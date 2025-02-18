@@ -1,0 +1,31 @@
+# Global Args #################################################################
+ARG BASE_UBI_IMAGE_TAG=9.4
+ARG PYTHON_VERSION=3.12
+
+# Base Layer ##################################################################
+FROM registry.access.redhat.com/ubi9/ubi-minimal:${BASE_UBI_IMAGE_TAG} AS base
+ARG PYTHON_VERSION
+ENV PYTHON_VERSION=${PYTHON_VERSION}
+WORKDIR /workspace
+
+# Install some basic utilities ##################################################################
+RUN microdnf update -y && microdnf install -y \
+    python${PYTHON_VERSION}-devel python${PYTHON_VERSION}-pip python${PYTHON_VERSION}-wheel git vim gcc g++ kmod\
+    && microdnf clean all
+
+# Download and install vllm ###########################################################
+ENV VLLM_TARGET_DEVICE=empty
+RUN git clone -b sop-plugin-refactoring --single-branch https://github.com/IBM/vllm.git \
+    && cd vllm \
+    && python3.12 -m pip install --upgrade pip \
+    && pip install -r requirements-build.txt \
+    && pip install --no-build-isolation -v -e . \
+    && mkdir /workspace/vllm-spyre
+
+# Install vllm Spyre plugin ##################################################################
+COPY . /workspace/vllm-spyre
+RUN cd /workspace/vllm-spyre && pip install --no-build-isolation -v -e .
+ENV VLLM_PLUGINS=spyre
+
+CMD ["/bin/bash"]
+

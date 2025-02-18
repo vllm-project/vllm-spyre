@@ -1,0 +1,80 @@
+[tool.setuptools_scm]
+# version_file = "vllm_spyre/_version.py" # currently handled by `setup.py:get_version()`
+
+[tool.ruff]
+# Allow lines to be as long as 80.
+line-length = 80
+exclude = [
+    "vllm_spyre/model_executor/model_loader/spyre_setup.py"
+]
+
+[tool.ruff.lint.per-file-ignores]
+"vllm_spyre/version.py" = ["F401"]
+"vllm_spyre/_version.py" = ["ALL"]
+
+[tool.ruff.lint]
+select = [
+    # pycodestyle
+    "E",
+    # Pyflakes
+    "F",
+    # pyupgrade
+    "UP",
+    # flake8-bugbear
+    "B",
+    # flake8-simplify
+    "SIM",
+    # isort
+    # "I",
+    "G",
+]
+ignore = [
+    # star imports
+    "F405", "F403",
+    # lambda expression assignment
+    "E731",
+    # Loop control variable not used within loop body
+    "B007",
+    # f-string format
+    "UP032",
+]
+
+[tool.mypy]
+ignore_missing_imports = true
+check_untyped_defs = true
+follow_imports = "silent"
+
+# After fixing type errors resulting from follow_imports: "skip" -> "silent",
+# move the directory here and remove it from tools/mypy.sh
+files = [
+]
+# TODO(woosuk): Include the code from Megatron and HuggingFace.
+exclude = [
+    'vllm_spyre/model_executor/model_loader/spyre_setup.py'
+]
+
+[tool.codespell]
+ignore-words-list = "dout, te, indicies, subtile, ElementE"
+#skip = "./tests/models/fixtures,./tests/prompts,./benchmarks/sonnet.txt,./tests/lora/data,./build"
+
+[tool.isort]
+use_parentheses = true
+skip_gitignore = true
+
+[tool.pytest.ini_options]
+markers = [
+    "skip_global_cleanup",
+    "core_model: enable this model test in each PR instead of only nightly",
+    "cpu_model: enable this model test in CPU tests",
+    "quant_model: run this model test under Quantized category",
+    "split: run this test as part of a split",
+    "distributed: run this test only in distributed GPU tests",
+    "skip_v1: do not run this test with v1",
+    "optional: optional tests that are automatically skipped, include --optional to run them",
+]
+
+[tool.pymarkdown]
+plugins.md013.enabled = false # line-length
+plugins.md041.enabled = false # first-line-h1
+plugins.md033.enabled = false # inline-html
+plugins.md024.allow_different_nesting = true # no-duplicate-headers
