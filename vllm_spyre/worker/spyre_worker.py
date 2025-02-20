@@ -11,6 +11,7 @@ from vllm.config import VllmConfig
 from vllm.distributed import (ensure_model_parallel_initialized,
                               init_distributed_environment)
 from vllm.model_executor import set_random_seed
+from vllm.platforms import current_platform
 from vllm.sequence import ExecuteModelRequest
 from vllm.worker.worker_base import (LocalOrDistributedWorkerBase,
                                      LoraNotSupportedWorkerBase, WorkerBase,
@@ -129,10 +130,10 @@ class SpyreWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
         # for all requested model warmups
         # printing env variables for debugging purposes
         load_model_start_t = time.time()
-
-        wup_prompt_lens, wup_new_tokens = zip(
-            *[(s["prompt_length"], s["new_tokens"])
-              for s in self.scheduler_config.spyre_warmup_shapes])
+        spyre_warmup_shapes = current_platform.get_warmup_shapes()
+        wup_prompt_lens, wup_new_tokens = zip(*[(s["prompt_length"],
+                                                 s["new_tokens"])
+                                                for s in spyre_warmup_shapes])
 
         self.model_runner.load_model(prompt_lens=wup_prompt_lens,
                                      num_decode_tokens=wup_new_tokens)
@@ -147,7 +148,7 @@ class SpyreWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
         all_warmup_start_t = time.time()
         for i, (prompt_len, num_decode_tokens, batch_size) in enumerate([
             (s["prompt_length"], s["new_tokens"], s["batch_size"])
-                for s in self.scheduler_config.spyre_warmup_shapes
+                for s in spyre_warmup_shapes
         ]):
             if self.model_config.task != "embed":
                 # TODO: remove if spyre supports

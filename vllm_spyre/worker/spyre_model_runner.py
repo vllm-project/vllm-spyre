@@ -10,6 +10,7 @@ from vllm.config import (DeviceConfig, ModelConfig, ParallelConfig,
 from vllm.logger import init_logger
 from vllm.model_executor import SamplingMetadata
 from vllm.model_executor.layers.sampler import SamplerOutput
+from vllm.platforms import current_platform
 from vllm.sequence import IntermediateTensors, SequenceGroupMetadata
 from vllm.utils import is_pin_memory_available
 from vllm.worker.model_runner_base import (
@@ -122,8 +123,9 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         input_token_list: List[torch.Tensor] = []
 
         # find warmup shape to be used for padding and batching
+        spyre_warmup_shapes = current_platform.get_warmup_shapes()
         applicable_spyre_warmup_shapes = [
-            shape for shape in self.scheduler_config.spyre_warmup_shapes
+            shape for shape in spyre_warmup_shapes
             if len(seq_group_metadata_list) <= shape['batch_size']
         ]
         for seq_group_metadata in seq_group_metadata_list:
