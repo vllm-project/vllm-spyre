@@ -12,17 +12,14 @@ WORKDIR /workspace
 RUN microdnf update -y && microdnf install -y \
     python${PYTHON_VERSION}-devel python${PYTHON_VERSION}-pip python${PYTHON_VERSION}-wheel git vim gcc g++ kmod\
     && microdnf clean all
+RUN ln -sf $(which python${PYTHON_VERSION}) /usr/bin/python && \
+    ln -sf $(which pip${PYTHON_VERSION}) /usr/bin/pip
 
 # Download and install vllm ###########################################################
-ENV VLLM_TARGET_DEVICE=empty
-RUN git clone -b sop-plugin-refactoring --single-branch https://github.com/IBM/vllm.git \
-    && cd vllm \
-    && python3.12 -m pip install --upgrade pip \
-    && pip install -r requirements-build.txt \
-    && pip install --no-build-isolation -v -e . \
-    && mkdir /workspace/vllm-spyre
+RUN pip install vllm==0.7.3
 
 # Install vllm Spyre plugin ##################################################################
+RUN mkdir /workspace/vllm-spyre
 COPY . /workspace/vllm-spyre
 RUN cd /workspace/vllm-spyre && pip install --no-build-isolation -v -e .
 ENV VLLM_PLUGINS=spyre

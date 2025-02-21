@@ -24,11 +24,7 @@ docker run -it --rm vllm-spyre bash
 
 ```
 # Install vllm
-git clone https://github.com/vllm-project/vllm.git
-cd vllm
-pip install -r requirements-build.txt
-export VLLM_TARGET_DEVICE=empty
-pip install --no-build-isolation -v -e .
+pip install vllm==0.7.3
 
 # Install vllm-spyre
 cd ..

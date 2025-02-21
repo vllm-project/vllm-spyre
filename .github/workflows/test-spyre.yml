@@ -13,16 +13,16 @@ jobs:
       run: |
         docker run -i --rm --entrypoint /bin/bash vllm-spyre -c '''
           pip install pytest sentence-transformers && \
-          python3.12 -c "from transformers import pipeline; pipeline(\"text-generation\", model=\"JackFram/llama-160m\")" && \
+          python -c "from transformers import pipeline; pipeline(\"text-generation\", model=\"JackFram/llama-160m\")" && \
           export VARIANT=$(ls /root/.cache/huggingface/hub/models--JackFram--llama-160m/snapshots/) && \
           mkdir -p /models && \
           ln -s /root/.cache/huggingface/hub/models--JackFram--llama-160m/snapshots/${VARIANT} /models/llama-194m && \
-          python3.12 -c "from sentence_transformers import SentenceTransformer; SentenceTransformer(\"sentence-transformers/all-roberta-large-v1\")" && \
+          python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer(\"sentence-transformers/all-roberta-large-v1\")" && \
           export VARIANT=$(ls /root/.cache/huggingface/hub/models--sentence-transformers--all-roberta-large-v1/snapshots/) && \
           ln -s /root/.cache/huggingface/hub/models--sentence-transformers--all-roberta-large-v1/snapshots/${VARIANT} /models/all-roberta-large-v1 && \
           export MASTER_PORT=12355 && \
           export MASTER_ADDR=localhost && \
           export DISTRIBUTED_STRATEGY_IGNORE_MODULES=WordEmbedding && \
           cd vllm-spyre && \
-          python3.12 -m pytest tests -v
+          python -m pytest tests -v
         '''
