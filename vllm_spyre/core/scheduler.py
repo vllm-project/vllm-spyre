@@ -798,7 +798,7 @@ class SpyreScheduler:
                             "and undefined maximum number of output "
                             "tokens", num_new_tokens)
                     for seq in waiting_seqs:
-                        seq.status = SequenceStatus.FINISHED_IGNORED
+                        seq.status = SequenceStatus.FINISHED_ABORTED
                     ignored_seq_groups.append(seq_group)
                     waiting_queue.popleft()
                     continue
