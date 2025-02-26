@@ -1,7 +1,7 @@
 import os
 from typing import List
 
-from setuptools import setup
+from setuptools import find_packages, setup
 
 ROOT_DIR = os.path.dirname(__file__)
 
@@ -35,6 +35,6 @@ def get_requirements() -> List[str]:
 
 setup(name="vllm-spyre",
       version="0.1",
-      packages=["vllm_spyre"],
+      packages=find_packages(),
       install_requires=get_requirements(),
       entry_points={"vllm.platform_plugins": ["spyre = vllm_spyre:register"]})
