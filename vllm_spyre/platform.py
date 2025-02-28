@@ -36,17 +36,25 @@ class SpyrePlatform(Platform):
 
     @classmethod
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:
+
+        print("\n\nCHECKING AND UPDATING CONFIG\n\n")
+
         parallel_config = vllm_config.parallel_config
         scheduler_config = vllm_config.scheduler_config
 
-        if scheduler_config.is_multi_step or envs.VLLM_USE_V1:
-            raise NotImplementedError
+        # if scheduler_config.is_multi_step or envs.VLLM_USE_V1:
+        #     raise NotImplementedError
 
         if parallel_config.worker_cls == "auto":
             parallel_config.worker_cls = \
                 "vllm_spyre.worker.spyre_worker.SpyreWorker"
-        scheduler_config.scheduler_cls = \
-            "vllm_spyre.core.scheduler.SpyreScheduler"
+        
+            if envs.VLLM_USE_V1:
+                parallel_config.worker_cls = \
+                    "vllm_spyre.v1.worker.spyre_worker.SpyreWorker"
+
+        # scheduler_config.scheduler_cls = \
+        #     "vllm_spyre.core.scheduler.SpyreScheduler"
         cache_config = vllm_config.cache_config
         if cache_config:
             # spyre needs block_size = max_model_len
@@ -70,6 +78,9 @@ class SpyrePlatform(Platform):
     @classmethod
     def set_warmup_shapes(cls, scheduler_config) -> None:
         # load warmup shapes and sort by "speed"
+
+        print("\n\n Setting warmup shapes \n\n\n")
+
         wup_prompt_lens = envs_spyre.VLLM_SPYRE_WARMUP_PROMPT_LENS or []
         wup_batch_sizes = envs_spyre.VLLM_SPYRE_WARMUP_BATCH_SIZES or []
         if len(wup_prompt_lens) != len(wup_batch_sizes):
@@ -100,6 +111,8 @@ class SpyrePlatform(Platform):
             } for pl, nt, bs in zip(wup_prompt_lens, wup_new_tokens,
                                     wup_batch_sizes)],
                    key=operator.itemgetter('batch_size', 'prompt_length')))
+        
+        print("\n\n\n Set the warmup shapes \n\n\n")
 
     @classmethod
     def get_warmup_shapes(cls) -> tuple[dict[str, int], ...]:

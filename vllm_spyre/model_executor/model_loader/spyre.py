@@ -13,6 +13,8 @@ from vllm.logger import init_logger
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
 from vllm.model_executor.layers.sampler import Sampler, SamplerOutput
 from vllm.model_executor.sampling_metadata import SamplingMetadata
+from vllm.model_executor.layers.sampler import get_sampler
+
 
 import vllm_spyre.envs as envs_spyre
 
@@ -42,7 +44,7 @@ class SpyreCausalLM(nn.Module):
         self.config = config
         self.logits_processor = LogitsProcessor(config.vocab_size,
                                                 logits_as_input=True)
-        self.sampler = Sampler()
+        self.sampler = get_sampler()
         self.past_key_value_states = None
         self.dtype = torch.float16 if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == \
             'sendnn_decoder' else torch.float32
@@ -207,5 +209,7 @@ def get_spyre_model(model_config: ModelConfig, parallel_config: ParallelConfig,
         max_prompt_length=max_prompt_length,
         max_decode_length=max_decode_length,
         distributed_strategy="tp" if parallel_config.world_size > 1 else None)
+    
+    # Set the correct sampler impl
 
     return model
