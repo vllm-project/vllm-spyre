@@ -1,4 +1,5 @@
 """Utilities for selecting and loading Spyre models."""
+import os
 import sys
 from typing import Optional
 
@@ -12,6 +13,8 @@ from vllm.config import ModelConfig, ParallelConfig
 from vllm.logger import init_logger
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
 from vllm.model_executor.layers.sampler import Sampler, SamplerOutput
+from vllm.model_executor.model_loader.weight_utils import (
+    download_weights_from_hf)
 from vllm.model_executor.sampling_metadata import SamplingMetadata
 
 import vllm_spyre.envs as envs_spyre
@@ -146,12 +149,22 @@ class SpyreCausalLM(nn.Module):
             data_type = self.dtype
             model_source = "hf"
 
+        is_local = os.path.isdir(model_config.model)
+        model_path = model_config.model
+        # Get location of model from HF cache.
+        if not is_local:
+            model_path = download_weights_from_hf(
+                model_name_or_path=model_path,
+                cache_dir=None,
+                allow_patterns=["*.safetensors", "*.bin", "*.pt"],
+                revision=model_config.revision)
+
         # we can use fused weights unless running on Spyre
         fused_weights = envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn_decoder"
 
         self.model = get_model(architecture="hf_configured",
                                variant=model_config.model,
-                               model_path=model_config.model,
+                               model_path=model_path,
                                source=model_source,
                                data_type=data_type,
                                distributed_strategy=distributed_strategy,
