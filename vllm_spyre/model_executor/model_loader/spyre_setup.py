@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import tempfile
 
 import torch
 
@@ -36,8 +37,9 @@ def spyre_setup(rank=0, world_size=1, local_rank=0, local_size=1, verbose=False)
     # Each rank needs a unique space to write its binaries
     # For both 'export' and '__pycache'
     # https://docs.python.org/3/library/sys.html#sys.pycache_prefix
-    os.environ.setdefault("DEEPRT_EXPORT_DIR", "export")
-    os.environ.setdefault("DTCOMPILER_EXPORT_DIR", "export")
+    with tempfile.TemporaryDirectory() as exportdir:
+        os.environ.setdefault("DEEPRT_EXPORT_DIR", exportdir)
+        os.environ.setdefault("DTCOMPILER_EXPORT_DIR", exportdir)
     if world_size > 1:
         os.environ["DEEPRT_EXPORT_DIR"] += f"/{rank}"
         os.environ["DTCOMPILER_EXPORT_DIR"] += f"/{rank}"
