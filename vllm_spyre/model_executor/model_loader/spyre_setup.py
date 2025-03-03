@@ -42,7 +42,7 @@ def spyre_setup(rank=0, world_size=1, local_rank=0, local_size=1, verbose=False)
         os.environ["DEEPRT_EXPORT_DIR"] += f"/{rank}"
         os.environ["DTCOMPILER_EXPORT_DIR"] += f"/{rank}"
         sys.pycache_prefix=os.getenv("DEEPRT_EXPORT_DIR")+"/py-" + str(rank)
-    os.environ.setdefault("DTCOMPILER_KEEP_EXPORT", "1")
+    os.environ.setdefault("DTCOMPILER_KEEP_EXPORT", "0")
 
     # Inform Flex of the size of this job
     os.environ.setdefault("FLEX_RDMA_WORLD_SIZE", str(world_size))
