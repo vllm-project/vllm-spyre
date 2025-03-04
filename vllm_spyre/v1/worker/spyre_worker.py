@@ -16,7 +16,6 @@ from vllm.worker.worker_base import WorkerBase
 
 import vllm_spyre.envs as envs_spyre
 from vllm_spyre.model_executor.model_loader import spyre_setup
-# from vllm.worker.spyre_model_runner import SpyreModelRunner
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import SpyreModelRunner
 
@@ -32,7 +31,6 @@ class SpyreWorker(WorkerBaseV1):
     """A worker class that executes the model on a group of Spyre cores.
     """
 
-    ### hack stuff for v1
     def get_kv_cache_spec(self) -> KVCacheSpec:
         """Get specifications for KV cache implementation."""
         return {
@@ -82,6 +80,7 @@ class SpyreWorker(WorkerBaseV1):
 
     def check_health(self) -> None:
         """Basic health check (override for device-specific checks)."""
+        # TODO: Implement something!
         return
 
     def determine_available_memory(self) -> int:
@@ -91,8 +90,6 @@ class SpyreWorker(WorkerBaseV1):
     def initialize_from_config(self,
                                kv_cache_configs: List[KVCacheConfig]) -> None:
         pass
-
-    ####
 
     def __init__(
         self,
@@ -209,6 +206,11 @@ class SpyreWorker(WorkerBaseV1):
 
     def _warmup_spyre_fixed_size(self, prompt_len, num_decode_tokens,
                                  special_token_ids, batch_size):
+        # TODO See if we can use `self.execute_model` instead for the warmup
+        # It's slightly risky to implement different forward pass logic here,
+        # which can go out of sync with the real forward pass and cause problems
+        # for torch.compile
+
         # warmup the model
         warmup_start_t = time.time()
         # NOTE(ngl): empty tensor causes spyre to hang, so using
