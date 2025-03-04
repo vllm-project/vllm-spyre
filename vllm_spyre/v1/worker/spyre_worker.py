@@ -12,28 +12,20 @@ from vllm.distributed import (ensure_model_parallel_initialized,
                               init_distributed_environment)
 from vllm.model_executor import set_random_seed
 from vllm.platforms import current_platform
-from vllm.sequence import ExecuteModelRequest
-from vllm.worker.worker_base import (LocalOrDistributedWorkerBase, WorkerBase,
-                                     WorkerInput)
+from vllm.worker.worker_base import WorkerBase
 
 import vllm_spyre.envs as envs_spyre
 from vllm_spyre.model_executor.model_loader import spyre_setup
 # from vllm.worker.spyre_model_runner import SpyreModelRunner
+from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import SpyreModelRunner
 
-# Post 0.7.3 this class was renamed
-try:
-    from vllm.worker.worker_base import LoRANotSupportedWorkerBase
-except ImportError:
-    from vllm.worker.worker_base import (
-        LoraNotSupportedWorkerBase as LoRANotSupportedWorkerBase)
-    
 from vllm.v1.worker.worker_base import WorkerBase as WorkerBaseV1
-from vllm.v1.kv_cache_interface import KVCacheSpec, KVCacheConfig, KVCacheSpecBase, FullAttentionSpec
+from vllm.v1.kv_cache_interface import (KVCacheSpec, KVCacheConfig,
+                                        FullAttentionSpec)
 
-from vllm.v1.core.scheduler import Scheduler, SchedulerOutput
+from vllm.v1.core.scheduler import SchedulerOutput
 from vllm.v1.outputs import ModelRunnerOutput
-
 
 
 class SpyreWorker(WorkerBaseV1):
@@ -44,7 +36,11 @@ class SpyreWorker(WorkerBaseV1):
     def get_kv_cache_spec(self) -> KVCacheSpec:
         """Get specifications for KV cache implementation."""
         return {
-            "foo": FullAttentionSpec(block_size=10, num_kv_heads=1, head_size=1, dtype=torch.float16)
+            "foo":
+            FullAttentionSpec(block_size=10,
+                              num_kv_heads=1,
+                              head_size=1,
+                              dtype=torch.float16)
         }
 
     def compile_or_warm_up_model(self) -> None:
@@ -87,11 +83,11 @@ class SpyreWorker(WorkerBaseV1):
     def check_health(self) -> None:
         """Basic health check (override for device-specific checks)."""
         return
-    
+
     def determine_available_memory(self) -> int:
         # TODO: figure out what to do based on determine_num_available_blocks
         return 10 * 1024 * 1024
-    
+
     def initialize_from_config(self,
                                kv_cache_configs: List[KVCacheConfig]) -> None:
         pass
@@ -335,7 +331,6 @@ class SpyreWorker(WorkerBaseV1):
 
         return num_gpu_blocks, num_cpu_blocks
 
-
     def get_cache_block_size_bytes(self) -> int:
         """Determine the size in bytes of a cache block.
 
@@ -351,16 +346,7 @@ class SpyreWorker(WorkerBaseV1):
     def kv_cache(self) -> Optional[List[List[torch.Tensor]]]:
         return None
 
-    # def prepare_worker_input(
-    #         self, execute_model_req: ExecuteModelRequest) -> WorkerInput:
-    #     return WorkerInput(num_seq_groups=len(
-    #         execute_model_req.seq_group_metadata_list), )
-
-
-    # def execute_worker(self, worker_input: WorkerInput) -> None:
-    #     pass
-
-    @torch.inference_mode()
+    @SpyrePlatform.inference_mode()
     def execute_model(
         self,
         scheduler_output: "SchedulerOutput",

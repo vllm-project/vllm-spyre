@@ -11,7 +11,6 @@ from vllm.logger import init_logger
 from vllm.v1.sample.metadata import SamplingMetadata
 from vllm.v1.outputs import SamplerOutput
 from vllm.platforms import current_platform
-from vllm.sequence import IntermediateTensors, SequenceGroupMetadata
 from vllm.utils import is_pin_memory_available
 from vllm.worker.model_runner_base import (
     ModelRunnerBase, ModelRunnerInputBase,
@@ -19,20 +18,20 @@ from vllm.worker.model_runner_base import (
     _init_sampling_metadata_from_tensor_dict)
 
 from vllm_spyre.model_executor.model_loader.spyre import get_spyre_model
+from vllm_spyre.platform import SpyrePlatform
 
 if TYPE_CHECKING:
     from vllm.attention.backends.abstract import AttentionBackend
     from vllm.model_executor.pooling_metadata import PoolingMetadata
 
+from vllm.v1.core.scheduler import (SchedulerOutput, NewRequestData,
+                                    CachedRequestData)
+from vllm.v1.outputs import ModelRunnerOutput
+
 logger = init_logger(__name__)
 
 TModelInputForSpyre = TypeVar('TModelInputForSpyre',
                               bound="ModelInputForSpyre")
-
-from vllm.v1.kv_cache_interface import KVCacheSpec, KVCacheConfig, KVCacheSpecBase, FullAttentionSpec
-
-from vllm.v1.core.scheduler import Scheduler, SchedulerOutput, NewRequestData, CachedRequestData
-from vllm.v1.outputs import ModelRunnerOutput
 
 
 @dataclass(frozen=True)
@@ -119,7 +118,6 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                                      max_prompt_length=max_pad_length,
                                      max_decode_length=max_decode_length)
 
-
     @property
     def vocab_size(self) -> int:
         return self.model.model.config.src_vocab_size
@@ -139,7 +137,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         ]
         for request_data in new_requests:
             # retrieve initial (unpadded) tokens
-            prompt_tokens = request_data.prompt_token_ids            
+            prompt_tokens = request_data.prompt_token_ids
             new_tokens = request_data.sampling_params.max_tokens\
                   if request_data.sampling_params is not None else 0
 
@@ -150,7 +148,8 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
             ]
             applicable_spyre_warmup_shapes = updated_spyre_warmup_shapes
 
-        assert applicable_spyre_warmup_shapes, "No shapes available to run prefill batch. (This should not happen)"
+        assert applicable_spyre_warmup_shapes, \
+            "No shapes available to run prefill batch. (This should not happen)"
 
         # If multiple warmup shapes apply, the first one is selected.
         # For improving performance, the warmup shapes in scheduler_config
@@ -204,7 +203,8 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         ]
 
         for cached_request in cached_requests:
-            # TODO: Will this always just be one token ID if there's no spec / jump decoding?
+            # TODO: Will this always just be one token ID if there's no spec
+            # or jump decoding?
             generation_token = cached_request.new_token_ids[-1]
             input_tokens[self._req_ids2idx[cached_request.req_id]] = [
                 generation_token
@@ -257,9 +257,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         return ModelInputForSpyre.from_broadcasted_tensor_dict(tensor_dict)
 
     def prepare_model_input(
-        self,
-        scheduler_output: SchedulerOutput
-    ) -> ModelInputForSpyre:
+            self, scheduler_output: SchedulerOutput) -> ModelInputForSpyre:
 
         # NOTE: We assume that all sequences in the group are all prompts or
         # all decodes.
@@ -284,11 +282,13 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                 for seq_id in scheduler_output.finished_req_ids:
                     self.model.indices[self._req_ids2idx[seq_id]] = False
             (input_tokens, input_positions,
-             input_masks) = self._prepare_decode(scheduler_output.scheduled_cached_reqs)
+             input_masks) = self._prepare_decode(
+                 scheduler_output.scheduled_cached_reqs)
             # seq_lens = []
             num_reqs = len(scheduler_output.scheduled_cached_reqs)
 
-        # TODO: Cache the sampling params for the current batch and build this correctly
+        # TODO: Cache the sampling params for the current batch and build this
+        # correctly
         dummy_tensors = lambda v: torch.full(
             (num_reqs, ), v, device=self.device)
         dummy_metadata = SamplingMetadata(
@@ -310,7 +310,6 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
             logit_bias=[None for _ in range(num_reqs)],
             allowed_token_ids_mask=None,
         )
-        
 
         return ModelInputForSpyre(input_tokens=input_tokens,
                                   input_positions=input_positions,
@@ -318,6 +317,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                                   sampling_metadata=dummy_metadata,
                                   is_prompt=is_prompt)
 
+    @SpyrePlatform.inference_mode()
     def execute_model(
         self,
         scheduler_output: "SchedulerOutput",
@@ -350,7 +350,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         t1 = time.time() - t0
         print("[spyre_model_runner:execute_model] t_token: %.2fms" %
               (t1 * 1000))
-        
+
         print("\n\n\n FINISHED ITERATION \n\n\n")
         print(self._req_ids2idx)
         print(output.sampled_token_ids)
@@ -361,8 +361,12 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
             req_id_to_index=self._req_ids2idx,
             sampled_token_ids=output.sampled_token_ids.tolist(),
             spec_token_ids=None,
-            logprobs=None, # TODO: add logprobs, needs to be converted from tensor here
-            prompt_logprobs_dict={req_id: None for req_id in self._req_ids2idx.keys()} # TODO: prompt logprobs too
+            logprobs=
+            None,  # TODO: add logprobs, needs to be converted from tensor here
+            prompt_logprobs_dict={
+                req_id: None
+                for req_id in self._req_ids2idx
+            }  # TODO: prompt logprobs too
         )
         return model_output
 

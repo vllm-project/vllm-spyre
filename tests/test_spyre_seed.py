@@ -18,11 +18,12 @@ from vllm import SamplingParams
 ])
 @pytest.mark.parametrize("temperature", [0.1, 1.0])
 @pytest.mark.parametrize("seed", [42])
-@pytest.mark.parametrize("warmup_shape", [(64, 20, 4), (64, 20, 8),
-                                          (128, 20, 4), (128, 20, 8)]
-                         )  # (prompt_length/new_tokens/batch_size)
-@pytest.mark.parametrize("backend",
-                         ["eager", "inductor", "sendnn_decoder"])  #, "inductor", "sendnn_decoder"])
+@pytest.mark.parametrize(
+    "warmup_shape", [(64, 20, 4), (64, 20, 8), (128, 20, 4),
+                     (128, 20, 8)])  # (prompt_length/new_tokens/batch_size)
+@pytest.mark.parametrize(
+    "backend",
+    ["eager", "inductor", "sendnn_decoder"])  #, "inductor", "sendnn_decoder"])
 def test_seed(
     model: str,
     prompt: str,

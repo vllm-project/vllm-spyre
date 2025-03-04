@@ -232,7 +232,6 @@ class Scheduler:
 
                 request = self.waiting[0]
 
-
                 # SPYRE SPECIFIC CODE BLOCK START
                 # check if current request can be scheduled based on the applicable
                 # spyre warmup shapes
@@ -244,15 +243,17 @@ class Scheduler:
                     max_tokens = request.sampling_params.max_tokens
                 updated_spyre_warmup_shapes = [
                     shape for shape in applicable_spyre_warmup_shapes
-                    if num_new_tokens <= shape['prompt_length'] and max_tokens <=
-                    shape['new_tokens'] and len(currently_scheduled_reqs) < shape['batch_size']
+                    if num_new_tokens <= shape['prompt_length']
+                    and max_tokens <= shape['new_tokens']
+                    and len(currently_scheduled_reqs) < shape['batch_size']
                 ]
                 if not updated_spyre_warmup_shapes:
                     if not currently_scheduled_reqs:
                         # request was tested against all spyre warmup shapes:
                         # request cannot be processed
-                        if (request.sampling_params is not None and
-                                request.sampling_params.max_tokens is not None):
+                        if (request.sampling_params is not None
+                                and request.sampling_params.max_tokens
+                                is not None):
                             logger.warning(
                                 "No applicable warmup shape exists for "
                                 "combination of prompt length (%d tokens) "
@@ -279,8 +280,6 @@ class Scheduler:
                 else:
                     applicable_spyre_warmup_shapes = updated_spyre_warmup_shapes
                 # SPYRE SPECIFIC CODE BLOCK END
-
-
 
                 # Check that adding the request still respects the max_loras
                 # constraint.
