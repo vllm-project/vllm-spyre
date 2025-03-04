@@ -11,9 +11,8 @@ from transformers import PretrainedConfig
 from vllm.config import ModelConfig, ParallelConfig
 from vllm.logger import init_logger
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
-from vllm.model_executor.layers.sampler import SamplerOutput
+from vllm.model_executor.layers.sampler import SamplerOutput, get_sampler
 from vllm.model_executor.sampling_metadata import SamplingMetadata
-from vllm.model_executor.layers.sampler import get_sampler
 
 import vllm_spyre.envs as envs_spyre
 

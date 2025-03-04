@@ -50,12 +50,12 @@ class SpyrePlatform(Platform):
             if envs.VLLM_USE_V1:
                 parallel_config.worker_cls = \
                     "vllm_spyre.v1.worker.spyre_worker.SpyreWorker"
-                
+
                 # Forking is required here because this class is used to set up
                 # the warmup shapes, and the workers that are now in separate
                 # processes need to retrieve them.
                 # If we can refactor the workers to setup the warmup shapes
-                # themselves, then we can support process spawning too. 
+                # themselves, then we can support process spawning too.
                 if envs.VLLM_WORKER_MULTIPROC_METHOD != "fork":
                     logger.warning("V1 integration requires "
                                    "VLLM_WORKER_MULTIPROC_METHOD=fork")

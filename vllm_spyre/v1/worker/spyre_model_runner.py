@@ -8,10 +8,10 @@ from torch import nn
 from vllm.config import (DeviceConfig, ModelConfig, ParallelConfig,
                          SchedulerConfig)
 from vllm.logger import init_logger
-from vllm.v1.sample.metadata import SamplingMetadata
-from vllm.v1.outputs import SamplerOutput
 from vllm.platforms import current_platform
 from vllm.utils import is_pin_memory_available
+from vllm.v1.outputs import SamplerOutput
+from vllm.v1.sample.metadata import SamplingMetadata
 from vllm.worker.model_runner_base import (
     ModelRunnerBase, ModelRunnerInputBase,
     _add_sampling_metadata_broadcastable_dict,
@@ -24,8 +24,8 @@ if TYPE_CHECKING:
     from vllm.attention.backends.abstract import AttentionBackend
     from vllm.model_executor.pooling_metadata import PoolingMetadata
 
-from vllm.v1.core.scheduler import (SchedulerOutput, NewRequestData,
-                                    CachedRequestData)
+from vllm.v1.core.scheduler import (CachedRequestData, NewRequestData,
+                                    SchedulerOutput)
 from vllm.v1.outputs import ModelRunnerOutput
 
 logger = init_logger(__name__)
@@ -46,7 +46,7 @@ class ModelInputForSpyre(ModelRunnerInputBase):
     pooling_metadata: Optional["PoolingMetadata"] = None
     is_prompt: Optional[bool] = None
     # unused
-    virtual_engine: Optional[int] = None,
+    virtual_engine: Optional[int] = None
 
     def as_broadcastable_tensor_dict(self) -> Dict[str, Any]:
         tensor_dict = {
@@ -280,7 +280,8 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
             # updating indices: set indices of newly finished sequences False
             if scheduler_output.finished_req_ids:
                 for seq_id in scheduler_output.finished_req_ids:
-                    self.model.indices[self._req_ids2idx[seq_id]] = False
+                    if seq_id in self._req_ids2idx:
+                        self.model.indices[self._req_ids2idx[seq_id]] = False
             (input_tokens, input_positions,
              input_masks) = self._prepare_decode(
                  scheduler_output.scheduled_cached_reqs)
