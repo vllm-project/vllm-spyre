@@ -12,28 +12,87 @@ from vllm.distributed import (ensure_model_parallel_initialized,
                               init_distributed_environment)
 from vllm.model_executor import set_random_seed
 from vllm.platforms import current_platform
-from vllm.sequence import ExecuteModelRequest
-from vllm.worker.worker_base import (LocalOrDistributedWorkerBase, WorkerBase,
-                                     WorkerInput)
+from vllm.worker.worker_base import WorkerBase
 
 import vllm_spyre.envs as envs_spyre
 from vllm_spyre.model_executor.model_loader import spyre_setup
-from vllm_spyre.worker.spyre_embedding_model_runner import (
-    SpyreEmbeddingModelRunner)
 # from vllm.worker.spyre_model_runner import SpyreModelRunner
-from vllm_spyre.worker.spyre_model_runner import SpyreModelRunner
+from vllm_spyre.platform import SpyrePlatform
+from vllm_spyre.v1.worker.spyre_model_runner import SpyreModelRunner
 
-# Post 0.7.3 this class was renamed
-try:
-    from vllm.worker.worker_base import LoRANotSupportedWorkerBase
-except ImportError:
-    from vllm.worker.worker_base import (LoraNotSupportedWorkerBase as
-                                         LoRANotSupportedWorkerBase)
+from vllm.v1.worker.worker_base import WorkerBase as WorkerBaseV1
+from vllm.v1.kv_cache_interface import (KVCacheSpec, KVCacheConfig,
+                                        FullAttentionSpec)
+
+from vllm.v1.core.scheduler import SchedulerOutput
+from vllm.v1.outputs import ModelRunnerOutput
 
 
-class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
+class SpyreWorker(WorkerBaseV1):
     """A worker class that executes the model on a group of Spyre cores.
     """
+
+    ### hack stuff for v1
+    def get_kv_cache_spec(self) -> KVCacheSpec:
+        """Get specifications for KV cache implementation."""
+        return {
+            "foo":
+            FullAttentionSpec(block_size=10,
+                              num_kv_heads=1,
+                              head_size=1,
+                              dtype=torch.float16)
+        }
+
+    def compile_or_warm_up_model(self) -> None:
+        """Prepare model for execution through compilation/warmup."""
+        spyre_warmup_shapes = current_platform.get_warmup_shapes()
+        wup_prompt_lens, wup_new_tokens = zip(*[(s["prompt_length"],
+                                                 s["new_tokens"])
+                                                for s in spyre_warmup_shapes])
+
+        print(f"[SpyreWorker] Start warming up "
+              f"{len(wup_new_tokens)} "
+              f"different prompt/decode/batchsize-shape combinations.")
+        all_warmup_start_t = time.time()
+        for i, (prompt_len, num_decode_tokens, batch_size) in enumerate([
+            (s["prompt_length"], s["new_tokens"], s["batch_size"])
+                for s in spyre_warmup_shapes
+        ]):
+            if self.model_config.task != "embed":
+                # TODO: remove if spyre supports
+                # lower number of output tokens
+                assert num_decode_tokens >= 3, (
+                    "VLLM_SPYRE_WARMUP_NEW_TOKENS must be "
+                    "at least 2 (spyre requirement).")
+            # warmup individual combination
+            print(f"[SpyreWorker] Warmup {i+1}/"
+                  f"{len(wup_new_tokens)} "
+                  f"prompt/decode/batchsize-shape combinations...")
+            print(f"[SpyreWorker] Warming up for prompt length {prompt_len}, "
+                  f"decoding {num_decode_tokens} tokens with batch "
+                  f"size {batch_size}")
+            self._warmup_spyre_fixed_size(prompt_len, num_decode_tokens,
+                                          self.restricted_tokens, batch_size)
+        all_warmup_end_t = time.time()
+        all_warmup_total_t = all_warmup_end_t - all_warmup_start_t
+        print(f"[SpyreWorker] All warmups for "
+              f"{len(wup_new_tokens)} different "
+              f"prompt/decode/batchsize-shape combinations finished. "
+              f"Total warmup time {all_warmup_total_t}s.")
+
+    def check_health(self) -> None:
+        """Basic health check (override for device-specific checks)."""
+        return
+
+    def determine_available_memory(self) -> int:
+        # TODO: figure out what to do based on determine_num_available_blocks
+        return 10 * 1024 * 1024
+
+    def initialize_from_config(self,
+                               kv_cache_configs: List[KVCacheConfig]) -> None:
+        pass
+
+    ####
 
     def __init__(
         self,
@@ -57,9 +116,7 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
             init_cached_hf_modules()
 
         if self.model_config.task == "embed":
-            self.model_runner: SpyreModelRunner = SpyreEmbeddingModelRunner(
-                self.model_config, self.parallel_config, self.scheduler_config,
-                self.device_config, self.is_driver_worker)
+            raise NotImplementedError
         else:
             self.model_runner = SpyreModelRunner(self.model_config,
                                                  self.parallel_config,
@@ -131,6 +188,8 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
         if tok := config.get("eos_token_id") is not None:
             restricted_tokens.append(int(tok))
 
+        self.restricted_tokens = restricted_tokens
+
         print("[SpyreWorker] load model...")
         # TODO: check additionally if the Spyre card has enough memory
         # for all requested model warmups
@@ -147,36 +206,6 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
         load_model_end_t = time.time()
         load_model_total_t = load_model_end_t - load_model_start_t
         print(f"\tload model took {load_model_total_t}s")
-
-        print(f"[SpyreWorker] Start warming up "
-              f"{len(wup_new_tokens)} "
-              f"different prompt/decode/batchsize-shape combinations.")
-        all_warmup_start_t = time.time()
-        for i, (prompt_len, num_decode_tokens, batch_size) in enumerate([
-            (s["prompt_length"], s["new_tokens"], s["batch_size"])
-                for s in spyre_warmup_shapes
-        ]):
-            if self.model_config.task != "embed":
-                # TODO: remove if spyre supports
-                # lower number of output tokens
-                assert num_decode_tokens >= 3, (
-                    "VLLM_SPYRE_WARMUP_NEW_TOKENS must be "
-                    "at least 2 (spyre requirement).")
-            # warmup individual combination
-            print(f"[SpyreWorker] Warmup {i+1}/"
-                  f"{len(wup_new_tokens)} "
-                  f"prompt/decode/batchsize-shape combinations...")
-            print(f"[SpyreWorker] Warming up for prompt length {prompt_len}, "
-                  f"decoding {num_decode_tokens} tokens with batch "
-                  f"size {batch_size}")
-            self._warmup_spyre_fixed_size(prompt_len, num_decode_tokens,
-                                          restricted_tokens, batch_size)
-        all_warmup_end_t = time.time()
-        all_warmup_total_t = all_warmup_end_t - all_warmup_start_t
-        print(f"[SpyreWorker] All warmups for "
-              f"{len(wup_new_tokens)} different "
-              f"prompt/decode/batchsize-shape combinations finished. "
-              f"Total warmup time {all_warmup_total_t}s.")
 
     def _warmup_spyre_fixed_size(self, prompt_len, num_decode_tokens,
                                  special_token_ids, batch_size):
@@ -302,18 +331,6 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
 
         return num_gpu_blocks, num_cpu_blocks
 
-    def initialize_cache(self, num_gpu_blocks: int,
-                         num_cpu_blocks: int) -> None:
-        """Initialize the KV cache.
-        """
-
-        # Different values are not tested.
-        assert num_cpu_blocks == 0
-        assert num_gpu_blocks == self.scheduler_config.max_num_seqs
-
-        self.cache_config.num_gpu_blocks = num_gpu_blocks
-        self.cache_config.num_cpu_blocks = num_cpu_blocks
-
     def get_cache_block_size_bytes(self) -> int:
         """Determine the size in bytes of a cache block.
 
@@ -329,10 +346,10 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
     def kv_cache(self) -> Optional[List[List[torch.Tensor]]]:
         return None
 
-    def prepare_worker_input(
-            self, execute_model_req: ExecuteModelRequest) -> WorkerInput:
-        return WorkerInput(num_seq_groups=len(
-            execute_model_req.seq_group_metadata_list), )
-
-    def execute_worker(self, worker_input: WorkerInput) -> None:
-        pass
+    @SpyrePlatform.inference_mode()
+    def execute_model(
+        self,
+        scheduler_output: "SchedulerOutput",
+    ) -> Optional[ModelRunnerOutput]:
+        output = self.model_runner.execute_model(scheduler_output)
+        return output if self.is_driver_worker else None
