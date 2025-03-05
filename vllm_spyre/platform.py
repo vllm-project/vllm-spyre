@@ -1,4 +1,5 @@
 import operator
+import os
 from typing import TYPE_CHECKING, Optional
 
 import torch
@@ -39,14 +40,39 @@ class SpyrePlatform(Platform):
         parallel_config = vllm_config.parallel_config
         scheduler_config = vllm_config.scheduler_config
 
-        if scheduler_config.is_multi_step or envs.VLLM_USE_V1:
+        if scheduler_config.is_multi_step:
             raise NotImplementedError
 
+        # Near future TODO: vLLM will have an api to check whether v0 or v1 is
+        # used that isn't just checking the environment variable
+
         if parallel_config.worker_cls == "auto":
-            parallel_config.worker_cls = \
-                "vllm_spyre.worker.spyre_worker.SpyreWorker"
-        scheduler_config.scheduler_cls = \
-            "vllm_spyre.core.scheduler.SpyreScheduler"
+            if envs.VLLM_USE_V1:
+                parallel_config.worker_cls = \
+                    "vllm_spyre.v1.worker.spyre_worker.SpyreWorker"
+
+                # Forking is required here because this class is used to set up
+                # the warmup shapes, and the workers that are now in separate
+                # processes need to retrieve them.
+                # If we can refactor the workers to setup the warmup shapes
+                # themselves, then we can support process spawning too.
+                if envs.VLLM_WORKER_MULTIPROC_METHOD != "fork":
+                    logger.warning("V1 integration requires "
+                                   "VLLM_WORKER_MULTIPROC_METHOD=fork")
+                    os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "fork"
+            else:
+                parallel_config.worker_cls = \
+                    "vllm_spyre.worker.spyre_worker.SpyreWorker"
+
+        if envs.VLLM_USE_V1:
+            # As of 0.7.3 the scheduler for V1 isn't actually pluggable like
+            # this yet
+            scheduler_config.scheduler_cls = \
+                "vllm_spyre.v1.core.scheduler.SpyreScheduler"
+        else:
+            scheduler_config.scheduler_cls = \
+                "vllm_spyre.core.scheduler.SpyreScheduler"
+
         cache_config = vllm_config.cache_config
         if cache_config:
             # spyre needs block_size = max_model_len
