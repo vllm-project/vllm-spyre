@@ -278,3 +278,41 @@ def compare_embedding_results(model: str, prompts: List[str],
                                    vllm_result["embeddings"])
 
         assert math.isclose(sim, 1.0, rel_tol=0.05)
+
+
+# get model directory path from env, if not set then default to "/models".
+def get_spyre_model_dir_path():
+    model_dir_path = os.environ.get("VLLM_SPYRE_TEST_MODEL_DIR", "/models")
+    return model_dir_path
+
+
+# get model backend from env, if not set then default to "eager"
+# For multiple values:
+# export SPYRE_TEST_BACKEND_LIST="eager, inductor, sendnn_decoder"
+def get_spyre_backend_list():
+    test_backend_list = []
+    user_backend_list = os.environ.get("VLLM_SPYRE_TEST_BACKEND_LIST",
+                                       "eager,inductor,sendnn_decoder,sendnn")
+
+    for sypre_backend in user_backend_list.split(","):
+        test_backend_list.append(sypre_backend.strip())
+    return test_backend_list
+
+
+# get model names from env, if not set then default to "llama-194m"
+# For multiple values:
+# export SPYRE_TEST_MODEL_LIST="llama-194m,all-roberta-large-v1"
+def get_spyre_model_list(isEmbeddings=False):
+    spyre_model_dir_path = get_spyre_model_dir_path()
+    test_model_list = []
+    user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST",
+                                          "llama-194m")
+
+    # set default to bert if testing embeddings
+    if isEmbeddings:
+        user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST",
+                                              "all-roberta-large-v1")
+
+    for model in user_test_model_list.split(","):
+        test_model_list.append(f"{spyre_model_dir_path}/{model.strip()}")
+    return test_model_list
