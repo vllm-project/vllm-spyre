@@ -7,12 +7,13 @@ from typing import List, Tuple
 
 import pytest
 from spyre_util import (compare_results, generate_hf_output,
-                        generate_spyre_vllm_output)
+                        generate_spyre_vllm_output, get_spyre_backend_list,
+                        get_spyre_model_list)
 from transformers import AutoTokenizer
 from vllm import SamplingParams
 
 
-@pytest.mark.parametrize("model", ["/models/llama-194m"])
+@pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("prompts", [
     7 * [
         "Hello",
@@ -27,8 +28,7 @@ from vllm import SamplingParams
 @pytest.mark.parametrize("warmup_shapes",
                          [[(64, 20, 4)], [(64, 20, 4), (128, 20, 4)]]
                          )  # (prompt_length/new_tokens/batch_size)
-@pytest.mark.parametrize("backend",
-                         ["eager"])  #, "inductor", "sendnn_decoder"])
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_output(
     model: str,
     prompts: List[str],

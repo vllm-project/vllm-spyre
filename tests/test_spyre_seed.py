@@ -7,11 +7,12 @@ import math
 from typing import Tuple
 
 import pytest
-from spyre_util import generate_spyre_vllm_output
+from spyre_util import (generate_spyre_vllm_output, get_spyre_backend_list,
+                        get_spyre_model_list)
 from vllm import SamplingParams
 
 
-@pytest.mark.parametrize("model", ["/models/llama-194m"])
+@pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("prompt", [
     "Provide a list of instructions for preparing"
     " chicken soup for a family of four."
@@ -21,8 +22,7 @@ from vllm import SamplingParams
 @pytest.mark.parametrize("warmup_shape", [(64, 20, 4), (64, 20, 8),
                                           (128, 20, 4), (128, 20, 8)]
                          )  # (prompt_length/new_tokens/batch_size)
-@pytest.mark.parametrize("backend",
-                         ["eager"])  #, "inductor", "sendnn_decoder"])
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_seed(
     model: str,
     prompt: str,
