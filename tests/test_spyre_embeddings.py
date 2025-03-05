@@ -6,11 +6,12 @@ Run `python -m pytest tests/test_spyre_embeddings.py`.
 from typing import List, Tuple
 
 import pytest
-from spyre_util import (compare_embedding_results, spyre_vllm_embeddings,
+from spyre_util import (compare_embedding_results, get_spyre_backend_list,
+                        get_spyre_model_list, spyre_vllm_embeddings,
                         st_embeddings)
 
 
-@pytest.mark.parametrize("model", ["/models/all-roberta-large-v1"])
+@pytest.mark.parametrize("model", get_spyre_model_list(isEmbeddings=True))
 @pytest.mark.parametrize("prompts", [[
     "The capital of France is Paris."
     "Provide a list of instructions for preparing"
@@ -20,8 +21,7 @@ from spyre_util import (compare_embedding_results, spyre_vllm_embeddings,
 @pytest.mark.parametrize("warmup_shape",
                          [(64, 4), (64, 8), (128, 4),
                           (128, 8)])  # (prompt_length/new_tokens/batch_size)
-@pytest.mark.parametrize("backend",
-                         ["eager"])  #, "inductor", "sendnn_decoder"])
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_output(
     model: str,
     prompts: List[str],

@@ -7,7 +7,8 @@ from typing import List, Tuple
 
 import pytest
 from spyre_util import (compare_results, generate_hf_output,
-                        generate_spyre_vllm_output)
+                        generate_spyre_vllm_output, get_spyre_backend_list,
+                        get_spyre_model_list)
 from vllm import SamplingParams
 
 template = (
@@ -20,15 +21,14 @@ prompt2 = template.format("Provide a list of instructions for preparing "
                           "chicken soup for a family of four.")
 
 
-@pytest.mark.parametrize("model", ["/models/llama-194m"])
+@pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("prompts", [[prompt1, prompt2, prompt2, prompt2],
                                      [prompt2, prompt2, prompt2, prompt1],
                                      [prompt2, prompt2, prompt2, prompt2]])
 @pytest.mark.parametrize("stop_last", [True, False])
 @pytest.mark.parametrize("warmup_shape", [(64, 10, 4)]
                          )  # (prompt_length/new_tokens/batch_size)
-@pytest.mark.parametrize("backend",
-                         ["eager"])  #, "inductor", "sendnn_decoder"])
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_output(
     model: str,
     prompts: List[str],
