@@ -1,4 +1,5 @@
 import pytest
+import torch
 from vllm.connections import global_http_connection
 from vllm.distributed import cleanup_dist_env_and_memory
 
@@ -42,3 +43,9 @@ def cleanup_fixture(should_do_global_cleanup_after_test: bool):
     yield
     if should_do_global_cleanup_after_test:
         cleanup_dist_env_and_memory()
+
+
+@pytest.fixture(autouse=True)
+def dynamo_reset():
+    yield
+    torch._dynamo.reset()
