@@ -7,6 +7,7 @@ from typing import List, Optional, Tuple
 
 import torch
 import torch.distributed as dist
+from huggingface_hub import hf_hub_download
 from vllm.config import VllmConfig
 from vllm.distributed import (ensure_model_parallel_initialized,
                               init_distributed_environment)
@@ -121,8 +122,14 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
     def load_model(self):
         assert self._env_initialized
 
-        with open(os.path.join(self.model_config.model, 'config.json'),
-                  'rb') as f:
+        is_local = os.path.isdir(self.model_config.model)
+        if is_local:
+            cf_file = os.path.join(self.model_config.model, 'config.json')
+        else:
+            cf_file = hf_hub_download(repo_id=self.model_config.model,
+                                      revision=self.model_config.revision,
+                                      filename="config.json")
+        with open(cf_file, 'rb') as f:
             config = json.load(f)
 
         restricted_tokens = []
