@@ -28,8 +28,8 @@ from vllm_spyre.worker.spyre_model_runner import SpyreModelRunner
 try:
     from vllm.worker.worker_base import LoRANotSupportedWorkerBase
 except ImportError:
-    from vllm.worker.worker_base import (
-        LoraNotSupportedWorkerBase as LoRANotSupportedWorkerBase)
+    from vllm.worker.worker_base import (LoraNotSupportedWorkerBase as
+                                         LoRANotSupportedWorkerBase)
 
 
 class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
