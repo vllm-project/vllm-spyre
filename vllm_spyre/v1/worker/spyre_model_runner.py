@@ -362,8 +362,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
             req_id_to_index=self._req_ids2idx,
             sampled_token_ids=output.sampled_token_ids.tolist(),
             spec_token_ids=None,
-            logprobs=
-            None,  # TODO: add logprobs, needs to be converted from tensor here
+            logprobs=output.logprobs_tensors.tolists(),
             prompt_logprobs_dict={
                 req_id: None
                 for req_id in self._req_ids2idx
