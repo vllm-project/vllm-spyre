@@ -352,11 +352,6 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         print("[spyre_model_runner:execute_model] t_token: %.2fms" %
               (t1 * 1000))
 
-        print("\n\n\n FINISHED ITERATION \n\n\n")
-        print(self._req_ids2idx)
-        print(output.sampled_token_ids)
-        print("\n\n")
-
         model_output = ModelRunnerOutput(
             req_ids=list(self._req_ids2idx.keys()),
             req_id_to_index=self._req_ids2idx,
