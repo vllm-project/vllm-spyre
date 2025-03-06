@@ -293,7 +293,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         dummy_tensors = lambda v: torch.full(
             (num_reqs, ), v, device=self.device)
         dummy_metadata = SamplingMetadata(
-            temperature=dummy_tensors(0.5),
+            temperature=dummy_tensors(0.0),
             all_greedy=False,
             all_random=False,
             top_p=None,
