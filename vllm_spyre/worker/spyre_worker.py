@@ -14,8 +14,7 @@ from vllm.distributed import (ensure_model_parallel_initialized,
 from vllm.model_executor import set_random_seed
 from vllm.platforms import current_platform
 from vllm.sequence import ExecuteModelRequest
-from vllm.worker.worker_base import (LocalOrDistributedWorkerBase,
-                                     LoraNotSupportedWorkerBase, WorkerBase,
+from vllm.worker.worker_base import (LocalOrDistributedWorkerBase, WorkerBase,
                                      WorkerInput)
 
 import vllm_spyre.envs as envs_spyre
@@ -25,8 +24,18 @@ from vllm_spyre.worker.spyre_embedding_model_runner import (
 # from vllm.worker.spyre_model_runner import SpyreModelRunner
 from vllm_spyre.worker.spyre_model_runner import SpyreModelRunner
 
+# Post 0.7.3 this class was renamed
+# yapf conflicts with isort for this block
+# yapf: disable
+try:
+    from vllm.worker.worker_base import LoRANotSupportedWorkerBase
+except ImportError:
+    from vllm.worker.worker_base import (
+        LoraNotSupportedWorkerBase as LoRANotSupportedWorkerBase)
+# yapf: enable
 
-class SpyreWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
+
+class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
     """A worker class that executes the model on a group of Spyre cores.
     """
 
