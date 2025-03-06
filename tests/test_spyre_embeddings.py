@@ -22,11 +22,13 @@ from spyre_util import (compare_embedding_results, get_spyre_backend_list,
                          [(64, 4), (64, 8), (128, 4),
                           (128, 8)])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
+@pytest.mark.parametrize("vllm_version", ["V0"])  # Todo: V1 support
 def test_output(
     model: str,
     prompts: List[str],
     warmup_shape: Tuple[int, int],
     backend: str,
+    vllm_version: str,
 ) -> None:
     '''
     The warmup is based on a single shape. After the warmup,
@@ -41,7 +43,8 @@ def test_output(
                                          max_model_len=256,
                                          block_size=256,
                                          tensor_parallel_size=1,
-                                         backend=backend)
+                                         backend=backend,
+                                         vllm_version=vllm_version)
 
     hf_results = st_embeddings(model=model, prompts=prompts)
 
