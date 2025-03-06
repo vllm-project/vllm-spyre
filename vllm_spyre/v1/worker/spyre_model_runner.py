@@ -9,6 +9,7 @@ from vllm.config import (DeviceConfig, ModelConfig, ParallelConfig,
                          SchedulerConfig)
 from vllm.logger import init_logger
 from vllm.platforms import current_platform
+from vllm.sampling_params import SamplingParams
 from vllm.utils import is_pin_memory_available
 from vllm.v1.outputs import SamplerOutput
 from vllm.v1.sample.metadata import SamplingMetadata
@@ -105,6 +106,9 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         self._req_ids2idx: dict = {}
         # Lazy initialization: after load_model.
         self.model: nn.Module
+        # mapping of request ID to sampling params
+        self._sampling_params_by_request: dict[str, SamplingParams] = {}
+        self._max_logprobs: Optional[int] = None
 
     def get_model(self) -> nn.Module:
         return self.model
@@ -158,9 +162,16 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
             'prompt_length']
         padded_batch_size = applicable_spyre_warmup_shapes[0]['batch_size']
 
+        # Internal state is reset here.
+        # We don't support continuous batching, so we know all previous requests
+        # have finished decoding.
         self._req_ids2idx = {}
+        self._sampling_params_by_request = {}
+        self._max_logprobs = None
         for idx, request_data in enumerate(new_requests):
             self._req_ids2idx[request_data.req_id] = idx
+            self._sampling_params_by_request[
+                request_data.req_id] = request_data.sampling_params
 
             # retrieve initial (unpadded) tokens
             prompt_tokens = request_data.prompt_token_ids
@@ -169,6 +180,15 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                 torch.tensor(prompt_tokens,
                              dtype=torch.long,
                              device=torch.device("cpu")))
+        # Cache the max requested logprobs for this batch
+        logprobs: list[int] = [
+            sampling_params.logprobs
+            for sampling_params in self._sampling_params_by_request.values()
+            if sampling_params is not None
+            and sampling_params.logprobs is not None
+        ]
+        if logprobs:
+            self._max_logprobs = max(logprobs)
 
         actual_batch_size = len(input_token_list)
         self.model.indices = torch.cat([
@@ -288,8 +308,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
             # seq_lens = []
             num_reqs = len(scheduler_output.scheduled_cached_reqs)
 
-        # TODO: Cache the sampling params for the current batch and build this
-        # correctly
+        # TODO: Build the rest of the SamplingMetadata correctly
         dummy_tensors = lambda v: torch.full(
             (num_reqs, ), v, device=self.device)
         dummy_metadata = SamplingMetadata(
@@ -300,7 +319,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
             top_k=None,
             min_p=None,
             generators={},
-            max_num_logprobs=None,
+            max_num_logprobs=self._max_logprobs,
             no_penalties=True,
             prompt_token_ids=None,
             frequency_penalties=dummy_tensors(0.1),
