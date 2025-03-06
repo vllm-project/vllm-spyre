@@ -80,7 +80,7 @@ class SpyreScheduler(Scheduler):
                     shape for shape in available_warmup_shapes
                     if request.num_prompt_tokens <= shape['prompt_length']
                     and max_tokens <= shape['new_tokens']
-                    and len(self.running) < shape['batch_size']
+                    and len(self.waiting) < shape['batch_size']
                 ]
 
                 if len(available_warmup_shapes) > 0:
@@ -91,7 +91,7 @@ class SpyreScheduler(Scheduler):
                     # We can't schedule this one.
                     # If it's the first request, then it fits _no_ shapes at all
                     # So we reject it entirely
-                    if len(self.running) == 0:
+                    if len(self.waiting) == 0:
                         logger.warning(
                             "No applicable warmup shape exists for "
                             "combination of prompt length (%d tokens) "
