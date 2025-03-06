@@ -25,11 +25,14 @@ from vllm_spyre.worker.spyre_embedding_model_runner import (
 from vllm_spyre.worker.spyre_model_runner import SpyreModelRunner
 
 # Post 0.7.3 this class was renamed
+# yapf conflicts with isort for this block
+# yapf: disable
 try:
     from vllm.worker.worker_base import LoRANotSupportedWorkerBase
 except ImportError:
     from vllm.worker.worker_base import (
         LoraNotSupportedWorkerBase as LoRANotSupportedWorkerBase)
+# yapf: enable
 
 
 class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
