@@ -27,11 +27,13 @@ from vllm import SamplingParams
 @pytest.mark.parametrize("warmup_shapes", [[(64, 20, 8), (128, 20, 4)]]
                          )  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
+@pytest.mark.parametrize("vllm_version", ["V0", "V1"])
 def test_output(
     model: str,
     prompts: List[str],
     warmup_shapes: List[Tuple[int, int, int]],
     backend: str,
+    vllm_version: str,
 ) -> None:
     '''
     The warmup is based on two shapes, that 'overlap' each
@@ -69,7 +71,8 @@ def test_output(
         block_size=2048,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
-        backend=backend)
+        backend=backend,
+        vllm_version=vllm_version)
 
     hf_results = generate_hf_output(model=model,
                                     prompts=prompts,
