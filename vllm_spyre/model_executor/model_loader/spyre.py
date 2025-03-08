@@ -74,15 +74,26 @@ class SpyreCausalLM(nn.Module):
             # cpu impl when padding too much
             extra_kwargs["attn_algorithm"] = "math"
 
-        output = self.model(
-            input_ids,
-            position_ids=positions,
-            mask=masks,
-            past_key_value_states=self.past_key_value_states,
-            use_cache=True,
-            only_last_token=True,
-            **extra_kwargs,
-        )
+        if envs_spyre.VLLM_SPYRE_USE_CB:
+            output = self.fms_wrapper(
+                input_ids,
+                position_ids=positions,
+                mask=masks,
+                past_key_value_states=self.past_key_value_states,
+                use_cache=True,
+                only_last_token=True,
+                **extra_kwargs,
+            )
+        else:
+            output = self.model(
+                input_ids,
+                position_ids=positions,
+                mask=masks,
+                past_key_value_states=self.past_key_value_states,
+                use_cache=True,
+                only_last_token=True,
+                **extra_kwargs,
+            )
 
         logits, past_key_value_states = output
         self.past_key_value_states = past_key_value_states
@@ -97,6 +108,30 @@ class SpyreCausalLM(nn.Module):
         logits = logits[self.indices]
 
         return logits
+
+    def fms_wrapper(
+        self,
+        input_ids: torch.Tensor,
+        position_ids: torch.Tensor,
+        mask: torch.Tensor,
+        past_key_value_states: torch.Tensor,
+        use_cache: bool,
+        only_last_token: bool,
+        **extra_kwargs,
+    ) -> torch.Tensor:
+
+        print('passing through fms_wrapper()')  # debug print
+
+        output = self.model(
+            input_ids,
+            position_ids=position_ids,
+            mask=mask,
+            past_key_value_states=past_key_value_states,
+            use_cache=use_cache,
+            only_last_token=only_last_token,
+            **extra_kwargs,
+        )
+        return output
 
     def compute_logits(self, hidden_states: torch.Tensor,
                        sampling_metadata: SamplingMetadata) -> torch.Tensor:
