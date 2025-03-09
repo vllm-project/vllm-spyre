@@ -35,6 +35,7 @@ BACKEND_LIST = ['sendnn_decoder', 'inductor']
 logger = init_logger(__name__)
 
 TESTING_CB = False
+PRINTS_CB = False
 
 
 class SpyreCausalLM(nn.Module):
@@ -157,7 +158,8 @@ class SpyreCausalLM(nn.Module):
         **extra_kwargs,
     ) -> torch.Tensor:
 
-        print('passing through fms_wrapper()')  # debug print
+        if PRINTS_CB:
+            print('passing through fms_wrapper()')  # debug print
 
         output = self.model(
             input_ids,
@@ -172,12 +174,14 @@ class SpyreCausalLM(nn.Module):
 
         if tkv == -1 and idx_batch == -1:
             # regular prefil or decoding step
-            print('regular prefil or decoding step')
+            if PRINTS_CB:
+                print('regular prefil or decoding step')
             # updating (physical) KV cache
             self.fms_kv_cache = key_value_states  # [10][2][B, 8, L, 128]
         else:
             # partial prefil with batch size 1
-            print('partial prefil with batch size 1')
+            if PRINTS_CB:
+                print('partial prefil with batch size 1')
             # asserting batch size 1
             assert input_ids.shape[0] == 1
             prompt_len = key_value_states[0][0].shape[2]
