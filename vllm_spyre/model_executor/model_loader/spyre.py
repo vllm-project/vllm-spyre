@@ -34,6 +34,8 @@ BACKEND_LIST = ['sendnn_decoder', 'inductor']
 
 logger = init_logger(__name__)
 
+TESTING_CB = False
+
 
 class SpyreCausalLM(nn.Module):
 
@@ -57,6 +59,14 @@ class SpyreCausalLM(nn.Module):
         # Lazy initialized
         self.model: nn.Module
 
+        # physical KV cache (fms wrapper/ AIU Spyre)
+        # lives in SpyreCausalLM only for convenient model access
+        self.fms_kv_cache: list[tuple[torch.Tensor]] = []
+
+        # testing only: variables to insert new sequence
+        self.sample_input: tuple = ()
+        self.counter = 0
+
     def forward(
         self,
         input_ids: torch.Tensor,
@@ -75,6 +85,29 @@ class SpyreCausalLM(nn.Module):
             extra_kwargs["attn_algorithm"] = "math"
 
         if envs_spyre.VLLM_SPYRE_USE_CB:
+            if TESTING_CB:
+                # testing only: save first input for later insertion
+                if not self.sample_input:
+                    self.sample_input = (input_ids[0].unsqueeze(0),
+                                         positions[0].unsqueeze(0),
+                                         masks[0].unsqueeze(0), extra_kwargs)
+
+                # testing only: partial prefil after 5 decodes
+                if self.counter == 5:
+                    output = self.fms_wrapper(
+                        self.sample_input[0],
+                        position_ids=self.sample_input[1],
+                        mask=self.sample_input[2],
+                        past_key_value_states=None,
+                        use_cache=True,
+                        only_last_token=True,
+                        tkv=(5 - 1) + 64,
+                        idx_batch=0,
+                        **self.sample_input[3],
+                    )
+                self.counter += 1
+
+            # normal prefil or decoding step
             output = self.fms_wrapper(
                 input_ids,
                 position_ids=positions,
@@ -82,6 +115,8 @@ class SpyreCausalLM(nn.Module):
                 past_key_value_states=self.past_key_value_states,
                 use_cache=True,
                 only_last_token=True,
+                tkv=-1,
+                idx_batch=-1,
                 **extra_kwargs,
             )
         else:
@@ -117,6 +152,8 @@ class SpyreCausalLM(nn.Module):
         past_key_value_states: torch.Tensor,
         use_cache: bool,
         only_last_token: bool,
+        tkv: int = -1,
+        idx_batch: int = -1,
         **extra_kwargs,
     ) -> torch.Tensor:
 
@@ -131,7 +168,35 @@ class SpyreCausalLM(nn.Module):
             only_last_token=only_last_token,
             **extra_kwargs,
         )
-        return output
+        logits, key_value_states = output
+
+        if tkv == -1 and idx_batch == -1:
+            # regular prefil or decoding step
+            print('regular prefil or decoding step')
+            # updating (physical) KV cache
+            self.fms_kv_cache = key_value_states  # [10][2][B, 8, L, 128]
+        else:
+            # partial prefil with batch size 1
+            print('partial prefil with batch size 1')
+            # asserting batch size 1
+            assert input_ids.shape[0] == 1
+            prompt_len = key_value_states[0][0].shape[2]
+            # updating (physical) KV cache
+            for idx_l in range(len(self.fms_kv_cache)):
+                for idx_t in range(len(self.fms_kv_cache[idx_l])):
+                    # erasing KV cache of finished sequence
+                    self.fms_kv_cache[idx_l][idx_t][
+                        idx_batch, :, :, :] = torch.zeros_like(
+                            self.fms_kv_cache[idx_l][idx_t][
+                                idx_batch, :, :, :])
+                    # inserting partial KV cache at correct location
+                    # (idx_batch, tkv) in the KV cache of the whole batch
+                    self.fms_kv_cache[idx_l][idx_t][
+                        idx_batch, :, tkv -
+                        prompt_len:tkv, :] = key_value_states[idx_l][idx_t][
+                            0, :, :, :]  # [1, 8, L, 128]
+
+        return logits, self.fms_kv_cache
 
     def compute_logits(self, hidden_states: torch.Tensor,
                        sampling_metadata: SamplingMetadata) -> torch.Tensor:
