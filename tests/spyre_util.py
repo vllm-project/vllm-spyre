@@ -47,7 +47,7 @@ def generate_spyre_vllm_output(model: str, prompts: List[str],
     for req_output in vllm_outputs:
         result = {}
         result['text'] = req_output.outputs[0].text
-        result['token_ids'] = req_output.outputs[0].token_ids
+        result['token_ids'] = tuple(req_output.outputs[0].token_ids)
         result['tokens'] = tuple([
             req_output.outputs[0].logprobs[i][t].decoded_token
             for i, t in enumerate(result['token_ids'])
