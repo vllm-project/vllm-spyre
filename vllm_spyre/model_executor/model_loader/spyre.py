@@ -49,7 +49,6 @@ class SpyreCausalLM(nn.Module):
         self.logits_processor = LogitsProcessor(config.vocab_size,
                                                 logits_as_input=True)
         self.sampler = get_sampler()
-        self.past_key_value_states = None
         self.dtype = torch.float16 if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == \
             'sendnn_decoder' else torch.float32
         # boolean tensor of length batch size with indices:
@@ -60,7 +59,9 @@ class SpyreCausalLM(nn.Module):
         # Lazy initialized
         self.model: nn.Module
 
-        if envs_spyre.VLLM_SPYRE_USE_CB:
+        if not envs_spyre.VLLM_SPYRE_USE_CB:
+            self.past_key_value_states = None
+        else:
             # physical KV cache (fms wrapper/ AIU Spyre)
             # lives in SpyreCausalLM only for convenient model access
             B = 4  # max batch size
@@ -97,7 +98,6 @@ class SpyreCausalLM(nn.Module):
         if envs_spyre.VLLM_SPYRE_USE_CB:
 
             if is_prompt and self.tkv == 0:
-                self.past_key_value_states = None
                 self.tkv = input_ids.shape[1]
 
             # testing only: prefil after 5 decodes
@@ -138,18 +138,16 @@ class SpyreCausalLM(nn.Module):
                 self.sample_mask = matrix.unsqueeze(0)
 
                 # prefil of batch size 1
-                output = self.fms_wrapper(
+                logits = self.fms_wrapper(
                     self.sample_token_id,
                     position_ids=self.sample_position,
                     mask=self.sample_mask,
-                    past_key_value_states=None,
                     use_cache=True,
                     only_last_token=True,
                     tkv=self.tkv - 1,
                     active_pages=[0],
                     **extra_kwargs,
                 )
-                logits, self.past_key_value_states = output
 
                 if PRINTS_CB:
                     print('inserted sequence token id: ',
@@ -165,11 +163,10 @@ class SpyreCausalLM(nn.Module):
                 masks[0, :, :] = self.sample_mask
 
             # normal prefil or decoding step
-            output = self.fms_wrapper(
+            logits = self.fms_wrapper(
                 input_ids,
                 position_ids=positions,
                 mask=masks,
-                past_key_value_states=self.past_key_value_states,
                 use_cache=True,
                 only_last_token=True,
                 tkv=self.tkv,
@@ -178,7 +175,7 @@ class SpyreCausalLM(nn.Module):
             )
             if TESTING_CB and self.tkv >= (5 + 64):
                 # update sample_token_id, sample_position and sample_mask
-                self.update_sample_inputs(logits=output[0][0, :])
+                self.update_sample_inputs(logits=logits[0, :])
 
             self.tkv += 1
         else:
@@ -196,14 +193,14 @@ class SpyreCausalLM(nn.Module):
                 **extra_kwargs,
             )
 
-        logits, past_key_value_states = output
-        self.past_key_value_states = past_key_value_states
+            logits, past_key_value_states = output
+            self.past_key_value_states = past_key_value_states
 
-        # mark dynamic
-        if self.past_key_value_states is not None:
-            for layer in self.past_key_value_states:
-                for tensor in layer:
-                    torch._dynamo.mark_dynamic(tensor, 2)
+            # mark dynamic
+            if self.past_key_value_states is not None:
+                for layer in self.past_key_value_states:
+                    for tensor in layer:
+                        torch._dynamo.mark_dynamic(tensor, 2)
 
         if (envs_spyre.VLLM_SPYRE_USE_CB and TESTING_CB and PRINTS_CB
                 and self.tkv > (5 + 64)):
@@ -232,7 +229,6 @@ class SpyreCausalLM(nn.Module):
         input_ids: torch.Tensor,
         position_ids: torch.Tensor,
         mask: torch.Tensor,
-        past_key_value_states: torch.Tensor,
         use_cache: bool,
         only_last_token: bool,
         tkv: int,
@@ -244,11 +240,19 @@ class SpyreCausalLM(nn.Module):
             print("tkv", tkv)
             print("active_pages", active_pages)
 
+        # read-out (dynamic) KV cache:
+        kv_cache = []
+        if mask.shape[1] == 1:
+            for layer in range(len(self.fms_kv_cache)):
+                kv_cache.append(
+                    (self.fms_kv_cache[layer][0][:, :, :tkv - 1, :],
+                     self.fms_kv_cache[layer][1][:, :, :tkv - 1, :]))
+
         output = self.model(
             input_ids,
             position_ids=position_ids,
             mask=mask,
-            past_key_value_states=past_key_value_states,
+            past_key_value_states=kv_cache,
             use_cache=use_cache,
             only_last_token=only_last_token,
             **extra_kwargs,
@@ -267,15 +271,7 @@ class SpyreCausalLM(nn.Module):
                     page, :, :tkv, :] = key_value_states[layer][1][
                         page, :, :, :]  # [1, 8, L, 128]
 
-        # (dynamic) KV cache: self.past_key_value_states
-        # for fms CPU eager execution
-        updated_kv_cache = []
-        for layer in range(len(self.fms_kv_cache)):
-            updated_kv_cache.append(
-                (self.fms_kv_cache[layer][0][:, :, :tkv, :],
-                 self.fms_kv_cache[layer][1][:, :, :tkv, :]))
-
-        return logits, updated_kv_cache
+        return logits
 
     def compute_logits(self, hidden_states: torch.Tensor,
                        sampling_metadata: SamplingMetadata) -> torch.Tensor:
