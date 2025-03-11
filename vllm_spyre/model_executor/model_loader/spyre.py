@@ -88,10 +88,6 @@ class SpyreCausalLM(nn.Module):
         is_prompt: bool,
     ) -> torch.Tensor:
 
-        if is_prompt and self.tkv == 0:
-            self.past_key_value_states = None
-            self.tkv = input_ids.shape[1]
-
         extra_kwargs = {}
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn_decoder":
             # Bug in 2.3.1 fixed in 2.4.1 for SDPA flash
@@ -99,6 +95,10 @@ class SpyreCausalLM(nn.Module):
             extra_kwargs["attn_algorithm"] = "math"
 
         if envs_spyre.VLLM_SPYRE_USE_CB:
+
+            if is_prompt and self.tkv == 0:
+                self.past_key_value_states = None
+                self.tkv = input_ids.shape[1]
 
             # testing only: prefil after 5 decodes
             if TESTING_CB and self.tkv == (5 + 64):
@@ -159,7 +159,7 @@ class SpyreCausalLM(nn.Module):
                 self.update_sample_inputs(logits=logits[0, :])
 
             if TESTING_CB and self.tkv >= (5 + 64):
-                # set input_ids, positions, masks
+                # set input_ids, positions, masks for inserted sequence
                 input_ids[0, :] = self.sample_token_id
                 positions[0, :] = self.sample_position
                 masks[0, :, :] = self.sample_mask
@@ -182,6 +182,10 @@ class SpyreCausalLM(nn.Module):
 
             self.tkv += 1
         else:
+            # if not envs_spyre.VLLM_SPYRE_USE_CB
+            if is_prompt:
+                self.past_key_value_states = None
+
             output = self.model(
                 input_ids,
                 position_ids=positions,
