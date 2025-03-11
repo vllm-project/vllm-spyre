@@ -3,7 +3,7 @@ import time
 
 from vllm import LLM, SamplingParams
 
-max_tokens = 10
+max_tokens = 15
 early_stop = 5
 
 os.environ["VLLM_SPYRE_WARMUP_PROMPT_LENS"] = '64'

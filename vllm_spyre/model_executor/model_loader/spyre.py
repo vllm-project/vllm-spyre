@@ -74,7 +74,7 @@ class SpyreCausalLM(nn.Module):
             # horizontal offset in physical KV cache memory block
             self.tkv: int = 0
 
-            # testing variables
+            # variables used for testing insertion of sample input
             if TESTING_CB:
                 self.sample_token_id: torch.Tensor = torch.empty((1, 1))
                 self.sample_position: torch.Tensor = torch.empty((1, 1))
@@ -205,7 +205,8 @@ class SpyreCausalLM(nn.Module):
                 for tensor in layer:
                     torch._dynamo.mark_dynamic(tensor, 2)
 
-        if TESTING_CB and PRINTS_CB and self.tkv >= (5 + 64):
+        if (envs_spyre.VLLM_SPYRE_USE_CB and TESTING_CB and PRINTS_CB
+                and self.tkv > (5 + 64)):
             print('inserted sequence token id: ', torch.argmax(logits[0, :]))
             # print(logits[0, 12269], logits[0, 19724])
 
