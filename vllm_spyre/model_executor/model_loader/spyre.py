@@ -60,13 +60,25 @@ class SpyreCausalLM(nn.Module):
         # Lazy initialized
         self.model: nn.Module
 
-        # physical KV cache (fms wrapper/ AIU Spyre)
-        # lives in SpyreCausalLM only for convenient model access
-        self.fms_kv_cache: list[tuple[torch.Tensor]] = []
+        if envs_spyre.VLLM_SPYRE_USE_CB:
+            # physical KV cache (fms wrapper/ AIU Spyre)
+            # lives in SpyreCausalLM only for convenient model access
+            B = 4  # max batch size
+            L = 128  # max model length
+            # 10 (layers) x 2 (k, v) x [B, 8, L, 128]
+            self.fms_kv_cache: list[tuple[torch.Tensor, torch.Tensor]] = [
+                (torch.empty((B, 8, L, 128)), torch.empty((B, 8, L, 128)))
+                for i in range(10)
+            ]
 
-        # testing only: variables to insert new sequence
-        self.sample_input: tuple = ()
-        self.counter = 0
+            # horizontal offset in physical KV cache memory block
+            self.tkv: int = 0
+
+            # testing variables
+            if TESTING_CB:
+                self.sample_token_id: torch.Tensor = torch.empty((1, 1))
+                self.sample_position: torch.Tensor = torch.empty((1, 1))
+                self.sample_mask: torch.Tensor = torch.empty((1, 1, 1))
 
     def forward(
         self,
@@ -76,8 +88,9 @@ class SpyreCausalLM(nn.Module):
         is_prompt: bool,
     ) -> torch.Tensor:
 
-        if is_prompt:
+        if is_prompt and self.tkv == 0:
             self.past_key_value_states = None
+            self.tkv = input_ids.shape[1]
 
         extra_kwargs = {}
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn_decoder":
@@ -86,27 +99,70 @@ class SpyreCausalLM(nn.Module):
             extra_kwargs["attn_algorithm"] = "math"
 
         if envs_spyre.VLLM_SPYRE_USE_CB:
-            if TESTING_CB:
-                # testing only: save first input for later insertion
-                if not self.sample_input:
-                    self.sample_input = (input_ids[0].unsqueeze(0),
-                                         positions[0].unsqueeze(0),
-                                         masks[0].unsqueeze(0), extra_kwargs)
 
-                # testing only: partial prefil after 5 decodes
-                if self.counter == 5:
-                    output = self.fms_wrapper(
-                        self.sample_input[0],
-                        position_ids=self.sample_input[1],
-                        mask=self.sample_input[2],
-                        past_key_value_states=None,
-                        use_cache=True,
-                        only_last_token=True,
-                        tkv=(5 - 1) + 64,
-                        idx_batch=0,
-                        **self.sample_input[3],
-                    )
-                self.counter += 1
+            # testing only: prefil after 5 decodes
+            if TESTING_CB and self.tkv == (5 + 64):
+                # define sample prompt
+                input_ids_list = [
+                    128000, 39314, 374, 459, 7754, 430, 16964, 264, 3465, 13,
+                    9842, 264, 2077, 430, 36001, 45695, 279, 1715, 13, 2893,
+                    48887, 304, 701, 2077, 311, 279, 1217, 382, 14711, 30151,
+                    512, 61524, 264, 1160, 315, 11470, 369, 20646, 16553,
+                    19724, 369, 264, 3070, 315, 3116, 382, 14711, 6075, 25
+                ]
+                prompt_len = len(input_ids_list)
+                padding_len = (self.tkv - 1) - prompt_len
+
+                # construct token and position ids for the sample prompt
+                self.sample_token_id = torch.tensor(
+                    [0] * padding_len + input_ids_list).unsqueeze(0)
+                self.sample_position = torch.tensor(
+                    [0] * padding_len +
+                    [i for i in range(prompt_len)]).unsqueeze(0)
+
+                # Construct attention mask for the sample prompt
+                n = self.tkv - 1
+                m = padding_len
+
+                top = torch.cat(
+                    (torch.tril(torch.ones(n - m, n - m)), torch.zeros(
+                        n - m, m)),
+                    dim=1)
+                bottom = torch.cat(
+                    (torch.zeros(m, n - m), torch.tril(torch.ones(m, m))),
+                    dim=1)
+                matrix = torch.cat((top, bottom), dim=0)
+
+                matrix = matrix.masked_fill(matrix == 1, 0).masked_fill(
+                    matrix == 0, float('-inf'))
+                self.sample_mask = matrix.unsqueeze(0)
+
+                # prefil of batch size 1
+                output = self.fms_wrapper(
+                    self.sample_token_id,
+                    position_ids=self.sample_position,
+                    mask=self.sample_mask,
+                    past_key_value_states=None,
+                    use_cache=True,
+                    only_last_token=True,
+                    tkv=self.tkv - 1,
+                    active_pages=[0],
+                    **extra_kwargs,
+                )
+                logits, self.past_key_value_states = output
+
+                if PRINTS_CB:
+                    print('inserted sequence token id: ',
+                          torch.argmax(logits[0, :]))
+
+                # update sample_token_id, sample_position and sample_mask
+                self.update_sample_inputs(logits=logits[0, :])
+
+            if TESTING_CB and self.tkv >= (5 + 64):
+                # set input_ids, positions, masks
+                input_ids[0, :] = self.sample_token_id
+                positions[0, :] = self.sample_position
+                masks[0, :, :] = self.sample_mask
 
             # normal prefil or decoding step
             output = self.fms_wrapper(
@@ -116,10 +172,15 @@ class SpyreCausalLM(nn.Module):
                 past_key_value_states=self.past_key_value_states,
                 use_cache=True,
                 only_last_token=True,
-                tkv=-1,
-                idx_batch=-1,
+                tkv=self.tkv,
+                active_pages=[i for i in range(input_ids.shape[0])],
                 **extra_kwargs,
             )
+            if TESTING_CB and self.tkv >= (5 + 64):
+                # update sample_token_id, sample_position and sample_mask
+                self.update_sample_inputs(logits=output[0][0, :])
+
+            self.tkv += 1
         else:
             output = self.model(
                 input_ids,
@@ -140,10 +201,26 @@ class SpyreCausalLM(nn.Module):
                 for tensor in layer:
                     torch._dynamo.mark_dynamic(tensor, 2)
 
+        if TESTING_CB and PRINTS_CB and self.tkv >= (5 + 64):
+            print('inserted sequence token id: ', torch.argmax(logits[0, :]))
+            # print(logits[0, 12269], logits[0, 19724])
+
         # removing finished or padded sequences
         logits = logits[self.indices]
 
         return logits
+
+    def update_sample_inputs(
+        self,
+        logits: torch.Tensor,
+    ) -> None:
+
+        self.sample_token_id = torch.argmax(logits).clone().detach().reshape(
+            (1, 1))
+        self.sample_position = (self.sample_position[0, -1] +
+                                1).clone().detach().reshape((1, 1))
+        self.sample_mask = torch.nn.functional.pad(
+            self.sample_mask[0, -1, :].unsqueeze(0), (0, 1)).unsqueeze(0)
 
     def fms_wrapper(
         self,
@@ -153,13 +230,14 @@ class SpyreCausalLM(nn.Module):
         past_key_value_states: torch.Tensor,
         use_cache: bool,
         only_last_token: bool,
-        tkv: int = -1,
-        idx_batch: int = -1,
+        tkv: int,
+        active_pages: list[int],
         **extra_kwargs,
     ) -> torch.Tensor:
 
         if PRINTS_CB:
-            print('passing through fms_wrapper()')  # debug print
+            print("tkv", tkv)
+            print("active_pages", active_pages)
 
         output = self.model(
             input_ids,
@@ -172,35 +250,27 @@ class SpyreCausalLM(nn.Module):
         )
         logits, key_value_states = output
 
-        if tkv == -1 and idx_batch == -1:
-            # regular prefil or decoding step
-            if PRINTS_CB:
-                print('regular prefil or decoding step')
-            # updating (physical) KV cache
-            self.fms_kv_cache = key_value_states  # [10][2][B, 8, L, 128]
-        else:
-            # partial prefil with batch size 1
-            if PRINTS_CB:
-                print('partial prefil with batch size 1')
-            # asserting batch size 1
-            assert input_ids.shape[0] == 1
-            prompt_len = key_value_states[0][0].shape[2]
-            # updating (physical) KV cache
-            for idx_l in range(len(self.fms_kv_cache)):
-                for idx_t in range(len(self.fms_kv_cache[idx_l])):
-                    # erasing KV cache of finished sequence
-                    self.fms_kv_cache[idx_l][idx_t][
-                        idx_batch, :, :, :] = torch.zeros_like(
-                            self.fms_kv_cache[idx_l][idx_t][
-                                idx_batch, :, :, :])
-                    # inserting partial KV cache at correct location
-                    # (idx_batch, tkv) in the KV cache of the whole batch
-                    self.fms_kv_cache[idx_l][idx_t][
-                        idx_batch, :, tkv -
-                        prompt_len:tkv, :] = key_value_states[idx_l][idx_t][
-                            0, :, :, :]  # [1, 8, L, 128]
+        # updating (physical) KV cache: self.fms_kv_cache
+        for page in active_pages:
+            for layer in range(len(self.fms_kv_cache)):
+                # inserting partial KV cache at correct location
+                # (page, tkv) in the KV cache of the whole batch
+                self.fms_kv_cache[layer][0][
+                    page, :, :tkv, :] = key_value_states[layer][0][
+                        page, :, :, :]  # [1, 8, L, 128]
+                self.fms_kv_cache[layer][1][
+                    page, :, :tkv, :] = key_value_states[layer][1][
+                        page, :, :, :]  # [1, 8, L, 128]
 
-        return logits, self.fms_kv_cache
+        # (dynamic) KV cache: self.past_key_value_states
+        # for fms CPU eager execution
+        updated_kv_cache = []
+        for layer in range(len(self.fms_kv_cache)):
+            updated_kv_cache.append(
+                (self.fms_kv_cache[layer][0][:, :, :tkv, :],
+                 self.fms_kv_cache[layer][1][:, :, :tkv, :]))
+
+        return logits, updated_kv_cache
 
     def compute_logits(self, hidden_states: torch.Tensor,
                        sampling_metadata: SamplingMetadata) -> torch.Tensor:
