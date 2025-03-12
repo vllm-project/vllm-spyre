@@ -75,10 +75,21 @@ class SpyreCausalLM(nn.Module):
             # Eventually max_model_len = self.config.max_position_embeddings,
             # but saving some memory here to only allocate the max in practise
             max_model_len = max_prompt_length + max_new_tokens
-            num_layers = self.config.num_hidden_layers
-            num_kv_heads = self.config.num_key_value_heads
-            head_dim = self.config.hidden_size // \
-                self.config.num_attention_heads
+
+            if self.config.model_type == 'llama':
+                num_layers = self.config.num_hidden_layers
+                num_kv_heads = self.config.num_key_value_heads
+                head_dim = self.config.hidden_size // \
+                    self.config.num_attention_heads
+            elif self.config.model_type == 'gpt_bigcode':
+                num_layers = self.config.n_layer
+                num_kv_heads = 1 if self.config.multi_query \
+                    else self.config.n_head
+                head_dim = self.config.n_embd // self.config.n_head
+            else:
+                print(f"[SpyreCausalLM] model type {self.config.model_type} "
+                      f"not supported in FMS wrapper")
+
             # (layers)x(k,v)x[max_batch, num_kv_heads, max_model_len, head_dim]
             self.fms_kv_cache: list[tuple[torch.Tensor, torch.Tensor]] = [
                 (torch.empty(
