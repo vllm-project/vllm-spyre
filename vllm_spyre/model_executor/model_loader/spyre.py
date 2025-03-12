@@ -243,10 +243,15 @@ class SpyreCausalLM(nn.Module):
         # read-out (dynamic) KV cache:
         kv_cache = []
         if mask.shape[1] == 1:
+            active_pages_mask = torch.zeros(self.fms_kv_cache[0][0].shape[0],
+                                            dtype=torch.bool)
+            active_pages_mask[active_pages] = True
             for layer in range(len(self.fms_kv_cache)):
                 kv_cache.append(
-                    (self.fms_kv_cache[layer][0][:, :, :tkv - 1, :],
-                     self.fms_kv_cache[layer][1][:, :, :tkv - 1, :]))
+                    (self.fms_kv_cache[layer][0][active_pages_mask, :, :tkv -
+                                                 1, :],
+                     self.fms_kv_cache[layer][1][active_pages_mask, :, :tkv -
+                                                 1, :]))
 
         output = self.model(
             input_ids,
