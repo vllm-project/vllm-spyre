@@ -16,6 +16,7 @@ from vllm.model_executor.layers.sampler import SamplerOutput, get_sampler
 from vllm.model_executor.model_loader.weight_utils import (
     download_weights_from_hf)
 from vllm.model_executor.sampling_metadata import SamplingMetadata
+from vllm.platforms import current_platform
 
 import vllm_spyre.envs as envs_spyre
 
@@ -60,16 +61,29 @@ class SpyreCausalLM(nn.Module):
         self.model: nn.Module
 
         if not envs_spyre.VLLM_SPYRE_USE_CB:
+            # dynamic KV cache managed by SpyreCausalLM used by fms
             self.past_key_value_states = None
         else:
             # physical KV cache (fms wrapper/ AIU Spyre)
             # lives in SpyreCausalLM only for convenient model access
-            B = 4  # max batch size
-            L = 128  # max model length
-            # 10 (layers) x 2 (k, v) x [B, 8, L, 128]
+            warmup_shapes = current_platform.get_warmup_shapes()
+            max_batch = max(shape["batch_size"] for shape in warmup_shapes)
+            max_prompt_length = max(shape["prompt_length"]
+                                    for shape in warmup_shapes)
+            max_new_tokens = max(shape["new_tokens"]
+                                 for shape in warmup_shapes)
+            max_model_len = max_prompt_length + max_new_tokens
+            num_layers = self.config.num_hidden_layers
+            num_kv_heads = self.config.num_key_value_heads
+            head_dim = self.config.hidden_size // \
+                self.config.num_attention_heads
+            # (layers)x(k,v)x[max_batch, num_kv_heads, max_model_len, head_dim]
             self.fms_kv_cache: list[tuple[torch.Tensor, torch.Tensor]] = [
-                (torch.empty((B, 8, L, 128)), torch.empty((B, 8, L, 128)))
-                for i in range(10)
+                (torch.empty(
+                    (max_batch, num_kv_heads, max_model_len, head_dim)),
+                 torch.empty(
+                     (max_batch, num_kv_heads, max_model_len, head_dim)))
+                for i in range(num_layers)
             ]
 
             # horizontal offset in physical KV cache memory block

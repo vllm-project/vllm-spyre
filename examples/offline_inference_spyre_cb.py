@@ -10,6 +10,12 @@ os.environ["VLLM_SPYRE_WARMUP_PROMPT_LENS"] = '64'
 os.environ["VLLM_SPYRE_WARMUP_NEW_TOKENS"] = str(max_tokens)
 os.environ['VLLM_SPYRE_WARMUP_BATCH_SIZES'] = '4'
 
+# defining here to be able to run/debug directly from VSC (not via terminal)
+os.environ['VLLM_SPYRE_DYNAMO_BACKEND'] = 'eager'
+os.environ['MASTER_ADDR'] = 'localhost'
+os.environ['MASTER_PORT'] = '12355'
+os.environ['VLLM_SPYRE_USE_CB'] = '1'
+
 # Sample prompts.
 template = (
     "Below is an instruction that describes a task. Write a response that "
