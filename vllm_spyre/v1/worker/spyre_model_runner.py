@@ -6,11 +6,11 @@ from typing import (TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Tuple,
 import torch
 from torch import nn
 from vllm.config import (DeviceConfig, ModelConfig, ParallelConfig,
-                         SchedulerConfig)
+                         SchedulerConfig, CacheConfig)
 from vllm.logger import init_logger
 from vllm.platforms import current_platform
-from vllm.sampling_params import SamplingParams
-from vllm.utils import is_pin_memory_available
+from vllm.sampling_params import SamplingParams, SamplingType
+from vllm.utils import cdiv, is_pin_memory_available
 from vllm.v1.outputs import SamplerOutput
 from vllm.v1.sample.metadata import SamplingMetadata
 from vllm.worker.model_runner_base import (
@@ -18,8 +18,10 @@ from vllm.worker.model_runner_base import (
     _add_sampling_metadata_broadcastable_dict,
     _init_sampling_metadata_from_tensor_dict)
 
+
 from vllm_spyre.model_executor.model_loader.spyre import get_spyre_model
 from vllm_spyre.platform import SpyrePlatform
+from vllm_spyre.v1.worker.spyre_input_batch import CachedRequestState, InputBatch
 
 if TYPE_CHECKING:
     from vllm.attention.backends.abstract import AttentionBackend
@@ -78,6 +80,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         parallel_config: ParallelConfig,
         scheduler_config: SchedulerConfig,
         device_config: DeviceConfig,
+        cache_config: CacheConfig,
         is_driver_worker: bool,
     ):
         self.model_config = model_config
@@ -109,6 +112,20 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         # mapping of request ID to sampling params
         self._sampling_params_by_request: dict[str, SamplingParams] = {}
         self._max_logprobs: Optional[int] = None
+        
+        self.requests: dict[str, CachedRequestState] = {}
+        
+        max_num_blocks_per_req = cdiv(model_config.max_model_len, 
+                                      cache_config.block_size)
+        
+        self.input_batch = InputBatch(
+            max_num_reqs=scheduler_config.max_num_seqs,
+            max_model_len=model_config.max_model_len,
+            max_num_blocks_per_req=max_num_blocks_per_req,
+            device=self.device,
+            pin_memory=self.pin_memory,
+            vocab_size=model_config.get_vocab_size(),
+        )
 
     def get_model(self) -> nn.Module:
         return self.model
@@ -308,41 +325,178 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
             # seq_lens = []
             num_reqs = len(scheduler_output.scheduled_cached_reqs)
 
-        # TODO: Build the rest of the SamplingMetadata correctly
-        dummy_tensors = lambda v: torch.full(
-            (num_reqs, ), v, device=self.device)
-        dummy_metadata = SamplingMetadata(
-            temperature=dummy_tensors(0.0),
-            all_greedy=False,
-            all_random=False,
-            top_p=None,
-            top_k=None,
-            min_p=None,
-            generators={},
-            max_num_logprobs=self._max_logprobs,
-            no_penalties=True,
-            prompt_token_ids=None,
-            frequency_penalties=dummy_tensors(0.1),
-            presence_penalties=dummy_tensors(0.1),
-            repetition_penalties=dummy_tensors(0.1),
-            output_token_ids=[[] for _ in range(num_reqs)],
-            min_tokens={},
-            logit_bias=[None for _ in range(num_reqs)],
-            allowed_token_ids_mask=None,
-        )
+        sampling_metadata = self.input_batch.sampling_metadata
 
         return ModelInputForSpyre(input_tokens=input_tokens,
                                   input_positions=input_positions,
                                   input_masks=input_masks,
-                                  sampling_metadata=dummy_metadata,
+                                  sampling_metadata=sampling_metadata,
                                   is_prompt=is_prompt)
 
+    def _update_states(self, scheduler_output: "SchedulerOutput") -> None:
+        """Update the cached states and the persistent batch with the scheduler
+        output.
+
+        The updated states are used by the `_prepare_inputs` function to create
+        the input GPU tensors for the model.
+
+        The SamplingMetadata is updated and copied to the GPU if there is a
+        new/resumed/paused/finished request in the batch.
+        
+        TODO(for Spyre): Add support for encoder cache 
+        """
+        # Remove finished requests from the cached states.
+        for req_id in scheduler_output.finished_req_ids:
+            self.requests.pop(req_id, None)
+        # Remove the finished requests from the persistent batch.
+        # NOTE(woosuk): There could be an edge case where finished_req_ids and
+        # scheduled_req_ids overlap. This happens when a request is aborted and
+        # then resubmitted with the same ID. In this case, we treat them as two
+        # distinct requests - clearing the cached states for the first request
+        # and handling the second as a new request.
+        removed_req_indices: list[int] = []
+        for req_id in scheduler_output.finished_req_ids:
+            req_index = self.input_batch.remove_request(req_id)
+            if req_index is not None:
+                removed_req_indices.append(req_index)
+
+
+        # Remove the unscheduled requests from the persistent batch.
+        # NOTE(woosuk): The unscheduled requests are either preempted requests
+        # or running requests that are not scheduled in this step. We remove
+        # them from the persistent batch but keep their cached states since
+        # they will be scheduled again sometime in the future.
+        scheduled_req_ids = scheduler_output.num_scheduled_tokens.keys()
+        cached_req_ids = self.input_batch.req_id_to_index.keys()
+        unscheduled_req_ids = cached_req_ids - scheduled_req_ids
+        # NOTE(woosuk): The persistent batch optimization assumes that
+        # consecutive batches contain mostly the same requests. If batches
+        # have low request overlap (e.g., alternating between two distinct
+        # sets of requests), this optimization becomes very inefficient.
+        for req_id in unscheduled_req_ids:
+            req_index = self.input_batch.remove_request(req_id)
+            assert req_index is not None
+            removed_req_indices.append(req_index)
+
+        req_ids_to_add: list[str] = []
+        # Add new requests to the cached states.
+        for new_req_data in scheduler_output.scheduled_new_reqs:
+            req_id = new_req_data.req_id
+            sampling_params = new_req_data.sampling_params
+            if sampling_params.sampling_type == SamplingType.RANDOM_SEED:
+                generator = torch.Generator(device=self.device)
+                generator.manual_seed(sampling_params.seed)
+            else:
+                generator = None
+
+            self.requests[req_id] = CachedRequestState(
+                req_id=req_id,
+                prompt_token_ids=new_req_data.prompt_token_ids,
+                prompt=new_req_data.prompt,
+                mm_inputs=new_req_data.mm_inputs,
+                mm_positions=new_req_data.mm_positions,
+                sampling_params=sampling_params,
+                generator=generator,
+                block_ids=new_req_data.block_ids,
+                num_computed_tokens=new_req_data.num_computed_tokens,
+                output_token_ids=[],
+                lora_request=new_req_data.lora_request,
+            )
+
+            req_ids_to_add.append(req_id)
+
+        # Update the states of the running/resumed requests.
+        for req_data in scheduler_output.scheduled_cached_reqs:
+            req_id = req_data.req_id
+            req_state = self.requests[req_id]
+
+            # Update the cached states.
+            num_computed_tokens = req_data.num_computed_tokens
+            req_state.num_computed_tokens = num_computed_tokens
+            # Add the sampled token(s) from the previous step (if any).
+            # This doesn't include "unverified" tokens like spec decode tokens.
+            num_new_tokens = (num_computed_tokens +
+                              len(req_data.new_token_ids) -
+                              req_state.num_tokens)
+            if num_new_tokens == 1:
+                # Avoid slicing list in most common case.
+                req_state.output_token_ids.append(req_data.new_token_ids[-1])
+            elif num_new_tokens > 0:
+                req_state.output_token_ids.extend(
+                    req_data.new_token_ids[-num_new_tokens:])
+            # Update the block IDs.
+            if not req_data.resumed_from_preemption:
+                # Append the new blocks to the existing block IDs.
+                req_state.block_ids.extend(req_data.new_block_ids)
+            else:
+                # The request is resumed from preemption.
+                # Replace the existing block IDs with the new ones.
+                req_state.block_ids = req_data.new_block_ids
+
+            req_index = self.input_batch.req_id_to_index.get(req_id)
+            if req_index is None:
+                # The request is not in the persistent batch.
+                # The request was either preempted and resumed later, or was not
+                # scheduled in the previous step and needs to be added again.
+                req_ids_to_add.append(req_id)
+                continue
+
+            # Update the persistent batch.
+            self.input_batch.num_computed_tokens_cpu[req_index] = (
+                num_computed_tokens)
+            self.input_batch.block_table.append_row(req_data.new_block_ids,
+                                                    req_index)
+            # Add new_token_ids to token_ids_cpu.
+            start_token_index = num_computed_tokens
+            end_token_index = num_computed_tokens + len(req_data.new_token_ids)
+            self.input_batch.token_ids_cpu[
+                req_index,
+                start_token_index:end_token_index] = req_data.new_token_ids
+            self.input_batch.num_tokens_no_spec[req_index] = end_token_index
+            # Add spec_token_ids to token_ids_cpu.
+            spec_token_ids = scheduler_output.scheduled_spec_decode_tokens.get(
+                req_id, ())
+            if spec_token_ids:
+                start_index = end_token_index
+                end_token_index += len(spec_token_ids)
+                self.input_batch.token_ids_cpu[
+                    req_index, start_index:end_token_index] = spec_token_ids
+            # NOTE(woosuk): `num_tokens` here may include spec decode tokens.
+            self.input_batch.num_tokens[req_index] = end_token_index
+
+        # Check if the batch has changed. If not, we can skip copying the
+        # sampling metadata from CPU to GPU.
+        batch_changed = len(removed_req_indices) > 0 or len(req_ids_to_add) > 0
+
+        # Add the new or resumed requests to the persistent batch.
+        # The smaller empty indices are filled first.
+        removed_req_indices = sorted(removed_req_indices, reverse=True)
+        for req_id in req_ids_to_add:
+            req_state = self.requests[req_id]
+            if removed_req_indices:
+                # Fill the empty index.
+                req_index = removed_req_indices.pop()
+            else:
+                # Append to the end.
+                req_index = None
+            self.input_batch.add_request(req_state, req_index)
+
+        # Condense the batched states if there are empty indices.
+        if removed_req_indices:
+            self.input_batch.condense(removed_req_indices)
+
+        if batch_changed:
+            self.input_batch.refresh_sampling_metadata()
+    
+    
     @SpyrePlatform.inference_mode()
     def execute_model(
         self,
         scheduler_output: "SchedulerOutput",
         **kwargs,
     ) -> ModelRunnerOutput:
+
+        self._update_states(scheduler_output)
 
         t0 = time.time()
 

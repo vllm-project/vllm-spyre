@@ -118,6 +118,7 @@ class SpyreWorker(WorkerBaseV1):
                                                  self.parallel_config,
                                                  self.scheduler_config,
                                                  self.device_config,
+                                                 vllm_config.cache_config,
                                                  self.is_driver_worker)
         self._env_initialized = False
 
