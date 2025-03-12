@@ -240,9 +240,11 @@ class SpyreCausalLM(nn.Module):
             print("tkv", tkv)
             print("active_pages", active_pages)
 
-        # read-out (dynamic) KV cache:
+        # read-out (dynamic) kv_cache for decoding steps only,
+        # for prefills kv_cache = [] (None)
+        is_decode = (tkv != mask.shape[1])
         kv_cache = []
-        if mask.shape[1] == 1:
+        if is_decode:
             active_pages_mask = torch.zeros(self.fms_kv_cache[0][0].shape[0],
                                             dtype=torch.bool)
             active_pages_mask[active_pages] = True
