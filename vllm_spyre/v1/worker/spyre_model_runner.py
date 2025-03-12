@@ -21,7 +21,8 @@ from vllm.worker.model_runner_base import (
 
 from vllm_spyre.model_executor.model_loader.spyre import get_spyre_model
 from vllm_spyre.platform import SpyrePlatform
-from vllm_spyre.v1.worker.spyre_input_batch import CachedRequestState, InputBatch
+from vllm_spyre.v1.worker.spyre_input_batch import CachedRequestState, \
+    InputBatch
 
 if TYPE_CHECKING:
     from vllm.attention.backends.abstract import AttentionBackend
@@ -309,10 +310,6 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
 
             (input_tokens, input_positions, input_masks,
              _) = self._prepare_prompt(scheduler_output.scheduled_new_reqs)
-            # seq_lens = [
-            #     input_tokens.shape[1] for i in range(input_tokens.shape[0])
-            # ]
-            num_reqs = len(scheduler_output.scheduled_new_reqs)
         else:
             # updating indices: set indices of newly finished sequences False
             if scheduler_output.finished_req_ids:
@@ -322,8 +319,6 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
             (input_tokens, input_positions,
              input_masks) = self._prepare_decode(
                  scheduler_output.scheduled_cached_reqs)
-            # seq_lens = []
-            num_reqs = len(scheduler_output.scheduled_cached_reqs)
 
         sampling_metadata = self.input_batch.sampling_metadata
 
