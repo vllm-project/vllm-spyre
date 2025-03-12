@@ -72,6 +72,8 @@ class SpyreCausalLM(nn.Module):
                                     for shape in warmup_shapes)
             max_new_tokens = max(shape["new_tokens"]
                                  for shape in warmup_shapes)
+            # Eventually max_model_len = self.config.max_position_embeddings,
+            # but saving some memory here to only allocate the max in practise
             max_model_len = max_prompt_length + max_new_tokens
             num_layers = self.config.num_hidden_layers
             num_kv_heads = self.config.num_key_value_heads
@@ -190,6 +192,10 @@ class SpyreCausalLM(nn.Module):
             if TESTING_CB and self.tkv >= (5 + 64):
                 # update sample_token_id, sample_position and sample_mask
                 self.update_sample_inputs(logits=logits[0, :])
+                if PRINTS_CB:
+                    print('inserted sequence token id: ',
+                          torch.argmax(logits[0, :]))
+                    # print(logits[0, 12269], logits[0, 19724])
 
             self.tkv += 1
         else:
@@ -215,11 +221,6 @@ class SpyreCausalLM(nn.Module):
                 for layer in self.past_key_value_states:
                     for tensor in layer:
                         torch._dynamo.mark_dynamic(tensor, 2)
-
-        if (envs_spyre.VLLM_SPYRE_USE_CB and TESTING_CB and PRINTS_CB
-                and self.tkv > (5 + 64)):
-            print('inserted sequence token id: ', torch.argmax(logits[0, :]))
-            # print(logits[0, 12269], logits[0, 19724])
 
         # removing finished or padded sequences
         logits = logits[self.indices]
