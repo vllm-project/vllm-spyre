@@ -5,8 +5,8 @@ from typing import (TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Tuple,
 
 import torch
 from torch import nn
-from vllm.config import (DeviceConfig, ModelConfig, ParallelConfig,
-                         SchedulerConfig, CacheConfig)
+from vllm.config import (CacheConfig, DeviceConfig, ModelConfig,
+                         ParallelConfig, SchedulerConfig)
 from vllm.logger import init_logger
 from vllm.platforms import current_platform
 from vllm.sampling_params import SamplingParams, SamplingType
@@ -18,11 +18,10 @@ from vllm.worker.model_runner_base import (
     _add_sampling_metadata_broadcastable_dict,
     _init_sampling_metadata_from_tensor_dict)
 
-
 from vllm_spyre.model_executor.model_loader.spyre import get_spyre_model
 from vllm_spyre.platform import SpyrePlatform
-from vllm_spyre.v1.worker.spyre_input_batch import CachedRequestState, \
-    InputBatch
+from vllm_spyre.v1.worker.spyre_input_batch import (CachedRequestState,
+                                                    InputBatch)
 
 if TYPE_CHECKING:
     from vllm.attention.backends.abstract import AttentionBackend
@@ -113,12 +112,12 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         # mapping of request ID to sampling params
         self._sampling_params_by_request: dict[str, SamplingParams] = {}
         self._max_logprobs: Optional[int] = None
-        
+
         self.requests: dict[str, CachedRequestState] = {}
-        
-        max_num_blocks_per_req = cdiv(model_config.max_model_len, 
+
+        max_num_blocks_per_req = cdiv(model_config.max_model_len,
                                       cache_config.block_size)
-        
+
         self.input_batch = InputBatch(
             max_num_reqs=scheduler_config.max_num_seqs,
             max_model_len=model_config.max_model_len,
@@ -355,7 +354,6 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
             if req_index is not None:
                 removed_req_indices.append(req_index)
 
-
         # Remove the unscheduled requests from the persistent batch.
         # NOTE(woosuk): The unscheduled requests are either preempted requests
         # or running requests that are not scheduled in this step. We remove
@@ -482,8 +480,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
 
         if batch_changed:
             self.input_batch.refresh_sampling_metadata()
-    
-    
+
     @SpyrePlatform.inference_mode()
     def execute_model(
         self,

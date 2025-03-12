@@ -6,11 +6,12 @@ from typing import Optional
 import numpy as np
 import pytest
 import torch
-
 from vllm.sampling_params import SamplingParams
 from vllm.utils import is_pin_memory_available, make_tensor_with_pad
 from vllm.v1.sample.metadata import SamplingMetadata
-from vllm.v1.worker.gpu_input_batch import CachedRequestState, InputBatch
+
+from vllm_spyre.v1.worker.spyre_input_batch import (CachedRequestState,
+                                                    InputBatch)
 
 VOCAB_SIZE = 1024
 NUM_OUTPUT_TOKENS = 20

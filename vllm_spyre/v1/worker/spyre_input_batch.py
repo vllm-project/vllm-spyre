@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Optional, cast
 
 import numpy as np
 import torch
-
 from vllm.lora.request import LoRARequest
 from vllm.multimodal import MultiModalKwargs
 from vllm.sampling_params import SamplingParams, SamplingType
