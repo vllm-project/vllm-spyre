@@ -351,8 +351,6 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         warmup_mode = kwargs.get("warmup_mode", False)
 
         if warmup_mode:
-            print("We're just warming up.")
-
             prompt_len = kwargs["prompt_len"]
             num_decode_tokens = kwargs["num_decode_tokens"]
             batch_size = kwargs["batch_size"]
@@ -389,15 +387,12 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                 finished_req_ids=set(),
                 free_encoder_input_ids=[],
             )
-        else:
-            print("We're really doing inference.")
 
         model_input = self.prepare_model_input(scheduler_output)
         input_tokens = model_input.input_tokens
         input_positions = model_input.input_positions
         input_masks = model_input.input_masks
         is_prompt = model_input.is_prompt
-        print("Prepared model input.")
 
         hidden_states = self.model(
             input_ids=input_tokens,
@@ -405,7 +400,6 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
             masks=input_masks,
             is_prompt=is_prompt,
         )
-        print("Hidden states done.")
 
         # Only perform sampling in the driver worker.
         if not self.is_driver_worker:
