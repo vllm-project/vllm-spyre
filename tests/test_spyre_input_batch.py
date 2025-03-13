@@ -161,8 +161,6 @@ def _construct_cached_request_state(req_id_suffix: int):
         prompt_token_ids=prompt_token_ids,
         prompt=None,
         sampling_params=_create_sampling_params(),
-        mm_inputs=[],
-        mm_positions=[],
         block_ids=[],
         generator=None,
         num_computed_tokens=len(output_token_ids),
