@@ -35,6 +35,7 @@ BACKEND_LIST = ['sendnn_decoder', 'inductor']
 
 logger = init_logger(__name__)
 
+# for testing use offline_inference_spyre_cb.py
 TESTING_CB = False
 PRINTS_CB = False
 
@@ -149,7 +150,7 @@ class SpyreCausalLM(nn.Module):
 
                 # Construct attention mask for the sample prompt
                 n = self.tkv - 1
-                m = padding_len
+                m = prompt_len
 
                 top = torch.cat(
                     (torch.tril(torch.ones(n - m, n - m)), torch.zeros(
@@ -206,7 +207,6 @@ class SpyreCausalLM(nn.Module):
                 if PRINTS_CB:
                     print('inserted sequence token id: ',
                           torch.argmax(logits[0, :]))
-                    # print(logits[0, 12269], logits[0, 19724])
 
             self.tkv += 1
         else:
