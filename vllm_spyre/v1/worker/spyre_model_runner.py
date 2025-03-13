@@ -9,7 +9,7 @@ from vllm.config import (CacheConfig, DeviceConfig, ModelConfig,
                          ParallelConfig, SchedulerConfig)
 from vllm.logger import init_logger
 from vllm.platforms import current_platform
-from vllm.sampling_params import SamplingParams, SamplingType
+from vllm.sampling_params import SamplingType
 from vllm.utils import cdiv, is_pin_memory_available
 from vllm.v1.outputs import SamplerOutput
 from vllm.v1.sample.metadata import SamplingMetadata
@@ -282,7 +282,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
             self, scheduler_output: SchedulerOutput) -> ModelInputForSpyre:
 
         self._update_states(scheduler_output)
-        
+
         # NOTE: We assume that all sequences in the group are all prompts or
         # all decodes.
         # Also assuming that new sequences are prefills
