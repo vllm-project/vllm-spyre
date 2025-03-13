@@ -4,21 +4,16 @@
 # Copied from vllm/vllm/v1/worker/gpu_input_batch.py
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional, cast
+from typing import Optional, cast
 
 import numpy as np
 import torch
-from vllm.lora.request import LoRARequest
-from vllm.multimodal import MultiModalKwargs
 from vllm.sampling_params import SamplingParams, SamplingType
 from vllm.v1.sample.metadata import SamplingMetadata
 from vllm.v1.utils import copy_slice
 from vllm.v1.worker.block_table import BlockTable
 
 _SAMPLING_EPS = 1e-5
-
-if TYPE_CHECKING:
-    from vllm.multimodal.inputs import PlaceholderRange
 
 
 @dataclass
@@ -27,19 +22,12 @@ class CachedRequestState:
     req_id: str
     prompt_token_ids: list[int]
     prompt: Optional[str]
-    mm_inputs: list[MultiModalKwargs]
-    mm_positions: list["PlaceholderRange"]
     sampling_params: SamplingParams
     generator: Optional[torch.Generator]
 
     block_ids: list[int]
     num_computed_tokens: int
     output_token_ids: list[int]
-
-    mrope_positions: Optional[torch.Tensor] = None
-    mrope_position_delta: Optional[int] = None
-
-    lora_request: Optional[LoRARequest] = None
 
     @property
     def num_tokens(self) -> int:
@@ -181,12 +169,6 @@ class InputBatch:
         # req_index -> (min_tokens, stop_token_ids)
         self.min_tokens: dict[int, tuple[int, set[int]]] = {}
 
-        # lora related
-        self.request_lora_mapping = np.zeros((self.max_num_reqs, ),
-                                             dtype=np.int32)
-        self.lora_id_to_request_ids: dict[int, set[str]] = {}
-        self.lora_id_to_lora_request: dict[int, LoRARequest] = {}
-
         # req_index -> generator
         # NOTE(woosuk): The indices of the requests that do not have their own
         # generator should not be included in the dictionary.
@@ -313,19 +295,6 @@ class InputBatch:
             self.allowed_token_ids_mask_cpu_tensor[req_index][
                 sampling_params.allowed_token_ids] = True
 
-        # Add request lora ID
-        if request.lora_request:
-            lora_id = request.lora_request.lora_int_id
-            if lora_id not in self.lora_id_to_request_ids:
-                self.lora_id_to_request_ids[lora_id] = set()
-
-            self.request_lora_mapping[req_index] = lora_id
-            self.lora_id_to_request_ids[lora_id].add(request.req_id)
-            self.lora_id_to_lora_request[lora_id] = request.lora_request
-        else:
-            # No LoRA
-            self.request_lora_mapping[req_index] = 0
-
     def remove_request(self, req_id: str) -> Optional[int]:
         """This method must always be followed by a call to condense()."""
 
@@ -347,15 +316,6 @@ class InputBatch:
         self.generators.pop(req_index, None)
         self.num_logprobs.pop(req_id, None)
         self.num_prompt_logprobs.pop(req_id, None)
-
-        # LoRA
-        lora_id = self.request_lora_mapping[req_index]
-        if lora_id != 0:
-            self.lora_id_to_request_ids[lora_id].discard(req_id)
-            if len(self.lora_id_to_request_ids[lora_id]) == 0:
-                self.lora_id_to_request_ids.pop(lora_id)
-                self.lora_id_to_lora_request.pop(lora_id)
-            self.request_lora_mapping[req_index] = 0
 
         self.logit_bias[req_index] = None
         self.has_allowed_token_ids.discard(req_id)
@@ -423,9 +383,6 @@ class InputBatch:
             min_token = self.min_tokens.pop(last_req_index, None)
             if min_token is not None:
                 self.min_tokens[empty_index] = min_token
-
-            self.request_lora_mapping[empty_index] = self.request_lora_mapping[
-                last_req_index]
 
             self.logit_bias[empty_index] = self.logit_bias[last_req_index]
 

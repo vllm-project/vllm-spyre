@@ -321,7 +321,6 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         The SamplingMetadata is updated and copied to the device if there is a
         new/resumed request in the batch.
         
-        TODO(for Spyre): Add support for encoder cache 
         """
         # Remove finished requests from the cached states.
         for req_id in scheduler_output.finished_req_ids:
@@ -370,14 +369,11 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                 req_id=req_id,
                 prompt_token_ids=new_req_data.prompt_token_ids,
                 prompt=new_req_data.prompt,
-                mm_inputs=new_req_data.mm_inputs,
-                mm_positions=new_req_data.mm_positions,
                 sampling_params=sampling_params,
                 generator=generator,
                 block_ids=new_req_data.block_ids,
                 num_computed_tokens=new_req_data.num_computed_tokens,
                 output_token_ids=[],
-                lora_request=new_req_data.lora_request,
             )
 
             req_ids_to_add.append(req_id)
