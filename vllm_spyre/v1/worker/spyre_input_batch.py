@@ -521,29 +521,6 @@ class InputBatch:
         return prompt_token_ids_cpu_tensor.to(device=self.device,
                                               non_blocking=True)
 
-    def make_lora_inputs(
-        self, num_scheduled_tokens: np.ndarray
-    ) -> tuple[tuple[int, ...], tuple[int, ...], set[LoRARequest]]:
-        """
-        Given the num_scheduled_tokens for each request in the batch, return
-        datastructures used to activate the current LoRAs.
-        Returns:
-            1. prompt_lora_mapping: A tuple of size self.num_reqs where,
-               prompt_lora_mapping[i] is the LoRA id to use for the ith prompt.
-            2. token_lora_mapping: A tuple of size np.sum(num_scheduled_tokens)
-               where, token_lora_mapping[i] is the LoRA id to use for ith token.
-            3. lora_requests: Set of relevant LoRA requests.
-        """
-
-        req_lora_mapping = self.request_lora_mapping[:self.num_reqs]
-        prompt_lora_mapping = tuple(req_lora_mapping)
-        token_lora_mapping = tuple(
-            req_lora_mapping.repeat(num_scheduled_tokens))
-        active_lora_requests: set[LoRARequest] = set(
-            self.lora_id_to_lora_request.values())
-
-        return prompt_lora_mapping, token_lora_mapping, active_lora_requests
-
     @property
     def num_reqs(self) -> int:
         return len(self.req_id_to_index)
