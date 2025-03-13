@@ -354,11 +354,9 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
             prompt_len = kwargs["prompt_len"]
             num_decode_tokens = kwargs["num_decode_tokens"]
             batch_size = kwargs["batch_size"]
-            num_scheduled_tokens = {}
-            total_num_scheduled_tokens = 0
-            dummy_requests = []
-            num_scheduled_tokens = {}
-            total_num_scheduled_tokens = 0
+            num_scheduled_tokens: dict = {}
+            total_num_scheduled_tokens: int = 0
+            dummy_requests: list = []
             for i in range(batch_size):
                 dummy_requests.append(
                     NewRequestData(
