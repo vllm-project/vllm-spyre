@@ -68,8 +68,16 @@ class SpyreWorker(WorkerBaseV1):
             print(f"[SpyreWorker] Warming up for prompt length {prompt_len}, "
                   f"decoding {num_decode_tokens} tokens with batch "
                   f"size {batch_size}")
-            self._warmup_spyre_fixed_size(prompt_len, num_decode_tokens,
-                                          self.restricted_tokens, batch_size)
+
+            # Use execute_model in warm-up mode
+            self.execute_model(
+                warmup_mode=True,
+                prompt_len=prompt_len,
+                num_decode_tokens=num_decode_tokens,
+                batch_size=batch_size,
+                special_token_ids=self.restricted_tokens
+            )
+
         all_warmup_end_t = time.time()
         all_warmup_total_t = all_warmup_end_t - all_warmup_start_t
         print(f"[SpyreWorker] All warmups for "
@@ -356,7 +364,8 @@ class SpyreWorker(WorkerBaseV1):
     @SpyrePlatform.inference_mode()
     def execute_model(
         self,
-        scheduler_output: "SchedulerOutput",
+        scheduler_output: Optional[SchedulerOutput] = None,
+        **kwargs
     ) -> Optional[ModelRunnerOutput]:
-        output = self.model_runner.execute_model(scheduler_output)
+        output = self.model_runner.execute_model(scheduler_output, **kwargs)
         return output if self.is_driver_worker else None

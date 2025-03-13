@@ -340,20 +340,72 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
     @SpyrePlatform.inference_mode()
     def execute_model(
         self,
-        scheduler_output: "SchedulerOutput",
-        **kwargs,
-    ) -> ModelRunnerOutput:
+        scheduler_output: Optional[SchedulerOutput] = None,
+        **kwargs
+    ) -> Optional[ModelRunnerOutput]:
+        """
+        Runs model execution for either warm up or real inference.
+        """
 
         t0 = time.time()
+        warmup_mode = kwargs.get("warmup_mode", False)
+
+        if warmup_mode:
+            print("We're just warming up.")
+
+            prompt_len = kwargs["prompt_len"]
+            num_decode_tokens = kwargs["num_decode_tokens"]
+            batch_size = kwargs["batch_size"]
+            num_scheduled_tokens = {}
+            total_num_scheduled_tokens = 0
+            dummy_requests = []
+            num_scheduled_tokens = {}
+            total_num_scheduled_tokens = 0
+            for i in range(batch_size):
+                dummy_requests.append(
+                    NewRequestData(
+                        req_id=f"warmup-{i}",
+                        prompt_token_ids=[1] * prompt_len,
+                        prompt="test",
+                        mm_inputs=[],
+                        mm_hashes=[],
+                        mm_positions=[],
+                        sampling_params=SamplingParams(max_tokens=num_decode_tokens),
+                        block_ids=[0],
+                        num_computed_tokens=0,
+                        lora_request=None,
+                    ))
+                num_scheduled_tokens[i] = prompt_len
+                total_num_scheduled_tokens += num_scheduled_tokens[i]
+
+            scheduler_output = SchedulerOutput(
+                scheduled_new_reqs=dummy_requests,
+                scheduled_cached_reqs=[],
+                num_scheduled_tokens=num_scheduled_tokens,
+                total_num_scheduled_tokens=total_num_scheduled_tokens,
+                scheduled_spec_decode_tokens={},
+                scheduled_encoder_inputs={},
+                num_common_prefix_blocks=0,
+                finished_req_ids=set(),
+                free_encoder_input_ids=[],
+            )
+        else:
+            print("We're really doing inference.")
 
         model_input = self.prepare_model_input(scheduler_output)
+        input_tokens = model_input.input_tokens
+        input_positions = model_input.input_positions
+        input_masks = model_input.input_masks
+        is_prompt = model_input.is_prompt
+        print("Prepared model input.")
 
         hidden_states = self.model(
-            input_ids=model_input.input_tokens,
-            positions=model_input.input_positions,
-            masks=model_input.input_masks,
-            is_prompt=model_input.is_prompt,
+            input_ids=input_tokens,
+            positions=input_positions,
+            masks=input_masks,
+            is_prompt=is_prompt,
         )
+        print("Hidden states done.")
 
         # Only perform sampling in the driver worker.
         if not self.is_driver_worker:
