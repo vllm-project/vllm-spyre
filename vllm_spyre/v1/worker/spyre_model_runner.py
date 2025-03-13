@@ -338,11 +338,9 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                                   is_prompt=is_prompt)
 
     @SpyrePlatform.inference_mode()
-    def execute_model(
-        self,
-        scheduler_output: Optional[SchedulerOutput] = None,
-        **kwargs
-    ) -> Optional[ModelRunnerOutput]:
+    def execute_model(self,
+                      scheduler_output: Optional[SchedulerOutput] = None,
+                      **kwargs) -> Optional[ModelRunnerOutput]:
         """
         Runs model execution for either warm up or real inference.
         """
@@ -366,7 +364,8 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                         mm_inputs=[],
                         mm_hashes=[],
                         mm_positions=[],
-                        sampling_params=SamplingParams(max_tokens=num_decode_tokens),
+                        sampling_params=SamplingParams(
+                            max_tokens=num_decode_tokens),
                         block_ids=[0],
                         num_computed_tokens=0,
                         lora_request=None,
