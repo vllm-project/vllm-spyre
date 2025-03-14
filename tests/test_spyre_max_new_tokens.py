@@ -29,12 +29,14 @@ prompt2 = template.format("Provide a list of instructions for preparing "
 @pytest.mark.parametrize("warmup_shape", [(64, 10, 4)]
                          )  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
+@pytest.mark.parametrize("vllm_version", ["V0", "V1"])
 def test_output(
     model: str,
     prompts: List[str],
     stop_last: bool,
     warmup_shape: Tuple[int, int, int],
     backend: str,
+    vllm_version: str,
 ) -> None:
     '''
     The warmup is based on a single shape. After the warmup,
@@ -86,7 +88,8 @@ def test_output(
         block_size=2048,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
-        backend=backend)
+        backend=backend,
+        vllm_version=vllm_version)
 
     hf_results = generate_hf_output(model=model,
                                     prompts=prompts,
