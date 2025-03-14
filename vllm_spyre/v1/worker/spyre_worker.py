@@ -43,7 +43,6 @@ class SpyreWorker(WorkerBaseV1):
 
     def compile_or_warm_up_model(self) -> None:
         """Prepare model for execution through compilation/warmup."""
-
         spyre_warmup_shapes = current_platform.get_warmup_shapes()
         wup_prompt_lens, wup_new_tokens = zip(*[(s["prompt_length"],
                                                  s["new_tokens"])
