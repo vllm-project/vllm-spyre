@@ -5,8 +5,7 @@ from typing import (TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Tuple,
 
 import torch
 from torch import nn
-from vllm.config import (DeviceConfig, ModelConfig, ParallelConfig,
-                         SchedulerConfig)
+from vllm.config import DeviceConfig, VllmConfig
 from vllm.logger import init_logger
 from vllm.platforms import current_platform
 from vllm.sampling_params import SamplingParams
@@ -75,28 +74,22 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
 
     def __init__(
         self,
-        model_config: ModelConfig,
-        parallel_config: ParallelConfig,
-        scheduler_config: SchedulerConfig,
-        device_config: DeviceConfig,
+        vllm_config: VllmConfig,
         is_driver_worker: bool,
     ):
-        self.model_config = model_config
-        self.parallel_config = parallel_config
-        self.scheduler_config = scheduler_config
-        self.device_config = device_config
+        super().__init__(vllm_config=vllm_config)
         self.is_driver_worker = is_driver_worker
 
         self.pad_token_id = 0
-        if model_config is not None:
-            if model_config.hf_config is not None:
-                self.pad_token_id = getattr(model_config.hf_config,
+        if self.model_config is not None:
+            if self.model_config.hf_config is not None:
+                self.pad_token_id = getattr(self.model_config.hf_config,
                                             "pad_token_id", None) or 0
-            if model_config.get_sliding_window():
+            if self.model_config.get_sliding_window():
                 logger.warning("Sliding window is not supported on Spyre. "
                                "The model will run without sliding window.")
-        self.device_config = (device_config
-                              if device_config is not None else DeviceConfig())
+        if vllm_config.device_config is None:
+            self.device_config = DeviceConfig()
         self.device = self.device_config.device
         self.pin_memory = is_pin_memory_available()
         # position_ids of all the sequences in current batch

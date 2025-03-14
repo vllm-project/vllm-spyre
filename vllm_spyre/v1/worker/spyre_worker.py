@@ -96,8 +96,15 @@ class SpyreWorker(WorkerBaseV1):
         also be overridden by `--num-gpu-blocks-override`, which is set under
         `vllm_config.cache_config.num_gpu_blocks_override`.
         """
-        # TODO: figure out what to do based on determine_num_available_blocks
-        return 10 * 1024 * 1024
+        # Currently we override vllm_config.cache_config.num_gpu_blocks_override
+        # in platform.py, so this value is only used by vllm to check that the
+        # number of gpu blocks will fit in available memory.
+        # Since we also return dummy values for the kv cache spec, this check is
+        # meaningless and we can just return a large value to ensure vllm does
+        # not raise a validation error.
+        # TODO: Return the real available device memory when we implement real
+        # kv-caching.
+        return 1 << 64
 
     def initialize_from_config(self,
                                kv_cache_configs: List[KVCacheConfig]) -> None:
@@ -129,10 +136,7 @@ class SpyreWorker(WorkerBaseV1):
         if self.model_config.task == "embed":
             raise NotImplementedError
         else:
-            self.model_runner = SpyreModelRunner(self.model_config,
-                                                 self.parallel_config,
-                                                 self.scheduler_config,
-                                                 self.device_config,
+            self.model_runner = SpyreModelRunner(self.vllm_config,
                                                  self.is_driver_worker)
         self._env_initialized = False
 
