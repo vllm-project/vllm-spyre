@@ -13,7 +13,8 @@ from vllm.distributed import (ensure_model_parallel_initialized,
                               init_distributed_environment)
 from vllm.model_executor import set_random_seed
 from vllm.platforms import current_platform
-from vllm.v1.core.scheduler import SchedulerOutput
+from vllm.sampling_params import SamplingParams
+from vllm.v1.core.scheduler import NewRequestData, SchedulerOutput
 from vllm.v1.kv_cache_interface import (FullAttentionSpec, KVCacheConfig,
                                         KVCacheSpec)
 from vllm.v1.outputs import ModelRunnerOutput
@@ -42,9 +43,6 @@ class SpyreWorker(WorkerBaseV1):
 
     def compile_or_warm_up_model(self) -> None:
         """Prepare model for execution through compilation/warmup."""
-
-        from vllm.sampling_params import SamplingParams
-        from vllm.v1.core.scheduler import NewRequestData, SchedulerOutput
 
         spyre_warmup_shapes = current_platform.get_warmup_shapes()
         wup_prompt_lens, wup_new_tokens = zip(*[(s["prompt_length"],

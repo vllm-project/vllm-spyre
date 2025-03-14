@@ -340,7 +340,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
     @SpyrePlatform.inference_mode()
     def execute_model(
         self,
-        scheduler_output: SchedulerOutput,
+        scheduler_output: "SchedulerOutput",
         **kwargs,
     ) -> ModelRunnerOutput:
 
