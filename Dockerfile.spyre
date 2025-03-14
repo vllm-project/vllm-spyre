@@ -16,7 +16,11 @@ RUN ln -sf $(which python${PYTHON_VERSION}) /usr/bin/python && \
     ln -sf $(which pip${PYTHON_VERSION}) /usr/bin/pip
 
 # Download and install vllm ###########################################################
-RUN pip install vllm==0.7.3
+RUN git clone --depth 1 https://github.com/vllm-project/vllm.git \
+    && cd vllm \
+    && git fetch origin pull/14242/head:spyre-workarounds \
+    && git checkout spyre-workarounds \
+    && pip install .
 
 # Install vllm Spyre plugin ##################################################################
 RUN mkdir /workspace/vllm-spyre
