@@ -23,7 +23,7 @@ from vllm import SamplingParams
 # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("tp_size", [2])
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("vllm_version", ["V0"])  # Todo: V1 support
+@pytest.mark.parametrize("vllm_version", ["V0", "V1"])
 def test_output(
     model: str,
     prompts: List[str],
