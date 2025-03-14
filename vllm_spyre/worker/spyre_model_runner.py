@@ -116,7 +116,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
 
     @property
     def vocab_size(self) -> int:
-        return self.model.model.config.src_vocab_size
+        return self.model.model.model.config.src_vocab_size
 
     def _prepare_prompt(
         self,
@@ -417,10 +417,11 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
     ) -> Tuple[torch.Tensor, Optional[List[Tuple[torch.Tensor,
                                                  torch.Tensor]]]]:
 
-        return self.model.model(input_ids,
-                                mask=mask,
-                                position_ids=position_ids,
-                                past_key_value_states=past_key_value_states,
-                                use_cache=use_cache,
-                                only_last_token=only_last_token,
-                                attn_algorithm=attn_algorithm)
+        return self.model.model.model(
+            input_ids,
+            mask=mask,
+            position_ids=position_ids,
+            past_key_value_states=past_key_value_states,
+            use_cache=use_cache,
+            only_last_token=only_last_token,
+            attn_algorithm=attn_algorithm)
