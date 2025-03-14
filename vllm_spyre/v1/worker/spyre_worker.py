@@ -42,6 +42,10 @@ class SpyreWorker(WorkerBaseV1):
 
     def compile_or_warm_up_model(self) -> None:
         """Prepare model for execution through compilation/warmup."""
+
+        from vllm.sampling_params import SamplingParams
+        from vllm.v1.core.scheduler import NewRequestData, SchedulerOutput
+
         spyre_warmup_shapes = current_platform.get_warmup_shapes()
         wup_prompt_lens, wup_new_tokens = zip(*[(s["prompt_length"],
                                                  s["new_tokens"])
@@ -69,12 +73,49 @@ class SpyreWorker(WorkerBaseV1):
                   f"decoding {num_decode_tokens} tokens with batch "
                   f"size {batch_size}")
 
-            # Use execute_model in warm-up mode
-            self.execute_model(warmup_mode=True,
-                               prompt_len=prompt_len,
-                               num_decode_tokens=num_decode_tokens,
-                               batch_size=batch_size,
-                               special_token_ids=self.restricted_tokens)
+            num_scheduled_tokens: dict = {}
+            total_num_scheduled_tokens: int = 0
+            dummy_requests: list = []
+            for i in range(batch_size):
+                dummy_requests.append(
+                    NewRequestData(
+                        req_id=f"warmup-{i}",
+                        prompt_token_ids=[1] * prompt_len,
+                        prompt="test",
+                        mm_inputs=[],
+                        mm_hashes=[],
+                        mm_positions=[],
+                        sampling_params=SamplingParams(
+                            max_tokens=num_decode_tokens),
+                        block_ids=[0],
+                        num_computed_tokens=0,
+                        lora_request=None,
+                    ))
+                num_scheduled_tokens[i] = prompt_len
+                total_num_scheduled_tokens += num_scheduled_tokens[i]
+
+            scheduler_output = SchedulerOutput(
+                scheduled_new_reqs=dummy_requests,
+                scheduled_cached_reqs=[],
+                num_scheduled_tokens=num_scheduled_tokens,
+                total_num_scheduled_tokens=total_num_scheduled_tokens,
+                scheduled_spec_decode_tokens={},
+                scheduled_encoder_inputs={},
+                num_common_prefix_blocks=0,
+                finished_req_ids=set(),
+                free_encoder_input_ids=[],
+            )
+
+            # Use execute_model for warm up
+            self.execute_model(scheduler_output)
+
+            if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
+                from torch_sendnn import torch_sendnn
+                ul_start_time = time.time()
+                torch_sendnn.update_lazyhandle()
+                ul_stop_time = time.time()
+                ul_total_t = ul_stop_time - ul_start_time
+                print(f"update_lazyhandle() done (duration: {ul_total_t}s)")
 
         all_warmup_end_t = time.time()
         all_warmup_total_t = all_warmup_end_t - all_warmup_start_t
