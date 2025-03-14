@@ -20,7 +20,10 @@ RUN git clone --depth 1 https://github.com/vllm-project/vllm.git \
     && cd vllm \
     && git fetch origin pull/14242/head:spyre-workarounds \
     && git checkout spyre-workarounds \
-    && pip install .
+    && python -m pip install --upgrade pip \
+    && python use_existing_torch.py \
+    && pip install -r requirements-build.txt \
+    && SETUPTOOLS_SCM_PRETEND_VERSION=0.7.3 VLLM_TARGET_DEVICE=empty pip install --verbose . --no-build-isolation
 
 # Install vllm Spyre plugin ##################################################################
 RUN mkdir /workspace/vllm-spyre
