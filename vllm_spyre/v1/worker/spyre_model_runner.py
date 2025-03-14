@@ -11,6 +11,7 @@ from vllm.logger import init_logger
 from vllm.platforms import current_platform
 from vllm.sampling_params import SamplingParams
 from vllm.utils import is_pin_memory_available
+from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.outputs import SamplerOutput
 from vllm.v1.sample.metadata import SamplingMetadata
 from vllm.worker.model_runner_base import (
@@ -463,3 +464,30 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                                 use_cache=use_cache,
                                 only_last_token=only_last_token,
                                 attn_algorithm=attn_algorithm)
+
+    def get_kv_cache_spec(self) -> KVCacheSpec:
+        """
+        This method should generate the KVCache spec by parsing the kv cache
+        format from each Attention module in the static forward context.
+
+        In vLLM, this static forward context is populated by the base Attention
+        class in the modeling code. Every attention layer populates an entry
+        for itself in vllm_config.compilation_config.static_forward_context,
+        which is a dictionary of layer_name -> layer for every attention layer.
+        This allows the model runner to correctly create the kv cache spec for
+        each layer.
+
+        The spyre modeling code currently comes from `fms`, and does not
+        integrate with vLLM's modeling classes, so we don't have access to any
+        model-agnostic metadata about the attention layers. This just returns a
+        dummy value for now.
+        """
+        # We do at least use the real size from the cache config.
+        block_size = self.vllm_config.cache_config.block_size
+        return {
+            "foo":
+            FullAttentionSpec(block_size=block_size,
+                              num_kv_heads=1,
+                              head_size=1,
+                              dtype=torch.float16)
+        }
