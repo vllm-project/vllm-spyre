@@ -139,7 +139,8 @@ class SpyreCausalLM(nn.Module):
                     19724, 369, 264, 3070, 315, 3116, 382, 14711, 6075, 25
                 ]
                 prompt_len = len(input_ids_list)
-                padding_len = (self.tkv - 1) - prompt_len
+                tkv_insert = self.tkv - 1
+                padding_len = tkv_insert - prompt_len
 
                 # construct token and position ids for the sample prompt
                 self.sample_token_id = torch.tensor(
@@ -149,7 +150,7 @@ class SpyreCausalLM(nn.Module):
                     [i for i in range(prompt_len)]).unsqueeze(0)
 
                 # Construct attention mask for the sample prompt
-                n = self.tkv - 1
+                n = tkv_insert
                 m = prompt_len
 
                 top = torch.cat(
@@ -172,7 +173,7 @@ class SpyreCausalLM(nn.Module):
                     mask=self.sample_mask,
                     use_cache=True,
                     only_last_token=True,
-                    tkv=self.tkv - 1,
+                    tkv=tkv_insert,
                     active_pages=[0],
                     **extra_kwargs,
                 )
@@ -269,8 +270,8 @@ class SpyreCausalLM(nn.Module):
         # read-out (dynamic) kv_cache for decoding steps only,
         # for prefills kv_cache = [] (None)
         is_decode = (tkv != mask.shape[1])
-        kv_cache = []
         if is_decode:
+            kv_cache = []
             active_pages_mask = torch.zeros(self.fms_kv_cache[0][0].shape[0],
                                             dtype=torch.bool)
             active_pages_mask[active_pages] = True
@@ -280,6 +281,8 @@ class SpyreCausalLM(nn.Module):
                                                  1, :],
                      self.fms_kv_cache[layer][1][active_pages_mask, :, :tkv -
                                                  1, :]))
+        else:  # prefil
+            kv_cache = None
 
         output = self.model(
             input_ids,
