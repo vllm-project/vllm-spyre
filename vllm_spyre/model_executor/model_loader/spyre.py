@@ -72,6 +72,9 @@ class SpyreCausalLM(nn.Module):
         is_prompt: bool,
     ) -> torch.Tensor:
 
+        if is_prompt:
+            self.tkv = 0
+
         extra_kwargs = {}
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn_decoder":
             # Bug in 2.3.1 fixed in 2.4.1 for SDPA flash
