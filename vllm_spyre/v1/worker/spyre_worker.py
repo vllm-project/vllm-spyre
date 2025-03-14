@@ -289,8 +289,9 @@ class SpyreWorker(WorkerBaseV1):
         return None
 
     @SpyrePlatform.inference_mode()
-    def execute_model(self,
-                      scheduler_output: Optional[SchedulerOutput] = None,
-                      **kwargs) -> Optional[ModelRunnerOutput]:
-        output = self.model_runner.execute_model(scheduler_output, **kwargs)
+    def execute_model(
+        self,
+        scheduler_output: "SchedulerOutput",
+    ) -> Optional[ModelRunnerOutput]:
+        output = self.model_runner.execute_model(scheduler_output)
         return output if self.is_driver_worker else None
