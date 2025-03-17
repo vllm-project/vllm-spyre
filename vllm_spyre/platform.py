@@ -111,12 +111,9 @@ class SpyrePlatform(Platform):
                     "The lists in VLLM_SPYRE_WARMUP_PROMPT_LENS and "
                     "VLLM_SPYRE_WARMUP_NEW_TOKENS must have equal length")
 
-        print("[SchedulerConfig] VLLM_SPYRE_WARMUP_PROMPT_LENS =",
-              wup_prompt_lens)
-        print("[SchedulerConfig] VLLM_SPYRE_WARMUP_NEW_TOKENS =",
-              wup_new_tokens)
-        print("[SchedulerConfig] VLLM_SPYRE_WARMUP_BATCH_SIZES =",
-              wup_batch_sizes)
+        logger.info("VLLM_SPYRE_WARMUP_PROMPT_LENS = %s", wup_prompt_lens)
+        logger.info("VLLM_SPYRE_WARMUP_NEW_TOKENS = %s", wup_new_tokens)
+        logger.info("VLLM_SPYRE_WARMUP_BATCH_SIZES = %s", wup_batch_sizes)
 
         cls.spyre_warmup_shapes = tuple(
             sorted([{
