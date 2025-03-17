@@ -85,7 +85,7 @@ class SpyrePlatform(Platform):
                               shape['prompt_length'] + shape['new_tokens'])
 
         if envs.VLLM_USE_V1:
-            # The v0 scheduler will run out of blocks if this is overriden
+            # The v0 scheduler will run out of blocks if this is overridden
             scheduler_config.max_num_seqs = max_batch_size
 
         cache_config = vllm_config.cache_config
@@ -104,7 +104,7 @@ class SpyrePlatform(Platform):
             cache_config.block_size = model_config.max_model_len
             cache_config.num_gpu_blocks_override = scheduler_config.max_num_seqs
             logger.info(
-                "Overriding configurations based on warmup shaped. "
+                "Overriding configurations based on warmup shapes. "
                 "max_model_len=%d, max_num_seqs=%d, block_size=%d, "
                 "num_gpu_blocks_override=%d", model_config.max_model_len,
                 scheduler_config.max_num_seqs, cache_config.block_size,
