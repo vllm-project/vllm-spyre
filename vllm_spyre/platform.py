@@ -83,7 +83,10 @@ class SpyrePlatform(Platform):
             max_batch_size = max(max_batch_size, shape['batch_size'])
             max_seq_len = max(max_batch_size,
                               shape['prompt_length'] + shape['new_tokens'])
-        scheduler_config.max_num_seqs = max_batch_size
+
+        if envs.VLLM_USE_V1:
+            # The v0 scheduler will run out of blocks if this is overriden
+            scheduler_config.max_num_seqs = max_batch_size
 
         cache_config = vllm_config.cache_config
 
@@ -100,6 +103,12 @@ class SpyrePlatform(Platform):
             model_config.max_model_len = max_seq_len
             cache_config.block_size = model_config.max_model_len
             cache_config.num_gpu_blocks_override = scheduler_config.max_num_seqs
+            logger.info(
+                "Overriding configurations based on warmup shaped. "
+                "max_model_len=%d, max_num_seqs=%d, block_size=%d, "
+                "num_gpu_blocks_override=%d", model_config.max_model_len,
+                scheduler_config.max_num_seqs, cache_config.block_size,
+                cache_config.num_gpu_blocks_override)
 
     @classmethod
     def is_pin_memory_available(cls) -> bool:
