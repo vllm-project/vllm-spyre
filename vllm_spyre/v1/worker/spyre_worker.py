@@ -69,18 +69,16 @@ class SpyreWorker(WorkerBaseV1):
                 "Warmup %d/%d prompt/decode/batchsize-shape "
                 "combinations...", i + 1, len(wup_new_tokens))
             logger.info(
-                "[SpyreWorker] Warming up for prompt length %d, "
-                "decoding %d tokens with batch size %d", prompt_len,
-                num_decode_tokens, batch_size)
+                "Warming up for prompt length %d, decoding %d tokens with "
+                "batch size %d", prompt_len, num_decode_tokens, batch_size)
             self._warmup_spyre_fixed_size(prompt_len, num_decode_tokens,
                                           self.restricted_tokens, batch_size)
         all_warmup_end_t = time.time()
         all_warmup_total_t = all_warmup_end_t - all_warmup_start_t
         logger.info(
-            "[SpyreWorker] All warmups for %d different "
-            "prompt/decode/batchsize-shape combinations finished. "
-            "Total warmup time %.3fs.", len(wup_new_tokens),
-            all_warmup_total_t)
+            "All warmups for %d different prompt/decode/batchsize-shape "
+            "combinations finished. Total warmup time %.3fs.",
+            len(wup_new_tokens), all_warmup_total_t)
 
     def check_health(self) -> None:
         """Basic health check (override for device-specific checks)."""
