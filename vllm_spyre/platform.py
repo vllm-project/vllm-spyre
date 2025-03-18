@@ -39,6 +39,7 @@ class SpyrePlatform(Platform):
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:
         parallel_config = vllm_config.parallel_config
         scheduler_config = vllm_config.scheduler_config
+        model_config = vllm_config.model_config
 
         if scheduler_config.is_multi_step:
             raise NotImplementedError
@@ -73,12 +74,41 @@ class SpyrePlatform(Platform):
             scheduler_config.scheduler_cls = \
                 "vllm_spyre.core.scheduler.SpyreScheduler"
 
-        cache_config = vllm_config.cache_config
-        if cache_config:
-            # spyre needs block_size = max_model_len
-            vllm_config.cache_config.block_size = \
-                vllm_config.model_config.max_model_len
+        # Override --max-num-seqs to the biggest warmup batch size
+        # And override --max-model-len to the biggest warmup sequence
         cls.set_warmup_shapes(scheduler_config)
+        max_batch_size = 0
+        max_seq_len = 0
+        for shape in cls.get_warmup_shapes():
+            max_batch_size = max(max_batch_size, shape['batch_size'])
+            max_seq_len = max(max_batch_size,
+                              shape['prompt_length'] + shape['new_tokens'])
+
+        if envs.VLLM_USE_V1:
+            # The v0 scheduler will run out of blocks if this is overridden
+            scheduler_config.max_num_seqs = max_batch_size
+
+        cache_config = vllm_config.cache_config
+
+        if cache_config and model_config:
+            # Cache and model config aren't set in the individual worker procs
+            # These are set in the main engine process
+
+            # To disable any paged attention ops in the base scheduler, we both:
+            # - Set the block size (in tokens) to the maximum sequence length
+            #       so that the scheduler thinks an entire sequence will fit in
+            #       one single block.
+            # - Set the number of blocks to the maximum number of sequences, so
+            #       the scheduler always thinks there's a block available
+            model_config.max_model_len = max_seq_len
+            cache_config.block_size = model_config.max_model_len
+            cache_config.num_gpu_blocks_override = scheduler_config.max_num_seqs
+            logger.info(
+                "Overriding configurations based on warmup shapes. "
+                "max_model_len=%d, max_num_seqs=%d, block_size=%d, "
+                "num_gpu_blocks_override=%d", model_config.max_model_len,
+                scheduler_config.max_num_seqs, cache_config.block_size,
+                cache_config.num_gpu_blocks_override)
 
     @classmethod
     def is_pin_memory_available(cls) -> bool:
