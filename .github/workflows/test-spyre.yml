@@ -24,5 +24,6 @@ jobs:
           export MASTER_ADDR=localhost && \
           export DISTRIBUTED_STRATEGY_IGNORE_MODULES=WordEmbedding && \
           cd vllm-spyre && \
-          python -m pytest --forked --timeout=300  tests -v -k eager
+          python -m pytest --timeout=300  tests -v -k "V0 and eager" && \
+          python -m pytest --forked --timeout=300  tests -v -k "V1 and eager"
         '''
