@@ -82,117 +82,6 @@ class SpyreWorker(WorkerBaseV1):
             "combinations finished. Total warmup time %.3fs.",
             len(wup_new_tokens), all_warmup_total_t)
 
-    def _warmup_spyre_fixed_size(self, prompt_len, num_decode_tokens,
-                                 special_token_ids, batch_size):
-
-        warmup_start_t = time.time()
-        # NOTE(ngl): empty tensor causes spyre to hang, so using
-        # randint without 0 and the eos and bos token
-
-        # Create a list of valid values between 1 (inclusive) and vocab
-        # size (exclusive) by excluding the eos and bos token ids
-        # (in special_token_ids)
-        vocab_size = self.model_runner.vocab_size
-        valid_token_ids = [
-            i for i in range(1, vocab_size) if i not in set(special_token_ids)
-        ]
-        # Convert to tensor for sampling
-        valid_token_ids_tensor = torch.tensor(valid_token_ids,
-                                              dtype=torch.long,
-                                              device="cpu")
-
-        # Sample from the valid token ids
-        warmup_tokens_tensor = valid_token_ids_tensor[torch.randint(
-            0, len(valid_token_ids_tensor), (batch_size, prompt_len))]
-
-        # Create requests to be used for prefill steps
-        dummy_requests = [
-            NewRequestData(
-                req_id="warmup",
-                prompt_token_ids=warmup_tokens_tensor[i].tolist(),
-                prompt="test",
-                mm_inputs=[],
-                mm_hashes=[],
-                mm_positions=[],
-                sampling_params=SamplingParams(max_tokens=num_decode_tokens),
-                block_ids=[0],
-                num_computed_tokens=0,
-                lora_request=None,
-            ) for i in range(batch_size)
-        ]
-
-        # Set up dummy cached_requests to be used for decode steps
-        cached_requests = [
-            CachedRequestData(
-                req_id=req.req_id,
-                resumed_from_preemption=False,
-                new_token_ids=[
-                    valid_token_ids_tensor[torch.randint(
-                        0, len(valid_token_ids_tensor), (1, )).item()]
-                ],  # placeholder token
-                new_block_ids=req.block_ids,
-                num_computed_tokens=req.num_computed_tokens,
-            ) for req in dummy_requests
-        ]
-
-        # To be used for execute_model, start with scheduled_new_reqs
-        # for prefill
-        scheduler_output = SchedulerOutput(
-            scheduled_new_reqs=dummy_requests,
-            scheduled_cached_reqs=[],
-            num_scheduled_tokens={i: prompt_len
-                                  for i in range(batch_size)},
-            total_num_scheduled_tokens=sum(prompt_len
-                                           for _ in range(batch_size)),
-            scheduled_spec_decode_tokens={},
-            scheduled_encoder_inputs={},
-            num_common_prefix_blocks=0,
-            finished_req_ids=set(),
-            free_encoder_input_ids=[],
-        )
-
-        # First full forward pass
-        logger.info("Warmup 1/2: Prefill...")
-        self.execute_model(scheduler_output)  # Prefill step
-
-        # Switch to cached requests to trigger decoding steps
-        scheduler_output.scheduled_new_reqs = []
-        scheduler_output.scheduled_cached_reqs = cached_requests
-
-        logger.info("Warmup 1/2: Decoding...")
-        for _ in range(num_decode_tokens - 1):
-            self.execute_model(scheduler_output)
-
-        # update_lazyhandle
-        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
-            from torch_sendnn import torch_sendnn
-            ul_start_time = time.time()
-            torch_sendnn.update_lazyhandle()
-            ul_stop_time = time.time()
-            logger.info("update_lazyhandle() done (duration: %.3fs",
-                        ul_stop_time - ul_start_time)
-
-        # Second full forward pass
-        logger.info("Warmup 2/2: Prefill step...")
-        scheduler_output.scheduled_new_reqs = dummy_requests
-        scheduler_output.scheduled_cached_reqs = []
-        self.execute_model(scheduler_output)
-
-        # Switch to cached requests to trigger decoding steps
-        scheduler_output.scheduled_new_reqs = []
-        scheduler_output.scheduled_cached_reqs = cached_requests
-
-        logger.info("[Warmup 2/2: Decoding steps...")
-        for _ in range(num_decode_tokens - 1):
-            self.execute_model(scheduler_output)
-
-        warmup_end_t = time.time()
-        warmup_total_t = warmup_end_t - warmup_start_t
-        logger.info("Warmup finished.")
-        logger.info(
-            "Warmup took %.3fs (for prompt length %d and max output tokens %d)",
-            warmup_total_t, prompt_len, num_decode_tokens)
-
     def check_health(self) -> None:
         """Basic health check (override for device-specific checks)."""
         # TODO: Implement something!
@@ -343,6 +232,117 @@ class SpyreWorker(WorkerBaseV1):
         load_model_end_t = time.time()
         load_model_total_t = load_model_end_t - load_model_start_t
         logger.info("load model took %.3fs", load_model_total_t)
+
+    def _warmup_spyre_fixed_size(self, prompt_len, num_decode_tokens,
+                                 special_token_ids, batch_size):
+
+        warmup_start_t = time.time()
+        # NOTE(ngl): empty tensor causes spyre to hang, so using
+        # randint without 0 and the eos and bos token
+
+        # Create a list of valid values between 1 (inclusive) and vocab
+        # size (exclusive) by excluding the eos and bos token ids
+        # (in special_token_ids)
+        vocab_size = self.model_runner.vocab_size
+        valid_token_ids = [
+            i for i in range(1, vocab_size) if i not in set(special_token_ids)
+        ]
+        # Convert to tensor for sampling
+        valid_token_ids_tensor = torch.tensor(valid_token_ids,
+                                              dtype=torch.long,
+                                              device="cpu")
+
+        # Sample from the valid token ids
+        warmup_tokens_tensor = valid_token_ids_tensor[torch.randint(
+            0, len(valid_token_ids_tensor), (batch_size, prompt_len))]
+
+        # Create requests to be used for prefill steps
+        dummy_requests = [
+            NewRequestData(
+                req_id="warmup",
+                prompt_token_ids=warmup_tokens_tensor[i].tolist(),
+                prompt="test",
+                mm_inputs=[],
+                mm_hashes=[],
+                mm_positions=[],
+                sampling_params=SamplingParams(max_tokens=num_decode_tokens),
+                block_ids=[0],
+                num_computed_tokens=0,
+                lora_request=None,
+            ) for i in range(batch_size)
+        ]
+
+        # Set up dummy cached_requests to be used for decode steps
+        cached_requests = [
+            CachedRequestData(
+                req_id=req.req_id,
+                resumed_from_preemption=False,
+                new_token_ids=[
+                    valid_token_ids_tensor[torch.randint(
+                        0, len(valid_token_ids_tensor), (1, )).item()]
+                ],  # placeholder token
+                new_block_ids=req.block_ids,
+                num_computed_tokens=req.num_computed_tokens,
+            ) for req in dummy_requests
+        ]
+
+        # To be used for execute_model, start with scheduled_new_reqs
+        # for prefill
+        scheduler_output = SchedulerOutput(
+            scheduled_new_reqs=dummy_requests,
+            scheduled_cached_reqs=[],
+            num_scheduled_tokens={i: prompt_len
+                                  for i in range(batch_size)},
+            total_num_scheduled_tokens=sum(prompt_len
+                                           for _ in range(batch_size)),
+            scheduled_spec_decode_tokens={},
+            scheduled_encoder_inputs={},
+            num_common_prefix_blocks=0,
+            finished_req_ids=set(),
+            free_encoder_input_ids=[],
+        )
+
+        # First full forward pass
+        logger.info("Warmup 1/2: Prefill...")
+        self.execute_model(scheduler_output)  # Prefill step
+
+        # Switch to cached requests to trigger decoding steps
+        scheduler_output.scheduled_new_reqs = []
+        scheduler_output.scheduled_cached_reqs = cached_requests
+
+        logger.info("Warmup 1/2: Decoding...")
+        for _ in range(num_decode_tokens - 1):
+            self.execute_model(scheduler_output)
+
+        # update_lazyhandle
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
+            from torch_sendnn import torch_sendnn
+            ul_start_time = time.time()
+            torch_sendnn.update_lazyhandle()
+            ul_stop_time = time.time()
+            logger.info("update_lazyhandle() done (duration: %.3fs",
+                        ul_stop_time - ul_start_time)
+
+        # Second full forward pass
+        logger.info("Warmup 2/2: Prefill step...")
+        scheduler_output.scheduled_new_reqs = dummy_requests
+        scheduler_output.scheduled_cached_reqs = []
+        self.execute_model(scheduler_output)
+
+        # Switch to cached requests to trigger decoding steps
+        scheduler_output.scheduled_new_reqs = []
+        scheduler_output.scheduled_cached_reqs = cached_requests
+
+        logger.info("[Warmup 2/2: Decoding steps...")
+        for _ in range(num_decode_tokens - 1):
+            self.execute_model(scheduler_output)
+
+        warmup_end_t = time.time()
+        warmup_total_t = warmup_end_t - warmup_start_t
+        logger.info("Warmup finished.")
+        logger.info(
+            "Warmup took %.3fs (for prompt length %d and max output tokens %d)",
+            warmup_total_t, prompt_len, num_decode_tokens)
 
     @property
     def do_metadata_broadcast(self) -> bool:
