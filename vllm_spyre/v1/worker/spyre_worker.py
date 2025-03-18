@@ -11,6 +11,7 @@ from huggingface_hub import hf_hub_download
 from vllm.config import VllmConfig
 from vllm.distributed import (ensure_model_parallel_initialized,
                               init_distributed_environment)
+from vllm.logger import init_logger
 from vllm.model_executor import set_random_seed
 from vllm.platforms import current_platform
 from vllm.v1.core.scheduler import SchedulerOutput
@@ -23,6 +24,8 @@ import vllm_spyre.envs as envs_spyre
 from vllm_spyre.model_executor.model_loader import spyre_setup
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import SpyreModelRunner
+
+logger = init_logger(__name__)
 
 
 class SpyreWorker(WorkerBaseV1):
@@ -47,9 +50,9 @@ class SpyreWorker(WorkerBaseV1):
                                                  s["new_tokens"])
                                                 for s in spyre_warmup_shapes])
 
-        print(f"[SpyreWorker] Start warming up "
-              f"{len(wup_new_tokens)} "
-              f"different prompt/decode/batchsize-shape combinations.")
+        logger.info(
+            "Start warming up %d different "
+            "prompt/decode/batchsize-shape combinations.", len(wup_new_tokens))
         all_warmup_start_t = time.time()
         for i, (prompt_len, num_decode_tokens, batch_size) in enumerate([
             (s["prompt_length"], s["new_tokens"], s["batch_size"])
@@ -62,20 +65,20 @@ class SpyreWorker(WorkerBaseV1):
                     "VLLM_SPYRE_WARMUP_NEW_TOKENS must be "
                     "at least 2 (spyre requirement).")
             # warmup individual combination
-            print(f"[SpyreWorker] Warmup {i+1}/"
-                  f"{len(wup_new_tokens)} "
-                  f"prompt/decode/batchsize-shape combinations...")
-            print(f"[SpyreWorker] Warming up for prompt length {prompt_len}, "
-                  f"decoding {num_decode_tokens} tokens with batch "
-                  f"size {batch_size}")
+            logger.info(
+                "Warmup %d/%d prompt/decode/batchsize-shape "
+                "combinations...", i + 1, len(wup_new_tokens))
+            logger.info(
+                "Warming up for prompt length %d, decoding %d tokens with "
+                "batch size %d", prompt_len, num_decode_tokens, batch_size)
             self._warmup_spyre_fixed_size(prompt_len, num_decode_tokens,
                                           self.restricted_tokens, batch_size)
         all_warmup_end_t = time.time()
         all_warmup_total_t = all_warmup_end_t - all_warmup_start_t
-        print(f"[SpyreWorker] All warmups for "
-              f"{len(wup_new_tokens)} different "
-              f"prompt/decode/batchsize-shape combinations finished. "
-              f"Total warmup time {all_warmup_total_t}s.")
+        logger.info(
+            "All warmups for %d different prompt/decode/batchsize-shape "
+            "combinations finished. Total warmup time %.3fs.",
+            len(wup_new_tokens), all_warmup_total_t)
 
     def check_health(self) -> None:
         """Basic health check (override for device-specific checks)."""
@@ -211,7 +214,7 @@ class SpyreWorker(WorkerBaseV1):
 
         self.restricted_tokens = restricted_tokens
 
-        print("[SpyreWorker] load model...")
+        logger.info("load model...")
         # TODO: check additionally if the Spyre card has enough memory
         # for all requested model warmups
         # printing env variables for debugging purposes
@@ -226,7 +229,7 @@ class SpyreWorker(WorkerBaseV1):
 
         load_model_end_t = time.time()
         load_model_total_t = load_model_end_t - load_model_start_t
-        print(f"\tload model took {load_model_total_t}s")
+        logger.info("load model took %.3fs", load_model_total_t)
 
     def _warmup_spyre_fixed_size(self, prompt_len, num_decode_tokens,
                                  special_token_ids, batch_size):
