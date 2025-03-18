@@ -11,6 +11,7 @@ from huggingface_hub import hf_hub_download
 from vllm.config import VllmConfig
 from vllm.distributed import (ensure_model_parallel_initialized,
                               init_distributed_environment)
+from vllm.logger import init_logger
 from vllm.model_executor import set_random_seed
 from vllm.platforms import current_platform
 from vllm.sampling_params import SamplingParams
@@ -25,6 +26,8 @@ import vllm_spyre.envs as envs_spyre
 from vllm_spyre.model_executor.model_loader import spyre_setup
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import SpyreModelRunner
+
+logger = init_logger(__name__)
 
 
 class SpyreWorker(WorkerBaseV1):
@@ -142,14 +145,14 @@ class SpyreWorker(WorkerBaseV1):
         )
 
         # First full forward pass
-        print("[SpyreWorker] Warmup 1/2: Prefill...")
+        logger.info("[SpyreWorker] Warmup 1/2: Prefill...")
         self.execute_model(scheduler_output)  # Prefill step
 
         # Switch to cached requests to trigger decoding steps
         scheduler_output.scheduled_new_reqs = []
         scheduler_output.scheduled_cached_reqs = cached_requests
 
-        print("[SpyreWorker] Warmup 1/2: Decoding...")
+        logger.info("[SpyreWorker] Warmup 1/2: Decoding...")
         for _ in range(num_decode_tokens - 1):
             self.execute_model(scheduler_output)
 
@@ -159,10 +162,10 @@ class SpyreWorker(WorkerBaseV1):
             ul_start_time = time.time()
             torch_sendnn.update_lazyhandle()
             ul_stop_time = time.time()
-            print(f"update_lazyhandle() done (duration: {ul_stop_time - ul_start_time}s)")
+            logger.info(f"update_lazyhandle() done (duration: {ul_stop_time - ul_start_time}s)")
 
         # Second full forward pass
-        print("[SpyreWorker] Warmup 2/2: Prefill step...")
+        logger.info("[SpyreWorker] Warmup 2/2: Prefill step...")
         scheduler_output.scheduled_new_reqs = dummy_requests
         scheduler_output.scheduled_cached_reqs = []
         self.execute_model(scheduler_output)
@@ -171,14 +174,14 @@ class SpyreWorker(WorkerBaseV1):
         scheduler_output.scheduled_new_reqs = []
         scheduler_output.scheduled_cached_reqs = cached_requests
 
-        print("[SpyreWorker] Warmup 2/2: Decoding steps...")
+        logger.info("[SpyreWorker] Warmup 2/2: Decoding steps...")
         for _ in range(num_decode_tokens - 1):
             self.execute_model(scheduler_output)
 
         warmup_end_t = time.time()
         warmup_total_t = warmup_end_t - warmup_start_t
-        print("[SpyreWorker] ... warmup finished.")
-        print(f"\twarmup took {warmup_total_t}s (for prompt length"
+        logger.info("[SpyreWorker] ... warmup finished.")
+        logger.info(f"\twarmup took {warmup_total_t}s (for prompt length"
               f"{prompt_len} and max output tokens {num_decode_tokens})")
 
 

@@ -368,7 +368,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
             sampling_metadata=model_input.sampling_metadata,
         )
         t1 = time.time() - t0
-        print("[spyre_model_runner:execute_model] t_token: %.2fms" %
+        logger.info("[spyre_model_runner:execute_model] t_token: %.2fms" %
               (t1 * 1000))
 
         model_output = ModelRunnerOutput(
@@ -400,7 +400,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         for input_ids_i in input_ids_list:
             seq_len = input_ids_i.size(0)
             if max_len > seq_len:
-                print(f"[SpyreModelRunner] INFO: Padding request of length "
+                logger.info(f"[SpyreModelRunner] INFO: Padding request of length "
                       f"{seq_len} tokens to {max_len} tokens.")
             pads = torch.ones(max_len - seq_len,
                               dtype=torch.long,
