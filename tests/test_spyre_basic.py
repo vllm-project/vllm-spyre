@@ -73,3 +73,51 @@ def test_output(
                     backend=backend,
                     vllm_results=vllm_results,
                     hf_results=hf_results)
+
+
+@pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+@pytest.mark.parametrize("vllm_version", ["V0", "V1"])
+def test_batch_handling(
+    model: str,
+    backend: str,
+    vllm_version: str,
+):
+    """Test that the spyre worker correctly handles batches of requests that
+    finish after different numbers of forward passes"""
+
+    # Test with batch size 4
+    warmup_shape = (64, 20, 4)
+
+    # Have the model count down to zero and stop
+    vllm_sampling_params = SamplingParams(max_tokens=20,
+                                          temperature=0,
+                                          stop="0",
+                                          logprobs=0)
+    # Importantly, these prompts are ordered so that they don't finish in the
+    # order given
+    prompts = [
+        "6 5 4 3",
+        "9 8 7 6",
+        "7 6 5 4",
+        "8 7 6 5",
+    ]
+
+    # Ensure that both:
+    # - The model doesn't crash
+    # - The output sequences are correct
+    vllm_results = generate_spyre_vllm_output(
+        model=model,
+        prompts=prompts,
+        warmup_shapes=[warmup_shape],
+        max_model_len=2048,
+        block_size=2048,
+        sampling_params=vllm_sampling_params,
+        tensor_parallel_size=1,
+        backend=backend,
+        vllm_version=vllm_version)
+
+    assert vllm_results[0]["text"] == " 2 1 "
+    assert vllm_results[1]["text"] == " 5 4 3 2 1 "
+    assert vllm_results[2]["text"] == " 3 2 1 "
+    assert vllm_results[3]["text"] == " 4 3 2 1 "
