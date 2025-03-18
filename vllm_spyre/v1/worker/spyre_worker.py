@@ -14,7 +14,7 @@ from vllm.distributed import (ensure_model_parallel_initialized,
 from vllm.model_executor import set_random_seed
 from vllm.platforms import current_platform
 from vllm.sampling_params import SamplingParams
-from vllm.v1.core.scheduler import NewRequestData, SchedulerOutput
+from vllm.v1.core.scheduler import CachedRequestData, NewRequestData, SchedulerOutput
 from vllm.v1.kv_cache_interface import (FullAttentionSpec, KVCacheConfig,
                                         KVCacheSpec)
 from vllm.v1.outputs import ModelRunnerOutput
@@ -50,7 +50,7 @@ class SpyreWorker(WorkerBaseV1):
 
         print(f"[SpyreWorker] Start warming up "
               f"{len(wup_new_tokens)} "
-              f"different prompt/decode/batchsize-shape combinations.")
+              f"different prompt/decode/batch size-shape combinations.")
         all_warmup_start_t = time.time()
         for i, (prompt_len, num_decode_tokens, batch_size) in enumerate([
             (s["prompt_length"], s["new_tokens"], s["batch_size"])
@@ -69,50 +69,8 @@ class SpyreWorker(WorkerBaseV1):
             print(f"[SpyreWorker] Warming up for prompt length {prompt_len}, "
                   f"decoding {num_decode_tokens} tokens with batch "
                   f"size {batch_size}")
-
-            num_scheduled_tokens: dict = {}
-            total_num_scheduled_tokens: int = 0
-            dummy_requests: list = []
-            for i in range(batch_size):
-                dummy_requests.append(
-                    NewRequestData(
-                        req_id=f"warmup-{i}",
-                        prompt_token_ids=[1] * prompt_len,
-                        prompt="test",
-                        mm_inputs=[],
-                        mm_hashes=[],
-                        mm_positions=[],
-                        sampling_params=SamplingParams(
-                            max_tokens=num_decode_tokens),
-                        block_ids=[0],
-                        num_computed_tokens=0,
-                        lora_request=None,
-                    ))
-                num_scheduled_tokens[i] = prompt_len
-                total_num_scheduled_tokens += num_scheduled_tokens[i]
-
-            scheduler_output = SchedulerOutput(
-                scheduled_new_reqs=dummy_requests,
-                scheduled_cached_reqs=[],
-                num_scheduled_tokens=num_scheduled_tokens,
-                total_num_scheduled_tokens=total_num_scheduled_tokens,
-                scheduled_spec_decode_tokens={},
-                scheduled_encoder_inputs={},
-                num_common_prefix_blocks=0,
-                finished_req_ids=set(),
-                free_encoder_input_ids=[],
-            )
-
-            # Use execute_model for warm up
-            self.execute_model(scheduler_output)
-
-            if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
-                from torch_sendnn import torch_sendnn
-                ul_start_time = time.time()
-                torch_sendnn.update_lazyhandle()
-                ul_stop_time = time.time()
-                ul_total_t = ul_stop_time - ul_start_time
-                print(f"update_lazyhandle() done (duration: {ul_total_t}s)")
+            
+            self._warmup_spyre_fixed_size(prompt_len, num_decode_tokens, self.restricted_tokens, batch_size)
 
         all_warmup_end_t = time.time()
         all_warmup_total_t = all_warmup_end_t - all_warmup_start_t
@@ -120,6 +78,109 @@ class SpyreWorker(WorkerBaseV1):
               f"{len(wup_new_tokens)} different "
               f"prompt/decode/batchsize-shape combinations finished. "
               f"Total warmup time {all_warmup_total_t}s.")
+
+
+    def _warmup_spyre_fixed_size(self, prompt_len, num_decode_tokens,
+                  special_token_ids, batch_size):
+
+        warmup_start_t = time.time()
+        # NOTE(ngl): empty tensor causes spyre to hang, so using
+        # randint without 0 and the eos and bos token
+
+        # Create a list of valid values between 1 (inclusive) and vocab
+        # size (exclusive) by excluding the eos and bos token ids
+        # (in special_token_ids)
+        vocab_size = self.model_runner.vocab_size
+        valid_token_ids = [
+            i for i in range(1, vocab_size) if i not in set(special_token_ids)
+        ]
+        # Convert to tensor for sampling
+        valid_token_ids_tensor = torch.tensor(valid_token_ids, dtype=torch.long, device="cpu")
+
+        # Sample from the valid token ids
+        warmup_tokens_tensor = valid_token_ids_tensor[torch.randint(
+            0, len(valid_token_ids_tensor), (batch_size, prompt_len))]
+
+        # Create requests to be used for prefill steps
+        dummy_requests = [
+            NewRequestData(
+                req_id=f"warmup",
+                prompt_token_ids=warmup_tokens_tensor[i].tolist(),
+                prompt="test",
+                mm_inputs=[], mm_hashes=[], mm_positions=[],
+                sampling_params=SamplingParams(max_tokens=num_decode_tokens),
+                block_ids=[0],
+                num_computed_tokens=0,
+                lora_request=None,
+            ) for i in range(batch_size)
+        ]
+
+        # Set up dummy cached_requests to be used for decode steps
+        cached_requests = [
+            CachedRequestData(
+                req_id=req.req_id,
+                resumed_from_preemption=False,
+                new_token_ids=[valid_token_ids_tensor[torch.randint(
+                    0, len(valid_token_ids_tensor), (1,)).item()]],  # placeholder token
+                new_block_ids=req.block_ids,
+                num_computed_tokens=req.num_computed_tokens,
+            ) for req in dummy_requests
+        ]
+
+        # To be used for execute_model, start with scheduled_new_reqs
+        # for prefill
+        scheduler_output = SchedulerOutput(
+            scheduled_new_reqs=dummy_requests,
+            scheduled_cached_reqs=[],
+            num_scheduled_tokens={i: prompt_len for i in range(batch_size)},
+            total_num_scheduled_tokens=sum(prompt_len for _ in range(batch_size)),
+            scheduled_spec_decode_tokens={},
+            scheduled_encoder_inputs={},
+            num_common_prefix_blocks=0,
+            finished_req_ids=set(),
+            free_encoder_input_ids=[],
+        )
+
+        # First full forward pass
+        print("[SpyreWorker] Warmup 1/2: Prefill...")
+        self.execute_model(scheduler_output)  # Prefill step
+
+        # Switch to cached requests to trigger decoding steps
+        scheduler_output.scheduled_new_reqs = []
+        scheduler_output.scheduled_cached_reqs = cached_requests
+
+        print("[SpyreWorker] Warmup 1/2: Decoding...")
+        for _ in range(num_decode_tokens - 1):
+            self.execute_model(scheduler_output)
+
+        # update_lazyhandle
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
+            from torch_sendnn import torch_sendnn
+            ul_start_time = time.time()
+            torch_sendnn.update_lazyhandle()
+            ul_stop_time = time.time()
+            print(f"update_lazyhandle() done (duration: {ul_stop_time - ul_start_time}s)")
+
+        # Second full forward pass
+        print("[SpyreWorker] Warmup 2/2: Prefill step...")
+        scheduler_output.scheduled_new_reqs = dummy_requests
+        scheduler_output.scheduled_cached_reqs = []
+        self.execute_model(scheduler_output)
+
+        # Switch to cached requests to trigger decoding steps
+        scheduler_output.scheduled_new_reqs = []
+        scheduler_output.scheduled_cached_reqs = cached_requests
+
+        print("[SpyreWorker] Warmup 2/2: Decoding steps...")
+        for _ in range(num_decode_tokens - 1):
+            self.execute_model(scheduler_output)
+
+        warmup_end_t = time.time()
+        warmup_total_t = warmup_end_t - warmup_start_t
+        print("[SpyreWorker] ... warmup finished.")
+        print(f"\twarmup took {warmup_total_t}s (for prompt length"
+              f"{prompt_len} and max output tokens {num_decode_tokens})")
+
 
     def check_health(self) -> None:
         """Basic health check (override for device-specific checks)."""
