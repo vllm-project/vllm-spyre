@@ -437,7 +437,6 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
 
         return input_ids, position_ids, mask
 
-
     def get_kv_cache_spec(self) -> KVCacheSpec:
         """
         This method should generate the KVCache spec by parsing the kv cache
