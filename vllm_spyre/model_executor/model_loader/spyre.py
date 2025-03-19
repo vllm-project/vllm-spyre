@@ -59,7 +59,7 @@ class SpyreCausalLM(nn.Module):
         self.indices = None
 
         # Lazy initialized (FMS Wrapper Model)
-        self.model: nn.Module
+        self.model: FmsModelWrapper
 
         # horizontal offset in physical KV cache memory block
         self.tkv: int = 0
