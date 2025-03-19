@@ -366,7 +366,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
 
         model_output = ModelRunnerOutput(
             req_ids=list(self._req_ids2idx.keys()),
-            req_id_to_index=self._map_output_indices(),
+            req_id_to_index=self._get_unpadded_output_indices(),
             sampled_token_ids=output.sampled_token_ids.tolist(),
             spec_token_ids=None,
             logprobs=output.logprobs_tensors.tolists()
@@ -378,7 +378,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         )
         return model_output
 
-    def _map_output_indices(self) -> dict[str, int]:
+    def _get_unpadded_output_indices(self) -> dict[str, int]:
         """The inputs to the model are all padded to a constant batch size, and
         self.req_id2idx is the map of request id -> padded index.
         However, finished requests and padded requests are stripped from the
