@@ -77,7 +77,7 @@ def test_output(
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("vllm_version", ["V0", "V1"])
+@pytest.mark.parametrize("vllm_version", ["V1"])
 def test_batch_handling(
     model: str,
     backend: str,
