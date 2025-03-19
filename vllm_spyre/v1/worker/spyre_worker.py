@@ -320,7 +320,7 @@ class SpyreWorker(WorkerBaseV1):
             ul_start_time = time.time()
             torch_sendnn.update_lazyhandle()
             ul_stop_time = time.time()
-            logger.info("update_lazyhandle() done (duration: %.3fs",
+            logger.info("update_lazyhandle() done (duration: %.3fs)",
                         ul_stop_time - ul_start_time)
 
         # Second full forward pass
@@ -333,7 +333,7 @@ class SpyreWorker(WorkerBaseV1):
         scheduler_output.scheduled_new_reqs = []
         scheduler_output.scheduled_cached_reqs = cached_requests
 
-        logger.info("[Warmup 2/2: Decoding steps...")
+        logger.info("Warmup 2/2: Decoding steps...")
         for _ in range(num_decode_tokens - 1):
             self.execute_model(scheduler_output)
 
