@@ -109,17 +109,11 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         self._req_ids2idx: dict = {}
         # Lazy initialization: after load_model.
         self.model: nn.Module
-
-        # Requests states
-        self.requests: dict[str, CachedRequestState] = {}
-
-        max_num_blocks_per_req = cdiv(model_config.max_model_len,
-                                      cache_config.block_size)
-
+        
+        
         self.input_batch = InputBatch(
             max_num_reqs=scheduler_config.max_num_seqs,
             max_model_len=model_config.max_model_len,
-            max_num_blocks_per_req=max_num_blocks_per_req,
             device=self.device,
             pin_memory=self.pin_memory,
             vocab_size=model_config.get_vocab_size(),
@@ -181,6 +175,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         # We don't support continuous batching, so we know all previous requests
         # have finished decoding.
         self._req_ids2idx = {}
+        self.input_batch.clear()
         for idx, request_data in enumerate(new_requests):
             self._req_ids2idx[request_data.req_id] = idx
 
@@ -191,6 +186,29 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                 torch.tensor(prompt_tokens,
                              dtype=torch.long,
                              device=torch.device("cpu")))
+            
+            
+            # Add new requests to the cached states.
+            req_id = request_data.req_id
+            sampling_params = request_data.sampling_params
+            if sampling_params.sampling_type == SamplingType.RANDOM_SEED:
+                generator = torch.Generator(device=self.device)
+                generator.manual_seed(sampling_params.seed)
+            else:
+                generator = None
+
+            req_state = CachedRequestState(
+                req_id=req_id,
+                prompt_token_ids=request_data.prompt_token_ids,
+                prompt=request_data.prompt,
+                sampling_params=sampling_params,
+                generator=generator,
+                output_token_ids=[],
+            )
+            
+            self.input_batch.add_request(req_state)
+            
+        self.input_batch.refresh_sampling_metadata()
 
         actual_batch_size = len(input_token_list)
         self.model.indices = torch.cat([
@@ -281,7 +299,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
     def prepare_model_input(
             self, scheduler_output: SchedulerOutput) -> ModelInputForSpyre:
 
-        self._update_states(scheduler_output)
+        
 
         # NOTE: We assume that all sequences in the group are all prompts or
         # all decodes.
@@ -290,7 +308,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
 
         # Prepare input tensors.
         if is_prompt:
-
+            # self._update_states(scheduler_output)
             # Assert no running requests
             assert len(scheduler_output.scheduled_cached_reqs) == 0
 
@@ -302,6 +320,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                 for seq_id in scheduler_output.finished_req_ids:
                     if seq_id in self._req_ids2idx:
                         self.model.indices[self._req_ids2idx[seq_id]] = False
+                self.input_batch.refresh_sampling_metadata()
             (input_tokens, input_positions,
              input_masks) = self._prepare_decode(
                  scheduler_output.scheduled_cached_reqs)
@@ -313,94 +332,6 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                                   input_masks=input_masks,
                                   sampling_metadata=sampling_metadata,
                                   is_prompt=is_prompt)
-
-    def _update_states(self, scheduler_output: "SchedulerOutput") -> None:
-        """Update the cached states and the persistent batch with the scheduler
-        output.
-
-        The SamplingMetadata is updated and copied to the device if there is a
-        new/resumed request in the batch.
-        
-        """
-        # Remove finished requests from the cached states.
-        for req_id in scheduler_output.finished_req_ids:
-            self.requests.pop(req_id, None)
-        # Remove the finished requests from the persistent batch.
-        # NOTE(woosuk): There could be an edge case where finished_req_ids and
-        # scheduled_req_ids overlap. This happens when a request is aborted and
-        # then resubmitted with the same ID. In this case, we treat them as two
-        # distinct requests - clearing the cached states for the first request
-        # and handling the second as a new request.
-        removed_req_indices: list[int] = []
-        for req_id in scheduler_output.finished_req_ids:
-            req_index = self.input_batch.remove_request(req_id)
-            if req_index is not None:
-                removed_req_indices.append(req_index)
-
-        # Remove the unscheduled requests from the persistent batch.
-        # NOTE(woosuk): The unscheduled requests are either preempted requests
-        # or running requests that are not scheduled in this step. We remove
-        # them from the persistent batch but keep their cached states since
-        # they will be scheduled again sometime in the future.
-        scheduled_req_ids = scheduler_output.num_scheduled_tokens.keys()
-        cached_req_ids = self.input_batch.req_id_to_index.keys()
-        unscheduled_req_ids = cached_req_ids - scheduled_req_ids
-        # NOTE(woosuk): The persistent batch optimization assumes that
-        # consecutive batches contain mostly the same requests. If batches
-        # have low request overlap (e.g., alternating between two distinct
-        # sets of requests), this optimization becomes very inefficient.
-        for req_id in unscheduled_req_ids:
-            req_index = self.input_batch.remove_request(req_id)
-            assert req_index is not None
-            removed_req_indices.append(req_index)
-
-        req_ids_to_add: list[str] = []
-        # Add new requests to the cached states.
-        for new_req_data in scheduler_output.scheduled_new_reqs:
-            req_id = new_req_data.req_id
-            sampling_params = new_req_data.sampling_params
-            if sampling_params.sampling_type == SamplingType.RANDOM_SEED:
-                generator = torch.Generator(device=self.device)
-                generator.manual_seed(sampling_params.seed)
-            else:
-                generator = None
-
-            self.requests[req_id] = CachedRequestState(
-                req_id=req_id,
-                prompt_token_ids=new_req_data.prompt_token_ids,
-                prompt=new_req_data.prompt,
-                sampling_params=sampling_params,
-                generator=generator,
-                block_ids=new_req_data.block_ids,
-                num_computed_tokens=new_req_data.num_computed_tokens,
-                output_token_ids=[],
-            )
-
-            req_ids_to_add.append(req_id)
-
-        # Check if the batch has changed. If not, we can skip copying the
-        # sampling metadata from CPU to GPU.
-        batch_changed = len(removed_req_indices) > 0 or len(req_ids_to_add) > 0
-
-        # Add the new or resumed requests to the persistent batch.
-        # The smaller empty indices are filled first.
-        removed_req_indices = sorted(removed_req_indices, reverse=True)
-        for req_id in req_ids_to_add:
-            req_state = self.requests[req_id]
-            if removed_req_indices:
-                # Fill the empty index.
-                req_index = removed_req_indices.pop()
-            else:
-                # Append to the end.
-                req_index = None
-            self.input_batch.add_request(req_state, req_index)
-
-        # Condense the batched states if there are empty indices.
-        if removed_req_indices:
-            self.input_batch.condense(removed_req_indices)
-
-        if batch_changed:
-            self.input_batch.refresh_sampling_metadata()
 
     @SpyrePlatform.inference_mode()
     def execute_model(
@@ -446,7 +377,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
             prompt_logprobs_dict={
                 req_id: None
                 for req_id in self._req_ids2idx
-            }  # TODO: prompt logprobs too
+            }  # TODO(wallas?): prompt logprobs too
         )
         return model_output
 

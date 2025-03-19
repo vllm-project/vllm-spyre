@@ -10,7 +10,6 @@ import numpy as np
 import torch
 from vllm.sampling_params import SamplingParams, SamplingType
 from vllm.v1.sample.metadata import SamplingMetadata
-from vllm.v1.worker.block_table import BlockTable
 
 _SAMPLING_EPS = 1e-5
 
@@ -24,8 +23,6 @@ class CachedRequestState:
     sampling_params: SamplingParams
     generator: Optional[torch.Generator]
 
-    block_ids: list[int]
-    num_computed_tokens: int
     output_token_ids: list[int]
 
     @property
@@ -39,17 +36,13 @@ class InputBatch:
         self,
         max_num_reqs: int,
         max_model_len: int,
-        max_num_blocks_per_req: int,
         device: torch.device,
         pin_memory: bool,
         vocab_size: int,
     ):
-
-        # TODO: This implementation consider that device type are
         assert device.type == 'cpu'
         self.max_num_reqs = max_num_reqs
         self.max_model_len = max_model_len
-        self.max_num_blocks_per_req = max_num_blocks_per_req
         self.device = device
         self.pin_memory = pin_memory
         self.vocab_size = vocab_size
@@ -79,14 +72,6 @@ class InputBatch:
         )
         self.num_computed_tokens_cpu = \
             self.num_computed_tokens_cpu_tensor.numpy()
-
-        # Block table.
-        self.block_table = BlockTable(
-            max_num_reqs=max_num_reqs,
-            max_num_blocks_per_req=max_num_blocks_per_req,
-            pin_memory=pin_memory,
-            device=device,
-        )
 
         # Sampling-related.
         self.temperature = torch.empty((max_num_reqs, ),
@@ -202,9 +187,6 @@ class InputBatch:
         # Number of tokens without spec decode tokens.
         self.num_tokens_no_spec[req_index] = request.num_tokens
 
-        self.num_computed_tokens_cpu[req_index] = request.num_computed_tokens
-        self.block_table.add_row(request.block_ids, req_index)
-
         sampling_params = request.sampling_params
         if sampling_params.sampling_type == SamplingType.GREEDY:
             # Avoid later division by zero.
@@ -262,107 +244,9 @@ class InputBatch:
             self.allowed_token_ids_mask[req_index][
                 sampling_params.allowed_token_ids] = True
 
-    def remove_request(self, req_id: str) -> Optional[int]:
-        """This method must always be followed by a call to condense()."""
-
-        req_index = self.req_id_to_index.pop(req_id, None)
-        if req_index is None:
-            return None
-        self._req_ids[req_index] = None
-        self.req_output_token_ids[req_index] = None
-
-        self.greedy_reqs.discard(req_id)
-        self.random_reqs.discard(req_id)
-        self.top_p_reqs.discard(req_id)
-        self.top_k_reqs.discard(req_id)
-        self.min_p_reqs.discard(req_id)
-        self.min_tokens.pop(req_index, None)
-        self.frequency_penalties_reqs.discard(req_id)
-        self.presence_penalties_reqs.discard(req_id)
-        self.repetition_penalties_reqs.discard(req_id)
-        self.generators.pop(req_index, None)
-        self.num_logprobs.pop(req_id, None)
-        self.num_prompt_logprobs.pop(req_id, None)
-
-        self.logit_bias[req_index] = None
-        self.has_allowed_token_ids.discard(req_id)
-        if self.allowed_token_ids_mask is not None:
-            self.allowed_token_ids_mask[req_index].fill_(False)
-        return req_index
-
-    def condense(self, empty_req_indices: list[int]) -> None:
-        num_reqs = self.num_reqs
-        if num_reqs == 0:
-            # The batched states are empty.
-            self._req_ids.clear()
-            self.req_output_token_ids.clear()
-            return
-
-        # NOTE(woosuk): This function assumes that the empty_req_indices
-        # is sorted in descending order.
-        last_req_index = num_reqs + len(empty_req_indices) - 1
-        while empty_req_indices:
-            # Find the largest non-empty index.
-            while last_req_index in empty_req_indices:
-                last_req_index -= 1
-
-            # Find the smallest empty index.
-            empty_index = empty_req_indices.pop()
-            if empty_index >= last_req_index:
-                break
-
-            # Swap the states.
-            req_id = self._req_ids[last_req_index]
-            output_token_ids = self.req_output_token_ids[last_req_index]
-            assert req_id is not None
-            self._req_ids[empty_index] = req_id
-            self._req_ids[last_req_index] = None
-            self.req_output_token_ids[empty_index] = output_token_ids
-            self.req_output_token_ids[last_req_index] = None
-            self.req_id_to_index[req_id] = empty_index
-
-            num_tokens = self.num_tokens[last_req_index]
-            self.token_ids_cpu[empty_index, :num_tokens] = self.token_ids_cpu[
-                last_req_index, :num_tokens]
-            self.num_tokens[empty_index] = num_tokens
-            self.num_tokens_no_spec[empty_index] = self.num_tokens_no_spec[
-                last_req_index]
-            self.num_prompt_tokens[empty_index] = self.num_prompt_tokens[
-                last_req_index]
-            self.num_computed_tokens_cpu[
-                empty_index] = self.num_computed_tokens_cpu[last_req_index]
-            self.block_table.move_row(last_req_index, empty_index)
-            self.temperature_cpu[empty_index] = self.temperature_cpu[
-                last_req_index]
-            self.top_p_cpu[empty_index] = self.top_p_cpu[last_req_index]
-            self.top_k_cpu[empty_index] = self.top_k_cpu[last_req_index]
-            self.frequency_penalties_cpu[
-                empty_index] = self.frequency_penalties_cpu[last_req_index]
-            self.presence_penalties_cpu[
-                empty_index] = self.presence_penalties_cpu[last_req_index]
-            self.repetition_penalties_cpu[
-                empty_index] = self.repetition_penalties_cpu[last_req_index]
-            self.min_p_cpu[empty_index] = self.min_p_cpu[last_req_index]
-            generator = self.generators.pop(last_req_index, None)
-            if generator is not None:
-                self.generators[empty_index] = generator
-
-            min_token = self.min_tokens.pop(last_req_index, None)
-            if min_token is not None:
-                self.min_tokens[empty_index] = min_token
-
-            self.logit_bias[empty_index] = self.logit_bias[last_req_index]
-
-            if self.allowed_token_ids_mask is not None:
-                self.allowed_token_ids_mask[empty_index] = \
-                    self.allowed_token_ids_mask[last_req_index]
-
-            # Decrement last_req_index since it is now empty.
-            last_req_index -= 1
-
-        # Trim lists to the batch size.
-        del self._req_ids[self.num_reqs:]
-        del self.req_output_token_ids[self.num_reqs:]
+    def clear(self):
+        self.req_id_to_index = {}
+        
 
     def refresh_sampling_metadata(self):
         self.sampling_metadata = self._make_sampling_metadata()
