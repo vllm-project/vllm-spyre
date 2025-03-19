@@ -438,7 +438,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         # this is a causal mask for generation
         mask = (mask.unsqueeze(-1) == mask.unsqueeze(-2)).tril()
         mask = torch.where(mask.logical_not(), -torch.inf, 0.0)
-        mask = mask.to(self.model.dtype)
+        mask = mask.to(self.model.model.dtype)
         position_ids = torch.stack(position_ids_list)
 
         return input_ids, position_ids, mask
