@@ -23,7 +23,7 @@ RUN git clone --depth 1 https://github.com/vllm-project/vllm.git \
     && python -m pip install --upgrade pip \
     && pip3 install torch=="2.5.1+cpu" --index-url https://download.pytorch.org/whl/cpu \
     && python use_existing_torch.py \
-    && pip install -r requirements-build.txt \
+    && pip install -r requirements/build.txt \
     && SETUPTOOLS_SCM_PRETEND_VERSION=0.8.0 VLLM_TARGET_DEVICE=empty pip install --verbose . --no-build-isolation
 
 # Install vllm Spyre plugin ##################################################################
