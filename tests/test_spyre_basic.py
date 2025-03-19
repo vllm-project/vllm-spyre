@@ -89,18 +89,18 @@ def test_batch_handling(
     # Test with batch size 4
     warmup_shape = (64, 20, 4)
 
-    # Have the model count down to zero and stop
+    # Have the model count down to one and stop
     vllm_sampling_params = SamplingParams(max_tokens=20,
                                           temperature=0,
-                                          stop="0",
+                                          stop="1",
                                           logprobs=0)
     # Importantly, these prompts are ordered so that they don't finish in the
     # order given
     prompts = [
-        "7 6 5 4 3",
-        "10 9 8 7 6",
-        "8 7 6 5 4",
-        "9 8 7 6 5",
+        "7 6 5 4",
+        "10 9 8 7",
+        "8 7 6 5",
+        "9 8 7 6",
     ]
 
     # Ensure that both:
@@ -117,7 +117,7 @@ def test_batch_handling(
         backend=backend,
         vllm_version=vllm_version)
 
-    assert vllm_results[0]["text"] == " 2 1 "
-    assert vllm_results[1]["text"] == " 5 4 3 2 1 "
-    assert vllm_results[2]["text"] == " 3 2 1 "
-    assert vllm_results[3]["text"] == " 4 3 2 1 "
+    assert vllm_results[0]["text"] == " 3 2 "
+    assert vllm_results[1]["text"] == " 6 5 4 3 2 "
+    assert vllm_results[2]["text"] == " 4 3 2 "
+    assert vllm_results[3]["text"] == " 5 4 3 2 "
