@@ -77,7 +77,7 @@ def test_output(
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("vllm_version", ["V1"])
+@pytest.mark.parametrize("vllm_version", ["V0", "V1"])
 def test_batch_handling(
     model: str,
     backend: str,
@@ -97,10 +97,10 @@ def test_batch_handling(
     # Importantly, these prompts are ordered so that they don't finish in the
     # order given
     prompts = [
-        "6 5 4 3",
-        "9 8 7 6",
-        "7 6 5 4",
-        "8 7 6 5",
+        "7 6 5 4 3",
+        "10 9 8 7 6",
+        "8 7 6 5 4",
+        "9 8 7 6 5",
     ]
 
     # Ensure that both:
