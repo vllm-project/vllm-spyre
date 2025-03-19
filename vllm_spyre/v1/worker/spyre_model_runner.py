@@ -366,7 +366,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
 
         model_output = ModelRunnerOutput(
             req_ids=list(self._req_ids2idx.keys()),
-            req_id_to_index=self._req_ids2idx,
+            req_id_to_index=self._get_unpadded_output_indices(),
             sampled_token_ids=output.sampled_token_ids.tolist(),
             spec_token_ids=None,
             logprobs=output.logprobs_tensors.tolists()
@@ -377,6 +377,28 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
             }  # TODO: prompt logprobs too
         )
         return model_output
+
+    def _get_unpadded_output_indices(self) -> dict[str, int]:
+        """The inputs to the model are all padded to a constant batch size, and
+        self.req_id2idx is the map of request id -> padded index.
+        However, finished requests and padded requests are stripped from the
+        output, so the mapping of request id -> unpadded output index needs to
+        be created to be returned in `ModelRunnerOutput`.
+
+        For example if:
+        - self.model.indices = [F, T, T, F]
+        - self.req_ids2ix = {"A": 0, "B": 1, "C": 2, "D": 3}
+        This will output: {"B": 0, "C": 1}
+        """
+        remapped_indices = {}
+        for req_id, idx in self._req_ids2idx.items():
+            if self.model.indices[idx]:
+                # Sum up all the requests to the left of this one that are still
+                # processing. That should be this requests' index in the output
+                # tensor.
+                remapped_indices[req_id] = self.model.indices[0:idx].sum(
+                ).item()
+        return remapped_indices
 
     def _prepare_pad_input_ids(
         self,

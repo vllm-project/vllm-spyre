@@ -106,6 +106,13 @@ class SpyreScheduler(Scheduler):
                         # can work with the batch we have
                         break
 
+            logger.debug(
+                "Scheduling a new batch of %d requests, holding back %d "
+                "requests", len(self.waiting), len(self.holdback_queue))
+        else:
+            logger.debug("Scheduling a running batch of %d requests",
+                         len(self.running))
+
         outputs = super().schedule()
         return outputs
 

@@ -102,7 +102,15 @@ class SpyrePlatform(Platform):
             #       the scheduler always thinks there's a block available
             model_config.max_model_len = max_seq_len
             cache_config.block_size = model_config.max_model_len
-            cache_config.num_gpu_blocks_override = scheduler_config.max_num_seqs
+
+            if envs.VLLM_USE_V1:
+                # The V1 scheduler actually needs 2 blocks for each sequence...
+                cache_config.num_gpu_blocks_override = \
+                    scheduler_config.max_num_seqs * 2
+            else:
+                cache_config.num_gpu_blocks_override = \
+                    scheduler_config.max_num_seqs
+
             logger.info(
                 "Overriding configurations based on warmup shapes. "
                 "max_model_len=%d, max_num_seqs=%d, block_size=%d, "
