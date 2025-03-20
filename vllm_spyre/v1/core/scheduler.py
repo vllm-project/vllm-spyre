@@ -37,19 +37,22 @@ class SpyreScheduler(Scheduler):
         # scheduler sees have at least one common warmup shape.
         self.holdback_queue: Deque[Request] = deque()
 
-        self.rejected_requests_this_iteration: set[str] = set()
+        self.rejected_requests: set[str] = set()
 
     def add_request(self, request: Request) -> None:
         """This override rejects requests that fit no warmup shape"""
         if len(
-                self._get_matching_warmup_shapes(
-                    request, list(self.spyre_warmup_shapes))) == 0:
+                self._get_matching_warmup_shapes(request=request,
+                                                 warmup_shapes=list(
+                                                     self.spyre_warmup_shapes),
+                                                 current_batch_size=0)) == 0:
             logger.warning(
                 "No applicable warmup shape exists for "
                 "combination of prompt length (%d tokens) "
                 "and maximum number of output tokens to be "
-                "generated (%d tokens)", request.num_prompt_tokens,
-                request.sampling_params.max_tokens)
+                "generated (%d tokens) from request id %s",
+                request.num_prompt_tokens, request.sampling_params.max_tokens,
+                request.request_id)
             # TODO: There are open PRs that should enable raising an error for
             # a single request like this, which will gracefully return an error
             # for the request, instead of shutting down the engine.
@@ -58,7 +61,7 @@ class SpyreScheduler(Scheduler):
 
             # For now, we'll insert a dummy request and manually reject it when
             # we construct the outputs later
-            self.rejected_requests_this_iteration.add(request.request_id)
+            self.rejected_requests.add(request.request_id)
             request.prompt_token_ids = [0]
             request.num_prompt_tokens = 1
             request.sampling_params = SamplingParams(max_tokens=1)
@@ -102,7 +105,9 @@ class SpyreScheduler(Scheduler):
                 # prune the possible shapes to only those that fit this request
                 # and the growing batch size
                 available_warmup_shapes = self._get_matching_warmup_shapes(
-                    request=request, warmup_shapes=available_warmup_shapes)
+                    request=request,
+                    warmup_shapes=available_warmup_shapes,
+                    current_batch_size=len(self.waiting))
 
                 if len(available_warmup_shapes) > 0:
                     # There is still at least one valid shape, so add to the
@@ -128,8 +133,8 @@ class SpyreScheduler(Scheduler):
         return len(self.waiting) + len(self.running) + len(self.holdback_queue)
 
     def _get_matching_warmup_shapes(
-            self, request: Request,
-            warmup_shapes: list[dict[str, int]]) -> list[dict[str, int]]:
+            self, request: Request, warmup_shapes: list[dict[str, int]],
+            current_batch_size: int) -> list[dict[str, int]]:
         """Return the subset of shapes that match this request"""
         max_tokens = 0
         if request.sampling_params is not None and\
@@ -140,7 +145,7 @@ class SpyreScheduler(Scheduler):
             shape for shape in warmup_shapes
             if request.num_prompt_tokens <= shape['prompt_length']
             and max_tokens <= shape['new_tokens']
-            and len(self.waiting) < shape['batch_size']
+            and current_batch_size < shape['batch_size']
         ]
 
     def _handle_rejects(self) -> list[EngineCoreOutput]:
@@ -148,17 +153,29 @@ class SpyreScheduler(Scheduler):
         schedule. This removes the rejected requests from the scheduler, and 
         returns empty outputs for them with finish reason `abort`.
         """
-        if len(self.rejected_requests_this_iteration) == 0:
+        if len(self.rejected_requests) == 0:
             return []
 
+        # Remove rejected requests from all queues
+        reject_outputs = self._reject_from_queue(self.running)
+        reject_outputs.extend(self._reject_from_queue(self.waiting))
+        reject_outputs.extend(self._reject_from_queue(self.holdback_queue))
+        self.rejected_requests.clear()
+
+        return reject_outputs
+
+    def _reject_from_queue(self,
+                           queue: Deque[Request]) -> list[EngineCoreOutput]:
+        """Remove rejected requests from a given queue and return a list of 
+        engine core outputs to return for them"""
         reject_outputs: list[EngineCoreOutput] = []
         rejected_requests: list[Request] = [
-            request for request in self.running
-            if request.request_id in self.rejected_requests_this_iteration
+            request for request in queue
+            if request.request_id in self.rejected_requests
         ]
 
         for request in rejected_requests:
-            self.running.remove(request)
+            queue.remove(request)
             reject_outputs.append(
                 EngineCoreOutput(request.request_id,
                                  new_token_ids=[],
@@ -167,5 +184,6 @@ class SpyreScheduler(Scheduler):
                                  "shape"))
             request.status = RequestStatus.FINISHED_ABORTED
             self._free_request(request)
-        self.rejected_requests_this_iteration.clear()
+            self.rejected_requests.remove(request.request_id)
+
         return reject_outputs

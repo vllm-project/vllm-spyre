@@ -305,6 +305,11 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         # TODO: Build the rest of the SamplingMetadata correctly
         dummy_tensors = lambda v: torch.full(
             (num_reqs, ), v, device=self.device)
+
+        extra_kwargs: dict = {}
+        if "bad_words_token_ids" in SamplingMetadata.__dataclass_fields__:
+            extra_kwargs["bad_words_token_ids"] = {}
+
         dummy_metadata = SamplingMetadata(
             temperature=dummy_tensors(0.0),
             all_greedy=False,
@@ -323,7 +328,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
             min_tokens={},
             logit_bias=[None for _ in range(num_reqs)],
             allowed_token_ids_mask=None,
-            bad_words_token_ids={})
+            **extra_kwargs)
 
         return ModelInputForSpyre(input_tokens=input_tokens,
                                   input_positions=input_positions,
@@ -499,11 +504,17 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         """
         # We do at least use the real size from the cache config.
         block_size = self.vllm_config.cache_config.block_size
-        return {
-            "foo":
-            FullAttentionSpec(block_size=block_size,
-                              num_kv_heads=1,
-                              head_size=1,
-                              dtype=torch.float16,
-                              use_mla=False)
-        }
+
+        # vllm 0.7.3 backwards compatibility
+        try:
+            attn_spec = FullAttentionSpec(block_size=block_size,
+                                          num_kv_heads=1,
+                                          head_size=1,
+                                          dtype=torch.float16)
+        except TypeError:
+            attn_spec = FullAttentionSpec(block_size=block_size,
+                                          num_kv_heads=1,
+                                          head_size=1,
+                                          dtype=torch.float16,
+                                          use_mla=False)
+        return {"foo": attn_spec}
