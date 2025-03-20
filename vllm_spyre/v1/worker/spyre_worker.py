@@ -3,7 +3,7 @@ import json
 import os
 import platform
 import time
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 import torch
 import torch.distributed as dist
@@ -11,11 +11,11 @@ from huggingface_hub import hf_hub_download
 from vllm.config import VllmConfig
 from vllm.distributed import (ensure_model_parallel_initialized,
                               init_distributed_environment)
+from vllm.logger import init_logger
 from vllm.model_executor import set_random_seed
 from vllm.platforms import current_platform
 from vllm.v1.core.scheduler import SchedulerOutput
-from vllm.v1.kv_cache_interface import (FullAttentionSpec, KVCacheConfig,
-                                        KVCacheSpec)
+from vllm.v1.kv_cache_interface import KVCacheConfig, KVCacheSpec
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.worker.worker_base import WorkerBase as WorkerBaseV1
 from vllm.worker.worker_base import WorkerBase
@@ -25,20 +25,23 @@ from vllm_spyre.model_executor.model_loader import spyre_setup
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import SpyreModelRunner
 
+logger = init_logger(__name__)
+
 
 class SpyreWorker(WorkerBaseV1):
     """A worker class that executes the model on a group of Spyre cores.
     """
 
     def get_kv_cache_spec(self) -> KVCacheSpec:
-        """Get specifications for KV cache implementation."""
-        return {
-            "foo":
-            FullAttentionSpec(block_size=10,
-                              num_kv_heads=1,
-                              head_size=1,
-                              dtype=torch.float16)
-        }
+        """Get specifications for KV cache implementation.
+        
+        These specs are used to:
+        - build the kv_cache_configs that are then passed to 
+            initialize_from_config() on this instance
+        - determine the number of available kv_cache_blocks, see
+            SpyreWorker.determine_available_memory
+        """
+        return self.model_runner.get_kv_cache_spec()
 
     def compile_or_warm_up_model(self) -> None:
         """Prepare model for execution through compilation/warmup."""
@@ -47,9 +50,9 @@ class SpyreWorker(WorkerBaseV1):
                                                  s["new_tokens"])
                                                 for s in spyre_warmup_shapes])
 
-        print(f"[SpyreWorker] Start warming up "
-              f"{len(wup_new_tokens)} "
-              f"different prompt/decode/batchsize-shape combinations.")
+        logger.info(
+            "Start warming up %d different "
+            "prompt/decode/batchsize-shape combinations.", len(wup_new_tokens))
         all_warmup_start_t = time.time()
         for i, (prompt_len, num_decode_tokens, batch_size) in enumerate([
             (s["prompt_length"], s["new_tokens"], s["batch_size"])
@@ -62,20 +65,20 @@ class SpyreWorker(WorkerBaseV1):
                     "VLLM_SPYRE_WARMUP_NEW_TOKENS must be "
                     "at least 2 (spyre requirement).")
             # warmup individual combination
-            print(f"[SpyreWorker] Warmup {i+1}/"
-                  f"{len(wup_new_tokens)} "
-                  f"prompt/decode/batchsize-shape combinations...")
-            print(f"[SpyreWorker] Warming up for prompt length {prompt_len}, "
-                  f"decoding {num_decode_tokens} tokens with batch "
-                  f"size {batch_size}")
+            logger.info(
+                "Warmup %d/%d prompt/decode/batchsize-shape "
+                "combinations...", i + 1, len(wup_new_tokens))
+            logger.info(
+                "Warming up for prompt length %d, decoding %d tokens with "
+                "batch size %d", prompt_len, num_decode_tokens, batch_size)
             self._warmup_spyre_fixed_size(prompt_len, num_decode_tokens,
                                           self.restricted_tokens, batch_size)
         all_warmup_end_t = time.time()
         all_warmup_total_t = all_warmup_end_t - all_warmup_start_t
-        print(f"[SpyreWorker] All warmups for "
-              f"{len(wup_new_tokens)} different "
-              f"prompt/decode/batchsize-shape combinations finished. "
-              f"Total warmup time {all_warmup_total_t}s.")
+        logger.info(
+            "All warmups for %d different prompt/decode/batchsize-shape "
+            "combinations finished. Total warmup time %.3fs.",
+            len(wup_new_tokens), all_warmup_total_t)
 
     def check_health(self) -> None:
         """Basic health check (override for device-specific checks)."""
@@ -83,11 +86,33 @@ class SpyreWorker(WorkerBaseV1):
         return
 
     def determine_available_memory(self) -> int:
-        # TODO: figure out what to do based on determine_num_available_blocks
-        return 10 * 1024 * 1024
+        """Return available device memory in bytes.
+        
+        This is used in conjunction with the result from `get_kv_cache_spec`
+        to determine the number of KV cache blocks that can fit on the device.
+
+        The number of available blocks is calculated as:
+            available_memory / page_size / # of layers
+        where the page size and number of layers come from the kv cache spec.
+
+        The number of device blocks (called "gpu blocks" in most places) can
+        also be overridden by `--num-gpu-blocks-override`, which is set under
+        `vllm_config.cache_config.num_gpu_blocks_override`.
+        """
+        # Currently we override vllm_config.cache_config.num_gpu_blocks_override
+        # in platform.py, so this value is only used by vllm to check that the
+        # number of gpu blocks will fit in available memory.
+        # Since we also return dummy values for the kv cache spec, this check is
+        # meaningless and we can just return a large value to ensure vllm does
+        # not raise a validation error.
+        # TODO: Return the real available device memory when we implement real
+        # kv-caching.
+        return 1 << 64
 
     def initialize_from_config(self,
                                kv_cache_configs: List[KVCacheConfig]) -> None:
+        """Construct the KV cache from the provided configs.
+        Currently, we do not support paged attention or kv caching"""
         pass
 
     def __init__(
@@ -114,11 +139,7 @@ class SpyreWorker(WorkerBaseV1):
         if self.model_config.task == "embed":
             raise NotImplementedError
         else:
-            self.model_runner = SpyreModelRunner(self.model_config,
-                                                 self.parallel_config,
-                                                 self.scheduler_config,
-                                                 self.device_config,
-                                                 vllm_config.cache_config,
+            self.model_runner = SpyreModelRunner(self.vllm_config,
                                                  self.is_driver_worker)
         self._env_initialized = False
 
@@ -193,7 +214,7 @@ class SpyreWorker(WorkerBaseV1):
 
         self.restricted_tokens = restricted_tokens
 
-        print("[SpyreWorker] load model...")
+        logger.info("load model...")
         # TODO: check additionally if the Spyre card has enough memory
         # for all requested model warmups
         # printing env variables for debugging purposes
@@ -208,7 +229,7 @@ class SpyreWorker(WorkerBaseV1):
 
         load_model_end_t = time.time()
         load_model_total_t = load_model_end_t - load_model_start_t
-        print(f"\tload model took {load_model_total_t}s")
+        logger.info("load model took %.3fs", load_model_total_t)
 
     def _warmup_spyre_fixed_size(self, prompt_len, num_decode_tokens,
                                  special_token_ids, batch_size):
@@ -321,30 +342,6 @@ class SpyreWorker(WorkerBaseV1):
                 use_cache=True,
                 only_last_token=True,
                 **extra_kwargs)
-
-    def determine_num_available_blocks(self) -> Tuple[int, int]:
-        """Determine the number of available KV blocks.
-
-        Swapping is not yet supported, so always return num_cpu_blocks=0.
-
-        We configure num_gpu_blocks to be equal to max_num_seqs.
-        """
-        # Set the number of GPU blocks to be the same as the maximum number of
-        # sequences that can be processed in a single batch. This is equivalent
-        # to schedule without PagedAttention.
-        num_gpu_blocks = self.scheduler_config.max_num_seqs
-
-        # Swap not yet supported with Spyre backend.
-        num_cpu_blocks = 0
-
-        return num_gpu_blocks, num_cpu_blocks
-
-    def get_cache_block_size_bytes(self) -> int:
-        """Determine the size in bytes of a cache block.
-
-        This is required for speculative decoding; it is not yet implemented.
-        """
-        raise NotImplementedError
 
     @property
     def do_metadata_broadcast(self) -> bool:
