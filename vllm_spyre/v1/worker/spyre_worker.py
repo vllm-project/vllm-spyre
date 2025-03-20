@@ -250,13 +250,21 @@ class SpyreWorker(WorkerBaseV1):
         # Convert to tensor for sampling
         valid_token_ids_tensor = torch.tensor(valid_token_ids,
                                               dtype=torch.long,
-                                              device="cpu")
+                                              device=torch.device("cpu"))
 
         # Sample from the valid token ids
         warmup_tokens_tensor = valid_token_ids_tensor[torch.randint(
             0, len(valid_token_ids_tensor), (batch_size, prompt_len))]
 
-        # Create requests to be used for prefill steps
+        extra_kwargs = {}
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND not in [
+                "sendnn", "sendnn_decoder"
+        ]:
+            # Bug in 2.3.1 fixed in 2.4.1 for SDPA flash cpu
+            # impl when padding too much
+            extra_kwargs["attn_algorithm"] = "math"
+
+        # Set up dummy requests for prefill steps
         dummy_requests = [
             NewRequestData(
                 req_id="warmup",
@@ -272,7 +280,7 @@ class SpyreWorker(WorkerBaseV1):
             ) for i in range(batch_size)
         ]
 
-        # Set up dummy cached_requests to be used for decode steps
+        # Set up dummy cached_requests for decode steps
         cached_requests = [
             CachedRequestData(
                 req_id=req.req_id,
@@ -286,8 +294,7 @@ class SpyreWorker(WorkerBaseV1):
             ) for req in dummy_requests
         ]
 
-        # To be used for execute_model, start with scheduled_new_reqs
-        # for prefill
+        # Set up scheduler_output for execute_model
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=dummy_requests,
             scheduled_cached_reqs=[],
@@ -303,18 +310,10 @@ class SpyreWorker(WorkerBaseV1):
         )
 
         # First full forward pass
-        logger.info("Warmup 1/2: Prefill...")
-        self.execute_model(scheduler_output)  # Prefill step
+        logger.info("Warmup forward pass 1/2...")
+        self._warmup_model_forward_pass(scheduler_output, dummy_requests,
+                                        cached_requests, num_decode_tokens)
 
-        # Switch to cached requests to trigger decoding steps
-        scheduler_output.scheduled_new_reqs = []
-        scheduler_output.scheduled_cached_reqs = cached_requests
-
-        logger.info("Warmup 1/2: Decoding...")
-        for _ in range(num_decode_tokens - 1):
-            self.execute_model(scheduler_output)
-
-        # update_lazyhandle
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
             from torch_sendnn import torch_sendnn
             ul_start_time = time.time()
@@ -324,18 +323,9 @@ class SpyreWorker(WorkerBaseV1):
                         ul_stop_time - ul_start_time)
 
         # Second full forward pass
-        logger.info("Warmup 2/2: Prefill step...")
-        scheduler_output.scheduled_new_reqs = dummy_requests
-        scheduler_output.scheduled_cached_reqs = []
-        self.execute_model(scheduler_output)
-
-        # Switch to cached requests to trigger decoding steps
-        scheduler_output.scheduled_new_reqs = []
-        scheduler_output.scheduled_cached_reqs = cached_requests
-
-        logger.info("Warmup 2/2: Decoding steps...")
-        for _ in range(num_decode_tokens - 1):
-            self.execute_model(scheduler_output)
+        logger.info("Warmup forward pass 2/2...")
+        self._warmup_model_forward_pass(scheduler_output, dummy_requests,
+                                        cached_requests, num_decode_tokens)
 
         warmup_end_t = time.time()
         warmup_total_t = warmup_end_t - warmup_start_t
@@ -343,6 +333,24 @@ class SpyreWorker(WorkerBaseV1):
         logger.info(
             "Warmup took %.3fs (for prompt length %d and max output tokens %d)",
             warmup_total_t, prompt_len, num_decode_tokens)
+
+    def _warmup_model_forward_pass(
+        self,
+        scheduler_output: SchedulerOutput,
+        requests: List[NewRequestData],
+        cached_requests: List[CachedRequestData],
+        num_decode_tokens,
+    ):
+        """Handle a complete forward pass"""
+        scheduler_output.scheduled_new_reqs = requests
+        scheduler_output.scheduled_cached_reqs = []
+        self.execute_model(scheduler_output)  # Prefill
+
+        # Switch to cached requests to trigger decoding steps
+        scheduler_output.scheduled_new_reqs = []
+        scheduler_output.scheduled_cached_reqs = cached_requests
+        for _ in range(num_decode_tokens - 1):
+            self.execute_model(scheduler_output)
 
     @property
     def do_metadata_broadcast(self) -> bool:
