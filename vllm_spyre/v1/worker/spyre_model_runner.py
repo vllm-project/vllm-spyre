@@ -306,6 +306,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         dummy_tensors = lambda v: torch.full(
             (num_reqs, ), v, device=self.device)
 
+        # vllm 0.7.3 backwards compatibility
         extra_kwargs: dict = {}
         if "bad_words_token_ids" in SamplingMetadata.__dataclass_fields__:
             extra_kwargs["bad_words_token_ids"] = {}
