@@ -61,7 +61,9 @@ class SpyreCausalLM(nn.Module):
         self.indices = None
 
         # FMS Wrapper Model
-        self.model = FmsModelWrapper(
+        fms_wrapper = FmsModelWrapper if envs_spyre.VLLM_SPYRE_USE_CB \
+            else FmsModelPseudoWrapper
+        self.model = fms_wrapper(
             model_config,
             parallel_config,
             max_prompt_length,
@@ -81,6 +83,8 @@ class SpyreCausalLM(nn.Module):
 
         if is_prompt:
             self.tkv = 0
+            if envs_spyre.VLLM_SPYRE_USE_CB:
+                self.model.past_key_value_states = None
 
         extra_kwargs = {}
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn_decoder":
@@ -168,13 +172,6 @@ class SpyreCausalLM(nn.Module):
                 print('inserted sequence token id: ',
                       torch.argmax(logits[0, :]))
 
-        # ToDo: what happens with that?
-        # # mark dynamic
-        # if self.past_key_value_states is not None:
-        #     for layer in self.past_key_value_states:
-        #         for tensor in layer:
-        #             torch._dynamo.mark_dynamic(tensor, 2)
-
         # removing finished or padded sequences
         logits = logits[self.indices]
 
@@ -211,7 +208,7 @@ def get_spyre_model(
     return model
 
 
-class FmsModelWrapper(nn.Module):
+class FmsModelBaseWrapper(nn.Module):
 
     def __init__(
         self,
@@ -235,6 +232,120 @@ class FmsModelWrapper(nn.Module):
                           max_decode_length=max_decode_length,
                           distributed_strategy="tp"
                           if parallel_config.world_size > 1 else None)
+
+    def load_weights(
+        self,
+        model_config: ModelConfig,
+        max_prompt_length: int,
+        max_decode_length: int,
+        distributed_strategy: Optional[str],
+        **kwargs,
+    ) -> None:
+
+        if self.dtype is not model_config.dtype:
+            logger.info(
+                "Ignoring user-provided dtype=%s and using dtype=%s instead.",
+                model_config.dtype, self.dtype)
+
+        if model_config.quantization == "gptq":
+
+            # note, we have to find a better way to package this
+            # shouldn't it be part of FMS?
+            sys.path.append("/home/senuser/aiu-fms")
+
+            if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
+                from aiu_as_addon import aiu_adapter, aiu_linear  # noqa: F401
+                linear_type = "gptq_aiu"
+                print("Loaded `aiu_as_addon` functionalities")
+            else:
+                from cpu_addon import cpu_linear  # noqa: F401
+                linear_type = "gptq_cpu"
+                print("Loaded `cpu_addon` functionalities")
+
+            quant_cfg = model_config._parse_quant_hf_config()
+
+            linear_config = {
+                "linear_type": linear_type,
+                "group_size": quant_cfg['group_size'],
+                "desc_act": quant_cfg['desc_act'],
+            }
+            data_type = None
+            model_source = "hf_gptq_aiu"
+        else:
+            linear_config = {"linear_type": "torch_linear"}
+            data_type = self.dtype
+            model_source = "hf"
+
+        is_local = os.path.isdir(model_config.model)
+        model_path = model_config.model
+        # Get location of model from HF cache.
+        if not is_local:
+            model_path = download_weights_from_hf(
+                model_name_or_path=model_path,
+                cache_dir=None,
+                allow_patterns=["*.safetensors", "*.bin", "*.pt"],
+                revision=model_config.revision)
+
+        # we can use fused weights unless running on Spyre
+        fused_weights = envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn_decoder"
+
+        self.model = get_model(architecture="hf_configured",
+                               variant=model_config.model,
+                               model_path=model_path,
+                               source=model_source,
+                               data_type=data_type,
+                               distributed_strategy=distributed_strategy,
+                               group=dist.group.WORLD,
+                               fused_weights=fused_weights,
+                               linear_config=linear_config)
+
+        compile_mode = "default"
+
+        self.model.eval()
+        torch.set_grad_enabled(False)
+
+        _target_cache_size = max(int(max_decode_length * 2),
+                                 int(max_prompt_length * 2.5))
+        if hasattr(torch._dynamo.config, "accumulated_cache_size_limit") and \
+            _target_cache_size > torch._dynamo.config.\
+            accumulated_cache_size_limit:
+            _prev = torch._dynamo.config.accumulated_cache_size_limit
+            torch._dynamo.config.accumulated_cache_size_limit = \
+                _target_cache_size
+            print("NOTICE: Adjusting "
+                  "torch._dynamo.config.accumulated_cache_size_limit"
+                  f" from {_prev} to "
+                  f"{torch._dynamo.config.accumulated_cache_size_limit} "
+                  f"to accommodate prompt size of {max_prompt_length} "
+                  f"and decode tokens of {max_decode_length}")
+
+        if _target_cache_size > torch._dynamo.config.cache_size_limit:
+            _prev = torch._dynamo.config.cache_size_limit
+            torch._dynamo.config.cache_size_limit = _target_cache_size
+            print(
+                "NOTICE: Adjusting torch._dynamo.config.cache_size_limit from"
+                f" {_prev} to {torch._dynamo.config.cache_size_limit} to "
+                f"accommodate prompt size of {max_prompt_length} and "
+                f"decode tokens of {max_decode_length}")
+
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in BACKEND_LIST:
+            self.model = torch.compile(
+                self.model,
+                mode=compile_mode,
+                backend=envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND)
+
+
+class FmsModelWrapper(FmsModelBaseWrapper):
+
+    def __init__(
+        self,
+        model_config: ModelConfig,
+        parallel_config: ParallelConfig,
+        max_prompt_length: int,
+        max_decode_length: int,
+    ) -> None:
+        super().__init__(model_config, parallel_config, max_prompt_length,
+                         max_decode_length)
 
         # physical KV cache (fms wrapper/ AIU Spyre)
         # lives in SpyreCausalLM only for convenient model access
@@ -343,103 +454,54 @@ class FmsModelWrapper(nn.Module):
         self.sample_mask = torch.nn.functional.pad(
             self.sample_mask[0, -1, :].unsqueeze(0), (0, 1)).unsqueeze(0)
 
-    def load_weights(
+
+class FmsModelPseudoWrapper(FmsModelBaseWrapper):
+
+    def __init__(
         self,
         model_config: ModelConfig,
+        parallel_config: ParallelConfig,
         max_prompt_length: int,
         max_decode_length: int,
-        distributed_strategy: Optional[str],
-        **kwargs,
     ) -> None:
+        super().__init__(model_config, parallel_config, max_prompt_length,
+                         max_decode_length)
 
-        if self.dtype is not model_config.dtype:
-            logger.info(
-                "Ignoring user-provided dtype=%s and using dtype=%s instead.",
-                model_config.dtype, self.dtype)
+        # dynamic KV cache
+        self.past_key_value_states = None
 
-        if model_config.quantization == "gptq":
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        position_ids: torch.Tensor,
+        mask: torch.Tensor,
+        use_cache: bool,
+        only_last_token: bool,
+        tkv: int,
+        active_pages: list[int],
+        **extra_kwargs,
+    ) -> torch.Tensor:
 
-            # note, we have to find a better way to package this
-            # shouldn't it be part of FMS?
-            sys.path.append("/home/senuser/aiu-fms")
+        if tkv == 0:  # prefil
+            tkv = input_ids.shape[1]
 
-            if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
-                from aiu_as_addon import aiu_adapter, aiu_linear  # noqa: F401
-                linear_type = "gptq_aiu"
-                print("Loaded `aiu_as_addon` functionalities")
-            else:
-                from cpu_addon import cpu_linear  # noqa: F401
-                linear_type = "gptq_cpu"
-                print("Loaded `cpu_addon` functionalities")
+        output = self.model(
+            input_ids,
+            position_ids=position_ids,
+            mask=mask,
+            past_key_value_states=self.past_key_value_states,
+            use_cache=use_cache,
+            only_last_token=only_last_token,
+            **extra_kwargs,
+        )
 
-            quant_cfg = model_config._parse_quant_hf_config()
+        logits, past_key_value_states = output
+        self.past_key_value_states = past_key_value_states
 
-            linear_config = {
-                "linear_type": linear_type,
-                "group_size": quant_cfg['group_size'],
-                "desc_act": quant_cfg['desc_act'],
-            }
-            data_type = None
-            model_source = "hf_gptq_aiu"
-        else:
-            linear_config = {"linear_type": "torch_linear"}
-            data_type = self.dtype
-            model_source = "hf"
+        # mark dynamic
+        if self.past_key_value_states is not None:
+            for layer in self.past_key_value_states:
+                for tensor in layer:
+                    torch._dynamo.mark_dynamic(tensor, 2)
 
-        is_local = os.path.isdir(model_config.model)
-        model_path = model_config.model
-        # Get location of model from HF cache.
-        if not is_local:
-            model_path = download_weights_from_hf(
-                model_name_or_path=model_path,
-                cache_dir=None,
-                allow_patterns=["*.safetensors", "*.bin", "*.pt"],
-                revision=model_config.revision)
-
-        # we can use fused weights unless running on Spyre
-        fused_weights = envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn_decoder"
-
-        self.model = get_model(architecture="hf_configured",
-                               variant=model_config.model,
-                               model_path=model_path,
-                               source=model_source,
-                               data_type=data_type,
-                               distributed_strategy=distributed_strategy,
-                               group=dist.group.WORLD,
-                               fused_weights=fused_weights,
-                               linear_config=linear_config)
-
-        compile_mode = "default"
-
-        self.model.eval()
-        torch.set_grad_enabled(False)
-
-        _target_cache_size = max(int(max_decode_length * 2),
-                                 int(max_prompt_length * 2.5))
-        if hasattr(torch._dynamo.config, "accumulated_cache_size_limit") and \
-            _target_cache_size > torch._dynamo.config.\
-            accumulated_cache_size_limit:
-            _prev = torch._dynamo.config.accumulated_cache_size_limit
-            torch._dynamo.config.accumulated_cache_size_limit = \
-                _target_cache_size
-            print("NOTICE: Adjusting "
-                  "torch._dynamo.config.accumulated_cache_size_limit"
-                  f" from {_prev} to "
-                  f"{torch._dynamo.config.accumulated_cache_size_limit} "
-                  f"to accommodate prompt size of {max_prompt_length} "
-                  f"and decode tokens of {max_decode_length}")
-
-        if _target_cache_size > torch._dynamo.config.cache_size_limit:
-            _prev = torch._dynamo.config.cache_size_limit
-            torch._dynamo.config.cache_size_limit = _target_cache_size
-            print(
-                "NOTICE: Adjusting torch._dynamo.config.cache_size_limit from"
-                f" {_prev} to {torch._dynamo.config.cache_size_limit} to "
-                f"accommodate prompt size of {max_prompt_length} and "
-                f"decode tokens of {max_decode_length}")
-
-        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in BACKEND_LIST:
-            self.model = torch.compile(
-                self.model,
-                mode=compile_mode,
-                backend=envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND)
+        return logits, tkv + 1
