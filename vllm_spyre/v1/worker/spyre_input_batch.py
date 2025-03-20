@@ -41,6 +41,7 @@ class InputBatch:
         vocab_size: int,
     ):
         assert device.type == 'cpu'
+        # NOTE: max_num_reqs should be consistent with the warmup shapes
         self.max_num_reqs = max_num_reqs
         self.max_model_len = max_model_len
         self.device = device
@@ -144,6 +145,15 @@ class InputBatch:
 
         self.req_output_token_ids: list[Optional[list[int]]] = []
 
+        # Model indices to mask padded request
+        self.model_indices_mask = torch.zeros(self.max_num_reqs,
+                                              dtype=torch.bool,
+                                              device=device)
+
+        self.padded_batch_size = self.max_num_reqs
+
+        self.running_requests_count = 0
+
         # This is updated each time the batch constituents change.
         self.sampling_metadata = self._make_sampling_metadata()
 
@@ -162,6 +172,7 @@ class InputBatch:
             req_index = self.num_reqs
         assert req_index < self.max_num_reqs
 
+        self.model_indices_mask[req_index] = True
         req_id = request.req_id
         if req_index == len(self._req_ids):
             self._req_ids.append(req_id)
@@ -244,17 +255,89 @@ class InputBatch:
             self.allowed_token_ids_mask[req_index][
                 sampling_params.allowed_token_ids] = True
 
-    def clear(self):
+    def clear_requests(self):
+        '''
+        TODO: While we do not support continuous batch, the simplest solution
+        is to clear the whole batch
+        '''
         self.req_id_to_index = {}
+
+        self._req_ids = []
+        self.req_output_token_ids = []
+
+        self.greedy_reqs = set()
+        self.random_reqs = set()
+        self.top_p_reqs = set()
+        self.top_k_reqs = set()
+        self.min_p_reqs = set()
+        self.min_tokens = {}
+        self.frequency_penalties_reqs = set()
+        self.presence_penalties_reqs = set()
+        self.repetition_penalties_reqs = set()
+        self.generators = {}
+        self.num_logprobs = {}
+        self.num_prompt_logprobs = {}
+
+        self.logit_bias = [None] * self.max_num_reqs
+        self.has_allowed_token_ids = set()
+        # if self.allowed_token_ids_mask_cpu_tensor is not None:
+        #     self.allowed_token_ids_mask_cpu_tensor[req_index].fill_(False)
+
+    def set_masked_out_requests(self, requests_ids: list[str]):
+        for seq_id in requests_ids:
+            if seq_id in self.req_id_to_index:
+                self.model_indices_mask[self.req_id_to_index[seq_id]] = False
+
+    def soft_remove_request(self, req_id: str):
+        '''
+        Disable requests from the batch, by only removing their reference to 
+        build the sampling parameters and masking out the padded requests.
         
+        This method however, does not change the self.req_id_to_index which is
+        needed to keep the map of finished padded requests.
+        
+        TODO: in the future we shall remove/change this method to actual remove
+        clean up the data 
+        '''
+        if req_id not in self.req_id_to_index:
+            return
+        req_index = self.req_id_to_index[req_id]
+
+        # Mask out the request
+        self.model_indices_mask[req_index] = False
+
+        # Remove the references
+        self._req_ids[req_index] = None
+        self.req_output_token_ids[req_index] = None
+
+        self.greedy_reqs.discard(req_id)
+        self.random_reqs.discard(req_id)
+        self.top_p_reqs.discard(req_id)
+        self.top_k_reqs.discard(req_id)
+        self.min_p_reqs.discard(req_id)
+        self.min_tokens.pop(req_index, None)
+        self.frequency_penalties_reqs.discard(req_id)
+        self.presence_penalties_reqs.discard(req_id)
+        self.repetition_penalties_reqs.discard(req_id)
+        self.generators.pop(req_index, None)
+        self.num_logprobs.pop(req_id, None)
+        self.num_prompt_logprobs.pop(req_id, None)
+
+        self.logit_bias[req_index] = None
+        self.has_allowed_token_ids.discard(req_id)
+        if self.allowed_token_ids_mask_cpu_tensor is not None:
+            self.allowed_token_ids_mask_cpu_tensor[req_index].fill_(False)
 
     def refresh_sampling_metadata(self):
         self.sampling_metadata = self._make_sampling_metadata()
 
     def _make_sampling_metadata(self) -> SamplingMetadata:
-        num_reqs = self.num_reqs
+
+        # Mask truncated by the num of requests
+        indices_mask = self.model_indices_mask
+
         if not self.all_greedy:
-            temperature = self.temperature[:num_reqs]
+            temperature = self.temperature[indices_mask]
         else:
             temperature = None
 
@@ -270,25 +353,32 @@ class InputBatch:
         allowed_token_ids_mask: Optional[torch.Tensor] = None
         if not self.no_allowed_token_ids:
             assert self.allowed_token_ids_mask is not None
-            allowed_token_ids_mask = self.allowed_token_ids_mask[:num_reqs]
+            allowed_token_ids_mask = self.allowed_token_ids_mask[indices_mask]
+
+        indices = indices_mask.nonzero().squeeze(dim=-1).tolist()
+        logit_bias = [self.logit_bias[i] for i in indices]
+
+        generators = { i: self.generators[idx] \
+            for i, idx in enumerate(indices) \
+                if self.generators.get(idx) is not None}
 
         return SamplingMetadata(
             temperature=temperature,
             all_greedy=self.all_greedy,
             all_random=self.all_random,
-            top_p=None if self.no_top_p else self.top_p[:num_reqs],
-            top_k=None if self.no_top_k else self.top_k[:num_reqs],
-            min_p=None if self.no_min_p else self.min_p[:num_reqs],
-            generators=self.generators,
+            top_p=None if self.no_top_p else self.top_p[indices_mask],
+            top_k=None if self.no_top_k else self.top_k[indices_mask],
+            min_p=None if self.no_min_p else self.min_p[indices_mask],
+            generators=generators,
             max_num_logprobs=self.max_num_logprobs,
             prompt_token_ids=prompt_token_ids,
-            frequency_penalties=self.frequency_penalties[:num_reqs],
-            presence_penalties=self.presence_penalties[:num_reqs],
-            repetition_penalties=self.repetition_penalties[:num_reqs],
+            frequency_penalties=self.frequency_penalties[indices_mask],
+            presence_penalties=self.presence_penalties[indices_mask],
+            repetition_penalties=self.repetition_penalties[indices_mask],
             output_token_ids=cast(list[list[int]], self.req_output_token_ids),
             min_tokens=self.min_tokens,
             no_penalties=self.no_penalties,
-            logit_bias=self.logit_bias[:num_reqs],
+            logit_bias=logit_bias,
             allowed_token_ids_mask=allowed_token_ids_mask,
         )
 
@@ -307,6 +397,25 @@ class InputBatch:
         for i in range(self.num_reqs):
             prompt_token_ids[i, self.num_prompt_tokens[i]:] = self.vocab_size
         return prompt_token_ids_tensor
+
+    def get_unpadded_output_indices(self) -> dict[str, int]:
+        """The inputs to the model are all padded to a constant batch size, and
+        self.req_id2idx is the map of request id -> padded index.
+        However, finished requests and padded requests are stripped from the
+        output, so the mapping of request id -> unpadded output index needs to
+        be created to be returned in `ModelRunnerOutput`.
+
+        For example if:
+        - self.model.indices = [F, T, T, F]
+        - self.req_ids2ix = {"A": 0, "B": 1, "C": 2, "D": 3}
+        This will output: {"B": 0, "C": 1}
+        """
+
+        indices = self.model_indices_mask.nonzero().squeeze(dim=-1).tolist()
+        return {self._req_ids[idx]: i for i, idx in enumerate(indices)}
+
+    def get_model_indices(self):
+        return self.model_indices_mask[:self.padded_batch_size]
 
     @property
     def num_reqs(self) -> int:

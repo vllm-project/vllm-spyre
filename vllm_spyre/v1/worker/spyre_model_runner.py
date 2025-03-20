@@ -8,7 +8,7 @@ from torch import nn
 from vllm.config import DeviceConfig, VllmConfig
 from vllm.logger import init_logger
 from vllm.platforms import current_platform
-from vllm.sampling_params import SamplingParams, SamplingType
+from vllm.sampling_params import SamplingType
 from vllm.utils import is_pin_memory_available
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.outputs import SamplerOutput
@@ -98,12 +98,10 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         self._position_ids: torch.Tensor = None
         # attention masks of all the sequences in current batch
         self._mask: torch.Tensor = None
-        # mapping: request id to index in batch
-        self._req_ids2idx: dict = {}
         # Lazy initialization: after load_model.
         self.model: nn.Module
-        
-        
+
+        # Batch state
         self.input_batch = InputBatch(
             max_num_reqs=vllm_config.scheduler_config.max_num_seqs,
             max_model_len=vllm_config.model_config.max_model_len,
@@ -135,43 +133,16 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         assert len(new_requests) > 0
         input_token_list: List[torch.Tensor] = []
 
-        # find warmup shape to be used for padding and batching
-        spyre_warmup_shapes = current_platform.get_warmup_shapes()
-        applicable_spyre_warmup_shapes = [
-            shape for shape in spyre_warmup_shapes
-            if len(new_requests) <= shape['batch_size']
-        ]
-        for request_data in new_requests:
-            # retrieve initial (unpadded) tokens
-            prompt_tokens = request_data.prompt_token_ids
-            new_tokens = request_data.sampling_params.max_tokens\
-                  if request_data.sampling_params is not None else 0
-
-            updated_spyre_warmup_shapes = [
-                shape for shape in applicable_spyre_warmup_shapes
-                if len(prompt_tokens) <= shape['prompt_length']
-                and new_tokens <= shape['new_tokens']
-            ]
-            applicable_spyre_warmup_shapes = updated_spyre_warmup_shapes
-
-        assert applicable_spyre_warmup_shapes, \
-            "No shapes available to run prefill batch. (This should not happen)"
-
-        # If multiple warmup shapes apply, the first one is selected.
-        # For improving performance, the warmup shapes in scheduler_config
-        # are ordered by "processing speed".
-        min_pad_length_batch = applicable_spyre_warmup_shapes[0][
-            'prompt_length']
-        padded_batch_size = applicable_spyre_warmup_shapes[0]['batch_size']
+        padded_batch_size, min_pad_length_batch = \
+            _get_padded_batch_size(new_requests)
 
         # Internal state is reset here.
         # We don't support continuous batching, so we know all previous requests
         # have finished decoding.
-        self._req_ids2idx = {}
-        self.input_batch.clear()
-        for idx, request_data in enumerate(new_requests):
-            self._req_ids2idx[request_data.req_id] = idx
+        self.input_batch.clear_requests()
 
+        # Build batch and prepare input_token1
+        for request_data in new_requests:
             # retrieve initial (unpadded) tokens
             prompt_tokens = request_data.prompt_token_ids
 
@@ -179,8 +150,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                 torch.tensor(prompt_tokens,
                              dtype=torch.long,
                              device=torch.device("cpu")))
-            
-            
+
             # Add new requests to the cached states.
             req_id = request_data.req_id
             sampling_params = request_data.sampling_params
@@ -198,18 +168,13 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                 generator=generator,
                 output_token_ids=[],
             )
-            
-            self.input_batch.add_request(req_state)
-            
-        self.input_batch.refresh_sampling_metadata()
 
-        actual_batch_size = len(input_token_list)
-        self.model.indices = torch.cat([
-            torch.ones(actual_batch_size, dtype=torch.bool, device='cpu'),
-            torch.zeros(padded_batch_size - actual_batch_size,
-                        dtype=torch.bool,
-                        device='cpu')
-        ])
+            self.input_batch.add_request(req_state)
+
+        self.input_batch.padded_batch_size = padded_batch_size
+
+        # Refresh sampling metadata after all request are added to the batch
+        self.input_batch.refresh_sampling_metadata()
 
         # padding to compiled batch size
         while len(input_token_list) < padded_batch_size:
@@ -239,9 +204,8 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
             generation_token = cached_request.new_token_ids[-1]
-            input_tokens[self._req_ids2idx[cached_request.req_id]] = [
-                generation_token
-            ]
+            input_tokens[self.input_batch.req_id_to_index[
+                cached_request.req_id]] = [generation_token]
 
         # update position ids and attention mask
         self._update_position_ids()
@@ -292,8 +256,6 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
     def prepare_model_input(
             self, scheduler_output: SchedulerOutput) -> ModelInputForSpyre:
 
-        
-
         # NOTE: We assume that all sequences in the group are all prompts or
         # all decodes.
         # Also assuming that new sequences are prefills
@@ -301,22 +263,19 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
 
         # Prepare input tensors.
         if is_prompt:
-            # self._update_states(scheduler_output)
             # Assert no running requests
             assert len(scheduler_output.scheduled_cached_reqs) == 0
 
             (input_tokens, input_positions, input_masks,
              _) = self._prepare_prompt(scheduler_output.scheduled_new_reqs)
         else:
-            # updating indices: set indices of newly finished sequences False
             if scheduler_output.finished_req_ids:
-                for seq_id in scheduler_output.finished_req_ids:
-                    if seq_id in self._req_ids2idx:
-                        self.model.indices[self._req_ids2idx[seq_id]] = False
+                for req_id in scheduler_output.finished_req_ids:
+                    self.input_batch.soft_remove_request(req_id)
                 self.input_batch.refresh_sampling_metadata()
-            (input_tokens, input_positions,
-             input_masks) = self._prepare_decode(
-                 scheduler_output.scheduled_cached_reqs)
+
+            (input_tokens, input_positions, input_masks) = \
+                self._prepare_decode(scheduler_output.scheduled_cached_reqs)
 
         sampling_metadata = self.input_batch.sampling_metadata
 
@@ -337,6 +296,14 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
 
         model_input = self.prepare_model_input(scheduler_output)
 
+        # TODO(Wallas): I think it would be better move the indices as argument
+        # of the forward rather than set as an attribute of the model. I'm not
+        # sure how easy is that right now.
+
+        # Always get the indices from the input_batch
+        self.model.indices = self.input_batch.get_model_indices()
+
+        # Execute the model
         hidden_states = self.model(
             input_ids=model_input.input_tokens,
             positions=model_input.input_positions,
@@ -360,40 +327,18 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         logger.debug("t_token: %.2fms", (t1 * 1000))
 
         model_output = ModelRunnerOutput(
-            req_ids=list(self._req_ids2idx.keys()),
-            req_id_to_index=self._get_unpadded_output_indices(),
+            req_ids=list(self.input_batch.req_id_to_index.keys()),
+            req_id_to_index=self.input_batch.get_unpadded_output_indices(),
             sampled_token_ids=output.sampled_token_ids.tolist(),
             spec_token_ids=None,
             logprobs=output.logprobs_tensors.tolists()
             if output.logprobs_tensors else None,
             prompt_logprobs_dict={
                 req_id: None
-                for req_id in self._req_ids2idx
+                for req_id in self.input_batch.req_id_to_index
             }  # TODO(wallas?): prompt logprobs too
         )
         return model_output
-
-    def _get_unpadded_output_indices(self) -> dict[str, int]:
-        """The inputs to the model are all padded to a constant batch size, and
-        self.req_id2idx is the map of request id -> padded index.
-        However, finished requests and padded requests are stripped from the
-        output, so the mapping of request id -> unpadded output index needs to
-        be created to be returned in `ModelRunnerOutput`.
-
-        For example if:
-        - self.model.indices = [F, T, T, F]
-        - self.req_ids2ix = {"A": 0, "B": 1, "C": 2, "D": 3}
-        This will output: {"B": 0, "C": 1}
-        """
-        remapped_indices = {}
-        for req_id, idx in self._req_ids2idx.items():
-            if self.model.indices[idx]:
-                # Sum up all the requests to the left of this one that are still
-                # processing. That should be this requests' index in the output
-                # tensor.
-                remapped_indices[req_id] = self.model.indices[0:idx].sum(
-                ).item()
-        return remapped_indices
 
     def _prepare_pad_input_ids(
         self,
@@ -501,3 +446,34 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                               head_size=1,
                               dtype=torch.float16)
         }
+
+
+def _get_padded_batch_size(new_requests: list[NewRequestData]):
+    # find warmup shape to be used for padding and batching
+    spyre_warmup_shapes = current_platform.get_warmup_shapes()
+    applicable_spyre_warmup_shapes = [
+        shape for shape in spyre_warmup_shapes
+        if len(new_requests) <= shape['batch_size']
+    ]
+    for request_data in new_requests:
+        # retrieve initial (unpadded) tokens
+        prompt_tokens = request_data.prompt_token_ids
+        new_tokens = request_data.sampling_params.max_tokens\
+              if request_data.sampling_params is not None else 0
+
+        updated_spyre_warmup_shapes = [
+            shape for shape in applicable_spyre_warmup_shapes
+            if len(prompt_tokens) <= shape['prompt_length']
+            and new_tokens <= shape['new_tokens']
+        ]
+        applicable_spyre_warmup_shapes = updated_spyre_warmup_shapes
+
+    assert applicable_spyre_warmup_shapes, \
+        "No shapes available to run prefill batch. (This should not happen)"
+
+    # If multiple warmup shapes apply, the first one is selected.
+    # For improving performance, the warmup shapes in scheduler_config
+    # are ordered by "processing speed".
+    min_pad_length_batch = applicable_spyre_warmup_shapes[0]['prompt_length']
+    padded_batch_size = applicable_spyre_warmup_shapes[0]['batch_size']
+    return padded_batch_size, min_pad_length_batch
