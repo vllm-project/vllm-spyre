@@ -83,7 +83,7 @@ class SpyreCausalLM(nn.Module):
 
         if is_prompt:
             self.tkv = 0
-            if envs_spyre.VLLM_SPYRE_USE_CB:
+            if not envs_spyre.VLLM_SPYRE_USE_CB:
                 self.model.past_key_value_states = None
 
         extra_kwargs = {}
