@@ -134,7 +134,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         input_token_list: List[torch.Tensor] = []
 
         padded_batch_size, min_pad_length_batch = \
-            _get_padded_batch_size(new_requests)
+            get_padded_batch_size(new_requests)
 
         # Internal state is reset here.
         # We don't support continuous batching, so we know all previous requests
@@ -448,7 +448,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         }
 
 
-def _get_padded_batch_size(new_requests: list[NewRequestData]):
+def get_padded_batch_size(new_requests: list[NewRequestData]):
     # find warmup shape to be used for padding and batching
     spyre_warmup_shapes = current_platform.get_warmup_shapes()
     applicable_spyre_warmup_shapes = [

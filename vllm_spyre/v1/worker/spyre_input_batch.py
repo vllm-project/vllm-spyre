@@ -141,7 +141,6 @@ class InputBatch:
                                             float]]] = [None] * max_num_reqs
         self.has_allowed_token_ids: set[str] = set()
         self.allowed_token_ids_mask: Optional[torch.Tensor] = None
-        self.allowed_token_ids_mask_cpu_tensor: Optional[torch.Tensor] = None
 
         self.req_output_token_ids: list[Optional[list[int]]] = []
 
@@ -150,9 +149,8 @@ class InputBatch:
                                               dtype=torch.bool,
                                               device=device)
 
+        # Initialize with max number of requests
         self.padded_batch_size = self.max_num_reqs
-
-        self.running_requests_count = 0
 
         # This is updated each time the batch constituents change.
         self.sampling_metadata = self._make_sampling_metadata()
@@ -280,8 +278,8 @@ class InputBatch:
 
         self.logit_bias = [None] * self.max_num_reqs
         self.has_allowed_token_ids = set()
-        # if self.allowed_token_ids_mask_cpu_tensor is not None:
-        #     self.allowed_token_ids_mask_cpu_tensor[req_index].fill_(False)
+        if self.allowed_token_ids_mask is not None:
+            self.allowed_token_ids_mask.fill_(False)
 
     def set_masked_out_requests(self, requests_ids: list[str]):
         for seq_id in requests_ids:
@@ -325,8 +323,8 @@ class InputBatch:
 
         self.logit_bias[req_index] = None
         self.has_allowed_token_ids.discard(req_id)
-        if self.allowed_token_ids_mask_cpu_tensor is not None:
-            self.allowed_token_ids_mask_cpu_tensor[req_index].fill_(False)
+        if self.allowed_token_ids_mask is not None:
+            self.allowed_token_ids_mask[req_index].fill_(False)
 
     def refresh_sampling_metadata(self):
         self.sampling_metadata = self._make_sampling_metadata()
