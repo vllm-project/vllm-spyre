@@ -318,16 +318,16 @@ class FmsModelWrapper(nn.Module):
         logits, key_value_states = output
 
         # updating (physical) KV cache: self.fms_kv_cache
-        for page in active_pages:
+        for idx, page in enumerate(sorted(active_pages)):
             for layer in range(len(self.fms_kv_cache)):
                 # inserting partial KV cache at correct location
                 # (page, tkv) in the KV cache of the whole batch
                 self.fms_kv_cache[layer][0][
                     page, :, :tkv, :] = key_value_states[layer][0][
-                        page, :, :, :]  # [1, 8, L, 128]
+                        idx, :, :, :]  # [1, 8, L, 128]
                 self.fms_kv_cache[layer][1][
                     page, :, :tkv, :] = key_value_states[layer][1][
-                        page, :, :, :]  # [1, 8, L, 128]
+                        idx, :, :, :]  # [1, 8, L, 128]
 
         return logits, tkv + 1
 
