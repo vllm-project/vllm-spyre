@@ -459,27 +459,6 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
 
         return input_ids, position_ids, mask
 
-    def _raw_model_forward(
-        self,
-        input_ids: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        past_key_value_states: Optional[List[Tuple[torch.Tensor,
-                                                   torch.Tensor]]] = None,
-        use_cache: bool = False,
-        only_last_token: bool = False,
-        attn_algorithm: Optional[str] = None
-    ) -> Tuple[torch.Tensor, Optional[List[Tuple[torch.Tensor,
-                                                 torch.Tensor]]]]:
-
-        return self.model.model(input_ids,
-                                mask=mask,
-                                position_ids=position_ids,
-                                past_key_value_states=past_key_value_states,
-                                use_cache=use_cache,
-                                only_last_token=only_last_token,
-                                attn_algorithm=attn_algorithm)
-
     def get_kv_cache_spec(self) -> KVCacheSpec:
         """
         This method should generate the KVCache spec by parsing the kv cache
