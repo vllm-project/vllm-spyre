@@ -307,6 +307,8 @@ class SpyreWorker(WorkerBaseV1):
             num_common_prefix_blocks=0,
             finished_req_ids=set(),
             free_encoder_input_ids=[],
+            structured_output_request_ids={},
+            grammar_bitmask=None,
         )
 
         # First full forward pass
