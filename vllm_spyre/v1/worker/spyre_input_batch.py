@@ -259,6 +259,7 @@ class InputBatch:
         is to clear the whole batch
         '''
         self.req_id_to_index = {}
+        self.model_indices_mask.fill_(False)
 
         self._req_ids = []
         self.req_output_token_ids = []
