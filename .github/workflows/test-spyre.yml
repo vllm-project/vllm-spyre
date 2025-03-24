@@ -1,29 +1,133 @@
 name: test-sypre
 
-on: pull_request
+on:
+  workflow_dispatch:
+  push:
+    paths-ignore:
+      - "**.md"
+  pull_request:
+    paths-ignore:
+      - "**.md"
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  TEST_IMAGE_NAME: "vllm-spyre"
 
 jobs:
-  test-spyre:
+  build:
     runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    env:
+      CACHE_IMAGE: "ghcr.io/vllm-project/vllm-spyre:test-cache"
+      CACHE_REGISTRY: "ghcr.io"
+
     steps:
-    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-    - name: Build docker image
-      run: docker build . -t vllm-spyre -f Dockerfile.spyre
-    - name: Run Spyre tests within docker container
+      - name: "Checkout"
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: "Setup Docker Buildx"
+        uses: docker/setup-buildx-action@v3
+
+      - name: "Log in to cache image container registry"
+        uses: docker/login-action@v3
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ${{ env.CACHE_REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: "Set build cache target"
+        run: |
+          # For push to `main` (PR merged), push new cache image with all layers (cache-mode=max).
+          # For PR builds, use GitHub action cache which isolates cached layers by PR/branch
+          # to optimize builds for subsequent pushes to the same PR/branch.
+          # Do not set a cache-to image for PR builds to not overwrite the `main` cache image
+          # to not ping-pong cache images for two or more concurrent PRs.
+          # Do not push cache images for multiple branches to not exceed GitHub package
+          # usage and traffic limitations.
+          # NOTE 2024/03/24: GHA cache appears to have issues, cannot use `cache-to: gha,mode=min`
+          # if `cache-from: registry,...,mode=max` but `cache-to: gha,mode=max` it takes longer than
+          # uncached build and exhausts GHA cache size, so use cache `type=inline` (no external cache).
+          if [ "${{ github.event_name }}" == "pull_request" ]
+          then
+              #CACHE_TO="type=gha,mode=min"
+              CACHE_TO="type=inline"
+          else
+              CACHE_TO="type=registry,ref=${{ env.CACHE_IMAGE }},mode=max"
+          fi
+          echo "CACHE_TO=$CACHE_TO" >> "$GITHUB_ENV"
+
+      - name: "Build test image"
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.spyre
+          target: "spyre-tests"
+          tags: ${{ env.TEST_IMAGE_NAME }}
+          cache-from: |
+              type=gha
+              type=registry,ref=${{ env.CACHE_IMAGE }}
+          cache-to: ${{ env.CACHE_TO }}
+          outputs: type=docker,dest=${{ runner.temp }}/test_image.tar
+
+      - name: "Upload test image"
+        uses: actions/upload-artifact@v4
+        with:
+          name: "test-image"
+          path: ${{ runner.temp }}/test_image.tar
+          retention-days: 1
+
+  test-spyre-v0:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+    - name: "Checkout"
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+    - name: "Download test image"
+      uses: actions/download-artifact@v4
+      with:
+        name: "test-image"
+        path: ${{ runner.temp }}
+
+    - name: "Load test image"
       run: |
-        docker run -i --rm --entrypoint /bin/bash vllm-spyre -c '''
-          pip install pytest sentence-transformers pytest-timeout pytest-forked && \
-          python -c "from transformers import pipeline; pipeline(\"text-generation\", model=\"JackFram/llama-160m\")" && \
-          export VARIANT=$(ls /root/.cache/huggingface/hub/models--JackFram--llama-160m/snapshots/) && \
-          mkdir -p /models && \
-          ln -s /root/.cache/huggingface/hub/models--JackFram--llama-160m/snapshots/${VARIANT} /models/llama-194m && \
-          python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer(\"sentence-transformers/all-roberta-large-v1\")" && \
-          export VARIANT=$(ls /root/.cache/huggingface/hub/models--sentence-transformers--all-roberta-large-v1/snapshots/) && \
-          ln -s /root/.cache/huggingface/hub/models--sentence-transformers--all-roberta-large-v1/snapshots/${VARIANT} /models/all-roberta-large-v1 && \
-          export MASTER_PORT=12355 && \
-          export MASTER_ADDR=localhost && \
-          export DISTRIBUTED_STRATEGY_IGNORE_MODULES=WordEmbedding && \
+        docker load --input ${{ runner.temp }}/test_image.tar
+        docker image ls -a
+
+    - name: Run Spyre tests in docker container (V0 and eager)
+      run: |
+        docker run -i --rm --entrypoint /bin/bash ${{ env.TEST_IMAGE_NAME }} -c '''
           cd vllm-spyre && \
-          python -m pytest --timeout=300  tests -v -k "V0 and eager" && \
-          python -m pytest --forked --timeout=300  tests -v -k "V1- and eager"
+          python -m pytest --timeout=300  tests -v -k "V0 and eager"
+        '''
+
+  test-spyre-v1:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+    - name: "Checkout"
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+    - name: "Download test image"
+      uses: actions/download-artifact@v4
+      with:
+        name: "test-image"
+        path: ${{ runner.temp }}
+
+    - name: "Load test image"
+      run: |
+        docker load --input ${{ runner.temp }}/test_image.tar
+        docker image ls -a
+
+    - name: Run Spyre tests in docker container (V1 and eager)
+      run: |
+        docker run -i --rm --entrypoint /bin/bash ${{ env.TEST_IMAGE_NAME }} -c '''
+          cd vllm-spyre && \
+          python -m pytest --forked --timeout=300  tests -v -k "V1 and eager"
         '''
