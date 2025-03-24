@@ -24,7 +24,7 @@ docker run -it --rm vllm-spyre bash
 
 ```
 # Install vllm
-pip install vllm==0.7.3
+pip install vllm==0.8.0
 
 # Install vllm-spyre
 cd ..
