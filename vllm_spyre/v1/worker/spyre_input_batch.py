@@ -152,7 +152,7 @@ class InputBatch:
 
         # req_index -> bad_words_token_ids
         self.bad_words_token_ids: dict[int, list[list[int]]] = {}
-        
+
         self.req_output_token_ids: list[Optional[list[int]]] = []
 
         # Model indices to mask padded request
@@ -320,12 +320,11 @@ class InputBatch:
             return
         req_index = self.req_id_to_index[req_id]
 
-        
         # Mask out the request
         self.model_indices_mask[req_index] = False
 
         # Remove the references
-        
+
         # Index corrected based on the padded/deactivated requests
         shifted_index = self.model_indices_mask[:req_index].sum().item()
         self.req_output_token_ids.pop(shifted_index)
@@ -352,7 +351,7 @@ class InputBatch:
         self.min_tokens.pop(req_index, None)
 
         self._num_requests -= 1
-        
+
         self.bad_words_token_ids.pop(req_index, None)
 
     def refresh_sampling_metadata(self):
@@ -388,7 +387,7 @@ class InputBatch:
         generators = { i: self.generators[idx] \
             for i, idx in enumerate(indices) \
                 if self.generators.get(idx) is not None}
-        
+
         min_tokens = { i: self.min_tokens[idx] \
             for i, idx in enumerate(indices) \
                 if self.min_tokens.get(idx) is not None}
@@ -415,7 +414,7 @@ class InputBatch:
             logit_bias=logit_bias,
             allowed_token_ids_mask=allowed_token_ids_mask,
             bad_words_token_ids=self.bad_words_token_ids,
-            )
+        )
 
     def _make_prompt_token_ids_tensor(self) -> torch.Tensor:
 
