@@ -127,13 +127,11 @@ class SpyreCausalLM(nn.Module):
             sys.path.append("/home/senuser/aiu-fms")
 
             if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
-                from aiu_as_addon import aiu_adapter, aiu_linear  # noqa: F401
+                from fms_mo.aiu_addons.gptq import gptq_aiu_adapter, gptq_aiu_linear  # noqa: F401
                 linear_type = "gptq_aiu"
-                logger.info("Loaded `aiu_as_addon` functionalities")
+                logger.info("Loaded `aiu_addons` functionalities")
             else:
-                from cpu_addon import cpu_linear  # noqa: F401
                 linear_type = "gptq_cpu"
-                logger.info("Loaded `cpu_addon` functionalities")
 
             quant_cfg = model_config._parse_quant_hf_config()
 
