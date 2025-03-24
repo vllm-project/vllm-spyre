@@ -424,13 +424,13 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         """
         # We do at least use the real size from the cache config.
         block_size = self.vllm_config.cache_config.block_size
-        return {
-            "foo":
-            FullAttentionSpec(block_size=block_size,
-                              num_kv_heads=1,
-                              head_size=1,
-                              dtype=torch.float16)
-        }
+
+        attn_spec = FullAttentionSpec(block_size=block_size,
+                                      num_kv_heads=1,
+                                      head_size=1,
+                                      dtype=torch.float16,
+                                      use_mla=False)
+        return {"foo": attn_spec}
 
     def _update_states(self, scheduler_output: SchedulerOutput):
         # Update the states of the running/resumed requests.

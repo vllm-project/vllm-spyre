@@ -415,7 +415,7 @@ class InputBatch:
             no_penalties=self.no_penalties,
             logit_bias=logit_bias,
             allowed_token_ids_mask=allowed_token_ids_mask,
-        )
+            bad_words_token_ids={})
 
     def _make_prompt_token_ids_tensor(self) -> torch.Tensor:
 
