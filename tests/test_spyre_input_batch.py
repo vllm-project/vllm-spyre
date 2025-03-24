@@ -70,6 +70,7 @@ def _construct_expected_sampling_metadata(
                                          device=device)
 
     index_in_input_batch = 0
+    bad_words_token_ids = {}
     for req in reqs:
         if req.req_id not in req_ids_retained:
             continue
@@ -92,6 +93,9 @@ def _construct_expected_sampling_metadata(
         if req.sampling_params.allowed_token_ids:
             allowed_token_ids_mask[index_in_input_batch][
                 req.sampling_params.allowed_token_ids] = True
+        if req.sampling_params.bad_words_token_ids:
+            bad_words_token_ids[
+                index_in_input_batch] = req.sampling_params.bad_words_token_ids
 
         index_in_input_batch += 1
 
@@ -130,6 +134,7 @@ def _construct_expected_sampling_metadata(
                       and all(x == 1 for x in repetition_penalties)),
         logit_bias=logit_bias,
         allowed_token_ids_mask=allowed_token_ids_mask,
+        bad_words_token_ids=bad_words_token_ids,
     )
 
 
@@ -252,3 +257,5 @@ def test_sampling_metadata_in_input_batch(batch_size: int):
         assert torch.allclose(
             expected_sampling_metadata.allowed_token_ids_mask,
             sampling_metadata.allowed_token_ids_mask)
+    assert expected_sampling_metadata.bad_words_token_ids == \
+        sampling_metadata.bad_words_token_ids

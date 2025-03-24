@@ -150,6 +150,9 @@ class InputBatch:
         self.has_allowed_token_ids: set[str] = set()
         self.allowed_token_ids_mask: Optional[torch.Tensor] = None
 
+        # req_index -> bad_words_token_ids
+        self.bad_words_token_ids: dict[int, list[list[int]]] = {}
+        
         self.req_output_token_ids: list[Optional[list[int]]] = []
 
         # Model indices to mask padded request
@@ -260,6 +263,9 @@ class InputBatch:
             self.allowed_token_ids_mask[req_index][
                 sampling_params.allowed_token_ids] = True
 
+        if sampling_params.bad_words_token_ids:
+            self.bad_words_token_ids[
+                req_index] = sampling_params.bad_words_token_ids
         self._num_requests += 1
         assert self._num_requests <= self.max_num_reqs
 
@@ -314,13 +320,14 @@ class InputBatch:
             return
         req_index = self.req_id_to_index[req_id]
 
-        # Index corrected based on the padded/deactivated requests
-        shifted_index = self.model_indices_mask[:req_index].sum().item()
-
+        
         # Mask out the request
         self.model_indices_mask[req_index] = False
 
         # Remove the references
+        
+        # Index corrected based on the padded/deactivated requests
+        shifted_index = self.model_indices_mask[:req_index].sum().item()
         self.req_output_token_ids.pop(shifted_index)
 
         self.greedy_reqs.discard(req_id)
@@ -332,7 +339,7 @@ class InputBatch:
         self.frequency_penalties_reqs.discard(req_id)
         self.presence_penalties_reqs.discard(req_id)
         self.repetition_penalties_reqs.discard(req_id)
-        self.generators.pop(shifted_index, None)
+        self.generators.pop(req_index, None)
         self.num_logprobs.pop(req_id, None)
         self.num_prompt_logprobs.pop(req_id, None)
 
@@ -342,21 +349,11 @@ class InputBatch:
         if self.allowed_token_ids_mask is not None:
             self.allowed_token_ids_mask[req_index].fill_(False)
 
-        self.min_tokens.pop(shifted_index, None)
-        # NOTE: remove multiples requests can make this n^2
-        # We need to shift the indices
-        # Proabably we should consider remove multiples requests at once to
-        # improve this loop in the future
-        for i in range(shifted_index, self._num_requests - 1):
-            if i < self._num_requests:
-                self.min_tokens[i] = self.min_tokens[i + 1]
-
-        # Remove the deduplicated last item from the shifting
-        # if it is not the last item
-        if shifted_index != self._num_requests - 1:
-            self.min_tokens.pop(self._num_requests - 1, None)
+        self.min_tokens.pop(req_index, None)
 
         self._num_requests -= 1
+        
+        self.bad_words_token_ids.pop(req_index, None)
 
     def refresh_sampling_metadata(self):
         self.sampling_metadata = self._make_sampling_metadata()
@@ -391,6 +388,10 @@ class InputBatch:
         generators = { i: self.generators[idx] \
             for i, idx in enumerate(indices) \
                 if self.generators.get(idx) is not None}
+        
+        min_tokens = { i: self.min_tokens[idx] \
+            for i, idx in enumerate(indices) \
+                if self.min_tokens.get(idx) is not None}
 
         return SamplingMetadata(
             temperature=temperature,
@@ -409,13 +410,12 @@ class InputBatch:
             # and may be updated from other contexts. For instance,
             # spyre_model_runner updates this data at _update_states.
             output_token_ids=cast(list[list[int]], self.req_output_token_ids),
-            # WARN: this one is also mutated by removing the request from the
-            # batch
-            min_tokens=self.min_tokens,
+            min_tokens=min_tokens,
             no_penalties=self.no_penalties,
             logit_bias=logit_bias,
             allowed_token_ids_mask=allowed_token_ids_mask,
-            bad_words_token_ids={})
+            bad_words_token_ids=self.bad_words_token_ids,
+            )
 
     def _make_prompt_token_ids_tensor(self) -> torch.Tensor:
 
