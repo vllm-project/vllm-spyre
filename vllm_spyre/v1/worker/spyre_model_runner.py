@@ -110,6 +110,9 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
             vocab_size=vllm_config.model_config.get_vocab_size(),
         )
 
+        # Requests
+        self.requests: dict[str, CachedRequestData] = {}
+
     def get_model(self) -> nn.Module:
         return self.model
 
@@ -140,6 +143,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         # We don't support continuous batching, so we know all previous requests
         # have finished decoding.
         self.input_batch.clear_requests()
+        self.requests = {}
 
         # Build batch and prepare input_token1
         for request_data in new_requests:
@@ -168,7 +172,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                 generator=generator,
                 output_token_ids=[],
             )
-
+            self.requests[req_id] = req_state
             self.input_batch.add_request(req_state)
 
         self.input_batch.padded_batch_size = padded_batch_size
@@ -294,6 +298,8 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
 
         t0 = time.time()
 
+        self._update_states(scheduler_output)
+
         model_input = self.prepare_model_input(scheduler_output)
 
         # TODO(Wallas): I think it would be better move the indices as argument
@@ -327,7 +333,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         logger.debug("t_token: %.2fms", (t1 * 1000))
 
         model_output = ModelRunnerOutput(
-            req_ids=list(self.input_batch.req_id_to_index.keys()),
+            req_ids=self.input_batch.requests_ids,
             req_id_to_index=self.input_batch.get_unpadded_output_indices(),
             sampled_token_ids=output.sampled_token_ids.tolist(),
             spec_token_ids=None,
@@ -425,6 +431,42 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                               head_size=1,
                               dtype=torch.float16)
         }
+
+    def _update_states(self, scheduler_output: SchedulerOutput):
+        # Update the states of the running/resumed requests.
+        # For now, we are updating input_batch.'s `token_ids_cpu`,
+        # `num_tokens`
+        #
+        # NOTE: req_state.output_token_ids is being mutated.
+        #
+        # Once we have continuous batch, we shall update more data
+        for req_data in scheduler_output.scheduled_cached_reqs:
+            req_id = req_data.req_id
+            req_state = self.requests[req_id]
+
+            # Update the cached states.
+            num_computed_tokens = req_data.num_computed_tokens
+            req_state.num_computed_tokens = num_computed_tokens
+            # Add the sampled token(s) from the previous step (if any).
+            # This doesn't include "unverified" tokens like spec decode tokens.
+            num_new_tokens = (num_computed_tokens +
+                              len(req_data.new_token_ids) -
+                              req_state.num_tokens)
+            if num_new_tokens == 1:
+                # Avoid slicing list in most common case.
+                req_state.output_token_ids.append(req_data.new_token_ids[-1])
+            elif num_new_tokens > 0:
+                req_state.output_token_ids.extend(
+                    req_data.new_token_ids[-num_new_tokens:])
+
+            req_index = self.input_batch.get_req_index(req_id)
+            # Add new_token_ids to token_ids_cpu.
+            # TODO: Update for spec decoding in the future
+            start_token_index = num_computed_tokens
+            end_token_index = num_computed_tokens + len(req_data.new_token_ids)
+            self.input_batch.token_ids_cpu[
+                req_index,
+                start_token_index:end_token_index] = req_data.new_token_ids
 
 
 def get_padded_batch_size(new_requests: list[NewRequestData]):
