@@ -323,7 +323,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
             min_tokens={},
             logit_bias=[None for _ in range(num_reqs)],
             allowed_token_ids_mask=None,
-        )
+            bad_words_token_ids={})
 
         return ModelInputForSpyre(input_tokens=input_tokens,
                                   input_positions=input_positions,
@@ -478,10 +478,9 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         """
         # We do at least use the real size from the cache config.
         block_size = self.vllm_config.cache_config.block_size
-        return {
-            "foo":
-            FullAttentionSpec(block_size=block_size,
-                              num_kv_heads=1,
-                              head_size=1,
-                              dtype=torch.float16)
-        }
+        attn_spec = FullAttentionSpec(block_size=block_size,
+                                      num_kv_heads=1,
+                                      head_size=1,
+                                      dtype=torch.float16,
+                                      use_mla=False)
+        return {"foo": attn_spec}
