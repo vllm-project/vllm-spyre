@@ -25,5 +25,5 @@ jobs:
           export DISTRIBUTED_STRATEGY_IGNORE_MODULES=WordEmbedding && \
           cd vllm-spyre && \
           python -m pytest --timeout=300  tests -v -k "V0 and eager" && \
-          python -m pytest --forked --timeout=300  tests -v -k "V1- and eager"
+          python -m pytest --forked --timeout=300  tests -v -k "(V1- and eager) or test_sampling_metadata_in_input_batch"
         '''

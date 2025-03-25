@@ -81,7 +81,7 @@ class SpyrePlatform(Platform):
         max_seq_len = 0
         for shape in cls.get_warmup_shapes():
             max_batch_size = max(max_batch_size, shape['batch_size'])
-            max_seq_len = max(max_batch_size,
+            max_seq_len = max(max_seq_len,
                               shape['prompt_length'] + shape['new_tokens'])
 
         if envs.VLLM_USE_V1:
