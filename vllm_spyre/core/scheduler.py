@@ -669,7 +669,7 @@ class SpyreScheduler:
         seq_groups: List[ScheduledSequenceGroup] = []
 
         # SPYRE SPECIFIC CODE BLOCK START
-        spyre_warmup_shapes = current_platform.get_warmup_shapes()
+        spyre_warmup_shapes = self.scheduler_config.spyre_warmup_shapes
         applicable_spyre_warmup_shapes = list(spyre_warmup_shapes)
         # SPYRE SPECIFIC CODE BLOCK END
 

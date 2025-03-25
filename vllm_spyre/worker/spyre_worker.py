@@ -146,7 +146,7 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
         # for all requested model warmups
         # printing env variables for debugging purposes
         load_model_start_t = time.time()
-        spyre_warmup_shapes = current_platform.get_warmup_shapes()
+        spyre_warmup_shapes = self.vllm_config.scheduler_config.spyre_warmup_shapes
         wup_prompt_lens, wup_new_tokens = zip(*[(s["prompt_length"],
                                                  s["new_tokens"])
                                                 for s in spyre_warmup_shapes])

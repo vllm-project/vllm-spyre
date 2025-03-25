@@ -126,7 +126,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         input_token_list: List[torch.Tensor] = []
 
         # find warmup shape to be used for padding and batching
-        spyre_warmup_shapes = current_platform.get_warmup_shapes()
+        spyre_warmup_shapes = self.scheduler_config.spyre_warmup_shapes
         applicable_spyre_warmup_shapes = [
             shape for shape in spyre_warmup_shapes
             if len(seq_group_metadata_list) <= shape['batch_size']

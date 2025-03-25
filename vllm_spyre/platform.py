@@ -22,7 +22,6 @@ class SpyrePlatform(Platform):
     device_name: str = "spyre"
     device_type: str = "cpu"
     supported_quantization: list[str] = ["gptq"]
-    spyre_warmup_shapes: tuple[dict[str, int], ...]
 
     @classmethod
     def get_device_name(cls, device_id: int = 0) -> str:
@@ -79,7 +78,7 @@ class SpyrePlatform(Platform):
         cls.set_warmup_shapes(scheduler_config)
         max_batch_size = 0
         max_seq_len = 0
-        for shape in cls.get_warmup_shapes():
+        for shape in scheduler_config.spyre_warmup_shapes:
             max_batch_size = max(max_batch_size, shape['batch_size'])
             max_seq_len = max(max_batch_size,
                               shape['prompt_length'] + shape['new_tokens'])
@@ -153,7 +152,7 @@ class SpyrePlatform(Platform):
         logger.info("VLLM_SPYRE_WARMUP_NEW_TOKENS = %s", wup_new_tokens)
         logger.info("VLLM_SPYRE_WARMUP_BATCH_SIZES = %s", wup_batch_sizes)
 
-        cls.spyre_warmup_shapes = tuple(
+        scheduler_config.spyre_warmup_shapes = tuple(
             sorted([{
                 'prompt_length': pl,
                 'new_tokens': nt,
@@ -161,7 +160,3 @@ class SpyrePlatform(Platform):
             } for pl, nt, bs in zip(wup_prompt_lens, wup_new_tokens,
                                     wup_batch_sizes)],
                    key=operator.itemgetter('batch_size', 'prompt_length')))
-
-    @classmethod
-    def get_warmup_shapes(cls) -> tuple[dict[str, int], ...]:
-        return cls.spyre_warmup_shapes
