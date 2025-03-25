@@ -133,6 +133,7 @@ class SpyreCausalLM(nn.Module):
                 logger.info("Loaded `aiu_addons` functionalities")
             else:
                 linear_type = "gptq_cpu"
+                logger.warning("GPTQ is not expected to work on CPU.")
 
             quant_cfg = model_config._parse_quant_hf_config()
 
