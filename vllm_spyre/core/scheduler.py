@@ -22,7 +22,6 @@ from vllm.core.scheduler import (ARTIFICIAL_PREEMPTION_MAX_CNT,
                                  scheduler_running_outputs_builder,
                                  seq_group_metadata_builder)
 from vllm.logger import init_logger
-from vllm.platforms import current_platform
 # SPYRE SPECIFIC CODE BLOCK END
 from vllm.sequence import (Sequence, SequenceData, SequenceGroup,
                            SequenceGroupMetadata, SequenceGroupMetadataDelta,

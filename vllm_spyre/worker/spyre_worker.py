@@ -12,7 +12,6 @@ from vllm.config import VllmConfig
 from vllm.distributed import (ensure_model_parallel_initialized,
                               init_distributed_environment)
 from vllm.model_executor import set_random_seed
-from vllm.platforms import current_platform
 from vllm.sequence import ExecuteModelRequest
 from vllm.worker.worker_base import (LocalOrDistributedWorkerBase, WorkerBase,
                                      WorkerInput)
@@ -146,7 +145,8 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
         # for all requested model warmups
         # printing env variables for debugging purposes
         load_model_start_t = time.time()
-        spyre_warmup_shapes = self.vllm_config.scheduler_config.spyre_warmup_shapes
+        spyre_warmup_shapes = \
+            self.vllm_config.scheduler_config.spyre_warmup_shapes
         wup_prompt_lens, wup_new_tokens = zip(*[(s["prompt_length"],
                                                  s["new_tokens"])
                                                 for s in spyre_warmup_shapes])
