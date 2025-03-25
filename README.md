@@ -9,7 +9,7 @@ The vLLM Spyre plugin (`vllm-spyre`) is a dedicated backend extension that enabl
 First, download vllm-spyre
 
 ```
-git clone https://github.com/IBM/vllm-spyre
+git clone https://github.com/vllm-project/vllm-spyre.git
 cd vllm-spyre
 ```
 
@@ -24,11 +24,11 @@ docker run -it --rm vllm-spyre bash
 
 ```
 # Install vllm
-pip install vllm==0.7.3
+pip install vllm==0.8.0
 
 # Install vllm-spyre
 cd ..
-git clone https://github.com/IBM/vllm-spyre.git
+git clone https://github.com/vllm-project/vllm-spyre.git
 cd vllm-spyre
 pip install -v -e .
 ```
