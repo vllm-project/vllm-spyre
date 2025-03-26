@@ -7,8 +7,7 @@ import torch
 from torch import nn
 from vllm.config import DeviceConfig, VllmConfig
 from vllm.logger import init_logger
-from vllm.platforms import current_platform
-from vllm.sampling_params import SamplingParams, SamplingType
+from vllm.sampling_params import SamplingType
 from vllm.utils import is_pin_memory_available
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.outputs import SamplerOutput
@@ -470,7 +469,6 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                 req_index,
                 start_token_index:end_token_index] = req_data.new_token_ids
 
-
     def _get_padded_batch_size(self, new_requests: list[NewRequestData]):
         # find warmup shape to be used for padding and batching
         applicable_spyre_warmup_shapes = [
@@ -496,6 +494,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         # If multiple warmup shapes apply, the first one is selected.
         # For improving performance, the warmup shapes in scheduler_config
         # are ordered by "processing speed".
-        min_pad_length_batch = applicable_spyre_warmup_shapes[0]['prompt_length']
+        min_pad_length_batch = applicable_spyre_warmup_shapes[0][
+            'prompt_length']
         padded_batch_size = applicable_spyre_warmup_shapes[0]['batch_size']
         return padded_batch_size, min_pad_length_batch
