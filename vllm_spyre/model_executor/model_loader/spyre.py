@@ -121,11 +121,6 @@ class SpyreCausalLM(nn.Module):
                 model_config.dtype, self.dtype)
 
         if model_config.quantization == "gptq":
-
-            # note, we have to find a better way to package this
-            # shouldn't it be part of FMS?
-            sys.path.append("/home/senuser/aiu-fms")
-
             if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
                 from fms_mo.aiu_addons.gptq import (  # noqa: F401
                     gptq_aiu_adapter, gptq_aiu_linear)
