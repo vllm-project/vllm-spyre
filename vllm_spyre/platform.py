@@ -6,8 +6,9 @@ import torch
 from vllm.logger import init_logger
 
 if TYPE_CHECKING:
-    from vllm.config import VllmConfig
+    from vllm.config import ModelConfig, VllmConfig
 else:
+    ModelConfig = None
     VllmConfig = None
 import vllm.envs as envs
 from vllm.platforms import Platform, PlatformEnum
@@ -81,7 +82,7 @@ class SpyrePlatform(Platform):
         max_seq_len = 0
         for shape in cls.get_warmup_shapes():
             max_batch_size = max(max_batch_size, shape['batch_size'])
-            max_seq_len = max(max_batch_size,
+            max_seq_len = max(max_seq_len,
                               shape['prompt_length'] + shape['new_tokens'])
 
         if envs.VLLM_USE_V1:
@@ -165,3 +166,10 @@ class SpyrePlatform(Platform):
     @classmethod
     def get_warmup_shapes(cls) -> tuple[dict[str, int], ...]:
         return cls.spyre_warmup_shapes
+
+    @classmethod
+    def supports_v1(cls, model_config: ModelConfig) -> bool:
+        """Returns whether the current platform can support v1 for the supplied
+        model configuration.
+        """
+        return True
