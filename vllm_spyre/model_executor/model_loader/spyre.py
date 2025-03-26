@@ -1,6 +1,5 @@
 """Utilities for selecting and loading Spyre models."""
 import os
-import sys
 from typing import Optional
 
 import torch
