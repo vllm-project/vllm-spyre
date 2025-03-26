@@ -103,6 +103,9 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         self._sampling_params_by_request: dict[str, SamplingParams] = {}
         self._max_logprobs: Optional[int] = None
 
+        self.spyre_warmup_shapes = SpyrePlatform.get_warmup_shapes(
+            self.scheduler_config)
+
     def get_model(self) -> nn.Module:
         return self.model
 
@@ -127,9 +130,8 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         input_token_list: List[torch.Tensor] = []
 
         # find warmup shape to be used for padding and batching
-        spyre_warmup_shapes = self.scheduler_config.spyre_warmup_shapes
         applicable_spyre_warmup_shapes = [
-            shape for shape in spyre_warmup_shapes
+            shape for shape in self.spyre_warmup_shapes
             if len(new_requests) <= shape['batch_size']
         ]
         for request_data in new_requests:

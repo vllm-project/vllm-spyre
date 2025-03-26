@@ -11,6 +11,8 @@ from vllm.v1.engine import EngineCoreOutput, EngineCoreOutputs, FinishReason
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request, RequestStatus
 
+from vllm_spyre.platform import SpyrePlatform
+
 logger = init_logger(__name__)
 
 
@@ -28,7 +30,7 @@ class SpyreScheduler(Scheduler):
 
         # All warmup shapes that we can support
         self.spyre_warmup_shapes: tuple[dict[str, int], ...] = \
-            self.scheduler_config.spyre_warmup_shapes
+            SpyrePlatform.get_warmup_shapes(self.scheduler_config)
 
         # We'll put all new requests into this queue so that the base scheduler
         # does not attempt to schedule them until we release them into the

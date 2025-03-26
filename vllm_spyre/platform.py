@@ -75,10 +75,10 @@ class SpyrePlatform(Platform):
 
         # Override --max-num-seqs to the biggest warmup batch size
         # And override --max-model-len to the biggest warmup sequence
-        cls.set_warmup_shapes(scheduler_config)
+        spyre_warmup_shapes = cls.get_warmup_shapes(scheduler_config)
         max_batch_size = 0
         max_seq_len = 0
-        for shape in scheduler_config.spyre_warmup_shapes:
+        for shape in spyre_warmup_shapes:
             max_batch_size = max(max_batch_size, shape['batch_size'])
             max_seq_len = max(max_batch_size,
                               shape['prompt_length'] + shape['new_tokens'])
@@ -131,7 +131,7 @@ class SpyrePlatform(Platform):
         return torch.no_grad()
 
     @classmethod
-    def set_warmup_shapes(cls, scheduler_config) -> None:
+    def get_warmup_shapes(cls, scheduler_config) -> tuple[dict[str, int], ...]:
         # load warmup shapes and sort by "speed"
         wup_prompt_lens = envs_spyre.VLLM_SPYRE_WARMUP_PROMPT_LENS or []
         wup_batch_sizes = envs_spyre.VLLM_SPYRE_WARMUP_BATCH_SIZES or []
@@ -152,7 +152,7 @@ class SpyrePlatform(Platform):
         logger.info("VLLM_SPYRE_WARMUP_NEW_TOKENS = %s", wup_new_tokens)
         logger.info("VLLM_SPYRE_WARMUP_BATCH_SIZES = %s", wup_batch_sizes)
 
-        scheduler_config.spyre_warmup_shapes = tuple(
+        return tuple(
             sorted([{
                 'prompt_length': pl,
                 'new_tokens': nt,
