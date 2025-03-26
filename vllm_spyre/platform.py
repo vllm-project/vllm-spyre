@@ -6,8 +6,9 @@ import torch
 from vllm.logger import init_logger
 
 if TYPE_CHECKING:
-    from vllm.config import VllmConfig
+    from vllm.config import ModelConfig, VllmConfig
 else:
+    ModelConfig = None
     VllmConfig = None
 import vllm.envs as envs
 from vllm.platforms import Platform, PlatformEnum
@@ -165,3 +166,10 @@ class SpyrePlatform(Platform):
     @classmethod
     def get_warmup_shapes(cls) -> tuple[dict[str, int], ...]:
         return cls.spyre_warmup_shapes
+
+    @classmethod
+    def supports_v1(cls, model_config: ModelConfig) -> bool:
+        """Returns whether the current platform can support v1 for the supplied
+        model configuration.
+        """
+        return True
