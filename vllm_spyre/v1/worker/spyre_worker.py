@@ -15,8 +15,6 @@ from vllm.logger import init_logger
 from vllm.model_executor import set_random_seed
 from vllm.platforms import current_platform
 from vllm.sampling_params import SamplingParams
-from vllm.v1.core.scheduler import (CachedRequestData, NewRequestData,
-                                    SchedulerOutput)
 from vllm.v1.kv_cache_interface import KVCacheConfig, KVCacheSpec
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.worker.worker_base import WorkerBase as WorkerBaseV1
@@ -25,6 +23,8 @@ from vllm.worker.worker_base import WorkerBase
 import vllm_spyre.envs as envs_spyre
 from vllm_spyre.model_executor.model_loader import spyre_setup
 from vllm_spyre.platform import SpyrePlatform
+from vllm_spyre.v1.core.sched.output import (CachedRequestData, NewRequestData,
+                                             SchedulerOutput)
 from vllm_spyre.v1.worker.spyre_model_runner import SpyreModelRunner
 
 logger = init_logger(__name__)

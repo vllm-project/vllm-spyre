@@ -1,16 +1,22 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from collections import deque
-from typing import Deque
+from typing import TYPE_CHECKING, Deque
 
 from vllm.logger import init_logger
 from vllm.platforms import current_platform
 from vllm.sampling_params import SamplingParams
-from vllm.v1.core.scheduler import Scheduler
-from vllm.v1.core.scheduler_output import SchedulerOutput
 from vllm.v1.engine import EngineCoreOutput, EngineCoreOutputs, FinishReason
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request, RequestStatus
+
+try:
+    from vllm.v1.core.sched.scheduler import Scheduler
+except ImportError:
+    from vllm.v1.core.scheduler import Scheduler
+
+if TYPE_CHECKING:
+    from vllm_spyre.v1.core.sched.output import SchedulerOutput
 
 logger = init_logger(__name__)
 
@@ -71,7 +77,7 @@ class SpyreScheduler(Scheduler):
 
     def update_from_output(
         self,
-        scheduler_output: SchedulerOutput,
+        scheduler_output: "SchedulerOutput",
         model_runner_output: ModelRunnerOutput,
     ) -> EngineCoreOutputs:
         """Temporary override to handle rejected requests that were too large
