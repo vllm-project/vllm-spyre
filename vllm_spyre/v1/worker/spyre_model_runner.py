@@ -21,6 +21,8 @@ from vllm.worker.model_runner_base import (
 from vllm_spyre.model_executor.model_loader.spyre import get_spyre_model
 from vllm_spyre.platform import SpyrePlatform
 
+import vllm_spyre.envs as envs_spyre
+
 if TYPE_CHECKING:
     from vllm.attention.backends.abstract import AttentionBackend
     from vllm.model_executor.pooling_metadata import PoolingMetadata
@@ -110,6 +112,24 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         self._sampling_params_by_request: dict[str, SamplingParams] = {}
         self._max_logprobs: Optional[int] = None
 
+        self._req_ids2idx_prompt: dict = {}
+        self._req_ids2idx_decode: dict = {}
+        self._decode_batch_size = 0
+        self._active_pages = []
+        self._free_page_idxs = []
+        self._position_ids_prompt: torch.Tensor = None
+        self._mask_prompt: torch.Tensor = None
+        self._tkv: int = 0
+        self._tkv2fms: int = 0
+        self._prev_step_dec = False
+
+        warmup_shapes = current_platform.get_warmup_shapes()
+        max_prompt_length = max(shape["prompt_length"]
+                                for shape in warmup_shapes)
+        max_batch_size = max(shape["batch_size"] for shape in warmup_shapes)
+        self._free_page_idxs = [i for i in range(max_batch_size)]
+        self._min_pad_length_batch = max_prompt_length
+
     def get_model(self) -> nn.Module:
         return self.model
 
@@ -125,6 +145,155 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
     @property
     def vocab_size(self) -> int:
         return self.model.model.model.config.src_vocab_size
+
+    def _prepare_prompt_cb(
+        self,
+        new_requests: List[NewRequestData],
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, List[int]]:
+        assert len(new_requests) > 0
+        input_token_list: List[torch.Tensor] = []
+
+        # set batch size for prompt to 1 ,update batch size for decode
+        padded_batch_size = 1
+        self._decode_batch_size = self._decode_batch_size +1;
+
+        # Internal state is managed here.
+        self._req_ids2idx_prompt = {}
+        self._sampling_params_by_request = {}
+        self._max_logprobs = None
+        self._active_pages = []
+        for idx, request_data in enumerate(new_requests):
+            free_page_idx = self._free_page_idxs.pop(0)
+            self._active_pages.append(free_page_idx)
+            len_val = len(self._req_ids2idx_decode)
+            self._req_ids2idx_decode[request_data.req_id] = len_val
+            self._req_ids2idx_prompt[request_data.req_id] = idx
+            self._sampling_params_by_request[
+                request_data.req_id] = request_data.sampling_params
+
+            # retrieve initial (unpadded) tokens
+            prompt_tokens = request_data.prompt_token_ids
+
+            input_token_list.append(
+                torch.tensor(prompt_tokens,
+                             dtype=torch.long,
+                             device=torch.device("cpu")))
+
+        # Cache the max requested logprobs for this batch
+        logprobs: list[int] = [
+            sampling_params.logprobs
+            for sampling_params in self._sampling_params_by_request.values()
+            if sampling_params is not None
+            and sampling_params.logprobs is not None
+        ]
+        if logprobs:
+            self._max_logprobs = max(logprobs)
+
+        actual_batch_size = len(input_token_list)
+        self.model.indices = torch.cat([
+            torch.ones(actual_batch_size, dtype=torch.bool, device='cpu'),
+            torch.zeros(padded_batch_size - actual_batch_size,
+                        dtype=torch.bool,
+                        device='cpu')
+        ])
+
+        if self._tkv == 0:
+            self._tkv = self._min_pad_length_batch
+
+        if self._prev_step_dec:
+            _tkv_insert = self._tkv - 1
+        else:
+            _tkv_insert = self._tkv
+        self._prev_step_dec = False
+
+        # padding to compiled batch size
+        while len(input_token_list) < padded_batch_size:
+            input_token_list.append(
+                torch.zeros(self._tkv,
+                            dtype=torch.long,
+                            device=torch.device("cpu")))
+
+        # get position ids and attention mask
+        input_tokens, self._position_ids_prompt, self._mask_prompt = self.pad_input_ids(
+            input_token_list, min_pad_length=self._tkv)
+
+        seq_lens = [t.shape[0] for t in input_token_list]
+        self._req_ids2idx = {}
+        self._req_ids2idx = self._req_ids2idx_prompt.copy()
+        self._tkv2fms = 0
+        return input_tokens, self._position_ids_prompt, self._mask_prompt, seq_lens
+
+    def _prepare_decode_cb(
+        self,
+        cached_requests: List[CachedRequestData],
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        assert len(cached_requests) > 0
+        input_tokens: List[List[int]] = [
+            [0] for _ in range(self._decode_batch_size)
+        ]
+
+        self._prev_step_dec = True
+        self._req_ids2idx_prompt = {}
+        self._req_ids2idx = {}
+        self._req_ids2idx = self._req_ids2idx_decode.copy()
+        self._active_pages = []
+        self.model.indices = torch.zeros(self._decode_batch_size, dtype=torch.bool, device='cpu')
+        for req_id in self._req_ids2idx:
+            self.model.indices[self._req_ids2idx[req_id]] = True
+            self._active_pages.append(int(req_id))
+
+        for cached_request in cached_requests:
+            # TODO: Will this always just be one token ID if there's no spec
+            # or jump decoding?
+            generation_token = cached_request.new_token_ids[-1]
+            input_tokens[self._req_ids2idx[cached_request.req_id]] = [
+                generation_token
+            ]
+
+        self._mask, self._position_ids = self._prepare_pos_mask_decode_cb(cached_requests, self._tkv)
+        self._tkv = self._tkv + 1
+        self._tkv2fms = self._tkv
+
+        input_tokens = torch.tensor(input_tokens,
+                                    dtype=torch.long,
+                                    device=self.device)
+
+        return input_tokens, self._position_ids, self._mask
+
+    def _prepare_pos_mask_decode_cb(
+        self,
+        cached_requests: List[CachedRequestData],
+        tkv: int = 0,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+
+        mask_list = []
+
+        position_ids_list: List[List[int]] = [
+            [0] for _ in range(self._decode_batch_size)
+        ]
+
+        for cached_request in cached_requests:
+            position_ids_list[self._req_ids2idx[cached_request.req_id]] = [
+                cached_request.num_computed_tokens
+            ]
+            seq_len = cached_request.num_computed_tokens
+            pads = torch.ones(tkv - seq_len,
+                            dtype=torch.long,
+                            device=self.device) * self.pad_token_id
+            non_pads = torch.ones(seq_len + 1,
+                                dtype=torch.long,
+                                device=self.device)
+            mask_list.append(torch.cat((torch.zeros_like(pads), non_pads)))
+            mask = torch.stack(mask_list).bool()
+            mask = torch.where(mask.logical_not(), -torch.inf, 0.0)
+            mask = mask.to(self.model.model.dtype)
+            position_ids = torch.tensor(position_ids_list,
+                                    dtype=torch.long,
+                                    device=self.device)
+
+        input_mask = torch.unsqueeze(mask, dim=1)
+
+        return input_mask, position_ids
 
     def _prepare_prompt(
         self,
@@ -337,6 +506,71 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                                   sampling_metadata=dummy_metadata,
                                   is_prompt=is_prompt)
 
+    def prepare_model_input_cb(
+            self, scheduler_output: SchedulerOutput) -> ModelInputForSpyre:
+
+        # NOTE: We assume that all sequences in the group are all prompts or
+        # all decodes.
+        # Also assuming that new sequences are prefills
+        is_prompt = len(scheduler_output.scheduled_new_reqs) > 0
+
+        # updating indices: set indices of newly finished sequences False
+        if scheduler_output.finished_req_ids:
+            for seq_id in scheduler_output.finished_req_ids:
+                if seq_id in self._req_ids2idx:
+                    self.model.indices[self._req_ids2idx[seq_id]] = False
+                    self._free_page_idxs.append(int(seq_id))
+                    del self._active_pages[self._req_ids2idx[seq_id]]
+                    del self._req_ids2idx[seq_id]
+                    del self._req_ids2idx_decode[seq_id]
+                    for index, key in enumerate(self._req_ids2idx_decode.keys()):
+                        self._req_ids2idx_decode[key] = index
+                    self._decode_batch_size = self._decode_batch_size - 1;
+
+        # Prepare input tensors.
+        if is_prompt:
+            (input_tokens, input_positions, input_masks,
+             _) = self._prepare_prompt_cb(scheduler_output.scheduled_new_reqs)
+            # seq_lens = [
+            #     input_tokens.shape[1] for i in range(input_tokens.shape[0])
+            # ]
+            num_reqs = len(scheduler_output.scheduled_new_reqs)
+        else:
+            (input_tokens, input_positions,
+             input_masks) = self._prepare_decode_cb(
+                 scheduler_output.scheduled_cached_reqs)
+            # seq_lens = []
+            num_reqs = len(scheduler_output.scheduled_cached_reqs)
+
+        # TODO: Build the rest of the SamplingMetadata correctly
+        dummy_tensors = lambda v: torch.full(
+            (num_reqs, ), v, device=self.device)
+        dummy_metadata = SamplingMetadata(
+            temperature=dummy_tensors(0.0),
+            all_greedy=False,
+            all_random=False,
+            top_p=None,
+            top_k=None,
+            min_p=None,
+            generators={},
+            max_num_logprobs=self._max_logprobs,
+            no_penalties=True,
+            prompt_token_ids=None,
+            frequency_penalties=dummy_tensors(0.1),
+            presence_penalties=dummy_tensors(0.1),
+            repetition_penalties=dummy_tensors(0.1),
+            output_token_ids=[[] for _ in range(num_reqs)],
+            min_tokens={},
+            logit_bias=[None for _ in range(num_reqs)],
+            allowed_token_ids_mask=None,
+        )
+
+        return ModelInputForSpyre(input_tokens=input_tokens,
+                                  input_positions=input_positions,
+                                  input_masks=input_masks,
+                                  sampling_metadata=dummy_metadata,
+                                  is_prompt=is_prompt)
+
     @SpyrePlatform.inference_mode()
     def execute_model(
         self,
@@ -346,13 +580,18 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
 
         t0 = time.time()
 
-        model_input = self.prepare_model_input(scheduler_output)
+        if envs_spyre.VLLM_SPYRE_USE_CB:
+            model_input = self.prepare_model_input_cb(scheduler_output)
+        else:
+            model_input = self.prepare_model_input(scheduler_output)
 
         hidden_states = self.model(
             input_ids=model_input.input_tokens,
             positions=model_input.input_positions,
             masks=model_input.input_masks,
             is_prompt=model_input.is_prompt,
+            tkv = self._tkv2fms,
+            active_pages = self._active_pages,
         )
 
         # Only perform sampling in the driver worker.
@@ -371,9 +610,16 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         print("[spyre_model_runner:execute_model] t_token: %.2fms" %
               (t1 * 1000))
 
+        # Remove padded and finished sequences
+        req_ids = list(self._req_ids2idx.keys())
+        output_req_id_to_index = {}
+        val_idx_list= [idx for idx in range(0,len(self.model.indices)) if self.model.indices[idx]]
+        for idx in range(0,len(val_idx_list)):
+            output_req_id_to_index[req_ids[val_idx_list[idx]]] = idx
+
         model_output = ModelRunnerOutput(
-            req_ids=list(self._req_ids2idx.keys()),
-            req_id_to_index=self._req_ids2idx,
+            req_ids=list(output_req_id_to_index.keys()),
+            req_id_to_index=output_req_id_to_index,
             sampled_token_ids=output.sampled_token_ids.tolist(),
             spec_token_ids=None,
             logprobs=output.logprobs_tensors.tolists()

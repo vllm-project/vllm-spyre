@@ -70,21 +70,20 @@ class SpyreCausalLM(nn.Module):
             max_decode_length,
         )
 
-        # horizontal offset in physical KV cache memory block
-        self.tkv: int = 0
-
     def forward(
         self,
         input_ids: torch.Tensor,
         positions: torch.Tensor,
         masks: torch.Tensor,
         is_prompt: bool,
+        tkv: int,
+        active_pages: list[int],
     ) -> torch.Tensor:
 
-        if is_prompt:
-            self.tkv = 0
-            if not envs_spyre.VLLM_SPYRE_USE_CB:
-                self.model.past_key_value_states = None
+        self.tkv = tkv
+
+        if is_prompt and not envs_spyre.VLLM_SPYRE_USE_CB:
+            self.model.past_key_value_states = None
 
         extra_kwargs = {}
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn_decoder":
@@ -130,7 +129,7 @@ class SpyreCausalLM(nn.Module):
             self.model.sample_mask = matrix.unsqueeze(0)
 
             # prefil of batch size 1
-            logits, self.tkv = self.model(
+            logits = self.model(
                 self.model.sample_token_id,
                 position_ids=self.model.sample_position,
                 mask=self.model.sample_mask,
@@ -155,16 +154,18 @@ class SpyreCausalLM(nn.Module):
             masks[0, :, :] = self.model.sample_mask
 
         # normal prefil or decoding step
-        logits, self.tkv = self.model(
+        logits = self.model(
             input_ids,
             position_ids=positions,
             mask=masks,
             use_cache=True,
             only_last_token=True,
             tkv=self.tkv,
-            active_pages=[i for i in range(input_ids.shape[0])],
+            #active_pages=[i for i in range(input_ids.shape[0])],
+            active_pages=active_pages,
             **extra_kwargs,
         )
+
         if TESTING_CB and self.tkv >= (6 + 64):
             # update sample_token_id, sample_position and sample_mask
             self.model.update_sample_inputs(logits=logits[0, :])
@@ -440,7 +441,7 @@ class FmsModelWrapper(FmsModelBaseWrapper):
                     page, :, :tkv, :] = key_value_states[layer][1][
                         idx, :, :, :]  # [1, 8, L, 128]
 
-        return logits, tkv + 1
+        return logits
 
     def update_sample_inputs(
         self,
@@ -504,4 +505,4 @@ class FmsModelPseudoWrapper(FmsModelBaseWrapper):
                 for tensor in layer:
                     torch._dynamo.mark_dynamic(tensor, 2)
 
-        return logits, tkv + 1
+        return logits
