@@ -129,5 +129,5 @@ jobs:
       run: |
         docker run -i --rm --entrypoint /bin/bash ${{ env.TEST_IMAGE_NAME }} -c '''
           cd vllm-spyre && \
-          python -m pytest --forked --timeout=300  tests -v -k "V1 and eager"
+          python -m pytest --forked --timeout=300  tests -v -k "(V1- and eager) or test_sampling_metadata_in_input_batch"
         '''

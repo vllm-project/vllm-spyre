@@ -1,13 +1,13 @@
 import operator
-import os
 from typing import TYPE_CHECKING, Optional
 
 import torch
 from vllm.logger import init_logger
 
 if TYPE_CHECKING:
-    from vllm.config import VllmConfig
+    from vllm.config import ModelConfig, VllmConfig
 else:
+    ModelConfig = None
     VllmConfig = None
 import vllm.envs as envs
 from vllm.platforms import Platform, PlatformEnum
@@ -22,7 +22,6 @@ class SpyrePlatform(Platform):
     device_name: str = "spyre"
     device_type: str = "cpu"
     supported_quantization: list[str] = ["gptq"]
-    spyre_warmup_shapes: tuple[dict[str, int], ...]
 
     @classmethod
     def get_device_name(cls, device_id: int = 0) -> str:
@@ -51,16 +50,6 @@ class SpyrePlatform(Platform):
             if envs.VLLM_USE_V1:
                 parallel_config.worker_cls = \
                     "vllm_spyre.v1.worker.spyre_worker.SpyreWorker"
-
-                # Forking is required here because this class is used to set up
-                # the warmup shapes, and the workers that are now in separate
-                # processes need to retrieve them.
-                # If we can refactor the workers to setup the warmup shapes
-                # themselves, then we can support process spawning too.
-                if envs.VLLM_WORKER_MULTIPROC_METHOD != "fork":
-                    logger.warning("V1 integration requires "
-                                   "VLLM_WORKER_MULTIPROC_METHOD=fork")
-                    os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "fork"
             else:
                 parallel_config.worker_cls = \
                     "vllm_spyre.worker.spyre_worker.SpyreWorker"
@@ -76,12 +65,12 @@ class SpyrePlatform(Platform):
 
         # Override --max-num-seqs to the biggest warmup batch size
         # And override --max-model-len to the biggest warmup sequence
-        cls.set_warmup_shapes(scheduler_config)
+        spyre_warmup_shapes = cls.get_warmup_shapes(scheduler_config)
         max_batch_size = 0
         max_seq_len = 0
-        for shape in cls.get_warmup_shapes():
+        for shape in spyre_warmup_shapes:
             max_batch_size = max(max_batch_size, shape['batch_size'])
-            max_seq_len = max(max_batch_size,
+            max_seq_len = max(max_seq_len,
                               shape['prompt_length'] + shape['new_tokens'])
 
         if envs.VLLM_USE_V1:
@@ -132,7 +121,7 @@ class SpyrePlatform(Platform):
         return torch.no_grad()
 
     @classmethod
-    def set_warmup_shapes(cls, scheduler_config) -> None:
+    def get_warmup_shapes(cls, scheduler_config) -> tuple[dict[str, int], ...]:
         # load warmup shapes and sort by "speed"
         wup_prompt_lens = envs_spyre.VLLM_SPYRE_WARMUP_PROMPT_LENS or []
         wup_batch_sizes = envs_spyre.VLLM_SPYRE_WARMUP_BATCH_SIZES or []
@@ -153,7 +142,7 @@ class SpyrePlatform(Platform):
         logger.info("VLLM_SPYRE_WARMUP_NEW_TOKENS = %s", wup_new_tokens)
         logger.info("VLLM_SPYRE_WARMUP_BATCH_SIZES = %s", wup_batch_sizes)
 
-        cls.spyre_warmup_shapes = tuple(
+        return tuple(
             sorted([{
                 'prompt_length': pl,
                 'new_tokens': nt,
@@ -163,5 +152,8 @@ class SpyrePlatform(Platform):
                    key=operator.itemgetter('batch_size', 'prompt_length')))
 
     @classmethod
-    def get_warmup_shapes(cls) -> tuple[dict[str, int], ...]:
-        return cls.spyre_warmup_shapes
+    def supports_v1(cls, model_config: ModelConfig) -> bool:
+        """Returns whether the current platform can support v1 for the supplied
+        model configuration.
+        """
+        return True
