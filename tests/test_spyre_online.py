@@ -171,3 +171,25 @@ def test_openai_serving(model, warmup_shape, backend, vllm_version):
                                                n=2)
         assert len(completion.choices) == 2
         assert len(completion.choices[0].text) > 0
+
+        # Check some basic error handling as well. This is all done in one test
+        # now to avoid server boot-up overhead to test each case.
+        # To change this we'll need:
+        # - A better way to share a server as a test fixture, or
+        # - Much less overhead on server boot (e.g. cached compiled graphs)
+        with pytest.raises(openai.APIError):
+            # Prompt too long should raise
+            long_prompt = "Hello " * 1000
+            client.completions.create(model=model,
+                                      prompt=long_prompt,
+                                      max_tokens=500)
+
+        # Short prompt under context length but requesting too many tokens for
+        # the warmup shape should return an empty result
+        completion = client.completions.create(model=model,
+                                               prompt="Hello World!",
+                                               max_tokens=25)
+
+        assert len(completion.choices) == 1
+        assert len(completion.choices[0].text) == 0
+        assert completion.choices[0].finish_reason == "abort"
