@@ -16,6 +16,8 @@ except ImportError:
 
 if TYPE_CHECKING:
     from vllm_spyre.v1.core.sched.output import SchedulerOutput
+else:
+    SchedulerOutput = None
 from vllm_spyre.platform import SpyrePlatform
 
 logger = init_logger(__name__)
@@ -77,7 +79,7 @@ class SpyreScheduler(Scheduler):
 
     def update_from_output(
         self,
-        scheduler_output: "SchedulerOutput",
+        scheduler_output: SchedulerOutput,
         model_runner_output: ModelRunnerOutput,
     ) -> EngineCoreOutputs:
         """Temporary override to handle rejected requests that were too large
@@ -88,7 +90,7 @@ class SpyreScheduler(Scheduler):
         outputs.outputs.extend(reject_outputs)
         return outputs
 
-    def schedule(self) -> "SchedulerOutput":
+    def schedule(self) -> SchedulerOutput:
         """This override adds constraints and then delegates most of the work
         to the base scheduler"""
 

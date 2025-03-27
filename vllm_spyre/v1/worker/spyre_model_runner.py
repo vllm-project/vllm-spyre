@@ -25,9 +25,14 @@ from vllm_spyre.v1.worker.spyre_input_batch import (CachedRequestState,
 if TYPE_CHECKING:
     from vllm.attention.backends.abstract import AttentionBackend
     from vllm.model_executor.pooling_metadata import PoolingMetadata
+
     from vllm_spyre.v1.core.sched.output import (CachedRequestData,
                                                  NewRequestData,
                                                  SchedulerOutput)
+else:
+    CachedRequestData = None
+    SchedulerOutput = None
+    NewRequestData = None
 
 from vllm.v1.outputs import ModelRunnerOutput
 
@@ -134,7 +139,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
 
     def _prepare_prompt(
         self,
-        new_requests: List["NewRequestData"],
+        new_requests: list[NewRequestData],
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, List[int]]:
         assert len(new_requests) > 0
         input_token_list: List[torch.Tensor] = []
@@ -199,7 +204,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
 
     def _prepare_decode(
         self,
-        cached_requests: list["CachedRequestData"],
+        cached_requests: list[CachedRequestData],
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         assert len(cached_requests) > 0
         input_tokens: List[List[int]] = [
@@ -260,7 +265,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         return ModelInputForSpyre.from_broadcasted_tensor_dict(tensor_dict)
 
     def prepare_model_input(
-            self, scheduler_output: "SchedulerOutput") -> ModelInputForSpyre:
+            self, scheduler_output: SchedulerOutput) -> ModelInputForSpyre:
 
         # NOTE: We assume that all sequences in the group are all prompts or
         # all decodes.
@@ -294,7 +299,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
     @SpyrePlatform.inference_mode()
     def execute_model(
         self,
-        scheduler_output: "SchedulerOutput",
+        scheduler_output: SchedulerOutput,
         **kwargs,
     ) -> ModelRunnerOutput:
 
@@ -434,7 +439,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                                       use_mla=False)
         return {"foo": attn_spec}
 
-    def _update_states(self, scheduler_output: "SchedulerOutput"):
+    def _update_states(self, scheduler_output: SchedulerOutput):
         # Update the states of the running/resumed requests.
         # For now, we are updating input_batch.'s `token_ids_cpu`,
         # `num_tokens`
@@ -470,7 +475,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                 req_index,
                 start_token_index:end_token_index] = req_data.new_token_ids
 
-    def _get_padded_batch_size(self, new_requests: list['NewRequestData']):
+    def _get_padded_batch_size(self, new_requests: list[NewRequestData]):
         # find warmup shape to be used for padding and batching
         applicable_spyre_warmup_shapes = [
             shape for shape in self.spyre_warmup_shapes
