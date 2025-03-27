@@ -33,8 +33,7 @@ class RemoteOpenAIServer:
                  env_dict: Optional[dict[str, str]] = None,
                  seed: Optional[int] = 0,
                  auto_port: bool = True,
-                 max_wait_seconds: Optional[float] = None,
-                 tensor_parallel_size: Optional[int] = 1) -> None:
+                 max_wait_seconds: Optional[float] = None) -> None:
         # NB: This implementation does not ensure that the model is downloaded
         # before booting the server, it should be used with models already
         # cached on disk
@@ -54,12 +53,6 @@ class RemoteOpenAIServer:
                                  f"when `seed={seed}`.")
 
             vllm_serve_args = vllm_serve_args + ["--seed", str(seed)]
-
-        if tensor_parallel_size > 1:
-            vllm_serve_args = vllm_serve_args + [
-                "--tensor-parallel-size",
-                str(tensor_parallel_size)
-            ]
 
         parser = FlexibleArgumentParser(
             description="vLLM's remote OpenAI server.")

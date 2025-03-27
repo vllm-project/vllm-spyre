@@ -10,7 +10,7 @@ from tests.spyre_util import get_spyre_backend_list, get_spyre_model_list
     (64, 20, 4),
 ]])
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("tensor_parallel_size", [2])
+@pytest.mark.parametrize("tensor_parallel_size", ["2"])
 @pytest.mark.parametrize("vllm_version", ["V0", "V1"])
 def test_openai_serving(model, warmup_shape, backend, tensor_parallel_size,
                         vllm_version):
@@ -34,10 +34,9 @@ def test_openai_serving(model, warmup_shape, backend, tensor_parallel_size,
         v1_flag
     }
 
-    with RemoteOpenAIServer(
-            model, [],
-            env_dict=env_dict,
-            tensor_parallel_size=tensor_parallel_size) as server:
+    with RemoteOpenAIServer(model,
+                            ["--tensor-parallel-size", tensor_parallel_size],
+                            env_dict=env_dict) as server:
         # Run a few simple requests to make sure the server works.
         # This is not checking correctness of replies
         client = server.get_client()
