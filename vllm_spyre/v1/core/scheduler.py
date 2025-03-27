@@ -4,7 +4,6 @@ from collections import deque
 from typing import TYPE_CHECKING, Deque
 
 from vllm.logger import init_logger
-from vllm.platforms import current_platform
 from vllm.sampling_params import SamplingParams
 from vllm.v1.engine import EngineCoreOutput, EngineCoreOutputs, FinishReason
 from vllm.v1.outputs import ModelRunnerOutput
@@ -17,6 +16,7 @@ except ImportError:
 
 if TYPE_CHECKING:
     from vllm_spyre.v1.core.sched.output import SchedulerOutput
+from vllm_spyre.platform import SpyrePlatform
 
 logger = init_logger(__name__)
 
@@ -35,7 +35,7 @@ class SpyreScheduler(Scheduler):
 
         # All warmup shapes that we can support
         self.spyre_warmup_shapes: tuple[dict[str, int], ...] = \
-            current_platform.get_warmup_shapes()
+            SpyrePlatform.get_warmup_shapes(self.scheduler_config)
 
         # We'll put all new requests into this queue so that the base scheduler
         # does not attempt to schedule them until we release them into the
