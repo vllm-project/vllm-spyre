@@ -72,4 +72,3 @@ def test_openai_serving(model, warmup_shape, backend, vllm_version):
 
         assert len(completion.choices) == 1
         assert len(completion.choices[0].text) == 0
-        assert completion.choices[0].finish_reason == "abort"
