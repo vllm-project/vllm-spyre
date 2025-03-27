@@ -470,7 +470,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                 req_index,
                 start_token_index:end_token_index] = req_data.new_token_ids
 
-    def _get_padded_batch_size(self, new_requests: list[NewRequestData]):
+    def _get_padded_batch_size(self, new_requests: list['NewRequestData']):
         # find warmup shape to be used for padding and batching
         applicable_spyre_warmup_shapes = [
             shape for shape in self.spyre_warmup_shapes
