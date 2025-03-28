@@ -15,17 +15,6 @@ RUN microdnf update -y && microdnf install -y \
 RUN ln -sf $(which python${PYTHON_VERSION}) /usr/bin/python && \
     ln -sf $(which pip${PYTHON_VERSION}) /usr/bin/pip
 
-# Download and install vllm ###########################################################
-# RUN git clone --depth 1 https://github.com/vllm-project/vllm.git \
-#     && cd vllm \
-#     && git fetch --tags \
-#     && git checkout v0.8.0 \
-#     && python -m pip install --upgrade pip \
-#     && pip3 install torch=="2.5.1+cpu" --index-url https://download.pytorch.org/whl/cpu \
-#     && python use_existing_torch.py \
-#     && pip install -r requirements/build.txt \
-#     && SETUPTOOLS_SCM_PRETEND_VERSION=0.8.0 VLLM_TARGET_DEVICE=empty pip install --verbose . --no-build-isolation
-
 # Install vllm Spyre plugin ##################################################################
 RUN mkdir /workspace/vllm-spyre
 COPY . /workspace/vllm-spyre
