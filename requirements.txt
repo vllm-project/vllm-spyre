@@ -1,4 +1,0 @@
-# IBM foundation model stack
-ibm-fms==0.0.8
-
-wurlitzer
