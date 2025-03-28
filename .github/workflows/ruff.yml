@@ -36,17 +36,22 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        uses: astral-sh/setup-uv@v5
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-lint.txt
+        run: uv sync --only-group lint
       - name: Analysing the code with ruff
         run: |
           echo "::add-matcher::.github/workflows/matchers/ruff.json"
           ruff check --output-format github .
       - name: Run isort
-        run: |
-          isort . --check-only
+        if: always()
+        run: isort . --check-only
+      - name: run yapf
+        if: always()
+        run: yapf --diff --recursive .
+      - name: Spelling check with codespell
+        if: always()
+        run: codespell --toml pyproject.toml
+
