@@ -29,6 +29,9 @@ RUN ln -sf $(which python${PYTHON_VERSION}) /usr/bin/python && \
 # Install vllm Spyre plugin ##################################################################
 RUN mkdir /workspace/vllm-spyre
 COPY . /workspace/vllm-spyre
+# Torch must be installed first
+RUN pip install torch==2.5.1+cpu --index-url https://download.pytorch.org/whl/cpu
+# Install uv to install the plugin
 RUN pip install uv
 RUN cd /workspace/vllm-spyre \
     && VLLM_TARGET_DEVICE=empty uv pip install -v -e . --system
