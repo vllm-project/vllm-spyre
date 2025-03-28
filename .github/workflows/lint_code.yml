@@ -40,7 +40,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
-        run: uv sync --only-group lint
+        run: uv sync --frozen --only-group lint
       - name: Analysing the code with ruff
         run: |
           echo "::add-matcher::.github/workflows/matchers/ruff.json"
