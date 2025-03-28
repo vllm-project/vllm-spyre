@@ -284,7 +284,10 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
             # updating indices: set indices of newly finished sequences False
             if finished_requests_ids:
                 for seq_id in finished_requests_ids:
-                    self.model.indices[self._req_ids2idx[seq_id]] = False
+                    # ignore requests that are not in the batch, eg. requests
+                    # cancelled while waiting
+                    if idx := self._req_ids2idx.get(seq_id):
+                        self.model.indices[idx] = False
             (input_tokens, input_positions,
              input_masks) = self._prepare_decode(seq_group_metadata_list)
             seq_lens = []
