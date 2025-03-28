@@ -305,6 +305,20 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
 
         t0 = time.time()
 
+        # TODO: change to EMPTY_MODEL_RUNNER_OUTPUT, right now this
+        # will be a breaking change, or clumsy to make retrocompatible
+        # with conditional import
+        if not scheduler_output.total_num_scheduled_tokens:
+            # Return empty ModelRunnerOuptut if there's no work to do.
+            return ModelRunnerOutput(
+                req_ids=[],
+                req_id_to_index={},
+                sampled_token_ids=[],
+                spec_token_ids=None,
+                logprobs=None,
+                prompt_logprobs_dict={},
+            )
+
         self._update_states(scheduler_output)
 
         model_input = self.prepare_model_input(scheduler_output)
