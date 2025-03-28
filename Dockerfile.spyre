@@ -31,10 +31,14 @@ RUN mkdir /workspace/vllm-spyre
 COPY . /workspace/vllm-spyre
 # Torch must be installed first
 RUN pip install torch==2.5.1+cpu --index-url https://download.pytorch.org/whl/cpu
-# Install uv to install the plugin
+# Install uv
 RUN pip install uv
+# Install the plugin in a new venv, along with dev deps to test with
 RUN cd /workspace/vllm-spyre \
-    && VLLM_TARGET_DEVICE=empty uv pip install -v -e . --system
+    && uv venv .venv --system-site-packages \
+    && source .venv/bin/activate \
+    && VLLM_TARGET_DEVICE=empty uv pip install -v -e . --system \
+    && uv sync --frozen --group dev
 ENV VLLM_PLUGINS=spyre
 
 CMD ["/bin/bash"]
