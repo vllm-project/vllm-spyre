@@ -76,8 +76,8 @@ class SpyreCausalLM(nn.Module):
         positions: torch.Tensor,
         masks: torch.Tensor,
         is_prompt: bool,
-        tkv: int,
-        active_pages: list[int],
+        tkv: Optional[int] = None,
+        active_pages: Optional[list[int]] = None,
     ) -> torch.Tensor:
 
         self.tkv = tkv
