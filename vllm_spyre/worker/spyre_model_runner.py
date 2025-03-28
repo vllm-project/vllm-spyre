@@ -286,7 +286,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                 for seq_id in finished_requests_ids:
                     # ignore requests that are not in the batch, eg. requests
                     # cancelled while waiting
-                    if idx := self._req_ids2idx.get(seq_id):
+                    if (idx := self._req_ids2idx.get(seq_id)) is not None:
                         self.model.indices[idx] = False
             (input_tokens, input_positions,
              input_masks) = self._prepare_decode(seq_group_metadata_list)
