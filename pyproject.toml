@@ -123,5 +123,5 @@ lint = [
     "types-pyyaml>=6.0.12.20250326",
     "types-requests>=2.32.0.20250328",
     "types-setuptools>=77.0.2.20250328",
-    "yapf==0.32.0",
+    "yapf==0.43.0",
 ]
