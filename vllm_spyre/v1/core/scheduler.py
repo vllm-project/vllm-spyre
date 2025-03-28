@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from collections import deque
-from typing import TYPE_CHECKING, Deque
+from typing import TYPE_CHECKING, Deque, Iterable, Union
 
 from vllm.logger import init_logger
 from vllm.sampling_params import SamplingParams
@@ -141,6 +141,43 @@ class SpyreScheduler(Scheduler):
     def get_num_unfinished_requests(self) -> int:
         # Override this to include our extra queue
         return len(self.waiting) + len(self.running) + len(self.holdback_queue)
+
+    def finish_requests(
+        self,
+        request_ids: Union[str, Iterable[str]],
+        finished_status: RequestStatus,
+    ) -> None:
+        """Handles the finish signal from outside the scheduler.
+
+        For example, the API server can abort a request when the client
+        disconnects.
+
+        Specialized in vllm_spyre to handle the holdback_queue.
+        """
+        assert RequestStatus.is_finished(finished_status)
+        if isinstance(request_ids, str):
+            request_ids = (request_ids, )
+        else:
+            request_ids = set(request_ids)
+
+        for req_id in request_ids:
+            request = self.requests.get(req_id)
+            if request is None:
+                # Invalid request ID.
+                continue
+
+            if request.status == RequestStatus.RUNNING:
+                self.running.remove(request)
+                self.scheduled_req_ids.discard(request.request_id)
+            else:
+                # this try-except is the specialization for Spyre
+                try:
+                    self.holdback_queue.remove(request)
+                except ValueError:
+                    self.waiting.remove(request)
+
+            request.status = finished_status
+            self._free_request(request)
 
     def _get_matching_warmup_shapes(
             self, request: Request, warmup_shapes: list[dict[str, int]],
