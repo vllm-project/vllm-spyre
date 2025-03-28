@@ -43,7 +43,7 @@ PYMARKDOWNLNT_VERSION=$(pymarkdownlnt version | awk '{print $1}')
 
 # params: tool name, tool version, required version
 tool_version_check() {
-    expected=$(grep "$1" requirements-lint.txt | cut -d'=' -f3)
+    expected=$(grep "\"$1" pyproject.toml | cut -d'=' -f3 | cut -d'"' -f1)
     if [[ "$2" != "$expected" ]]; then
         echo "❓❓Wrong $1 version installed: $expected is required, not $2."
         exit 1
