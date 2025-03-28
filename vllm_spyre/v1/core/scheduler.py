@@ -11,6 +11,8 @@ from vllm.v1.core.scheduler import Scheduler
 from vllm.v1.core.scheduler_output import SchedulerOutput
 from vllm.v1.request import Request, RequestStatus
 
+import vllm_spyre.envs as envs_spyre
+
 logger = init_logger(__name__)
 
 
@@ -49,7 +51,9 @@ class SpyreScheduler(Scheduler):
         # scheduler sees have at least one common warmup shape.
         self.holdback_queue: Deque[Request] = deque()
 
-    def schedule(self) -> "SchedulerOutput":
+        self.last_running: list[Request] = []
+
+    def schedule_sb(self) -> "SchedulerOutput":
         """This override adds constraints and then delegates most of the work
         to the base scheduler"""
 
@@ -107,6 +111,88 @@ class SpyreScheduler(Scheduler):
                         break
 
         outputs = super().schedule()
+        return outputs
+
+    def schedule_cb(self) -> "SchedulerOutput":
+        """This override adds constraints and then delegates most of the work
+        to the base scheduler"""
+
+        # First purge the full waiting queue into our holdback queue, preserving
+        # priority
+        while self.waiting:
+            self.holdback_queue.append(self.waiting.popleft())
+
+        # Check if there are new request and if total scheduled running request are less
+        # than the max number
+        total_running = self.last_running + self.running
+
+        if len(self.holdback_queue) > 0 and len(total_running) + 1 <= self.max_num_running_reqs:
+            # Make a copy of the warmup shapes
+            available_warmup_shapes = list(self.spyre_warmup_shapes)
+
+            while self.holdback_queue:
+                request = self.holdback_queue[0]
+
+                # prune the possible shapes to only those that fit this request
+                # and the growing batch size
+                max_tokens = 0
+                if request.sampling_params is not None and\
+                        request.sampling_params.max_tokens is not None:
+                    max_tokens = request.sampling_params.max_tokens
+
+                available_warmup_shapes = [
+                    shape for shape in available_warmup_shapes
+                    if request.num_prompt_tokens <= shape['prompt_length']
+                    and max_tokens <= shape['new_tokens']
+                    and len(self.waiting) < shape['batch_size']
+                ]
+
+                if len(available_warmup_shapes) > 0:
+                    # There is still at least one valid shape, so add to the
+                    # waiting queue
+                    self.waiting.append(self.holdback_queue.popleft())
+                else:
+                    # We can't schedule this one.
+                    # If it's the first request, then it fits _no_ shapes at all
+                    # So we reject it entirely
+                    if len(self.waiting) == 0:
+                        logger.warning(
+                            "No applicable warmup shape exists for "
+                            "combination of prompt length (%d tokens) "
+                            "and maximum number of output tokens to be "
+                            "generated (%d tokens)", request.num_prompt_tokens,
+                            request.sampling_params.max_tokens)
+
+                        request.status = RequestStatus.FINISHED_IGNORED
+                        self._free_request(self.holdback_queue.popleft())
+                    else:
+                        # Otherwise, we simply stop here so that the scheduler
+                        # can work with the batch we have
+                        break
+
+                # Schedule a single prefill
+                if len(self.waiting) > 0:
+                    break
+
+        if len(self.waiting) > 0:
+            # If prefill scheduled, save running queue for the next decode step.
+            # If previous step was also prefill, running queue contains the previous prefill sequence.
+            self.last_running = total_running
+            self.running = []
+        else:
+            # If decode scheduled and previous step was prefil, restore and update last decode running
+            # queue
+            self.running = total_running
+            self.last_running = []
+
+        outputs = super().schedule()
+        return outputs
+
+    def schedule(self) -> "SchedulerOutput":
+        if envs_spyre.VLLM_SPYRE_USE_CB:
+            outputs = self.schedule_cb()
+        else:
+            outputs = self.schedule_sb()
         return outputs
 
     def get_num_unfinished_requests(self) -> int:
