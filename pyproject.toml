@@ -1,3 +1,9 @@
+[build-system]
+requires = [
+  "setuptools>=48",
+]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "vllm-spyre"
 description = "vLLM plugin for Spyre hardware support"
@@ -9,6 +15,12 @@ dependencies = [
     "ibm-fms==0.0.8",
     "vllm",
 ]
+
+[project.entry-points."vllm.platform_plugins"]
+spyre = "vllm_spyre:register"
+
+[tool.setuptools.packages.find]
+where = ["vllm_spyre"]
 
 [tool.setuptools_scm]
 # version_file = "vllm_spyre/_version.py" # currently handled by `setup.py:get_version()`

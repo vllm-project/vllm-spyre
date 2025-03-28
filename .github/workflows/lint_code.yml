@@ -1,4 +1,4 @@
-name: ruff
+name: lint code
 
 on:
   # Trigger the workflow on push or pull request,
@@ -46,6 +46,8 @@ jobs:
           echo "::add-matcher::.github/workflows/matchers/ruff.json"
           ruff check --output-format github .
       - name: Run isort
+        # using `always()` here ensures all the checks run even if previous
+        # checks fail
         if: always()
         run: isort . --check-only
       - name: run yapf
