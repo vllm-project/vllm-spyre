@@ -26,8 +26,14 @@ if TYPE_CHECKING:
     from vllm.attention.backends.abstract import AttentionBackend
     from vllm.model_executor.pooling_metadata import PoolingMetadata
 
-from vllm.v1.core.scheduler import (CachedRequestData, NewRequestData,
-                                    SchedulerOutput)
+    from vllm_spyre.v1.core.sched.output import (CachedRequestData,
+                                                 NewRequestData,
+                                                 SchedulerOutput)
+else:
+    CachedRequestData = None
+    SchedulerOutput = None
+    NewRequestData = None
+
 from vllm.v1.outputs import ModelRunnerOutput
 
 logger = init_logger(__name__)
@@ -133,7 +139,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
 
     def _prepare_prompt(
         self,
-        new_requests: List[NewRequestData],
+        new_requests: list[NewRequestData],
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, List[int]]:
         assert len(new_requests) > 0
         input_token_list: List[torch.Tensor] = []
@@ -198,7 +204,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
 
     def _prepare_decode(
         self,
-        cached_requests: List[CachedRequestData],
+        cached_requests: list[CachedRequestData],
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         assert len(cached_requests) > 0
         input_tokens: List[List[int]] = [
@@ -293,7 +299,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
     @SpyrePlatform.inference_mode()
     def execute_model(
         self,
-        scheduler_output: "SchedulerOutput",
+        scheduler_output: SchedulerOutput,
         **kwargs,
     ) -> ModelRunnerOutput:
 
