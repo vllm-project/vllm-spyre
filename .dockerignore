@@ -1,0 +1,8 @@
+# exclude any files inside the .git folder to not invalidate docker layer caches
+.git
+
+# exclude any files that are not required in the build image
+.github
+examples
+tools
+*.md
