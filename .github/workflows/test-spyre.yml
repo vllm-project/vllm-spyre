@@ -24,6 +24,7 @@ jobs:
       contents: read
     env:
       CACHE_IMAGE: "ghcr.io/vllm-project/vllm-spyre:test-cache"
+      CACHE_PACKAGE_NAME: "vllm-spyre"
       CACHE_REGISTRY: "ghcr.io"
 
     steps:
@@ -81,6 +82,14 @@ jobs:
           name: "test-image"
           path: ${{ runner.temp }}/test_image.tar
           retention-days: 1
+
+      - name: "Cleanup old cache images"
+        uses: actions/delete-package-versions@v5
+        if: ${{ github.event_name == 'push' }}
+        with: 
+          package-name: ${{ env.CACHE_PACKAGE_NAME }}
+          package-type: container
+          delete-only-untagged-versions: true
 
   test-spyre-v0:
     runs-on: ubuntu-latest
