@@ -30,7 +30,8 @@ RUN ln -sf $(which python${PYTHON_VERSION}) /usr/bin/python && \
 RUN mkdir /workspace/vllm-spyre
 COPY . /workspace/vllm-spyre
 RUN pip install uv
-RUN cd /workspace/vllm-spyre && VLLM_TARGET_DEVICE=empty uv pip install -v -e .
+RUN cd /workspace/vllm-spyre \
+    && VLLM_TARGET_DEVICE=empty uv pip install -v -e . --system
 ENV VLLM_PLUGINS=spyre
 
 CMD ["/bin/bash"]
