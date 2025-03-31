@@ -15,6 +15,8 @@ os.environ['VLLM_SPYRE_DYNAMO_BACKEND'] = 'eager'
 os.environ['MASTER_ADDR'] = 'localhost'
 os.environ['MASTER_PORT'] = '12355'
 os.environ['VLLM_SPYRE_USE_CB'] = '1'
+os.environ['VLLM_SPYRE_MAX_BATCH_SIZE'] = '4'
+os.environ['VLLM_SPYRE_MAX_CONTEXT_LENGTH'] = '2048'
 
 # Sample prompts.
 template = (
