@@ -1,6 +1,5 @@
 """Utilities for selecting and loading Spyre models."""
 import os
-import sys
 from typing import Optional
 
 import torch
@@ -248,19 +247,14 @@ class FmsModelBaseWrapper(nn.Module):
                 model_config.dtype, self.dtype)
 
         if model_config.quantization == "gptq":
-
-            # note, we have to find a better way to package this
-            # shouldn't it be part of FMS?
-            sys.path.append("/home/senuser/aiu-fms")
-
             if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
-                from aiu_as_addon import aiu_adapter, aiu_linear  # noqa: F401
+                from fms_mo.aiu_addons.gptq import (  # noqa: F401
+                    gptq_aiu_adapter, gptq_aiu_linear)
                 linear_type = "gptq_aiu"
-                logger.info("Loaded `aiu_as_addon` functionalities")
+                logger.info("Loaded `aiu_addons` functionalities")
             else:
-                from cpu_addon import cpu_linear  # noqa: F401
                 linear_type = "gptq_cpu"
-                logger.info("Loaded `cpu_addon` functionalities")
+                logger.warning("GPTQ is not expected to work on CPU.")
 
             quant_cfg = model_config._parse_quant_hf_config()
 

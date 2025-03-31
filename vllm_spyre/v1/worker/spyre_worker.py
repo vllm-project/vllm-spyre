@@ -13,10 +13,7 @@ from vllm.distributed import (ensure_model_parallel_initialized,
                               init_distributed_environment)
 from vllm.logger import init_logger
 from vllm.model_executor import set_random_seed
-from vllm.platforms import current_platform
 from vllm.sampling_params import SamplingParams
-from vllm.v1.core.scheduler import (CachedRequestData, NewRequestData,
-                                    SchedulerOutput)
 from vllm.v1.kv_cache_interface import KVCacheConfig, KVCacheSpec
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.worker.worker_base import WorkerBase as WorkerBaseV1
@@ -25,6 +22,8 @@ from vllm.worker.worker_base import WorkerBase
 import vllm_spyre.envs as envs_spyre
 from vllm_spyre.model_executor.model_loader import spyre_setup
 from vllm_spyre.platform import SpyrePlatform
+from vllm_spyre.v1.core.sched.output import (CachedRequestData, NewRequestData,
+                                             SchedulerOutput)
 from vllm_spyre.v1.worker.spyre_model_runner import SpyreModelRunner
 
 logger = init_logger(__name__)
@@ -47,10 +46,9 @@ class SpyreWorker(WorkerBaseV1):
 
     def compile_or_warm_up_model(self) -> None:
         """Prepare model for execution through compilation/warmup."""
-        spyre_warmup_shapes = current_platform.get_warmup_shapes()
-        wup_prompt_lens, wup_new_tokens = zip(*[(s["prompt_length"],
-                                                 s["new_tokens"])
-                                                for s in spyre_warmup_shapes])
+        wup_prompt_lens, wup_new_tokens = zip(
+            *[(s["prompt_length"], s["new_tokens"])
+              for s in self.spyre_warmup_shapes])
 
         logger.info(
             "Start warming up %d different "
@@ -58,7 +56,7 @@ class SpyreWorker(WorkerBaseV1):
         all_warmup_start_t = time.time()
         for i, (prompt_len, num_decode_tokens, batch_size) in enumerate([
             (s["prompt_length"], s["new_tokens"], s["batch_size"])
-                for s in spyre_warmup_shapes
+                for s in self.spyre_warmup_shapes
         ]):
             if self.model_config.task != "embed":
                 # TODO: remove if spyre supports
@@ -144,6 +142,8 @@ class SpyreWorker(WorkerBaseV1):
             self.model_runner = SpyreModelRunner(self.vllm_config,
                                                  self.is_driver_worker)
         self._env_initialized = False
+        self.spyre_warmup_shapes = SpyrePlatform.get_warmup_shapes(
+            self.vllm_config.scheduler_config)
 
     def init_distributed_environment(self) -> None:
         """Initialize the distributed environment."""
@@ -221,10 +221,9 @@ class SpyreWorker(WorkerBaseV1):
         # for all requested model warmups
         # printing env variables for debugging purposes
         load_model_start_t = time.time()
-        spyre_warmup_shapes = current_platform.get_warmup_shapes()
-        wup_prompt_lens, wup_new_tokens = zip(*[(s["prompt_length"],
-                                                 s["new_tokens"])
-                                                for s in spyre_warmup_shapes])
+        wup_prompt_lens, wup_new_tokens = zip(
+            *[(s["prompt_length"], s["new_tokens"])
+              for s in self.spyre_warmup_shapes])
 
         self.model_runner.load_model(prompt_lens=wup_prompt_lens,
                                      num_decode_tokens=wup_new_tokens)

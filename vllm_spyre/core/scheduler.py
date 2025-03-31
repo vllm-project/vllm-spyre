@@ -22,12 +22,13 @@ from vllm.core.scheduler import (ARTIFICIAL_PREEMPTION_MAX_CNT,
                                  scheduler_running_outputs_builder,
                                  seq_group_metadata_builder)
 from vllm.logger import init_logger
-from vllm.platforms import current_platform
 # SPYRE SPECIFIC CODE BLOCK END
 from vllm.sequence import (Sequence, SequenceData, SequenceGroup,
                            SequenceGroupMetadata, SequenceGroupMetadataDelta,
                            SequenceStatus)
 from vllm.utils import Device, PyObjectCache
+
+from vllm_spyre.platform import SpyrePlatform
 
 logger = init_logger(__name__)
 
@@ -144,6 +145,12 @@ class SpyreScheduler:
         for i in range(1, self.scheduler_config.max_num_partial_prefills + 1):
             self.partial_prefill_budget_lookup_list[i] = (
                 scheduler_config.max_num_batched_tokens // i)
+
+        # SPYRE SPECIFIC CODE BLOCK START
+        self.spyre_warmup_shapes = SpyrePlatform.get_warmup_shapes(
+            self.scheduler_config
+        )
+        # SPYRE SPECIFIC CODE BLOCK END
 
     @property
     def next_cache_id(self):
@@ -669,8 +676,7 @@ class SpyreScheduler:
         seq_groups: List[ScheduledSequenceGroup] = []
 
         # SPYRE SPECIFIC CODE BLOCK START
-        spyre_warmup_shapes = current_platform.get_warmup_shapes()
-        applicable_spyre_warmup_shapes = list(spyre_warmup_shapes)
+        applicable_spyre_warmup_shapes = list(self.spyre_warmup_shapes)
         # SPYRE SPECIFIC CODE BLOCK END
 
         waiting_queue = self.waiting
