@@ -347,8 +347,6 @@ class FmsModelWrapper(FmsModelBaseWrapper):
         # physical KV cache (fms wrapper/ AIU Spyre)
         max_batch = envs_spyre.VLLM_SPYRE_MAX_BATCH_SIZE
         max_model_len = envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH
-        print('max_batch', max_batch)
-        print('max_model_len', max_model_len)
 
         if self.config.model_type == 'llama':
             num_layers = self.config.num_hidden_layers
