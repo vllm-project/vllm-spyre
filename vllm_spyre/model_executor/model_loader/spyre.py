@@ -256,11 +256,11 @@ class FmsModelBaseWrapper(nn.Module):
             if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
                 from aiu_as_addon import aiu_adapter, aiu_linear  # noqa: F401
                 linear_type = "gptq_aiu"
-                print("Loaded `aiu_as_addon` functionalities")
+                logger.info("Loaded `aiu_as_addon` functionalities")
             else:
                 from cpu_addon import cpu_linear  # noqa: F401
                 linear_type = "gptq_cpu"
-                print("Loaded `cpu_addon` functionalities")
+                logger.info("Loaded `cpu_addon` functionalities")
 
             quant_cfg = model_config._parse_quant_hf_config()
 
@@ -312,21 +312,25 @@ class FmsModelBaseWrapper(nn.Module):
             _prev = torch._dynamo.config.accumulated_cache_size_limit
             torch._dynamo.config.accumulated_cache_size_limit = \
                 _target_cache_size
-            print("NOTICE: Adjusting "
-                  "torch._dynamo.config.accumulated_cache_size_limit"
-                  f" from {_prev} to "
-                  f"{torch._dynamo.config.accumulated_cache_size_limit} "
-                  f"to accommodate prompt size of {max_prompt_length} "
-                  f"and decode tokens of {max_decode_length}")
+            logger.info(
+                "NOTICE: Adjusting "
+                "torch._dynamo.config.accumulated_cache_size_limit "
+                "from %s to %s "
+                "to accommodate prompt size of %d "
+                "and decode tokens of %d", _prev,
+                torch._dynamo.config.accumulated_cache_size_limit,
+                max_prompt_length, max_decode_length)
 
         if _target_cache_size > torch._dynamo.config.cache_size_limit:
             _prev = torch._dynamo.config.cache_size_limit
             torch._dynamo.config.cache_size_limit = _target_cache_size
-            print(
-                "NOTICE: Adjusting torch._dynamo.config.cache_size_limit from"
-                f" {_prev} to {torch._dynamo.config.cache_size_limit} to "
-                f"accommodate prompt size of {max_prompt_length} and "
-                f"decode tokens of {max_decode_length}")
+            logger.info(
+                "NOTICE: Adjusting torch._dynamo.config.cache_size_limit "
+                "from %s to %s "
+                "to accommodate prompt size of %d "
+                "and decode tokens of %d", _prev,
+                torch._dynamo.config.accumulated_cache_size_limit,
+                max_prompt_length, max_decode_length)
 
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in BACKEND_LIST:
             self.model = torch.compile(

@@ -5,12 +5,12 @@ from typing import (TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Tuple,
 
 import torch
 from torch import nn
-from vllm.config import (DeviceConfig, ModelConfig, ParallelConfig,
-                         SchedulerConfig)
+from vllm.config import DeviceConfig, VllmConfig
 from vllm.logger import init_logger
 from vllm.platforms import current_platform
 from vllm.sampling_params import SamplingParams
 from vllm.utils import is_pin_memory_available
+from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.outputs import SamplerOutput
 from vllm.v1.sample.metadata import SamplingMetadata
 from vllm.worker.model_runner_base import (
@@ -74,28 +74,22 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
 
     def __init__(
         self,
-        model_config: ModelConfig,
-        parallel_config: ParallelConfig,
-        scheduler_config: SchedulerConfig,
-        device_config: DeviceConfig,
+        vllm_config: VllmConfig,
         is_driver_worker: bool,
     ):
-        self.model_config = model_config
-        self.parallel_config = parallel_config
-        self.scheduler_config = scheduler_config
-        self.device_config = device_config
+        super().__init__(vllm_config=vllm_config)
         self.is_driver_worker = is_driver_worker
 
         self.pad_token_id = 0
-        if model_config is not None:
-            if model_config.hf_config is not None:
-                self.pad_token_id = getattr(model_config.hf_config,
+        if self.model_config is not None:
+            if self.model_config.hf_config is not None:
+                self.pad_token_id = getattr(self.model_config.hf_config,
                                             "pad_token_id", None) or 0
-            if model_config.get_sliding_window():
+            if self.model_config.get_sliding_window():
                 logger.warning("Sliding window is not supported on Spyre. "
                                "The model will run without sliding window.")
-        self.device_config = (device_config
-                              if device_config is not None else DeviceConfig())
+        if vllm_config.device_config is None:
+            self.device_config = DeviceConfig()
         self.device = self.device_config.device
         self.pin_memory = is_pin_memory_available()
         # position_ids of all the sequences in current batch
@@ -329,7 +323,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
             min_tokens={},
             logit_bias=[None for _ in range(num_reqs)],
             allowed_token_ids_mask=None,
-        )
+            bad_words_token_ids={})
 
         return ModelInputForSpyre(input_tokens=input_tokens,
                                   input_positions=input_positions,
@@ -368,12 +362,11 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
             sampling_metadata=model_input.sampling_metadata,
         )
         t1 = time.time() - t0
-        print("[spyre_model_runner:execute_model] t_token: %.2fms" %
-              (t1 * 1000))
+        logger.debug("t_token: %.2fms", (t1 * 1000))
 
         model_output = ModelRunnerOutput(
             req_ids=list(self._req_ids2idx.keys()),
-            req_id_to_index=self._req_ids2idx,
+            req_id_to_index=self._get_unpadded_output_indices(),
             sampled_token_ids=output.sampled_token_ids.tolist(),
             spec_token_ids=None,
             logprobs=output.logprobs_tensors.tolists()
@@ -384,6 +377,28 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
             }  # TODO: prompt logprobs too
         )
         return model_output
+
+    def _get_unpadded_output_indices(self) -> dict[str, int]:
+        """The inputs to the model are all padded to a constant batch size, and
+        self.req_id2idx is the map of request id -> padded index.
+        However, finished requests and padded requests are stripped from the
+        output, so the mapping of request id -> unpadded output index needs to
+        be created to be returned in `ModelRunnerOutput`.
+
+        For example if:
+        - self.model.indices = [F, T, T, F]
+        - self.req_ids2ix = {"A": 0, "B": 1, "C": 2, "D": 3}
+        This will output: {"B": 0, "C": 1}
+        """
+        remapped_indices = {}
+        for req_id, idx in self._req_ids2idx.items():
+            if self.model.indices[idx]:
+                # Sum up all the requests to the left of this one that are still
+                # processing. That should be this requests' index in the output
+                # tensor.
+                remapped_indices[req_id] = self.model.indices[0:idx].sum(
+                ).item()
+        return remapped_indices
 
     def _prepare_pad_input_ids(
         self,
@@ -400,8 +415,9 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         for input_ids_i in input_ids_list:
             seq_len = input_ids_i.size(0)
             if max_len > seq_len:
-                print(f"[SpyreModelRunner] INFO: Padding request of length "
-                      f"{seq_len} tokens to {max_len} tokens.")
+                logger.info(
+                    "Padding request of length %d tokens to %d tokens.",
+                    seq_len, max_len)
             pads = torch.ones(max_len - seq_len,
                               dtype=torch.long,
                               device=input_ids_i.device) * self.pad_token_id
@@ -443,24 +459,28 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
 
         return input_ids, position_ids, mask
 
-    def _raw_model_forward(
-        self,
-        input_ids: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        past_key_value_states: Optional[List[Tuple[torch.Tensor,
-                                                   torch.Tensor]]] = None,
-        use_cache: bool = False,
-        only_last_token: bool = False,
-        attn_algorithm: Optional[str] = None
-    ) -> Tuple[torch.Tensor, Optional[List[Tuple[torch.Tensor,
-                                                 torch.Tensor]]]]:
+    def get_kv_cache_spec(self) -> KVCacheSpec:
+        """
+        This method should generate the KVCache spec by parsing the kv cache
+        format from each Attention module in the static forward context.
 
-        return self.model.model.model(
-            input_ids,
-            mask=mask,
-            position_ids=position_ids,
-            past_key_value_states=past_key_value_states,
-            use_cache=use_cache,
-            only_last_token=only_last_token,
-            attn_algorithm=attn_algorithm)
+        In vLLM, this static forward context is populated by the base Attention
+        class in the modeling code. Every attention layer populates an entry
+        for itself in vllm_config.compilation_config.static_forward_context,
+        which is a dictionary of layer_name -> layer for every attention layer.
+        This allows the model runner to correctly create the kv cache spec for
+        each layer.
+
+        The spyre modeling code currently comes from `fms`, and does not
+        integrate with vLLM's modeling classes, so we don't have access to any
+        model-agnostic metadata about the attention layers. This just returns a
+        dummy value for now.
+        """
+        # We do at least use the real size from the cache config.
+        block_size = self.vllm_config.cache_config.block_size
+        attn_spec = FullAttentionSpec(block_size=block_size,
+                                      num_kv_heads=1,
+                                      head_size=1,
+                                      dtype=torch.float16,
+                                      use_mla=False)
+        return {"foo": attn_spec}
