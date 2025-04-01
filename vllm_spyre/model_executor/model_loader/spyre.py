@@ -15,7 +15,6 @@ from vllm.model_executor.layers.sampler import SamplerOutput, get_sampler
 from vllm.model_executor.model_loader.weight_utils import (
     download_weights_from_hf)
 from vllm.model_executor.sampling_metadata import SamplingMetadata
-from vllm.platforms import current_platform
 
 import vllm_spyre.envs as envs_spyre
 
@@ -346,15 +345,8 @@ class FmsModelWrapper(FmsModelBaseWrapper):
                          max_decode_length)
 
         # physical KV cache (fms wrapper/ AIU Spyre)
-        # lives in SpyreCausalLM only for convenient model access
-        warmup_shapes = current_platform.get_warmup_shapes()
-        max_batch = max(shape["batch_size"] for shape in warmup_shapes)
-        max_prompt_length = max(shape["prompt_length"]
-                                for shape in warmup_shapes)
-        max_new_tokens = max(shape["new_tokens"] for shape in warmup_shapes)
-        # Eventually max_model_len = self.config.max_position_embeddings,
-        # but saving some memory here to only allocate the max in practise
-        max_model_len = max_prompt_length + max_new_tokens
+        max_batch = envs_spyre.VLLM_SPYRE_MAX_BATCH_SIZE
+        max_model_len = envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH
 
         if self.config.model_type == 'llama':
             num_layers = self.config.num_hidden_layers
