@@ -47,6 +47,13 @@ class SpyreScheduler(Scheduler):
 
         self.rejected_requests: set[str] = set()
 
+        if self.log_stats:
+            logger.warning_once(
+                "Log stats for V1 is not working properly. Requests that do "
+                "not fit in warmup shapes will crash the engine. "
+                "Pass --disable-log-stats to disable stats and this message. "
+                "See https://github.com/vllm-project/vllm-spyre/issues/68")
+
     def add_request(self, request: Request) -> None:
         """This override rejects requests that fit no warmup shape"""
         if len(

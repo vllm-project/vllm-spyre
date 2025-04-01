@@ -64,6 +64,10 @@ class RemoteOpenAIServer:
         env = os.environ.copy()
         if env_dict is not None:
             env.update(env_dict)
+
+        # TODO: Re-enable stats for vllm-spyre plugin
+        # See: https://github.com/vllm-project/vllm-spyre/issues/68
+        vllm_serve_args.append("--disable-log-stats")
         self.proc = subprocess.Popen(
             ["vllm", "serve", model, *vllm_serve_args],
             env=env,
