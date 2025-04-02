@@ -22,6 +22,8 @@ from vllm_spyre.platform import SpyrePlatform
 
 logger = init_logger(__name__)
 
+NO_WARMUP_FIT_STOP_REASON = "Request did not fit any warmup shape"
+
 
 class SpyreScheduler(Scheduler):
     """Small extension of the V1 scheduler that adds constraints for Sypre:
@@ -46,13 +48,6 @@ class SpyreScheduler(Scheduler):
         self.holdback_queue: Deque[Request] = deque()
 
         self.rejected_requests: set[str] = set()
-
-        if self.log_stats:
-            logger.warning_once(
-                "Log stats for V1 is not working properly. Requests that do "
-                "not fit in warmup shapes will crash the engine. "
-                "Pass --disable-log-stats to disable stats and this message. "
-                "See https://github.com/vllm-project/vllm-spyre/issues/68")
 
     def add_request(self, request: Request) -> None:
         """This override rejects requests that fit no warmup shape"""
@@ -192,11 +187,13 @@ class SpyreScheduler(Scheduler):
         for request in rejected_requests:
             queue.remove(request)
             reject_outputs.append(
-                EngineCoreOutput(request.request_id,
-                                 new_token_ids=[],
-                                 finish_reason=FinishReason.ABORT,
-                                 stop_reason="Request did not fit any warmup "
-                                 "shape"))
+                EngineCoreOutput(
+                    request.request_id,
+                    # TODO: FIXME
+                    # Dummy token prevent stats collection crash
+                    new_token_ids=[0],
+                    finish_reason=FinishReason.ABORT,
+                    stop_reason=NO_WARMUP_FIT_STOP_REASON))
             request.status = RequestStatus.FINISHED_ABORTED
             self._free_request(request)
             self.rejected_requests.remove(request.request_id)
