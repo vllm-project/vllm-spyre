@@ -5,6 +5,7 @@ import platform
 import time
 from typing import List, Optional, Tuple
 
+import prometheus_client
 import torch
 import torch.distributed as dist
 from huggingface_hub import hf_hub_download
@@ -33,6 +34,15 @@ except ImportError:
     from vllm.worker.worker_base import (
         LoraNotSupportedWorkerBase as LoRANotSupportedWorkerBase)
 # yapf: enable
+
+
+# Capture a oneshot metric (e.x warmup)
+def _spyre_metric_oneshot(name, labels, value):
+    gauge = prometheus_client.Gauge(name="vllm:plugin:spyre:" + name,
+                                    documentation="Oneshot spyre metric",
+                                    multiprocess_mode='mostrecent',
+                                    labelnames=labels)
+    gauge.labels(**labels).set(value)
 
 
 class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
@@ -157,6 +167,8 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
 
         load_model_end_t = time.time()
         load_model_total_t = load_model_end_t - load_model_start_t
+        _spyre_metric_oneshot("load_model", {"rank": str(self.rank)},
+                              load_model_total_t)
         print(f"\tload model took {load_model_total_t}s")
 
         print(f"[SpyreWorker] Start warming up "
@@ -184,6 +196,8 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
                                           restricted_tokens, batch_size)
         all_warmup_end_t = time.time()
         all_warmup_total_t = all_warmup_end_t - all_warmup_start_t
+        _spyre_metric_oneshot("warmup_time", {"rank": str(self.rank)},
+                              all_warmup_total_t)
         print(f"[SpyreWorker] All warmups for "
               f"{len(wup_new_tokens)} different "
               f"prompt/decode/batchsize-shape combinations finished. "
@@ -222,6 +236,15 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
         print(f"[SpyreWorker] warmup for prompt length "
               f"{prompt_len} and max output tokens {num_decode_tokens}.")
 
+        def take_metric(name, time):
+            _spyre_metric_oneshot(
+                name, {
+                    "rank": str(self.rank),
+                    "prompt_len": str(prompt_len),
+                    "num_decode_tokens": str(num_decode_tokens),
+                    "batch_size": str(batch_size)
+                }, time)
+
         # 1. trace
         print("[SpyreWorker] warmup 1/2...")
         # TODO: torch_sendnn.CleanGraph() should be necessary?
@@ -231,15 +254,18 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
                                         num_decode_tokens, batch_size,
                                         extra_kwargs)
 
+        take_metric("warmup_1", time.time() - warmup_start_t)
+
         # 2. compile
         print("[SpyreWorker] warmup 2/2...")
+        warmup2_start_time = time.time()
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
             from torch_sendnn import torch_sendnn
-            ul_start_time = time.time()
             torch_sendnn.update_lazyhandle()
             ul_stop_time = time.time()
-            ul_total_t = ul_stop_time - ul_start_time
+            ul_total_t = ul_stop_time - warmup2_start_time
             print(f"update_lazyhandle() done (duration: {ul_total_t}s)")
+            take_metric("warmup_update_lazyhandle", ul_total_t)
 
         # warmup 2nd forward pass
         self._warmup_model_forward_pass(warmup_tokens_tensor,
@@ -249,6 +275,7 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
 
         warmup_end_t = time.time()
         warmup_total_t = warmup_end_t - warmup_start_t
+        take_metric("warmup_2", warmup_end_t - warmup2_start_time)
         print("[SpyreWorker] ... warmup finished.")
         print(f"\twarmup took {warmup_total_t}s (for prompt length"
               f"{prompt_len} and max output tokens {num_decode_tokens})")

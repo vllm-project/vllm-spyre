@@ -3,7 +3,10 @@ import os
 import sys
 import tempfile
 
+import prometheus_client
 import torch
+
+import vllm_spyre.envs as envs_spyre
 
 # ==============================================================
 # Common utilities
@@ -124,6 +127,19 @@ def spyre_setup(rank=0, world_size=1, local_rank=0, local_size=1, verbose=False)
         dprint(f"Spyre: Enabled ({device_id})")
     else:
         dprint(f"Spyre: Disabled (Senulator)")
+
+    # Export spyre configuration through metrics as fixed label
+    if rank == 0:
+        labels = {}
+        for k in envs_spyre.environment_variables.keys():
+            labels[k] = str(envs_spyre.environment_variables[k]())
+        info = prometheus_client.Gauge(
+                name="vllm:plugin:spyre:config",
+                documentation="Spyre shape configuration",
+                multiprocess_mode='mostrecent',
+                labelnames=labels,
+                )
+        info.labels(**labels).set(1)
 
 
 # ==============================================================
