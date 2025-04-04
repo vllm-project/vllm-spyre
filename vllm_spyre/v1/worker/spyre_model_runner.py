@@ -655,16 +655,15 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                                   dtype=torch.long,
                                   device=self.device)
             mask_list.append(torch.cat((torch.zeros_like(pads), non_pads)))
-            mask = torch.stack(mask_list).bool()
-            mask = torch.where(mask.logical_not(), -torch.inf, 0.0)
-            mask = mask.to(self.model.model.dtype)
-            position_ids = torch.tensor(position_ids_list,
-                                        dtype=torch.long,
-                                        device=self.device)
 
-        input_mask = torch.unsqueeze(mask, dim=1)
-
-        return input_mask, position_ids
+        mask = torch.stack(mask_list).bool()
+        mask = torch.where(mask.logical_not(), -torch.inf, 0.0)
+        mask = mask.to(self.model.model.dtype)
+        mask = torch.unsqueeze(mask, dim=1)
+        position_ids = torch.tensor(position_ids_list,
+                                    dtype=torch.long,
+                                    device=self.device)
+        return mask, position_ids
 
     def prepare_model_input(
             self, scheduler_output: SchedulerOutput) -> ModelInputForSpyre:
