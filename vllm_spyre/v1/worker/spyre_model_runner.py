@@ -538,6 +538,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # TO DO: move to InputBatch
         self.req_ids2idx: dict = {}
         self.req_ids2idx_decode: dict = {}
+        self.req_ids2page: dict = {}
         self.active_pages: List[int] = []
         self.tkv = 0
         self.free_pages = [i for i in range(max_batch_size)]
@@ -556,6 +557,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         for idx, request_data in enumerate(new_requests):
             free_page_idx = self.free_pages.pop(0)
             self.active_pages.append(free_page_idx)
+            self.req_ids2page[request_data.req_id] = free_page_idx
             len_val = len(self.req_ids2idx_decode)
             self.req_ids2idx_decode[request_data.req_id] = len_val
             req_ids2idx_prompt[request_data.req_id] = idx
@@ -610,7 +612,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                                         device='cpu')
 
         for req_id in self.req_ids2idx:
-            self.active_pages.append(int(req_id))
+            self.active_pages.append(self.req_ids2page[req_id])
         for cached_request in cached_requests:
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
@@ -676,7 +678,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             for req_id in scheduler_output.finished_req_ids:
                 if req_id in self.req_ids2idx_decode:
                     self.model.indices[self.req_ids2idx_decode[req_id]] = False
-                    self.free_pages.append(int(req_id))
+                    self.free_pages.append(self.req_ids2page[req_id])
+                    del self.req_ids2page[req_id]
                     del self.req_ids2idx_decode[req_id]
                     for index, key in enumerate(
                             self.req_ids2idx_decode.keys()):
