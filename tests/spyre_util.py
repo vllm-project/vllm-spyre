@@ -163,13 +163,13 @@ def generate_spyre_vllm_output(model: str, prompts: List[str],
     vllm_outputs = vllm_model.generate(prompts, sampling_params)
 
     results = []
-    
+
     for req_output in vllm_outputs:
         result = {}
         result['text'] = req_output.outputs[0].text
         # TODO: Workaround for V1, if request does not fit in a warmup shape
         # token_ids may be filled with -1.
-        token_ids = [t for t in req_output.outputs[0].token_ids if t >=0]
+        token_ids = [t for t in req_output.outputs[0].token_ids if t >= 0]
         result['token_ids'] = tuple(token_ids)
         result['tokens'] = tuple([
             req_output.outputs[0].logprobs[i][t].decoded_token
