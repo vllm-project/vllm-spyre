@@ -550,9 +550,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         assert len(new_requests) > 0
         input_token_list: List[torch.Tensor] = []
 
-        # set batch size for prompt to 1, update batch size for decode
-        padded_batch_size = 1
-
         # Internal state is managed here.
         req_ids2idx_prompt = {}
         self.active_pages = []
@@ -578,23 +575,15 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             else:
                 generator = None
 
+        # prefils are always of batch size 1 for this milestone
         actual_batch_size = len(input_token_list)
-        self.model.indices = torch.cat([
-            torch.ones(actual_batch_size, dtype=torch.bool, device='cpu'),
-            torch.zeros(padded_batch_size - actual_batch_size,
-                        dtype=torch.bool,
-                        device='cpu')
-        ])
+        assert actual_batch_size == 1
+        self.model.indices = torch.ones(actual_batch_size,
+                                        dtype=torch.bool,
+                                        device='cpu')
 
         if self.tkv == 0:
             self.tkv = self.min_pad_length_batch
-
-        # padding to compiled batch size
-        while len(input_token_list) < padded_batch_size:
-            input_token_list.append(
-                torch.zeros(self.tkv,
-                            dtype=torch.long,
-                            device=torch.device("cpu")))
 
         # get position ids and attention mask
         input_tokens, position_ids, mask =\
@@ -616,7 +605,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         self.req_ids2idx = self.req_ids2idx_decode.copy()
         self.active_pages = []
-        self.model.indices = torch.zeros(len(self.req_ids2idx_decode),
+        self.model.indices = torch.zeros(len(self.req_ids2idx),
                                          dtype=torch.bool,
                                          device='cpu')
 
