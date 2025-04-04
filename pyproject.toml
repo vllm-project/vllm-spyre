@@ -102,6 +102,7 @@ use_parentheses = true
 skip_gitignore = true
 
 [tool.pytest.ini_options]
+pythonpath = ["."]
 markers = [
     "skip_global_cleanup",
     "core_model: enable this model test in each PR instead of only nightly",
