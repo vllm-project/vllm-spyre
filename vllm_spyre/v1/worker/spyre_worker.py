@@ -24,7 +24,8 @@ from vllm_spyre.model_executor.model_loader import spyre_setup
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.core.sched.output import (CachedRequestData, NewRequestData,
                                              SchedulerOutput)
-from vllm_spyre.v1.worker.spyre_model_runner import StaticBatchingSpyreModelRunner, ContinuousBatchingSpyreModelRunner
+from vllm_spyre.v1.worker.spyre_model_runner import (
+    ContinuousBatchingSpyreModelRunner, StaticBatchingSpyreModelRunner)
 
 logger = init_logger(__name__)
 
@@ -144,11 +145,11 @@ class SpyreWorker(WorkerBaseV1):
             raise NotImplementedError
         else:
             if envs_spyre.VLLM_SPYRE_USE_CB:
-                self.model_runner = ContinuousBatchingSpyreModelRunner(self.vllm_config,
-                                                 self.is_driver_worker)
+                self.model_runner = ContinuousBatchingSpyreModelRunner(
+                    self.vllm_config, self.is_driver_worker)
             else:
-                self.model_runner = StaticBatchingSpyreModelRunner(self.vllm_config,
-                                                 self.is_driver_worker)
+                self.model_runner = StaticBatchingSpyreModelRunner(
+                    self.vllm_config, self.is_driver_worker)
         self._env_initialized = False
         self.spyre_warmup_shapes = SpyrePlatform.get_warmup_shapes(
             self.vllm_config.scheduler_config)

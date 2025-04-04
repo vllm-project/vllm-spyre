@@ -48,7 +48,7 @@ class SpyreScheduler(Scheduler):
         self.holdback_queue: Deque[Request] = deque()
 
         self.rejected_requests: set[str] = set()
-        
+
     def add_request(self, request: Request) -> None:
         """This override rejects requests that fit no warmup shape"""
         if len(
@@ -199,10 +199,10 @@ class SpyreScheduler(Scheduler):
 
     def run_schedule(self) -> SchedulerOutput:
         return super().schedule()
-        
+
     def run_add_request(self, request: Request) -> None:
-        super().add_request(request=request)            
-        
+        super().add_request(request=request)
+
 
 class ContinuousBatchingSpyreScheduler(SpyreScheduler):
     """ Support of continuous batching """
@@ -213,16 +213,20 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         # running queue of last decoding step
         self.last_running: list[Request] = []
         self.total_running: list[Request] = []
-        
+
     def add_request(self, request: Request) -> None:
         """This override rejects requests that exceed max context length"""
         if not request.num_prompt_tokens + request.sampling_params.max_tokens\
                 <= envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH:
-            logger.warning("Could not add request id %s, prompt length is "
+            logger.warning(
+                "Could not add request id %s, prompt length is "
                 "%d tokens, maximum number of output tokens is %d tokens",
-                request.request_id, request.num_prompt_tokens, request.sampling_params.max_tokens,
-                )
-            logger.warning("Could not schedule request id %s", request.request_id)
+                request.request_id,
+                request.num_prompt_tokens,
+                request.sampling_params.max_tokens,
+            )
+            logger.warning("Could not schedule request id %s",
+                           request.request_id)
             # TODO: There are open PRs that should enable raising an error for
             # a single request like this, which will gracefully return an error
             # for the request, instead of shutting down the engine.
@@ -247,10 +251,10 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         while self.waiting:
             self.holdback_queue.append(self.waiting.popleft())
 
-        # Check if new requests can be scheduled. 
-        self.total_running = self.last_running + self.running              
+        # Check if new requests can be scheduled.
+        self.total_running = self.last_running + self.running
         while self.holdback_queue:
-            request = self.holdback_queue[0]                
+            request = self.holdback_queue[0]
             if self.can_schedule(request=request):
                 # Add request to the waiting queue
                 self.waiting.append(self.holdback_queue.popleft())
@@ -261,27 +265,27 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
 
         if len(self.waiting) > 0:
             # If prefill scheduled, save running queue for the next decode step.
-            # If previous step was also prefill, running queue contains the previous prefill sequence.
+            # If previous step was also prefill, running queue contains the
+            # previous prefill sequence.
             self.last_running = self.total_running
             self.running = []
             logger.debug(
                 "Scheduling a prompt step of %d requests, holding back %d "
                 "requests", len(self.waiting), len(self.holdback_queue))
         else:
-            # If decode scheduled and previous step was prefil, update running queue
+            # If decode scheduled and previous step was prefil, update running
+            # queue
             self.running = self.total_running
             self.last_running = []
             logger.debug("Scheduling a decode step of %d requests",
-                         len(self.running))         
+                         len(self.running))
 
         outputs = self.run_schedule()
         return outputs
-    
+
     def can_schedule(self, request: Request) -> bool:
-        max_prompt_batch_size = 1  
+        max_prompt_batch_size = 1
         # TODO: add additional checks, e.g. max_tokens
-        if len(self.total_running)+len(self.waiting) < self.max_num_running_reqs and\
-                len(self.waiting) < max_prompt_batch_size:        
-            return True
-        return False
-        
+        return len(self.total_running)+len(self.waiting) <\
+                self.max_num_running_reqs and\
+                len(self.waiting) < max_prompt_batch_size

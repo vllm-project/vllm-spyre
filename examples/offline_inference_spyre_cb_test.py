@@ -6,7 +6,7 @@ from vllm import LLM, SamplingParams
 max_tokens1 = 10
 max_tokens2 = 5
 max_tokens3 = 7
-max_tokens = max([max_tokens1, max_tokens2, max_tokens3]);
+max_tokens = max([max_tokens1, max_tokens2, max_tokens3])
 max_num_seqs = 2
 
 os.environ["VLLM_SPYRE_WARMUP_PROMPT_LENS"] = '64'
@@ -15,45 +15,49 @@ os.environ['VLLM_SPYRE_WARMUP_BATCH_SIZES'] = '4'
 
 # defining here to be able to run/debug directly from VSC (not via terminal)
 os.environ['VLLM_SPYRE_DYNAMO_BACKEND'] = 'eager'
-os.environ['VLLM_SPYRE_USE_CB'] =  '1'
-os.environ['VLLM_USE_V1'] ='1'
-
+os.environ['VLLM_SPYRE_USE_CB'] = '1'
+os.environ['VLLM_USE_V1'] = '1'
 
 # Sample prompts.
 template = (
     "Below is an instruction that describes a task. Write a response that "
     "appropriately completes the request. Be polite in your response to the "
     "user.\n\n### Instruction:\n{}\n\n### Response:")
-    
+
 prompt1 = template.format(
     "Provide a list of instructions for preparing chicken soup for a family "
     "of four.")
-    
-prompt2 = template.format(
-    "Provide instructions for preparing chicken soup.")
-    
+
+prompt2 = template.format("Provide instructions for preparing chicken soup.")
+
 prompt3 = template.format(
     "Provide a list of instructions for preparing chicken soup for a family.")
 
 prompts = [
-    prompt1, prompt2, prompt3,
+    prompt1,
+    prompt2,
+    prompt3,
 ]
 
 # Create a sampling params object.
 sampling_params1 = SamplingParams(max_tokens=max_tokens1,
-                                 temperature=0.0,
-                                 ignore_eos=True)
-                                 
+                                  temperature=0.0,
+                                  ignore_eos=True)
+
 sampling_params2 = SamplingParams(max_tokens=max_tokens2,
-                                 temperature=0.0,
-                                 ignore_eos=True)
+                                  temperature=0.0,
+                                  ignore_eos=True)
 
 sampling_params3 = SamplingParams(max_tokens=max_tokens3,
-                                 temperature=0.0,
-                                 ignore_eos=True)
+                                  temperature=0.0,
+                                  ignore_eos=True)
 
-sampling_params = [sampling_params1, sampling_params2, sampling_params3,]
-        
+sampling_params = [
+    sampling_params1,
+    sampling_params2,
+    sampling_params3,
+]
+
 # Create an LLM.
 llm = LLM(model="/models/llama-194m",
           tokenizer="/models/llama-194m",
