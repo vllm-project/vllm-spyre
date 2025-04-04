@@ -80,6 +80,8 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         self.scheduler_config = scheduler_config
         self.device_config = device_config
         self.is_driver_worker = is_driver_worker
+        self.spyre_warmup_shapes = current_platform.get_warmup_shapes(
+            self.scheduler_config)
 
         self.pad_token_id = 0
         if model_config is not None:
@@ -126,9 +128,8 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         input_token_list: List[torch.Tensor] = []
 
         # find warmup shape to be used for padding and batching
-        spyre_warmup_shapes = current_platform.get_warmup_shapes()
         applicable_spyre_warmup_shapes = [
-            shape for shape in spyre_warmup_shapes
+            shape for shape in self.spyre_warmup_shapes
             if len(seq_group_metadata_list) <= shape['batch_size']
         ]
         for seq_group_metadata in seq_group_metadata_list:

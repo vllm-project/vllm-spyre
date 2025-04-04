@@ -1,6 +1,5 @@
 """Utilities for selecting and loading Spyre models."""
 import os
-import sys
 from typing import Optional
 
 import torch
@@ -16,7 +15,6 @@ from vllm.model_executor.layers.sampler import SamplerOutput, get_sampler
 from vllm.model_executor.model_loader.weight_utils import (
     download_weights_from_hf)
 from vllm.model_executor.sampling_metadata import SamplingMetadata
-from vllm.platforms import current_platform
 
 import vllm_spyre.envs as envs_spyre
 
@@ -249,19 +247,14 @@ class FmsModelBaseWrapper(nn.Module):
                 model_config.dtype, self.dtype)
 
         if model_config.quantization == "gptq":
-
-            # note, we have to find a better way to package this
-            # shouldn't it be part of FMS?
-            sys.path.append("/home/senuser/aiu-fms")
-
             if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
-                from aiu_as_addon import aiu_adapter, aiu_linear  # noqa: F401
+                from fms_mo.aiu_addons.gptq import (  # noqa: F401
+                    gptq_aiu_adapter, gptq_aiu_linear)
                 linear_type = "gptq_aiu"
-                print("Loaded `aiu_as_addon` functionalities")
+                logger.info("Loaded `aiu_addons` functionalities")
             else:
-                from cpu_addon import cpu_linear  # noqa: F401
                 linear_type = "gptq_cpu"
-                print("Loaded `cpu_addon` functionalities")
+                logger.warning("GPTQ is not expected to work on CPU.")
 
             quant_cfg = model_config._parse_quant_hf_config()
 
@@ -313,21 +306,25 @@ class FmsModelBaseWrapper(nn.Module):
             _prev = torch._dynamo.config.accumulated_cache_size_limit
             torch._dynamo.config.accumulated_cache_size_limit = \
                 _target_cache_size
-            print("NOTICE: Adjusting "
-                  "torch._dynamo.config.accumulated_cache_size_limit"
-                  f" from {_prev} to "
-                  f"{torch._dynamo.config.accumulated_cache_size_limit} "
-                  f"to accommodate prompt size of {max_prompt_length} "
-                  f"and decode tokens of {max_decode_length}")
+            logger.info(
+                "NOTICE: Adjusting "
+                "torch._dynamo.config.accumulated_cache_size_limit "
+                "from %s to %s "
+                "to accommodate prompt size of %d "
+                "and decode tokens of %d", _prev,
+                torch._dynamo.config.accumulated_cache_size_limit,
+                max_prompt_length, max_decode_length)
 
         if _target_cache_size > torch._dynamo.config.cache_size_limit:
             _prev = torch._dynamo.config.cache_size_limit
             torch._dynamo.config.cache_size_limit = _target_cache_size
-            print(
-                "NOTICE: Adjusting torch._dynamo.config.cache_size_limit from"
-                f" {_prev} to {torch._dynamo.config.cache_size_limit} to "
-                f"accommodate prompt size of {max_prompt_length} and "
-                f"decode tokens of {max_decode_length}")
+            logger.info(
+                "NOTICE: Adjusting torch._dynamo.config.cache_size_limit "
+                "from %s to %s "
+                "to accommodate prompt size of %d "
+                "and decode tokens of %d", _prev,
+                torch._dynamo.config.accumulated_cache_size_limit,
+                max_prompt_length, max_decode_length)
 
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in BACKEND_LIST:
             self.model = torch.compile(
@@ -349,15 +346,8 @@ class FmsModelWrapper(FmsModelBaseWrapper):
                          max_decode_length)
 
         # physical KV cache (fms wrapper/ AIU Spyre)
-        # lives in SpyreCausalLM only for convenient model access
-        warmup_shapes = current_platform.get_warmup_shapes()
-        max_batch = max(shape["batch_size"] for shape in warmup_shapes)
-        max_prompt_length = max(shape["prompt_length"]
-                                for shape in warmup_shapes)
-        max_new_tokens = max(shape["new_tokens"] for shape in warmup_shapes)
-        # Eventually max_model_len = self.config.max_position_embeddings,
-        # but saving some memory here to only allocate the max in practise
-        max_model_len = max_prompt_length + max_new_tokens
+        max_batch = envs_spyre.VLLM_SPYRE_MAX_BATCH_SIZE
+        max_model_len = envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH
 
         if self.config.model_type == 'llama':
             num_layers = self.config.num_hidden_layers

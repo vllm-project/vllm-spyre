@@ -12,7 +12,7 @@ jobs:
     - name: Run Spyre tests within docker container
       run: |
         docker run -i --rm --entrypoint /bin/bash vllm-spyre -c '''
-          pip install pytest sentence-transformers && \
+          pip install pytest sentence-transformers pytest-timeout pytest-forked && \
           python -c "from transformers import pipeline; pipeline(\"text-generation\", model=\"JackFram/llama-160m\")" && \
           export VARIANT=$(ls /root/.cache/huggingface/hub/models--JackFram--llama-160m/snapshots/) && \
           mkdir -p /models && \
@@ -24,5 +24,6 @@ jobs:
           export MASTER_ADDR=localhost && \
           export DISTRIBUTED_STRATEGY_IGNORE_MODULES=WordEmbedding && \
           cd vllm-spyre && \
-          python -m pytest tests -v -k eager
+          python -m pytest --timeout=300  tests -v -k "V0 and eager" && \
+          python -m pytest --forked --timeout=300  tests -v -k "(V1- and eager) or test_sampling_metadata_in_input_batch"
         '''

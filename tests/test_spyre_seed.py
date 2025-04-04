@@ -23,6 +23,7 @@ from vllm import SamplingParams
                                           (128, 20, 4), (128, 20, 8)]
                          )  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
+@pytest.mark.parametrize("vllm_version", ["V0", "V1"])
 def test_seed(
     model: str,
     prompt: str,
@@ -30,6 +31,7 @@ def test_seed(
     seed: int,
     warmup_shape: Tuple[int, int, int],
     backend: str,
+    vllm_version: str,
 ) -> None:
     '''
     The warmup is based on a single shape. After the warmup,
@@ -58,7 +60,8 @@ def test_seed(
         block_size=2048,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
-        backend=backend)
+        backend=backend,
+        vllm_version=vllm_version)
 
     # compare all generated outputs against the first generated output
     for vllm_result in vllm_results:

@@ -1,16 +1,135 @@
 import math
 import os
-from typing import Any, Dict, List, Tuple, Union
+import subprocess
+import sys
+import time
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+import openai
+import requests
 from sentence_transformers import SentenceTransformer, util
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, SamplingParams
+from vllm.entrypoints.openai.cli_args import make_arg_parser
+from vllm.utils import FlexibleArgumentParser, get_open_port
 
 DISABLE_ASSERTS = False  # used for debugging
 
 ISCLOSE_REL_TOL_CPU = 0.1
 ISCLOSE_REL_TOL_SPYRE = 0.1
+
+
+class RemoteOpenAIServer:
+    """Subprocess wrapper that boots a vllm server with `vllm serve` for testing
+    against"""
+
+    DUMMY_API_KEY = "token-abc123"  # vLLM's OpenAI server does not need API key
+
+    def __init__(self,
+                 model: str,
+                 vllm_serve_args: list[str],
+                 *,
+                 env_dict: Optional[dict[str, str]] = None,
+                 seed: Optional[int] = 0,
+                 auto_port: bool = True,
+                 max_wait_seconds: Optional[float] = None) -> None:
+        # NB: This implementation does not ensure that the model is downloaded
+        # before booting the server, it should be used with models already
+        # cached on disk
+
+        if auto_port:
+            if "-p" in vllm_serve_args or "--port" in vllm_serve_args:
+                raise ValueError("You have manually specified the port "
+                                 "when `auto_port=True`.")
+
+            # Don't mutate the input args
+            vllm_serve_args = vllm_serve_args + [
+                "--port", str(get_open_port())
+            ]
+        if seed is not None:
+            if "--seed" in vllm_serve_args:
+                raise ValueError("You have manually specified the seed "
+                                 f"when `seed={seed}`.")
+
+            vllm_serve_args = vllm_serve_args + ["--seed", str(seed)]
+
+        parser = FlexibleArgumentParser(
+            description="vLLM's remote OpenAI server.")
+        parser = make_arg_parser(parser)
+        args = parser.parse_args(["--model", model, *vllm_serve_args])
+        self.host = str(args.host or 'localhost')
+        self.port = int(args.port)
+
+        env = os.environ.copy()
+        if env_dict is not None:
+            env.update(env_dict)
+        self.proc = subprocess.Popen(
+            ["vllm", "serve", model, *vllm_serve_args],
+            env=env,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+        )
+        max_wait_seconds = max_wait_seconds or 240
+        self._wait_for_server(url=self.url_for("health"),
+                              timeout=max_wait_seconds)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.proc.terminate()
+        try:
+            self.proc.wait(8)
+        except subprocess.TimeoutExpired:
+            # force kill if needed
+            self.proc.kill()
+
+    def _wait_for_server(self, *, url: str, timeout: float):
+        # run health check
+        start = time.time()
+        while True:
+            try:
+                if requests.get(url).status_code == 200:
+                    break
+            except Exception:
+                # this exception can only be raised by requests.get,
+                # which means the server is not ready yet.
+                # the stack trace is not useful, so we suppress it
+                # by using `raise from None`.
+                result = self.proc.poll()
+                if result is not None and result != 0:
+                    raise RuntimeError("Server exited unexpectedly.") from None
+
+                time.sleep(0.5)
+                if time.time() - start > timeout:
+                    raise RuntimeError(
+                        "Server failed to start in time.") from None
+
+    @property
+    def url_root(self) -> str:
+        return f"http://{self.host}:{self.port}"
+
+    def url_for(self, *parts: str) -> str:
+        return self.url_root + "/" + "/".join(parts)
+
+    def get_client(self, **kwargs):
+        if "timeout" not in kwargs:
+            kwargs["timeout"] = 600
+        return openai.OpenAI(
+            base_url=self.url_for("v1"),
+            api_key=self.DUMMY_API_KEY,
+            max_retries=0,
+            **kwargs,
+        )
+
+    def get_async_client(self, **kwargs):
+        if "timeout" not in kwargs:
+            kwargs["timeout"] = 600
+        return openai.AsyncOpenAI(base_url=self.url_for("v1"),
+                                  api_key=self.DUMMY_API_KEY,
+                                  max_retries=0,
+                                  **kwargs)
 
 
 # vLLM / Spyre
@@ -19,8 +138,8 @@ def generate_spyre_vllm_output(model: str, prompts: List[str],
                                max_model_len: int, block_size: int,
                                sampling_params: Union[SamplingParams,
                                                       List[SamplingParams]],
-                               tensor_parallel_size: int,
-                               backend: str) -> List[Dict[str, Any]]:
+                               tensor_parallel_size: int, backend: str,
+                               vllm_version: str) -> List[Dict[str, Any]]:
 
     warmup_prompt_length = [t[0] for t in warmup_shapes]
     warmup_new_tokens = [t[1] for t in warmup_shapes]
@@ -33,6 +152,7 @@ def generate_spyre_vllm_output(model: str, prompts: List[str],
     os.environ['VLLM_SPYRE_WARMUP_BATCH_SIZES'] = ','.join(
         str(val) for val in warmup_batch_size)
     os.environ['VLLM_SPYRE_DYNAMO_BACKEND'] = backend
+    os.environ['VLLM_USE_V1'] = "1" if vllm_version == "V1" else "0"
 
     vllm_model = LLM(model=model,
                      tokenizer=model,
@@ -46,7 +166,7 @@ def generate_spyre_vllm_output(model: str, prompts: List[str],
     for req_output in vllm_outputs:
         result = {}
         result['text'] = req_output.outputs[0].text
-        result['token_ids'] = req_output.outputs[0].token_ids
+        result['token_ids'] = tuple(req_output.outputs[0].token_ids)
         result['tokens'] = tuple([
             req_output.outputs[0].logprobs[i][t].decoded_token
             for i, t in enumerate(result['token_ids'])
@@ -200,10 +320,10 @@ def compare_results(model: str, prompts: List[str],
 
 # vLLM / Spyre
 def spyre_vllm_embeddings(model: str, prompts: List[str],
-                          warmup_shapes: List[Tuple[int,
-                                                    int]], max_model_len: int,
-                          block_size: int, tensor_parallel_size: int,
-                          backend: str) -> List[Dict[str, Any]]:
+                          warmup_shapes: List[Tuple[int, int]],
+                          max_model_len: int, block_size: int,
+                          tensor_parallel_size: int, backend: str,
+                          vllm_version: str) -> List[Dict[str, Any]]:
 
     warmup_prompt_length = [t[0] for t in warmup_shapes]
     warmup_new_tokens = [0] * len(warmup_shapes)
@@ -216,6 +336,7 @@ def spyre_vllm_embeddings(model: str, prompts: List[str],
     os.environ['VLLM_SPYRE_WARMUP_BATCH_SIZES'] = ','.join(
         str(val) for val in warmup_batch_size)
     os.environ['VLLM_SPYRE_DYNAMO_BACKEND'] = backend
+    os.environ['VLLM_USE_V1'] = "1" if vllm_version == "V1" else "0"
 
     vllm_model = LLM(model=model,
                      tokenizer=model,
