@@ -601,33 +601,26 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         cached_requests: List[CachedRequestData],
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         assert len(cached_requests) > 0
-        input_tokens: List[List[int]] = [
-            [0] for _ in range(len(self.req_ids2idx_decode))
-        ]
-
         self.req_ids2idx = self.req_ids2idx_decode.copy()
+        input_tokens = []
         self.active_pages = []
-        self.model.indices = torch.ones(len(self.req_ids2idx),
+        self.model.indices = torch.ones(len(cached_requests),
                                         dtype=torch.bool,
                                         device='cpu')
 
-        for req_id in self.req_ids2idx:
-            self.active_pages.append(self.req_ids2page[req_id])
         for cached_request in cached_requests:
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
+            self.active_pages.append(self.req_ids2page[cached_request.req_id])
             generation_token = cached_request.new_token_ids[-1]
-            input_tokens[self.req_ids2idx[cached_request.req_id]] = [
-                generation_token
-            ]
-
-        self._mask, self._position_ids = self._prepare_pos_mask_decode(
-            cached_requests, self.tkv)
-        self.tkv = self.tkv + 1
+            input_tokens.append([generation_token])
 
         input_tokens = torch.tensor(input_tokens,
                                     dtype=torch.long,
                                     device=self.device)
+        self._mask, self._position_ids = self._prepare_pos_mask_decode(
+            cached_requests, self.tkv)
+        self.tkv = self.tkv + 1
 
         return input_tokens, self._position_ids, self._mask
 
@@ -638,16 +631,12 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
 
         mask_list = []
-
-        position_ids_list: List[List[int]] = [
-            [0] for _ in range(len(self.req_ids2idx_decode))
-        ]
+        position_ids_list = []
 
         for cached_request in cached_requests:
-            position_ids_list[self.req_ids2idx[cached_request.req_id]] = [
-                cached_request.num_computed_tokens
-            ]
             seq_len = cached_request.num_computed_tokens
+            position_ids_list.append([seq_len])
+
             pads = torch.ones(tkv - seq_len,
                               dtype=torch.long,
                               device=self.device) * self.pad_token_id
