@@ -191,7 +191,7 @@ class SpyreScheduler(Scheduler):
                     request.request_id,
                     # TODO: FIXME
                     # Dummy token prevent stats collection crash
-                    new_token_ids=[0],
+                    new_token_ids=[-1],
                     finish_reason=FinishReason.ABORT,
                     stop_reason=NO_WARMUP_FIT_STOP_REASON))
             request.status = RequestStatus.FINISHED_ABORTED
