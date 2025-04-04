@@ -34,8 +34,7 @@ def test_openai_serving(model, warmup_shape, backend, quantization,
         v1_flag
     }
 
-    with RemoteOpenAIServer(model,
-                            ["--quantization", quantization],
+    with RemoteOpenAIServer(model, ["--quantization", quantization],
                             env_dict=env_dict) as server:
         client = server.get_client()
         completion = client.completions.create(model=model,

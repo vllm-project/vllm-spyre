@@ -7,7 +7,8 @@ Run `python -m pytest tests/test_spyre_gptq.py`.
 from typing import List, Tuple
 
 import pytest
-from spyre_util import (generate_spyre_vllm_output, get_spyre_backend_list, get_spyre_model_list)
+from spyre_util import (generate_spyre_vllm_output, get_spyre_backend_list,
+                        get_spyre_model_list)
 from vllm import SamplingParams
 
 
@@ -18,9 +19,9 @@ from vllm import SamplingParams
     " chicken soup for a family of four.", "Hello",
     "What is the weather today like?", "Who are you?"
 ]])
-@pytest.mark.parametrize("warmup_shape", [(64, 20, 4), (64, 20, 8),
-                                          (128, 20, 4), (128, 20, 8)]
-                         )  # (prompt_length/new_tokens/batch_size)
+@pytest.mark.parametrize(
+    "warmup_shape", [(64, 20, 4), (64, 20, 8), (128, 20, 4),
+                     (128, 20, 8)])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("vllm_version", ["V0"])
 def test_gptq_exec(
@@ -37,10 +38,9 @@ def test_gptq_exec(
 
     max_new_tokens = warmup_shape[1]
 
-    vllm_sampling_params = SamplingParams(
-        max_tokens=max_new_tokens,
-        temperature=0,
-        ignore_eos=True)
+    vllm_sampling_params = SamplingParams(max_tokens=max_new_tokens,
+                                          temperature=0,
+                                          ignore_eos=True)
 
     vllm_results = generate_spyre_vllm_output(
         model=model,
@@ -52,8 +52,7 @@ def test_gptq_exec(
         tensor_parallel_size=1,
         backend=backend,
         vllm_version=vllm_version,
-        quantization="gptq"
-    )
+        quantization="gptq")
 
     # Ensure results were produced for all prompts
     assert isinstance(vllm_results, list), "Expected a list of results"

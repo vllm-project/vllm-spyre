@@ -440,7 +440,7 @@ def get_spyre_model_list(isEmbeddings=False, isGPTQ=False):
         user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST",
                                               "all-roberta-large-v1")
 
-    # set default to bert if testing embeddings
+    # set default to granite if testing GPTQ
     if isGPTQ:
         user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST",
                                               "granite-3.0-8b-instruct-gptq")
