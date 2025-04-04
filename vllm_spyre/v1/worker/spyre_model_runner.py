@@ -530,20 +530,18 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         super().__init__(vllm_config=vllm_config,
                          is_driver_worker=is_driver_worker)
 
-        self.max_batch_size = envs_spyre.VLLM_SPYRE_MAX_BATCH_SIZE
+        max_batch_size = envs_spyre.VLLM_SPYRE_MAX_BATCH_SIZE
         # this is just to pass formatting bc type is Optional[list[int]]
         if envs_spyre.VLLM_SPYRE_WARMUP_PROMPT_LENS:
             max_prompt_length = envs_spyre.VLLM_SPYRE_WARMUP_PROMPT_LENS[0]
 
         # TO DO: move to InputBatch
-        self._req_ids2idx: dict = {}
-        self._req_ids2idx_prompt: dict = {}
-        self._req_ids2idx_decode: dict = {}
-        self.decode_batch_size = 0
-        self._active_pages: List[int] = []
+        self.req_ids2idx: dict = {}
+        self.req_ids2idx_decode: dict = {}
+        self.active_pages: List[int] = []
         self.tkv = 0
-        self._free_page_idxs = [i for i in range(self.max_batch_size)]
-        self._min_pad_length_batch = max_prompt_length
+        self.free_page_idxs = [i for i in range(max_batch_size)]
+        self.min_pad_length_batch = max_prompt_length
 
     def _prepare_prompt(
         self,
@@ -554,17 +552,16 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         # set batch size for prompt to 1, update batch size for decode
         padded_batch_size = 1
-        self.decode_batch_size = self.decode_batch_size + 1
 
         # Internal state is managed here.
-        self._req_ids2idx_prompt = {}
-        self._active_pages = []
+        req_ids2idx_prompt = {}
+        self.active_pages = []
         for idx, request_data in enumerate(new_requests):
-            free_page_idx = self._free_page_idxs.pop(0)
-            self._active_pages.append(free_page_idx)
-            len_val = len(self._req_ids2idx_decode)
-            self._req_ids2idx_decode[request_data.req_id] = len_val
-            self._req_ids2idx_prompt[request_data.req_id] = idx
+            free_page_idx = self.free_page_idxs.pop(0)
+            self.active_pages.append(free_page_idx)
+            len_val = len(self.req_ids2idx_decode)
+            self.req_ids2idx_decode[request_data.req_id] = len_val
+            req_ids2idx_prompt[request_data.req_id] = idx
 
             # retrieve initial (unpadded) tokens
             prompt_tokens = request_data.prompt_token_ids
@@ -590,7 +587,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         ])
 
         if self.tkv == 0:
-            self.tkv = self._min_pad_length_batch
+            self.tkv = self.min_pad_length_batch
 
         # padding to compiled batch size
         while len(input_token_list) < padded_batch_size:
@@ -604,8 +601,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             self.pad_input_ids(input_token_list, min_pad_length=self.tkv)
 
         seq_lens = [t.shape[0] for t in input_token_list]
-        self._req_ids2idx = {}
-        self._req_ids2idx = self._req_ids2idx_prompt.copy()
+        self.req_ids2idx = req_ids2idx_prompt
 
         return input_tokens, position_ids, mask, seq_lens
 
@@ -614,26 +610,24 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         cached_requests: List[CachedRequestData],
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         assert len(cached_requests) > 0
-        input_tokens: List[List[int]] = [[0]
-                                         for _ in range(self.decode_batch_size)
-                                         ]
+        input_tokens: List[List[int]] = [
+            [0] for _ in range(len(self.req_ids2idx_decode))
+        ]
 
-        self._req_ids2idx_prompt = {}
-        self._req_ids2idx = {}
-        self._req_ids2idx = self._req_ids2idx_decode.copy()
-        self._active_pages = []
-        self.model.indices = torch.zeros(self.decode_batch_size,
+        self.req_ids2idx = self.req_ids2idx_decode.copy()
+        self.active_pages = []
+        self.model.indices = torch.zeros(len(self.req_ids2idx_decode),
                                          dtype=torch.bool,
                                          device='cpu')
 
-        for req_id in self._req_ids2idx:
-            self.model.indices[self._req_ids2idx[req_id]] = True
-            self._active_pages.append(int(req_id))
+        for req_id in self.req_ids2idx:
+            self.model.indices[self.req_ids2idx[req_id]] = True
+            self.active_pages.append(int(req_id))
         for cached_request in cached_requests:
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
             generation_token = cached_request.new_token_ids[-1]
-            input_tokens[self._req_ids2idx[cached_request.req_id]] = [
+            input_tokens[self.req_ids2idx[cached_request.req_id]] = [
                 generation_token
             ]
 
@@ -656,11 +650,11 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         mask_list = []
 
         position_ids_list: List[List[int]] = [
-            [0] for _ in range(self.decode_batch_size)
+            [0] for _ in range(len(self.req_ids2idx_decode))
         ]
 
         for cached_request in cached_requests:
-            position_ids_list[self._req_ids2idx[cached_request.req_id]] = [
+            position_ids_list[self.req_ids2idx[cached_request.req_id]] = [
                 cached_request.num_computed_tokens
             ]
             seq_len = cached_request.num_computed_tokens
@@ -692,16 +686,15 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         if scheduler_output.finished_req_ids:
             for req_id in scheduler_output.finished_req_ids:
-                if req_id in self._req_ids2idx:
-                    self.model.indices[self._req_ids2idx[req_id]] = False
-                    self._free_page_idxs.append(int(req_id))
-                    del self._active_pages[self._req_ids2idx[req_id]]
-                    del self._req_ids2idx[req_id]
-                    del self._req_ids2idx_decode[req_id]
+                if req_id in self.req_ids2idx:
+                    self.model.indices[self.req_ids2idx[req_id]] = False
+                    self.free_page_idxs.append(int(req_id))
+                    del self.active_pages[self.req_ids2idx[req_id]]
+                    del self.req_ids2idx[req_id]
+                    del self.req_ids2idx_decode[req_id]
                     for index, key in enumerate(
-                            self._req_ids2idx_decode.keys()):
-                        self._req_ids2idx_decode[key] = index
-                    self.decode_batch_size = self.decode_batch_size - 1
+                            self.req_ids2idx_decode.keys()):
+                        self.req_ids2idx_decode[key] = index
 
         # Prepare input tensors.
         if is_prompt:
@@ -760,7 +753,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             masks=model_input.input_masks,
             is_prompt=model_input.is_prompt,
             tkv=0 if model_input.is_prompt else self.tkv,
-            active_pages=self._active_pages,
+            active_pages=self.active_pages,
         )
 
         # Only perform sampling in the driver worker.
@@ -779,7 +772,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         logger.debug("t_token: %.2fms", (t1 * 1000))
 
         # Remove padded and finished sequences
-        req_ids = list(self._req_ids2idx.keys())
+        req_ids = list(self.req_ids2idx.keys())
         output_req_id_to_index = {}
         val_idx_list = [
             idx for idx in range(0, len(self.model.indices))
@@ -795,9 +788,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             spec_token_ids=None,
             logprobs=output.logprobs_tensors.tolists()
             if output.logprobs_tensors else None,
-            prompt_logprobs_dict={
-                req_id: None
-                for req_id in self._req_ids2idx
-            }  # TODO(wallas?): prompt logprobs too
+            prompt_logprobs_dict={req_id: None
+                                  for req_id in self.req_ids2idx
+                                  }  # TODO(wallas?): prompt logprobs too
         )
         return model_output
