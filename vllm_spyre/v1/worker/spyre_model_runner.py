@@ -540,7 +540,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.req_ids2idx_decode: dict = {}
         self.active_pages: List[int] = []
         self.tkv = 0
-        self.free_page_idxs = [i for i in range(max_batch_size)]
+        self.free_pages = [i for i in range(max_batch_size)]
         self.min_pad_length_batch = max_prompt_length
 
     def _prepare_prompt(
@@ -557,7 +557,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         req_ids2idx_prompt = {}
         self.active_pages = []
         for idx, request_data in enumerate(new_requests):
-            free_page_idx = self.free_page_idxs.pop(0)
+            free_page_idx = self.free_pages.pop(0)
             self.active_pages.append(free_page_idx)
             len_val = len(self.req_ids2idx_decode)
             self.req_ids2idx_decode[request_data.req_id] = len_val
@@ -688,7 +688,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             for req_id in scheduler_output.finished_req_ids:
                 if req_id in self.req_ids2idx_decode:
                     self.model.indices[self.req_ids2idx_decode[req_id]] = False
-                    self.free_page_idxs.append(int(req_id))
+                    self.free_pages.append(int(req_id))
                     del self.req_ids2idx_decode[req_id]
                     for index, key in enumerate(
                             self.req_ids2idx_decode.keys()):
