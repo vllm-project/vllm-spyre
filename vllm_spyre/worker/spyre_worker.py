@@ -38,7 +38,12 @@ except ImportError:
 
 # Capture a oneshot metric (e.x warmup)
 def _spyre_metric_oneshot(name, labels, value):
-    gauge = prometheus_client.Gauge(name="vllm:plugin:spyre:" + name,
+    name = "vllm:plugin:spyre:" + name
+    # Cleanup existing, for CI.
+    if name in prometheus_client.REGISTRY._names_to_collectors:
+        collector = prometheus_client.REGISTRY._names_to_collectors[name]
+        prometheus_client.REGISTRY.unregister(collector)
+    gauge = prometheus_client.Gauge(name=name,
                                     documentation="Oneshot spyre metric",
                                     multiprocess_mode='mostrecent',
                                     labelnames=labels)

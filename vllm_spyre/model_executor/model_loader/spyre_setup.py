@@ -130,6 +130,11 @@ def spyre_setup(rank=0, world_size=1, local_rank=0, local_size=1, verbose=False)
 
     # Export spyre configuration through metrics as fixed label
     if rank == 0:
+        name = "vllm:plugin:spyre:config"
+        # Cleanup existing, for CI.
+        if name in prometheus_client.REGISTRY._names_to_collectors:
+            collector = prometheus_client.REGISTRY._names_to_collectors[name]
+            prometheus_client.REGISTRY.unregister(collector)
         labels = {}
         for k in envs_spyre.environment_variables.keys():
             labels[k] = str(envs_spyre.environment_variables[k]())
