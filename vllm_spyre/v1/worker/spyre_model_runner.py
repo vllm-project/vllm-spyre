@@ -686,11 +686,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         if scheduler_output.finished_req_ids:
             for req_id in scheduler_output.finished_req_ids:
-                if req_id in self.req_ids2idx:
-                    self.model.indices[self.req_ids2idx[req_id]] = False
+                if req_id in self.req_ids2idx_decode:
+                    self.model.indices[self.req_ids2idx_decode[req_id]] = False
                     self.free_page_idxs.append(int(req_id))
-                    del self.active_pages[self.req_ids2idx[req_id]]
-                    del self.req_ids2idx[req_id]
                     del self.req_ids2idx_decode[req_id]
                     for index, key in enumerate(
                             self.req_ids2idx_decode.keys()):
