@@ -75,8 +75,8 @@ def test_openai_serving(model, warmup_shape, backend, vllm_version):
 
         # TODO: V0 and V1 have slight different behavior for requests
         # that do not fit in a warmup shape
-        if vllm_version == 'V0':
-            assert len(completion.choices[0].text) == 0
-        elif vllm_version == 'V1':
+        
+        assert len(completion.choices[0].text) == 0
+        if vllm_version == 'V1':
             assert completion.choices[0].stop_reason == \
-                NO_WARMUP_FIT_STOP_REASON
+                NO_WARMUP_FIT_STOP_REASON   
