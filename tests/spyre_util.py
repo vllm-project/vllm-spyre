@@ -133,13 +133,18 @@ class RemoteOpenAIServer:
 
 
 # vLLM / Spyre
-def generate_spyre_vllm_output(model: str, prompts: List[str],
-                               warmup_shapes: List[Tuple[int, int, int]],
-                               max_model_len: int, block_size: int,
-                               sampling_params: Union[SamplingParams,
-                                                      List[SamplingParams]],
-                               tensor_parallel_size: int, backend: str,
-                               vllm_version: str) -> List[Dict[str, Any]]:
+def generate_spyre_vllm_output(
+    model: str,
+    prompts: List[str],
+    warmup_shapes: List[Tuple[int, int, int]],
+    max_model_len: int,
+    block_size: int,
+    sampling_params: Union[SamplingParams, List[SamplingParams]],
+    tensor_parallel_size: int,
+    backend: str,
+    vllm_version: str,
+    quantization: str = None,
+) -> List[Dict[str, Any]]:
 
     warmup_prompt_length = [t[0] for t in warmup_shapes]
     warmup_new_tokens = [t[1] for t in warmup_shapes]
@@ -158,7 +163,8 @@ def generate_spyre_vllm_output(model: str, prompts: List[str],
                      tokenizer=model,
                      max_model_len=max_model_len,
                      block_size=block_size,
-                     tensor_parallel_size=tensor_parallel_size)
+                     tensor_parallel_size=tensor_parallel_size,
+                     quantization=quantization)
 
     vllm_outputs = vllm_model.generate(prompts, sampling_params)
 
@@ -423,7 +429,7 @@ def get_spyre_backend_list():
 # get model names from env, if not set then default to "llama-194m"
 # For multiple values:
 # export SPYRE_TEST_MODEL_LIST="llama-194m,all-roberta-large-v1"
-def get_spyre_model_list(isEmbeddings=False):
+def get_spyre_model_list(isEmbeddings=False, isGPTQ=False):
     spyre_model_dir_path = get_spyre_model_dir_path()
     test_model_list = []
     user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST",
@@ -433,6 +439,11 @@ def get_spyre_model_list(isEmbeddings=False):
     if isEmbeddings:
         user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST",
                                               "all-roberta-large-v1")
+
+    # set default to bert if testing embeddings
+    if isGPTQ:
+        user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST",
+                                              "granite-3.0-8b-instruct-gptq")
 
     for model in user_test_model_list.split(","):
         test_model_list.append(f"{spyre_model_dir_path}/{model.strip()}")
