@@ -541,8 +541,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self._req_ids2idx_decode: dict = {}
         self.decode_batch_size = 0
         self._active_pages: List[int] = []
-        self._position_ids_prompt: torch.Tensor = None
-        self._mask_prompt: torch.Tensor = None
         self.tkv = 0
         self._free_page_idxs = [i for i in range(self.max_batch_size)]
         self._min_pad_length_batch = max_prompt_length
@@ -602,15 +600,14 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                             device=torch.device("cpu")))
 
         # get position ids and attention mask
-        input_tokens, self._position_ids_prompt, self._mask_prompt =\
-                self.pad_input_ids(input_token_list, min_pad_length=self.tkv)
+        input_tokens, position_ids, mask =\
+            self.pad_input_ids(input_token_list, min_pad_length=self.tkv)
 
         seq_lens = [t.shape[0] for t in input_token_list]
         self._req_ids2idx = {}
         self._req_ids2idx = self._req_ids2idx_prompt.copy()
 
-        return input_tokens, self._position_ids_prompt, self._mask_prompt,\
-                seq_lens
+        return input_tokens, position_ids, mask, seq_lens
 
     def _prepare_decode(
         self,
