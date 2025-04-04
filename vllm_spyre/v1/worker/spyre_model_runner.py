@@ -544,7 +544,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self._position_ids_prompt: torch.Tensor = None
         self._mask_prompt: torch.Tensor = None
         self.tkv = 0
-        self.tkv2fms = 0
         self._free_page_idxs = [i for i in range(self.max_batch_size)]
         self._min_pad_length_batch = max_prompt_length
 
@@ -555,7 +554,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         assert len(new_requests) > 0
         input_token_list: List[torch.Tensor] = []
 
-        # set batch size for prompt to 1 ,update batch size for decode
+        # set batch size for prompt to 1, update batch size for decode
         padded_batch_size = 1
         self.decode_batch_size = self.decode_batch_size + 1
 
@@ -609,7 +608,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         seq_lens = [t.shape[0] for t in input_token_list]
         self._req_ids2idx = {}
         self._req_ids2idx = self._req_ids2idx_prompt.copy()
-        self.tkv2fms = 0
 
         return input_tokens, self._position_ids_prompt, self._mask_prompt,\
                 seq_lens
@@ -645,7 +643,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self._mask, self._position_ids = self._prepare_pos_mask_decode(
             cached_requests, self.tkv)
         self.tkv = self.tkv + 1
-        self.tkv2fms = self.tkv
 
         input_tokens = torch.tensor(input_tokens,
                                     dtype=torch.long,
@@ -765,7 +762,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             positions=model_input.input_positions,
             masks=model_input.input_masks,
             is_prompt=model_input.is_prompt,
-            tkv=self.tkv2fms,
+            tkv=0 if model_input.is_prompt else self.tkv,
             active_pages=self._active_pages,
         )
 

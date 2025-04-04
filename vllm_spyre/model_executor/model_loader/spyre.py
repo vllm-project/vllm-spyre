@@ -91,7 +91,6 @@ class SpyreCausalLM(nn.Module):
             use_cache=True,
             only_last_token=True,
             tkv=tkv,
-            #active_pages=[i for i in range(input_ids.shape[0])],
             active_pages=active_pages,
             **extra_kwargs,
         )
