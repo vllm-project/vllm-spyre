@@ -531,14 +531,16 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                          is_driver_worker=is_driver_worker)
 
         self.max_batch_size = envs_spyre.VLLM_SPYRE_MAX_BATCH_SIZE
-        max_prompt_length = envs_spyre.VLLM_SPYRE_WARMUP_PROMPT_LENS[0]
+        # this is just to pass formatting bc type is Optional[list[int]]
+        if envs_spyre.VLLM_SPYRE_WARMUP_PROMPT_LENS:
+            max_prompt_length = envs_spyre.VLLM_SPYRE_WARMUP_PROMPT_LENS[0]
 
         # TO DO: move to InputBatch
         self._req_ids2idx: dict = {}
         self._req_ids2idx_prompt: dict = {}
         self._req_ids2idx_decode: dict = {}
         self.decode_batch_size = 0
-        self._active_pages = []
+        self._active_pages: List[int] = []
         self._position_ids_prompt: torch.Tensor = None
         self._mask_prompt: torch.Tensor = None
         self.tkv = 0
@@ -655,7 +657,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self,
         cached_requests: List[CachedRequestData],
         tkv: int = 0,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
 
         mask_list = []
 

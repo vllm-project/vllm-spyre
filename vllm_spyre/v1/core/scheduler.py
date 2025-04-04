@@ -213,6 +213,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         # running queue of last decoding step
         self.last_running: list[Request] = []
         self.total_running: list[Request] = []
+        self.running: list[Request] = []
 
     def add_request(self, request: Request) -> None:
         """This override rejects requests that exceed max context length"""
