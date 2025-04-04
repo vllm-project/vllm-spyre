@@ -15,7 +15,7 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              body: "👋 Hi! Thank you for contributing to vLLM support on Spyre.\n Just a reminder: Make sure that your code passes all the linting checks, otherwise your PR won't be able to be merged. To do so, first install the linting requirements, then run `format.sh` and commit the changes:\n```\npip install -r requirements-lint.txt\nbash format.sh\n```\nNow you are good to go 🚀"
+              body: "👋 Hi! Thank you for contributing to vLLM support on Spyre.\n Just a reminder: Make sure that your code passes all the linting checks, otherwise your PR won't be able to be merged. To do so, first install the linting requirements, then run `format.sh` and commit the changes. This can be done with `uv` directly: \n```\nuv sync --frozen --group lint\n```\n Or this can be done with `pip`: \n```\nuv pip compile --group lint > requirements-lint.txt\npip install -r requirements-lint.txt\nbash format.sh\n```\nNow you are good to go 🚀"
             })
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
