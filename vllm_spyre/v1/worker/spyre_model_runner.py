@@ -605,12 +605,11 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         self.req_ids2idx = self.req_ids2idx_decode.copy()
         self.active_pages = []
-        self.model.indices = torch.zeros(len(self.req_ids2idx),
-                                         dtype=torch.bool,
-                                         device='cpu')
+        self.model.indices = torch.ones(len(self.req_ids2idx),
+                                        dtype=torch.bool,
+                                        device='cpu')
 
         for req_id in self.req_ids2idx:
-            self.model.indices[self.req_ids2idx[req_id]] = True
             self.active_pages.append(int(req_id))
         for cached_request in cached_requests:
             # TODO: Will this always just be one token ID if there's no spec
