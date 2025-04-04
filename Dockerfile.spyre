@@ -15,22 +15,19 @@ RUN microdnf update -y && microdnf install -y \
 RUN ln -sf $(which python${PYTHON_VERSION}) /usr/bin/python && \
     ln -sf $(which pip${PYTHON_VERSION}) /usr/bin/pip
 
-ENV VLLM_REVISION=5f063a80bda621da09e73fc63d4c59320259131d    
-# Download and install vllm ###########################################################
-RUN git clone --depth 1 https://github.com/vllm-project/vllm.git \
-    && cd vllm \
-    && git fetch --depth 1 origin ${VLLM_REVISION} \
-    && git checkout ${VLLM_REVISION} \
-    && python -m pip install --upgrade pip \
-    && pip3 install torch=="2.5.1+cpu" --index-url https://download.pytorch.org/whl/cpu \
-    && python use_existing_torch.py \
-    && pip install -r requirements/build.txt \
-    && SETUPTOOLS_SCM_PRETEND_VERSION=0.8.0 VLLM_TARGET_DEVICE=empty pip install --verbose . --no-build-isolation
-
 # Install vllm Spyre plugin ##################################################################
 RUN mkdir /workspace/vllm-spyre
 COPY . /workspace/vllm-spyre
-RUN cd /workspace/vllm-spyre && pip install -v -e .
+# Torch must be installed first
+RUN pip install torch==2.5.1+cpu --index-url https://download.pytorch.org/whl/cpu
+# Install uv
+RUN pip install uv
+# Install the plugin in a new venv, along with dev deps to test with
+RUN cd /workspace/vllm-spyre \
+    && uv venv .venv --system-site-packages \
+    && source .venv/bin/activate \
+    && VLLM_TARGET_DEVICE=empty uv pip install -v -e . --system \
+    && uv sync --frozen --group dev
 ENV VLLM_PLUGINS=spyre
 
 CMD ["/bin/bash"]

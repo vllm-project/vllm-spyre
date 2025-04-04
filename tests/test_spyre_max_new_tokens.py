@@ -26,8 +26,8 @@ prompt2 = template.format("Provide a list of instructions for preparing "
                                      [prompt2, prompt2, prompt2, prompt1],
                                      [prompt2, prompt2, prompt2, prompt2]])
 @pytest.mark.parametrize("stop_last", [True, False])
-@pytest.mark.parametrize("warmup_shape", [(64, 10, 4)]
-                         )  # (prompt_length/new_tokens/batch_size)
+@pytest.mark.parametrize(
+    "warmup_shape", [(64, 10, 4)])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("vllm_version", ["V0", "V1"])
 def test_output(
