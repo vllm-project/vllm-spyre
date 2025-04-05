@@ -102,10 +102,6 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         self.device = self.device_config.device
         self.pin_memory = is_pin_memory_available()
 
-        # position_ids of all the sequences in current batch
-        self._position_ids: torch.Tensor = None
-        # attention masks of all the sequences in current batch
-        self._mask: torch.Tensor = None
         # Lazy initialization: after load_model.
         self.model: nn.Module
 
@@ -225,6 +221,11 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
     ):
         super().__init__(vllm_config=vllm_config,
                          is_driver_worker=is_driver_worker)
+
+        # position_ids of all the sequences in current batch
+        self._position_ids: torch.Tensor = None
+        # attention masks of all the sequences in current batch
+        self._mask: torch.Tensor = None
 
         # Batch state
         self.input_batch = InputBatch(
@@ -551,7 +552,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         # Internal state is managed here.
         self.active_pages = []
-        for idx, request_data in enumerate(new_requests):
+        for request_data in new_requests:
             free_page_idx = self.free_pages.pop(0)
             self.active_pages.append(free_page_idx)
             self.req_ids2page[request_data.req_id] = free_page_idx
@@ -563,13 +564,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                 torch.tensor(prompt_tokens,
                              dtype=torch.long,
                              device=torch.device("cpu")))
-
-            sampling_params = request_data.sampling_params
-            if sampling_params.sampling_type == SamplingType.RANDOM_SEED:
-                generator = torch.Generator(device=self.device)
-                generator.manual_seed(sampling_params.seed)
-            else:
-                generator = None
 
         # prefils are always of batch size 1 for this milestone
         actual_batch_size = len(input_token_list)
@@ -610,11 +604,11 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         input_tokens = torch.tensor(input_tokens,
                                     dtype=torch.long,
                                     device=self.device)
-        self._mask, self._position_ids = self._prepare_pos_mask_decode(
+        mask, position_ids = self._prepare_pos_mask_decode(
             cached_requests, self.tkv)
         self.tkv = self.tkv + 1
 
-        return input_tokens, self._position_ids, self._mask
+        return input_tokens, position_ids, mask
 
     def _prepare_pos_mask_decode(
         self,
@@ -654,11 +648,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # Also assuming that new sequences are prefills
         is_prompt = len(scheduler_output.scheduled_new_reqs) > 0
 
-        if scheduler_output.finished_req_ids:
-            for req_id in scheduler_output.finished_req_ids:
-                if req_id in self.req_ids2page:
-                    self.free_pages.append(self.req_ids2page[req_id])
-                    del self.req_ids2page[req_id]
+        for req_id in scheduler_output.finished_req_ids:
+            if req_id in self.req_ids2page:
+                self.free_pages.append(self.req_ids2page[req_id])
+                del self.req_ids2page[req_id]
 
         # Prepare input tensors.
         if is_prompt:
@@ -735,11 +728,13 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         t1 = time.time() - t0
         logger.debug("t_token: %.2fms", (t1 * 1000))
 
-        scheduled_req = scheduler_output.scheduled_new_reqs if len(
-            scheduler_output.scheduled_new_reqs
-        ) > 0 else scheduler_output.scheduled_cached_reqs
+        is_prompt = len(scheduler_output.scheduled_new_reqs) > 0
+        scheduled_req = scheduler_output.scheduled_new_reqs if is_prompt\
+            else scheduler_output.scheduled_cached_reqs
+        # since same order as in _prepare_prompt/decode req_ids2idx not needed
         req_ids = [req.req_id for req in scheduled_req]
         req_id_to_index = {req_id: i for i, req_id in enumerate(req_ids)}
+
         model_output = ModelRunnerOutput(
             req_ids=req_ids,
             req_id_to_index=req_id_to_index,
