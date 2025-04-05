@@ -7,11 +7,10 @@ max_tokens1 = 10
 max_tokens2 = 5
 max_tokens3 = 7
 max_tokens = max([max_tokens1, max_tokens2, max_tokens3])
-max_num_seqs = 2
+max_num_seqs = 2  # defines max batch size
 
 os.environ["VLLM_SPYRE_WARMUP_PROMPT_LENS"] = '64'
 os.environ["VLLM_SPYRE_WARMUP_NEW_TOKENS"] = str(max_tokens)
-os.environ['VLLM_SPYRE_WARMUP_BATCH_SIZES'] = '4'
 
 # defining here to be able to run/debug directly from VSC (not via terminal)
 os.environ['VLLM_SPYRE_DYNAMO_BACKEND'] = 'eager'
@@ -19,7 +18,7 @@ os.environ['VLLM_SPYRE_USE_CB'] = '1'
 os.environ['VLLM_USE_V1'] = '1'
 
 os.environ['VLLM_SPYRE_MAX_CONTEXT_LENGTH'] = '2048'
-os.environ['VLLM_SPYRE_MAX_BATCH_SIZE'] = '4'
+os.environ['VLLM_SPYRE_MAX_BATCH_SIZE'] = str(max_num_seqs)
 
 # Sample prompts.
 template = (
@@ -65,8 +64,7 @@ sampling_params = [
 llm = LLM(model="/models/llama-194m",
           tokenizer="/models/llama-194m",
           max_model_len=2048,
-          block_size=2048,
-          max_num_seqs=max_num_seqs)
+          block_size=2048)
 
 # Generate texts from the prompts. The output is a list of RequestOutput objects
 # that contain the prompt, generated text, and other information.
