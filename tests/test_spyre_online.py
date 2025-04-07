@@ -3,6 +3,7 @@ import pytest
 
 from tests.spyre_util import (RemoteOpenAIServer, get_spyre_backend_list,
                               get_spyre_model_list)
+from vllm_spyre.v1.core.scheduler import NO_WARMUP_FIT_STOP_REASON
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
@@ -71,4 +72,11 @@ def test_openai_serving(model, warmup_shape, backend, vllm_version):
                                                max_tokens=25)
 
         assert len(completion.choices) == 1
+
+        # TODO: V0 and V1 have slight different behavior for requests
+        # that do not fit in a warmup shape
+
         assert len(completion.choices[0].text) == 0
+        if vllm_version == 'V1':
+            assert completion.choices[0].stop_reason == \
+                NO_WARMUP_FIT_STOP_REASON
