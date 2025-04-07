@@ -202,7 +202,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
     """ Support of continuous batching """
 
     def __init__(self, *args, **kwargs) -> None:
-        # Initialize vLLM scheduler
+        # Initialize SpyreScheduler
         super().__init__(*args, **kwargs)
         # running queue of last decoding step
         self.last_running: list[Request] = []
@@ -215,13 +215,13 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
                 <= envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH:
             logger.warning(
                 "Could not add request id %s, prompt length is "
-                "%d tokens, maximum number of output tokens is %d tokens",
+                "%d tokens, maximum number of output tokens is %d tokens,"
+                "but max model context length is %d.",
                 request.request_id,
                 request.num_prompt_tokens,
                 request.sampling_params.max_tokens,
+                envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH,
             )
-            logger.warning("Could not schedule request id %s",
-                           request.request_id)
             # TODO: There are open PRs that should enable raising an error for
             # a single request like this, which will gracefully return an error
             # for the request, instead of shutting down the engine.
@@ -249,8 +249,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         # Check if new requests can be scheduled.
         self.total_running = self.last_running + self.running
         while self.holdback_queue:
-            request = self.holdback_queue[0]
-            if self.can_schedule(request=request):
+            if self.can_schedule():
                 # Add request to the waiting queue
                 self.waiting.append(self.holdback_queue.popleft())
             else:
@@ -278,7 +277,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         outputs = super(SpyreScheduler, self).schedule()
         return outputs
 
-    def can_schedule(self, request: Request) -> bool:
+    def can_schedule(self) -> bool:
         max_prompt_batch_size = 1
         # TODO: add additional checks, e.g. max_tokens
         return len(self.total_running)+len(self.waiting) <\
