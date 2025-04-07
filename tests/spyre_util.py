@@ -133,18 +133,13 @@ class RemoteOpenAIServer:
 
 
 # vLLM / Spyre
-def generate_spyre_vllm_output(
-    model: str,
-    prompts: List[str],
-    warmup_shapes: List[Tuple[int, int, int]],
-    max_model_len: int,
-    block_size: int,
-    sampling_params: Union[SamplingParams, List[SamplingParams]],
-    tensor_parallel_size: int,
-    backend: str,
-    vllm_version: str,
-    quantization: str = None,
-) -> List[Dict[str, Any]]:
+def generate_spyre_vllm_output(model: str, prompts: List[str],
+                               warmup_shapes: List[Tuple[int, int, int]],
+                               max_model_len: int, block_size: int,
+                               sampling_params: Union[SamplingParams,
+                                                      List[SamplingParams]],
+                               tensor_parallel_size: int, backend: str,
+                               vllm_version: str) -> List[Dict[str, Any]]:
 
     warmup_prompt_length = [t[0] for t in warmup_shapes]
     warmup_new_tokens = [t[1] for t in warmup_shapes]
@@ -163,8 +158,7 @@ def generate_spyre_vllm_output(
                      tokenizer=model,
                      max_model_len=max_model_len,
                      block_size=block_size,
-                     tensor_parallel_size=tensor_parallel_size,
-                     quantization=quantization)
+                     tensor_parallel_size=tensor_parallel_size)
 
     vllm_outputs = vllm_model.generate(prompts, sampling_params)
 
