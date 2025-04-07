@@ -9,6 +9,8 @@ from vllm.v1.engine import EngineCoreOutput, EngineCoreOutputs, FinishReason
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request, RequestStatus
 
+import vllm_spyre.envs as envs_spyre
+
 try:
     from vllm.v1.core.sched.scheduler import Scheduler
 except ImportError:
@@ -93,7 +95,6 @@ class SpyreScheduler(Scheduler):
     def schedule(self) -> SchedulerOutput:
         """This override adds constraints and then delegates most of the work
         to the base scheduler"""
-
         # First purge the full waiting queue into our holdback queue, preserving
         # priority
         while self.waiting:
@@ -195,3 +196,90 @@ class SpyreScheduler(Scheduler):
             self.rejected_requests.remove(request.request_id)
 
         return reject_outputs
+
+
+class ContinuousBatchingSpyreScheduler(SpyreScheduler):
+    """ Support of continuous batching """
+
+    def __init__(self, *args, **kwargs) -> None:
+        # Initialize SpyreScheduler
+        super().__init__(*args, **kwargs)
+        # running queue of last decoding step
+        self.last_running: list[Request] = []
+        self.total_running: list[Request] = []
+        self.running: list[Request] = []
+
+    def add_request(self, request: Request) -> None:
+        """This override rejects requests that exceed max context length"""
+        if not request.num_prompt_tokens + request.sampling_params.max_tokens\
+                <= envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH:
+            logger.warning(
+                "Could not add request id %s, prompt length is "
+                "%d tokens, maximum number of output tokens is %d tokens,"
+                "but max model context length is %d.",
+                request.request_id,
+                request.num_prompt_tokens,
+                request.sampling_params.max_tokens,
+                envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH,
+            )
+            # TODO: There are open PRs that should enable raising an error for
+            # a single request like this, which will gracefully return an error
+            # for the request, instead of shutting down the engine.
+            # See https://github.com/vllm-project/vllm/pull/11737
+            # raise ValueError("Request does not fit any spyre warmup shape")
+
+            # For now, we'll insert a dummy request and manually reject it when
+            # we construct the outputs later
+            self.rejected_requests.add(request.request_id)
+            request.prompt_token_ids = [0]
+            request.num_prompt_tokens = 1
+            request.sampling_params = SamplingParams(max_tokens=1)
+
+        # delegate to super
+        super(SpyreScheduler, self).add_request(request=request)
+
+    def schedule(self) -> "SchedulerOutput":
+        """This override adds constraints and then delegates most of the work
+        to the base scheduler"""
+        # First purge the full waiting queue into our holdback queue, preserving
+        # priority
+        while self.waiting:
+            self.holdback_queue.append(self.waiting.popleft())
+
+        # Check if new requests can be scheduled.
+        self.total_running = self.last_running + self.running
+        while self.holdback_queue:
+            if self.can_schedule():
+                # Add request to the waiting queue
+                self.waiting.append(self.holdback_queue.popleft())
+            else:
+                # Otherwise, we simply stop here so that the scheduler
+                # can work with the batch we have
+                break
+
+        if len(self.waiting) > 0:
+            # If prefill scheduled, save running queue for the next decode step.
+            # If previous step was also prefill, running queue contains the
+            # previous prefill sequence.
+            self.last_running = self.total_running
+            self.running = []
+            logger.debug(
+                "Scheduling a prompt step of %d requests, holding back %d "
+                "requests", len(self.waiting), len(self.holdback_queue))
+        else:
+            # If decode scheduled and previous step was prefil, update running
+            # queue
+            self.running = self.total_running
+            self.last_running = []
+            logger.debug("Scheduling a decode step of %d requests",
+                         len(self.running))
+
+        outputs = super(SpyreScheduler, self).schedule()
+        return outputs
+
+    def can_schedule(self) -> bool:
+        max_prompt_batch_size = 1
+        # TODO: add additional checks, e.g. max_tokens
+        return len(self.total_running)+len(self.waiting) <\
+                self.max_num_running_reqs and\
+                len(self.waiting) < max_prompt_batch_size
