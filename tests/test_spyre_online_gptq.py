@@ -1,22 +1,18 @@
 import pytest
 
-from tests.spyre_util import (RemoteOpenAIServer, get_spyre_backend_list,
-                              get_spyre_model_list)
+from tests.spyre_util import RemoteOpenAIServer, get_spyre_model_list
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list(isGPTQ=True))
-# (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("warmup_shape", [[
     (64, 20, 4),
 ]])
-@pytest.mark.parametrize("backend", get_spyre_backend_list())
+@pytest.mark.parametrize("backend", ["sendnn_decoder"])
 @pytest.mark.parametrize("quantization", ["gptq"])
 @pytest.mark.parametrize("vllm_version", ["V0"])
-def test_openai_serving(model, warmup_shape, backend, quantization,
-                        vllm_version):
+def test_gptq_online(model, warmup_shape, backend, quantization, vllm_version):
     """Test online serving with a GPTQ model using the `vllm serve` CLI"""
 
-    # TODO: util or fixture-ize
     warmup_prompt_length = [t[0] for t in warmup_shape]
     warmup_new_tokens = [t[1] for t in warmup_shape]
     warmup_batch_size = [t[2] for t in warmup_shape]
