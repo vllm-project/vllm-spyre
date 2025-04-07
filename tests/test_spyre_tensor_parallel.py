@@ -46,11 +46,6 @@ def test_output(
     test using 'pytest --capture=no tests/spyre/test_spyre_tensore_parallel.py'
     After debugging, DISABLE_ASSERTS should be reset to 'False'.
     '''
-    print("[INFO] Ignoring test_spyre_tensor_parallel.py on continuous "
-          "batching branch. FMS model wrapper does not support tensor "
-          "parallelism, but the actual FMS implementation of course will.")
-    assert True
-    return
     max_new_tokens = max([t[1] for t in warmup_shapes])
 
     vllm_sampling_params = SamplingParams(
