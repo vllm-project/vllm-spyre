@@ -77,7 +77,7 @@ class SpyreScheduler(Scheduler):
             request.sampling_params = SamplingParams(max_tokens=1)
 
         # delegate to super
-        self.run_add_request(request=request)
+        super().add_request(request=request)
 
     def update_from_output(
         self,
@@ -134,7 +134,7 @@ class SpyreScheduler(Scheduler):
             logger.debug("Scheduling a running batch of %d requests",
                          len(self.running))
 
-        outputs = self.run_schedule()
+        outputs = super().schedule()
         return outputs
 
     def get_num_unfinished_requests(self) -> int:
@@ -197,12 +197,6 @@ class SpyreScheduler(Scheduler):
 
         return reject_outputs
 
-    def run_schedule(self) -> SchedulerOutput:
-        return super().schedule()
-
-    def run_add_request(self, request: Request) -> None:
-        super().add_request(request=request)
-
 
 class ContinuousBatchingSpyreScheduler(SpyreScheduler):
     """ Support of continuous batching """
@@ -242,7 +236,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             request.sampling_params = SamplingParams(max_tokens=1)
 
         # delegate to super
-        self.run_add_request(request=request)
+        super(SpyreScheduler, self).add_request(request=request)
 
     def schedule(self) -> "SchedulerOutput":
         """This override adds constraints and then delegates most of the work
@@ -281,7 +275,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             logger.debug("Scheduling a decode step of %d requests",
                          len(self.running))
 
-        outputs = self.run_schedule()
+        outputs = super(SpyreScheduler, self).schedule()
         return outputs
 
     def can_schedule(self, request: Request) -> bool:
