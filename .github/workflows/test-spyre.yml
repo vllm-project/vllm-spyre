@@ -1,4 +1,4 @@
-name: test-sypre
+name: Test
 
 on:
   # Don't use pull_request.paths filter since this workflow is required for
@@ -17,14 +17,9 @@ on:
   workflow_dispatch:
 
 env:
-  # force output to be colored for non-tty GHA runner shell
   FORCE_COLOR: "1"
-  # prefer index for torch cpu version and match pip's extra index policy
-  UV_EXTRA_INDEX_URL: "https://download.pytorch.org/whl/cpu"
-  UV_INDEX_STRATEGY: "unsafe-best-match"
-  # facilitate testing by building vLLM for CPU when needed
   VLLM_CPU_DISABLE_AVX512: "true"
-  VLLM_TARGET_DEVICE: "cpu"
+  VLLM_TARGET_DEVICE: "empty"
   VLLM_PLUGINS: "spyre"
   VLLM_SPYRE_TEST_MODEL_DIR: "${{ github.workspace }}/models"
   HF_HUB_CACHE: "${{ github.workspace }}/.cache/huggingface/hub"
@@ -34,7 +29,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-spyre:
+  test:
     timeout-minutes: 20
     runs-on: ${{ matrix.os }}
     strategy:
@@ -47,8 +42,6 @@ jobs:
             repo: "git+https://github.com/vllm-project/vllm --tag v0.8.0"
           - name: "vLLM:main"
             repo: "git+https://github.com/vllm-project/vllm --branch main"
-          - name: "ODH:main"
-            repo: "git+https://github.com/opendatahub-io/vllm --branch main"
         test_suite:
           - name: "V0"
             tests: "V0 and eager"
@@ -56,11 +49,6 @@ jobs:
           - name: "V1"
             tests: "(V1- and eager) or test_sampling_metadata_in_input_batch"
             flags: "--timeout=300 --forked"
-        exclude:
-          - vllm_version: { name: "vLLM:main" }
-            test_suite:   { name: "V1" }
-          - vllm_version: { name: "ODH:main" }
-            test_suite:   { name: "V1" }
 
     name: "${{ matrix.test_suite.name }} (${{ matrix.vllm_version.name }})"
 
@@ -84,29 +72,31 @@ jobs:
           cache-dependency-glob: |
             pyproject.toml
 
-      - name: "Install vLLM"
-        env:
-          VLLM_TARGET_DEVICE: empty
+      - name: "Install vLLM with Spyre plugin"
         run: |
-          # Install markupsafe from PyPI, Torch CPU index only has wheels for Python 3.13
-          uv add markupsafe --index force_pypi_index=https://pypi.org/simple
           uv add ${{ matrix.vllm_version.repo }}
           uv venv .venv --system-site-packages
           source .venv/bin/activate
-          uv pip install -v -e .
+          uv pip install -v .
           uv sync --frozen --group dev
 
       - name: "Download models"
         run: |
           mkdir -p "${VLLM_SPYRE_TEST_MODEL_DIR}"
-          
-          python -c "from transformers import pipeline; pipeline(\"text-generation\", model=\"JackFram/llama-160m\")"
-          VARIANT=$(ls "${HF_HUB_CACHE}/models--JackFram--llama-160m/snapshots/")
-          ln -s "${HF_HUB_CACHE}/models--JackFram--llama-160m/snapshots/${VARIANT}" "${VLLM_SPYRE_TEST_MODEL_DIR}/llama-194m"
-          
-          python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer(\"sentence-transformers/all-roberta-large-v1\")"
-          VARIANT=$(ls "${HF_HUB_CACHE}/models--sentence-transformers--all-roberta-large-v1/snapshots/")
-          ln -s "${HF_HUB_CACHE}/models--sentence-transformers--all-roberta-large-v1/snapshots/${VARIANT}" "${VLLM_SPYRE_TEST_MODEL_DIR}/all-roberta-large-v1"
+
+          download_jackfram_llama() {
+            python -c "from transformers import pipeline; pipeline('text-generation', model='JackFram/llama-160m')"
+            VARIANT=$(ls "${HF_HUB_CACHE}/models--JackFram--llama-160m/snapshots/")
+            ln -s "${HF_HUB_CACHE}/models--JackFram--llama-160m/snapshots/${VARIANT}" "${VLLM_SPYRE_TEST_MODEL_DIR}/llama-194m"
+          }
+          download_roberta_large() {
+            python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-roberta-large-v1')"
+            VARIANT=$(ls "${HF_HUB_CACHE}/models--sentence-transformers--all-roberta-large-v1/snapshots/")
+            ln -s "${HF_HUB_CACHE}/models--sentence-transformers--all-roberta-large-v1/snapshots/${VARIANT}" "${VLLM_SPYRE_TEST_MODEL_DIR}/all-roberta-large-v1"
+          }
+          download_jackfram_llama &
+          download_roberta_large &
+          wait
 
       - name: "Run tests"
         env:
