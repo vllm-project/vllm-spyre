@@ -54,10 +54,10 @@ class SpyreCausalLM(nn.Module):
         # False for finished or padded sequences
         self.indices = None
 
-        # FMS Wrapper Model
-        fms_wrapper = FmsModelWrapper if envs_spyre.VLLM_SPYRE_USE_CB \
-            else FmsModelPseudoWrapper
-        self.model = fms_wrapper(
+        # FMS Model
+        fms_model = ContinuousBatchingFmsModel if envs_spyre.VLLM_SPYRE_USE_CB\
+            else StaticBatchingFmsModel
+        self.model = fms_model(
             model_config,
             parallel_config,
             max_prompt_length,
@@ -131,7 +131,7 @@ def get_spyre_model(
     return model
 
 
-class FmsModelBaseWrapper(nn.Module):
+class FmsModelBase(nn.Module):
 
     def __init__(
         self,
@@ -257,7 +257,7 @@ class FmsModelBaseWrapper(nn.Module):
                 backend=envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND)
 
 
-class FmsModelWrapper(FmsModelBaseWrapper):
+class ContinuousBatchingFmsModel(FmsModelBase):
 
     def __init__(
         self,
@@ -269,7 +269,7 @@ class FmsModelWrapper(FmsModelBaseWrapper):
         super().__init__(model_config, parallel_config, max_prompt_length,
                          max_decode_length)
 
-        # physical KV cache (fms wrapper/ AIU Spyre)
+        # physical KV cache on AIU Spyre
         max_batch = envs_spyre.VLLM_SPYRE_MAX_BATCH_SIZE
         max_model_len = envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH
 
@@ -284,7 +284,7 @@ class FmsModelWrapper(FmsModelBaseWrapper):
             head_dim = self.config.n_embd // self.config.n_head
         else:
             print(f"[SpyreCausalLM] model type {self.config.model_type} "
-                  f"not supported in FMS wrapper")
+                  f"not supported in ContinuousBatchingFmsModel")
 
         # (layers)x(k,v)x[max_batch, num_kv_heads, max_model_len, head_dim]
         self.fms_kv_cache: list[tuple[torch.Tensor, torch.Tensor]] = [
@@ -348,7 +348,7 @@ class FmsModelWrapper(FmsModelBaseWrapper):
         return logits
 
 
-class FmsModelPseudoWrapper(FmsModelBaseWrapper):
+class StaticBatchingFmsModel(FmsModelBase):
 
     def __init__(
         self,
@@ -374,9 +374,6 @@ class FmsModelPseudoWrapper(FmsModelBaseWrapper):
         active_pages: list[int],
         **extra_kwargs,
     ) -> torch.Tensor:
-
-        if tkv == 0:  # prefil
-            tkv = input_ids.shape[1]
 
         output = self.model(
             input_ids,
