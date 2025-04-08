@@ -22,6 +22,8 @@ from vllm_spyre.platform import SpyrePlatform
 
 logger = init_logger(__name__)
 
+NO_WARMUP_FIT_STOP_REASON = "Request did not fit any warmup shape"
+
 
 class SpyreScheduler(Scheduler):
     """Small extension of the V1 scheduler that adds constraints for Sypre:
@@ -39,10 +41,9 @@ class SpyreScheduler(Scheduler):
         self.spyre_warmup_shapes: tuple[dict[str, int], ...] = \
             SpyrePlatform.get_warmup_shapes(self.scheduler_config)
 
-        # We'll put all new requests into this queue so that the base scheduler
-        # does not attempt to schedule them until we release them into the
-        # waiting queue. This lets us ensure that the set of requests the base
-        # scheduler sees have at least one common warmup shape.
+        # Requests are temporarily moved to this queue so that the base
+        # scheduler does not see them. This lets us ensure that the set of
+        # requests scheduled have at least one common warmup shape.
         self.holdback_queue: Deque[Request] = deque()
 
         self.rejected_requests: set[str] = set()
@@ -134,11 +135,12 @@ class SpyreScheduler(Scheduler):
                          len(self.running))
 
         outputs = super().schedule()
-        return outputs
 
-    def get_num_unfinished_requests(self) -> int:
-        # Override this to include our extra queue
-        return len(self.waiting) + len(self.running) + len(self.holdback_queue)
+        # move unscheduled requests back to the waiting queue
+        while self.holdback_queue:
+            self.waiting.append(self.holdback_queue.popleft())
+
+        return outputs
 
     def _get_matching_warmup_shapes(
             self, request: Request, warmup_shapes: list[dict[str, int]],
@@ -185,11 +187,13 @@ class SpyreScheduler(Scheduler):
         for request in rejected_requests:
             queue.remove(request)
             reject_outputs.append(
-                EngineCoreOutput(request.request_id,
-                                 new_token_ids=[],
-                                 finish_reason=FinishReason.ABORT,
-                                 stop_reason="Request did not fit any warmup "
-                                 "shape"))
+                EngineCoreOutput(
+                    request.request_id,
+                    # TODO: FIXME
+                    # Dummy token prevent stats collection crash
+                    new_token_ids=[-1],
+                    finish_reason=FinishReason.ABORT,
+                    stop_reason=NO_WARMUP_FIT_STOP_REASON))
             request.status = RequestStatus.FINISHED_ABORTED
             self._free_request(request)
             self.rejected_requests.remove(request.request_id)
