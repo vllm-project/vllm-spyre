@@ -17,6 +17,7 @@ from vllm.worker.worker_base import (LocalOrDistributedWorkerBase, WorkerBase,
                                      WorkerInput)
 
 import vllm_spyre.envs as envs_spyre
+import vllm_spyre.perf_metrics as perf_metrics
 from vllm_spyre.model_executor.model_loader import spyre_setup
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.worker.spyre_embedding_model_runner import (
@@ -52,6 +53,7 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
         self.rank = rank
         self.distributed_init_method = distributed_init_method
         self.is_driver_worker = is_driver_worker
+        self.perf_metrics = perf_metrics.create_perf_metric_logger(rank)
         if self.parallel_config and is_driver_worker:
             assert rank % self.parallel_config.tensor_parallel_size == 0, \
                    "Driver worker should be rank 0 of tensor parallel group."
@@ -157,6 +159,9 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
 
         load_model_end_t = time.time()
         load_model_total_t = load_model_end_t - load_model_start_t
+        self.perf_metrics.log("load model time",
+                              load_model_total_t,
+                              model=self.model_config.model)
         print(f"\tload model took {load_model_total_t}s")
 
         print(f"[SpyreWorker] Start warming up "
@@ -184,6 +189,9 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
                                           restricted_tokens, batch_size)
         all_warmup_end_t = time.time()
         all_warmup_total_t = all_warmup_end_t - all_warmup_start_t
+        self.perf_metrics.log("total warmup time", all_warmup_total_t)
+        # No more perf metric are captured (so far) after warmup, cleanup now.
+        del self.perf_metrics
         print(f"[SpyreWorker] All warmups for "
               f"{len(wup_new_tokens)} different "
               f"prompt/decode/batchsize-shape combinations finished. "
@@ -230,6 +238,11 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
                                         valid_token_ids_tensor, prompt_len,
                                         num_decode_tokens, batch_size,
                                         extra_kwargs)
+        self.perf_metrics.log("warmup 1 time",
+                              time.time() - warmup_start_t,
+                              batch_size=batch_size,
+                              max_tokens=num_decode_tokens,
+                              prompt_len=prompt_len)
 
         # 2. compile
         print("[SpyreWorker] warmup 2/2...")
@@ -240,8 +253,14 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
             ul_stop_time = time.time()
             ul_total_t = ul_stop_time - ul_start_time
             print(f"update_lazyhandle() done (duration: {ul_total_t}s)")
+            self.perf_metrics.log("update_lazyhandle() time",
+                                  ul_total_t,
+                                  batch_size=batch_size,
+                                  max_tokens=num_decode_tokens,
+                                  prompt_len=prompt_len)
 
         # warmup 2nd forward pass
+        warmup2_start_t = time.time()
         self._warmup_model_forward_pass(warmup_tokens_tensor,
                                         valid_token_ids_tensor, prompt_len,
                                         num_decode_tokens, batch_size,
@@ -249,6 +268,11 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
 
         warmup_end_t = time.time()
         warmup_total_t = warmup_end_t - warmup_start_t
+        self.perf_metrics.log("warmup 2 time",
+                              time.time() - warmup2_start_t,
+                              batch_size=batch_size,
+                              max_tokens=num_decode_tokens,
+                              prompt_len=prompt_len)
         print("[SpyreWorker] ... warmup finished.")
         print(f"\twarmup took {warmup_total_t}s (for prompt length"
               f"{prompt_len} and max output tokens {num_decode_tokens})")
