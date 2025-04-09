@@ -24,8 +24,8 @@ from vllm.core.scheduler import (ARTIFICIAL_PREEMPTION_MAX_CNT,
 from vllm.logger import init_logger
 # SPYRE SPECIFIC CODE BLOCK END
 from vllm.sequence import (Sequence, SequenceData, SequenceGroup,
-                           SequenceGroupMetadata, SequenceGroupMetadataDelta,
-                           SequenceStatus)
+                           SequenceGroupBase, SequenceGroupMetadata,
+                           SequenceGroupMetadataDelta, SequenceStatus)
 from vllm.utils import Device, PyObjectCache
 
 from vllm_spyre.platform import SpyrePlatform
@@ -179,7 +179,11 @@ class SpyreScheduler:
         # Only for testing purposes.
         self.swapped.append(seq_group)
 
-    def abort_seq_group(self, request_id: Union[str, Iterable[str]]) -> None:
+    def abort_seq_group(
+        self,
+        request_id: Union[str, Iterable[str]],
+        seq_id_to_seq_group: Optional[Dict[str, SequenceGroupBase]] = None,
+    ) -> None:
         """Aborts a sequence group with the given ID.
 
         Check if the sequence group with the given ID

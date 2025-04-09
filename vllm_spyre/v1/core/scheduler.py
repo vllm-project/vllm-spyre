@@ -43,10 +43,9 @@ class SpyreScheduler(Scheduler):
         self.spyre_warmup_shapes: tuple[dict[str, int], ...] = \
             SpyrePlatform.get_warmup_shapes(self.scheduler_config)
 
-        # We'll put all new requests into this queue so that the base scheduler
-        # does not attempt to schedule them until we release them into the
-        # waiting queue. This lets us ensure that the set of requests the base
-        # scheduler sees have at least one common warmup shape.
+        # Requests are temporarily moved to this queue so that the base
+        # scheduler does not see them. This lets us ensure that the set of
+        # requests scheduled have at least one common warmup shape.
         self.holdback_queue: Deque[Request] = deque()
 
         self.rejected_requests: set[str] = set()
@@ -137,11 +136,12 @@ class SpyreScheduler(Scheduler):
                          len(self.running))
 
         outputs = super().schedule()
-        return outputs
 
-    def get_num_unfinished_requests(self) -> int:
-        # Override this to include our extra queue
-        return len(self.waiting) + len(self.running) + len(self.holdback_queue)
+        # move unscheduled requests back to the waiting queue
+        while self.holdback_queue:
+            self.waiting.append(self.holdback_queue.popleft())
+
+        return outputs
 
     def _get_matching_warmup_shapes(
             self, request: Request, warmup_shapes: list[dict[str, int]],
