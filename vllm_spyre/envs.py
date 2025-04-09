@@ -6,6 +6,9 @@ if TYPE_CHECKING:
     VLLM_SPYRE_WARMUP_PROMPT_LENS: Optional[List[int]] = None
     VLLM_SPYRE_WARMUP_NEW_TOKENS: Optional[List[int]] = None
     VLLM_SPYRE_WARMUP_BATCH_SIZES: Optional[List[int]] = None
+    VLLM_SPYRE_USE_CB: bool = False
+    VLLM_SPYRE_MAX_BATCH_SIZE: int = 0
+    VLLM_SPYRE_MAX_CONTEXT_LENGTH: int = 0
 
 environment_variables: Dict[str, Callable[[], Any]] = {
     # Defines the prompt lengths the Spyre accelerator should be prepared
@@ -40,6 +43,18 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     # - "eager": Skip compile entirely (for debug and testing
     "VLLM_SPYRE_DYNAMO_BACKEND":
     lambda: os.getenv("VLLM_SPYRE_DYNAMO_BACKEND", "sendnn_decoder"),
+
+    # If set, use the V1 continuous batching implementation
+    "VLLM_SPYRE_USE_CB":
+    lambda: bool(int(os.getenv("VLLM_SPYRE_USE_CB", "0"))),
+
+    # Maximal supported batch size
+    "VLLM_SPYRE_MAX_BATCH_SIZE":
+    lambda: int(os.getenv("VLLM_SPYRE_MAX_BATCH_SIZE", "0")),
+
+    # Maximal supported context length
+    "VLLM_SPYRE_MAX_CONTEXT_LENGTH":
+    lambda: int(os.getenv("VLLM_SPYRE_MAX_CONTEXT_LENGTH", "0")),
 }
 
 

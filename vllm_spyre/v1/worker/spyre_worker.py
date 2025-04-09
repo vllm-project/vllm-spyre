@@ -24,7 +24,8 @@ from vllm_spyre.model_executor.model_loader import spyre_setup
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.core.sched.output import (CachedRequestData, NewRequestData,
                                              SchedulerOutput)
-from vllm_spyre.v1.worker.spyre_model_runner import SpyreModelRunner
+from vllm_spyre.v1.worker.spyre_model_runner import (
+    ContinuousBatchingSpyreModelRunner, StaticBatchingSpyreModelRunner)
 
 logger = init_logger(__name__)
 
@@ -46,6 +47,10 @@ class SpyreWorker(WorkerBaseV1):
 
     def compile_or_warm_up_model(self) -> None:
         """Prepare model for execution through compilation/warmup."""
+        # TO DO: implement warmup for continuous batching
+        if envs_spyre.VLLM_SPYRE_USE_CB:
+            return
+
         wup_prompt_lens, wup_new_tokens = zip(
             *[(s["prompt_length"], s["new_tokens"])
               for s in self.spyre_warmup_shapes])
@@ -139,8 +144,12 @@ class SpyreWorker(WorkerBaseV1):
         if self.model_config.task == "embed":
             raise NotImplementedError
         else:
-            self.model_runner = SpyreModelRunner(self.vllm_config,
-                                                 self.is_driver_worker)
+            if envs_spyre.VLLM_SPYRE_USE_CB:
+                self.model_runner = ContinuousBatchingSpyreModelRunner(
+                    self.vllm_config, self.is_driver_worker)
+            else:
+                self.model_runner = StaticBatchingSpyreModelRunner(
+                    self.vllm_config, self.is_driver_worker)
         self._env_initialized = False
         self.spyre_warmup_shapes = SpyrePlatform.get_warmup_shapes(
             self.vllm_config.scheduler_config)
