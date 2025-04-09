@@ -1,29 +1,134 @@
-name: test-sypre
+name: Test
 
-on: pull_request
+on:
+  # Don't use pull_request.paths filter since this workflow is required for
+  # all pull requests on main irrespective of file type or location
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+    paths:
+      - "tests/**/*.py"
+      - "vllm_spyre/**/*.py"
+      - pyproject.toml
+      - .github/workflows/test-spyre.yml
+  workflow_dispatch:
+
+env:
+  FORCE_COLOR: "1"
+  VLLM_CPU_DISABLE_AVX512: "true"
+  VLLM_TARGET_DEVICE: "empty"
+  VLLM_PLUGINS: "spyre"
+  VLLM_SPYRE_TEST_MODEL_DIR: "${{ github.workspace }}/models"
+  HF_HUB_CACHE: "${{ github.workspace }}/.cache/huggingface/hub"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
-  test-spyre:
-    runs-on: ubuntu-latest
+  test:
+    timeout-minutes: 20
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["ubuntu-latest"]
+        python_version: ["3.12"]
+        vllm_version:
+          - name: "default"
+            repo: ""
+          - name: "vLLM:main"
+            repo: "git+https://github.com/vllm-project/vllm --branch main"
+        test_suite:
+          - name: "V0"
+            tests: "V0 and eager"
+            flags: "--timeout=300"
+          - name: "V1"
+            tests: "(V1- and eager) or test_sampling_metadata_in_input_batch"
+            flags: "--timeout=300 --forked"
+
+    name: "${{ matrix.test_suite.name }} (${{ matrix.vllm_version.name }})"
+
     steps:
-    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-    - name: Build docker image
-      run: docker build . -t vllm-spyre -f Dockerfile.spyre
-    - name: Run Spyre tests within docker container
-      run: |
-        docker run -i --rm --entrypoint /bin/bash vllm-spyre -c '''
-          source vllm-spyre/.venv/bin/activate && \
-          python -c "from transformers import pipeline; pipeline(\"text-generation\", model=\"JackFram/llama-160m\")" && \
-          export VARIANT=$(ls /root/.cache/huggingface/hub/models--JackFram--llama-160m/snapshots/) && \
-          mkdir -p /models && \
-          ln -s /root/.cache/huggingface/hub/models--JackFram--llama-160m/snapshots/${VARIANT} /models/llama-194m && \
-          python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer(\"sentence-transformers/all-roberta-large-v1\")" && \
-          export VARIANT=$(ls /root/.cache/huggingface/hub/models--sentence-transformers--all-roberta-large-v1/snapshots/) && \
-          ln -s /root/.cache/huggingface/hub/models--sentence-transformers--all-roberta-large-v1/snapshots/${VARIANT} /models/all-roberta-large-v1 && \
-          export MASTER_PORT=12355 && \
-          export MASTER_ADDR=localhost && \
-          export DISTRIBUTED_STRATEGY_IGNORE_MODULES=WordEmbedding && \
-          cd vllm-spyre && \
-          python -m pytest --timeout=300  tests -v -k "V0 and eager" && \
-          python -m pytest --forked --timeout=300  tests -v -k "(V1- and eager) or test_sampling_metadata_in_input_batch"
-        '''
+      - name: "Checkout"
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: "Install PyTorch"
+        run: |
+          pip install torch=="2.5.1+cpu" --index-url https://download.pytorch.org/whl/cpu
+
+      - name: "Install uv"
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          python-version: ${{ matrix.python_version }}
+          enable-cache: true
+          ignore-nothing-to-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+
+      - name: "Set vLLM version"
+        if: matrix.vllm_version.repo
+        run: |
+          uv add ${{ matrix.vllm_version.repo }}
+
+      - name: "Install vLLM with Spyre plugin"
+        run: |
+          uv venv .venv --system-site-packages
+          source .venv/bin/activate
+          uv pip install -v .
+          uv sync --frozen --group dev
+
+      - name: "Restore HF models cache"
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.HF_HUB_CACHE }}
+          key: ${{ runner.os }}-hub-cache-${{ hashFiles('cached_models.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-hub-cache
+
+      - name: "Download HF models"
+        run: |
+          mkdir -p "${VLLM_SPYRE_TEST_MODEL_DIR}"
+
+          # We are caching HF models (HF_HUB_CACHE) for reliability rather than speed, since HF downloads are flaky for concurrent jobs.
+          # Be careful when adding models to the cache here, as the GHA cache is limited to 10 GB.
+          # If a new model is added here, hashFiles('cached_models.txt') should create a new hash key. The previous cache blob can then
+          # be removed by an admin or can be left to expire after 7 days.
+          
+          download_jackfram_llama() {
+            python -c "from transformers import pipeline; pipeline('text-generation', model='JackFram/llama-160m')"
+            VARIANT=$(ls "${HF_HUB_CACHE}/models--JackFram--llama-160m/snapshots/")
+            ln -s "${HF_HUB_CACHE}/models--JackFram--llama-160m/snapshots/${VARIANT}" "${VLLM_SPYRE_TEST_MODEL_DIR}/llama-194m"
+          }
+          download_roberta_large() {
+            python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-roberta-large-v1')"
+            VARIANT=$(ls "${HF_HUB_CACHE}/models--sentence-transformers--all-roberta-large-v1/snapshots/")
+            ln -s "${HF_HUB_CACHE}/models--sentence-transformers--all-roberta-large-v1/snapshots/${VARIANT}" "${VLLM_SPYRE_TEST_MODEL_DIR}/all-roberta-large-v1"
+          }
+          download_jackfram_llama &
+          download_roberta_large &
+          wait
+          ls "${VLLM_SPYRE_TEST_MODEL_DIR}" > cached_models.txt
+
+      - name: "Save HF models cache"
+        if: ( github.event_name != 'pull_request' && strategy.job-index == 0 )
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.HF_HUB_CACHE }}
+          key: ${{ runner.os }}-hub-cache-${{ hashFiles('cached_models.txt') }}
+
+      - name: "Run tests"
+        env:
+          MASTER_PORT: 12355
+          MASTER_ADDR: localhost
+          DISTRIBUTED_STRATEGY_IGNORE_MODULES: WordEmbedding
+        run: |
+          source .venv/bin/activate
+          uv run pytest ${{ matrix.test_suite.flags }} \
+            tests -v -k "${{ matrix.test_suite.tests }}"
