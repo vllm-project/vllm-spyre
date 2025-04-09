@@ -205,6 +205,52 @@ def generate_spyre_vllm_output(model: str, prompts: list[str],
     return results
 
 
+# vLLM / Spyre_cb
+def generate_cb_spyre_vllm_output(
+    model: str,
+    prompts: List[str],
+    max_model_len: int,
+    block_size: int,
+    sampling_params: Union[SamplingParams, List[SamplingParams]],
+    tensor_parallel_size: int,
+    backend: str,
+) -> List[Dict[str, Any]]:
+
+    max_num_seqs = 3  # defines max batch size
+
+    os.environ["VLLM_SPYRE_WARMUP_PROMPT_LENS"] = "64"
+    os.environ["VLLM_SPYRE_WARMUP_NEW_TOKENS"] = str(
+        max([param.max_tokens for param in sampling_params]))
+
+    # defining here to be able to run/debug directly from VSC (not via terminal)
+    os.environ["VLLM_SPYRE_DYNAMO_BACKEND"] = "eager"
+    os.environ["VLLM_SPYRE_USE_CB"] = "1"
+    os.environ["VLLM_USE_V1"] = "1"
+
+    os.environ["VLLM_SPYRE_MAX_CONTEXT_LENGTH"] = "2048"
+    os.environ["VLLM_SPYRE_MAX_BATCH_SIZE"] = str(max_num_seqs)
+    os.environ["VLLM_SPYRE_DYNAMO_BACKEND"] = backend
+
+    vllm_model = LLM(
+        model=model,
+        tokenizer=model,
+        max_model_len=max_model_len,
+        block_size=block_size,
+        tensor_parallel_size=tensor_parallel_size,
+    )
+
+    vllm_outputs = vllm_model.generate(prompts, sampling_params)
+
+    results = []
+
+    for req_output in vllm_outputs:
+        result = {}
+        result["text"] = req_output.outputs[0].text
+        results.append(result)
+
+    return results
+
+
 # Hugging Face
 def generate_hf_output(
         model: str, prompts: list[str],
