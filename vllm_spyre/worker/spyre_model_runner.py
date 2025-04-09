@@ -18,7 +18,7 @@ from vllm.worker.model_runner_base import (
     _add_sampling_metadata_broadcastable_dict,
     _init_sampling_metadata_from_tensor_dict)
 
-from vllm_spyre.model_executor.model_loader.spyre import get_spyre_model
+from vllm_spyre.model_executor.model_loader.spyre import SpyreCausalLM
 
 if TYPE_CHECKING:
     from vllm.attention.backends.abstract import AttentionBackend
@@ -111,10 +111,10 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                    num_decode_tokens: Iterable[int]) -> None:
         max_pad_length = max(prompt_lens)
         max_decode_length = max(num_decode_tokens)
-        self.model = get_spyre_model(self.model_config,
-                                     parallel_config=self.parallel_config,
-                                     max_prompt_length=max_pad_length,
-                                     max_decode_length=max_decode_length)
+        self.model = SpyreCausalLM(self.model_config,
+                                   parallel_config=self.parallel_config,
+                                   max_prompt_length=max_pad_length,
+                                   max_decode_length=max_decode_length)
 
     @property
     def vocab_size(self) -> int:

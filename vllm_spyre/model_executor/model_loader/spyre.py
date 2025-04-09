@@ -117,20 +117,6 @@ class SpyreCausalLM(nn.Module):
         return next_tokens
 
 
-def get_spyre_model(
-    model_config: ModelConfig,
-    parallel_config: ParallelConfig,
-    max_prompt_length,
-    max_decode_length,
-) -> nn.Module:
-
-    # Create a model instance.
-    model = SpyreCausalLM(model_config, parallel_config, max_prompt_length,
-                          max_decode_length)
-
-    return model
-
-
 class FmsModelBase(nn.Module):
 
     def __init__(

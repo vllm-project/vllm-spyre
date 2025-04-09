@@ -239,7 +239,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             request.num_prompt_tokens = 1
             request.sampling_params = SamplingParams(max_tokens=1)
 
-        # delegate to super
+        # delegate to super of SpyreScheduler: base V1 Scheduler
         super(SpyreScheduler, self).add_request(request=request)
 
     def schedule(self) -> "SchedulerOutput":
@@ -278,6 +278,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             logger.debug("Scheduling a decode step of %d requests",
                          len(self.running))
 
+        # delegate to super of SpyreScheduler: base V1 Scheduler
         outputs = super(SpyreScheduler, self).schedule()
         return outputs
 

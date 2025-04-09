@@ -46,6 +46,7 @@ def test_output(
     test using 'pytest --capture=no tests/spyre/test_spyre_tensore_parallel.py'
     After debugging, DISABLE_ASSERTS should be reset to 'False'.
     '''
+
     max_new_tokens = max([t[1] for t in warmup_shapes])
 
     vllm_sampling_params = SamplingParams(
