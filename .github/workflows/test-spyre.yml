@@ -38,8 +38,8 @@ jobs:
         os: ["ubuntu-latest"]
         python_version: ["3.12"]
         vllm_version:
-          - name: "vLLM:v0.8.0"
-            repo: "git+https://github.com/vllm-project/vllm --tag v0.8.0"
+          - name: "vLLM:v0.8.3"
+            repo: "git+https://github.com/vllm-project/vllm --tag v0.8.3"
           - name: "vLLM:main"
             repo: "git+https://github.com/vllm-project/vllm --branch main"
         test_suite:
