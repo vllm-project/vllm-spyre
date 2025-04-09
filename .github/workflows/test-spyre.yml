@@ -80,10 +80,23 @@ jobs:
           uv pip install -v .
           uv sync --frozen --group dev
 
-      - name: "Download models"
+      - name: "Restore HF models cache"
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.HF_HUB_CACHE }}
+          key: ${{ runner.os }}-hub-cache-${{ hashFiles('cached_models.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-hub-cache
+
+      - name: "Download HF models"
         run: |
           mkdir -p "${VLLM_SPYRE_TEST_MODEL_DIR}"
 
+          # We are caching HF models (HF_HUB_CACHE) for reliability rather than speed, since HF downloads are flaky for concurrent jobs.
+          # Be careful when adding models to the cache here, as the GHA cache is limited to 10 GB.
+          # If a new model is added here, hashFiles('cached_models.txt') should create a new hash key. The previous cache blob can then
+          # be removed by an admin or can be left to expire after 7 days.
+          
           download_jackfram_llama() {
             python -c "from transformers import pipeline; pipeline('text-generation', model='JackFram/llama-160m')"
             VARIANT=$(ls "${HF_HUB_CACHE}/models--JackFram--llama-160m/snapshots/")
@@ -97,6 +110,14 @@ jobs:
           download_jackfram_llama &
           download_roberta_large &
           wait
+          ls "${VLLM_SPYRE_TEST_MODEL_DIR}" > cached_models.txt
+
+      - name: "Save HF models cache"
+        if: ( github.event_name != 'pull_request' && strategy.job-index == 0 )
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.HF_HUB_CACHE }}
+          key: ${{ runner.os }}-hub-cache-${{ hashFiles('cached_models.txt') }}
 
       - name: "Run tests"
         env:
