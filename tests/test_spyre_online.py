@@ -5,6 +5,7 @@ from tests.spyre_util import (RemoteOpenAIServer, get_spyre_backend_list,
                               get_spyre_model_list)
 from vllm_spyre.v1.core.scheduler import NO_WARMUP_FIT_STOP_REASON
 
+
 def get_test_combinations():
     combinations = []
 
@@ -18,6 +19,7 @@ def get_test_combinations():
         combinations.append((model, "sendnn_decoder", "gptq"))
 
     return combinations
+
 
 @pytest.mark.parametrize("model,backend,quantization", get_test_combinations())
 # (prompt_length/new_tokens/batch_size)
