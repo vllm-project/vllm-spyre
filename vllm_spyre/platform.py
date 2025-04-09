@@ -57,8 +57,12 @@ class SpyrePlatform(Platform):
         if envs.VLLM_USE_V1:
             # As of 0.7.3 the scheduler for V1 isn't actually pluggable like
             # this yet
-            scheduler_config.scheduler_cls = \
-                "vllm_spyre.v1.core.scheduler.SpyreScheduler"
+            if envs_spyre.VLLM_SPYRE_USE_CB:
+                scheduler_config.scheduler_cls = \
+                    "vllm_spyre.v1.core.scheduler.ContinuousBatchingSpyreScheduler"
+            else:
+                scheduler_config.scheduler_cls = \
+                    "vllm_spyre.v1.core.scheduler.SpyreScheduler"
         else:
             scheduler_config.scheduler_cls = \
                 "vllm_spyre.core.scheduler.SpyreScheduler"
@@ -74,8 +78,22 @@ class SpyrePlatform(Platform):
                               shape['prompt_length'] + shape['new_tokens'])
 
         if envs.VLLM_USE_V1:
-            # The v0 scheduler will run out of blocks if this is overridden
-            scheduler_config.max_num_seqs = max_batch_size
+            if envs_spyre.VLLM_SPYRE_USE_CB:
+                # For continuous batching we use max_num_seqs to control
+                # the max batch size respecting AIU Spyre KV cache size
+                scheduler_config.max_num_seqs =\
+                    envs_spyre.VLLM_SPYRE_MAX_BATCH_SIZE
+                # ToDo: this function check_and_update_config is called twice:
+                # 1st time scheduler_config.max_num_seqs is what user sets
+                # 2nd time scheduler_config.max_num_seqs is 128
+            else:
+                # The v0 scheduler will run out of blocks if this is overridden
+                scheduler_config.max_num_seqs = max_batch_size
+
+        # continuous batching related checks
+        if envs_spyre.VLLM_SPYRE_USE_CB and not envs.VLLM_USE_V1:
+            raise NotImplementedError(
+                "Continuous batching is only implemented for vLLM V1")
 
         cache_config = vllm_config.cache_config
 

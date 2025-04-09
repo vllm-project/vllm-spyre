@@ -18,7 +18,7 @@ from vllm.worker.model_runner_base import (
     _add_sampling_metadata_broadcastable_dict,
     _init_sampling_metadata_from_tensor_dict)
 
-from vllm_spyre.model_executor.model_loader.spyre import get_spyre_model
+from vllm_spyre.model_executor.model_loader.spyre import SpyreCausalLM
 
 if TYPE_CHECKING:
     from vllm.attention.backends.abstract import AttentionBackend
@@ -111,14 +111,14 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                    num_decode_tokens: Iterable[int]) -> None:
         max_pad_length = max(prompt_lens)
         max_decode_length = max(num_decode_tokens)
-        self.model = get_spyre_model(self.model_config,
-                                     parallel_config=self.parallel_config,
-                                     max_prompt_length=max_pad_length,
-                                     max_decode_length=max_decode_length)
+        self.model = SpyreCausalLM(self.model_config,
+                                   parallel_config=self.parallel_config,
+                                   max_prompt_length=max_pad_length,
+                                   max_decode_length=max_decode_length)
 
     @property
     def vocab_size(self) -> int:
-        return self.model.model.config.src_vocab_size
+        return self.model.model.model.config.src_vocab_size
 
     def _prepare_prompt(
         self,
@@ -403,7 +403,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         # this is a causal mask for generation
         mask = (mask.unsqueeze(-1) == mask.unsqueeze(-2)).tril()
         mask = torch.where(mask.logical_not(), -torch.inf, 0.0)
-        mask = mask.to(self.model.dtype)
+        mask = mask.to(self.model.model.dtype)
         position_ids = torch.stack(position_ids_list)
 
         return input_ids, position_ids, mask
@@ -421,10 +421,11 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
     ) -> Tuple[torch.Tensor, Optional[List[Tuple[torch.Tensor,
                                                  torch.Tensor]]]]:
 
-        return self.model.model(input_ids,
-                                mask=mask,
-                                position_ids=position_ids,
-                                past_key_value_states=past_key_value_states,
-                                use_cache=use_cache,
-                                only_last_token=only_last_token,
-                                attn_algorithm=attn_algorithm)
+        return self.model.model.model(
+            input_ids,
+            mask=mask,
+            position_ids=position_ids,
+            past_key_value_states=past_key_value_states,
+            use_cache=use_cache,
+            only_last_token=only_last_token,
+            attn_algorithm=attn_algorithm)
