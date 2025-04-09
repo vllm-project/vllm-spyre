@@ -38,8 +38,8 @@ jobs:
         os: ["ubuntu-latest"]
         python_version: ["3.12"]
         vllm_version:
-          - name: "vLLM:v0.8.3"
-            repo: "git+https://github.com/vllm-project/vllm --tag v0.8.3"
+          - name: "default"
+            repo: ""
           - name: "vLLM:main"
             repo: "git+https://github.com/vllm-project/vllm --branch main"
         test_suite:
@@ -72,9 +72,13 @@ jobs:
           cache-dependency-glob: |
             pyproject.toml
 
-      - name: "Install vLLM with Spyre plugin"
+      - name: "Set vLLM version"
+        if: matrix.vllm_version.repo
         run: |
           uv add ${{ matrix.vllm_version.repo }}
+
+      - name: "Install vLLM with Spyre plugin"
+        run: |
           uv venv .venv --system-site-packages
           source .venv/bin/activate
           uv pip install -v .
