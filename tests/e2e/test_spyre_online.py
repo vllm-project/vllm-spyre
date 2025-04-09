@@ -1,7 +1,7 @@
 import openai
-import pytest # type: ignore
+import pytest  # type: ignore
 
-from tests.spyre_util import (get_spyre_backend_list, get_spyre_model_list)
+from tests.spyre_util import get_spyre_backend_list, get_spyre_model_list
 from vllm_spyre.v1.core.scheduler import NO_WARMUP_FIT_STOP_REASON
 
 
@@ -9,22 +9,23 @@ from vllm_spyre.v1.core.scheduler import NO_WARMUP_FIT_STOP_REASON
 @pytest.mark.parametrize("warmup_shape", [[(64, 20, 4)]])
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("vllm_version", ["V0", "V1"])
-def test_openai_serving(remote_openai_server, model, warmup_shape, backend, vllm_version):
+def test_openai_serving(remote_openai_server, model, warmup_shape, backend,
+                        vllm_version):
     """Test online serving using the `vllm serve` CLI"""
 
     client = remote_openai_server.get_client()
     completion = client.completions.create(model=model,
-                                            prompt="Hello World!",
-                                            max_tokens=5,
-                                            temperature=0.0)
+                                           prompt="Hello World!",
+                                           max_tokens=5,
+                                           temperature=0.0)
     assert len(completion.choices) == 1
     assert len(completion.choices[0].text) > 0
 
     completion = client.completions.create(model=model,
-                                            prompt="Hello World!",
-                                            max_tokens=5,
-                                            temperature=1.0,
-                                            n=2)
+                                           prompt="Hello World!",
+                                           max_tokens=5,
+                                           temperature=1.0,
+                                           n=2)
     assert len(completion.choices) == 2
     assert len(completion.choices[0].text) > 0
 
@@ -37,14 +38,14 @@ def test_openai_serving(remote_openai_server, model, warmup_shape, backend, vllm
         # Prompt too long should raise
         long_prompt = "Hello " * 1000
         client.completions.create(model=model,
-                                    prompt=long_prompt,
-                                    max_tokens=500)
+                                  prompt=long_prompt,
+                                  max_tokens=500)
 
     # Short prompt under context length but requesting too many tokens for
     # the warmup shape should return an empty result
     completion = client.completions.create(model=model,
-                                            prompt="Hello World!",
-                                            max_tokens=25)
+                                           prompt="Hello World!",
+                                           max_tokens=25)
 
     assert len(completion.choices) == 1
 
