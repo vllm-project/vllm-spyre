@@ -52,6 +52,8 @@ class ModelInputForSpyre(ModelRunnerInputBase):
     input_tokens: Optional[torch.Tensor] = None
     input_positions: Optional[torch.Tensor] = None
     input_masks: Optional[torch.Tensor] = None
+    partial_page_tkv_mask: Optional[torch.Tensor] = None
+    left_padded_prompt_mask: Optional[torch.Tensor] = None
     sampling_metadata: Optional[SamplingMetadata] = None
     pooling_metadata: Optional["PoolingMetadata"] = None
     is_prompt: Optional[bool] = None
@@ -63,6 +65,8 @@ class ModelInputForSpyre(ModelRunnerInputBase):
             "input_tokens": self.input_tokens,
             "input_positions": self.input_positions,
             "input_masks": self.input_masks,
+            "partial_page_tkv_mask": self.partial_page_tkv_mask,
+            "left_padded_prompt_mask": self.left_padded_prompt_mask,
             "is_prompt": self.is_prompt,
         }
         _add_sampling_metadata_broadcastable_dict(tensor_dict,
@@ -550,27 +554,32 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         if envs_spyre.VLLM_SPYRE_WARMUP_PROMPT_LENS:
             max_prompt_length = envs_spyre.VLLM_SPYRE_WARMUP_PROMPT_LENS[0]
 
+        max_model_len = envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH
+
+        self.BLOCK_SIZE = 64
+        NUM_BLOCKS = max_batch_size * max_model_len // self.BLOCK_SIZE  # 64
+
         # TO DO: move to InputBatch
-        self.req_ids2page: dict = {}
-        self.active_pages: List[int] = []
+        self.req_ids2blocks: dict[str, List[int]] = {}
+        self.block_table: List[List[int]] = []
         self.tkv = 0
-        self.free_pages = [i for i in range(max_batch_size)]
+        self.free_blocks = [i for i in range(NUM_BLOCKS)]
         self.min_pad_length_batch = max_prompt_length
 
     def _prepare_prompt(
         self,
         new_requests: List[NewRequestData],
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, List[int]]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,
+               torch.Tensor]:
         assert len(new_requests) > 0
         input_token_list: List[torch.Tensor] = []
 
-        # Internal state is managed here.
-        self.active_pages = []
-        for request_data in new_requests:
-            free_page_idx = self.free_pages.pop(0)
-            self.active_pages.append(free_page_idx)
-            self.req_ids2page[request_data.req_id] = free_page_idx
+        if self.tkv == 0:
+            self.tkv = self.min_pad_length_batch
 
+        # Internal state is managed here.
+        self.slot_mapping = []
+        for request_data in new_requests:
             # retrieve initial (unpadded) tokens
             prompt_tokens = request_data.prompt_token_ids
 
@@ -579,6 +588,19 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                              dtype=torch.long,
                              device=torch.device("cpu")))
 
+            # filling block table and slot mapping
+            block_table_i = []
+            slot_mapping_i = []
+            for pos_i in range(self.tkv):
+                if pos_i % self.BLOCK_SIZE == 0:
+                    block_number = self.free_blocks.pop(0)
+                    block_table_i.append(block_number)
+                block_offset = pos_i % self.BLOCK_SIZE
+                slot = block_number * self.BLOCK_SIZE + block_offset
+                slot_mapping_i.append(slot)
+            self.req_ids2blocks[request_data.req_id] = block_table_i
+            self.slot_mapping.append(slot_mapping_i)
+
         # prefils are always of batch size 1 for this milestone
         actual_batch_size = len(input_token_list)
         assert actual_batch_size == 1
@@ -586,24 +608,26 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                                         dtype=torch.bool,
                                         device='cpu')
 
-        if self.tkv == 0:
-            self.tkv = self.min_pad_length_batch
-
         # get position ids and attention mask
         input_tokens, position_ids, mask =\
             self.pad_input_ids(input_token_list, min_pad_length=self.tkv)
 
-        seq_lens = [t.shape[0] for t in input_token_list]
+        # not needed for prefil
+        partial_page_tkv_mask = None
+        left_padded_prompt_mask = None
 
-        return input_tokens, position_ids, mask, seq_lens
+        return input_tokens, position_ids, mask, partial_page_tkv_mask, \
+            left_padded_prompt_mask
 
     def _prepare_decode(
         self,
         cached_requests: List[CachedRequestData],
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,
+               torch.Tensor]:
         assert len(cached_requests) > 0
         input_tokens = []
-        self.active_pages = []
+        self.block_table = []
+        self.slot_mapping = []
         self.model.indices = torch.ones(len(cached_requests),
                                         dtype=torch.bool,
                                         device='cpu')
@@ -611,7 +635,18 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         for cached_request in cached_requests:
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
-            self.active_pages.append(self.req_ids2page[cached_request.req_id])
+
+            # adding new blocks if needed
+            if self.tkv // self.BLOCK_SIZE + 1 > len(
+                    self.req_ids2blocks[cached_request.req_id]):
+                self.req_ids2blocks[cached_request.req_id].append(
+                    self.free_blocks.pop(0))
+            self.block_table.append(self.req_ids2blocks[cached_request.req_id])
+            # slot_mapping for all blocks of sequence
+            start_slot = self.block_table[-1][-1] * self.BLOCK_SIZE
+            offset = self.tkv % self.BLOCK_SIZE
+            slot = [start_slot + offset]
+            self.slot_mapping.append(slot)
             generation_token = cached_request.new_token_ids[-1]
             input_tokens.append([generation_token])
 
@@ -622,7 +657,12 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             cached_requests, self.tkv)
         self.tkv = self.tkv + 1
 
-        return input_tokens, position_ids, mask
+        partial_page_tkv_mask = (position_ids + 1).reshape((-1, ))
+        left_padded_prompt_mask = (mask == -float('inf')).sum(dim=2).reshape(
+            (-1, ))
+
+        return input_tokens, position_ids, mask, partial_page_tkv_mask, \
+            left_padded_prompt_mask
 
     def _prepare_pos_mask_decode(
         self,
@@ -663,18 +703,21 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         is_prompt = len(scheduler_output.scheduled_new_reqs) > 0
 
         for req_id in scheduler_output.finished_req_ids:
-            if req_id in self.req_ids2page:
-                self.free_pages.append(self.req_ids2page[req_id])
-                del self.req_ids2page[req_id]
+            if req_id in self.req_ids2blocks:
+                for freed_block in self.req_ids2blocks[req_id]:
+                    self.free_blocks.append(freed_block)
+                del self.req_ids2blocks[req_id]
 
         # Prepare input tensors.
         if is_prompt:
-            (input_tokens, input_positions, input_masks,
-             _) = self._prepare_prompt(scheduler_output.scheduled_new_reqs)
+            (input_tokens, input_positions, input_masks, partial_page_tkv_mask,
+             left_padded_prompt_mask) = self._prepare_prompt(
+                 scheduler_output.scheduled_new_reqs)
             num_reqs = len(scheduler_output.scheduled_new_reqs)
         else:
-            (input_tokens, input_positions, input_masks) = \
-                self._prepare_decode(scheduler_output.scheduled_cached_reqs)
+            (input_tokens, input_positions, input_masks, partial_page_tkv_mask,
+             left_padded_prompt_mask) = self._prepare_decode(
+                 scheduler_output.scheduled_cached_reqs)
             num_reqs = len(scheduler_output.scheduled_cached_reqs)
 
         # TODO: Build the rest of the SamplingMetadata correctly
@@ -701,11 +744,14 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             bad_words_token_ids=None,
         )
 
-        return ModelInputForSpyre(input_tokens=input_tokens,
-                                  input_positions=input_positions,
-                                  input_masks=input_masks,
-                                  sampling_metadata=dummy_metadata,
-                                  is_prompt=is_prompt)
+        return ModelInputForSpyre(
+            input_tokens=input_tokens,
+            input_positions=input_positions,
+            input_masks=input_masks,
+            sampling_metadata=dummy_metadata,
+            is_prompt=is_prompt,
+            partial_page_tkv_mask=partial_page_tkv_mask,
+            left_padded_prompt_mask=left_padded_prompt_mask)
 
     @SpyrePlatform.inference_mode()
     def execute_model(
@@ -717,15 +763,26 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         t0 = time.time()
         model_input = self.prepare_model_input(scheduler_output)
 
+        # print('position_ids', model_input.input_positions)
+        # print('mask', model_input.input_masks
+        #       if model_input.is_prompt else None)
+        # print('partial_page_tkv_mask', model_input.partial_page_tkv_mask)
+        # print('left_padded_prompt_mask', model_input.left_padded_prompt_mask)
+        # print('block_table', None
+        #       if model_input.is_prompt else self.block_table)
+        # print('slot_mapping', self.slot_mapping)
+
         # Execute the model
         hidden_states = self.model(
             input_ids=model_input.input_tokens,
             positions=model_input.input_positions,
-            masks=model_input.input_masks,
+            masks=model_input.input_masks if model_input.is_prompt else None,
             is_prompt=model_input.is_prompt,
-            tkv=0 if model_input.is_prompt else self.tkv,
-            active_pages=self.active_pages,
-        )
+            partial_page_tkv_mask=model_input.partial_page_tkv_mask,
+            left_padded_prompt_mask=model_input.left_padded_prompt_mask,
+            block_table=None if model_input.is_prompt else torch.tensor(
+                self.block_table, dtype=torch.int64),
+            slot_mapping=torch.tensor(self.slot_mapping, dtype=torch.int64))
 
         # Only perform sampling in the driver worker.
         if not self.is_driver_worker:

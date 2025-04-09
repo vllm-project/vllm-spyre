@@ -70,8 +70,10 @@ class SpyreCausalLM(nn.Module):
         positions: torch.Tensor,
         masks: torch.Tensor,
         is_prompt: bool,
-        tkv: Optional[int] = None,
-        active_pages: Optional[list[int]] = None,
+        partial_page_tkv_mask: Optional[torch.Tensor] = None,
+        left_padded_prompt_mask: Optional[torch.Tensor] = None,
+        block_table: Optional[torch.Tensor] = None,
+        slot_mapping: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
 
         if is_prompt and not envs_spyre.VLLM_SPYRE_USE_CB:
@@ -90,8 +92,10 @@ class SpyreCausalLM(nn.Module):
             mask=masks,
             use_cache=True,
             only_last_token=True,
-            tkv=tkv,
-            active_pages=active_pages,
+            partial_page_tkv_mask=partial_page_tkv_mask,
+            left_padded_prompt_mask=left_padded_prompt_mask,
+            block_table=block_table,
+            slot_mapping=slot_mapping,
             **extra_kwargs,
         )
 
@@ -272,11 +276,23 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             print(f"[SpyreCausalLM] model type {self.config.model_type} "
                   f"not supported in ContinuousBatchingFmsModel")
 
-        # (layers)x(k,v)x[max_batch, num_kv_heads, max_model_len, head_dim]
-        self.fms_kv_cache: list[tuple[torch.Tensor, torch.Tensor]] = [
-            (torch.empty((max_batch, num_kv_heads, max_model_len, head_dim)),
-             torch.empty((max_batch, num_kv_heads, max_model_len, head_dim)))
-            for i in range(num_layers)
+        BLOCK_SIZE = 64
+        NUM_BLOCKS = max_batch * max_model_len // BLOCK_SIZE  # 64
+
+        # List[layers] of Tuple[k,v] of
+        # Tensor[NUM_BLOCKS, BLOCK_SIZE, num_kv_heads, max_model_len, head_dim]
+        self.past_key_value_states = [
+            (torch.zeros(NUM_BLOCKS,
+                         BLOCK_SIZE,
+                         num_kv_heads,
+                         head_dim,
+                         dtype=self.config.torch_dtype),
+             torch.zeros(NUM_BLOCKS,
+                         BLOCK_SIZE,
+                         num_kv_heads,
+                         head_dim,
+                         dtype=self.config.torch_dtype))
+            for _ in range(num_layers)
         ]
 
     def forward(
@@ -286,50 +302,28 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         mask: torch.Tensor,
         use_cache: bool,
         only_last_token: bool,
-        tkv: int,
-        active_pages: list[int],
+        partial_page_tkv_mask: torch.Tensor,
+        left_padded_prompt_mask: torch.Tensor,
+        block_table: torch.Tensor,
+        slot_mapping: torch.Tensor,
         **extra_kwargs,
     ) -> torch.Tensor:
-
-        # read-out (dynamic) kv_cache for decoding steps only,
-        # for prefills kv_cache = None
-        if tkv == 0:  # prefil
-            kv_cache = None
-            tkv = input_ids.shape[1]
-        else:  # decode
-            kv_cache = []
-            active_pages_mask = torch.zeros(self.fms_kv_cache[0][0].shape[0],
-                                            dtype=torch.bool)
-            active_pages_mask[active_pages] = True
-            for layer in range(len(self.fms_kv_cache)):
-                kv_cache.append(
-                    (self.fms_kv_cache[layer][0][active_pages_mask, :, :tkv -
-                                                 1, :],
-                     self.fms_kv_cache[layer][1][active_pages_mask, :, :tkv -
-                                                 1, :]))
 
         output = self.model(
             input_ids,
             position_ids=position_ids,
             mask=mask,
-            past_key_value_states=kv_cache,
+            past_key_value_states=self.past_key_value_states,
             use_cache=use_cache,
             only_last_token=only_last_token,
+            partial_page_tkv_mask=partial_page_tkv_mask,
+            left_padded_prompt_mask=left_padded_prompt_mask,
+            block_table=block_table,
+            slot_mapping=slot_mapping,
             **extra_kwargs,
         )
-        logits, key_value_states = output
 
-        # updating (physical) KV cache: self.fms_kv_cache
-        for idx, page in enumerate(sorted(active_pages)):
-            for layer in range(len(self.fms_kv_cache)):
-                # inserting partial KV cache at correct location
-                # (page, tkv) in the KV cache of the whole batch
-                self.fms_kv_cache[layer][0][
-                    page, :, :tkv, :] = key_value_states[layer][0][
-                        idx, :, :, :]  # [1, 8, L, 128]
-                self.fms_kv_cache[layer][1][
-                    page, :, :tkv, :] = key_value_states[layer][1][
-                        idx, :, :, :]  # [1, 8, L, 128]
+        logits, self.key_value_states = output
 
         return logits
 
@@ -356,8 +350,10 @@ class StaticBatchingFmsModel(FmsModelBase):
         mask: torch.Tensor,
         use_cache: bool,
         only_last_token: bool,
-        tkv: int,
-        active_pages: list[int],
+        partial_page_tkv_mask: torch.Tensor,
+        left_padded_prompt_mask: torch.Tensor,
+        block_table: torch.Tensor,
+        slot_mapping: torch.Tensor,
         **extra_kwargs,
     ) -> torch.Tensor:
 
