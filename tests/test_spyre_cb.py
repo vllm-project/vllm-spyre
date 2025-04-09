@@ -3,12 +3,9 @@
 Run `python -m pytest tests/test_spyre_cb.py`.
 """
 
-from vllm import EngineArgs, SamplingParams
 import pytest
-from spyre_util import (
-    generate_cb_spyre_vllm_output,
-    get_spyre_model_list,
-)
+from spyre_util import generate_cb_spyre_vllm_output, get_spyre_model_list
+from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine.llm_engine import LLMEngine as V1LLMEngine
 
 
@@ -26,17 +23,20 @@ def test_cb_handling(
     max_tokens2 = 17
     max_tokens3 = 11
 
-    sampling_params1 = SamplingParams(
-        max_tokens=max_tokens1, temperature=0.0, stop="1", ignore_eos=True
-    )
+    sampling_params1 = SamplingParams(max_tokens=max_tokens1,
+                                      temperature=0.0,
+                                      stop="1",
+                                      ignore_eos=True)
 
-    sampling_params2 = SamplingParams(
-        max_tokens=max_tokens2, temperature=0.0, stop="1", ignore_eos=True
-    )
+    sampling_params2 = SamplingParams(max_tokens=max_tokens2,
+                                      temperature=0.0,
+                                      stop="1",
+                                      ignore_eos=True)
 
-    sampling_params3 = SamplingParams(
-        max_tokens=max_tokens3, temperature=0.0, stop="1", ignore_eos=True
-    )
+    sampling_params3 = SamplingParams(max_tokens=max_tokens3,
+                                      temperature=0.0,
+                                      stop="1",
+                                      ignore_eos=True)
 
     vllm_sampling_params = [
         sampling_params1,
@@ -72,29 +72,33 @@ def test_cb_handling(
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", ["eager", "inductor"])
-def test_cb_with_engine_steps(model: str, backend: str, monkeypatch: pytest.MonkeyPatch):
+def test_cb_with_engine_steps(model: str, backend: str,
+                              monkeypatch: pytest.MonkeyPatch):
     """Test that the spyre worker correctly handles 
     continuous batches of requests and one sequence 
-    an exit the batch while a new ones get's prefilled 
+    an exit the batch while a new ones gets prefilled 
     and appended to the batch"""
     with monkeypatch.context() as m:
         max_tokens1 = 20
         max_tokens2 = 17
 
-        sampling_params1 = SamplingParams(
-            max_tokens=max_tokens1, temperature=0.0, stop="1", ignore_eos=True
-        )
+        sampling_params1 = SamplingParams(max_tokens=max_tokens1,
+                                          temperature=0.0,
+                                          stop="1",
+                                          ignore_eos=True)
 
-        sampling_params2 = SamplingParams(
-            max_tokens=max_tokens2, temperature=0.0, stop="1", ignore_eos=True
-        )
+        sampling_params2 = SamplingParams(max_tokens=max_tokens2,
+                                          temperature=0.0,
+                                          stop="1",
+                                          ignore_eos=True)
 
         prompt1 = "7 6 5 4"
         prompt2 = "10 9 8 7"
 
         # set env vars
         m.setenv("VLLM_SPYRE_WARMUP_PROMPT_LENS", "64")
-        m.setenv("VLLM_SPYRE_WARMUP_NEW_TOKENS", str(max([max_tokens1, max_tokens2])))
+        m.setenv("VLLM_SPYRE_WARMUP_NEW_TOKENS",
+                 str(max([max_tokens1, max_tokens2])))
 
         m.setenv("VLLM_SPYRE_USE_CB", "1")
         m.setenv("VLLM_USE_V1", "1")

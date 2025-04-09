@@ -223,7 +223,6 @@ def generate_cb_spyre_vllm_output(
     results = []
 
     for req_output in vllm_outputs:
-        print("req_output.outputs : ", req_output.outputs)
         result = {}
         result["text"] = req_output.outputs[0].text
         results.append(result)
