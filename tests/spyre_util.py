@@ -70,7 +70,7 @@ class RemoteOpenAIServer:
             stdout=sys.stdout,
             stderr=sys.stderr,
         )
-        max_wait_seconds = max_wait_seconds or 240
+        max_wait_seconds = max_wait_seconds or 600
         self._wait_for_server(url=self.url_for("health"),
                               timeout=max_wait_seconds)
 
@@ -427,21 +427,19 @@ def get_spyre_backend_list():
 # get model names from env, if not set then default to "llama-194m"
 # For multiple values:
 # export SPYRE_TEST_MODEL_LIST="llama-194m,all-roberta-large-v1"
-def get_spyre_model_list(isEmbeddings=False, isGPTQ=False):
+def get_spyre_model_list(isEmbeddings=False, quantization=None):
     spyre_model_dir_path = get_spyre_model_dir_path()
     test_model_list = []
-    user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST",
-                                          "llama-194m")
 
-    # set default to bert if testing embeddings
     if isEmbeddings:
         user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST",
                                               "all-roberta-large-v1")
-
-    # set default to granite if testing GPTQ
-    if isGPTQ:
+    elif quantization == "gptq":
         user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST",
                                               "granite-3.0-8b-instruct-gptq")
+    else:
+        user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST",
+                                              "llama-194m")
 
     for model in user_test_model_list.split(","):
         test_model_list.append(f"{spyre_model_dir_path}/{model.strip()}")

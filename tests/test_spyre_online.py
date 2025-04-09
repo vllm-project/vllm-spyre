@@ -5,15 +5,28 @@ from tests.spyre_util import (RemoteOpenAIServer, get_spyre_backend_list,
                               get_spyre_model_list)
 from vllm_spyre.v1.core.scheduler import NO_WARMUP_FIT_STOP_REASON
 
+def get_test_combinations():
+    combinations = []
 
-@pytest.mark.parametrize("model", get_spyre_model_list())
+    # Base model tests across all backends
+    for backend in get_spyre_backend_list():
+        for model in get_spyre_model_list():
+            combinations.append((model, backend, None))
+
+    # GPTQ model only tests on sendnn_decoder
+    for model in get_spyre_model_list(quantization="gptq"):
+        combinations.append((model, "sendnn_decoder", "gptq"))
+
+    return combinations
+
+@pytest.mark.parametrize("model,backend,quantization", get_test_combinations())
 # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("warmup_shape", [[
     (64, 20, 4),
 ]])
-@pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("vllm_version", ["V0", "V1"])
-def test_openai_serving(model, warmup_shape, backend, vllm_version):
+def test_openai_serving(model, warmup_shape, backend, vllm_version,
+                        quantization):
     """Test online serving using the `vllm serve` CLI"""
 
     # TODO: util or fixture-ize
@@ -34,7 +47,9 @@ def test_openai_serving(model, warmup_shape, backend, vllm_version):
         v1_flag
     }
 
-    with RemoteOpenAIServer(model, [], env_dict=env_dict) as server:
+    cli_args = ["--quantization", quantization] if quantization else []
+
+    with RemoteOpenAIServer(model, cli_args, env_dict=env_dict) as server:
         # Run a few simple requests to make sure the server works.
         # This is not checking correctness of replies
         client = server.get_client()
