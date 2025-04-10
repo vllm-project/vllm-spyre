@@ -129,6 +129,7 @@ jobs:
           MASTER_ADDR: localhost
           DISTRIBUTED_STRATEGY_IGNORE_MODULES: WordEmbedding
         run: |
+          rm -fr vllm_spyre
           source .venv/bin/activate
           uv run pytest ${{ matrix.test_suite.flags }} \
             tests -v -k "${{ matrix.test_suite.tests }}"
