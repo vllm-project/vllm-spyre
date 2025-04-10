@@ -54,6 +54,8 @@ class ModelInputForSpyre(ModelRunnerInputBase):
     input_masks: Optional[torch.Tensor] = None
     partial_page_tkv_mask: Optional[torch.Tensor] = None
     left_padded_prompt_mask: Optional[torch.Tensor] = None
+    block_table: Optional[torch.Tensor] = None
+    slot_mapping: Optional[torch.Tensor] = None
     sampling_metadata: Optional[SamplingMetadata] = None
     pooling_metadata: Optional["PoolingMetadata"] = None
     is_prompt: Optional[bool] = None
@@ -67,6 +69,8 @@ class ModelInputForSpyre(ModelRunnerInputBase):
             "input_masks": self.input_masks,
             "partial_page_tkv_mask": self.partial_page_tkv_mask,
             "left_padded_prompt_mask": self.left_padded_prompt_mask,
+            "block_table": self.block_table,
+            "slot_mapping": self.slot_mapping,
             "is_prompt": self.is_prompt,
         }
         _add_sampling_metadata_broadcastable_dict(tensor_dict,
@@ -561,8 +565,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         # TO DO: move to InputBatch
         self.req_ids2blocks: dict[str, List[int]] = {}
-        self.block_table: torch.Tensor = None
-        self.slot_mapping: torch.Tensor = None
         self.tkv = 0
         self.free_blocks = [i for i in range(NUM_BLOCKS)]
         self.min_pad_length_batch = max_prompt_length
@@ -571,7 +573,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self,
         new_requests: List[NewRequestData],
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,
-               torch.Tensor]:
+               torch.Tensor, torch.Tensor, torch.Tensor]:
         assert len(new_requests) > 0
         input_token_list: List[torch.Tensor] = []
 
@@ -609,7 +611,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                                         dtype=torch.bool,
                                         device='cpu')
         # construct tensor from list
-        self.slot_mapping = torch.tensor(slot_mapping, dtype=torch.int64)
+        slot_mapping = torch.tensor(slot_mapping, dtype=torch.int64)
+        block_table = None
 
         # get position ids and attention mask
         input_tokens, position_ids, mask =\
@@ -620,13 +623,13 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         left_padded_prompt_mask = None
 
         return input_tokens, position_ids, mask, partial_page_tkv_mask, \
-            left_padded_prompt_mask
+            left_padded_prompt_mask, block_table, slot_mapping
 
     def _prepare_decode(
         self,
         cached_requests: List[CachedRequestData],
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,
-               torch.Tensor]:
+               torch.Tensor, torch.Tensor, torch.Tensor]:
         assert len(cached_requests) > 0
         input_tokens = []
         block_table = []
@@ -658,8 +661,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                                     device=self.device)
 
         # construct tensors from lists
-        self.slot_mapping = torch.tensor(slot_mapping, dtype=torch.int64)
-        self.block_table = torch.tensor(block_table, dtype=torch.int64)
+        slot_mapping = torch.tensor(slot_mapping, dtype=torch.int64)
+        block_table = torch.tensor(block_table, dtype=torch.int64)
 
         mask, position_ids = self._prepare_pos_mask_decode(
             cached_requests, self.tkv)
@@ -670,7 +673,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             (-1, ))
 
         return input_tokens, position_ids, mask, partial_page_tkv_mask, \
-            left_padded_prompt_mask
+            left_padded_prompt_mask, block_table, slot_mapping
 
     def _prepare_pos_mask_decode(
         self,
@@ -719,13 +722,13 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # Prepare input tensors.
         if is_prompt:
             (input_tokens, input_positions, input_masks, partial_page_tkv_mask,
-             left_padded_prompt_mask) = self._prepare_prompt(
-                 scheduler_output.scheduled_new_reqs)
+             left_padded_prompt_mask, block_table, slot_mapping) = \
+                self._prepare_prompt(scheduler_output.scheduled_new_reqs)
             num_reqs = len(scheduler_output.scheduled_new_reqs)
         else:
             (input_tokens, input_positions, input_masks, partial_page_tkv_mask,
-             left_padded_prompt_mask) = self._prepare_decode(
-                 scheduler_output.scheduled_cached_reqs)
+             left_padded_prompt_mask, block_table, slot_mapping) = \
+                self._prepare_decode(scheduler_output.scheduled_cached_reqs)
             num_reqs = len(scheduler_output.scheduled_cached_reqs)
 
         # TODO: Build the rest of the SamplingMetadata correctly
@@ -759,7 +762,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             sampling_metadata=dummy_metadata,
             is_prompt=is_prompt,
             partial_page_tkv_mask=partial_page_tkv_mask,
-            left_padded_prompt_mask=left_padded_prompt_mask)
+            left_padded_prompt_mask=left_padded_prompt_mask,
+            block_table=block_table,
+            slot_mapping=slot_mapping)
 
     @SpyrePlatform.inference_mode()
     def execute_model(
@@ -772,26 +777,24 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         model_input = self.prepare_model_input(scheduler_output)
 
         # print('position_ids', model_input.input_positions)
-        # print('mask', model_input.input_masks
-        #       if model_input.is_prompt else None)
+        # print('mask', model_input.input_masks)
         # print('partial_page_tkv_mask', model_input.partial_page_tkv_mask)
         # print('left_padded_prompt_mask', model_input.left_padded_prompt_mask)
-        # print('block_table', None
-        #       if model_input.is_prompt else self.block_table)
-        # print('slot_mapping', self.slot_mapping)
+        # print('block_table', model_input.block_table)
+        # print('slot_mapping', model_input.slot_mapping)
 
         # Marking dimensions dynamic
         if model_input.is_prompt:
 
             # batch dynamic
             torch._dynamo.mark_static(model_input.input_tokens, 0)
-            torch._dynamo.mark_static(self.slot_mapping, 0)
+            torch._dynamo.mark_static(model_input.slot_mapping, 0)
             torch._dynamo.mark_static(model_input.input_positions, 0)
             torch._dynamo.mark_static(model_input.input_masks, 0)
 
             # seq dynamic
             torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
-            torch._dynamo.mark_dynamic(self.slot_mapping, 1)
+            torch._dynamo.mark_dynamic(model_input.slot_mapping, 1)
             torch._dynamo.mark_dynamic(model_input.input_positions, 1)
             torch._dynamo.mark_dynamic(model_input.input_masks, 2)
             torch._dynamo.mark_dynamic(model_input.input_masks, 3)
@@ -802,16 +805,16 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
             # batch
             torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
-            torch._dynamo.mark_dynamic(self.block_table, 0)
-            torch._dynamo.mark_dynamic(self.slot_mapping, 0)
+            torch._dynamo.mark_dynamic(model_input.block_table, 0)
+            torch._dynamo.mark_dynamic(model_input.slot_mapping, 0)
             torch._dynamo.mark_dynamic(model_input.input_positions, 0)
             torch._dynamo.mark_dynamic(model_input.partial_page_tkv_mask, 0)
             torch._dynamo.mark_dynamic(model_input.left_padded_prompt_mask, 0)
 
             # seq
             torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
-            torch._dynamo.mark_dynamic(self.block_table, 1)
-            torch._dynamo.mark_static(self.slot_mapping, 1)  # always 1
+            torch._dynamo.mark_dynamic(model_input.block_table, 1)
+            torch._dynamo.mark_static(model_input.slot_mapping, 1)  # always 1
             torch._dynamo.mark_static(model_input.input_positions,
                                       1)  # always 1
 
@@ -823,8 +826,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             is_prompt=model_input.is_prompt,
             partial_page_tkv_mask=model_input.partial_page_tkv_mask,
             left_padded_prompt_mask=model_input.left_padded_prompt_mask,
-            block_table=None if model_input.is_prompt else self.block_table,
-            slot_mapping=self.slot_mapping)
+            block_table=model_input.block_table,
+            slot_mapping=model_input.slot_mapping)
 
         # Only perform sampling in the driver worker.
         if not self.is_driver_worker:
