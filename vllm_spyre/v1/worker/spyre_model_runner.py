@@ -561,7 +561,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         # TO DO: move to InputBatch
         self.req_ids2blocks: dict[str, List[int]] = {}
-        self.block_table: List[List[int]] = []
+        self.block_table: torch.Tensor = None
+        self.slot_mapping: torch.Tensor = None
         self.tkv = 0
         self.free_blocks = [i for i in range(NUM_BLOCKS)]
         self.min_pad_length_batch = max_prompt_length
@@ -578,7 +579,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             self.tkv = self.min_pad_length_batch
 
         # Internal state is managed here.
-        self.slot_mapping = []
+        slot_mapping = []
         for request_data in new_requests:
             # retrieve initial (unpadded) tokens
             prompt_tokens = request_data.prompt_token_ids
@@ -599,7 +600,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                 slot = block_number * self.BLOCK_SIZE + block_offset
                 slot_mapping_i.append(slot)
             self.req_ids2blocks[request_data.req_id] = block_table_i
-            self.slot_mapping.append(slot_mapping_i)
+            slot_mapping.append(slot_mapping_i)
 
         # prefils are always of batch size 1 for this milestone
         actual_batch_size = len(input_token_list)
@@ -607,6 +608,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.model.indices = torch.ones(actual_batch_size,
                                         dtype=torch.bool,
                                         device='cpu')
+        # construct tensor from list
+        self.slot_mapping = torch.tensor(slot_mapping, dtype=torch.int64)
 
         # get position ids and attention mask
         input_tokens, position_ids, mask =\
@@ -626,8 +629,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                torch.Tensor]:
         assert len(cached_requests) > 0
         input_tokens = []
-        self.block_table = []
-        self.slot_mapping = []
+        block_table = []
+        slot_mapping = []
         self.model.indices = torch.ones(len(cached_requests),
                                         dtype=torch.bool,
                                         device='cpu')
@@ -641,18 +644,23 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                     self.req_ids2blocks[cached_request.req_id]):
                 self.req_ids2blocks[cached_request.req_id].append(
                     self.free_blocks.pop(0))
-            self.block_table.append(self.req_ids2blocks[cached_request.req_id])
+            block_table.append(self.req_ids2blocks[cached_request.req_id])
             # slot_mapping for all blocks of sequence
-            start_slot = self.block_table[-1][-1] * self.BLOCK_SIZE
+            start_slot = block_table[-1][-1] * self.BLOCK_SIZE
             offset = self.tkv % self.BLOCK_SIZE
             slot = [start_slot + offset]
-            self.slot_mapping.append(slot)
+            slot_mapping.append(slot)
             generation_token = cached_request.new_token_ids[-1]
             input_tokens.append([generation_token])
 
         input_tokens = torch.tensor(input_tokens,
                                     dtype=torch.long,
                                     device=self.device)
+
+        # construct tensors from lists
+        self.slot_mapping = torch.tensor(slot_mapping, dtype=torch.int64)
+        self.block_table = torch.tensor(block_table, dtype=torch.int64)
+
         mask, position_ids = self._prepare_pos_mask_decode(
             cached_requests, self.tkv)
         self.tkv = self.tkv + 1
@@ -772,6 +780,41 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         #       if model_input.is_prompt else self.block_table)
         # print('slot_mapping', self.slot_mapping)
 
+        # Marking dimensions dynamic
+        if model_input.is_prompt:
+
+            # batch dynamic
+            torch._dynamo.mark_static(model_input.input_tokens, 0)
+            torch._dynamo.mark_static(self.slot_mapping, 0)
+            torch._dynamo.mark_static(model_input.input_positions, 0)
+            torch._dynamo.mark_static(model_input.input_masks, 0)
+
+            # seq dynamic
+            torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
+            torch._dynamo.mark_dynamic(self.slot_mapping, 1)
+            torch._dynamo.mark_dynamic(model_input.input_positions, 1)
+            torch._dynamo.mark_dynamic(model_input.input_masks, 2)
+            torch._dynamo.mark_dynamic(model_input.input_masks, 3)
+
+        # decode
+        else:
+            # mask is no longer used here
+
+            # batch
+            torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
+            torch._dynamo.mark_dynamic(self.block_table, 0)
+            torch._dynamo.mark_dynamic(self.slot_mapping, 0)
+            torch._dynamo.mark_dynamic(model_input.input_positions, 0)
+            torch._dynamo.mark_dynamic(model_input.partial_page_tkv_mask, 0)
+            torch._dynamo.mark_dynamic(model_input.left_padded_prompt_mask, 0)
+
+            # seq
+            torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
+            torch._dynamo.mark_dynamic(self.block_table, 1)
+            torch._dynamo.mark_static(self.slot_mapping, 1)  # always 1
+            torch._dynamo.mark_static(model_input.input_positions,
+                                      1)  # always 1
+
         # Execute the model
         hidden_states = self.model(
             input_ids=model_input.input_tokens,
@@ -780,9 +823,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             is_prompt=model_input.is_prompt,
             partial_page_tkv_mask=model_input.partial_page_tkv_mask,
             left_padded_prompt_mask=model_input.left_padded_prompt_mask,
-            block_table=None if model_input.is_prompt else torch.tensor(
-                self.block_table, dtype=torch.int64),
-            slot_mapping=torch.tensor(self.slot_mapping, dtype=torch.int64))
+            block_table=None if model_input.is_prompt else self.block_table,
+            slot_mapping=self.slot_mapping)
 
         # Only perform sampling in the driver worker.
         if not self.is_driver_worker:

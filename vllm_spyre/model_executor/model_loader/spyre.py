@@ -309,6 +309,14 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         **extra_kwargs,
     ) -> torch.Tensor:
 
+        # mark dynamic: Not sure if that's correct/needed here,
+        # copied from fms branch paged_atten_mock
+        if self.past_key_value_states is not None:
+            for layer in self.past_key_value_states:
+                if isinstance(layer, tuple):
+                    for tensor in layer:
+                        torch._dynamo.mark_dynamic(tensor, 2)
+
         output = self.model(
             input_ids,
             position_ids=position_ids,

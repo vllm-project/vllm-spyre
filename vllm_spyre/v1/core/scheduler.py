@@ -268,7 +268,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             self.last_running = self.total_running
             self.running = []
             logger.debug(
-                "Scheduling a prompt step of %d requests, holding back %d "
+                "Scheduling a prefil step of %d requests, holding back %d "
                 "requests", len(self.waiting), len(self.holdback_queue))
         else:
             # If decode scheduled and previous step was prefil, update running
