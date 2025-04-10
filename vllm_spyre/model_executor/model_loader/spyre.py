@@ -331,7 +331,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             **extra_kwargs,
         )
 
-        logits, self.key_value_states = output
+        logits, self.past_key_value_states = output
 
         return logits
 
