@@ -81,8 +81,11 @@ jobs:
         run: |
           uv venv .venv --system-site-packages
           source .venv/bin/activate
+
+          # Syncs both the runtime and dev deps, based on the lockfile contents
+          uv sync --frozen
+          # Builds and installs the vllm_spyre wheel into .venv
           uv pip install -v .
-          uv sync --frozen --group dev
 
       - name: "Restore HF models cache"
         uses: actions/cache/restore@v4
