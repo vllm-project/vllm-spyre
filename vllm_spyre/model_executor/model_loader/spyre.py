@@ -351,7 +351,6 @@ class StaticBatchingFmsModel(FmsModelBase):
         # dynamic KV cache
         self.past_key_value_states = None
 
-
     def forward(
         self,
         input_ids: torch.Tensor,
