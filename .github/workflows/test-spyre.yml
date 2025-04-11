@@ -84,8 +84,13 @@ jobs:
         run: |
           uv venv .venv --system-site-packages
           source .venv/bin/activate
+
+          # Syncs both the runtime and dev deps, based on the lockfile contents
+          uv sync --frozen
+          # Builds and installs the vllm_spyre wheel into .venv
+          # This needs to be done after `uv sync`, or the wheel install will be
+          # overwritten.
           uv pip install -v .
-          uv sync --frozen --group dev
 
       - name: "Restore HF models cache"
         uses: actions/cache/restore@v4
@@ -132,6 +137,12 @@ jobs:
           MASTER_ADDR: localhost
           DISTRIBUTED_STRATEGY_IGNORE_MODULES: WordEmbedding
         run: |
+          # Delete the source code so we can ensure we're testing the installed
+          # wheel
+          rm -fr vllm_spyre
+          # We activate .venv manually and run pytest directly instead of using
+          # `uv run`, to avoid having `uv run` re-sync any dependencies or 
+          # re-install the vllm_sypre package from source
           source .venv/bin/activate
-          uv run pytest ${{ matrix.test_suite.flags }} \
+          python3 -m pytest ${{ matrix.test_suite.flags }} \
             tests -v -k "${{ matrix.test_suite.tests }}"
