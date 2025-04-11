@@ -713,12 +713,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # Also assuming that new sequences are prefills
         is_prompt = len(scheduler_output.scheduled_new_reqs) > 0
 
-        for req_id in scheduler_output.finished_req_ids:
-            if req_id in self.req_ids2blocks:
-                for freed_block in self.req_ids2blocks[req_id]:
-                    self.free_blocks.append(freed_block)
-                del self.req_ids2blocks[req_id]
-
         # Prepare input tensors.
         if is_prompt:
             (input_tokens, input_positions, input_masks, partial_page_tkv_mask,
@@ -758,7 +752,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         return ModelInputForSpyre(
             input_tokens=input_tokens,
             input_positions=input_positions,
-            input_masks=input_masks,
+            input_masks=input_masks.unsqueeze(1),
             sampling_metadata=dummy_metadata,
             is_prompt=is_prompt,
             partial_page_tkv_mask=partial_page_tkv_mask,
@@ -774,6 +768,18 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
     ) -> ModelRunnerOutput:
 
         t0 = time.time()
+
+        for req_id in scheduler_output.finished_req_ids:
+            if req_id in self.req_ids2blocks:
+                logger.debug("Freeing request id: %s", req_id)
+                for freed_block in self.req_ids2blocks[req_id]:
+                    self.free_blocks.append(freed_block)
+                del self.req_ids2blocks[req_id]
+
+        # during warmup we do one "fake" iteration to free blocks
+        if scheduler_output.total_num_scheduled_tokens == 0:
+            return
+
         model_input = self.prepare_model_input(scheduler_output)
 
         # Marking dimensions dynamic
