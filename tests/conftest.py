@@ -1,5 +1,6 @@
 import pytest
 import torch
+from spyre_util import RemoteOpenAIServer
 from vllm.connections import global_http_connection
 from vllm.distributed import cleanup_dist_env_and_memory
 
@@ -49,3 +50,42 @@ def cleanup_fixture(should_do_global_cleanup_after_test: bool):
 def dynamo_reset():
     yield
     torch._dynamo.reset()
+
+
+@pytest.fixture(scope="function")
+def remote_openai_server(request):
+    """ Fixture to set up a test server."""
+
+    params = request.node.callspec.params
+
+    # Extract parameters from the test function for the server
+    model = params['model']
+    warmup_shape = params['warmup_shape']
+    backend = params['backend']
+    vllm_version = params['vllm_version']
+
+    warmup_prompt_length = [t[0] for t in warmup_shape]
+    warmup_new_tokens = [t[1] for t in warmup_shape]
+    warmup_batch_size = [t[2] for t in warmup_shape]
+    v1_flag = "1" if vllm_version == "V1" else "0"
+    env_dict = {
+        "VLLM_SPYRE_WARMUP_PROMPT_LENS":
+        ','.join(map(str, warmup_prompt_length)),
+        "VLLM_SPYRE_WARMUP_NEW_TOKENS": ','.join(map(str, warmup_new_tokens)),
+        "VLLM_SPYRE_WARMUP_BATCH_SIZES": ','.join(map(str, warmup_batch_size)),
+        "VLLM_SPYRE_DYNAMO_BACKEND": backend,
+        "VLLM_USE_V1": v1_flag
+    }
+
+    # Add extra server args if present in test
+    server_args = ["--quantization", quantization] if quantization else []
+    if 'tensor_parallel_size' in params:
+        tp_size = params['tensor_parallel_size']
+        server_args.extend(["--tensor-parallel-size", str(tp_size)])
+
+    try:
+        with RemoteOpenAIServer(model, server_args,
+                                env_dict=env_dict) as server:
+            yield server
+    except Exception as e:
+        pytest.fail(f"Failed to setup server: {e}")
