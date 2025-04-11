@@ -577,7 +577,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         assert len(new_requests) > 0
         input_token_list: List[torch.Tensor] = []
 
-        if self.tkv == 0:
+        if len(self.req_ids2blocks) == 0:
             self.tkv = self.min_pad_length_batch
 
         # Internal state is managed here.
