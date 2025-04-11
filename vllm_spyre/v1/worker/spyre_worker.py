@@ -20,6 +20,7 @@ from vllm.v1.worker.worker_base import WorkerBase as WorkerBaseV1
 from vllm.worker.worker_base import WorkerBase
 
 import vllm_spyre.envs as envs_spyre
+import vllm_spyre.perf_metrics as perf_metrics
 from vllm_spyre.model_executor.model_loader import spyre_setup
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.core.sched.output import (CachedRequestData, NewRequestData,
@@ -80,6 +81,9 @@ class SpyreWorker(WorkerBaseV1):
                                           self.restricted_tokens, batch_size)
         all_warmup_end_t = time.time()
         all_warmup_total_t = all_warmup_end_t - all_warmup_start_t
+        self.perf_metrics.log("total warmup time", all_warmup_total_t)
+        # No more perf metric are captured (so far) after warmup, cleanup now.
+        del self.perf_metrics
         logger.info(
             "All warmups for %d different prompt/decode/batchsize-shape "
             "combinations finished. Total warmup time %.3fs.",
@@ -133,6 +137,7 @@ class SpyreWorker(WorkerBaseV1):
         self.rank = rank
         self.distributed_init_method = distributed_init_method
         self.is_driver_worker = is_driver_worker
+        self.perf_metrics = perf_metrics.create_perf_metric_logger(rank)
         if self.parallel_config and is_driver_worker:
             assert rank % self.parallel_config.tensor_parallel_size == 0, \
                    "Driver worker should be rank 0 of tensor parallel group."
@@ -239,6 +244,9 @@ class SpyreWorker(WorkerBaseV1):
 
         load_model_end_t = time.time()
         load_model_total_t = load_model_end_t - load_model_start_t
+        self.perf_metrics.log("load model time",
+                              load_model_total_t,
+                              model=self.model_config.model)
         logger.info("load model took %.3fs", load_model_total_t)
 
     def _warmup_spyre_fixed_size(self, prompt_len, num_decode_tokens,
@@ -323,22 +331,39 @@ class SpyreWorker(WorkerBaseV1):
         logger.info("Warmup forward pass 1/2...")
         self._warmup_model_forward_pass(scheduler_output, dummy_requests,
                                         cached_requests, num_decode_tokens)
+        self.perf_metrics.log("warmup 1 time",
+                              time.time() - warmup_start_t,
+                              batch_size=batch_size,
+                              max_tokens=num_decode_tokens,
+                              prompt_len=prompt_len)
 
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
             from torch_sendnn import torch_sendnn
             ul_start_time = time.time()
             torch_sendnn.update_lazyhandle()
             ul_stop_time = time.time()
+            ul_total_t = ul_stop_time - ul_start_time
             logger.info("update_lazyhandle() done (duration: %.3fs)",
-                        ul_stop_time - ul_start_time)
+                        ul_total_t)
+            self.perf_metrics.log("update_lazyhandle() time",
+                                  ul_total_t,
+                                  batch_size=batch_size,
+                                  max_tokens=num_decode_tokens,
+                                  prompt_len=prompt_len)
 
         # Second full forward pass
         logger.info("Warmup forward pass 2/2...")
+        warmup2_start_t = time.time()
         self._warmup_model_forward_pass(scheduler_output, dummy_requests,
                                         cached_requests, num_decode_tokens)
 
         warmup_end_t = time.time()
         warmup_total_t = warmup_end_t - warmup_start_t
+        self.perf_metrics.log("warmup 2 time",
+                              time.time() - warmup2_start_t,
+                              batch_size=batch_size,
+                              max_tokens=num_decode_tokens,
+                              prompt_len=prompt_len)
         logger.info("Warmup finished.")
         logger.info(
             "Warmup took %.3fs (for prompt length %d and max output tokens %d)",
