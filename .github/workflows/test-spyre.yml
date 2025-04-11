@@ -43,12 +43,15 @@ jobs:
           - name: "vLLM:main"
             repo: "git+https://github.com/vllm-project/vllm --branch main"
         test_suite:
-          - name: "V0"
+          - name: "V0-e2e"
             tests: "V0 and eager"
             flags: "--timeout=300"
-          - name: "V1"
-            tests: "(V1- and eager) or test_sampling_metadata_in_input_batch"
+          - name: "V1-e2e"
+            tests: "V1- and eager"
             flags: "--timeout=300 --forked"
+          - name: "V1-worker"
+            tests: "test_sampling_metadata_in_input_batch"
+            flags: "--timeout=300"
 
     name: "${{ matrix.test_suite.name }} (${{ matrix.vllm_version.name }})"
 
