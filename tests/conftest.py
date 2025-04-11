@@ -65,7 +65,8 @@ def remote_openai_server(request):
         backend = params['backend']
         vllm_version = params['vllm_version']
     except KeyError as e:
-            f"Error setting up remote_openai_server params."
+        raise pytest.UsageError(
+            "Error setting up remote_openai_server params") from e
 
     # Default to None if not present
     quantization = params.get('quantization', None)
