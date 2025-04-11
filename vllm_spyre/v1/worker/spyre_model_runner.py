@@ -715,6 +715,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         for req_id in scheduler_output.finished_req_ids:
             if req_id in self.req_ids2blocks:
+                logger.debug("Freeing request id: %s", req_id)
                 for freed_block in self.req_ids2blocks[req_id]:
                     self.free_blocks.append(freed_block)
                 del self.req_ids2blocks[req_id]
@@ -758,7 +759,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         return ModelInputForSpyre(
             input_tokens=input_tokens,
             input_positions=input_positions,
-            input_masks=input_masks,
+            input_masks=input_masks.unsqueeze(1),
             sampling_metadata=dummy_metadata,
             is_prompt=is_prompt,
             partial_page_tkv_mask=partial_page_tkv_mask,
@@ -774,6 +775,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
     ) -> ModelRunnerOutput:
 
         t0 = time.time()
+
         model_input = self.prepare_model_input(scheduler_output)
 
         # Marking dimensions dynamic
