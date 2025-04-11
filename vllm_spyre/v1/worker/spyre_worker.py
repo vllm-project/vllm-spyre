@@ -273,7 +273,7 @@ class SpyreWorker(WorkerBaseV1):
                 mm_hashes=[],
                 mm_positions=[],
                 sampling_params=SamplingParams(max_tokens=num_decode_tokens),
-                block_ids=[0], # not actually used
+                block_ids=[0],  # not actually used
                 num_computed_tokens=0,
                 lora_request=None,
             ) for i in range(batch_size)
@@ -314,7 +314,10 @@ class SpyreWorker(WorkerBaseV1):
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=[],
             scheduled_cached_reqs=cached_requests,
-            num_scheduled_tokens={'warmup-0': 1, 'warmup-1': 1},
+            num_scheduled_tokens={
+                'warmup-0': 1,
+                'warmup-1': 1
+            },
             total_num_scheduled_tokens=2,
             scheduled_spec_decode_tokens={},
             scheduled_encoder_inputs={},
@@ -336,7 +339,7 @@ class SpyreWorker(WorkerBaseV1):
             scheduled_spec_decode_tokens={},
             scheduled_encoder_inputs={},
             num_common_prefix_blocks=0,
-            finished_req_ids=set(['warmup-0','warmup-1']),
+            finished_req_ids=set(['warmup-0', 'warmup-1']),
             free_encoder_input_ids=[],
             structured_output_request_ids={},
             grammar_bitmask=None,
@@ -347,8 +350,7 @@ class SpyreWorker(WorkerBaseV1):
         warmup_end_t = time.time()
         warmup_total_t = warmup_end_t - warmup_start_t
         logger.info("Warmup finished.")
-        logger.info(
-            "Warmup took %.3fs", warmup_total_t)
+        logger.info("Warmup took %.3fs", warmup_total_t)
 
     def _warmup_spyre_fixed_size(self, prompt_len, num_decode_tokens,
                                  special_token_ids, batch_size):
