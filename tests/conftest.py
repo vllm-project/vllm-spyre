@@ -58,12 +58,17 @@ def remote_openai_server(request):
 
     params = request.node.callspec.params
 
-    # Extract parameters from the test function for the server
-    model = params['model']
-    warmup_shape = params['warmup_shape']
-    backend = params['backend']
-    vllm_version = params['vllm_version']
-    quantization = params['quantization']
+    try:
+        # Extract parameters from the test function for the server
+        model = params['model']
+        warmup_shape = params['warmup_shape']
+        backend = params['backend']
+        vllm_version = params['vllm_version']
+    except KeyError as e:
+            f"Error setting up remote_openai_server params."
+
+    # Default to None if not present
+    quantization = params.get('quantization', None)
 
     warmup_prompt_length = [t[0] for t in warmup_shape]
     warmup_new_tokens = [t[1] for t in warmup_shape]
