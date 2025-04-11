@@ -4,7 +4,6 @@ Run `python -m pytest tests/test_spyre_cb.py`.
 """
 
 import time
-import uuid
 
 import pytest
 from spyre_util import generate_cb_spyre_vllm_output, get_spyre_model_list
@@ -22,7 +21,7 @@ def test_cb_handling(
     model: str,
     backend: str,
 ):
-    """Test that the spyre worker correctly handles 
+    """Test that the spyre worker correctly handles
     continuous batches of requests that
     finish after different numbers of forward passes"""
 
@@ -81,13 +80,14 @@ def test_cb_handling(
 @pytest.mark.parametrize("backend", ["eager", "inductor"])
 def test_cb_with_engine_steps(model: str, backend: str,
                               monkeypatch: pytest.MonkeyPatch):
-    """Test that the spyre worker correctly handles 
-    continuous batches of requests and one sequence 
-    an exit the batch while a new ones gets prefilled 
+    """Test that the spyre worker correctly handles
+    continuous batches of requests and one sequence
+    an exit the batch while a new ones gets prefilled
     and appended to the batch"""
     with monkeypatch.context() as m:
         max_tokens1 = 20
         max_tokens2 = 17
+        max_tokens3 = 15
 
         sampling_params1 = SamplingParams(max_tokens=max_tokens1,
                                           temperature=0.0,
@@ -98,14 +98,21 @@ def test_cb_with_engine_steps(model: str, backend: str,
                                           temperature=0.0,
                                           stop="1",
                                           ignore_eos=True)
+        sampling_params3 = SamplingParams(max_tokens=max_tokens3,
+                                          temperature=0.0,
+                                          stop="1",
+                                          ignore_eos=True)
 
         prompt1 = "7 6 5 4"
         prompt2 = "10 9 8 7"
+        prompt3 = "8 7 6 5"
 
         # set env vars
         m.setenv("VLLM_SPYRE_WARMUP_PROMPT_LENS", "64")
-        m.setenv("VLLM_SPYRE_WARMUP_NEW_TOKENS",
-                 str(max([max_tokens1, max_tokens2])))
+        m.setenv(
+            "VLLM_SPYRE_WARMUP_NEW_TOKENS",
+            str(max([max_tokens1, max_tokens2, max_tokens3])),
+        )
 
         m.setenv("VLLM_SPYRE_USE_CB", "1")
         m.setenv("VLLM_USE_V1", "1")
@@ -115,49 +122,67 @@ def test_cb_with_engine_steps(model: str, backend: str,
         m.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
 
         # start the engine
-        engine_args = EngineArgs(
-            model=model,
-            enforce_eager=True,  # reduce test time
-        )
+        engine_args = EngineArgs(model=model, )
 
         engine = V1LLMEngine.from_engine_args(engine_args)
 
         # add first request
-        engine.add_request("0", prompt1, sampling_params1)
+        engine.add_request("1", prompt1, sampling_params1)
 
         request_outputs = engine.step()
         assert len(request_outputs) == 1  # only 1 request
-        assert request_outputs[0].request_id == "0"
+        assert request_outputs[0].request_id == "1"  # req 1 is decoding
 
         request_outputs = engine.step()
         assert len(request_outputs) == 1  # still only 1 request
-        assert request_outputs[0].request_id == "0"
+        assert request_outputs[0].request_id == "1"  # req 1 is decoding
 
         # add another request
-        engine.add_request("1", prompt2, sampling_params2)
-
-        request_outputs = engine.step()
-        assert len(request_outputs) == 1  # still only 1 request
-        assert request_outputs[0].request_id == "0"
+        engine.add_request("2", prompt2, sampling_params2)
 
         request_outputs = engine.step()
         assert len(request_outputs) == 1  # still only 1 request
         assert request_outputs[0].request_id == "1"  # req 1 is decoding
 
         request_outputs = engine.step()
-        assert len(request_outputs) == 2  # both requests decoding now
+        assert len(request_outputs) == 1
+        assert request_outputs[0].request_id == "2"  # req 2 is decoding
 
         request_outputs = engine.step()
         assert len(request_outputs) == 2  # both requests decoding now
+        assert request_outputs[0].request_id == "1"  # req 1 is decoding
+        assert request_outputs[1].request_id == "2"  # req 2 is decoding
+
+        # add the third request
+        # but since VLLM_SPYRE_MAX_BATCH_SIZE=2
+        # this request is waiting
+        engine.add_request("3", prompt3, sampling_params3)
 
         request_outputs = engine.step()
         assert len(request_outputs) == 2  # both requests decoding now
+        assert request_outputs[0].request_id == "1"  # req 1 is decoding
+        assert request_outputs[1].request_id == "2"  # req 2 is decoding
+
+        request_outputs = engine.step()
+        assert len(request_outputs) == 2  # both requests decoding now
+        assert request_outputs[0].request_id == "1"  # req 1 is decoding
+        assert request_outputs[1].request_id == "2"  # req 2 is decoding
         assert request_outputs[0].finished  # request 1 is done
         assert request_outputs[0].outputs[0].text == " 3 2 "
 
         request_outputs = engine.step()
-        assert len(request_outputs) == 1  # only req #2 is left
-        assert request_outputs[0].request_id == "1"  # req 1 is decoding
+        assert len(request_outputs) == 1
+        assert request_outputs[0].request_id == "2"  # req 2 is decoding
+
+        # req 3 is scheduled now
+        request_outputs = engine.step()
+        assert len(request_outputs) == 1
+        assert request_outputs[0].request_id == "3"  # req 3 is decoding
+
+        request_outputs = engine.step()
+        assert len(request_outputs) == 2  # req 2, 3 is scheduled now
+        assert request_outputs[0].request_id == "2"  # req 2 is decoding
+        assert request_outputs[1].request_id == "3"  # req 3 is decoding
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
