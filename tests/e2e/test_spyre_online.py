@@ -1,8 +1,7 @@
 import openai
 import pytest
 
-from tests.spyre_util import (RemoteOpenAIServer, get_spyre_backend_list,
-                              get_spyre_model_list)
+from tests.spyre_util import get_spyre_backend_list, get_spyre_model_list
 from vllm_spyre.v1.core.scheduler import NO_WARMUP_FIT_STOP_REASON
 
 
@@ -26,8 +25,8 @@ def get_test_combinations():
     (64, 20, 4),
 ]])
 @pytest.mark.parametrize("vllm_version", ["V0", "V1"])
-def test_openai_serving(remote_openai_server, model, warmup_shape, backend, vllm_version,
-                        quantization):
+def test_openai_serving(remote_openai_server, model, warmup_shape, backend,
+                        vllm_version, quantization):
     """Test online serving using the `vllm serve` CLI"""
 
     client = remote_openai_server.get_client()

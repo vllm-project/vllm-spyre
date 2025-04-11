@@ -63,6 +63,7 @@ def remote_openai_server(request):
     warmup_shape = params['warmup_shape']
     backend = params['backend']
     vllm_version = params['vllm_version']
+    quantization = params['quantization']
 
     warmup_prompt_length = [t[0] for t in warmup_shape]
     warmup_new_tokens = [t[1] for t in warmup_shape]
