@@ -776,13 +776,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         t0 = time.time()
         model_input = self.prepare_model_input(scheduler_output)
 
-        # print('position_ids', model_input.input_positions)
-        # print('mask', model_input.input_masks)
-        # print('partial_page_tkv_mask', model_input.partial_page_tkv_mask)
-        # print('left_padded_prompt_mask', model_input.left_padded_prompt_mask)
-        # print('block_table', model_input.block_table)
-        # print('slot_mapping', model_input.slot_mapping)
-
         # Marking dimensions dynamic
         if model_input.is_prompt:
 
@@ -822,7 +815,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         hidden_states = self.model(
             input_ids=model_input.input_tokens,
             positions=model_input.input_positions,
-            masks=model_input.input_masks if model_input.is_prompt else None,
+            masks=model_input.input_masks,
             is_prompt=model_input.is_prompt,
             partial_page_tkv_mask=model_input.partial_page_tkv_mask,
             left_padded_prompt_mask=model_input.left_padded_prompt_mask,

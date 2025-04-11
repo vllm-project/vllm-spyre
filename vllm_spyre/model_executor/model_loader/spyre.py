@@ -1,6 +1,6 @@
 """Utilities for selecting and loading Spyre models."""
 import os
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import torch
 import torch._inductor.config
@@ -79,11 +79,17 @@ class SpyreCausalLM(nn.Module):
         if is_prompt and not envs_spyre.VLLM_SPYRE_USE_CB:
             self.model.past_key_value_states = None
 
-        extra_kwargs = {}
+        extra_kwargs: Dict[str, Any] = {}
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn_decoder":
             # Bug in 2.3.1 fixed in 2.4.1 for SDPA flash
             # cpu impl when padding too much
             extra_kwargs["attn_algorithm"] = "math"
+
+        if envs_spyre.VLLM_SPYRE_USE_CB:
+            extra_kwargs["partial_page_tkv_mask"] = partial_page_tkv_mask
+            extra_kwargs["left_padded_prompt_mask"] = left_padded_prompt_mask
+            extra_kwargs["block_table"] = block_table
+            extra_kwargs["slot_mapping"] = slot_mapping
 
         # normal prefil or decoding step
         logits = self.model(
@@ -92,10 +98,6 @@ class SpyreCausalLM(nn.Module):
             mask=masks,
             use_cache=True,
             only_last_token=True,
-            partial_page_tkv_mask=partial_page_tkv_mask,
-            left_padded_prompt_mask=left_padded_prompt_mask,
-            block_table=block_table,
-            slot_mapping=slot_mapping,
             **extra_kwargs,
         )
 
@@ -259,7 +261,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         super().__init__(model_config, parallel_config, max_prompt_length,
                          max_decode_length)
 
-        # physical KV cache on AIU Spyre
+        # physical KV cache on AIU Spyre: will eventually not live in this class
         max_batch = envs_spyre.VLLM_SPYRE_MAX_BATCH_SIZE
         max_model_len = envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH
 
@@ -358,10 +360,6 @@ class StaticBatchingFmsModel(FmsModelBase):
         mask: torch.Tensor,
         use_cache: bool,
         only_last_token: bool,
-        partial_page_tkv_mask: torch.Tensor,
-        left_padded_prompt_mask: torch.Tensor,
-        block_table: torch.Tensor,
-        slot_mapping: torch.Tensor,
         **extra_kwargs,
     ) -> torch.Tensor:
 
