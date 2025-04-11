@@ -279,12 +279,11 @@ class SpyreWorker(WorkerBaseV1):
             ) for i in range(batch_size)
         ]
 
-        for i in range(batch_size):
-
+        for i, req in enumerate(dummy_requests):
             scheduler_output = SchedulerOutput(
-                scheduled_new_reqs=[dummy_requests[i]],
+                scheduled_new_reqs=[req],
                 scheduled_cached_reqs=[],
-                num_scheduled_tokens={dummy_requests[i].req_id: prompt_len},
+                num_scheduled_tokens={req.req_id: prompt_len},
                 total_num_scheduled_tokens=prompt_len,
                 scheduled_spec_decode_tokens={},
                 scheduled_encoder_inputs={},
@@ -294,7 +293,7 @@ class SpyreWorker(WorkerBaseV1):
                 structured_output_request_ids={},
                 grammar_bitmask=None,
             )
-
+            logger.info("Warmup prefil %d/2...", i + 1)
             self.execute_model(scheduler_output)
 
         # one decode iteration across both sequences
@@ -327,25 +326,15 @@ class SpyreWorker(WorkerBaseV1):
             structured_output_request_ids={},
             grammar_bitmask=None,
         )
-
+        logger.info("Warmup decode 1/1...")
         self.execute_model(scheduler_output)
 
         # free blocks
-        scheduler_output = SchedulerOutput(
-            scheduled_new_reqs=[],
-            scheduled_cached_reqs=cached_requests,
-            num_scheduled_tokens={},
-            total_num_scheduled_tokens=0,
-            scheduled_spec_decode_tokens={},
-            scheduled_encoder_inputs={},
-            num_common_prefix_blocks=0,
-            finished_req_ids=set(['warmup-0', 'warmup-1']),
-            free_encoder_input_ids=[],
-            structured_output_request_ids={},
-            grammar_bitmask=None,
-        )
-
-        self.execute_model(scheduler_output)
+        for req in dummy_requests:
+            logger.debug("Freeing request id: %s", req.req_id)
+            for freed_block in self.model_runner.req_ids2blocks[req.req_id]:
+                self.model_runner.free_blocks.append(freed_block)
+            del self.model_runner.req_ids2blocks[req.req_id]
 
         warmup_end_t = time.time()
         warmup_total_t = warmup_end_t - warmup_start_t
