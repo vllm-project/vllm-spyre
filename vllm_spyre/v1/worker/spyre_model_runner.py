@@ -673,8 +673,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         left_padded_prompt_mask = (mask == -float('inf')).sum(dim=2).reshape(
             (-1, ))
 
-         # not needed for decode
-+        mask = None
+        # not needed for decode
+        mask = None
 
         return input_tokens, position_ids, mask, partial_page_tkv_mask, \
             left_padded_prompt_mask, block_table, slot_mapping
