@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import openai
+import pytest
 import requests
 from sentence_transformers import SentenceTransformer, util
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -184,7 +185,7 @@ def generate_spyre_vllm_output(model: str, prompts: List[str],
     return results
 
 
-# vLLM / Spyre_cb
+# Support for continuous batching
 def generate_cb_spyre_vllm_output(
     model: str,
     prompts: List[str],
@@ -193,41 +194,39 @@ def generate_cb_spyre_vllm_output(
     sampling_params: Union[SamplingParams, List[SamplingParams]],
     tensor_parallel_size: int,
     backend: str,
+    max_num_seqs: int,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> List[Dict[str, Any]]:
+    with monkeypatch.context() as m:
+        m.setenv("VLLM_SPYRE_WARMUP_PROMPT_LENS", "64")
+        m.setenv("VLLM_SPYRE_WARMUP_NEW_TOKENS",
+                 str(sampling_params.max_tokens))
 
-    max_num_seqs = 3  # defines max batch size
+        m.setenv("VLLM_SPYRE_USE_CB", "1")
+        m.setenv("VLLM_USE_V1", "1")
 
-    os.environ["VLLM_SPYRE_WARMUP_PROMPT_LENS"] = "64"
-    os.environ["VLLM_SPYRE_WARMUP_NEW_TOKENS"] = str(
-        max([param.max_tokens for param in sampling_params]))
+        m.setenv("VLLM_SPYRE_MAX_CONTEXT_LENGTH", str(max_model_len))
+        m.setenv("VLLM_SPYRE_MAX_BATCH_SIZE",
+                 str(max_num_seqs))  # defines max batch size
+        m.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
 
-    # defining here to be able to run/debug directly from VSC (not via terminal)
-    os.environ["VLLM_SPYRE_DYNAMO_BACKEND"] = "eager"
-    os.environ["VLLM_SPYRE_USE_CB"] = "1"
-    os.environ["VLLM_USE_V1"] = "1"
+        vllm_model = LLM(
+            model=model,
+            tokenizer=model,
+            max_model_len=max_model_len,
+            block_size=block_size,
+            tensor_parallel_size=tensor_parallel_size,
+        )
 
-    os.environ["VLLM_SPYRE_MAX_CONTEXT_LENGTH"] = "2048"
-    os.environ["VLLM_SPYRE_MAX_BATCH_SIZE"] = str(max_num_seqs)
-    os.environ["VLLM_SPYRE_DYNAMO_BACKEND"] = backend
+        vllm_outputs = vllm_model.generate(prompts, sampling_params)
+        results = []
 
-    vllm_model = LLM(
-        model=model,
-        tokenizer=model,
-        max_model_len=max_model_len,
-        block_size=block_size,
-        tensor_parallel_size=tensor_parallel_size,
-    )
+        for req_output in vllm_outputs:
+            result = {}
+            result["text"] = req_output.outputs[0].text
+            results.append(result)
 
-    vllm_outputs = vllm_model.generate(prompts, sampling_params)
-
-    results = []
-
-    for req_output in vllm_outputs:
-        result = {}
-        result["text"] = req_output.outputs[0].text
-        results.append(result)
-
-    return results
+        return results
 
 
 # Hugging Face
