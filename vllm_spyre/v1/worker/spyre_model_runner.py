@@ -617,6 +617,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # get position ids and attention mask
         input_tokens, position_ids, mask =\
             self.pad_input_ids(input_token_list, min_pad_length=self.tkv)
+        mask = mask.unsqueeze(1)
 
         # not needed for prefil
         partial_page_tkv_mask = None
@@ -671,6 +672,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         partial_page_tkv_mask = (position_ids + 1).reshape((-1, ))
         left_padded_prompt_mask = (mask == -float('inf')).sum(dim=2).reshape(
             (-1, ))
+
+         # not needed for decode
++        mask = None
 
         return input_tokens, position_ids, mask, partial_page_tkv_mask, \
             left_padded_prompt_mask, block_table, slot_mapping
@@ -759,7 +763,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         return ModelInputForSpyre(
             input_tokens=input_tokens,
             input_positions=input_positions,
-            input_masks=input_masks.unsqueeze(1),
+            input_masks=input_masks,
             sampling_metadata=dummy_metadata,
             is_prompt=is_prompt,
             partial_page_tkv_mask=partial_page_tkv_mask,
