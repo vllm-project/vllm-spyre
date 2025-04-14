@@ -215,6 +215,7 @@ def generate_cb_spyre_vllm_output(
     tensor_parallel_size: int,
     backend: str,
     max_num_seqs: int,
+    use_cb: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> List[Dict[str, Any]]:
     with monkeypatch.context() as m:
@@ -222,7 +223,7 @@ def generate_cb_spyre_vllm_output(
         m.setenv("VLLM_SPYRE_WARMUP_NEW_TOKENS",
                  str(sampling_params.max_tokens))
 
-        m.setenv("VLLM_SPYRE_USE_CB", "1")
+        m.setenv("VLLM_SPYRE_USE_CB", str(use_cb))
         m.setenv("VLLM_USE_V1", "1")
 
         m.setenv("VLLM_SPYRE_MAX_CONTEXT_LENGTH", str(max_model_len))

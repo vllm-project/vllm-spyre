@@ -12,10 +12,12 @@ from vllm.v1.engine.llm_engine import LLMEngine as V1LLMEngine
 @pytest.mark.parametrize("max_num_seqs", [1, 2, 3, 4])
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", ["eager", "inductor"])
+@pytest.mark.parametrize("use_cb", [0, 1])
 def test_cb_handling(
     model: str,
     backend: str,
     max_num_seqs: int,
+    use_cb: bool,
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Test that the spyre worker correctly handles
@@ -48,6 +50,7 @@ def test_cb_handling(
         tensor_parallel_size=1,
         backend=backend,
         max_num_seqs=max_num_seqs,
+        use_cb=use_cb,
         monkeypatch=monkeypatch,
     )
 
