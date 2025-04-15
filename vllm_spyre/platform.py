@@ -2,11 +2,11 @@ import operator
 from typing import TYPE_CHECKING, Optional, Union
 
 import torch
-from vllm.sampling_params import SamplingParams
-from vllm.pooling_params import PoolingParams
 from vllm.inputs import ProcessorInputs, PromptType
 from vllm.inputs.parse import is_token_prompt
 from vllm.logger import init_logger
+from vllm.pooling_params import PoolingParams
+from vllm.sampling_params import SamplingParams
 
 if TYPE_CHECKING:
     from vllm.config import ModelConfig, VllmConfig
@@ -205,7 +205,6 @@ class SpyrePlatform(Platform):
         else:
             # We need a prompt length to do any validation here
             return
-        
 
         max_tokens = 0
         if params is not None and params.max_tokens is not None:
@@ -214,7 +213,7 @@ class SpyrePlatform(Platform):
         if envs_spyre.VLLM_SPYRE_USE_CB:
             # For continuous batching, check if the request is within the max
             # context length.
-            # The V1 engine will check the prompt length, but not the prompt + 
+            # The V1 engine will check the prompt length, but not the prompt +
             # max_tokens.
             if (prompt_len + max_tokens
                     > envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH):
@@ -222,8 +221,7 @@ class SpyrePlatform(Platform):
                     "Could not add request: prompt length is "
                     f"{prompt_len} tokens, maximum number of output tokens is "
                     f"{max_tokens} tokens, but max model context length is "
-                    f"{envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH}."
-                )
+                    f"{envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH}.")
         else:
             # For non-continuous batching, check if the request matches a warmup
             # shape
