@@ -149,7 +149,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
             seq_len = input_ids_i.size(0)
             if max_len > seq_len:
                 logger.info(
-                    "Padding request of length %d tokens to %d tokens.",
+                    "Left padding request of length %d tokens to %d tokens.",
                     seq_len, max_len)
             pads = torch.ones(max_len - seq_len,
                               dtype=torch.long,
@@ -565,6 +565,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         # TO DO: move to InputBatch
         self.req_ids2blocks: dict[str, List[int]] = {}
+        self.req_ids2left_pads: dict[str, int] = {}
         self.tkv = 0
         self.free_blocks = [i for i in range(NUM_BLOCKS)]
         self.min_pad_length_batch = max_prompt_length
@@ -580,12 +581,18 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         if len(self.req_ids2blocks) == 0:
             self.tkv = self.min_pad_length_batch
 
+        # ceil division to pad to next block boundary
+        n = self.tkv
+        d = self.BLOCK_SIZE
+        block_padding = ((n + d - 1) // d) * d
+
         # Internal state is managed here.
         slot_mapping = []
         for request_data in new_requests:
             # retrieve initial (unpadded) tokens
             prompt_tokens = request_data.prompt_token_ids
-
+            self.req_ids2left_pads[
+                request_data.req_id] = self.tkv - len(prompt_tokens)
             input_token_list.append(
                 torch.tensor(prompt_tokens,
                              dtype=torch.long,
@@ -594,7 +601,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             # filling block table and slot mapping
             block_table_i = []
             slot_mapping_i = []
-            for pos_i in range(self.tkv):
+            for pos_i in range(block_padding):
                 if pos_i % self.BLOCK_SIZE == 0:
                     block_number = self.free_blocks.pop(0)
                     block_table_i.append(block_number)
@@ -615,8 +622,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         block_table = None
 
         # get position ids and attention mask
+        # applies left padding to align with tkv of current decode batch
+        # and right padding to align with the next block boundary
         input_tokens, position_ids, mask =\
-            self.pad_input_ids(input_token_list, min_pad_length=self.tkv)
+            self.pad_input_ids(input_token_list, min_pad_length=block_padding)
         mask = mask.unsqueeze(1)
 
         # not needed for prefil
@@ -633,8 +642,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                torch.Tensor, torch.Tensor, torch.Tensor]:
         assert len(cached_requests) > 0
         input_tokens = []
+        input_positions = []
         block_table = []
         slot_mapping = []
+        left_padded_prompt_mask = []
         self.model.indices = torch.ones(len(cached_requests),
                                         dtype=torch.bool,
                                         device='cpu')
@@ -656,58 +667,91 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             slot_mapping.append(slot)
             generation_token = cached_request.new_token_ids[-1]
             input_tokens.append([generation_token])
+            seq_len = cached_request.num_computed_tokens
+            input_positions.append([seq_len])
+            left_padded_prompt_mask.append(
+                self.req_ids2left_pads[cached_request.req_id])
 
         input_tokens = torch.tensor(input_tokens,
                                     dtype=torch.long,
                                     device=self.device)
-
+        position_ids = torch.tensor(input_positions,
+                                    dtype=torch.long,
+                                    device=self.device)
+        left_padded_prompt_mask = torch.tensor(left_padded_prompt_mask,
+                                               dtype=torch.long,
+                                               device=self.device)
         # construct tensors from lists
         slot_mapping = torch.tensor(slot_mapping, dtype=torch.int64)
         block_table = torch.tensor(block_table, dtype=torch.int64)
 
-        mask, position_ids = self._prepare_pos_mask_decode(
-            cached_requests, self.tkv)
-        self.tkv = self.tkv + 1
-
+        # todo: check if always position id + 1
         partial_page_tkv_mask = (position_ids + 1).reshape((-1, ))
-        left_padded_prompt_mask = (mask == -float('inf')).sum(dim=2).reshape(
-            (-1, ))
 
         # not needed for decode
         mask = None
 
+        # update tkv
+        self.tkv = self.tkv + 1
+
         return input_tokens, position_ids, mask, partial_page_tkv_mask, \
             left_padded_prompt_mask, block_table, slot_mapping
 
-    def _prepare_pos_mask_decode(
+    def pad_input_ids(
         self,
-        cached_requests: List[CachedRequestData],
-        tkv: int = 0,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        input_ids_list: List[torch.Tensor],
+        min_pad_length: int = 0,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
 
-        mask_list = []
-        position_ids_list = []
+        # left padding to align with tkv of current decode batch
+        input_tokens_left, position_ids_left, mask_left =\
+            super().pad_input_ids(input_ids_list, min_pad_length=self.tkv)
 
-        for cached_request in cached_requests:
-            seq_len = cached_request.num_computed_tokens
-            position_ids_list.append([seq_len])
+        # right padding to align with the next block boundary
+        left_pad_len = input_tokens_left.shape[1]
+        n_pads_right = min_pad_length - left_pad_len
 
-            pads = torch.ones(tkv - seq_len,
-                              dtype=torch.long,
-                              device=self.device) * self.pad_token_id
-            non_pads = torch.ones(seq_len + 1,
-                                  dtype=torch.long,
-                                  device=self.device)
-            mask_list.append(torch.cat((torch.zeros_like(pads), non_pads)))
+        if n_pads_right > 0:
+            # apply right padding to input_tokens, position_ids and mask
+            logger.info(
+                "Right padding request of length %d tokens to %d tokens.",
+                left_pad_len, min_pad_length)
 
-        mask = torch.stack(mask_list).bool()
-        mask = torch.where(mask.logical_not(), -torch.inf, 0.0)
-        mask = mask.to(self.model.model.dtype)
-        mask = torch.unsqueeze(mask, dim=1)
-        position_ids = torch.tensor(position_ids_list,
-                                    dtype=torch.long,
-                                    device=self.device)
-        return mask, position_ids
+            input_tokens_right = torch.tensor(
+                [[self.pad_token_id for i in range(n_pads_right)]],
+                device=input_tokens_left.device,
+                dtype=input_tokens_left.dtype)
+            input_tokens = torch.concat(
+                (input_tokens_left, input_tokens_right), dim=1)
+
+            # Note: same output with i as padding for position ids
+            pos_start = position_ids_left[0][-1] + 1
+            position_ids_right = torch.tensor(
+                [[0 for i in range(pos_start, pos_start + n_pads_right)]],
+                device=position_ids_left.device,
+                dtype=position_ids_left.dtype)
+            position_ids = torch.concat(
+                (position_ids_left, position_ids_right), dim=1)
+
+            # pad left padded mask with -inf to the next block boundary
+            mask = torch.nn.functional.pad(mask_left,
+                                           (0, n_pads_right, 0, n_pads_right),
+                                           value=-torch.inf)
+
+            # lower triangle: 0.0, upper triangle -inf
+            mask_pads = torch.zeros(n_pads_right, n_pads_right)
+            mask_pads[~torch.tril(torch.ones(n_pads_right, n_pads_right)).bool(
+            )] = float('-inf')
+
+            # insert triangular matrix for right pads
+            mask[:, -n_pads_right:, -n_pads_right:] = mask_pads.unsqueeze(0)
+        else:
+            # no right padding needed
+            input_tokens = input_tokens_left
+            position_ids = position_ids_left
+            mask = mask_left
+
+        return input_tokens, position_ids, mask
 
     def prepare_model_input(
             self, scheduler_output: SchedulerOutput) -> ModelInputForSpyre:
@@ -723,6 +767,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                 for freed_block in self.req_ids2blocks[req_id]:
                     self.free_blocks.append(freed_block)
                 del self.req_ids2blocks[req_id]
+                del self.req_ids2left_pads[req_id]
 
         # Prepare input tensors.
         if is_prompt:
