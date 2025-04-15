@@ -43,7 +43,7 @@ jobs:
             torch_version: "2.5.1+cpu"
           - name: "vLLM:main"
             repo: "git+https://github.com/vllm-project/vllm --branch main"
-            torch_version: "2.6.0+cpu"
+            torch_version: "2.5.1+cpu"
         test_suite:
           - name: "V0"
             tests: "V0 and eager"

@@ -36,6 +36,7 @@ override-dependencies = [
     "torch; sys_platform == 'never'",
     "torchaudio; sys_platform == 'never'",
     "torchvision; sys_platform == 'never'",
+    "triton; sys_platform == 'never'",
 ]
 
 [tool.uv.sources]
