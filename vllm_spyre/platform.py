@@ -19,13 +19,13 @@ logger = init_logger(__name__)
 
 class SpyrePlatform(Platform):
     _enum = PlatformEnum.OOT
-    device_name: str = "spyre"
+    device_name: str = "cpu"
     device_type: str = "cpu"
     supported_quantization: list[str] = ["gptq"]
 
     @classmethod
     def get_device_name(cls, device_id: int = 0) -> str:
-        return "spyre"
+        return "cpu"
 
     @classmethod
     def is_async_output_supported(cls, enforce_eager: Optional[bool]) -> bool:
