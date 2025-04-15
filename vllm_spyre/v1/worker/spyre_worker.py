@@ -293,7 +293,7 @@ class SpyreWorker(WorkerBaseV1):
                 structured_output_request_ids={},
                 grammar_bitmask=None,
             )
-            logger.info("Warmup prefil %d/2...", i + 1)
+            logger.info("Warmup prefil %d/%d...", i + 1, batch_size)
             self.execute_model(scheduler_output)
 
         # one decode iteration across both sequences
