@@ -3,21 +3,70 @@
 Run `python -m pytest tests/test_spyre_cb.py`.
 """
 
+from typing import List
+
 import pytest
 from spyre_util import generate_cb_spyre_vllm_output, get_spyre_model_list
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine.llm_engine import LLMEngine as V1LLMEngine
 
 
-@pytest.mark.parametrize("max_num_seqs", [1, 2, 3, 4])
+@pytest.mark.parametrize("max_num_seqs", [1, 2, 3, 4, 5, 6],
+                         ids=lambda val: f"max_num_seqs({val})")
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", ["eager", "inductor"])
-@pytest.mark.parametrize("use_cb", [0, 1])
+@pytest.mark.parametrize("use_cb", [0, 1], ids=lambda val: f"use_cb({val})")
+@pytest.mark.parametrize(
+    "enable_v1_multiprocessing",
+    [0, 1],
+    ids=lambda val: f"enable_v1_multiprocessing({val})",
+)
+@pytest.mark.parametrize(
+    "prompts",
+    [
+        [
+            "7 6 5 4",
+        ],
+        [
+            "7 6 5 4",
+            "10 9 8 7",
+        ],
+        [
+            "7 6 5 4",
+            "10 9 8 7",
+            "8 7 6 5",
+        ],
+        [
+            "7 6 5 4",
+            "10 9 8 7",
+            "8 7 6 5",
+            "9 8 7 6",
+        ],
+        [
+            "7 6 5 4",
+            "10 9 8 7",
+            "8 7 6 5",
+            "9 8 7 6",
+            "6 5 4 3",
+        ],
+        [
+            "7 6 5 4",
+            "10 9 8 7",
+            "8 7 6 5",
+            "11 10 9 8",
+            "9 8 7 6",
+            "6 5 4 3",
+        ],
+    ],
+    ids=lambda val: f"num_prompts({len(val)})",
+)
 def test_cb_handling(
     model: str,
     backend: str,
     max_num_seqs: int,
     use_cb: bool,
+    prompts: List[str],
+    enable_v1_multiprocessing: int,
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Test that the spyre worker correctly handles
@@ -28,15 +77,6 @@ def test_cb_handling(
                                           temperature=0,
                                           stop="1",
                                           ignore_eos=True)
-
-    # These prompts are ordered so that they don't finish in the
-    # order given
-    prompts = [
-        "7 6 5 4",
-        "10 9 8 7",
-        "8 7 6 5",
-        "9 8 7 6",
-    ]
 
     # Ensure that both:
     # - The model doesn't crash
@@ -51,13 +91,16 @@ def test_cb_handling(
         backend=backend,
         max_num_seqs=max_num_seqs,
         use_cb=use_cb,
+        enable_v1_multiprocessing=enable_v1_multiprocessing,
         monkeypatch=monkeypatch,
     )
 
-    assert vllm_results[0]["text"] == " 3 2 "
-    assert vllm_results[1]["text"] == " 6 5 4 3 2 "
-    assert vllm_results[2]["text"] == " 4 3 2 "
-    assert vllm_results[3]["text"] == " 5 4 3 2 "
+    for i, prompt in enumerate(prompts):
+        assert vllm_results[i]["text"] == [
+            ' ' + ' '.join(
+                str(i)
+                for i in range(int(prompt.split()[-1]) - 1, 1, -1)) + ' '
+        ][0]
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
