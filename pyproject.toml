@@ -31,11 +31,13 @@ namespaces = false  # to disable scanning PEP 420 namespaces (true by default)
 
 [tool.uv]
 # Never install torch, so that no dependencies can override it.
-# This requires that torch is installed separately in the target environment
+# This requires that torch is installed separately in the target environment.
+# Never install triton, currently unused and break tests against vllm/main. 
 override-dependencies = [
     "torch; sys_platform == 'never'",
     "torchaudio; sys_platform == 'never'",
     "torchvision; sys_platform == 'never'",
+    "triton; sys_platform == 'never'",
 ]
 
 [tool.uv.sources]
