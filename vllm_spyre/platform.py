@@ -19,13 +19,15 @@ logger = init_logger(__name__)
 
 class SpyrePlatform(Platform):
     _enum = PlatformEnum.OOT
+
+    # "spyre" device_name no longer worked due to https://github.com/vllm-project/vllm/pull/16464
     device_name: str = "cpu"
     device_type: str = "cpu"
     supported_quantization: list[str] = ["gptq"]
 
     @classmethod
     def get_device_name(cls, device_id: int = 0) -> str:
-        return "cpu"
+        return "spyre"
 
     @classmethod
     def is_async_output_supported(cls, enforce_eager: Optional[bool]) -> bool:
