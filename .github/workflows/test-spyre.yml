@@ -40,10 +40,8 @@ jobs:
         vllm_version:
           - name: "default"
             repo: ""
-            torch_version: "2.5.1+cpu"
           - name: "vLLM:main"
             repo: "git+https://github.com/vllm-project/vllm --branch main"
-            torch_version: "2.5.1+cpu"
         test_suite:
           - name: "V0"
             tests: "V0 and eager"
@@ -62,7 +60,7 @@ jobs:
 
       - name: "Install PyTorch"
         run: |
-          pip install torch==${{ matrix.vllm_version.torch_version }} --index-url https://download.pytorch.org/whl/cpu
+          pip install torch=="2.5.1+cpu" --index-url https://download.pytorch.org/whl/cpu
 
       - name: "Install uv"
         uses: astral-sh/setup-uv@v5
@@ -87,8 +85,6 @@ jobs:
           # Syncs both the runtime and dev deps, based on the lockfile contents
           uv sync --frozen
           # Builds and installs the vllm_spyre wheel into .venv
-          # This needs to be done after `uv sync`, or the wheel install will be
-          # overwritten.
           uv pip install -v .
 
       - name: "Restore HF models cache"
@@ -139,9 +135,6 @@ jobs:
           # Delete the source code so we can ensure we're testing the installed
           # wheel
           rm -fr vllm_spyre
-          # We activate .venv manually and run pytest directly instead of using
-          # `uv run`, to avoid having `uv run` re-sync any dependencies or 
-          # re-install the vllm_sypre package from source
           source .venv/bin/activate
           python3 -m pytest ${{ matrix.test_suite.flags }} \
             tests -v -k "${{ matrix.test_suite.tests }}"
