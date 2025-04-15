@@ -9,11 +9,7 @@ from vllm import LLM, SamplingParams
 max_tokens1 = 10
 max_tokens2 = 5
 max_tokens3 = 7
-max_tokens = max([max_tokens1, max_tokens2, max_tokens3])
 max_num_seqs = 2  # defines max batch size
-
-os.environ["VLLM_SPYRE_WARMUP_PROMPT_LENS"] = '64'
-os.environ["VLLM_SPYRE_WARMUP_NEW_TOKENS"] = str(max_tokens)
 
 # defining here to be able to run/debug directly from VSC (not via terminal)
 os.environ['VLLM_SPYRE_DYNAMO_BACKEND'] = 'eager'

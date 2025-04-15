@@ -313,11 +313,9 @@ class SpyreWorker(WorkerBaseV1):
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=[],
             scheduled_cached_reqs=cached_requests,
-            num_scheduled_tokens={
-                'warmup-0': 1,
-                'warmup-1': 1
-            },
-            total_num_scheduled_tokens=2,
+            num_scheduled_tokens={f"warmup-{i}": 1
+                                  for i in range(batch_size)},
+            total_num_scheduled_tokens=batch_size,
             scheduled_spec_decode_tokens={},
             scheduled_encoder_inputs={},
             num_common_prefix_blocks=0,
