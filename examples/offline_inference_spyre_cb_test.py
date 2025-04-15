@@ -6,8 +6,8 @@ from vllm import LLM, SamplingParams
 # RUN with fms branch: https://github.com/foundation-model-stack/
 # foundation-model-stack/tree/paged_attn_mock
 
-max_tokens1 = 10
-max_tokens2 = 5
+max_tokens1 = 65
+max_tokens2 = 67
 max_tokens3 = 7
 max_num_seqs = 2  # defines max batch size
 
