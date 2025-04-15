@@ -40,8 +40,10 @@ jobs:
         vllm_version:
           - name: "default"
             repo: ""
+            torch_version: "2.5.1+cpu"
           - name: "vLLM:main"
             repo: "git+https://github.com/vllm-project/vllm --branch main"
+            torch_version: "2.6.0+cpu"
         test_suite:
           - name: "V0"
             tests: "V0 and eager"
@@ -60,7 +62,7 @@ jobs:
 
       - name: "Install PyTorch"
         run: |
-          pip install torch=="2.5.1+cpu" --index-url https://download.pytorch.org/whl/cpu
+          pip install torch==${{ matrix.vllm_version.torch_version }} --index-url https://download.pytorch.org/whl/cpu
 
       - name: "Install uv"
         uses: astral-sh/setup-uv@v5
