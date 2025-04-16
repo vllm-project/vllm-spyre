@@ -15,7 +15,6 @@ dependencies = [
     "ibm-fms==0.0.8",
     "vllm",
 ]
-requires-python = ">=3.9"
 
 [project.entry-points."vllm.platform_plugins"]
 spyre = "vllm_spyre:register"
