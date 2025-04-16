@@ -1,5 +1,6 @@
 import time
-from typing import Dict, Iterable, List, Optional, Tuple
+from collections.abc import Iterable
+from typing import Optional
 
 import torch
 from transformers import AutoModel
@@ -24,7 +25,7 @@ BACKEND_LIST = ['sendnn', 'inductor']
 class SpyreEmbeddingModelRunner(SpyreModelRunner):
 
     # Map of request_id -> generator used for seeded random sampling
-    generators: Dict[str, torch.Generator] = {}
+    generators: dict[str, torch.Generator] = {}
 
     def __init__(
         self,
@@ -65,9 +66,9 @@ class SpyreEmbeddingModelRunner(SpyreModelRunner):
 
     def prepare_input_tensors(
         self,
-        seq_group_metadata_list: List[SequenceGroupMetadata],
-        finished_requests_ids: Optional[List[str]] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, PoolingMetadata]:
+        seq_group_metadata_list: list[SequenceGroupMetadata],
+        finished_requests_ids: Optional[list[str]] = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, PoolingMetadata]:
         # NOTE: We assume that all sequences in the group are all prompts
         (input_tokens, input_positions, input_masks,
          seq_lens) = self._prepare_prompt(seq_group_metadata_list)
@@ -79,17 +80,17 @@ class SpyreEmbeddingModelRunner(SpyreModelRunner):
 
     def _prepare_pooling(
         self,
-        seq_group_metadata_list: List[SequenceGroupMetadata],
-        prompt_lens: List[int],
+        seq_group_metadata_list: list[SequenceGroupMetadata],
+        prompt_lens: list[int],
     ) -> PoolingMetadata:
         """Prepare PoolingMetadata for the sequence group metadata list."""
-        seq_groups: List[Tuple[List[int], PoolingParams]] = []
+        seq_groups: list[tuple[list[int], PoolingParams]] = []
         for i, seq_group_metadata in enumerate(seq_group_metadata_list):
             seq_ids = list(seq_group_metadata.seq_data.keys())
             pooling_params = seq_group_metadata.pooling_params
             seq_groups.append((seq_ids, pooling_params))
 
-        seq_data: Dict[int, SequenceData] = {}
+        seq_data: dict[int, SequenceData] = {}
         for seq_group_metadata in seq_group_metadata_list:
             seq_data.update(seq_group_metadata.seq_data)
 
@@ -103,9 +104,9 @@ class SpyreEmbeddingModelRunner(SpyreModelRunner):
 
     def pad_input_ids(
         self,
-        input_ids_list: List[torch.Tensor],
+        input_ids_list: list[torch.Tensor],
         min_pad_length: int = 0,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
 
         padded_input_ids_list, mask_list, position_ids_list = self.\
             _prepare_pad_input_ids(input_ids_list, min_pad_length)
@@ -118,9 +119,9 @@ class SpyreEmbeddingModelRunner(SpyreModelRunner):
 
     def prepare_model_input(
         self,
-        seq_group_metadata_list: List[SequenceGroupMetadata],
+        seq_group_metadata_list: list[SequenceGroupMetadata],
         virtual_engine: int = 0,
-        finished_requests_ids: Optional[List[str]] = None
+        finished_requests_ids: Optional[list[str]] = None
     ) -> ModelInputForSpyre:
 
         (input_tokens, input_positions, input_masks,
@@ -135,11 +136,11 @@ class SpyreEmbeddingModelRunner(SpyreModelRunner):
     def execute_model(
         self,
         model_input: ModelInputForSpyre,
-        kv_caches: Optional[List[torch.Tensor]] = None,
+        kv_caches: Optional[list[torch.Tensor]] = None,
         intermediate_tensors: Optional[IntermediateTensors] = None,
         num_steps: int = 1,
         **kwargs,
-    ) -> Optional[List[PoolerOutput]]:
+    ) -> Optional[list[PoolerOutput]]:
 
         t0 = time.time()
 
@@ -178,12 +179,12 @@ class SpyreEmbeddingModelRunner(SpyreModelRunner):
         input_ids: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.Tensor] = None,
-        past_key_value_states: Optional[List[Tuple[torch.Tensor,
+        past_key_value_states: Optional[list[tuple[torch.Tensor,
                                                    torch.Tensor]]] = None,
         use_cache: bool = False,
         only_last_token: bool = False,
         attn_algorithm: Optional[str] = None
-    ) -> Tuple[torch.Tensor, Optional[List[Tuple[torch.Tensor,
+    ) -> tuple[torch.Tensor, Optional[list[tuple[torch.Tensor,
                                                  torch.Tensor]]]]:
 
         hidden_states, _ = self.model(

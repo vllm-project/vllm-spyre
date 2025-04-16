@@ -3,8 +3,6 @@
 Run `python -m pytest tests/test_spyre_max_new_tokens.py`.
 """
 
-from typing import List, Tuple
-
 import pytest
 from spyre_util import (compare_results, generate_hf_output,
                         generate_spyre_vllm_output, get_spyre_backend_list,
@@ -32,9 +30,9 @@ prompt2 = template.format("Provide a list of instructions for preparing "
 @pytest.mark.parametrize("vllm_version", ["V0", "V1"])
 def test_output(
     model: str,
-    prompts: List[str],
+    prompts: list[str],
     stop_last: bool,
-    warmup_shape: Tuple[int, int, int],
+    warmup_shape: tuple[int, int, int],
     backend: str,
     vllm_version: str,
 ) -> None:
