@@ -1,19 +1,21 @@
-name: Lint documentation
+name: Lint Docs
 
 on:
   push:
-    branches:
-      - main
+#    branches:
+#      - main
     paths:
+      - "**/*.md"
       - "docs/**"
   pull_request:
-    branches:
-      - main
+#    branches:
+#      - main
     paths:
+      - "**/*.md"
       - "docs/**"
 
 jobs:
-  doc-lint:
+  lint-docs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -28,5 +30,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-lint.txt
+          # TODO: use `uv`
       - name: Linting docs
-        run: tools/doc-lint.sh
+        run: tools/lint_docs.sh

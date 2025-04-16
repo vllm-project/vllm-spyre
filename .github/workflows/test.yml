@@ -4,16 +4,16 @@ on:
   # Don't use pull_request.paths filter since this workflow is required for
   # all pull requests on main irrespective of file type or location
   pull_request:
-    branches:
-      - main
+#    branches:
+#      - main
   push:
-    branches:
-      - main
+#    branches:
+#      - main
     paths:
       - "tests/**/*.py"
       - "vllm_spyre/**/*.py"
       - pyproject.toml
-      - .github/workflows/test-spyre.yml
+      - .github/workflows/test.yml
   workflow_dispatch:
 
 env:

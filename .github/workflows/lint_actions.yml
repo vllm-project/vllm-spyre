@@ -1,15 +1,16 @@
-name: Lint GitHub Actions workflows
+name: Lint GitHub Actions
+
 on:
   push:
-    branches:
-      - "main"
+#    branches:
+#      - "main"
     paths:
       - '.github/workflows/*.ya?ml'
       - '.github/workflows/actionlint.*'
       - '.github/workflows/matchers/actionlint.json'
   pull_request:
-    branches:
-      - "main"
+#    branches:
+#      - "main"
     paths:
       - '.github/workflows/*.ya?ml'
       - '.github/workflows/actionlint.*'
@@ -26,7 +27,7 @@ permissions:
   contents: read
 
 jobs:
-  actionlint:
+  lint-actions:
     runs-on: ubuntu-latest
     steps:
       - name: "Checkout"
@@ -37,4 +38,4 @@ jobs:
       - name: "Run actionlint"
         run: |
           echo "::add-matcher::.github/workflows/matchers/actionlint.json"
-          tools/actionlint.sh -color
+          tools/lint_actions.sh -color
