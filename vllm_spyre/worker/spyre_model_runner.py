@@ -1,7 +1,7 @@
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import (TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Tuple,
-                    Type, TypeVar)
+from typing import TYPE_CHECKING, Any, Optional, TypeVar
 
 import torch
 from torch import nn
@@ -44,7 +44,7 @@ class ModelInputForSpyre(ModelRunnerInputBase):
     # unused
     virtual_engine: Optional[int] = None
 
-    def as_broadcastable_tensor_dict(self) -> Dict[str, Any]:
+    def as_broadcastable_tensor_dict(self) -> dict[str, Any]:
         tensor_dict = {
             "input_tokens": self.input_tokens,
             "input_positions": self.input_positions,
@@ -57,8 +57,8 @@ class ModelInputForSpyre(ModelRunnerInputBase):
 
     @classmethod
     def from_broadcasted_tensor_dict(
-        cls: Type[TModelInputForSpyre],
-        tensor_dict: Dict[str, Any],
+        cls: type[TModelInputForSpyre],
+        tensor_dict: dict[str, Any],
         attn_backend: Optional["AttentionBackend"] = None,
     ) -> TModelInputForSpyre:
         tensor_dict = _init_sampling_metadata_from_tensor_dict(tensor_dict)
@@ -122,10 +122,10 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
 
     def _prepare_prompt(
         self,
-        seq_group_metadata_list: List[SequenceGroupMetadata],
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, List[int]]:
+        seq_group_metadata_list: list[SequenceGroupMetadata],
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[int]]:
         assert len(seq_group_metadata_list) > 0
-        input_token_list: List[torch.Tensor] = []
+        input_token_list: list[torch.Tensor] = []
 
         # find warmup shape to be used for padding and batching
         applicable_spyre_warmup_shapes = [
@@ -198,10 +198,10 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
 
     def _prepare_decode(
         self,
-        seq_group_metadata_list: List[SequenceGroupMetadata],
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        seq_group_metadata_list: list[SequenceGroupMetadata],
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         assert len(seq_group_metadata_list) > 0
-        input_tokens: List[List[int]] = [
+        input_tokens: list[list[int]] = [
             [0] for _ in range(self._position_ids.shape[0])
         ]
 
@@ -260,14 +260,14 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         self._mask = torch.stack(masks_new, dim=0)
 
     def make_model_input_from_broadcasted_tensor_dict(
-            self, tensor_dict: Dict[str, Any]) -> ModelInputForSpyre:
+            self, tensor_dict: dict[str, Any]) -> ModelInputForSpyre:
         return ModelInputForSpyre.from_broadcasted_tensor_dict(tensor_dict)
 
     def prepare_model_input(
         self,
-        seq_group_metadata_list: List[SequenceGroupMetadata],
+        seq_group_metadata_list: list[SequenceGroupMetadata],
         virtual_engine: int = 0,
-        finished_requests_ids: Optional[List[str]] = None
+        finished_requests_ids: Optional[list[str]] = None
     ) -> ModelInputForSpyre:
 
         # NOTE: We assume that all sequences in the group are all prompts or
@@ -312,11 +312,11 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
     def execute_model(
         self,
         model_input: ModelInputForSpyre,
-        kv_caches: Optional[List[torch.Tensor]] = None,
+        kv_caches: Optional[list[torch.Tensor]] = None,
         intermediate_tensors: Optional[IntermediateTensors] = None,
         num_steps: int = 1,
         **kwargs,
-    ) -> Optional[List[SamplerOutput]]:
+    ) -> Optional[list[SamplerOutput]]:
 
         t0 = time.time()
 
@@ -352,9 +352,9 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
 
     def _prepare_pad_input_ids(
         self,
-        input_ids_list: List[torch.Tensor],
+        input_ids_list: list[torch.Tensor],
         min_pad_length: int = 0,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """left side padding implemented as
         in fms.utils.generation.pad_input_id"""
         max_len = max([min_pad_length] +
@@ -391,9 +391,9 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
 
     def pad_input_ids(
         self,
-        input_ids_list: List[torch.Tensor],
+        input_ids_list: list[torch.Tensor],
         min_pad_length: int = 0,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
 
         padded_input_ids_list, mask_list, position_ids_list = self.\
             _prepare_pad_input_ids(input_ids_list, min_pad_length)
@@ -413,12 +413,12 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         input_ids: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.Tensor] = None,
-        past_key_value_states: Optional[List[Tuple[torch.Tensor,
+        past_key_value_states: Optional[list[tuple[torch.Tensor,
                                                    torch.Tensor]]] = None,
         use_cache: bool = False,
         only_last_token: bool = False,
         attn_algorithm: Optional[str] = None
-    ) -> Tuple[torch.Tensor, Optional[List[Tuple[torch.Tensor,
+    ) -> tuple[torch.Tensor, Optional[list[tuple[torch.Tensor,
                                                  torch.Tensor]]]]:
 
         return self.model.model.model(
