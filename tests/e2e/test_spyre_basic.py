@@ -3,8 +3,6 @@
 Run `python -m pytest tests/test_spyre_basic.py`.
 """
 
-from typing import List, Tuple
-
 import pytest
 from spyre_util import (compare_results, generate_hf_output,
                         generate_spyre_vllm_output, get_spyre_backend_list,
@@ -25,8 +23,8 @@ from vllm import SamplingParams
 @pytest.mark.parametrize("vllm_version", ["V0", "V1"])
 def test_output(
     model: str,
-    prompts: List[str],
-    warmup_shape: Tuple[int, int, int],
+    prompts: list[str],
+    warmup_shape: tuple[int, int, int],
     backend: str,
     vllm_version: str,
 ) -> None:
