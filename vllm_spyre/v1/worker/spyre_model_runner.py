@@ -1,7 +1,7 @@
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import (TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Tuple,
-                    Type, TypeVar)
+from typing import TYPE_CHECKING, Any, Optional, TypeVar
 
 import torch
 from torch import nn
@@ -58,7 +58,7 @@ class ModelInputForSpyre(ModelRunnerInputBase):
     # unused
     virtual_engine: Optional[int] = None
 
-    def as_broadcastable_tensor_dict(self) -> Dict[str, Any]:
+    def as_broadcastable_tensor_dict(self) -> dict[str, Any]:
         tensor_dict = {
             "input_tokens": self.input_tokens,
             "input_positions": self.input_positions,
@@ -71,8 +71,8 @@ class ModelInputForSpyre(ModelRunnerInputBase):
 
     @classmethod
     def from_broadcasted_tensor_dict(
-        cls: Type[TModelInputForSpyre],
-        tensor_dict: Dict[str, Any],
+        cls: type[TModelInputForSpyre],
+        tensor_dict: dict[str, Any],
         attn_backend: Optional["AttentionBackend"] = None,
     ) -> TModelInputForSpyre:
         tensor_dict = _init_sampling_metadata_from_tensor_dict(tensor_dict)
@@ -122,14 +122,14 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         return self.model.model.model.config.src_vocab_size
 
     def make_model_input_from_broadcasted_tensor_dict(
-            self, tensor_dict: Dict[str, Any]) -> ModelInputForSpyre:
+            self, tensor_dict: dict[str, Any]) -> ModelInputForSpyre:
         return ModelInputForSpyre.from_broadcasted_tensor_dict(tensor_dict)
 
     def _prepare_pad_input_ids(
         self,
-        input_ids_list: List[torch.Tensor],
+        input_ids_list: list[torch.Tensor],
         min_pad_length: int = 0,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """left side padding implemented as
         in fms.utils.generation.pad_input_id"""
         max_len = max([min_pad_length] +
@@ -167,9 +167,9 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
 
     def pad_input_ids(
         self,
-        input_ids_list: List[torch.Tensor],
+        input_ids_list: list[torch.Tensor],
         min_pad_length: int = 0,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
 
         padded_input_ids_list, mask_list, position_ids_list = self.\
             _prepare_pad_input_ids(input_ids_list, min_pad_length)
@@ -245,9 +245,9 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
     def _prepare_prompt(
         self,
         new_requests: list[NewRequestData],
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, List[int]]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[int]]:
         assert len(new_requests) > 0
-        input_token_list: List[torch.Tensor] = []
+        input_token_list: list[torch.Tensor] = []
         padded_batch_size, min_pad_length_batch = \
             self._get_padded_batch_size(new_requests)
 
@@ -310,9 +310,9 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
     def _prepare_decode(
         self,
         cached_requests: list[CachedRequestData],
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         assert len(cached_requests) > 0
-        input_tokens: List[List[int]] = [
+        input_tokens: list[list[int]] = [
             [0] for _ in range(self._position_ids.shape[0])
         ]
 
@@ -552,17 +552,17 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         # TO DO: move to InputBatch
         self.req_ids2page: dict = {}
-        self.active_pages: List[int] = []
+        self.active_pages: list[int] = []
         self.tkv = 0
         self.free_pages = [i for i in range(max_batch_size)]
         self.min_pad_length_batch = max_prompt_length
 
     def _prepare_prompt(
         self,
-        new_requests: List[NewRequestData],
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, List[int]]:
+        new_requests: list[NewRequestData],
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[int]]:
         assert len(new_requests) > 0
-        input_token_list: List[torch.Tensor] = []
+        input_token_list: list[torch.Tensor] = []
 
         # Internal state is managed here.
         self.active_pages = []
@@ -599,8 +599,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
     def _prepare_decode(
         self,
-        cached_requests: List[CachedRequestData],
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        cached_requests: list[CachedRequestData],
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         assert len(cached_requests) > 0
         input_tokens = []
         self.active_pages = []
@@ -626,9 +626,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
     def _prepare_pos_mask_decode(
         self,
-        cached_requests: List[CachedRequestData],
+        cached_requests: list[CachedRequestData],
         tkv: int = 0,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
 
         mask_list = []
         position_ids_list = []

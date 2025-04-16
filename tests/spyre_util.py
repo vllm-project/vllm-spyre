@@ -3,7 +3,7 @@ import os
 import subprocess
 import sys
 import time
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional, Union
 
 import numpy as np
 import openai
@@ -133,13 +133,13 @@ class RemoteOpenAIServer:
 
 
 # vLLM / Spyre
-def generate_spyre_vllm_output(model: str, prompts: List[str],
-                               warmup_shapes: List[Tuple[int, int, int]],
+def generate_spyre_vllm_output(model: str, prompts: list[str],
+                               warmup_shapes: list[tuple[int, int, int]],
                                max_model_len: int, block_size: int,
                                sampling_params: Union[SamplingParams,
-                                                      List[SamplingParams]],
+                                                      list[SamplingParams]],
                                tensor_parallel_size: int, backend: str,
-                               vllm_version: str) -> List[Dict[str, Any]]:
+                               vllm_version: str) -> list[dict[str, Any]]:
 
     warmup_prompt_length = [t[0] for t in warmup_shapes]
     warmup_new_tokens = [t[1] for t in warmup_shapes]
@@ -186,8 +186,8 @@ def generate_spyre_vllm_output(model: str, prompts: List[str],
 
 # Hugging Face
 def generate_hf_output(
-        model: str, prompts: List[str],
-        max_new_tokens: Union[int, List[int]]) -> List[Dict[str, Any]]:
+        model: str, prompts: list[str],
+        max_new_tokens: Union[int, list[int]]) -> list[dict[str, Any]]:
 
     if not isinstance(max_new_tokens, list):
         max_new_tokens = [max_new_tokens] * len(prompts)
@@ -232,11 +232,11 @@ def generate_hf_output(
 
 
 # compare results
-def compare_results(model: str, prompts: List[str],
-                    warmup_shapes: List[Tuple[int, int,
+def compare_results(model: str, prompts: list[str],
+                    warmup_shapes: list[tuple[int, int,
                                               int]], tensor_parallel_size: int,
-                    backend: str, vllm_results: List[Dict[str, Any]],
-                    hf_results: List[Dict[str, Any]]):
+                    backend: str, vllm_results: list[dict[str, Any]],
+                    hf_results: list[dict[str, Any]]):
 
     print(f"\nmodel:         {model:s}")
     print(f"warmup shapes: {warmup_shapes}")
@@ -323,11 +323,11 @@ def compare_results(model: str, prompts: List[str],
 
 
 # vLLM / Spyre
-def spyre_vllm_embeddings(model: str, prompts: List[str],
-                          warmup_shapes: List[Tuple[int, int]],
+def spyre_vllm_embeddings(model: str, prompts: list[str],
+                          warmup_shapes: list[tuple[int, int]],
                           max_model_len: int, block_size: int,
                           tensor_parallel_size: int, backend: str,
-                          vllm_version: str) -> List[Dict[str, Any]]:
+                          vllm_version: str) -> list[dict[str, Any]]:
 
     warmup_prompt_length = [t[0] for t in warmup_shapes]
     warmup_new_tokens = [0] * len(warmup_shapes)
@@ -360,7 +360,7 @@ def spyre_vllm_embeddings(model: str, prompts: List[str],
 
 
 # Hugging Face
-def st_embeddings(model: str, prompts: List[str]) -> List[Dict[str, Any]]:
+def st_embeddings(model: str, prompts: list[str]) -> list[dict[str, Any]]:
 
     model = SentenceTransformer(model)
 
@@ -377,11 +377,11 @@ def st_embeddings(model: str, prompts: List[str]) -> List[Dict[str, Any]]:
 
 
 # compare results
-def compare_embedding_results(model: str, prompts: List[str],
-                              warmup_shapes: List[Tuple[int, int]],
+def compare_embedding_results(model: str, prompts: list[str],
+                              warmup_shapes: list[tuple[int, int]],
                               tensor_parallel_size: int, backend: str,
-                              vllm_results: List[Dict[str, Any]],
-                              hf_results: List[Dict[str, Any]]):
+                              vllm_results: list[dict[str, Any]],
+                              hf_results: list[dict[str, Any]]):
 
     print(f"\nmodel:         {model:s}")
     print(f"warmup shapes: {warmup_shapes}")

@@ -3,8 +3,8 @@
 import random
 import time
 from collections import deque
-from typing import (Callable, Deque, Dict, Iterable, List, Optional, Set,
-                    Tuple, Union)
+from collections.abc import Iterable
+from typing import Callable, Optional, Union
 
 from vllm.config import CacheConfig, LoRAConfig, SchedulerConfig
 from vllm.core.interfaces import AllocStatus, BlockSpaceManager
@@ -77,18 +77,18 @@ class SpyreScheduler:
 
         # Sequence groups in the WAITING state.
         # Contain new prefill or preempted requests.
-        self.waiting: Deque[SequenceGroup] = deque()
+        self.waiting: deque[SequenceGroup] = deque()
         # Sequence groups in the RUNNING state.
         # Contain decode requests.
-        self.running: Deque[SequenceGroup] = deque()
+        self.running: deque[SequenceGroup] = deque()
         # Sequence groups in the SWAPPED state.
         # Contain decode requests that are swapped out.
-        self.swapped: Deque[SequenceGroup] = deque()
+        self.swapped: deque[SequenceGroup] = deque()
         # Sequence groups finished requests ids since last step iteration.
         # It lets the model know that any state associated with these requests
         # can and must be released after the current step.
         # This is used to evict the finished requests from the Mamba cache.
-        self._finished_requests_ids: List[str] = list()
+        self._finished_requests_ids: list[str] = list()
         # Time at previous scheduling step
         self.prev_time = 0.0
         # Did we schedule a prompt at previous step?
@@ -107,9 +107,9 @@ class SpyreScheduler:
         self.num_cumulative_preemption: int = 0
 
         # Used to cache python objects
-        self._seq_group_metadata_cache: List[PyObjectCache] = []
-        self._scheduler_running_outputs_cache: List[PyObjectCache] = []
-        self._scheduled_seq_group_cache: List[PyObjectCache] = []
+        self._seq_group_metadata_cache: list[PyObjectCache] = []
+        self._scheduler_running_outputs_cache: list[PyObjectCache] = []
+        self._scheduled_seq_group_cache: list[PyObjectCache] = []
 
         # For async output processing, we need to swap cache buffers between
         # iterations. I.e. since the output processing is lagged one step,
@@ -132,7 +132,7 @@ class SpyreScheduler:
         # when the request reaches max_model_len. In this case, the request
         # will be stopped during schedule() call and added to this stop list
         # for processing and deallocation by the free_finished_seq_groups()
-        self._async_stopped: List[SequenceGroup] = []
+        self._async_stopped: list[SequenceGroup] = []
 
         # List with the chunk sizes to hand out to each sequence depending
         # on how many partial prefills are running. This is slightly faster than
@@ -182,7 +182,7 @@ class SpyreScheduler:
     def abort_seq_group(
         self,
         request_id: Union[str, Iterable[str]],
-        seq_id_to_seq_group: Optional[Dict[str, SequenceGroupBase]] = None,
+        seq_id_to_seq_group: Optional[dict[str, SequenceGroupBase]] = None,
     ) -> None:
         """Aborts a sequence group with the given ID.
 
@@ -200,7 +200,7 @@ class SpyreScheduler:
             request_id = (request_id, )
         request_ids = set(request_id)
         for state_queue in [self.waiting, self.running, self.swapped]:
-            aborted_groups: List[SequenceGroup] = []
+            aborted_groups: list[SequenceGroup] = []
             for seq_group in state_queue:
                 if not request_ids:
                     # Using 'break' here may add two extra iterations,
@@ -247,7 +247,7 @@ class SpyreScheduler:
     def get_num_unfinished_seq_groups(self) -> int:
         return len(self.waiting) + len(self.running) + len(self.swapped)
 
-    def get_and_reset_finished_requests_ids(self) -> List[str]:
+    def get_and_reset_finished_requests_ids(self) -> list[str]:
         """Flushes the list of request ids of previously finished seq_groups."""
         finished_requests_ids = self._finished_requests_ids
         self._finished_requests_ids = list()
@@ -256,7 +256,7 @@ class SpyreScheduler:
     def _schedule_running(
         self,
         budget: SchedulingBudget,
-        curr_loras: Optional[Set[int]],
+        curr_loras: Optional[set[int]],
         enable_chunking: bool = False,
         partial_prefill_metadata: Optional[PartialPrefillMetadata] = None,
     ) -> SchedulerRunningOutputs:
@@ -295,14 +295,14 @@ class SpyreScheduler:
         ret.prefill_seq_groups_list.clear()
 
         # Blocks that need to be swapped or copied before model execution.
-        blocks_to_swap_out: List[Tuple[int, int]] = ret.blocks_to_swap_out
-        blocks_to_copy: List[Tuple[int, int]] = ret.blocks_to_copy
+        blocks_to_swap_out: list[tuple[int, int]] = ret.blocks_to_swap_out
+        blocks_to_copy: list[tuple[int, int]] = ret.blocks_to_copy
 
-        decode_seq_groups: List[ScheduledSequenceGroup] = ret.decode_seq_groups
-        prefill_seq_groups: List[
+        decode_seq_groups: list[ScheduledSequenceGroup] = ret.decode_seq_groups
+        prefill_seq_groups: list[
             ScheduledSequenceGroup] = ret.prefill_seq_groups
-        preempted: List[SequenceGroup] = ret.preempted
-        swapped_out: List[SequenceGroup] = ret.swapped_out
+        preempted: list[SequenceGroup] = ret.preempted
+        swapped_out: list[SequenceGroup] = ret.swapped_out
 
         running_queue = self.running
         assert len(self._async_stopped) == 0
@@ -428,7 +428,7 @@ class SpyreScheduler:
     def _schedule_swapped(
         self,
         budget: SchedulingBudget,
-        curr_loras: Optional[Set[int]],
+        curr_loras: Optional[set[int]],
         enable_chunking: bool = False,
     ) -> SchedulerSwappedInOutputs:
         """Schedule sequence groups that are swapped out.
@@ -451,15 +451,15 @@ class SpyreScheduler:
             SchedulerSwappedInOutputs.
         """
         # Blocks that need to be swapped or copied before model execution.
-        blocks_to_swap_in: List[Tuple[int, int]] = []
-        blocks_to_copy: List[Tuple[int, int]] = []
-        decode_seq_groups: List[ScheduledSequenceGroup] = []
-        prefill_seq_groups: List[ScheduledSequenceGroup] = []
-        infeasible_seq_groups: List[SequenceGroup] = []
+        blocks_to_swap_in: list[tuple[int, int]] = []
+        blocks_to_copy: list[tuple[int, int]] = []
+        decode_seq_groups: list[ScheduledSequenceGroup] = []
+        prefill_seq_groups: list[ScheduledSequenceGroup] = []
+        infeasible_seq_groups: list[SequenceGroup] = []
 
         swapped_queue = self.swapped
 
-        leftover_swapped: Deque[SequenceGroup] = deque()
+        leftover_swapped: deque[SequenceGroup] = deque()
         while swapped_queue:
             seq_group = swapped_queue[0]
 
@@ -561,7 +561,7 @@ class SpyreScheduler:
             return prompt_limit
 
     def _get_priority(self,
-                      seq_group: SequenceGroup) -> Tuple[Optional[int], float]:
+                      seq_group: SequenceGroup) -> tuple[Optional[int], float]:
         """Get the priority of the sequence group.
         Highest preference to user-defined priority, followed by arrival time.
         Args:
@@ -589,7 +589,7 @@ class SpyreScheduler:
 
         running_queue = deque(sorted(self.running, key=self._get_priority))
 
-        blocks_to_swap_out: List[Tuple[int, int]] = []
+        blocks_to_swap_out: list[tuple[int, int]] = []
         force_preemption_count = 0
 
         if waiting_queue:
@@ -639,7 +639,7 @@ class SpyreScheduler:
     def _schedule_prefills(
         self,
         budget: SchedulingBudget,
-        curr_loras: Optional[Set[int]],
+        curr_loras: Optional[set[int]],
         enable_chunking: bool = False,
         partial_prefill_metadata: Optional[PartialPrefillMetadata] = None,
     ) -> SchedulerPrefillOutputs:
@@ -676,8 +676,8 @@ class SpyreScheduler:
                 num_lookahead_slots=self._get_num_lookahead_slots(
                     is_prefill=True, enable_chunking=enable_chunking),
             )
-        ignored_seq_groups: List[SequenceGroup] = []
-        seq_groups: List[ScheduledSequenceGroup] = []
+        ignored_seq_groups: list[SequenceGroup] = []
+        seq_groups: list[ScheduledSequenceGroup] = []
 
         # SPYRE SPECIFIC CODE BLOCK START
         applicable_spyre_warmup_shapes = list(self.spyre_warmup_shapes)
@@ -685,7 +685,7 @@ class SpyreScheduler:
 
         waiting_queue = self.waiting
 
-        leftover_waiting_sequences: Deque[SequenceGroup] = deque()
+        leftover_waiting_sequences: deque[SequenceGroup] = deque()
         while self._passed_delay(time.time()) and waiting_queue:
             seq_group = waiting_queue[0]
 
@@ -835,7 +835,7 @@ class SpyreScheduler:
                     seq_group)
 
             if enable_chunking and self.scheduler_config.is_multi_step:
-                blocks_to_copy: List[Tuple[int, int]] = []
+                blocks_to_copy: list[tuple[int, int]] = []
                 # init_multi_step_from_lookahead_slots happens in append_slots
                 self._append_slots(seq_group, blocks_to_copy, enable_chunking)
                 # This assert will trip when a copy-on-write happens. This is
@@ -1011,7 +1011,7 @@ class SpyreScheduler:
             token_budget=self.scheduler_config.max_num_batched_tokens,
             max_num_seqs=self.scheduler_config.max_num_seqs,
         )
-        curr_loras: Set[int] = set()
+        curr_loras: set[int] = set()
 
         prefills = SchedulerPrefillOutputs.create_empty()
         swapped_in = SchedulerSwappedInOutputs.create_empty()
@@ -1109,8 +1109,8 @@ class SpyreScheduler:
         )
 
     def _order_finishing_prefills_first(
-        self, scheduled_prefill_seqs: List[ScheduledSequenceGroup]
-    ) -> List[SequenceGroup]:
+        self, scheduled_prefill_seqs: list[ScheduledSequenceGroup]
+    ) -> list[SequenceGroup]:
         """Returns a list of prefilling SequenceGroups where sequences that are
         scheduled to finish prefilling are listed first"""
         finishing = [
@@ -1163,7 +1163,7 @@ class SpyreScheduler:
 
     def schedule(
             self
-    ) -> Tuple[List[SequenceGroupMetadata], SchedulerOutputs, bool]:
+    ) -> tuple[list[SequenceGroupMetadata], SchedulerOutputs, bool]:
         # Schedule sequence groups.
         # This function call changes the internal states of the scheduler
         # such as self.running, self.swapped, and self.waiting.
@@ -1178,7 +1178,7 @@ class SpyreScheduler:
         allow_async_output_proc: bool = self.use_async_output_proc
 
         # Create input data structures.
-        seq_group_metadata_list: List[SequenceGroupMetadata] = []
+        seq_group_metadata_list: list[SequenceGroupMetadata] = []
         for i, scheduled_seq_group in enumerate(
                 scheduler_outputs.scheduled_seq_groups):
             seq_group = scheduled_seq_group.seq_group
@@ -1191,9 +1191,9 @@ class SpyreScheduler:
             seq_group_metadata.block_tables.clear()
 
             # seq_id -> SequenceData
-            seq_data: Dict[int, SequenceData] = {}
+            seq_data: dict[int, SequenceData] = {}
             # seq_id -> physical block numbers
-            block_tables: Dict[int, List[int]] = {}
+            block_tables: dict[int, list[int]] = {}
 
             if seq_group.is_encoder_decoder():
                 # Encoder associated with SequenceGroup
@@ -1347,7 +1347,7 @@ class SpyreScheduler:
         self._free_finished_seqs(seq_group)
 
     def free_finished_seq_groups(self) -> None:
-        remaining: Deque[SequenceGroup] = deque()
+        remaining: deque[SequenceGroup] = deque()
         for seq_group in self.running:
             self._free_finished_seq_group(seq_group)
             if not seq_group.is_finished():
@@ -1375,7 +1375,7 @@ class SpyreScheduler:
     def _append_slots(
         self,
         seq_group: SequenceGroup,
-        blocks_to_copy: List[Tuple[int, int]],
+        blocks_to_copy: list[tuple[int, int]],
         enable_chunking: bool = False,
     ) -> None:
         """Appends new slots to the sequences in the given sequence group.
@@ -1413,7 +1413,7 @@ class SpyreScheduler:
                 blocks_to_copy.extend(cows)
 
     def _preempt(self, seq_group: SequenceGroup,
-                 blocks_to_swap_out: List[Tuple[int, int]]) -> PreemptionMode:
+                 blocks_to_swap_out: list[tuple[int, int]]) -> PreemptionMode:
         # If preemption mode is not specified, we determine the mode as follows:
         # We use recomputation by default since it incurs lower overhead than
         # swapping. However, when the sequence group has multiple sequences
@@ -1472,14 +1472,14 @@ class SpyreScheduler:
     def _preempt_by_swap(
         self,
         seq_group: SequenceGroup,
-        blocks_to_swap_out: List[Tuple[int, int]],
+        blocks_to_swap_out: list[tuple[int, int]],
     ) -> None:
         self._swap_out(seq_group, blocks_to_swap_out)
 
     def _swap_in(
         self,
         seq_group: SequenceGroup,
-        blocks_to_swap_in: List[Tuple[int, int]],
+        blocks_to_swap_in: list[tuple[int, int]],
     ) -> None:
         mapping = self.block_manager.swap_in(seq_group)
         blocks_to_swap_in.extend(mapping)
@@ -1489,7 +1489,7 @@ class SpyreScheduler:
     def _swap_out(
         self,
         seq_group: SequenceGroup,
-        blocks_to_swap_out: List[Tuple[int, int]],
+        blocks_to_swap_out: list[tuple[int, int]],
     ) -> None:
         if not self.block_manager.can_swap_out(seq_group):
             # FIXME(woosuk): Abort the sequence group instead of aborting the
@@ -1553,7 +1553,7 @@ class SpyreScheduler:
         enable_chunking: bool,
         budget: SchedulingBudget,
         partial_prefill_metadata: Optional[PartialPrefillMetadata] = None,
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         """
         Returns the number of new uncached and cached tokens to schedule for a
         given sequence group that's in a given `status`.
@@ -1668,7 +1668,7 @@ class SpyreScheduler:
         budget: SchedulingBudget,
         prompt_limit: int,
         num_new_tokens: int,
-        partial_prefill_budget_lookup_list: List[int],
+        partial_prefill_budget_lookup_list: list[int],
         partial_prefill_metadata: Optional[PartialPrefillMetadata] = None,
     ) -> int:
         """

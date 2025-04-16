@@ -3,8 +3,6 @@
 Run `python -m pytest tests/test_spyre_embeddings.py`.
 """
 
-from typing import List, Tuple
-
 import pytest
 from spyre_util import (compare_embedding_results, get_spyre_backend_list,
                         get_spyre_model_list, spyre_vllm_embeddings,
@@ -25,8 +23,8 @@ from spyre_util import (compare_embedding_results, get_spyre_backend_list,
 @pytest.mark.parametrize("vllm_version", ["V0"])  # Todo: V1 support
 def test_output(
     model: str,
-    prompts: List[str],
-    warmup_shape: Tuple[int, int],
+    prompts: list[str],
+    warmup_shape: tuple[int, int],
     backend: str,
     vllm_version: str,
 ) -> None:
