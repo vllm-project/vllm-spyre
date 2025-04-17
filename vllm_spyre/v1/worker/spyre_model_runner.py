@@ -564,7 +564,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         NUM_BLOCKS = max_batch_size * max_model_len // self.BLOCK_SIZE  # 64
 
         # TO DO: move to InputBatch
-        self.req_ids2blocks: dict[str, List[int]] = {}
+        self.req_ids2blocks: dict[str, list[int]] = {}
         self.req_ids2left_pads: dict[str, int] = {}
         self.tkv = 0
         self.free_blocks = [i for i in range(NUM_BLOCKS)]
@@ -699,9 +699,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
     def pad_input_ids(
         self,
-        input_ids_list: List[torch.Tensor],
+        input_ids_list: list[torch.Tensor],
         min_pad_length: int = 0,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
 
         # left padding to align with tkv of current decode batch
         input_tokens_left, position_ids_left, mask_left =\
