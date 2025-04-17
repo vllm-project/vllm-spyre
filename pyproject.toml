@@ -15,6 +15,7 @@ dependencies = [
     "ibm-fms==0.0.8",
     "vllm",
 ]
+requires-python = ">=3.9"
 
 [project.entry-points."vllm.platform_plugins"]
 spyre = "vllm_spyre:register"
@@ -31,15 +32,17 @@ namespaces = false  # to disable scanning PEP 420 namespaces (true by default)
 
 [tool.uv]
 # Never install torch, so that no dependencies can override it.
-# This requires that torch is installed separately in the target environment
+# This requires that torch is installed separately in the target environment.
+# Never install triton, currently unused and break tests against vllm/main. 
 override-dependencies = [
     "torch; sys_platform == 'never'",
     "torchaudio; sys_platform == 'never'",
     "torchvision; sys_platform == 'never'",
+    "triton; sys_platform == 'never'",
 ]
 
 [tool.uv.sources]
-vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.8.3" }
+vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.8.4" }
 
 [tool.ruff]
 # Allow lines to be as long as 80.

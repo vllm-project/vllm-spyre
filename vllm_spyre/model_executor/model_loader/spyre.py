@@ -1,6 +1,6 @@
 """Utilities for selecting and loading Spyre models."""
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import torch
 import torch._inductor.config
@@ -82,7 +82,7 @@ class SpyreCausalLM(nn.Module):
         if is_prompt and not envs_spyre.VLLM_SPYRE_USE_CB:
             self.model.past_key_value_states = None
 
-        extra_kwargs: Dict[str, Any] = {}
+        extra_kwargs: dict[str, Any] = {}
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn_decoder":
             # Bug in 2.3.1 fixed in 2.4.1 for SDPA flash
             # cpu impl when padding too much

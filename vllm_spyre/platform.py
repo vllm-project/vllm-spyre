@@ -19,7 +19,9 @@ logger = init_logger(__name__)
 
 class SpyrePlatform(Platform):
     _enum = PlatformEnum.OOT
-    device_name: str = "spyre"
+
+    # "spyre" device_name no longer worked due to https://github.com/vllm-project/vllm/pull/16464
+    device_name: str = "cpu"
     device_type: str = "cpu"
     supported_quantization: list[str] = ["gptq"]
 
