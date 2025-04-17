@@ -194,6 +194,10 @@ class SpyrePlatform(Platform):
         processed_inputs: Optional[ProcessorInputs] = None,
     ) -> None:
         """Raises if this request is unsupported on this platform"""
+        if not envs.VLLM_USE_V1:
+            # Don't change any V0 behavior
+            return
+
         if isinstance(params, PoolingParams):
             # Only validating generation requests for now
             return None
