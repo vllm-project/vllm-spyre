@@ -334,6 +334,15 @@ class SpyreWorker(WorkerBaseV1):
                 self.model_runner.free_blocks.append(freed_block)
             del self.model_runner.req_ids2blocks[req.req_id]
 
+        # update lazyhandle (once)
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
+            from torch_sendnn import torch_sendnn
+            ul_start_time = time.time()
+            torch_sendnn.update_lazyhandle()
+            ul_stop_time = time.time()
+            logger.info("update_lazyhandle() done (duration: %.3fs)",
+                        ul_stop_time - ul_start_time)
+
         warmup_end_t = time.time()
         warmup_total_t = warmup_end_t - warmup_start_t
         logger.info("Warmup finished.")
