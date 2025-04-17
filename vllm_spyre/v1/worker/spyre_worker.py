@@ -3,7 +3,7 @@ import json
 import os
 import platform
 import time
-from typing import List, Optional
+from typing import Optional
 
 import torch
 import torch.distributed as dist
@@ -119,7 +119,7 @@ class SpyreWorker(WorkerBaseV1):
         return 1 << 64
 
     def initialize_from_config(self,
-                               kv_cache_configs: List[KVCacheConfig]) -> None:
+                               kv_cache_configs: list[KVCacheConfig]) -> None:
         """Construct the KV cache from the provided configs.
         Currently, we do not support paged attention or kv caching"""
         pass
@@ -372,8 +372,8 @@ class SpyreWorker(WorkerBaseV1):
     def _warmup_model_forward_pass(
         self,
         scheduler_output: SchedulerOutput,
-        requests: List[NewRequestData],
-        cached_requests: List[CachedRequestData],
+        requests: list[NewRequestData],
+        cached_requests: list[CachedRequestData],
         num_decode_tokens,
     ):
         """Handle a complete forward pass"""
@@ -392,7 +392,7 @@ class SpyreWorker(WorkerBaseV1):
         return True
 
     @property
-    def kv_cache(self) -> Optional[List[List[torch.Tensor]]]:
+    def kv_cache(self) -> Optional[list[list[torch.Tensor]]]:
         return None
 
     @SpyrePlatform.inference_mode()

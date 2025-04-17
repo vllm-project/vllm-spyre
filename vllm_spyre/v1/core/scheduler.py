@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from collections import deque
-from typing import TYPE_CHECKING, Deque
+from typing import TYPE_CHECKING
 
 from vllm.logger import init_logger
 from vllm.sampling_params import SamplingParams
@@ -46,7 +46,7 @@ class SpyreScheduler(Scheduler):
         # Requests are temporarily moved to this queue so that the base
         # scheduler does not see them. This lets us ensure that the set of
         # requests scheduled have at least one common warmup shape.
-        self.holdback_queue: Deque[Request] = deque()
+        self.holdback_queue: deque[Request] = deque()
 
         self.rejected_requests: set[str] = set()
 
@@ -176,7 +176,7 @@ class SpyreScheduler(Scheduler):
         return reject_outputs
 
     def _reject_from_queue(self,
-                           queue: Deque[Request]) -> list[EngineCoreOutput]:
+                           queue: deque[Request]) -> list[EngineCoreOutput]:
         """Remove rejected requests from a given queue and return a list of 
         engine core outputs to return for them"""
         reject_outputs: list[EngineCoreOutput] = []

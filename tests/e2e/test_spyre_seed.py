@@ -4,7 +4,6 @@ Run `python -m pytest tests/test_spyre_seed.py`.
 """
 
 import math
-from typing import Tuple
 
 import pytest
 from spyre_util import (generate_spyre_vllm_output, get_spyre_backend_list,
@@ -29,7 +28,7 @@ def test_seed(
     prompt: str,
     temperature: float,
     seed: int,
-    warmup_shape: Tuple[int, int, int],
+    warmup_shape: tuple[int, int, int],
     backend: str,
     vllm_version: str,
 ) -> None:

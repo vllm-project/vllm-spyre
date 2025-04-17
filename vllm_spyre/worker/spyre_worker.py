@@ -3,7 +3,7 @@ import json
 import os
 import platform
 import time
-from typing import List, Optional, Tuple
+from typing import Optional
 
 import torch
 import torch.distributed as dist
@@ -320,7 +320,7 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
                 only_last_token=True,
                 **extra_kwargs)
 
-    def determine_num_available_blocks(self) -> Tuple[int, int]:
+    def determine_num_available_blocks(self) -> tuple[int, int]:
         """Determine the number of available KV blocks.
 
         Swapping is not yet supported, so always return num_cpu_blocks=0.
@@ -361,7 +361,7 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
         return True
 
     @property
-    def kv_cache(self) -> Optional[List[List[torch.Tensor]]]:
+    def kv_cache(self) -> Optional[list[list[torch.Tensor]]]:
         return None
 
     def prepare_worker_input(
