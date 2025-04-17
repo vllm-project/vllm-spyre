@@ -42,7 +42,7 @@ override-dependencies = [
 ]
 
 [tool.uv.sources]
-vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.8.3" }
+vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.8.4" }
 
 [tool.ruff]
 # Allow lines to be as long as 80.
