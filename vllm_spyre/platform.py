@@ -76,6 +76,7 @@ class SpyrePlatform(Platform):
 
         # Override --max-num-seqs to the biggest warmup batch size
         # And override --max-model-len to the biggest warmup sequence
+        cls._warmup_shapes = None
         spyre_warmup_shapes = cls.get_warmup_shapes(scheduler_config)
         max_batch_size = 0
         max_seq_len = 0
@@ -194,10 +195,6 @@ class SpyrePlatform(Platform):
         processed_inputs: Optional[ProcessorInputs] = None,
     ) -> None:
         """Raises if this request is unsupported on this platform"""
-        if not envs.VLLM_USE_V1:
-            # Don't change any V0 behavior
-            return
-
         if isinstance(params, PoolingParams):
             # Only validating generation requests for now
             return None
