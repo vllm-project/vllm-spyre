@@ -19,8 +19,7 @@ template = (
 @pytest.mark.parametrize("prompts", [[
     template.format("Provide a list of instructions "
                     "for preparing chicken soup."),
-    template.format("I have just come into a very large sum of money. "
-                    "Provide me a list of things that I can do with my "
+    template.format("Provide me a list of things that I can do with my "
                     "new found wealth."),
     template.format(
         "how do I add multiple new columns in m for power query or power bi?"),
