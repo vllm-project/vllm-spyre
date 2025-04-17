@@ -54,6 +54,9 @@ class SpyreCausalLM(nn.Module):
         # False for finished or padded sequences
         self.indices = None
 
+        # number of right pads (relevant for continuous batching only)
+        self.n_pads_right = 0
+
         # FMS Model
         fms_model = ContinuousBatchingFmsModel if envs_spyre.VLLM_SPYRE_USE_CB\
             else StaticBatchingFmsModel
@@ -97,12 +100,20 @@ class SpyreCausalLM(nn.Module):
             position_ids=positions,
             mask=masks,
             use_cache=True,
-            only_last_token=True,
+            only_last_token=not envs_spyre.VLLM_SPYRE_USE_CB,
             **extra_kwargs,
         )
 
-        # removing finished or padded sequences
-        logits = logits[self.indices]
+        if envs_spyre.VLLM_SPYRE_USE_CB:
+            if is_prompt and self.n_pads_right > 0:
+                # get last token before the right padding
+                logits = logits[self.indices, -self.n_pads_right - 1, :]
+            else:
+                # just take last token if no right padding
+                logits = logits[self.indices, -1, :]
+        else:
+            # removing finished or padded sequences
+            logits = logits[self.indices]
 
         return logits
 
