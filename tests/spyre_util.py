@@ -7,6 +7,7 @@ from typing import Any, Optional, Union
 
 import numpy as np
 import openai
+import pytest
 import requests
 from sentence_transformers import SentenceTransformer, util
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -182,6 +183,55 @@ def generate_spyre_vllm_output(model: str, prompts: list[str],
         results.append(result)
 
     return results
+
+
+# Support for continuous batching
+def generate_cb_spyre_vllm_output(
+    model: str,
+    prompts: List[str],
+    max_model_len: int,
+    block_size: int,
+    sampling_params: Union[SamplingParams, List[SamplingParams]],
+    tensor_parallel_size: int,
+    backend: str,
+    max_num_seqs: int,
+    use_cb: int,
+    enable_v1_multiprocessing: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> List[Dict[str, Any]]:
+    with monkeypatch.context() as m:
+        m.setenv("VLLM_SPYRE_WARMUP_PROMPT_LENS", "64")
+        m.setenv("VLLM_SPYRE_WARMUP_NEW_TOKENS",
+                 str(sampling_params.max_tokens))
+
+        m.setenv("VLLM_SPYRE_USE_CB", str(use_cb))
+        m.setenv("VLLM_USE_V1", "1")
+
+        m.setenv("VLLM_ENABLE_V1_MULTIPROCESSING",
+                 str(enable_v1_multiprocessing))
+
+        m.setenv("VLLM_SPYRE_MAX_CONTEXT_LENGTH", str(max_model_len))
+        m.setenv("VLLM_SPYRE_MAX_BATCH_SIZE",
+                 str(max_num_seqs))  # defines max batch size
+        m.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+
+        vllm_model = LLM(
+            model=model,
+            tokenizer=model,
+            max_model_len=max_model_len,
+            block_size=block_size,
+            tensor_parallel_size=tensor_parallel_size,
+        )
+
+        vllm_outputs = vllm_model.generate(prompts, sampling_params)
+        results = []
+
+        for req_output in vllm_outputs:
+            result = {}
+            result["text"] = req_output.outputs[0].text
+            results.append(result)
+
+        return results
 
 
 # Hugging Face
