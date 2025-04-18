@@ -9,6 +9,8 @@ if TYPE_CHECKING:
     VLLM_SPYRE_USE_CB: bool = False
     VLLM_SPYRE_MAX_BATCH_SIZE: int = 0
     VLLM_SPYRE_MAX_CONTEXT_LENGTH: int = 0
+    VLLM_SPYRE_PERF_METRIC_LOGGING_ENABLED: int = 0
+    VLLM_SPYRE_PERF_METRIC_LOGGING_DIR: str = "/tmp"
 
 environment_variables: dict[str, Callable[[], Any]] = {
     # Defines the prompt lengths the Spyre accelerator should be prepared
@@ -55,6 +57,16 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Maximal supported context length
     "VLLM_SPYRE_MAX_CONTEXT_LENGTH":
     lambda: int(os.getenv("VLLM_SPYRE_MAX_CONTEXT_LENGTH", "0")),
+
+    # Enable performance metric logging. This captures startup information
+    # such as warmup times, and loading times. It is turned off by default.
+    "VLLM_SPYRE_PERF_METRIC_LOGGING_ENABLED":
+    lambda: int(os.getenv("VLLM_SPYRE_PERF_METRIC_LOGGING_ENABLED", 0)),
+
+    # Directory to write performance metric logging files. By default,
+    # logs are written to /tmp.
+    "VLLM_SPYRE_PERF_METRIC_LOGGING_DIR":
+    lambda: os.getenv("VLLM_SPYRE_PERF_METRIC_LOGGING_DIR", "/tmp"),
 }
 
 
