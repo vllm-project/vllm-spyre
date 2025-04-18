@@ -3,8 +3,11 @@ import time
 
 from vllm import LLM, SamplingParams
 
-max_tokens1 = 10
-max_tokens2 = 5
+# RUN with fms branch: https://github.com/foundation-model-stack/
+# foundation-model-stack/tree/paged_attn_mock
+
+max_tokens1 = 65
+max_tokens2 = 67
 max_tokens3 = 7
 max_tokens = max([max_tokens1, max_tokens2, max_tokens3])
 max_num_seqs = 2  # defines max batch size
