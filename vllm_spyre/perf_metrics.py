@@ -7,7 +7,7 @@ import vllm_spyre.envs as envs
 
 def create_perf_metric_logger(rank: int):
     """ Create a performance metric logging object. """
-    if envs.VLLM_SPYRE_PERF_METRIC_LOGGING_ENABLE == 1:
+    if envs.VLLM_SPYRE_PERF_METRIC_LOGGING_ENABLED == 1:
         return SpyrePerfMetricFileLogger(rank)
     return SpyrePerfMetricLoggerBase(rank)
 
@@ -35,8 +35,9 @@ class SpyrePerfMetricFileLogger(SpyrePerfMetricLoggerBase):
         self.time_fmt = "%m-%d %H:%M:%S"
         self.log_path = os.path.join(envs.VLLM_SPYRE_PERF_METRIC_LOGGING_DIR,
                                      f"perf_log_rank_{str(rank)}.txt")
-        # Note, this file is closed during object deletion.
-        self.file = open(self.log_path, "w", buffering=1)  # noqa: SIM115
+        # Cleanup previous metrics files
+        if os.path.exists(self.log_path):
+            os.remove(self.log_path)
         # Output configuration variables to ease understanding of logs
         self.log("VLLM_SPYRE_USE_CB", envs.VLLM_SPYRE_USE_CB)
         self.log("VLLM_SPYRE_WARMUP_BATCH_SIZES",
@@ -48,12 +49,10 @@ class SpyrePerfMetricFileLogger(SpyrePerfMetricLoggerBase):
         self.log("AIU_WORLD_SIZE", os.getenv("AIU_WORLD_SIZE", 0))
         self.log("DT_OPT", os.getenv("DT_OPT", ""))
 
-    def __del__(self):
-        self.file.close()
-
     def log(self, description: str, value, **kwargs):
         text = f"{time.strftime(self.time_fmt)}, {description}, {value}"
         for kw in kwargs:
             text += f", {kw}, {kwargs[kw]}"
         text += "\n"
-        self.file.write(text)
+        with open(self.log_path, "a") as f:
+            f.write(text)
