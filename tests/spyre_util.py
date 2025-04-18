@@ -458,3 +458,23 @@ def get_spyre_model_list(isEmbeddings=False, quantization=None):
     for model in user_test_model_list.split(","):
         test_model_list.append(f"{spyre_model_dir_path}/{model.strip()}")
     return test_model_list
+
+
+def create_text_prompt(model: str, min_tokens: int, max_tokens: int) -> str:
+    """Create a text prompt for the specified model that will tokenize to within
+    the specified token length range."""
+    tokenizer = AutoTokenizer.from_pretrained(model)
+    pepper = "🌶️"
+    pepper_tokens = len(tokenizer.encode(pepper, add_special_tokens=False))
+
+    # Find a good starting number of peppers
+    prompt = pepper * (min_tokens // pepper_tokens + 1)
+
+    # And add more until we're over the minimum token length
+    while len(tokenizer.encode(prompt)) < min_tokens:
+        prompt += pepper
+
+    # Make sure this prompt is within the specified range
+    assert min_tokens < len(tokenizer.encode(prompt)) < max_tokens
+
+    return prompt

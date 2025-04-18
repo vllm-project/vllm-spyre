@@ -4,9 +4,8 @@ Run `python -m pytest tests/test_spyre_max_prompt_length.py`.
 """
 
 import pytest
-from spyre_util import (get_spyre_backend_list, get_spyre_model_list,
-                        patch_warmup_shapes)
-from transformers import AutoTokenizer
+from spyre_util import (create_text_prompt, get_spyre_backend_list,
+                        get_spyre_model_list, patch_warmup_shapes)
 from vllm import LLM, SamplingParams
 
 
@@ -26,6 +25,8 @@ def test_max_prompt_length(model: str, warmup_shapes: list[tuple[int, int,
     - prompts cannot exceed the maximu prompt length of all warmup shapes
     - max_tokens cannot exceed the max new token length of the matching warmup 
         shape
+
+    These two cases are combined to reduce the cost of starting each `LLM`
     '''
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     patch_warmup_shapes(warmup_shapes, monkeypatch)
@@ -35,15 +36,12 @@ def test_max_prompt_length(model: str, warmup_shapes: list[tuple[int, int,
     max_new_tokens = max([t[1] for t in warmup_shapes])
     llm = LLM(model)
 
-    # Craft a request with a prompt that is too long, but where prompt_len +
-    # max_tokens is still
-    hf_tokenizer = AutoTokenizer.from_pretrained(model)
-    pepper = "🌶️"
-    pepper_tokens = len(hf_tokenizer.encode(pepper, add_special_tokens=False))
-
-    prompt = " ".join([pepper] * (max_prompt_length // pepper_tokens + 1))
-    prompt_len = len(hf_tokenizer.encode(prompt))
-    assert max_prompt_length < prompt_len < max_prompt_length + max_new_tokens
+    # Craft a request with a prompt that is slightly too long for the warmup
+    # shape
+    prompt = create_text_prompt(model,
+                                min_tokens=max_prompt_length,
+                                max_tokens=max_prompt_length + max_new_tokens -
+                                1)
     sampling_params = SamplingParams(max_tokens=1)
 
     try:
@@ -57,7 +55,7 @@ def test_max_prompt_length(model: str, warmup_shapes: list[tuple[int, int,
 
     # Craft a request with a prompt that fits, but where too many tokens are
     # requested
-    prompt = pepper
+    prompt = "hello"
     sampling_params = SamplingParams(max_tokens=max_new_tokens + 1)
     try:
         results = llm.generate(prompts=[prompt],
