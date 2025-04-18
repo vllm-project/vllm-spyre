@@ -41,7 +41,7 @@ def test_max_prompt_length(model: str, warmup_shapes: list[tuple[int, int,
     pepper = "🌶️"
     pepper_tokens = len(hf_tokenizer.encode(pepper, add_special_tokens=False))
 
-    prompt = pepper * (max_prompt_length // pepper_tokens + 1)
+    prompt = " ".join([pepper] * (max_prompt_length // pepper_tokens + 1))
     prompt_len = len(hf_tokenizer.encode(prompt))
     assert max_prompt_length < prompt_len < max_prompt_length + max_new_tokens
     sampling_params = SamplingParams(max_tokens=1)
