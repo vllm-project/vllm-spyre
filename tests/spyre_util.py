@@ -132,6 +132,20 @@ class RemoteOpenAIServer:
                                   **kwargs)
 
 
+def patch_warmup_shapes(warmup_shapes: list[tuple[int, int, int]],
+                        monkeypatch):
+    warmup_prompt_length = [t[0] for t in warmup_shapes]
+    warmup_new_tokens = [t[1] for t in warmup_shapes]
+    warmup_batch_size = [t[2] for t in warmup_shapes]
+
+    monkeypatch.setenv('VLLM_SPYRE_WARMUP_PROMPT_LENS',
+                       ','.join(str(val) for val in warmup_prompt_length))
+    monkeypatch.setenv('VLLM_SPYRE_WARMUP_NEW_TOKENS',
+                       ','.join(str(val) for val in warmup_new_tokens))
+    monkeypatch.setenv('VLLM_SPYRE_WARMUP_BATCH_SIZES',
+                       ','.join(str(val) for val in warmup_batch_size))
+
+
 # vLLM / Spyre
 def generate_spyre_vllm_output(model: str, prompts: list[str],
                                warmup_shapes: list[tuple[int, int, int]],
