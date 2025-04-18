@@ -16,7 +16,7 @@ from vllm import LLM, SamplingParams
                      (128, 20, 4)]])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("vllm_version", ["V0", "V1"])
-def test_max_prompt_length(model: str, warmup_shapes: list[tuple[int, int,
+def test_max_prompt_len_and_new_tokens(model: str, warmup_shapes: list[tuple[int, int,
                                                                  int]],
                            backend: str, vllm_version: str,
                            monkeypatch) -> None:
