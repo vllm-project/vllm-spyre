@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import time
+from pathlib import Path
 from typing import Any, Optional, Union
 
 import numpy as np
@@ -405,10 +406,10 @@ def compare_embedding_results(model: str, prompts: list[str],
         assert math.isclose(sim, 1.0, rel_tol=0.05)
 
 
-# get model directory path from env, if not set then default to "/models".
-def get_spyre_model_dir_path():
-    model_dir_path = os.environ.get("VLLM_SPYRE_TEST_MODEL_DIR", "/models")
-    return model_dir_path
+# get model directory path from env, if not set then default to "models".
+def get_spyre_model_dir_path() -> Path:
+    model_dir_path = os.environ.get("VLLM_SPYRE_TEST_MODEL_DIR", "models")
+    return Path(model_dir_path)
 
 
 # get model backend from env, if not set then default to "eager"
@@ -442,5 +443,5 @@ def get_spyre_model_list(isEmbeddings=False, quantization=None):
                                               "llama-194m")
 
     for model in user_test_model_list.split(","):
-        test_model_list.append(f"{spyre_model_dir_path}/{model.strip()}")
+        test_model_list.append(str(spyre_model_dir_path / model.strip()))
     return test_model_list
