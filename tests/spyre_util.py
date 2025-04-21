@@ -218,10 +218,8 @@ def generate_hf_output(
         result['tokens'] = []
         result['logprobs'] = []
         for tok_index, hf_logprob in enumerate(hf_transition_scores[0]):
-
             hf_token_id = hf_output.sequences[0][tok_index +
                                                  len(hf_input_tokens[0])]
-
             result['token_ids'].append(hf_token_id.item())
             result['tokens'].append(hf_tokenizer.decode(hf_token_id))
             result['logprobs'].append(hf_logprob.item())
@@ -276,8 +274,8 @@ def compare_results(model: str, prompts: list[str],
             for hf_token, hf_token_id, hf_logprob, vllm_token,\
                  vllm_token_id, vllm_logprob in zip(
                     hf_result['tokens'], hf_result['token_ids'],
-                    hf_result['token_ids'], vllm_result['tokens'],
-                    vllm_result['token_ids'], vllm_result['token_ids']):
+                    hf_result['logprobs'], vllm_result['tokens'],
+                    vllm_result['token_ids'], vllm_result['logprobs']):
                 logprob_abs_diff = math.fabs(hf_logprob - vllm_logprob)
                 logprob_abs_diff_list.append(logprob_abs_diff)
                 logprob_rel_diff = math.fabs(logprob_abs_diff / hf_logprob)
