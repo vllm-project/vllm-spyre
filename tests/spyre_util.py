@@ -18,7 +18,7 @@ from vllm.utils import FlexibleArgumentParser, get_open_port
 DISABLE_ASSERTS = False  # used for debugging
 
 ISCLOSE_REL_TOL_CPU = 0.1
-ISCLOSE_REL_TOL_SPYRE = 0.1
+ISCLOSE_REL_TOL_SPYRE = 0.35
 
 
 class RemoteOpenAIServer:

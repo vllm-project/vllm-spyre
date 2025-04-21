@@ -9,6 +9,11 @@ from spyre_util import (compare_results, generate_hf_output,
                         get_spyre_model_list)
 from vllm import SamplingParams
 
+template = (
+    "Below is an instruction that describes a task. Write a response that "
+    "appropriately completes the request. Be polite in your response to the "
+    "user.\n\n### Instruction:\n{}\n\n### Response:")
+
 
 # Basic test to make sure we return the model_list correctly
 def test_get_spyre_model_list(monkeypatch):
@@ -30,9 +35,13 @@ def test_get_spyre_model_list(monkeypatch):
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("prompts", [[
-    "Provide a list of instructions for preparing"
-    " chicken soup for a family of four.", "Hello",
-    "What is the weather today like?", "Who are you?"
+    template.format("Provide a list of instructions "
+                    "for preparing chicken soup."),
+    template.format("Provide me a list of things that I can do with my "
+                    "new found wealth."),
+    template.format(
+        "how do I add multiple new columns in m for power query or power bi?"),
+    template.format("Convert char to string in Java."),
 ]])
 @pytest.mark.parametrize(
     "warmup_shape", [(64, 20, 4), (64, 20, 8), (128, 20, 4),
@@ -116,10 +125,10 @@ def test_batch_handling(
         "7 6 5 4",
         "10 9 8 7",
         "8 7 6 5",
-        "9 8 7 6",
+        "10 9 8 7 ",
     ]
-
     # Ensure that both:
+
     # - The model doesn't crash
     # - The output sequences are correct
     vllm_results = generate_spyre_vllm_output(
@@ -136,4 +145,4 @@ def test_batch_handling(
     assert vllm_results[0]["text"] == " 3 2 "
     assert vllm_results[1]["text"] == " 6 5 4 3 2 "
     assert vllm_results[2]["text"] == " 4 3 2 "
-    assert vllm_results[3]["text"] == " 5 4 3 2 "
+    assert vllm_results[3]["text"] == "6 5 4 3 2 "
