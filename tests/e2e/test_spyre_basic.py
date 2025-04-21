@@ -15,13 +15,11 @@ def test_get_spyre_model_list(monkeypatch):
     with monkeypatch.context() as m:
         m.setenv("VLLM_SPYRE_TEST_MODEL_DIR", "models")
         m.setenv("VLLM_SPYRE_TEST_MODEL_LIST", "llama-194m")
-        print(get_spyre_model_list())
         assert get_spyre_model_list()[0] == "models/llama-194m"
 
     with monkeypatch.context() as m:
         m.setenv("VLLM_SPYRE_TEST_MODEL_DIR", "")
         m.setenv("VLLM_SPYRE_TEST_MODEL_LIST", "llama-194m, all-roberta-large-v1")
-        print(get_spyre_model_list())
         assert get_spyre_model_list()[0] == "llama-194m"
         assert get_spyre_model_list()[1] == "all-roberta-large-v1"
 
