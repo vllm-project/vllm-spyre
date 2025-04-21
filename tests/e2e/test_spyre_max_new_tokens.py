@@ -14,9 +14,9 @@ template = (
     "appropriately completes the request. Be polite in your response to the "
     "user.\n\n### Instruction:\n{}\n\n### Response:")
 
-prompt1 = template.format("Provide a recipe for chicken soup.")
-prompt2 = template.format("Provide a list of instructions for preparing "
-                          "chicken soup for a family of four.")
+prompt1 = template.format(
+    "Provide a list of instructions for preparing chicken soup.")
+prompt2 = template.format("Explain to me why ignorance is bliss.")
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
