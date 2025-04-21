@@ -52,7 +52,7 @@ def test_max_prompt_len_and_new_tokens(model: str,
     except ValueError as e:
         # V1 will raise on vllm > 0.8.4
         assert vllm_version == "V1"
-        assert "matching" in str(e)
+        assert "warmup" in str(e)
 
     # Craft a request with a prompt that fits, but where too many tokens are
     # requested
@@ -65,4 +65,4 @@ def test_max_prompt_len_and_new_tokens(model: str,
     except ValueError as e:
         # V1 will raise on vllm > 0.8.4
         assert vllm_version == "V1"
-        assert "matching" in str(e)
+        assert "warmup" in str(e)
