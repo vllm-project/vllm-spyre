@@ -23,7 +23,7 @@ def test_max_prompt_len_and_new_tokens(model: str,
                                        monkeypatch) -> None:
     '''
     Simple test that for static batching:
-    - prompts cannot exceed the maximu prompt length of all warmup shapes
+    - prompts cannot exceed the maximum prompt length of all warmup shapes
     - max_tokens cannot exceed the max new token length of the matching warmup 
         shape
 
