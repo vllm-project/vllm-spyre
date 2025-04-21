@@ -133,6 +133,20 @@ class RemoteOpenAIServer:
                                   **kwargs)
 
 
+def patch_warmup_shapes(warmup_shapes: list[tuple[int, int, int]],
+                        monkeypatch):
+    warmup_prompt_length = [t[0] for t in warmup_shapes]
+    warmup_new_tokens = [t[1] for t in warmup_shapes]
+    warmup_batch_size = [t[2] for t in warmup_shapes]
+
+    monkeypatch.setenv('VLLM_SPYRE_WARMUP_PROMPT_LENS',
+                       ','.join(str(val) for val in warmup_prompt_length))
+    monkeypatch.setenv('VLLM_SPYRE_WARMUP_NEW_TOKENS',
+                       ','.join(str(val) for val in warmup_new_tokens))
+    monkeypatch.setenv('VLLM_SPYRE_WARMUP_BATCH_SIZES',
+                       ','.join(str(val) for val in warmup_batch_size))
+
+
 # vLLM / Spyre
 def generate_spyre_vllm_output(model: str, prompts: list[str],
                                warmup_shapes: list[tuple[int, int, int]],
@@ -445,3 +459,23 @@ def get_spyre_model_list(isEmbeddings=False, quantization=None):
     for model in user_test_model_list.split(","):
         test_model_list.append(str(spyre_model_dir_path / model.strip()))
     return test_model_list
+
+
+def create_text_prompt(model: str, min_tokens: int, max_tokens: int) -> str:
+    """Create a text prompt for the specified model that will tokenize to within
+    the specified token length range."""
+    tokenizer = AutoTokenizer.from_pretrained(model)
+    pepper = "🌶️"
+    pepper_tokens = len(tokenizer.encode(pepper, add_special_tokens=False))
+
+    # Find a good starting number of peppers
+    prompt = pepper * (min_tokens // pepper_tokens + 1)
+
+    # And add more until we're over the minimum token length
+    while len(tokenizer.encode(prompt)) < min_tokens:
+        prompt += pepper
+
+    # Make sure this prompt is within the specified range
+    assert min_tokens < len(tokenizer.encode(prompt)) < max_tokens
+
+    return prompt

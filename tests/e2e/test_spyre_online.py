@@ -2,7 +2,6 @@ import openai
 import pytest
 
 from tests.spyre_util import get_spyre_backend_list, get_spyre_model_list
-from vllm_spyre.v1.core.scheduler import NO_WARMUP_FIT_STOP_REASON
 
 
 def get_test_combinations():
@@ -59,16 +58,13 @@ def test_openai_serving(remote_openai_server, model, warmup_shape, backend,
 
     # Short prompt under context length but requesting too many tokens for
     # the warmup shape should return an empty result
-    completion = client.completions.create(model=model,
-                                           prompt="Hello World!",
-                                           max_tokens=25)
-
-    assert len(completion.choices) == 1
-
-    # TODO: V0 and V1 have slight different behavior for requests
-    # that do not fit in a warmup shape
-
-    assert len(completion.choices[0].text) == 0
-    if vllm_version == 'V1':
-        assert completion.choices[0].stop_reason == \
-            NO_WARMUP_FIT_STOP_REASON
+    try:
+        completion = client.completions.create(model=model,
+                                               prompt="Hello World!",
+                                               max_tokens=25)
+        # V1 should raise
+        assert vllm_version == "V0"
+        assert len(completion.choices) == 1
+        assert len(completion.choices[0].text) == 0
+    except openai.BadRequestError as e:
+        assert "warmup" in str(e)
