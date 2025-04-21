@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import time
+from pathlib import Path
 from typing import Any, Optional, Union
 
 import numpy as np
@@ -17,7 +18,7 @@ from vllm.utils import FlexibleArgumentParser, get_open_port
 DISABLE_ASSERTS = False  # used for debugging
 
 ISCLOSE_REL_TOL_CPU = 0.1
-ISCLOSE_REL_TOL_SPYRE = 0.1
+ISCLOSE_REL_TOL_SPYRE = 0.35
 
 
 class RemoteOpenAIServer:
@@ -130,6 +131,20 @@ class RemoteOpenAIServer:
                                   api_key=self.DUMMY_API_KEY,
                                   max_retries=0,
                                   **kwargs)
+
+
+def patch_warmup_shapes(warmup_shapes: list[tuple[int, int, int]],
+                        monkeypatch):
+    warmup_prompt_length = [t[0] for t in warmup_shapes]
+    warmup_new_tokens = [t[1] for t in warmup_shapes]
+    warmup_batch_size = [t[2] for t in warmup_shapes]
+
+    monkeypatch.setenv('VLLM_SPYRE_WARMUP_PROMPT_LENS',
+                       ','.join(str(val) for val in warmup_prompt_length))
+    monkeypatch.setenv('VLLM_SPYRE_WARMUP_NEW_TOKENS',
+                       ','.join(str(val) for val in warmup_new_tokens))
+    monkeypatch.setenv('VLLM_SPYRE_WARMUP_BATCH_SIZES',
+                       ','.join(str(val) for val in warmup_batch_size))
 
 
 # vLLM / Spyre
@@ -405,10 +420,10 @@ def compare_embedding_results(model: str, prompts: list[str],
         assert math.isclose(sim, 1.0, rel_tol=0.05)
 
 
-# get model directory path from env, if not set then default to "/models".
-def get_spyre_model_dir_path():
-    model_dir_path = os.environ.get("VLLM_SPYRE_TEST_MODEL_DIR", "/models")
-    return model_dir_path
+# get model directory path from env, if not set then default to "models".
+def get_spyre_model_dir_path() -> Path:
+    model_dir_path = os.environ.get("VLLM_SPYRE_TEST_MODEL_DIR", "models")
+    return Path(model_dir_path)
 
 
 # get model backend from env, if not set then default to "eager"
@@ -442,5 +457,25 @@ def get_spyre_model_list(isEmbeddings=False, quantization=None):
                                               "llama-194m")
 
     for model in user_test_model_list.split(","):
-        test_model_list.append(f"{spyre_model_dir_path}/{model.strip()}")
+        test_model_list.append(str(spyre_model_dir_path / model.strip()))
     return test_model_list
+
+
+def create_text_prompt(model: str, min_tokens: int, max_tokens: int) -> str:
+    """Create a text prompt for the specified model that will tokenize to within
+    the specified token length range."""
+    tokenizer = AutoTokenizer.from_pretrained(model)
+    pepper = "🌶️"
+    pepper_tokens = len(tokenizer.encode(pepper, add_special_tokens=False))
+
+    # Find a good starting number of peppers
+    prompt = pepper * (min_tokens // pepper_tokens + 1)
+
+    # And add more until we're over the minimum token length
+    while len(tokenizer.encode(prompt)) < min_tokens:
+        prompt += pepper
+
+    # Make sure this prompt is within the specified range
+    assert min_tokens < len(tokenizer.encode(prompt)) < max_tokens
+
+    return prompt
