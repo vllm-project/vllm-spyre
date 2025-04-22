@@ -105,6 +105,9 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         # Lazy initialization: after load_model.
         self.model: nn.Module
 
+        # Flag to be turned off after warmup is complete
+        self.warmup_mode = True
+
     def get_model(self) -> nn.Module:
         return self.model
 
@@ -210,6 +213,10 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                                       dtype=torch.float16,
                                       use_mla=False)
         return {"foo": attn_spec}
+
+    def complete_warmup(self):
+        """Turn off warmup mode once the warmup is complete"""
+        self.warmup_mode = False
 
 
 class StaticBatchingSpyreModelRunner(SpyreModelRunner):
@@ -539,6 +546,10 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         """Yoinked from 
         https://github.com/foundation-model-stack/aiu-fms-testing-utils/pull/13
         """
+        if not self.warmup_mode:
+            # Only mark tensors when we're warming up and compiling the graphs
+            return
+
         # To produce like graphs during pre-fill, we mark the prefill
         # batch x seq as static, but relax this for decode for the seq
         if model_input.is_prompt:
