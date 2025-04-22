@@ -278,12 +278,15 @@ class ContinuousBatchingFmsModel(FmsModelBase):
 
         if self.config.model_type == 'llama':
             num_layers = self.config.num_hidden_layers
-            num_kv_heads = self.config.num_key_value_heads
+            num_kv_heads = max(
+                1, self.config.num_key_value_heads //
+                parallel_config.tensor_parallel_size)
             head_dim = self.config.hidden_size // \
                 self.config.num_attention_heads
         elif self.config.model_type == 'gpt_bigcode':
             num_layers = self.config.n_layer
-            num_kv_heads = 1 if self.config.multi_query else self.config.n_head
+            num_kv_heads = 1 if self.config.multi_query else max(
+                1, self.config.n_head // parallel_config.tensor_parallel_size)
             head_dim = self.config.n_embd // self.config.n_head
         else:
             print(f"[SpyreCausalLM] model type {self.config.model_type} "
