@@ -276,14 +276,14 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         max_batch = envs_spyre.VLLM_SPYRE_MAX_BATCH_SIZE
         max_model_len = envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH
 
+        num_kv_heads = model_config.get_num_kv_heads(parallel_config)
+
         if self.config.model_type == 'llama':
             num_layers = self.config.num_hidden_layers
-            num_kv_heads = self.config.num_key_value_heads
             head_dim = self.config.hidden_size // \
                 self.config.num_attention_heads
         elif self.config.model_type == 'gpt_bigcode':
             num_layers = self.config.n_layer
-            num_kv_heads = 1 if self.config.multi_query else self.config.n_head
             head_dim = self.config.n_embd // self.config.n_head
         else:
             print(f"[SpyreCausalLM] model type {self.config.model_type} "
