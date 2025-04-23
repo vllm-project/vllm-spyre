@@ -3,7 +3,7 @@ import json
 import os
 import platform
 import time
-from typing import Optional
+from typing import Optional, Union
 
 import torch
 import torch.distributed as dist
@@ -146,7 +146,9 @@ class SpyreWorker(WorkerBaseV1):
             # note: lazy import to avoid importing torch before initializing
             from vllm.utils import init_cached_hf_modules
             init_cached_hf_modules()
-
+        self.model_runner: \
+            Union[StaticBatchingSpyreModelRunner,
+                  ContinuousBatchingSpyreModelRunner]
         if self.model_config.task == "embed":
             raise NotImplementedError
         else:
