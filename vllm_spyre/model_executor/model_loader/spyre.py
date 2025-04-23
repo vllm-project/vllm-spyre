@@ -168,11 +168,6 @@ class FmsModelBase(nn.Module):
         **kwargs,
     ) -> None:
 
-        if self.dtype is not model_config.dtype:
-            logger.info(
-                "Ignoring user-provided dtype=%s and using dtype=%s instead.",
-                model_config.dtype, self.dtype)
-
         if model_config.quantization == "gptq":
             if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
                 from fms_mo.aiu_addons.gptq import (  # noqa: F401
@@ -190,12 +185,16 @@ class FmsModelBase(nn.Module):
                 "group_size": quant_cfg['group_size'],
                 "desc_act": quant_cfg['desc_act'],
             }
-            data_type = None
+            self.dtype = None
             model_source = "hf_gptq_aiu"
         else:
             linear_config = {"linear_type": "torch_linear"}
-            data_type = self.dtype
             model_source = "hf"
+
+        if self.dtype is not model_config.dtype:
+            logger.info(
+                "Ignoring user-provided dtype=%s and using dtype=%s instead.",
+                model_config.dtype, self.dtype)
 
         is_local = os.path.isdir(model_config.model)
         model_path = model_config.model
@@ -214,7 +213,7 @@ class FmsModelBase(nn.Module):
                                variant=model_config.model,
                                model_path=model_path,
                                source=model_source,
-                               data_type=data_type,
+                               data_type=self.dtype,
                                distributed_strategy=distributed_strategy,
                                group=dist.group.WORLD,
                                fused_weights=fused_weights,
@@ -275,10 +274,9 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         # physical KV cache on AIU Spyre: will eventually not live in this class
         max_batch = envs_spyre.VLLM_SPYRE_MAX_BATCH_SIZE
         max_model_len = envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH
-
         num_kv_heads = model_config.get_num_kv_heads(parallel_config)
 
-        if self.config.model_type == 'llama':
+        if self.config.model_type in {'llama', 'granite'}:
             num_layers = self.config.num_hidden_layers
             head_dim = self.config.hidden_size // \
                 self.config.num_attention_heads
@@ -294,19 +292,17 @@ class ContinuousBatchingFmsModel(FmsModelBase):
 
         # List[layers] of Tuple[k,v] of
         # Tensor[NUM_BLOCKS, BLOCK_SIZE, num_kv_heads, max_model_len, head_dim]
-        self.past_key_value_states = [
-            (torch.zeros(NUM_BLOCKS,
-                         BLOCK_SIZE,
-                         num_kv_heads,
-                         head_dim,
-                         dtype=self.config.torch_dtype),
-             torch.zeros(NUM_BLOCKS,
-                         BLOCK_SIZE,
-                         num_kv_heads,
-                         head_dim,
-                         dtype=self.config.torch_dtype))
-            for _ in range(num_layers)
-        ]
+        self.past_key_value_states = [(torch.zeros(NUM_BLOCKS,
+                                                   BLOCK_SIZE,
+                                                   num_kv_heads,
+                                                   head_dim,
+                                                   dtype=self.dtype),
+                                       torch.zeros(NUM_BLOCKS,
+                                                   BLOCK_SIZE,
+                                                   num_kv_heads,
+                                                   head_dim,
+                                                   dtype=self.dtype))
+                                      for _ in range(num_layers)]
 
     def forward(
         self,
