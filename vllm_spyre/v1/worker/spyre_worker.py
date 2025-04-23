@@ -89,6 +89,7 @@ class SpyreWorker(WorkerBaseV1):
             "All warmups for %d different prompt/decode/batchsize-shape "
             "combinations finished. Total warmup time %.3fs.",
             len(wup_new_tokens), all_warmup_total_t)
+        self.model_runner.complete_warmup()
 
     def check_health(self) -> None:
         """Basic health check (override for device-specific checks)."""

@@ -113,6 +113,9 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         # Lazy initialization: after load_model.
         self.model: nn.Module
 
+        # Flag to be turned off after warmup is complete
+        self.warmup_mode = True
+
     def get_model(self) -> nn.Module:
         return self.model
 
@@ -218,6 +221,10 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                                       dtype=torch.float16,
                                       use_mla=False)
         return {"foo": attn_spec}
+
+    def complete_warmup(self):
+        """Turn off warmup mode once the warmup is complete"""
+        self.warmup_mode = False
 
 
 class StaticBatchingSpyreModelRunner(SpyreModelRunner):
@@ -431,6 +438,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         self._update_states(scheduler_output)
 
         model_input = self.prepare_model_input(scheduler_output)
+        self._mark_input_tensors(model_input)
 
         # TODO(Wallas): I think it would be better move the indices as argument
         # of the forward rather than set as an attribute of the model. I'm not
@@ -541,6 +549,36 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
             'prompt_length']
         padded_batch_size = applicable_spyre_warmup_shapes[0]['batch_size']
         return padded_batch_size, min_pad_length_batch
+
+    def _mark_input_tensors(self, model_input: ModelInputForSpyre) -> None:
+        """Yoinked from 
+        https://github.com/foundation-model-stack/aiu-fms-testing-utils/pull/13
+        """
+        if not self.warmup_mode:
+            # Only mark tensors when we're warming up and compiling the graphs
+            return
+
+        # To produce like graphs during pre-fill, we mark the prefill
+        # batch x seq as static, but relax this for decode for the seq
+        if model_input.is_prompt:
+            # we always want prefill to be static to produce same-like graph
+            torch._dynamo.mark_static(model_input.input_tokens, 0)
+            torch._dynamo.mark_static(model_input.input_tokens, 1)
+            torch._dynamo.mark_static(model_input.input_masks, 0)
+            torch._dynamo.mark_static(model_input.input_masks, 1)
+            torch._dynamo.mark_static(model_input.input_masks, 2)
+            torch._dynamo.mark_static(model_input.input_positions, 0)
+            torch._dynamo.mark_static(model_input.input_positions, 1)
+        else:
+            # we always want the decode to be dynamic on sequence
+            torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
+            torch._dynamo.mark_dynamic(model_input.input_masks, 1)
+            torch._dynamo.mark_dynamic(model_input.input_masks, 2)
+
+            # here self.model.model is a StaticBatchingFmsModel
+            for layer in self.model.model.past_key_value_states:
+                for tensor in layer:
+                    torch._dynamo.mark_static(tensor, 0)
 
 
 class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
