@@ -10,7 +10,8 @@ def get_test_combinations():
 
     # Base model tests across all backends
     for backend_param in get_spyre_backend_list():
-        backend = backend_param.values[0] # Pulls out the val from ParameterSet
+        backend = backend_param.values[
+            0]  # Pulls out the val from ParameterSet
         for model_param in get_spyre_model_list():
             model = model_param.values[0]
             marks = [pytest.mark.decoder]
