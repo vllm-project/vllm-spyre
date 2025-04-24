@@ -1,6 +1,7 @@
 import pytest
 from spyre_util import get_spyre_model_list
 
+
 @pytest.mark.util
 def test_get_spyre_model_list(monkeypatch):
     '''

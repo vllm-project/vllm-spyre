@@ -4,7 +4,7 @@ Run `python -m pytest tests/test_spyre_warmup_shapes.py`.
 """
 
 import pytest
-from spyre_util import (VLLM_VERSIONS, compare_results, generate_hf_output,
+from spyre_util import (compare_results, generate_hf_output,
                         generate_spyre_vllm_output, get_spyre_backend_list,
                         get_spyre_model_list)
 from vllm import SamplingParams
@@ -26,8 +26,8 @@ from vllm import SamplingParams
     "warmup_shapes", [[(64, 20, 8),
                        (128, 20, 4)]])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("vllm_version", [pytest.param("V1", marks=pytest.mark.v1, id="v1")])
-
+@pytest.mark.parametrize("vllm_version",
+                         [pytest.param("V1", marks=pytest.mark.v1, id="v1")])
 def test_output(
     model: str,
     prompts: list[str],
