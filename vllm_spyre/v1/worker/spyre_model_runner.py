@@ -52,7 +52,7 @@ class ModelInputForSpyre(ModelRunnerInputBase):
     input_tokens: Optional[torch.Tensor] = None
     input_positions: Optional[torch.Tensor] = None
     input_masks: Optional[torch.Tensor] = None
-    partial_page_tkv_mask: Optional[torch.Tensor] = None
+    current_tkv_mask: Optional[torch.Tensor] = None
     left_padded_prompt_mask: Optional[torch.Tensor] = None
     block_table: Optional[torch.Tensor] = None
     slot_mapping: Optional[torch.Tensor] = None
@@ -67,7 +67,7 @@ class ModelInputForSpyre(ModelRunnerInputBase):
             "input_tokens": self.input_tokens,
             "input_positions": self.input_positions,
             "input_masks": self.input_masks,
-            "partial_page_tkv_mask": self.partial_page_tkv_mask,
+            "current_tkv_mask": self.current_tkv_mask,
             "left_padded_prompt_mask": self.left_padded_prompt_mask,
             "block_table": self.block_table,
             "slot_mapping": self.slot_mapping,
@@ -667,10 +667,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         mask = mask.unsqueeze(1)
 
         # not needed for prefil
-        partial_page_tkv_mask = None
+        current_tkv_mask = None
         left_padded_prompt_mask = None
 
-        return input_tokens, position_ids, mask, partial_page_tkv_mask, \
+        return input_tokens, position_ids, mask, current_tkv_mask, \
             left_padded_prompt_mask, block_table, slot_mapping
 
     def _prepare_decode(
@@ -723,16 +723,16 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         slot_mapping = torch.tensor(slot_mapping, dtype=torch.int64)
         block_table = torch.tensor(block_table, dtype=torch.int64)
 
-        # todo: check if always position id + 1
-        partial_page_tkv_mask = (position_ids + 1).reshape((-1, ))
-
         # not needed for decode
         mask = None
 
         # update tkv
         self.tkv = self.tkv + 1
 
-        return input_tokens, position_ids, mask, partial_page_tkv_mask, \
+        current_tkv_mask = torch.tensor([self.tkv] * input_tokens.shape[0],
+                                        dtype=torch.int64)
+
+        return input_tokens, position_ids, mask, current_tkv_mask, \
             left_padded_prompt_mask, block_table, slot_mapping
 
     def pad_input_ids(
@@ -813,12 +813,12 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         # Prepare input tensors.
         if is_prompt:
-            (input_tokens, input_positions, input_masks, partial_page_tkv_mask,
+            (input_tokens, input_positions, input_masks, current_tkv_mask,
              left_padded_prompt_mask, block_table, slot_mapping) = \
                 self._prepare_prompt(scheduler_output.scheduled_new_reqs)
             num_reqs = len(scheduler_output.scheduled_new_reqs)
         else:
-            (input_tokens, input_positions, input_masks, partial_page_tkv_mask,
+            (input_tokens, input_positions, input_masks, current_tkv_mask,
              left_padded_prompt_mask, block_table, slot_mapping) = \
                 self._prepare_decode(scheduler_output.scheduled_cached_reqs)
             num_reqs = len(scheduler_output.scheduled_cached_reqs)
@@ -853,7 +853,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             input_masks=input_masks,
             sampling_metadata=dummy_metadata,
             is_prompt=is_prompt,
-            partial_page_tkv_mask=partial_page_tkv_mask,
+            current_tkv_mask=current_tkv_mask,
             left_padded_prompt_mask=left_padded_prompt_mask,
             block_table=block_table,
             slot_mapping=slot_mapping)
@@ -908,7 +908,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             torch._dynamo.mark_dynamic(model_input.block_table, 0)
             torch._dynamo.mark_dynamic(model_input.slot_mapping, 0)
             torch._dynamo.mark_dynamic(model_input.input_positions, 0)
-            torch._dynamo.mark_dynamic(model_input.partial_page_tkv_mask, 0)
+            torch._dynamo.mark_dynamic(model_input.current_tkv_mask, 0)
             torch._dynamo.mark_dynamic(model_input.left_padded_prompt_mask, 0)
 
             # sequence
@@ -924,7 +924,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             positions=model_input.input_positions,
             masks=model_input.input_masks,
             is_prompt=model_input.is_prompt,
-            partial_page_tkv_mask=model_input.partial_page_tkv_mask,
+            current_tkv_mask=model_input.current_tkv_mask,
             left_padded_prompt_mask=model_input.left_padded_prompt_mask,
             block_table=model_input.block_table,
             slot_mapping=model_input.slot_mapping)

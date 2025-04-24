@@ -73,7 +73,7 @@ class SpyreCausalLM(nn.Module):
         positions: torch.Tensor,
         masks: torch.Tensor,
         is_prompt: bool,
-        partial_page_tkv_mask: Optional[torch.Tensor] = None,
+        current_tkv_mask: Optional[torch.Tensor] = None,
         left_padded_prompt_mask: Optional[torch.Tensor] = None,
         block_table: Optional[torch.Tensor] = None,
         slot_mapping: Optional[torch.Tensor] = None,
@@ -89,7 +89,7 @@ class SpyreCausalLM(nn.Module):
             extra_kwargs["attn_algorithm"] = "math"
 
         if envs_spyre.VLLM_SPYRE_USE_CB:
-            extra_kwargs["partial_page_tkv_mask"] = partial_page_tkv_mask
+            extra_kwargs["current_tkv_mask"] = current_tkv_mask
             extra_kwargs["left_padded_prompt_mask"] = left_padded_prompt_mask
             extra_kwargs["block_table"] = block_table
             extra_kwargs["slot_mapping"] = slot_mapping
@@ -311,7 +311,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         mask: torch.Tensor,
         use_cache: bool,
         only_last_token: bool,
-        partial_page_tkv_mask: torch.Tensor,
+        current_tkv_mask: torch.Tensor,
         left_padded_prompt_mask: torch.Tensor,
         block_table: torch.Tensor,
         slot_mapping: torch.Tensor,
@@ -333,7 +333,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             past_key_value_states=self.past_key_value_states,
             use_cache=use_cache,
             only_last_token=only_last_token,
-            partial_page_tkv_mask=partial_page_tkv_mask,
+            current_tkv_mask=current_tkv_mask,
             left_padded_prompt_mask=left_padded_prompt_mask,
             block_table=block_table,
             slot_mapping=slot_mapping,
