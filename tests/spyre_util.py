@@ -462,7 +462,7 @@ def get_spyre_model_list(isEmbeddings=False, quantization=None):
     elif quantization == "gptq":
         user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST",
                                               "granite-3.0-8b-instruct-gptq")
-        marks = [pytest.mark.decoder, pytest.mark.quantized]
+        marks = [pytest.mark.decoder, pytest.mark.quantized, pytest.mark.spyre]
     else:
         user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST",
                                               "llama-194m")

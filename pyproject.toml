@@ -120,6 +120,7 @@ markers = [
     "spyre: Tests using Spyre hardware backend",
     "decoder: Tests for decoder models",
     "embedding: Tests for embedding models",
+    "quantized: Tests for quantized models",
     "multi: Tests that require >1 cards",
     "util: Tests for utility functions",
 ]
