@@ -4,7 +4,7 @@ Run `python -m pytest tests/test_spyre_basic.py`.
 """
 
 import pytest
-from spyre_util import (compare_results, generate_hf_output,
+from spyre_util import (VLLM_VERSIONS, compare_results, generate_hf_output,
                         generate_spyre_vllm_output, get_spyre_backend_list,
                         get_spyre_model_list)
 from vllm import SamplingParams
@@ -13,24 +13,6 @@ template = (
     "Below is an instruction that describes a task. Write a response that "
     "appropriately completes the request. Be polite in your response to the "
     "user.\n\n### Instruction:\n{}\n\n### Response:")
-
-
-# Basic test to make sure we return the model_list correctly
-def test_get_spyre_model_list(monkeypatch):
-    with monkeypatch.context() as m:
-        m.setenv("VLLM_SPYRE_TEST_MODEL_DIR", "models")
-        m.setenv("VLLM_SPYRE_TEST_MODEL_LIST", "llama-194m, " \
-                 "all-roberta-large-v1")
-        assert get_spyre_model_list()[0] == "models/llama-194m"
-        assert get_spyre_model_list()[1] == \
-        "models/all-roberta-large-v1"
-
-    with monkeypatch.context() as m:
-        m.setenv("VLLM_SPYRE_TEST_MODEL_DIR", "")
-        m.setenv("VLLM_SPYRE_TEST_MODEL_LIST", "llama-194m, " \
-            "all-roberta-large-v1")
-        assert get_spyre_model_list()[0] == "llama-194m"
-        assert get_spyre_model_list()[1] == "all-roberta-large-v1"
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
@@ -47,7 +29,7 @@ def test_get_spyre_model_list(monkeypatch):
     "warmup_shape", [(64, 20, 4), (64, 20, 8), (128, 20, 4),
                      (128, 20, 8)])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("vllm_version", ["V0", "V1"])
+@pytest.mark.parametrize("vllm_version", VLLM_VERSIONS)
 def test_output(
     model: str,
     prompts: list[str],
@@ -102,7 +84,7 @@ def test_output(
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("vllm_version", ["V0", "V1"])
+@pytest.mark.parametrize("vllm_version", VLLM_VERSIONS)
 def test_batch_handling(
     model: str,
     backend: str,

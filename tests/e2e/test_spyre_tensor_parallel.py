@@ -4,12 +4,13 @@ Run `python -m pytest tests/test_spyre_tensor_parallel.py`.
 """
 
 import pytest
-from spyre_util import (compare_results, generate_hf_output,
+from spyre_util import (VLLM_VERSIONS, compare_results, generate_hf_output,
                         generate_spyre_vllm_output, get_spyre_backend_list,
                         get_spyre_model_list)
 from vllm import SamplingParams
 
 
+@pytest.mark.multi
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("prompts", [[
     "Provide a list of instructions for preparing"
@@ -22,7 +23,7 @@ from vllm import SamplingParams
 # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("tp_size", [2])
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("vllm_version", ["V0", "V1"])
+@pytest.mark.parametrize("vllm_version", VLLM_VERSIONS)
 def test_output(
     model: str,
     prompts: list[str],

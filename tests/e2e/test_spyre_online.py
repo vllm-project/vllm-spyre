@@ -1,7 +1,8 @@
 import openai
 import pytest
 
-from tests.spyre_util import get_spyre_backend_list, get_spyre_model_list
+from tests.spyre_util import (VLLM_VERSIONS, get_spyre_backend_list,
+                              get_spyre_model_list)
 
 
 def get_test_combinations():
@@ -10,11 +11,21 @@ def get_test_combinations():
     # Base model tests across all backends
     for backend in get_spyre_backend_list():
         for model in get_spyre_model_list():
-            combinations.append((model, backend, None))
+            combinations.append(
+                pytest.param(model,
+                             backend,
+                             None,
+                             marks=[pytest.mark.decoder],
+                             id=f"{model}-{backend}"))
 
     # GPTQ model only tests on sendnn_decoder
     for model in get_spyre_model_list(quantization="gptq"):
-        combinations.append((model, "sendnn_decoder", "gptq"))
+        combinations.append(
+            pytest.param(model,
+                         "sendnn_decoder",
+                         "gptq",
+                         marks=[pytest.mark.quantized, pytest.mark.sendnn],
+                         id=f"{model}-sendnn-gptq"))
 
     return combinations
 
@@ -23,7 +34,7 @@ def get_test_combinations():
 @pytest.mark.parametrize("warmup_shape", [[
     (64, 20, 4),
 ]])
-@pytest.mark.parametrize("vllm_version", ["V0", "V1"])
+@pytest.mark.parametrize("vllm_version", VLLM_VERSIONS)
 def test_openai_serving(remote_openai_server, model, warmup_shape, backend,
                         vllm_version, quantization):
     """Test online serving using the `vllm serve` CLI"""

@@ -4,8 +4,9 @@ Run `python -m pytest tests/test_spyre_max_prompt_length.py`.
 """
 
 import pytest
-from spyre_util import (create_text_prompt, get_spyre_backend_list,
-                        get_spyre_model_list, patch_warmup_shapes)
+from spyre_util import (VLLM_VERSIONS, create_text_prompt,
+                        get_spyre_backend_list, get_spyre_model_list,
+                        patch_warmup_shapes)
 from vllm import LLM, SamplingParams
 
 
@@ -15,7 +16,7 @@ from vllm import LLM, SamplingParams
     [[(64, 20, 4)], [(64, 20, 4),
                      (128, 20, 4)]])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("vllm_version", ["V0", "V1"])
+@pytest.mark.parametrize("vllm_version", VLLM_VERSIONS)
 def test_max_prompt_len_and_new_tokens(model: str,
                                        warmup_shapes: list[tuple[int, int,
                                                                  int]],

@@ -6,8 +6,8 @@ Run `python -m pytest tests/test_spyre_seed.py`.
 import math
 
 import pytest
-from spyre_util import (generate_spyre_vllm_output, get_spyre_backend_list,
-                        get_spyre_model_list)
+from spyre_util import (VLLM_VERSIONS, generate_spyre_vllm_output,
+                        get_spyre_backend_list, get_spyre_model_list)
 from vllm import SamplingParams
 
 
@@ -22,7 +22,7 @@ from vllm import SamplingParams
     "warmup_shape", [(64, 20, 4), (64, 20, 8), (128, 20, 4),
                      (128, 20, 8)])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("vllm_version", ["V0", "V1"])
+@pytest.mark.parametrize("vllm_version", VLLM_VERSIONS)
 def test_seed(
     model: str,
     prompt: str,
