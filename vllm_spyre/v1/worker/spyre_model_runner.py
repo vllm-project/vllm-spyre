@@ -564,13 +564,14 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         else:
             # we always want the decode to be dynamic on sequence
             torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
-            torch._dynamo.mark_dynamic(model_input.input_masks, 1)
             torch._dynamo.mark_dynamic(model_input.input_masks, 2)
 
             # here self.model.model is a StaticBatchingFmsModel
             for layer in self.model.model.past_key_value_states:
                 for tensor in layer:
                     torch._dynamo.mark_static(tensor, 0)
+                    # This used to be baked into the model's forward pass
+                    torch._dynamo.mark_dynamic(tensor, 2)
 
 
 class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
