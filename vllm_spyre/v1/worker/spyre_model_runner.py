@@ -676,9 +676,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         return mask, position_ids
 
     def prepare_model_input(
-        self, scheduler_output: SchedulerOutput
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, SamplingMetadata,
-               bool]:
+            self, scheduler_output: SchedulerOutput) -> ModelInputForSpyre:
 
         # NOTE: We assume that all sequences in the group are all prompts or
         # all decodes.
@@ -725,12 +723,12 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             bad_words_token_ids=None,
         )
 
-        return (
-            input_tokens,
-            input_positions,
-            input_masks,
-            dummy_metadata,
-            is_prompt,
+        return ModelInputForSpyre(
+            input_tokens=input_tokens,
+            input_positions=input_positions,
+            input_masks=input_masks,
+            sampling_metadata=dummy_metadata,
+            is_prompt=is_prompt,
         )
 
     @SpyrePlatform.inference_mode()
@@ -741,19 +739,15 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
     ) -> ModelRunnerOutput:
 
         t0 = time.time()
-        input_tokens, input_positions, \
-        input_masks, sampling_metadata, \
-        is_prompt = (
-            self.prepare_model_input(scheduler_output)
-        )
+        model_input = self.prepare_model_input(scheduler_output)
 
         # Execute the model
         hidden_states = self.model(
-            input_ids=input_tokens,
-            positions=input_positions,
-            masks=input_masks,
-            is_prompt=is_prompt,
-            tkv=0 if is_prompt else self.tkv,
+            input_ids=model_input.input_tokens,
+            positions=model_input.input_positions,
+            masks=model_input.input_masks,
+            is_prompt=model_input.is_prompt,
+            tkv=0 if model_input.is_prompt else self.tkv,
             active_pages=self.active_pages,
         )
 
@@ -767,7 +761,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # Sample the next token.
         output: SamplerOutput = self.model.sample(
             logits=logits,
-            sampling_metadata=sampling_metadata,
+            sampling_metadata=model_input.sampling_metadata,
         )
         t1 = time.time() - t0
         logger.debug("t_token: %.2fms", (t1 * 1000))
