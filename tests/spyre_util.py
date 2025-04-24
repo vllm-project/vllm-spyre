@@ -22,8 +22,8 @@ ISCLOSE_REL_TOL_CPU = 0.1
 ISCLOSE_REL_TOL_SPYRE = 0.35
 
 VLLM_VERSIONS = [
-    pytest.param("v0", marks=pytest.mark.v0, id="v0"),
-    pytest.param("v1", marks=pytest.mark.v1, id="v1"),
+    pytest.param("V0", marks=pytest.mark.v0, id="v0"),
+    pytest.param("V1", marks=pytest.mark.v1, id="v1"),
 ]
 
 
