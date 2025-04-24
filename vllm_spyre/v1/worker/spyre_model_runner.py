@@ -1,6 +1,7 @@
 import time
 from collections.abc import Iterable
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Optional
 
 import torch
 from torch import nn
@@ -31,6 +32,18 @@ from vllm.v1.outputs import ModelRunnerOutput
 import vllm_spyre.envs as envs_spyre
 
 logger = init_logger(__name__)
+
+
+@dataclass(frozen=True)
+class ModelInputForSpyre:
+    """
+    Used by the SpyreModelRunner.
+    """
+    input_tokens: Optional[torch.Tensor] = None
+    input_positions: Optional[torch.Tensor] = None
+    input_masks: Optional[torch.Tensor] = None
+    sampling_metadata: Optional[SamplingMetadata] = None
+    is_prompt: Optional[bool] = None
 
 
 class SpyreModelRunner:
@@ -340,9 +353,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         self._mask = torch.stack(masks_new, dim=0)
 
     def prepare_model_input(
-        self, scheduler_output: SchedulerOutput
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, SamplingMetadata,
-               bool]:
+            self, scheduler_output: SchedulerOutput) -> ModelInputForSpyre:
 
         # NOTE: We assume that all sequences in the group are all prompts or
         # all decodes.
@@ -368,13 +379,11 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
 
         sampling_metadata = self.input_batch.sampling_metadata
 
-        return (
-            input_tokens,
-            input_positions,
-            input_masks,
-            sampling_metadata,
-            is_prompt,
-        )
+        return ModelInputForSpyre(input_tokens=input_tokens,
+                                  input_positions=input_positions,
+                                  input_masks=input_masks,
+                                  sampling_metadata=sampling_metadata,
+                                  is_prompt=is_prompt)
 
     @SpyrePlatform.inference_mode()
     def execute_model(
@@ -401,11 +410,8 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
 
         self._update_states(scheduler_output)
 
-        input_tokens, input_positions, input_masks, \
-            sampling_metadata, is_prompt = (
-            self.prepare_model_input(scheduler_output))
-        self._mark_input_tensors(is_prompt, input_tokens, input_masks,
-                                 input_positions)
+        model_input = self.prepare_model_input(scheduler_output)
+        self._mark_input_tensors(model_input)
 
         # TODO(Wallas): I think it would be better move the indices as argument
         # of the forward rather than set as an attribute of the model. I'm not
@@ -416,10 +422,10 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
 
         # Execute the model
         hidden_states = self.model(
-            input_ids=input_tokens,
-            positions=input_positions,
-            masks=input_masks,
-            is_prompt=is_prompt,
+            input_ids=model_input.input_tokens,
+            positions=model_input.input_positions,
+            masks=model_input.input_masks,
+            is_prompt=model_input.is_prompt,
         )
 
         # Only perform sampling in the driver worker.
@@ -432,7 +438,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         # Sample the next token.
         output: SamplerOutput = self.model.sample(
             logits=logits,
-            sampling_metadata=sampling_metadata,
+            sampling_metadata=model_input.sampling_metadata,
         )
         t1 = time.time() - t0
         logger.debug("t_token: %.2fms", (t1 * 1000))
@@ -518,8 +524,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         padded_batch_size = applicable_spyre_warmup_shapes[0]["batch_size"]
         return padded_batch_size, min_pad_length_batch
 
-    def _mark_input_tensors(self, is_prompt: bool, input_tokens, input_masks,
-                            input_positions) -> None:
+    def _mark_input_tensors(self, model_input: ModelInputForSpyre) -> None:
         """Yoinked from
         https://github.com/foundation-model-stack/aiu-fms-testing-utils/pull/13
         """
@@ -529,19 +534,19 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
 
         # To produce like graphs during pre-fill, we mark the prefill
         # batch x seq as static, but relax this for decode for the seq
-        if is_prompt:
+        if model_input.is_prompt:
             # we always want prefill to be static to produce same-like graph
-            torch._dynamo.mark_static(input_tokens, 0)
-            torch._dynamo.mark_static(input_tokens, 1)
-            torch._dynamo.mark_static(input_masks, 0)
-            torch._dynamo.mark_static(input_masks, 1)
-            torch._dynamo.mark_static(input_masks, 2)
-            torch._dynamo.mark_static(input_positions, 0)
-            torch._dynamo.mark_static(input_positions, 1)
+            torch._dynamo.mark_static(model_input.input_tokens, 0)
+            torch._dynamo.mark_static(model_input.input_tokens, 1)
+            torch._dynamo.mark_static(model_input.input_masks, 0)
+            torch._dynamo.mark_static(model_input.input_masks, 1)
+            torch._dynamo.mark_static(model_input.input_masks, 2)
+            torch._dynamo.mark_static(model_input.input_positions, 0)
+            torch._dynamo.mark_static(model_input.input_positions, 1)
         else:
             # we always want the decode to be dynamic on sequence
-            torch._dynamo.mark_dynamic(input_tokens, 1)
-            torch._dynamo.mark_dynamic(input_masks, 2)
+            torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
+            torch._dynamo.mark_dynamic(model_input.input_masks, 2)
 
             # here self.model.model is a StaticBatchingFmsModel
             for layer in self.model.model.past_key_value_states:
