@@ -6,6 +6,7 @@ from vllm.distributed import cleanup_dist_env_and_memory
 
 
 def pytest_collection_modifyitems(config, items):
+    """ Mark all tests in e2e directory"""
     for item in items:
         if "tests/e2e" in str(item.nodeid):
             item.add_marker(pytest.mark.e2e)
