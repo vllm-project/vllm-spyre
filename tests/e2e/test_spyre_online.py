@@ -9,11 +9,12 @@ def get_test_combinations():
     combinations = []
 
     # Base model tests across all backends
-    for backend in get_spyre_backend_list():
-        for model in get_spyre_model_list():
+    for backend_param in get_spyre_backend_list():
+        backend = backend_param.values[0] # Pulls out the val from ParameterSet
+        for model_param in get_spyre_model_list():
+            model = model_param.values[0]
             marks = [pytest.mark.decoder]
             if "eager" in backend:
-                # Include CPU marker with eager backend
                 marks.append(pytest.mark.cpu)
             combinations.append(
                 pytest.param(model,
@@ -23,7 +24,8 @@ def get_test_combinations():
                              id=f"{model}-{backend}"))
 
     # GPTQ model only tests on sendnn_decoder
-    for model in get_spyre_model_list(quantization="gptq"):
+    for model_param in get_spyre_model_list(quantization="gptq"):
+        model = model_param.values[0]
         combinations.append(
             pytest.param(model,
                          "sendnn_decoder",
