@@ -34,11 +34,16 @@ namespaces = false  # to disable scanning PEP 420 namespaces (true by default)
 # Never install torch, so that no dependencies can override it.
 # This requires that torch is installed separately in the target environment.
 # Triton >3.1 breaks tests against vllm/main and fms-mo requires it.
+# Triton also cannot be installed on macs.
 override-dependencies = [
     "torch; sys_platform == 'never'",
     "torchaudio; sys_platform == 'never'",
     "torchvision; sys_platform == 'never'",
-    "triton>=3.0,<3.2",
+    "triton>=3.0,<3.2; sys_platform != 'darwin'",
+]
+# fms-mo doesn't support python 3.9, so don't have UV try to resolve it
+environments = [
+    "python_version > '3.9'"
 ]
 
 [tool.uv.sources]
