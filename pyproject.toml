@@ -122,7 +122,8 @@ markers = [
     "embedding: Tests for embedding models",
     "quantized: Tests for quantized models",
     "multi: Tests that require >1 cards",
-    "util: Tests for utility functions",
+    "utils: Tests for utility functions",
+    "worker: Tests for worker logic",
 ]
 
 [tool.pymarkdown]

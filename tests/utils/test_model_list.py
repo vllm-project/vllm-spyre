@@ -2,7 +2,7 @@ import pytest
 from spyre_util import get_spyre_model_list
 
 
-@pytest.mark.util
+@pytest.mark.utils
 def test_get_spyre_model_list(monkeypatch):
     '''
     Ensure we return the model_list correctly
