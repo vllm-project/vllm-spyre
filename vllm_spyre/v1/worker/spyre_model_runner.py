@@ -883,16 +883,16 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         model_input = self.prepare_model_input(scheduler_output)
 
-        # Marking dimensions dynamic
+        # Marking dimensions static/dynamic
         if model_input.is_prompt:
 
-            # batch dynamic
+            # batch static (batch size 1)
             torch._dynamo.mark_static(model_input.input_tokens, 0)
             torch._dynamo.mark_static(model_input.slot_mapping, 0)
             torch._dynamo.mark_static(model_input.input_positions, 0)
             torch._dynamo.mark_static(model_input.input_masks, 0)
 
-            # seq dynamic
+            # sequence dynamic
             torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
             torch._dynamo.mark_dynamic(model_input.slot_mapping, 1)
             torch._dynamo.mark_dynamic(model_input.input_positions, 1)
@@ -903,7 +903,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         else:
             # mask is no longer used here
 
-            # batch
+            # batch dynamic
             torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
             torch._dynamo.mark_dynamic(model_input.block_table, 0)
             torch._dynamo.mark_dynamic(model_input.slot_mapping, 0)
@@ -911,7 +911,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             torch._dynamo.mark_dynamic(model_input.partial_page_tkv_mask, 0)
             torch._dynamo.mark_dynamic(model_input.left_padded_prompt_mask, 0)
 
-            # seq
+            # sequence
             torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
             torch._dynamo.mark_dynamic(model_input.block_table, 1)
             torch._dynamo.mark_static(model_input.slot_mapping, 1)  # always 1
