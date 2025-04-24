@@ -729,7 +729,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # update tkv
         self.tkv = self.tkv + 1
 
-        current_tkv_mask = torch.tensor([self.tkv] * input_tokens.shape[0],
+        current_tkv_mask = torch.tensor([self.tkv] * len(cached_requests),
                                         dtype=torch.int64)
 
         return input_tokens, position_ids, mask, current_tkv_mask, \
