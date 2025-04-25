@@ -142,7 +142,7 @@ class SpyrePlatform(Platform):
         Whether to use allgather in LogitsProcessor to gather the logits.
         """
 
-        return False
+        return True
 
     @classmethod
     def is_pin_memory_available(cls) -> bool:
