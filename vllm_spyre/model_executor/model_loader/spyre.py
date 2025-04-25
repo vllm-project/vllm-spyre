@@ -8,7 +8,7 @@ import torch.distributed as dist
 import torch.nn as nn
 from fms.models import get_model
 from transformers import PretrainedConfig
-from vllm.config import ModelConfig, ParallelConfig
+from vllm.config import ModelConfig, ParallelConfig, SchedulerConfig
 from vllm.logger import init_logger
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
 from vllm.model_executor.layers.sampler import SamplerOutput, get_sampler
@@ -40,6 +40,7 @@ class SpyreCausalLM(nn.Module):
         self,
         model_config: ModelConfig,
         parallel_config: ParallelConfig,
+        scheduler_config: SchedulerConfig,
         max_prompt_length: int,
         max_decode_length: int,
     ) -> None:
@@ -60,6 +61,7 @@ class SpyreCausalLM(nn.Module):
         self.model = fms_model(
             model_config,
             parallel_config,
+            scheduler_config,
             max_prompt_length,
             max_decode_length,
         )
@@ -249,6 +251,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         self,
         model_config: ModelConfig,
         parallel_config: ParallelConfig,
+        scheduler_config: SchedulerConfig,
         max_prompt_length: int,
         max_decode_length: int,
     ) -> None:
@@ -256,8 +259,8 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                          max_decode_length)
 
         # physical KV cache on AIU Spyre
-        max_batch = envs_spyre.VLLM_SPYRE_MAX_BATCH_SIZE
-        max_model_len = envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH
+        max_batch = scheduler_config.max_num_seqs
+        max_model_len = scheduler_config.max_model_len
 
         if self.config.model_type == 'llama':
             num_layers = self.config.num_hidden_layers
@@ -340,6 +343,7 @@ class StaticBatchingFmsModel(FmsModelBase):
         self,
         model_config: ModelConfig,
         parallel_config: ParallelConfig,
+        _: SchedulerConfig,
         max_prompt_length: int,
         max_decode_length: int,
     ) -> None:

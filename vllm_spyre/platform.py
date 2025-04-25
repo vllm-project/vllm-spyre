@@ -141,7 +141,6 @@ class SpyrePlatform(Platform):
         """
         Whether to use allgather in LogitsProcessor to gather the logits.
         """
-
         return True
 
     @classmethod
