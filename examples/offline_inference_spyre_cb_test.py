@@ -17,9 +17,6 @@ os.environ['VLLM_SPYRE_DYNAMO_BACKEND'] = 'eager'
 os.environ['VLLM_SPYRE_USE_CB'] = '1'
 os.environ['VLLM_USE_V1'] = '1'
 
-# os.environ['VLLM_SPYRE_MAX_CONTEXT_LENGTH'] = '2048'
-# os.environ['VLLM_SPYRE_MAX_BATCH_SIZE'] = str(max_num_seqs)
-
 # Sample prompts.
 template = (
     "Below is an instruction that describes a task. Write a response that "

@@ -45,7 +45,6 @@ class SpyrePlatform(Platform):
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:
         parallel_config = vllm_config.parallel_config
         scheduler_config = vllm_config.scheduler_config
-        assert scheduler_config.max_num_seqs == 2
         model_config = vllm_config.model_config
 
         if scheduler_config.is_multi_step:
