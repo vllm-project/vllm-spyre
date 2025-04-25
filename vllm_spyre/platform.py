@@ -45,6 +45,7 @@ class SpyrePlatform(Platform):
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:
         parallel_config = vllm_config.parallel_config
         scheduler_config = vllm_config.scheduler_config
+        assert scheduler_config.max_num_seqs == 2
         model_config = vllm_config.model_config
 
         if scheduler_config.is_multi_step:
@@ -77,7 +78,8 @@ class SpyrePlatform(Platform):
         # Override --max-num-seqs to the biggest warmup batch size
         # And override --max-model-len to the biggest warmup sequence
         cls._warmup_shapes = None
-        spyre_warmup_shapes = cls.get_warmup_shapes(scheduler_config)
+        spyre_warmup_shapes = \
+            cls.get_warmup_shapes(scheduler_config)
         max_batch_size = 0
         max_seq_len = 0
         for shape in spyre_warmup_shapes:
@@ -85,18 +87,19 @@ class SpyrePlatform(Platform):
             max_seq_len = max(max_seq_len,
                               shape['prompt_length'] + shape['new_tokens'])
 
-        if envs.VLLM_USE_V1:
-            if envs_spyre.VLLM_SPYRE_USE_CB:
-                # For continuous batching we use max_num_seqs to control
-                # the max batch size respecting AIU Spyre KV cache size
-                scheduler_config.max_num_seqs =\
-                    envs_spyre.VLLM_SPYRE_MAX_BATCH_SIZE
-                # ToDo: this function check_and_update_config is called twice:
-                # 1st time scheduler_config.max_num_seqs is what user sets
-                # 2nd time scheduler_config.max_num_seqs is 128
-            else:
-                # The v0 scheduler will run out of blocks if this is overridden
-                scheduler_config.max_num_seqs = max_batch_size
+        # if envs.VLLM_USE_V1:
+        #     if envs_spyre.VLLM_SPYRE_USE_CB:
+        #         # For continuous batching we use max_num_seqs to control
+        #         # the max batch size respecting AIU Spyre KV cache size
+        #         scheduler_config.max_num_seqs =\
+        #             envs_spyre.VLLM_SPYRE_MAX_BATCH_SIZE
+        #         # ToDo: this function check_and_update_config is called twice:
+        #         # 1st time scheduler_config.max_num_seqs is what user sets
+        #         # 2nd time scheduler_config.max_num_seqs is 128
+        #     else:
+        #         # The v0 scheduler will run out of
+        #           blocks if this is overridden
+        #         scheduler_config.max_num_seqs = max_batch_size
 
         # continuous batching related checks
         if envs_spyre.VLLM_SPYRE_USE_CB and not envs.VLLM_USE_V1:
@@ -132,6 +135,14 @@ class SpyrePlatform(Platform):
                 "num_gpu_blocks_override=%d", model_config.max_model_len,
                 scheduler_config.max_num_seqs, cache_config.block_size,
                 cache_config.num_gpu_blocks_override)
+
+    @classmethod
+    def use_all_gather(cls) -> bool:
+        """
+        Whether to use allgather in LogitsProcessor to gather the logits.
+        """
+
+        return False
 
     @classmethod
     def is_pin_memory_available(cls) -> bool:

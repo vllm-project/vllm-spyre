@@ -583,7 +583,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         super().__init__(vllm_config=vllm_config,
                          is_driver_worker=is_driver_worker)
 
-        max_batch_size = envs_spyre.VLLM_SPYRE_MAX_BATCH_SIZE
+        max_batch_size = vllm_config.scheduler_config.max_num_seqs
+        assert max_batch_size == 2
         # this is just to pass formatting bc type is Optional[list[int]]
         if envs_spyre.VLLM_SPYRE_WARMUP_PROMPT_LENS:
             max_prompt_length = envs_spyre.VLLM_SPYRE_WARMUP_PROMPT_LENS[0]

@@ -9,8 +9,6 @@ from vllm.v1.engine import EngineCoreOutput, EngineCoreOutputs, FinishReason
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request, RequestStatus
 
-import vllm_spyre.envs as envs_spyre
-
 try:
     from vllm.v1.core.sched.scheduler import Scheduler
 except ImportError:
@@ -236,7 +234,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
     def add_request(self, request: Request) -> None:
         """This override rejects requests that exceed max context length"""
         if not request.num_prompt_tokens + request.sampling_params.max_tokens\
-                <= envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH:
+                <= self.scheduler_config.max_model_len:
             logger.warning(
                 "Could not add request id %s, prompt length is "
                 "%d tokens, maximum number of output tokens is %d tokens,"
@@ -244,7 +242,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
                 request.request_id,
                 request.num_prompt_tokens,
                 request.sampling_params.max_tokens,
-                envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH,
+                self.scheduler_config.max_model_len,
             )
             # TODO: There are open PRs that should enable raising an error for
             # a single request like this, which will gracefully return an error
