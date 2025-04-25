@@ -440,9 +440,10 @@ def get_spyre_backend_list():
     backends = []
     for backend in user_backend_list.split(","):
         backend = backend.strip()
-        if backend in {"eager"}:
+        marks = []
+        if backend == "eager":
             marks = [pytest.mark.cpu]
-        else:
+        elif backend == "sendnn_decoder":
             marks = [pytest.mark.spyre]
 
         backends.append(pytest.param(backend, marks=marks, id=backend))
