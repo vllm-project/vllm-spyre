@@ -38,7 +38,6 @@ class ModelForwardInputs:
     """
     Used by the SpyreModelRunner.
     """
-
     input_tokens: Optional[torch.Tensor] = None
     input_positions: Optional[torch.Tensor] = None
     input_masks: Optional[torch.Tensor] = None
