@@ -28,20 +28,12 @@ NO_WARMUP_FIT_STOP_REASON = "Request did not fit any warmup shape"
 
 
 class SpyreScheduler(Scheduler):
-    """Small extension of the V1 scheduler that adds constraints for Sypre:
-    - No continuous batching
-    - Only schedules batches of requests that fit a common warmup shape
-    """
+    """Base class inheriting from the V1 scheduler to support static 
+    and continuous batching respecting AIU Spyre constraints."""
 
     def __init__(self, *args, **kwargs) -> None:
         # Initialize vLLM scheduler
         super().__init__(*args, **kwargs)
-
-        # Add our own state for handling Spyre constraints
-
-        # All warmup shapes that we can support
-        self.spyre_warmup_shapes: tuple[dict[str, int], ...] = \
-            SpyrePlatform.get_warmup_shapes(self.scheduler_config)
 
         # Requests are temporarily moved to this queue so that the base
         # scheduler does not see them. This lets us ensure that the set of
@@ -49,6 +41,74 @@ class SpyreScheduler(Scheduler):
         self.holdback_queue: deque[Request] = deque()
 
         self.rejected_requests: set[str] = set()
+
+    def update_from_output(
+        self,
+        scheduler_output: SchedulerOutput,
+        model_runner_output: ModelRunnerOutput,
+    ) -> EngineCoreOutputs:
+        """Temporary override to handle rejected requests that were too large
+        to schedule."""
+        reject_outputs = self._handle_rejects()
+        outputs = super().update_from_output(scheduler_output,
+                                             model_runner_output)
+        outputs.outputs.extend(reject_outputs)
+        return outputs
+
+    def _handle_rejects(self) -> list[EngineCoreOutput]:
+        """Temporary solution to reject requests that were too large to
+        schedule. This removes the rejected requests from the scheduler, and 
+        returns empty outputs for them with finish reason `abort`.
+        """
+        if len(self.rejected_requests) == 0:
+            return []
+
+        # Remove rejected requests from all queues
+        reject_outputs = self._reject_from_queue(self.running)
+        reject_outputs.extend(self._reject_from_queue(self.waiting))
+        reject_outputs.extend(self._reject_from_queue(self.holdback_queue))
+        self.rejected_requests.clear()
+
+        return reject_outputs
+
+    def _reject_from_queue(self,
+                           queue: deque[Request]) -> list[EngineCoreOutput]:
+        """Remove rejected requests from a given queue and return a list of 
+        engine core outputs to return for them"""
+        reject_outputs: list[EngineCoreOutput] = []
+        rejected_requests: list[Request] = [
+            request for request in queue
+            if request.request_id in self.rejected_requests
+        ]
+
+        for request in rejected_requests:
+            queue.remove(request)
+            reject_outputs.append(
+                EngineCoreOutput(
+                    request.request_id,
+                    # TODO: FIXME
+                    # Dummy token prevent stats collection crash
+                    new_token_ids=[-1],
+                    finish_reason=FinishReason.ABORT,
+                    stop_reason=NO_WARMUP_FIT_STOP_REASON))
+            request.status = RequestStatus.FINISHED_ABORTED
+            self._free_request(request)
+            self.rejected_requests.remove(request.request_id)
+
+        return reject_outputs
+
+
+class StaticBatchingSpyreScheduler(SpyreScheduler):
+    """ Support of static batching """
+
+    def __init__(self, *args, **kwargs) -> None:
+        # Initialize SpyreScheduler
+        super().__init__(*args, **kwargs)
+
+        # Add our own state for handling Spyre constraints:
+        # all warmup shapes that we can support
+        self.spyre_warmup_shapes: tuple[dict[str, int], ...] = \
+            SpyrePlatform.get_warmup_shapes(self.scheduler_config)
 
     def add_request(self, request: Request) -> None:
         """This override rejects requests that fit no warmup shape"""
@@ -77,21 +137,8 @@ class SpyreScheduler(Scheduler):
             request.num_prompt_tokens = 1
             request.sampling_params = SamplingParams(max_tokens=1)
 
-        # delegate to super
-        super().add_request(request=request)
-
-    def update_from_output(
-        self,
-        scheduler_output: SchedulerOutput,
-        model_runner_output: ModelRunnerOutput,
-    ) -> EngineCoreOutputs:
-        """Temporary override to handle rejected requests that were too large
-        to schedule."""
-        reject_outputs = self._handle_rejects()
-        outputs = super().update_from_output(scheduler_output,
-                                             model_runner_output)
-        outputs.outputs.extend(reject_outputs)
-        return outputs
+        # delegate to super of SpyreScheduler: base V1 Scheduler
+        super(SpyreScheduler, self).add_request(request=request)
 
     def schedule(self) -> SchedulerOutput:
         """This override adds constraints and then delegates most of the work
@@ -151,7 +198,8 @@ class SpyreScheduler(Scheduler):
             logger.debug("Scheduling a running batch of %d requests",
                          len(self.running))
 
-        outputs = super().schedule()
+        # delegate to super of SpyreScheduler: base V1 Scheduler
+        outputs = super(SpyreScheduler, self).schedule()
 
         # first move skipped and then unscheduled requests back
         # to the waiting queue, preserving priority
@@ -178,48 +226,6 @@ class SpyreScheduler(Scheduler):
             and max_tokens <= shape['new_tokens']
             and current_batch_size < shape['batch_size']
         ]
-
-    def _handle_rejects(self) -> list[EngineCoreOutput]:
-        """Temporary solution to reject requests that were too large to
-        schedule. This removes the rejected requests from the scheduler, and 
-        returns empty outputs for them with finish reason `abort`.
-        """
-        if len(self.rejected_requests) == 0:
-            return []
-
-        # Remove rejected requests from all queues
-        reject_outputs = self._reject_from_queue(self.running)
-        reject_outputs.extend(self._reject_from_queue(self.waiting))
-        reject_outputs.extend(self._reject_from_queue(self.holdback_queue))
-        self.rejected_requests.clear()
-
-        return reject_outputs
-
-    def _reject_from_queue(self,
-                           queue: deque[Request]) -> list[EngineCoreOutput]:
-        """Remove rejected requests from a given queue and return a list of 
-        engine core outputs to return for them"""
-        reject_outputs: list[EngineCoreOutput] = []
-        rejected_requests: list[Request] = [
-            request for request in queue
-            if request.request_id in self.rejected_requests
-        ]
-
-        for request in rejected_requests:
-            queue.remove(request)
-            reject_outputs.append(
-                EngineCoreOutput(
-                    request.request_id,
-                    # TODO: FIXME
-                    # Dummy token prevent stats collection crash
-                    new_token_ids=[-1],
-                    finish_reason=FinishReason.ABORT,
-                    stop_reason=NO_WARMUP_FIT_STOP_REASON))
-            request.status = RequestStatus.FINISHED_ABORTED
-            self._free_request(request)
-            self.rejected_requests.remove(request.request_id)
-
-        return reject_outputs
 
 
 class ContinuousBatchingSpyreScheduler(SpyreScheduler):

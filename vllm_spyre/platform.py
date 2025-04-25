@@ -69,7 +69,7 @@ class SpyrePlatform(Platform):
                     "vllm_spyre.v1.core.scheduler.ContinuousBatchingSpyreScheduler"
             else:
                 scheduler_config.scheduler_cls = \
-                    "vllm_spyre.v1.core.scheduler.SpyreScheduler"
+                    "vllm_spyre.v1.core.scheduler.StaticBatchingSpyreScheduler"
         else:
             scheduler_config.scheduler_cls = \
                 "vllm_spyre.core.scheduler.SpyreScheduler"
