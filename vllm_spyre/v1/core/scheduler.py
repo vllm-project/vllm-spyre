@@ -205,24 +205,33 @@ class SpyreScheduler(Scheduler):
 class ContinuousBatchingSpyreScheduler(SpyreScheduler):
     """ Support of continuous batching """
 
+    # inherited from V1 base scheduler but mypy needs to know the type
+    running: list[Request]
+
     def __init__(self, *args, **kwargs) -> None:
         # Initialize SpyreScheduler
         super().__init__(*args, **kwargs)
         # running queue of last decoding step
         self.last_running: list[Request] = []
         self.total_running: list[Request] = []
-        self.running: list[Request] = []
 
     def add_request(self, request: Request) -> None:
         """This override rejects requests that exceed max context length"""
-        if not request.num_prompt_tokens + request.sampling_params.max_tokens\
+
+        # ceil division to pad to next block boundary
+        n = request.num_prompt_tokens
+        d = 64  # hardcoded AIU Spyre block size
+        prompt_padding_len = ((n + d - 1) // d) * d
+        if not prompt_padding_len + request.sampling_params.max_tokens\
                 <= envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH:
             logger.warning(
                 "Could not add request id %s, prompt length is "
-                "%d tokens, maximum number of output tokens is %d tokens,"
+                "%d tokens, which gets padded to %d tokens, "
+                "maximum number of output tokens is %d tokens, "
                 "but max model context length is %d.",
                 request.request_id,
                 request.num_prompt_tokens,
+                prompt_padding_len,
                 request.sampling_params.max_tokens,
                 envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH,
             )
@@ -280,6 +289,11 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
 
         # delegate to super of SpyreScheduler: base V1 Scheduler
         outputs = super(SpyreScheduler, self).schedule()
+
+        # move unscheduled requests back to the waiting queue
+        while self.holdback_queue:
+            self.waiting.append(self.holdback_queue.popleft())
+
         return outputs
 
     def can_schedule(self) -> bool:
