@@ -8,6 +8,7 @@ from typing import Any, Optional, Union
 
 import numpy as np
 import openai
+import pytest
 import requests
 from sentence_transformers import SentenceTransformer, util
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -19,6 +20,11 @@ DISABLE_ASSERTS = False  # used for debugging
 
 ISCLOSE_REL_TOL_CPU = 0.1
 ISCLOSE_REL_TOL_SPYRE = 0.35
+
+VLLM_VERSIONS = [
+    pytest.param("V0", marks=pytest.mark.v0, id="v0"),
+    pytest.param("V1", marks=pytest.mark.v1, id="v1"),
+]
 
 
 class RemoteOpenAIServer:
@@ -426,17 +432,22 @@ def get_spyre_model_dir_path() -> Path:
     return Path(model_dir_path)
 
 
-# get model backend from env, if not set then default to "eager"
-# For multiple values:
-# export SPYRE_TEST_BACKEND_LIST="eager, inductor, sendnn_decoder"
+# get model backends from env or default to all and add pytest markers
 def get_spyre_backend_list():
-    test_backend_list = []
     user_backend_list = os.environ.get("VLLM_SPYRE_TEST_BACKEND_LIST",
                                        "eager,inductor,sendnn_decoder,sendnn")
 
-    for sypre_backend in user_backend_list.split(","):
-        test_backend_list.append(sypre_backend.strip())
-    return test_backend_list
+    backends = []
+    for backend in user_backend_list.split(","):
+        backend = backend.strip()
+        marks = []
+        if backend == "eager":
+            marks = [pytest.mark.cpu]
+        elif backend == "sendnn_decoder":
+            marks = [pytest.mark.spyre]
+
+        backends.append(pytest.param(backend, marks=marks, id=backend))
+    return backends
 
 
 # get model names from env, if not set then default to "llama-194m"
@@ -444,20 +455,25 @@ def get_spyre_backend_list():
 # export SPYRE_TEST_MODEL_LIST="llama-194m,all-roberta-large-v1"
 def get_spyre_model_list(isEmbeddings=False, quantization=None):
     spyre_model_dir_path = get_spyre_model_dir_path()
-    test_model_list = []
 
     if isEmbeddings:
         user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST",
                                               "all-roberta-large-v1")
+        marks = [pytest.mark.embedding]
     elif quantization == "gptq":
         user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST",
                                               "granite-3.0-8b-instruct-gptq")
+        marks = [pytest.mark.decoder, pytest.mark.quantized, pytest.mark.spyre]
     else:
         user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST",
                                               "llama-194m")
+        marks = [pytest.mark.decoder]
 
+    test_model_list = []
     for model in user_test_model_list.split(","):
-        test_model_list.append(str(spyre_model_dir_path / model.strip()))
+        model_path = str(spyre_model_dir_path / model.strip())
+        test_model_list.append(
+            pytest.param(model_path, marks=marks, id=model.strip()))
     return test_model_list
 
 
