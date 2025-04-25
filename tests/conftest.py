@@ -5,6 +5,13 @@ from vllm.connections import global_http_connection
 from vllm.distributed import cleanup_dist_env_and_memory
 
 
+def pytest_collection_modifyitems(config, items):
+    """ Mark all tests in e2e directory"""
+    for item in items:
+        if "tests/e2e" in str(item.nodeid):
+            item.add_marker(pytest.mark.e2e)
+
+
 @pytest.fixture(params=[True, False])
 def run_with_both_engines(request, monkeypatch):
     # Automatically runs tests twice, once with V1 and once without
