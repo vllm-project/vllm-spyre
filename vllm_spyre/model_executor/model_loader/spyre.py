@@ -383,10 +383,4 @@ class StaticBatchingFmsModel(FmsModelBase):
         logits, past_key_value_states = output
         self.past_key_value_states = past_key_value_states
 
-        # mark dynamic
-        if self.past_key_value_states is not None:
-            for layer in self.past_key_value_states:
-                for tensor in layer:
-                    torch._dynamo.mark_dynamic(tensor, 2)
-
         return logits
