@@ -31,7 +31,10 @@ def get_test_combinations():
             pytest.param(model,
                          "sendnn_decoder",
                          "gptq",
-                         marks=[pytest.mark.quantized, pytest.mark.spyre],
+                         marks=[
+                             pytest.mark.decoder, pytest.mark.quantized,
+                             pytest.mark.spyre
+                         ],
                          id=f"{model}-sendnn_decoder-gptq"))
 
     return combinations
