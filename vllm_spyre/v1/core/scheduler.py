@@ -101,6 +101,9 @@ class SpyreScheduler(Scheduler):
         while self.waiting:
             self.holdback_queue.append(self.waiting.popleft())
 
+        # store requests which don't fit the warmup shapes of the current batch
+        skip_queue: deque[Request] = deque()
+
         # If no requests are currently running, we can now release requests back
         # into the waiting queue in priority order for the scheduler to prefill.
         # These must share a common warmup shape
@@ -123,10 +126,23 @@ class SpyreScheduler(Scheduler):
                     # There is still at least one valid shape, so add to the
                     # waiting queue
                     self.waiting.append(self.holdback_queue.popleft())
+                    # remember the available warmup shapes of the current batch
+                    last_available_warmup_shapes = available_warmup_shapes
                 else:
-                    # Otherwise, we simply stop here so that the scheduler
-                    # can work with the batch we have
-                    break
+                    # calculating the max possible batch size among the
+                    # available warmup shapes of the scheduled requests
+                    max_batch = max([
+                        d['batch_size'] for d in last_available_warmup_shapes
+                    ])
+
+                    # if there is potential space in the batch but the current
+                    # request does not fit, skip it and try with the next
+                    if len(self.waiting) < max_batch:
+                        available_warmup_shapes = last_available_warmup_shapes
+                        skip_queue.append(self.holdback_queue.popleft())
+                    else:
+                        # If the batch is full, we exit the loop here
+                        break
 
             logger.debug(
                 "Scheduling a new batch of %d requests, holding back %d "
@@ -137,7 +153,11 @@ class SpyreScheduler(Scheduler):
 
         outputs = super().schedule()
 
-        # move unscheduled requests back to the waiting queue
+        # first move skipped and then unscheduled requests back
+        # to the waiting queue, preserving priority
+        while skip_queue:
+            self.waiting.append(skip_queue.popleft())
+
         while self.holdback_queue:
             self.waiting.append(self.holdback_queue.popleft())
 
