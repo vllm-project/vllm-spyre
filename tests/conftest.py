@@ -1,3 +1,15 @@
+# 🌶️🌶️🌶️ Hack to allow testing of both engines
+import os
+
+# If `VLLM_USE_V1=1` is set upon first vLLM import, then there are side-effects
+# in vLLM that will cause the V1 engine to always be used even if our tests
+# update this variable later before constructing each engine.
+# Deleting it here before importing vLLM allows us to continue testing both
+# engines.
+if "VLLM_USE_V1" in os.environ:
+    del os.environ["VLLM_USE_V1"]
+# 🌶️🌶️🌶️ end hack
+
 import pytest
 import torch
 from spyre_util import RemoteOpenAIServer
@@ -10,23 +22,6 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if "tests/e2e" in str(item.nodeid):
             item.add_marker(pytest.mark.e2e)
-
-
-@pytest.fixture(params=[True, False])
-def run_with_both_engines(request, monkeypatch):
-    # Automatically runs tests twice, once with V1 and once without
-    use_v1 = request.param
-    # Tests decorated with `@skip_v1` are only run without v1
-    skip_v1 = request.node.get_closest_marker("skip_v1")
-
-    if use_v1:
-        if skip_v1:
-            pytest.skip("Skipping test on vllm V1")
-        monkeypatch.setenv('VLLM_USE_V1', '1')
-    else:
-        monkeypatch.setenv('VLLM_USE_V1', '0')
-
-    yield
 
 
 @pytest.fixture(autouse=True)
