@@ -11,7 +11,6 @@ from vllm.sampling_params import SamplingType
 from vllm.utils import is_pin_memory_available
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.outputs import SamplerOutput
-from vllm.v1.sample.metadata import SamplingMetadata
 
 from vllm_spyre.model_executor.model_loader.spyre import SpyreCausalLM
 from vllm_spyre.platform import SpyrePlatform
@@ -35,14 +34,14 @@ logger = init_logger(__name__)
 
 
 @dataclass(frozen=True)
-class ModelInputForSpyre:
+class ModelForwardInputs:
     """
     Used by the SpyreModelRunner.
     """
+
     input_tokens: Optional[torch.Tensor] = None
     input_positions: Optional[torch.Tensor] = None
     input_masks: Optional[torch.Tensor] = None
-    sampling_metadata: Optional[SamplingMetadata] = None
     is_prompt: Optional[bool] = None
 
 
@@ -353,7 +352,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         self._mask = torch.stack(masks_new, dim=0)
 
     def prepare_model_input(
-            self, scheduler_output: SchedulerOutput) -> ModelInputForSpyre:
+            self, scheduler_output: SchedulerOutput) -> ModelForwardInputs:
 
         # NOTE: We assume that all sequences in the group are all prompts or
         # all decodes.
@@ -377,13 +376,12 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
              input_masks) = self._prepare_decode(
                  scheduler_output.scheduled_cached_reqs)
 
-        sampling_metadata = self.input_batch.sampling_metadata
-
-        return ModelInputForSpyre(input_tokens=input_tokens,
-                                  input_positions=input_positions,
-                                  input_masks=input_masks,
-                                  sampling_metadata=sampling_metadata,
-                                  is_prompt=is_prompt)
+        return ModelForwardInputs(
+            input_tokens=input_tokens,
+            input_positions=input_positions,
+            input_masks=input_masks,
+            is_prompt=is_prompt,
+        )
 
     @SpyrePlatform.inference_mode()
     def execute_model(
@@ -438,7 +436,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         # Sample the next token.
         output: SamplerOutput = self.model.sample(
             logits=logits,
-            sampling_metadata=model_input.sampling_metadata,
+            sampling_metadata=self.input_batch.sampling_metadata,
         )
         t1 = time.time() - t0
         logger.debug("t_token: %.2fms", (t1 * 1000))
@@ -524,7 +522,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         padded_batch_size = applicable_spyre_warmup_shapes[0]["batch_size"]
         return padded_batch_size, min_pad_length_batch
 
-    def _mark_input_tensors(self, model_input: ModelInputForSpyre) -> None:
+    def _mark_input_tensors(self, model_input: ModelForwardInputs) -> None:
         """Yoinked from
         https://github.com/foundation-model-stack/aiu-fms-testing-utils/pull/13
         """
@@ -675,7 +673,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         return mask, position_ids
 
     def prepare_model_input(
-            self, scheduler_output: SchedulerOutput) -> ModelInputForSpyre:
+            self, scheduler_output: SchedulerOutput) -> ModelForwardInputs:
 
         # NOTE: We assume that all sequences in the group are all prompts or
         # all decodes.
@@ -691,42 +689,15 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         if is_prompt:
             (input_tokens, input_positions, input_masks,
              _) = self._prepare_prompt(scheduler_output.scheduled_new_reqs)
-            num_reqs = len(scheduler_output.scheduled_new_reqs)
         else:
             (input_tokens, input_positions,
              input_masks) = self._prepare_decode(
                  scheduler_output.scheduled_cached_reqs)
-            num_reqs = len(scheduler_output.scheduled_cached_reqs)
 
-        # TODO: Build the rest of the SamplingMetadata correctly
-        dummy_tensors = lambda v: torch.full(
-            (num_reqs, ), v, device=self.device)
-        dummy_metadata = SamplingMetadata(
-            temperature=dummy_tensors(0.0),
-            all_greedy=False,
-            all_random=False,
-            top_p=None,
-            top_k=None,
-            min_p=None,
-            generators={},
-            max_num_logprobs=None,
-            no_penalties=True,
-            prompt_token_ids=None,
-            frequency_penalties=dummy_tensors(0.1),
-            presence_penalties=dummy_tensors(0.1),
-            repetition_penalties=dummy_tensors(0.1),
-            output_token_ids=[[] for _ in range(num_reqs)],
-            min_tokens={},
-            logit_bias=[None for _ in range(num_reqs)],
-            allowed_token_ids_mask=None,
-            bad_words_token_ids=None,
-        )
-
-        return ModelInputForSpyre(
+        return ModelForwardInputs(
             input_tokens=input_tokens,
             input_positions=input_positions,
             input_masks=input_masks,
-            sampling_metadata=dummy_metadata,
             is_prompt=is_prompt,
         )
 
@@ -760,7 +731,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # Sample the next token.
         output: SamplerOutput = self.model.sample(
             logits=logits,
-            sampling_metadata=model_input.sampling_metadata,
+            # TODO: Uncomment once Wallas is done with the work
+            # sampling_metadata=self.input_batch.sampling_metadata,
         )
         t1 = time.time() - t0
         logger.debug("t_token: %.2fms", (t1 * 1000))
