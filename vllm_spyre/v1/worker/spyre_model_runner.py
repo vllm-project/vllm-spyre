@@ -571,7 +571,6 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
             torch._dynamo.mark_static(model_input.input_positions, 1)
         else:
             # we always want the decode to be dynamic on sequence
-            torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
             torch._dynamo.mark_dynamic(model_input.input_masks, 2)
 
             # here self.model.model is a StaticBatchingFmsModel
