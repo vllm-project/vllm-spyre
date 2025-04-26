@@ -157,9 +157,9 @@ class SpyreWorker(WorkerBaseV1):
             else:
                 self.model_runner = StaticBatchingSpyreModelRunner(
                     self.vllm_config, self.is_driver_worker)
+                self.spyre_warmup_shapes = SpyrePlatform.get_warmup_shapes(
+                    self.vllm_config.scheduler_config)
         self._env_initialized = False
-        self.spyre_warmup_shapes = SpyrePlatform.get_warmup_shapes(
-            self.vllm_config.scheduler_config)
 
     def init_distributed_environment(self) -> None:
         """Initialize the distributed environment."""
@@ -237,9 +237,14 @@ class SpyreWorker(WorkerBaseV1):
         # for all requested model warmups
         # printing env variables for debugging purposes
         load_model_start_t = time.time()
-        wup_prompt_lens, wup_new_tokens = zip(
-            *[(s["prompt_length"], s["new_tokens"])
-              for s in self.spyre_warmup_shapes])
+
+        if envs_spyre.VLLM_SPYRE_USE_CB:
+            # unused for continuous batching: set here to use same API
+            wup_prompt_lens, wup_new_tokens = (0, ), (0, )
+        else:
+            wup_prompt_lens, wup_new_tokens = zip(
+                *[(s["prompt_length"], s["new_tokens"])
+                  for s in self.spyre_warmup_shapes])
 
         self.model_runner.load_model(prompt_lens=wup_prompt_lens,
                                      num_decode_tokens=wup_new_tokens)
