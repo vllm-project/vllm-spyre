@@ -237,9 +237,6 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
     def __init__(self, *args, **kwargs) -> None:
         # Initialize SpyreScheduler
         super().__init__(*args, **kwargs)
-        # running queue of last decoding step
-        self.last_running: list[Request] = []
-        self.total_running: list[Request] = []
 
     def add_request(self, request: Request) -> None:
         """This override rejects requests that exceed max context length"""
@@ -279,14 +276,17 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
 
     def schedule(self) -> "SchedulerOutput":
         """This override adds constraints and then delegates most of the work
-        to the base scheduler"""
+        to the base scheduler
+
+        To avoid additional specialization, some requests are held back from the
+        base scheduler but are restored after.
+        """
         # First purge the full waiting queue into our holdback queue, preserving
         # priority
         while self.waiting:
             self.holdback_queue.append(self.waiting.popleft())
 
         # Check if new requests can be scheduled.
-        self.total_running = self.last_running + self.running
         while self.holdback_queue:
             if self.can_schedule():
                 # Add request to the waiting queue
@@ -296,27 +296,24 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
                 # can work with the batch we have
                 break
 
+        # Schedule Prefill and Decode separately
         if len(self.waiting) > 0:
-            # If prefill scheduled, save running queue for the next decode step.
-            # If previous step was also prefill, running queue contains the
-            # previous prefill sequence.
-            self.last_running = self.total_running
+            # For prefill, hide current decodes from the scheduler
+            running_holdback = self.running
             self.running = []
             logger.debug(
                 "Scheduling a prefill step of %d requests, holding back %d "
                 "requests", len(self.waiting), len(self.holdback_queue))
         else:
-            # If decode scheduled and previous step was prefill, update running
-            # queue
-            self.running = self.total_running
-            self.last_running = []
+            running_holdback = []
             logger.debug("Scheduling a decode step of %d requests",
                          len(self.running))
 
         # delegate to super of SpyreScheduler: base V1 Scheduler
         outputs = super(SpyreScheduler, self).schedule()
 
-        # move unscheduled requests back to the waiting queue
+        # restore holdbacks after running the base scheduler
+        self.running = self.running + running_holdback
         while self.holdback_queue:
             self.waiting.append(self.holdback_queue.popleft())
 
@@ -325,6 +322,6 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
     def can_schedule(self) -> bool:
         max_prompt_batch_size = 1
         # TODO: add additional checks, e.g. max_tokens
-        return len(self.total_running)+len(self.waiting) <\
+        return len(self.running)+len(self.waiting) <\
                 self.max_num_running_reqs and\
                 len(self.waiting) < max_prompt_batch_size
