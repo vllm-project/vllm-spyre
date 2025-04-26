@@ -592,10 +592,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                          is_driver_worker=is_driver_worker)
 
         max_batch_size = envs_spyre.VLLM_SPYRE_MAX_BATCH_SIZE
-        # this is just to pass formatting bc type is Optional[list[int]]
-        if envs_spyre.VLLM_SPYRE_WARMUP_PROMPT_LENS:
-            max_prompt_length = envs_spyre.VLLM_SPYRE_WARMUP_PROMPT_LENS[0]
-
         max_model_len = envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH
 
         self.BLOCK_SIZE = 64
@@ -606,7 +602,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.req_ids2left_pads: dict[str, int] = {}
         self.tkv = 0
         self.free_blocks = [i for i in range(NUM_BLOCKS)]
-        self.min_pad_length_batch = max_prompt_length
 
     def _prepare_prompt(
         self,
@@ -617,7 +612,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         input_token_list: list[torch.Tensor] = []
 
         if len(self.req_ids2blocks) == 0:
-            self.tkv = self.min_pad_length_batch
+            self.tkv = self.BLOCK_SIZE
 
         # ceil division to pad to next block boundary
         n = self.tkv
