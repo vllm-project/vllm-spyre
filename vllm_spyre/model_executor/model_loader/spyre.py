@@ -58,14 +58,16 @@ class SpyreCausalLM(nn.Module):
         self.n_pads_right = 0
 
         # FMS Model
-        fms_model = ContinuousBatchingFmsModel if envs_spyre.VLLM_SPYRE_USE_CB\
-            else StaticBatchingFmsModel
-        self.model = fms_model(
-            model_config,
-            parallel_config,
-            max_prompt_length,
-            max_decode_length,
-        )
+        if envs_spyre.VLLM_SPYRE_USE_CB:
+            self.model = ContinuousBatchingFmsModel(model_config,
+                                                    parallel_config)
+        else:
+            self.model = StaticBatchingFmsModel(
+                model_config,
+                parallel_config,
+                max_prompt_length,
+                max_decode_length,
+            )
 
     def forward(
         self,
@@ -80,7 +82,7 @@ class SpyreCausalLM(nn.Module):
     ) -> torch.Tensor:
 
         if is_prompt and not envs_spyre.VLLM_SPYRE_USE_CB:
-            self.model.past_key_value_states = None
+            self.model.past_key_value_states = None  # type: ignore
 
         extra_kwargs: dict[str, Any] = {}
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn_decoder":
@@ -94,7 +96,7 @@ class SpyreCausalLM(nn.Module):
             extra_kwargs["block_table"] = block_table
             extra_kwargs["slot_mapping"] = slot_mapping
 
-        # normal prefil or decoding step
+        # normal prefill or decoding step
         logits = self.model(
             input_ids,
             position_ids=positions,
@@ -261,19 +263,22 @@ class FmsModelBase(nn.Module):
 
 class ContinuousBatchingFmsModel(FmsModelBase):
 
-    def __init__(
-        self,
-        model_config: ModelConfig,
-        parallel_config: ParallelConfig,
-        max_prompt_length: int,
-        max_decode_length: int,
-    ) -> None:
+    def __init__(self, model_config: ModelConfig,
+                 parallel_config: ParallelConfig) -> None:
+
+        BLOCK_SIZE = 64
+        max_batch = envs_spyre.VLLM_SPYRE_MAX_BATCH_SIZE
+        max_model_len = envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH
+
+        # edge case: prompt fills model length: can produce 1 token with prefill
+        max_prompt_length = max_model_len
+        # edge case: prompt will be padded to first block:
+        # can produce 1 token with prefill plus rest of model length
+        max_decode_length = max_model_len - BLOCK_SIZE + 1
         super().__init__(model_config, parallel_config, max_prompt_length,
                          max_decode_length)
 
         # physical KV cache on AIU Spyre: will eventually not live in this class
-        max_batch = envs_spyre.VLLM_SPYRE_MAX_BATCH_SIZE
-        max_model_len = envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH
         num_kv_heads = model_config.get_num_kv_heads(parallel_config)
 
         if self.config.model_type in {'llama', 'granite'}:
@@ -284,20 +289,20 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             num_layers = self.config.n_layer
             head_dim = self.config.n_embd // self.config.n_head
         else:
-            print(f"[SpyreCausalLM] model type {self.config.model_type} "
-                  f"not supported in ContinuousBatchingFmsModel")
+            raise NotImplementedError(
+                f"[SpyreCausalLM] model type {self.config.model_type} "
+                f"not supported in ContinuousBatchingFmsModel")
 
-        BLOCK_SIZE = 64
-        NUM_BLOCKS = max_batch * max_model_len // BLOCK_SIZE  # 64
+        num_blocks = max_batch * max_model_len // BLOCK_SIZE  # 64
 
         # List[layers] of Tuple[k,v] of
-        # Tensor[NUM_BLOCKS, BLOCK_SIZE, num_kv_heads, max_model_len, head_dim]
-        self.past_key_value_states = [(torch.zeros(NUM_BLOCKS,
+        # Tensor[num_blocks, BLOCK_SIZE, num_kv_heads, max_model_len, head_dim]
+        self.past_key_value_states = [(torch.zeros(num_blocks,
                                                    BLOCK_SIZE,
                                                    num_kv_heads,
                                                    head_dim,
                                                    dtype=self.dtype),
-                                       torch.zeros(NUM_BLOCKS,
+                                       torch.zeros(num_blocks,
                                                    BLOCK_SIZE,
                                                    num_kv_heads,
                                                    head_dim,
@@ -380,7 +385,6 @@ class StaticBatchingFmsModel(FmsModelBase):
             **extra_kwargs,
         )
 
-        logits, past_key_value_states = output
-        self.past_key_value_states = past_key_value_states
+        logits, self.past_key_value_states = output
 
         return logits

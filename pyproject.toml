@@ -113,13 +113,17 @@ skip_gitignore = true
 pythonpath = ["."]
 markers = [
     "skip_global_cleanup",
-    "core_model: enable this model test in each PR instead of only nightly",
-    "cpu_model: enable this model test in CPU tests",
-    "quant_model: run this model test under Quantized category",
-    "split: run this test as part of a split",
-    "distributed: run this test only in distributed GPU tests",
-    "skip_v1: do not run this test with v1",
-    "optional: optional tests that are automatically skipped, include --optional to run them",
+    "e2e: Tests using end-to-end engine spin-up",
+    "v0: Tests using vLLM v0 engine",
+    "v1: Tests using vLLM v1 engine",
+    "cpu: Tests using CPU (i.e. eager) backend",
+    "spyre: Tests using Spyre hardware backend",
+    "decoder: Tests for decoder models",
+    "embedding: Tests for embedding models",
+    "quantized: Tests for quantized models",
+    "multi: Tests that require >1 cards",
+    "utils: Tests for utility functions",
+    "worker: Tests for worker logic",
 ]
 
 [tool.pymarkdown]
