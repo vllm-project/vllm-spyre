@@ -9,7 +9,6 @@ from vllm import LLM, SamplingParams
 max_tokens1 = 65
 max_tokens2 = 67
 max_tokens3 = 7
-max_tokens = max([max_tokens1, max_tokens2, max_tokens3])
 max_num_seqs = 2  # defines max batch size
 
 # defining here to be able to run/debug directly from VSC (not via terminal)

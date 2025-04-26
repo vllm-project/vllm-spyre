@@ -96,7 +96,7 @@ class SpyreCausalLM(nn.Module):
             extra_kwargs["block_table"] = block_table
             extra_kwargs["slot_mapping"] = slot_mapping
 
-        # normal prefil or decoding step
+        # normal prefill or decoding step
         logits = self.model(
             input_ids,
             position_ids=positions,
@@ -270,7 +270,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         max_batch = envs_spyre.VLLM_SPYRE_MAX_BATCH_SIZE
         max_model_len = envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH
 
-        # edge case: prompt fills model length: can produce 1 token with prefil,
+        # edge case: prompt fills model length: can produce 1 token with prefill
         max_prompt_length = max_model_len
         # edge case: prompt will be padded to first block:
         # can produce 1 token with prefill plus rest of model length
@@ -289,8 +289,9 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             num_layers = self.config.n_layer
             head_dim = self.config.n_embd // self.config.n_head
         else:
-            print(f"[SpyreCausalLM] model type {self.config.model_type} "
-                  f"not supported in ContinuousBatchingFmsModel")
+            raise NotImplementedError(
+                f"[SpyreCausalLM] model type {self.config.model_type} "
+                f"not supported in ContinuousBatchingFmsModel")
 
         num_blocks = max_batch * max_model_len // BLOCK_SIZE  # 64
 
@@ -384,7 +385,6 @@ class StaticBatchingFmsModel(FmsModelBase):
             **extra_kwargs,
         )
 
-        logits, past_key_value_states = output
-        self.past_key_value_states = past_key_value_states
+        logits, self.past_key_value_states = output
 
         return logits

@@ -661,7 +661,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             self.pad_input_ids(input_token_list, min_pad_length=block_padding)
         mask = mask.unsqueeze(1)
 
-        # not needed for prefil
+        # not needed for prefill
         current_tkv_mask = None
         left_padded_prompt_mask = None
 
