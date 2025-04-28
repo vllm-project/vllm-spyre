@@ -577,7 +577,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
     def _prepare_prompt(
         self,
         new_requests: list[NewRequestData],
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[int]]:
+    ) -> ModelForwardInputs:
         assert len(new_requests) > 0
         input_token_list: list[torch.Tensor] = []
 
@@ -610,14 +610,17 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         input_tokens, position_ids, mask = self.pad_input_ids(
             input_token_list, min_pad_length=self.tkv)
 
-        seq_lens = [t.shape[0] for t in input_token_list]
-
-        return input_tokens, position_ids, mask, seq_lens
+        return ModelForwardInputs(
+            input_tokens=input_tokens,
+            input_positions=position_ids,
+            input_masks=mask,
+            is_prompt=True,
+        )
 
     def _prepare_decode(
         self,
         cached_requests: list[CachedRequestData],
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> ModelForwardInputs:
         assert len(cached_requests) > 0
         input_tokens = []
         self.active_pages = []
@@ -639,7 +642,12 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             cached_requests, self.tkv)
         self.tkv = self.tkv + 1
 
-        return input_tokens, position_ids, mask
+        return ModelForwardInputs(
+            input_tokens=input_tokens,
+            input_positions=position_ids,
+            input_masks=mask,
+            is_prompt=False,
+        )
 
     def _prepare_pos_mask_decode(
         self,
@@ -684,21 +692,11 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                 self.free_pages.append(self.req_ids2page[req_id])
                 del self.req_ids2page[req_id]
 
-        # Prepare input tensors.
+        # Prepare and return input tensors.
         if is_prompt:
-            (input_tokens, input_positions, input_masks,
-             _) = self._prepare_prompt(scheduler_output.scheduled_new_reqs)
-        else:
-            (input_tokens, input_positions,
-             input_masks) = self._prepare_decode(
-                 scheduler_output.scheduled_cached_reqs)
+            return self._prepare_prompt(scheduler_output.scheduled_new_reqs)
 
-        return ModelForwardInputs(
-            input_tokens=input_tokens,
-            input_positions=input_positions,
-            input_masks=input_masks,
-            is_prompt=is_prompt,
-        )
+        return self._prepare_decode(scheduler_output.scheduled_cached_reqs)
 
     @SpyrePlatform.inference_mode()
     def execute_model(
