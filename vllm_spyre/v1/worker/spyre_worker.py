@@ -282,7 +282,6 @@ class SpyreWorker(WorkerBaseV1):
             NewRequestData(
                 req_id="warmup-%d" % (i),
                 prompt_token_ids=warmup_tokens_tensor[i].tolist(),
-                prompt="test",
                 mm_inputs=[],
                 mm_hashes=[],
                 mm_positions=[],
@@ -398,7 +397,6 @@ class SpyreWorker(WorkerBaseV1):
             NewRequestData(
                 req_id="warmup",
                 prompt_token_ids=warmup_tokens_tensor[i].tolist(),
-                prompt="test",
                 mm_inputs=[],
                 mm_hashes=[],
                 mm_positions=[],
