@@ -230,7 +230,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
     def _prepare_prompt(
         self,
         new_requests: list[NewRequestData],
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[int]]:
+    ) -> ModelForwardInputs:
         assert len(new_requests) > 0
         input_token_list: list[torch.Tensor] = []
         padded_batch_size, min_pad_length_batch = self._get_padded_batch_size(
@@ -288,14 +288,17 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         input_tokens, self._position_ids, self._mask = self.pad_input_ids(
             input_token_list, min_pad_length=min_pad_length_batch)
 
-        seq_lens = [t.shape[0] for t in input_token_list]
-
-        return input_tokens, self._position_ids, self._mask, seq_lens
+        return ModelForwardInputs(
+            input_tokens=input_tokens,
+            input_positions=self._position_ids,
+            input_masks=self._mask,
+            is_prompt=True,
+        )
 
     def _prepare_decode(
         self,
         cached_requests: list[CachedRequestData],
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> ModelForwardInputs:
         assert len(cached_requests) > 0
         input_tokens: list[list[int]] = [
             [0] for _ in range(self._position_ids.shape[0])
@@ -315,8 +318,12 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         input_tokens = torch.tensor(input_tokens,
                                     dtype=torch.long,
                                     device=self.device)
-
-        return input_tokens, self._position_ids, self._mask
+        return ModelForwardInputs(
+            input_tokens=input_tokens,
+            input_positions=self._position_ids,
+            input_masks=self._mask,
+            is_prompt=False,
+        )
 
     def _update_position_ids(self) -> None:
         """Updating the position ids of all sequences
@@ -363,24 +370,14 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
             # Assert no running requests
             assert len(scheduler_output.scheduled_cached_reqs) == 0
 
-            (input_tokens, input_positions, input_masks,
-             _) = self._prepare_prompt(scheduler_output.scheduled_new_reqs)
+            return self._prepare_prompt(scheduler_output.scheduled_new_reqs)
         else:
             if scheduler_output.finished_req_ids:
                 for req_id in scheduler_output.finished_req_ids:
                     self.input_batch.soft_remove_request(req_id)
                 self.input_batch.refresh_sampling_metadata()
 
-            (input_tokens, input_positions,
-             input_masks) = self._prepare_decode(
-                 scheduler_output.scheduled_cached_reqs)
-
-        return ModelForwardInputs(
-            input_tokens=input_tokens,
-            input_positions=input_positions,
-            input_masks=input_masks,
-            is_prompt=is_prompt,
-        )
+            return self._prepare_decode(scheduler_output.scheduled_cached_reqs)
 
     @SpyrePlatform.inference_mode()
     def execute_model(
