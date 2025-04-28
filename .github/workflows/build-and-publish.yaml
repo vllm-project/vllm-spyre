@@ -1,8 +1,11 @@
 name: Build and Publish vllm-spyre Library
 
 on:
-    release:
-      types: [published]
+  release:
+    types: [published]
+  push:
+    branches:
+      - push-to-pypi
 
 jobs:
   build:
