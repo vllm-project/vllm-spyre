@@ -294,7 +294,6 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
             req_state = CachedRequestState(
                 req_id=req_id,
                 prompt_token_ids=request_data.prompt_token_ids,
-                prompt=request_data.prompt,
                 sampling_params=sampling_params,
                 generator=generator,
                 output_token_ids=[],
