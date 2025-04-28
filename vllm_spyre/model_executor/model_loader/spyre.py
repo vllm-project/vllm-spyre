@@ -296,7 +296,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         num_blocks = max_batch * max_model_len // BLOCK_SIZE  # 64
 
         # List[layers] of Tuple[k,v] of
-        # Tensor[num_blocks, BLOCK_SIZE, num_kv_heads, max_model_len, head_dim]
+        # Tensor[num_blocks, BLOCK_SIZE, num_kv_heads, head_dim]
         self.past_key_value_states = [(torch.zeros(num_blocks,
                                                    BLOCK_SIZE,
                                                    num_kv_heads,
