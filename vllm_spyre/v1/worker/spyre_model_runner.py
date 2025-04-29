@@ -26,9 +26,8 @@ if TYPE_CHECKING:
     from vllm.attention.backends.abstract import AttentionBackend
     from vllm.model_executor.pooling_metadata import PoolingMetadata
 
-    from vllm_spyre.v1.core.sched.output import (CachedRequestData,
-                                                 NewRequestData,
-                                                 SchedulerOutput)
+    from vllm_spyre.v1.compat import (CachedRequestData, NewRequestData,
+                                      SchedulerOutput)
 else:
     CachedRequestData = None
     SchedulerOutput = None

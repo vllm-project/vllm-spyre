@@ -1,5 +1,4 @@
 # This import wraps the importing of some vLLM classes based on the version
-
 try:
     # vllm v0.8.2+
     from vllm.v1.core.sched.output import CachedRequestData  # noqa: F401
