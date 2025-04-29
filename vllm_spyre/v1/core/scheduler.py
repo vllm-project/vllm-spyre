@@ -281,6 +281,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         To avoid additional specialization, some requests are held back from the
         base scheduler but are restored after.
         """
+
         # First purge the full waiting queue into our holdback queue, preserving
         # priority
         while self.waiting:
@@ -321,7 +322,11 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
 
     def can_schedule(self) -> bool:
         max_prompt_batch_size = 1
-        # TODO: add additional checks, e.g. max_tokens
-        return len(self.running)+len(self.waiting) <\
-                self.max_num_running_reqs and\
-                len(self.waiting) < max_prompt_batch_size
+        tkv = envs_spyre.VLLM_SPYRE_RUNNING_TKV
+        max_context_len = envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH
+
+        return len(self.running)+len(self.waiting) == 0 or\
+            (len(self.running)+len(self.waiting) < self.max_num_running_reqs and\
+            len(self.waiting) < max_prompt_batch_size and\
+            self.holdback_queue[0].num_prompt_tokens <= tkv and\
+            self.holdback_queue[0].max_tokens <= (max_context_len - tkv))

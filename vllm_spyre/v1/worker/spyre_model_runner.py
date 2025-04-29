@@ -613,6 +613,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         if len(self.req_ids2blocks) == 0:
             self.tkv = self.BLOCK_SIZE
+            os.environ['VLLM_SPYRE_RUNNING_TKV'] = str(self.tkv)
 
         # ceil division to pad to next block boundary
         n = self.tkv
@@ -723,6 +724,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         # update tkv
         self.tkv = self.tkv + 1
+        os.environ['VLLM_SPYRE_RUNNING_TKV'] = str(self.tkv)
 
         current_tkv_mask = torch.tensor([self.tkv] * len(cached_requests),
                                         dtype=torch.int64)

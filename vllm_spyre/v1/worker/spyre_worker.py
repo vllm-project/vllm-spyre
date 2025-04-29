@@ -341,12 +341,15 @@ class SpyreWorker(WorkerBaseV1):
         logger.info("Warmup decode 1/1...")
         self.execute_model(scheduler_output)
 
-        # free blocks
+        # free blocks and reset tkv
         for req in dummy_requests:
             logger.debug("Freeing request id: %s", req.req_id)
             for freed_block in self.model_runner.req_ids2blocks[req.req_id]:
                 self.model_runner.free_blocks.append(freed_block)
             del self.model_runner.req_ids2blocks[req.req_id]
+
+        self.model_runner.tkv = 0
+        os.environ['VLLM_SPYRE_RUNNING_TKV'] = str(self.model_runner.tkv)
 
         # update lazyhandle (once)
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
