@@ -1,15 +1,19 @@
-name: Build and Publish vllm-spyre Library
+# This tests the publication process by pushing a pre-release to test.pypi.org
+# on all main commits
+name: Test publication on test.pypi.org
 
 on:
-  release:
-    types: [published]
+  push:
+    branches:
+      - main
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     environment:
-      name: pypi
+      name: testpypi
+      url: https://test.pypi.org/p/vllm-spyre
     permissions:
       id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
 
@@ -24,3 +28,5 @@ jobs:
         run: uv build
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+            repository-url: https://test.pypi.org/legacy/
