@@ -48,6 +48,7 @@ def test_cb_handling(
     prompts: list[str],
     enable_v1_multiprocessing: int,
     monkeypatch: pytest.MonkeyPatch,
+    vllm_version: str,
 ):
     """Test that the spyre worker correctly handles
     continuous batches of requests that
