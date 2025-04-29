@@ -1,6 +1,7 @@
 [build-system]
 requires = [
-  "setuptools>=48",
+  "setuptools>=64",
+  "setuptools_scm>=8"
 ]
 build-backend = "setuptools.build_meta"
 
@@ -9,13 +10,13 @@ name = "vllm-spyre"
 description = "vLLM plugin for Spyre hardware support"
 readme = "README.md"
 license = {text = "Apache 2"}
-version = "0.0.0" # TODO dynamic versioning
 dependencies = [
     "fms-model-optimizer>=0.2.0",
     "ibm-fms==0.0.8",
     "vllm",
 ]
 requires-python = ">=3.9"
+dynamic = ["version"]
 
 [project.entry-points."vllm.platform_plugins"]
 spyre = "vllm_spyre:register"
@@ -26,9 +27,16 @@ include = ["vllm_spyre*"]  # package names should match these glob patterns (["*
 exclude = []  # exclude packages matching these glob patterns (empty by default)
 namespaces = false  # to disable scanning PEP 420 namespaces (true by default)
 
-
 [tool.setuptools_scm]
-# version_file = "vllm_spyre/_version.py" # currently handled by `setup.py:get_version()`
+# Version files are optional, this just marginally speeds up version inspection
+# at runtime
+version_file = "vllm_spyre/_version.py"
+# Version strings are formatted as `{version}+{local}`, e.g. "0.1.dev1+gb1a7032"
+# Local versioning is incompatible with pypi, so we disable it by default.
+local_scheme = "no-local-version"
+# For more version configuration, see 
+# https://setuptools-scm.readthedocs.io/en/latest/config/
+
 
 [tool.uv]
 # Never install torch, so that no dependencies can override it.
