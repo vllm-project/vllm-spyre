@@ -1,3 +1,4 @@
+import os
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -84,6 +85,12 @@ class ModelInputForSpyre(ModelRunnerInputBase):
     ) -> TModelInputForSpyre:
         tensor_dict = _init_sampling_metadata_from_tensor_dict(tensor_dict)
         return cls(**tensor_dict)
+
+
+@dataclass
+class CBSpyreModelRunnerOutput(ModelRunnerOutput):
+    # Add the current tkv to the output
+    tkv: int
 
 
 class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
@@ -611,7 +618,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         if len(self.req_ids2blocks) == 0:
             self.tkv = self.BLOCK_SIZE
-            os.environ['VLLM_SPYRE_RUNNING_TKV'] = str(self.tkv)
 
         # ceil division to pad to next block boundary
         n = self.tkv
@@ -722,7 +728,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         # update tkv
         self.tkv = self.tkv + 1
-        os.environ['VLLM_SPYRE_RUNNING_TKV'] = str(self.tkv)
 
         current_tkv_mask = torch.tensor([self.tkv] * len(cached_requests),
                                         dtype=torch.int64)
@@ -867,13 +872,14 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # with conditional import
         if not scheduler_output.total_num_scheduled_tokens:
             # Return empty ModelRunnerOuptut if there's no work to do.
-            return ModelRunnerOutput(
+            return CBSpyreModelRunnerOutput(
                 req_ids=[],
                 req_id_to_index={},
                 sampled_token_ids=[],
                 spec_token_ids=None,
                 logprobs=None,
                 prompt_logprobs_dict={},
+                tkv=0
             )
 
         model_input = self.prepare_model_input(scheduler_output)
@@ -946,7 +952,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         req_ids = [req.req_id for req in scheduled_req]
         req_id_to_index = {req_id: i for i, req_id in enumerate(req_ids)}
 
-        model_output = ModelRunnerOutput(
+        model_output = CBSpyreModelRunnerOutput(
             req_ids=req_ids,
             req_id_to_index=req_id_to_index,
             sampled_token_ids=output.sampled_token_ids.tolist(),
@@ -955,6 +961,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             if output.logprobs_tensors else None,
             prompt_logprobs_dict={req_id: None
                                   for req_id in req_ids
-                                  }  # TODO(wallas?): prompt logprobs too
+                                  },  # TODO(wallas?): prompt logprobs too
+            tkv=self.tkv
         )
         return model_output

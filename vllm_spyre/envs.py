@@ -11,7 +11,6 @@ if TYPE_CHECKING:
     VLLM_SPYRE_MAX_CONTEXT_LENGTH: int = 0
     VLLM_SPYRE_PERF_METRIC_LOGGING_ENABLED: int = 0
     VLLM_SPYRE_PERF_METRIC_LOGGING_DIR: str = "/tmp"
-    VLLM_SPYRE_RUNNING_TKV: int = 0
 
 environment_variables: dict[str, Callable[[], Any]] = {
     # Defines the prompt lengths the Spyre accelerator should be prepared
@@ -68,10 +67,6 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # logs are written to /tmp.
     "VLLM_SPYRE_PERF_METRIC_LOGGING_DIR":
     lambda: os.getenv("VLLM_SPYRE_PERF_METRIC_LOGGING_DIR", "/tmp"),
-
-    # Value of running tkv. Updated in spyre_model_runner.
-    "VLLM_SPYRE_RUNNING_TKV":
-    lambda: int(os.getenv("VLLM_SPYRE_RUNNING_TKV", "0")),
 }
 
 
