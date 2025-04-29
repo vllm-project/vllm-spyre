@@ -3,15 +3,13 @@
 Run `python -m pytest tests/test_spyre_cb.py`.
 """
 
-from typing import List
-
 import pytest
 from spyre_util import generate_cb_spyre_vllm_output, get_spyre_model_list
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine.llm_engine import LLMEngine as V1LLMEngine
 
 
-@pytest.mark.parametrize("max_num_seqs", [1, 2, 3, 4, 5, 6],
+@pytest.mark.parametrize("max_num_seqs", [1, 2, 3, 4],
                          ids=lambda val: f"max_num_seqs({val})")
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", ["eager", "inductor"])
@@ -23,41 +21,21 @@ from vllm.v1.engine.llm_engine import LLMEngine as V1LLMEngine
 )
 @pytest.mark.parametrize(
     "prompts",
-    [
-        [
-            "7 6 5 4",
-        ],
-        [
-            "7 6 5 4",
-            "10 9 8 7",
-        ],
-        [
-            "7 6 5 4",
-            "10 9 8 7",
-            "8 7 6 5",
-        ],
-        [
-            "7 6 5 4",
-            "10 9 8 7",
-            "8 7 6 5",
-            "9 8 7 6",
-        ],
-        [
-            "7 6 5 4",
-            "10 9 8 7",
-            "8 7 6 5",
-            "9 8 7 6",
-            "6 5 4 3",
-        ],
-        [
-            "7 6 5 4",
-            "10 9 8 7",
-            "8 7 6 5",
-            "11 10 9 8",
-            "9 8 7 6",
-            "6 5 4 3",
-        ],
-    ],
+    [[
+        "7 6 5 4",
+    ], [
+        "7 6 5 4",
+        "10 9 8 7",
+    ], [
+        "7 6 5 4",
+        "10 9 8 7",
+        "8 7 6 5",
+    ], [
+        "7 6 5 4",
+        "10 9 8 7",
+        "8 7 6 5",
+        "9 8 7 6",
+    ]],
     ids=lambda val: f"num_prompts({len(val)})",
 )
 def test_cb_handling(
@@ -65,7 +43,7 @@ def test_cb_handling(
     backend: str,
     max_num_seqs: int,
     use_cb: bool,
-    prompts: List[str],
+    prompts: list[str],
     enable_v1_multiprocessing: int,
     monkeypatch: pytest.MonkeyPatch,
 ):

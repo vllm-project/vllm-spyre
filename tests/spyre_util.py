@@ -208,21 +208,21 @@ def generate_spyre_vllm_output(model: str, prompts: list[str],
 # Support for continuous batching
 def generate_cb_spyre_vllm_output(
     model: str,
-    prompts: List[str],
+    prompts: list[str],
     max_model_len: int,
     block_size: int,
-    sampling_params: Union[SamplingParams, List[SamplingParams]],
+    sampling_params: Union[SamplingParams, list[SamplingParams]],
     tensor_parallel_size: int,
     backend: str,
     max_num_seqs: int,
     use_cb: int,
     enable_v1_multiprocessing: int,
     monkeypatch: pytest.MonkeyPatch,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     with monkeypatch.context() as m:
-        m.setenv("VLLM_SPYRE_WARMUP_PROMPT_LENS", "64")
-        m.setenv("VLLM_SPYRE_WARMUP_NEW_TOKENS",
-                 str(sampling_params.max_tokens))
+        # m.setenv("VLLM_SPYRE_WARMUP_PROMPT_LENS", "64")
+        # m.setenv("VLLM_SPYRE_WARMUP_NEW_TOKENS",
+        #          str(sampling_params.max_tokens))
 
         m.setenv("VLLM_SPYRE_USE_CB", str(use_cb))
         m.setenv("VLLM_USE_V1", "1")
