@@ -911,6 +911,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         output: SamplerOutput = self.model.sample(
             logits=logits,
             # TODO: Uncomment once Wallas is done with the work
+            # sampling_metadata=self.input_batch.sampling_metadata,
             sampling_metadata=model_input.sampling_metadata,
         )
         t1 = time.time() - t0
