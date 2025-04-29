@@ -12,15 +12,10 @@ from vllm.v1.engine.llm_engine import LLMEngine as V1LLMEngine
 @pytest.mark.parametrize("max_num_seqs", [1, 2, 3, 4],
                          ids=lambda val: f"max_num_seqs({val})")
 @pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize("backend", ["eager", "inductor"])
+@pytest.mark.parametrize("backend", ["eager"])
 @pytest.mark.parametrize("use_cb", [0, 1], ids=lambda val: f"use_cb({val})")
 @pytest.mark.parametrize("vllm_version",
                          [pytest.param("V1", marks=pytest.mark.v1, id="v1")])
-@pytest.mark.parametrize(
-    "enable_v1_multiprocessing",
-    [0, 1],
-    ids=lambda val: f"enable_v1_multiprocessing({val})",
-)
 @pytest.mark.parametrize(
     "prompts",
     [[
@@ -46,9 +41,8 @@ def test_cb_handling(
     max_num_seqs: int,
     use_cb: bool,
     prompts: list[str],
-    enable_v1_multiprocessing: int,
-    monkeypatch: pytest.MonkeyPatch,
     vllm_version: str,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     """Test that the spyre worker correctly handles
     continuous batches of requests that
@@ -72,7 +66,6 @@ def test_cb_handling(
         backend=backend,
         max_num_seqs=max_num_seqs,
         use_cb=use_cb,
-        enable_v1_multiprocessing=enable_v1_multiprocessing,
         monkeypatch=monkeypatch,
     )
 

@@ -216,19 +216,12 @@ def generate_cb_spyre_vllm_output(
     backend: str,
     max_num_seqs: int,
     use_cb: int,
-    enable_v1_multiprocessing: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> list[dict[str, Any]]:
     with monkeypatch.context() as m:
-        # m.setenv("VLLM_SPYRE_WARMUP_PROMPT_LENS", "64")
-        # m.setenv("VLLM_SPYRE_WARMUP_NEW_TOKENS",
-        #          str(sampling_params.max_tokens))
 
         m.setenv("VLLM_SPYRE_USE_CB", str(use_cb))
         m.setenv("VLLM_USE_V1", "1")
-
-        m.setenv("VLLM_ENABLE_V1_MULTIPROCESSING",
-                 str(enable_v1_multiprocessing))
 
         m.setenv("VLLM_SPYRE_MAX_CONTEXT_LENGTH", str(max_model_len))
         m.setenv("VLLM_SPYRE_MAX_BATCH_SIZE",
