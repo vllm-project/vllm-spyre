@@ -19,7 +19,6 @@ class CachedRequestState:
 
     req_id: str
     prompt_token_ids: list[int]
-    prompt: Optional[str]
     sampling_params: SamplingParams
     generator: Optional[torch.Generator]
 
