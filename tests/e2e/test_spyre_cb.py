@@ -15,6 +15,8 @@ from vllm.v1.engine.llm_engine import LLMEngine as V1LLMEngine
 @pytest.mark.parametrize("backend", ["eager", "inductor"])
 @pytest.mark.parametrize("use_cb", [0, 1], ids=lambda val: f"use_cb({val})")
 @pytest.mark.parametrize(
+    "vllm_version", [pytest.param("V1", marks=pytest.mark.v1, id="v1")])
+@pytest.mark.parametrize(
     "enable_v1_multiprocessing",
     [0, 1],
     ids=lambda val: f"enable_v1_multiprocessing({val})",
