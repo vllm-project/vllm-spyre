@@ -3,12 +3,15 @@ import inspect
 from dataclasses import dataclass
 from typing import ClassVar
 
+# yapf conflicts with ruff for this block
+# yapf: disable
 try:
     # vllm v0.8.2+
     from vllm.v1.core.sched.output import (
         NewRequestData as UpstreamNewRequestData)
 except ImportError:
     from vllm.v1.core.scheduler import NewRequestData as UpstreamNewRequestData
+# yapf: enable
 
 
 @dataclass
