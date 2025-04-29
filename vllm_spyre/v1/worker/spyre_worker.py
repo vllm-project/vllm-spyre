@@ -23,8 +23,8 @@ import vllm_spyre.envs as envs_spyre
 import vllm_spyre.perf_metrics as perf_metrics
 from vllm_spyre.model_executor.model_loader import spyre_setup
 from vllm_spyre.platform import SpyrePlatform
-from vllm_spyre.v1.core.sched.output import (CachedRequestData, NewRequestData,
-                                             SchedulerOutput)
+from vllm_spyre.v1.compat import (CachedRequestData, NewRequestData,
+                                  SchedulerOutput)
 from vllm_spyre.v1.worker.spyre_model_runner import (
     ContinuousBatchingSpyreModelRunner, StaticBatchingSpyreModelRunner)
 
@@ -288,7 +288,6 @@ class SpyreWorker(WorkerBaseV1):
             NewRequestData(
                 req_id="warmup-%d" % (i),
                 prompt_token_ids=warmup_tokens_tensor[i].tolist(),
-                prompt="test",
                 mm_inputs=[],
                 mm_hashes=[],
                 mm_positions=[],
@@ -404,7 +403,6 @@ class SpyreWorker(WorkerBaseV1):
             NewRequestData(
                 req_id="warmup",
                 prompt_token_ids=warmup_tokens_tensor[i].tolist(),
-                prompt="test",
                 mm_inputs=[],
                 mm_hashes=[],
                 mm_positions=[],
