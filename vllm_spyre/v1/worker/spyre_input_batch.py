@@ -66,7 +66,7 @@ class InputBatch:
         self.pin_memory = pin_memory
         self.vocab_size = vocab_size
 
-        self._req_ids: list[Optional[str]] = []
+        self._req_ids: list[Optional[str]] = [None] * max_num_reqs
         self.req_id_to_index: dict[str, int] = {}
 
         # TODO(woosuk): This buffer could be too large if max_model_len is big.
@@ -175,23 +175,40 @@ class InputBatch:
         # while performing state updates to the batch.
         return cast(list[str], self._req_ids)
 
+    def get_available_index(self):
+        available_indices = self.model_indices_mask.logical_not().nonzero()
+        available_indices_list = available_indices.squeeze(dim=-1).tolist()
+        return available_indices_list[0] if available_indices_list else None
+
+    def req_idx_to_dense_index(self, req_index):
+        return self.model_indices_mask[:req_index].sum().item()
+
+    def req_id_to_dense_index(self, req_id):
+        req_index = self.req_id_to_index[req_id]
+        return self.req_idx_to_dense_index(req_index)
+
     def add_request(
         self,
         request: "CachedRequestState",
         req_index: Optional[int] = None,
     ) -> None:
         if req_index is None:
-            req_index = self.num_reqs
+            req_index = self.get_available_index()
+        assert req_index is not None
         assert req_index < self.max_num_reqs
 
+        assert self.model_indices_mask[req_index].item() is False
         self.model_indices_mask[req_index] = True
         req_id = request.req_id
-        if req_index == len(self._req_ids):
-            self._req_ids.append(req_id)
-            self.req_output_token_ids.append(request.output_token_ids)
-        else:
-            self._req_ids[req_index] = req_id
-            self.req_output_token_ids[req_index] = request.output_token_ids
+        self._req_ids[req_index] = req_id
+
+        # NOTE: differently from gpu input batch, self.req_output_token_ids
+        # is not synced with self._req_ids, it should use
+        # self.model_indices_mask to resolve its index considering masked
+        # out requests.
+        shifted_index = self.model_indices_mask[:req_index].sum().item()
+        self.req_output_token_ids.insert(shifted_index,
+                                         request.output_token_ids)
 
         self.req_id_to_index[req_id] = req_index
 
@@ -313,12 +330,16 @@ class InputBatch:
         This method however, does not change the self.req_id_to_index which is
         needed to keep the map of finished padded requests.
         
-        TODO: in the future we shall remove/change this method to actual clean 
-        up all the data 
+        For the continuous batching, the removed request indices can be 
+        overwritten by new requests
         '''
         if req_id not in self.req_id_to_index:
             return
-        req_index = self.req_id_to_index[req_id]
+        # req_index = self.req_id_to_index[req_id]
+        req_index = self.req_id_to_index.pop(req_id)
+
+        if req_index is None:
+            return None
 
         # Mask out the request
         self.model_indices_mask[req_index] = False
@@ -328,6 +349,7 @@ class InputBatch:
         # Index corrected based on the padded/deactivated requests
         shifted_index = self.model_indices_mask[:req_index].sum().item()
         self.req_output_token_ids.pop(shifted_index)
+        self._req_ids[req_index] = None
 
         self.greedy_reqs.discard(req_id)
         self.random_reqs.discard(req_id)
