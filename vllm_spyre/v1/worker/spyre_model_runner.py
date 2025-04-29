@@ -11,6 +11,7 @@ from vllm.sampling_params import SamplingType
 from vllm.utils import is_pin_memory_available
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.outputs import SamplerOutput
+from vllm.v1.sample.metadata import SamplingMetadata
 
 from vllm_spyre.model_executor.model_loader.spyre import SpyreCausalLM
 from vllm_spyre.platform import SpyrePlatform
@@ -33,7 +34,7 @@ import vllm_spyre.envs as envs_spyre
 logger = init_logger(__name__)
 
 
-@dataclass(frozen=True)
+@dataclass()
 class ModelForwardInputs:
     """
     Used by the SpyreModelRunner.
@@ -46,6 +47,8 @@ class ModelForwardInputs:
     block_table: Optional[torch.Tensor] = None
     slot_mapping: Optional[torch.Tensor] = None
     is_prompt: Optional[bool] = None
+    # temporary until we can get from input_batch
+    sampling_metadata: Optional[SamplingMetadata] = None
 
 
 class SpyreModelRunner:
@@ -908,7 +911,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         output: SamplerOutput = self.model.sample(
             logits=logits,
             # TODO: Uncomment once Wallas is done with the work
-            # sampling_metadata=self.input_batch.sampling_metadata,
+            sampling_metadata=model_input.sampling_metadata,
         )
         t1 = time.time() - t0
         logger.debug("t_token: %.2fms", (t1 * 1000))
