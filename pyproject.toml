@@ -31,6 +31,9 @@ namespaces = false  # to disable scanning PEP 420 namespaces (true by default)
 # Version files are optional, this just marginally speeds up version inspection
 # at runtime
 version_file = "vllm_spyre/_version.py"
+# Version strings are formatted as `{version}+{local}`, e.g. "0.1.dev1+gb1a7032"
+# Local versioning is incompatible with pypi, so we disable it by default.
+local_scheme = "no-local-version"
 # For more version configuration, see 
 # https://setuptools-scm.readthedocs.io/en/latest/config/
 
