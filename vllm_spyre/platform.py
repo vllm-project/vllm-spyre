@@ -90,10 +90,9 @@ class SpyrePlatform(Platform):
                 max_batch_size = max(max_batch_size, shape['batch_size'])
                 max_seq_len = max(max_seq_len,
                                   shape['prompt_length'] + shape['new_tokens'])
-
-        if envs.VLLM_USE_V1 and not envs_spyre.VLLM_SPYRE_USE_CB:
-            # The v0 scheduler will run out of blocks if this is overridden
-            scheduler_config.max_num_seqs = max_batch_size
+            if envs.VLLM_USE_V1:
+                # The v0 scheduler will run out of blocks if this is overridden
+                scheduler_config.max_num_seqs = max_batch_size
 
         cache_config = vllm_config.cache_config
 
