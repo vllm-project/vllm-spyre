@@ -4,23 +4,15 @@ from collections import deque
 from typing import TYPE_CHECKING
 
 from vllm.logger import init_logger
-from vllm.sampling_params import SamplingParams
-from vllm.v1.engine import EngineCoreOutput, EngineCoreOutputs, FinishReason
-from vllm.v1.outputs import ModelRunnerOutput
-from vllm.v1.request import Request, RequestStatus
+from vllm.v1.core.sched.scheduler import Scheduler
+from vllm.v1.request import Request
 
-import vllm_spyre.envs as envs_spyre
-
-try:
-    from vllm.v1.core.sched.scheduler import Scheduler
-except ImportError:
-    from vllm.v1.core.scheduler import Scheduler
+from vllm_spyre.platform import SpyrePlatform
 
 if TYPE_CHECKING:
-    from vllm_spyre.v1.core.sched.output import SchedulerOutput
+    from vllm.v1.core.sched.output import SchedulerOutput
 else:
     SchedulerOutput = None
-from vllm_spyre.platform import SpyrePlatform
 
 logger = init_logger(__name__)
 
