@@ -583,9 +583,11 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         # ceil division to pad to next block boundary
         new_batch = len(self.req_ids2blocks) == 0
+        max_prompt_len = max([len(r.prompt_token_ids) for r in new_requests])
+        if not new_batch:
+            assert max_prompt_len <= self.tkv
         d = self.BLOCK_SIZE
-        n = max([len(r.prompt_token_ids)
-                 for r in new_requests]) if new_batch else self.tkv
+        n = max_prompt_len if new_batch else self.tkv
         block_padding = ((n + d - 1) // d) * d
         if new_batch:
             self.tkv = block_padding
