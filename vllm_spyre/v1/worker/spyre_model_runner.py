@@ -1,4 +1,5 @@
 import time
+from collections import deque
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional, TypeVar
@@ -596,10 +597,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         NUM_BLOCKS = max_batch_size * max_model_len // self.BLOCK_SIZE  # 64
 
         # TO DO: move to InputBatch
-        self.req_ids2blocks: dict[str, list[int]] = {}
+        self.req_ids2blocks: dict[str, deque[int]] = {}
         self.req_ids2left_pads: dict[str, int] = {}
         self.tkv = 0
-        self.free_blocks = [i for i in range(NUM_BLOCKS)]
+        self.free_blocks = deque([i for i in range(NUM_BLOCKS)])
 
     def _prepare_prompt(
         self,
@@ -634,12 +635,12 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             slot_mapping_i = []
             for pos_i in range(block_padding):
                 if pos_i % self.BLOCK_SIZE == 0:
-                    block_number = self.free_blocks.pop(0)
+                    block_number = self.free_blocks.popleft()
                     block_table_i.append(block_number)
                 block_offset = pos_i % self.BLOCK_SIZE
                 slot = block_number * self.BLOCK_SIZE + block_offset
                 slot_mapping_i.append(slot)
-            self.req_ids2blocks[request_data.req_id] = block_table_i
+            self.req_ids2blocks[request_data.req_id] = deque(block_table_i)
             slot_mapping.append(slot_mapping_i)
 
         # prefils are always of batch size 1 for this milestone
@@ -692,7 +693,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             if self.tkv // self.BLOCK_SIZE + 1 > len(
                     self.req_ids2blocks[cached_request.req_id]):
                 self.req_ids2blocks[cached_request.req_id].append(
-                    self.free_blocks.pop(0))
+                    self.free_blocks.popleft())
             block_table.append(self.req_ids2blocks[cached_request.req_id])
             # slot_mapping for all blocks of sequence
             start_slot = block_table[-1][-1] * self.BLOCK_SIZE
@@ -747,8 +748,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
                 # free blocks
                 for _ in range(n_padded_blocks):
-                    freed_block_id = self.req_ids2blocks[req.req_id].pop(
-                        0)  # todo: opt
+                    freed_block_id = self.req_ids2blocks[req.req_id].popleft()
                     self.free_blocks.append(freed_block_id)
 
         # update tkv
