@@ -352,6 +352,7 @@ class SpyreWorker(WorkerBaseV1):
             for freed_block in model_runner.req_ids2blocks[req.req_id]:
                 model_runner.free_blocks.append(freed_block)
             del model_runner.req_ids2blocks[req.req_id]
+            del model_runner.req_ids2left_pads[req.req_id]
 
         # update lazyhandle (once)
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
