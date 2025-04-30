@@ -1,0 +1,39 @@
+# This creates a release on github when a tag is pushed
+# See build-and-publish.yaml for the PyPI package release process
+name: Create Release
+
+on:
+  push:
+    tags:
+      - v*
+
+# Needed to create release and upload assets
+permissions:
+  contents: write
+
+jobs:
+  release:
+    # Retrieve tag and create release
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Extract branch info
+        shell: bash
+        run: |
+          echo "release_tag=${GITHUB_REF#refs/*/}" >> "$GITHUB_ENV"
+
+      - name: Create Release
+        id: create_release
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          RELEASE_TAG: ${{ env.release_tag }}
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+          script: |
+            const script = require('.github/workflows/scripts/create_release.js')
+            await script(github, context, core)
