@@ -86,6 +86,8 @@ def test_cb_handling(
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
+@pytest.mark.parametrize("vllm_version",
+                         [pytest.param("V1", marks=pytest.mark.v1, id="v1")])
 def test_cb_with_steps(model: str, backend: str,
                        monkeypatch: pytest.MonkeyPatch):
     """Test that the spyre worker correctly handles
