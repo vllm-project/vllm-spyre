@@ -609,13 +609,14 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         assert len(new_requests) > 0
         input_token_list: list[torch.Tensor] = []
 
-        if len(self.req_ids2blocks) == 0:
-            self.tkv = self.BLOCK_SIZE
-
         # ceil division to pad to next block boundary
-        n = self.tkv
+        new_batch = len(self.req_ids2blocks) == 0
         d = self.BLOCK_SIZE
+        n = max([len(r.prompt_token_ids)
+                 for r in new_requests]) if new_batch else self.tkv
         block_padding = ((n + d - 1) // d) * d
+        if new_batch:
+            self.tkv = block_padding
 
         # Internal state is managed here.
         slot_mapping = []
