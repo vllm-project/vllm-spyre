@@ -1,4 +1,3 @@
-import os
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -879,7 +878,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                 spec_token_ids=None,
                 logprobs=None,
                 prompt_logprobs_dict={},
-                tkv=0
+                tkv=0,
             )
 
         model_input = self.prepare_model_input(scheduler_output)
@@ -962,6 +961,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             prompt_logprobs_dict={req_id: None
                                   for req_id in req_ids
                                   },  # TODO(wallas?): prompt logprobs too
-            tkv=self.tkv
+            tkv=self.tkv,
         )
         return model_output

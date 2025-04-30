@@ -240,16 +240,20 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
 
         # Initialize SpyreScheduler
         super().__init__(*args, **kwargs)
-        
+
     def update_from_output(
         self,
         scheduler_output: SchedulerOutput,
         model_runner_output: ModelRunnerOutput,
     ) -> EngineCoreOutputs:
-        # Need an instance of CBSpyreModelRunnerOutput, which holds the current tkv value information
-        assert isinstance(model_runner_output, CBSpyreModelRunnerOutput), f"Expecting an instance of CBSpyreModelRunnerOutput when doing continuous batching."
+        # Need an instance of CBSpyreModelRunnerOutput which holds the tkv value
+        assert isinstance(
+            model_runner_output, CBSpyreModelRunnerOutput
+        ), "Expecting an instance of CBSpyreModelRunnerOutput"
+        "when doing continuous batching."
         self.tkv = model_runner_output.tkv
-        return super().update_from_output(scheduler_output, model_runner_output)
+        return super().update_from_output(scheduler_output,
+                                          model_runner_output)
 
     def add_request(self, request: Request) -> None:
         """This override rejects requests that exceed max context length"""
@@ -337,7 +341,8 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         max_context_len = envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH
 
         return len(self.running)+len(self.waiting) == 0 or\
-            (len(self.running)+len(self.waiting) < self.max_num_running_reqs and\
+            (len(self.running)+len(self.waiting)\
+                < self.max_num_running_reqs and\
             len(self.waiting) < max_prompt_batch_size and\
             self.holdback_queue[0].num_prompt_tokens <= self.tkv and\
             self.holdback_queue[0].max_tokens <= (max_context_len - self.tkv))
