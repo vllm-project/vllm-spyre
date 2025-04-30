@@ -681,6 +681,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                                         dtype=torch.bool,
                                         device='cpu')
 
+        if envs_spyre.VLLM_SPYRE_RM_PADDED_BLOCKS:
+            self.reduce_left_padding(cached_requests)
+
         for cached_request in cached_requests:
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
@@ -727,6 +730,31 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         return input_tokens, position_ids, mask, current_tkv_mask, \
             left_padded_prompt_mask, block_table, slot_mapping
+
+    def reduce_left_padding(self, requests: list[CachedRequestData]) -> None:
+
+        min_left_pad = min(
+            [self.req_ids2left_pads[r.req_id] for r in requests])
+        n_padded_blocks = min_left_pad // self.BLOCK_SIZE
+
+        if n_padded_blocks > 0:
+            logger.debug("Number of removed blocks due to left padding: %d",
+                         n_padded_blocks)
+
+            for req in requests:
+                self.req_ids2left_pads[
+                    req.req_id] -= n_padded_blocks * self.BLOCK_SIZE
+
+                # free blocks
+                for _ in range(n_padded_blocks):
+                    freed_block_id = self.req_ids2blocks[req.req_id].pop(
+                        0)  # todo: opt
+                    self.free_blocks.append(freed_block_id)
+
+        # update tkv
+        self.tkv -= n_padded_blocks * self.BLOCK_SIZE
+
+        return
 
     def pad_input_ids(
         self,
