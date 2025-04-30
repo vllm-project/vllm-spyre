@@ -54,6 +54,9 @@ def test_cb_handling(
     continuous batches of requests that
     finish after different numbers of forward passes"""
 
+    if use_cb and len(prompts) < max_num_seqs:
+        pytest.skip("Skipping since this doesn't really test CB")
+
     vllm_sampling_params = SamplingParams(max_tokens=20,
                                           temperature=0,
                                           stop="1",
