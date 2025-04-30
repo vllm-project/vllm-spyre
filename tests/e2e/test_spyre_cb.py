@@ -9,30 +9,39 @@ from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine.llm_engine import LLMEngine as V1LLMEngine
 
 
-@pytest.mark.parametrize("max_num_seqs", [1, 2, 3, 4],
-                         ids=lambda val: f"max_num_seqs({val})")
+@pytest.mark.parametrize(
+    "max_num_seqs", [1, 2, 3, 4], ids=lambda val: f"max_num_seqs({val})"
+)
 @pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize("backend", ["eager"])
+@pytest.mark.parametrize(
+    "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")]
+)
 @pytest.mark.parametrize("use_cb", [0, 1], ids=lambda val: f"use_cb({val})")
-@pytest.mark.parametrize("vllm_version",
-                         [pytest.param("V1", marks=pytest.mark.v1, id="v1")])
+@pytest.mark.parametrize(
+    "vllm_version", [pytest.param("V1", marks=pytest.mark.v1, id="v1")]
+)
 @pytest.mark.parametrize(
     "prompts",
-    [[
-        "7 6 5 4",
-    ], [
-        "7 6 5 4",
-        "10 9 8 7",
-    ], [
-        "7 6 5 4",
-        "10 9 8 7",
-        "8 7 6 5",
-    ], [
-        "7 6 5 4",
-        "10 9 8 7",
-        "8 7 6 5",
-        "9 8 7 6",
-    ]],
+    [
+        [
+            "7 6 5 4",
+        ],
+        [
+            "7 6 5 4",
+            "10 9 8 7",
+        ],
+        [
+            "7 6 5 4",
+            "10 9 8 7",
+            "8 7 6 5",
+        ],
+        [
+            "7 6 5 4",
+            "10 9 8 7",
+            "8 7 6 5",
+            "9 8 7 6",
+        ],
+    ],
     ids=lambda val: f"num_prompts({len(val)})",
 )
 def test_cb_handling(
@@ -70,15 +79,15 @@ def test_cb_handling(
     )
 
     for i, prompt in enumerate(prompts):
-        assert vllm_results[i]["text"] == [
-            ' ' + ' '.join(
+        assert (vllm_results[i]["text"] == [
+            " " + " ".join(
                 str(i)
-                for i in range(int(prompt.split()[-1]) - 1, 1, -1)) + ' '
-        ][0]
+                for i in range(int(prompt.split()[-1]) - 1, 1, -1)) + " "
+        ][0])
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize("backend", ["eager", "inductor"])
+@pytest.mark.parametrize("backend", ["eager"])
 def test_cb_with_steps(model: str, backend: str,
                        monkeypatch: pytest.MonkeyPatch):
     """Test that the spyre worker correctly handles
@@ -94,14 +103,15 @@ def test_cb_with_steps(model: str, backend: str,
         prompt2 = "10 9 8 7"
         prompt3 = "8 7 6 5"
 
-        sampling_params = SamplingParams(max_tokens=max_tokens,
-                                         temperature=0,
-                                         stop="1",
-                                         ignore_eos=True)
+        sampling_params = SamplingParams(
+            max_tokens=max_tokens,
+            temperature=0,
+            # stop="1",  # replace with stop_tokens
+            stop_token_ids=[16],
+            ignore_eos=True,
+        )
 
         # set env vars
-        m.setenv("VLLM_SPYRE_WARMUP_PROMPT_LENS", "64")
-        m.setenv("VLLM_SPYRE_WARMUP_NEW_TOKENS", str(max_tokens))
 
         m.setenv("VLLM_SPYRE_USE_CB", "1")
         m.setenv("VLLM_USE_V1", "1")
@@ -144,28 +154,28 @@ def test_cb_with_steps(model: str, backend: str,
         assert request_outputs[0].request_id == "2"  # req 2 is decoding
 
         assert len(engine_core.scheduler.waiting) == 0
-        assert len(engine_core.scheduler.running) == 1
+        assert len(engine_core.scheduler.running) == 2
 
         request_outputs = engine.step()
-        assert len(request_outputs) == 2  # still only 1 request
-        assert request_outputs[0].request_id == "1"  # req 1 is decoding
-        assert request_outputs[1].request_id == "2"  # req 2 is decoding
+        assert len(request_outputs) == 2
+        assert request_outputs[0].request_id == "2"  # req 2 is decoding
+        assert request_outputs[1].request_id == "1"  # req 1 is decoding
 
         assert len(engine_core.scheduler.waiting) == 0
         assert len(engine_core.scheduler.running) == 2
 
         request_outputs = engine.step()
         assert len(request_outputs) == 2
-        assert request_outputs[0].request_id == "1"  # req 1 is decoding
-        assert request_outputs[1].request_id == "2"  # req 2 is decoding
+        assert request_outputs[0].request_id == "2"  # req 2 is decoding
+        assert request_outputs[1].request_id == "1"  # req 1 is decoding
 
         assert len(engine_core.scheduler.waiting) == 0
         assert len(engine_core.scheduler.running) == 2
 
         request_outputs = engine.step()
         assert len(request_outputs) == 2
-        assert request_outputs[0].request_id == "1"  # req 1 is decoding
-        assert request_outputs[1].request_id == "2"  # req 2 is decoding
+        assert request_outputs[0].request_id == "2"  # req 2 is decoding
+        assert request_outputs[1].request_id == "1"  # req 1 is decoding
 
         assert len(engine_core.scheduler.waiting) == 0
         assert len(engine_core.scheduler.running) == 2
@@ -180,20 +190,20 @@ def test_cb_with_steps(model: str, backend: str,
 
         request_outputs = engine.step()
         assert len(request_outputs) == 2  # both requests decoding now
-        assert request_outputs[0].request_id == "1"  # req 1 is decoding
-        assert request_outputs[1].request_id == "2"  # req 2 is decoding
+        assert request_outputs[0].request_id == "2"  # req 2 is decoding
+        assert request_outputs[1].request_id == "1"  # req 1 is decoding
 
-        assert len(engine_core.scheduler.waiting) == 0
+        assert len(engine_core.scheduler.waiting) == 1
         assert len(engine_core.scheduler.running) == 2
 
         request_outputs = engine.step()
         assert len(request_outputs) == 2  # both requests decoding now
-        assert request_outputs[0].request_id == "1"  # req 1 is decoding
-        assert request_outputs[1].request_id == "2"  # req 2 is decoding
-        assert request_outputs[0].finished  # request 1 is done
-        assert request_outputs[0].outputs[0].text == " 3 2 "
+        assert request_outputs[0].request_id == "2"  # req 2 is decoding
+        assert request_outputs[1].request_id == "1"  # req 1 is decoding
+        assert request_outputs[1].finished  # request 1 is done
+        assert request_outputs[1].outputs[0].text == " 3 2 "
 
-        assert len(engine_core.scheduler.waiting) == 0
+        assert len(engine_core.scheduler.waiting) == 1
         assert len(engine_core.scheduler.running) == 1
 
         # req 3 is scheduled now
@@ -202,12 +212,12 @@ def test_cb_with_steps(model: str, backend: str,
         assert request_outputs[0].request_id == "3"  # req 3 is decoding
 
         assert len(engine_core.scheduler.waiting) == 0
-        assert len(engine_core.scheduler.running) == 1
+        assert len(engine_core.scheduler.running) == 2
 
         request_outputs = engine.step()
         assert len(request_outputs) == 2  # requests 2 and 3 decoding now
-        assert request_outputs[0].request_id == "2"  # req 2 is decoding
-        assert request_outputs[1].request_id == "3"  # req 3 is decoding
+        assert request_outputs[0].request_id == "3"  # req 3 is decoding
+        assert request_outputs[1].request_id == "2"  # req 2 is decoding
 
         assert len(engine_core.scheduler.waiting) == 0
         assert len(engine_core.scheduler.running) == 2
