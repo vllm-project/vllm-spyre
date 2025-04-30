@@ -1,7 +1,7 @@
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Optional, TypeVar
+from typing import TYPE_CHECKING, Optional
 
 import torch
 from torch import nn
@@ -12,10 +12,6 @@ from vllm.utils import is_pin_memory_available
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.outputs import SamplerOutput
 from vllm.v1.sample.metadata import SamplingMetadata
-from vllm.worker.model_runner_base import (
-    ModelRunnerBase, ModelRunnerInputBase,
-    _add_sampling_metadata_broadcastable_dict,
-    _init_sampling_metadata_from_tensor_dict)
 
 from vllm_spyre.model_executor.model_loader.spyre import SpyreCausalLM
 from vllm_spyre.platform import SpyrePlatform
@@ -23,12 +19,8 @@ from vllm_spyre.v1.worker.spyre_input_batch import (CachedRequestState,
                                                     InputBatch)
 
 if TYPE_CHECKING:
-    from vllm.attention.backends.abstract import AttentionBackend
-    from vllm.model_executor.pooling_metadata import PoolingMetadata
-
-    from vllm_spyre.v1.core.sched.output import (CachedRequestData,
-                                                 NewRequestData,
-                                                 SchedulerOutput)
+    from vllm_spyre.v1.compat import (CachedRequestData, NewRequestData,
+                                      SchedulerOutput)
 else:
     CachedRequestData = None
     SchedulerOutput = None
@@ -40,60 +32,50 @@ import vllm_spyre.envs as envs_spyre
 
 logger = init_logger(__name__)
 
-TModelInputForSpyre = TypeVar('TModelInputForSpyre',
-                              bound="ModelInputForSpyre")
 
-
-@dataclass(frozen=True)
-class ModelInputForSpyre(ModelRunnerInputBase):
+@dataclass()
+class ModelForwardInputs:
     """
     Used by the SpyreModelRunner.
     """
     input_tokens: Optional[torch.Tensor] = None
     input_positions: Optional[torch.Tensor] = None
     input_masks: Optional[torch.Tensor] = None
-    sampling_metadata: Optional[SamplingMetadata] = None
-    pooling_metadata: Optional["PoolingMetadata"] = None
+    current_tkv_mask: Optional[torch.Tensor] = None
+    left_padded_prompt_mask: Optional[torch.Tensor] = None
+    block_table: Optional[torch.Tensor] = None
+    slot_mapping: Optional[torch.Tensor] = None
     is_prompt: Optional[bool] = None
-    # unused
-    virtual_engine: Optional[int] = None
-
-    def as_broadcastable_tensor_dict(self) -> dict[str, Any]:
-        tensor_dict = {
-            "input_tokens": self.input_tokens,
-            "input_positions": self.input_positions,
-            "input_masks": self.input_masks,
-            "is_prompt": self.is_prompt,
-        }
-        _add_sampling_metadata_broadcastable_dict(tensor_dict,
-                                                  self.sampling_metadata)
-        return tensor_dict
-
-    @classmethod
-    def from_broadcasted_tensor_dict(
-        cls: type[TModelInputForSpyre],
-        tensor_dict: dict[str, Any],
-        attn_backend: Optional["AttentionBackend"] = None,
-    ) -> TModelInputForSpyre:
-        tensor_dict = _init_sampling_metadata_from_tensor_dict(tensor_dict)
-        return cls(**tensor_dict)
+    # temporary until we can get from input_batch
+    sampling_metadata: Optional[SamplingMetadata] = None
 
 
-class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
+class SpyreModelRunner:
 
     def __init__(
         self,
         vllm_config: VllmConfig,
         is_driver_worker: bool,
     ):
-        super().__init__(vllm_config=vllm_config)
         self.is_driver_worker = is_driver_worker
+        self.vllm_config = vllm_config
+        self.model_config = vllm_config.model_config
+        self.cache_config = vllm_config.cache_config
+        self.lora_config = vllm_config.lora_config
+        self.load_config = vllm_config.load_config
+        self.parallel_config = vllm_config.parallel_config
+        self.scheduler_config = vllm_config.scheduler_config
+        self.device_config = vllm_config.device_config
+        self.speculative_config = vllm_config.speculative_config
+        self.prompt_adapter_config = vllm_config.prompt_adapter_config
+        self.observability_config = vllm_config.observability_config
 
         self.pad_token_id = 0
+
         if self.model_config is not None:
             if self.model_config.hf_config is not None:
-                self.pad_token_id = getattr(self.model_config.hf_config,
-                                            "pad_token_id", None) or 0
+                self.pad_token_id = (getattr(self.model_config.hf_config,
+                                             "pad_token_id", None) or 0)
             if self.model_config.get_sliding_window():
                 logger.warning("Sliding window is not supported on Spyre. "
                                "The model will run without sliding window.")
@@ -127,18 +109,16 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                    num_decode_tokens: Iterable[int]) -> None:
         max_pad_length = max(prompt_lens)
         max_decode_length = max(num_decode_tokens)
-        self.model = SpyreCausalLM(self.model_config,
-                                   parallel_config=self.parallel_config,
-                                   max_prompt_length=max_pad_length,
-                                   max_decode_length=max_decode_length)
+        self.model = SpyreCausalLM(
+            self.model_config,
+            parallel_config=self.parallel_config,
+            max_prompt_length=max_pad_length,
+            max_decode_length=max_decode_length,
+        )
 
     @property
     def vocab_size(self) -> int:
         return self.model.model.model.config.src_vocab_size
-
-    def make_model_input_from_broadcasted_tensor_dict(
-            self, tensor_dict: dict[str, Any]) -> ModelInputForSpyre:
-        return ModelInputForSpyre.from_broadcasted_tensor_dict(tensor_dict)
 
     def _prepare_pad_input_ids(
         self,
@@ -156,7 +136,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
             seq_len = input_ids_i.size(0)
             if max_len > seq_len:
                 logger.info(
-                    "Padding request of length %d tokens to %d tokens.",
+                    "Left padding request of length %d tokens to %d tokens.",
                     seq_len, max_len)
             pads = torch.ones(max_len - seq_len,
                               dtype=torch.long,
@@ -186,8 +166,8 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         min_pad_length: int = 0,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
 
-        padded_input_ids_list, mask_list, position_ids_list = self.\
-            _prepare_pad_input_ids(input_ids_list, min_pad_length)
+        padded_input_ids_list, mask_list, position_ids_list = (
+            self._prepare_pad_input_ids(input_ids_list, min_pad_length))
 
         input_ids = torch.stack(padded_input_ids_list)
         mask = torch.stack(mask_list).bool()
@@ -219,11 +199,13 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         # We do at least use the real size from the cache config.
         block_size = self.vllm_config.cache_config.block_size
 
-        attn_spec = FullAttentionSpec(block_size=block_size,
-                                      num_kv_heads=1,
-                                      head_size=1,
-                                      dtype=torch.float16,
-                                      use_mla=False)
+        attn_spec = FullAttentionSpec(
+            block_size=block_size,
+            num_kv_heads=1,
+            head_size=1,
+            dtype=torch.float16,
+            use_mla=False,
+        )
         return {"foo": attn_spec}
 
     def complete_warmup(self):
@@ -305,11 +287,11 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
     def _prepare_prompt(
         self,
         new_requests: list[NewRequestData],
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[int]]:
+    ) -> ModelForwardInputs:
         assert len(new_requests) > 0
         input_token_list: list[torch.Tensor] = []
-        padded_batch_size, min_pad_length_batch = \
-            self._get_padded_batch_size(new_requests)
+        padded_batch_size, min_pad_length_batch = self._get_padded_batch_size(
+            new_requests)
 
         # Internal state is reset here.
         # We don't support continuous batching, so we know all previous requests
@@ -339,7 +321,6 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
             req_state = CachedRequestState(
                 req_id=req_id,
                 prompt_token_ids=request_data.prompt_token_ids,
-                prompt=request_data.prompt,
                 sampling_params=sampling_params,
                 generator=generator,
                 output_token_ids=[],
@@ -363,14 +344,17 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         input_tokens, self._position_ids, self._mask = self.pad_input_ids(
             input_token_list, min_pad_length=min_pad_length_batch)
 
-        seq_lens = [t.shape[0] for t in input_token_list]
-
-        return input_tokens, self._position_ids, self._mask, seq_lens
+        return ModelForwardInputs(
+            input_tokens=input_tokens,
+            input_positions=self._position_ids,
+            input_masks=self._mask,
+            is_prompt=True,
+        )
 
     def _prepare_decode(
         self,
         cached_requests: list[CachedRequestData],
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> ModelForwardInputs:
         assert len(cached_requests) > 0
         input_tokens: list[list[int]] = [
             [0] for _ in range(self._position_ids.shape[0])
@@ -390,8 +374,12 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         input_tokens = torch.tensor(input_tokens,
                                     dtype=torch.long,
                                     device=self.device)
-
-        return input_tokens, self._position_ids, self._mask
+        return ModelForwardInputs(
+            input_tokens=input_tokens,
+            input_positions=self._position_ids,
+            input_masks=self._mask,
+            is_prompt=False,
+        )
 
     def _update_position_ids(self) -> None:
         """Updating the position ids of all sequences
@@ -426,7 +414,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         self._mask = torch.stack(masks_new, dim=0)
 
     def prepare_model_input(
-            self, scheduler_output: SchedulerOutput) -> ModelInputForSpyre:
+            self, scheduler_output: SchedulerOutput) -> ModelForwardInputs:
 
         # NOTE: We assume that all sequences in the group are all prompts or
         # all decodes.
@@ -438,24 +426,14 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
             # Assert no running requests
             assert len(scheduler_output.scheduled_cached_reqs) == 0
 
-            (input_tokens, input_positions, input_masks,
-             _) = self._prepare_prompt(scheduler_output.scheduled_new_reqs)
+            return self._prepare_prompt(scheduler_output.scheduled_new_reqs)
         else:
             if scheduler_output.finished_req_ids:
                 for req_id in scheduler_output.finished_req_ids:
                     self.input_batch.soft_remove_request(req_id)
                 self.input_batch.refresh_sampling_metadata()
 
-            (input_tokens, input_positions, input_masks) = \
-                self._prepare_decode(scheduler_output.scheduled_cached_reqs)
-
-        sampling_metadata = self.input_batch.sampling_metadata
-
-        return ModelInputForSpyre(input_tokens=input_tokens,
-                                  input_positions=input_positions,
-                                  input_masks=input_masks,
-                                  sampling_metadata=sampling_metadata,
-                                  is_prompt=is_prompt)
+            return self._prepare_decode(scheduler_output.scheduled_cached_reqs)
 
     @SpyrePlatform.inference_mode()
     def execute_model(
@@ -510,7 +488,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         # Sample the next token.
         output: SamplerOutput = self.model.sample(
             logits=logits,
-            sampling_metadata=model_input.sampling_metadata,
+            sampling_metadata=self.input_batch.sampling_metadata,
         )
         t1 = time.time() - t0
         logger.debug("t_token: %.2fms", (t1 * 1000))
@@ -520,12 +498,12 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
             req_id_to_index=self.input_batch.get_unpadded_output_indices(),
             sampled_token_ids=output.sampled_token_ids.tolist(),
             spec_token_ids=None,
-            logprobs=output.logprobs_tensors.tolists()
-            if output.logprobs_tensors else None,
+            logprobs=(output.logprobs_tensors.tolists()
+                      if output.logprobs_tensors else None),
             prompt_logprobs_dict={
                 req_id: None
                 for req_id in self.input_batch.req_id_to_index
-            }  # TODO(wallas?): prompt logprobs too
+            },  # TODO(wallas?): prompt logprobs too
         )
         return model_output
 
@@ -533,34 +511,35 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         # find warmup shape to be used for padding and batching
         applicable_spyre_warmup_shapes = [
             shape for shape in self.spyre_warmup_shapes
-            if len(new_requests) <= shape['batch_size']
+            if len(new_requests) <= shape["batch_size"]
         ]
         for request_data in new_requests:
             # retrieve initial (unpadded) tokens
             prompt_tokens = request_data.prompt_token_ids
-            new_tokens = request_data.sampling_params.max_tokens\
-                if request_data.sampling_params is not None else 0
+            new_tokens = (request_data.sampling_params.max_tokens
+                          if request_data.sampling_params is not None else 0)
 
             updated_spyre_warmup_shapes = [
                 shape for shape in applicable_spyre_warmup_shapes
-                if len(prompt_tokens) <= shape['prompt_length']
-                and new_tokens <= shape['new_tokens']
+                if len(prompt_tokens) <= shape["prompt_length"]
+                and new_tokens <= shape["new_tokens"]
             ]
             applicable_spyre_warmup_shapes = updated_spyre_warmup_shapes
 
-        assert applicable_spyre_warmup_shapes, \
-            "No shapes available to run prefill batch. (This should not happen)"
+        assert (
+            applicable_spyre_warmup_shapes
+        ), "No shapes available to run prefill batch. (This should not happen)"
 
         # If multiple warmup shapes apply, the first one is selected.
         # For improving performance, the warmup shapes in scheduler_config
         # are ordered by "processing speed".
         min_pad_length_batch = applicable_spyre_warmup_shapes[0][
-            'prompt_length']
-        padded_batch_size = applicable_spyre_warmup_shapes[0]['batch_size']
+            "prompt_length"]
+        padded_batch_size = applicable_spyre_warmup_shapes[0]["batch_size"]
         return padded_batch_size, min_pad_length_batch
 
-    def _mark_input_tensors(self, model_input: ModelInputForSpyre) -> None:
-        """Yoinked from 
+    def _mark_input_tensors(self, model_input: ModelForwardInputs) -> None:
+        """Yoinked from
         https://github.com/foundation-model-stack/aiu-fms-testing-utils/pull/13
         """
         if not self.warmup_mode:
@@ -601,16 +580,16 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                          is_driver_worker=is_driver_worker)
 
         max_batch_size = envs_spyre.VLLM_SPYRE_MAX_BATCH_SIZE
-        # this is just to pass formatting bc type is Optional[list[int]]
-        if envs_spyre.VLLM_SPYRE_WARMUP_PROMPT_LENS:
-            max_prompt_length = envs_spyre.VLLM_SPYRE_WARMUP_PROMPT_LENS[0]
+        max_model_len = envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH
+
+        self.BLOCK_SIZE = 64
+        NUM_BLOCKS = max_batch_size * max_model_len // self.BLOCK_SIZE  # 64
 
         # TO DO: move to InputBatch
-        self.req_ids2page: dict = {}
-        self.active_pages: list[int] = []
+        self.req_ids2blocks: dict[str, list[int]] = {}
+        self.req_ids2left_pads: dict[str, int] = {}
         self.tkv = 0
-        self.free_pages = [i for i in range(max_batch_size)]
-        self.min_pad_length_batch = max_prompt_length
+        self.free_blocks = [i for i in range(NUM_BLOCKS)]
 
         # Batch State
         self.input_batch = InputBatch(
@@ -627,25 +606,43 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
     def _prepare_prompt(
         self,
         new_requests: list[NewRequestData],
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[int]]:
+    ) -> ModelForwardInputs:
         assert len(new_requests) > 0
         input_token_list: list[torch.Tensor] = []
 
-        # Internal state is managed here.
-        self.active_pages = []
-        for request_data in new_requests:
-            free_page_idx = self.free_pages.pop(0)
-            self.active_pages.append(free_page_idx)
-            self.req_ids2page[request_data.req_id] = free_page_idx
+        if len(self.req_ids2blocks) == 0:
+            self.tkv = self.BLOCK_SIZE
 
+        # ceil division to pad to next block boundary
+        n = self.tkv
+        d = self.BLOCK_SIZE
+        block_padding = ((n + d - 1) // d) * d
+
+        # Internal state is managed here.
+        slot_mapping = []
+        for request_data in new_requests:
             # retrieve initial (unpadded) tokens
             prompt_tokens = request_data.prompt_token_ids
-
+            self.req_ids2left_pads[
+                request_data.req_id] = self.tkv - len(prompt_tokens)
             input_token_list.append(
                 torch.tensor(prompt_tokens,
                              dtype=torch.long,
                              device=torch.device("cpu")))
 
+            # filling block table and slot mapping
+            block_table_i = []
+            slot_mapping_i = []
+            for pos_i in range(block_padding):
+                if pos_i % self.BLOCK_SIZE == 0:
+                    block_number = self.free_blocks.pop(0)
+                    block_table_i.append(block_number)
+                block_offset = pos_i % self.BLOCK_SIZE
+                slot = block_number * self.BLOCK_SIZE + block_offset
+                slot_mapping_i.append(slot)
+            self.req_ids2blocks[request_data.req_id] = block_table_i
+            slot_mapping.append(slot_mapping_i)
+            
             # Add new requests to the cached states.
             req_id = request_data.req_id
             sampling_params = request_data.sampling_params
@@ -669,83 +666,170 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # Refresh sampling metadata after all request are added to the batch
         self.input_batch.refresh_sampling_metadata()
 
+
         # prefils are always of batch size 1 for this milestone
         actual_batch_size = len(input_token_list)
         assert actual_batch_size == 1
         self.model.indices = torch.ones(actual_batch_size,
                                         dtype=torch.bool,
                                         device='cpu')
-
-        if self.tkv == 0:
-            self.tkv = self.min_pad_length_batch
+        # construct tensor from list
+        slot_mapping = torch.tensor(slot_mapping, dtype=torch.int64)
+        block_table = None
 
         # get position ids and attention mask
+        # applies left padding to align with tkv of current decode batch
+        # and right padding to align with the next block boundary
         input_tokens, position_ids, mask =\
-            self.pad_input_ids(input_token_list, min_pad_length=self.tkv)
+            self.pad_input_ids(input_token_list, min_pad_length=block_padding)
+        mask = mask.unsqueeze(1)
 
-        seq_lens = [t.shape[0] for t in input_token_list]
+        # not needed for prefill
+        current_tkv_mask = None
+        left_padded_prompt_mask = None
 
-        return input_tokens, position_ids, mask, seq_lens
+        return ModelForwardInputs(
+            input_tokens=input_tokens,
+            input_positions=position_ids,
+            input_masks=mask,
+            current_tkv_mask=current_tkv_mask,
+            left_padded_prompt_mask=left_padded_prompt_mask,
+            block_table=block_table,
+            slot_mapping=slot_mapping,
+            is_prompt=True,
+        )
 
     def _prepare_decode(
         self,
         cached_requests: list[CachedRequestData],
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> ModelForwardInputs:
         assert len(cached_requests) > 0
         input_tokens = []
-        self.active_pages = []
+        input_positions = []
+        block_table = []
+        slot_mapping = []
+        left_padded_prompt_mask = []
         self.model.indices = torch.ones(len(cached_requests),
                                         dtype=torch.bool,
-                                        device='cpu')
+                                        device="cpu")
 
         for cached_request in cached_requests:
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
-            self.active_pages.append(self.req_ids2page[cached_request.req_id])
+
+            # adding new blocks if needed
+            if self.tkv // self.BLOCK_SIZE + 1 > len(
+                    self.req_ids2blocks[cached_request.req_id]):
+                self.req_ids2blocks[cached_request.req_id].append(
+                    self.free_blocks.pop(0))
+            block_table.append(self.req_ids2blocks[cached_request.req_id])
+            # slot_mapping for all blocks of sequence
+            start_slot = block_table[-1][-1] * self.BLOCK_SIZE
+            offset = self.tkv % self.BLOCK_SIZE
+            slot = [start_slot + offset]
+            slot_mapping.append(slot)
             generation_token = cached_request.new_token_ids[-1]
             input_tokens.append([generation_token])
+            seq_len = cached_request.num_computed_tokens
+            input_positions.append([seq_len])
+            left_padded_prompt_mask.append(
+                self.req_ids2left_pads[cached_request.req_id])
 
         input_tokens = torch.tensor(input_tokens,
                                     dtype=torch.long,
                                     device=self.device)
-        mask, position_ids = self._prepare_pos_mask_decode(
-            cached_requests, self.tkv)
+        position_ids = torch.tensor(input_positions,
+                                    dtype=torch.long,
+                                    device=self.device)
+        left_padded_prompt_mask = torch.tensor(left_padded_prompt_mask,
+                                               dtype=torch.long,
+                                               device=self.device)
+        # construct tensors from lists
+        slot_mapping = torch.tensor(slot_mapping, dtype=torch.int64)
+        block_table = torch.tensor(block_table, dtype=torch.int64)
+
+        # not needed for decode
+        mask = None
+
+        # update tkv
         self.tkv = self.tkv + 1
+
+        current_tkv_mask = torch.tensor([self.tkv] * len(cached_requests),
+                                        dtype=torch.int64)
+
+        return ModelForwardInputs(
+            input_tokens=input_tokens,
+            input_positions=position_ids,
+            input_masks=mask,
+            current_tkv_mask=current_tkv_mask,
+            left_padded_prompt_mask=left_padded_prompt_mask,
+            block_table=block_table,
+            slot_mapping=slot_mapping,
+            is_prompt=False,
+        )
+
+    def pad_input_ids(
+        self,
+        input_ids_list: list[torch.Tensor],
+        min_pad_length: int = 0,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+
+        # left padding to align with tkv of current decode batch
+        input_tokens_left, position_ids_left, mask_left =\
+            super().pad_input_ids(input_ids_list, min_pad_length=self.tkv)
+
+        # right padding to align with the next block boundary
+        left_pad_len = input_tokens_left.shape[1]
+        n_pads_right = min_pad_length - left_pad_len
+
+        # set number of right pads for the next model forward pass:
+        # need to be excluded before sampling tokens
+        self.model.n_pads_right = n_pads_right
+
+        if n_pads_right > 0:
+            # apply right padding to input_tokens, position_ids and mask
+            logger.info(
+                "Right padding request of length %d tokens to %d tokens.",
+                left_pad_len, min_pad_length)
+
+            input_tokens_right = torch.tensor(
+                [[self.pad_token_id for i in range(n_pads_right)]],
+                device=input_tokens_left.device,
+                dtype=input_tokens_left.dtype)
+            input_tokens = torch.concat(
+                (input_tokens_left, input_tokens_right), dim=1)
+
+            # Note: same output with i as padding for position ids
+            pos_start = position_ids_left[0][-1] + 1
+            position_ids_right = torch.tensor(
+                [[0 for i in range(pos_start, pos_start + n_pads_right)]],
+                device=position_ids_left.device,
+                dtype=position_ids_left.dtype)
+            position_ids = torch.concat(
+                (position_ids_left, position_ids_right), dim=1)
+
+            # pad left padded mask with -inf to the next block boundary
+            mask = torch.nn.functional.pad(mask_left,
+                                           (0, n_pads_right, 0, n_pads_right),
+                                           value=-torch.inf)
+
+            # lower triangle: 0.0, upper triangle -inf
+            mask_pads = torch.zeros(n_pads_right, n_pads_right)
+            mask_pads[~torch.tril(torch.ones(n_pads_right, n_pads_right)).bool(
+            )] = float('-inf')
+
+            # insert triangular matrix for right pads
+            mask[:, -n_pads_right:, -n_pads_right:] = mask_pads.unsqueeze(0)
+        else:
+            # no right padding needed
+            input_tokens = input_tokens_left
+            position_ids = position_ids_left
+            mask = mask_left
 
         return input_tokens, position_ids, mask
 
-    def _prepare_pos_mask_decode(
-        self,
-        cached_requests: list[CachedRequestData],
-        tkv: int = 0,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-
-        mask_list = []
-        position_ids_list = []
-
-        for cached_request in cached_requests:
-            seq_len = cached_request.num_computed_tokens
-            position_ids_list.append([seq_len])
-
-            pads = torch.ones(tkv - seq_len,
-                              dtype=torch.long,
-                              device=self.device) * self.pad_token_id
-            non_pads = torch.ones(seq_len + 1,
-                                  dtype=torch.long,
-                                  device=self.device)
-            mask_list.append(torch.cat((torch.zeros_like(pads), non_pads)))
-
-        mask = torch.stack(mask_list).bool()
-        mask = torch.where(mask.logical_not(), -torch.inf, 0.0)
-        mask = mask.to(self.model.model.dtype)
-        mask = torch.unsqueeze(mask, dim=1)
-        position_ids = torch.tensor(position_ids_list,
-                                    dtype=torch.long,
-                                    device=self.device)
-        return mask, position_ids
-
     def prepare_model_input(
-            self, scheduler_output: SchedulerOutput) -> ModelInputForSpyre:
+            self, scheduler_output: SchedulerOutput) -> ModelForwardInputs:
 
         # NOTE: We assume that all sequences in the group are all prompts or
         # all decodes.
@@ -753,26 +837,25 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         is_prompt = len(scheduler_output.scheduled_new_reqs) > 0
 
         for req_id in scheduler_output.finished_req_ids:
-            if req_id in self.req_ids2page:
-                self.free_pages.append(self.req_ids2page[req_id])
-                del self.req_ids2page[req_id]
+            if req_id in self.req_ids2blocks:
+                logger.debug("Freeing request id: %s", req_id)
+                for freed_block in self.req_ids2blocks[req_id]:
+                    self.free_blocks.append(freed_block)
+                del self.req_ids2blocks[req_id]
+                del self.req_ids2left_pads[req_id]
 
-        # Prepare input tensors.
+        # Prepare and return input tensors.
         if is_prompt:
-            (input_tokens, input_positions, input_masks,
-             _) = self._prepare_prompt(scheduler_output.scheduled_new_reqs)
+            model_inputs = \
+                self._prepare_prompt(scheduler_output.scheduled_new_reqs)
+            num_reqs = len(scheduler_output.scheduled_new_reqs)
         else:
-            (input_tokens, input_positions, input_masks) = \
+            model_inputs = \
                 self._prepare_decode(scheduler_output.scheduled_cached_reqs)
 
-        sampling_metadata = self.input_batch.sampling_metadata
-        # TODO: Build the rest of the SamplingMetadata correctly
+        model_inputs.sampling_metadata = self.input_batch.sampling_metadata
 
-        return ModelInputForSpyre(input_tokens=input_tokens,
-                                  input_positions=input_positions,
-                                  input_masks=input_masks,
-                                  sampling_metadata=sampling_metadata,
-                                  is_prompt=is_prompt)
+        return model_inputs
 
     @SpyrePlatform.inference_mode()
     def execute_model(
@@ -784,8 +867,56 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         t0 = time.time()
 
         self._update_states(scheduler_output, update_for_cb=True)
+        # TODO: change to EMPTY_MODEL_RUNNER_OUTPUT, right now this
+        # will be a breaking change, or clumsy to make retrocompatible
+        # with conditional import
+        if not scheduler_output.total_num_scheduled_tokens:
+            # Return empty ModelRunnerOuptut if there's no work to do.
+            return ModelRunnerOutput(
+                req_ids=[],
+                req_id_to_index={},
+                sampled_token_ids=[],
+                spec_token_ids=None,
+                logprobs=None,
+                prompt_logprobs_dict={},
+            )
 
         model_input = self.prepare_model_input(scheduler_output)
+
+        # Marking dimensions static/dynamic
+        if model_input.is_prompt:
+
+            # batch static (batch size 1)
+            torch._dynamo.mark_static(model_input.input_tokens, 0)
+            torch._dynamo.mark_static(model_input.slot_mapping, 0)
+            torch._dynamo.mark_static(model_input.input_positions, 0)
+            torch._dynamo.mark_static(model_input.input_masks, 0)
+
+            # sequence dynamic
+            torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
+            torch._dynamo.mark_dynamic(model_input.slot_mapping, 1)
+            torch._dynamo.mark_dynamic(model_input.input_positions, 1)
+            torch._dynamo.mark_dynamic(model_input.input_masks, 2)
+            torch._dynamo.mark_dynamic(model_input.input_masks, 3)
+
+        # decode
+        else:
+            # mask is no longer used here
+
+            # batch dynamic
+            torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
+            torch._dynamo.mark_dynamic(model_input.block_table, 0)
+            torch._dynamo.mark_dynamic(model_input.slot_mapping, 0)
+            torch._dynamo.mark_dynamic(model_input.input_positions, 0)
+            torch._dynamo.mark_dynamic(model_input.current_tkv_mask, 0)
+            torch._dynamo.mark_dynamic(model_input.left_padded_prompt_mask, 0)
+
+            # sequence
+            torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
+            torch._dynamo.mark_dynamic(model_input.block_table, 1)
+            torch._dynamo.mark_static(model_input.slot_mapping, 1)  # always 1
+            torch._dynamo.mark_static(model_input.input_positions,
+                                      1)  # always 1
 
         # Execute the model
         hidden_states = self.model(
@@ -793,9 +924,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             positions=model_input.input_positions,
             masks=model_input.input_masks,
             is_prompt=model_input.is_prompt,
-            tkv=0 if model_input.is_prompt else self.tkv,
-            active_pages=self.active_pages,
-        )
+            current_tkv_mask=model_input.current_tkv_mask,
+            left_padded_prompt_mask=model_input.left_padded_prompt_mask,
+            block_table=model_input.block_table,
+            slot_mapping=model_input.slot_mapping)
 
         # Only perform sampling in the driver worker.
         if not self.is_driver_worker:
@@ -807,14 +939,16 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # Sample the next token.
         output: SamplerOutput = self.model.sample(
             logits=logits,
+            # TODO: Uncomment once Wallas is done with the work
+            # sampling_metadata=self.input_batch.sampling_metadata,
             sampling_metadata=model_input.sampling_metadata,
         )
         t1 = time.time() - t0
         logger.debug("t_token: %.2fms", (t1 * 1000))
 
         is_prompt = len(scheduler_output.scheduled_new_reqs) > 0
-        scheduled_req = scheduler_output.scheduled_new_reqs if is_prompt\
-            else scheduler_output.scheduled_cached_reqs
+        scheduled_req = (scheduler_output.scheduled_new_reqs if is_prompt else
+                         scheduler_output.scheduled_cached_reqs)
         # since same order as in _prepare_prompt/decode req_ids2idx not needed
         req_ids = [req.req_id for req in scheduled_req]
         req_id_to_index = {req_id: i for i, req_id in enumerate(req_ids)}
@@ -824,10 +958,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             req_id_to_index=req_id_to_index,
             sampled_token_ids=output.sampled_token_ids.tolist(),
             spec_token_ids=None,
-            logprobs=output.logprobs_tensors.tolists()
-            if output.logprobs_tensors else None,
+            logprobs=(output.logprobs_tensors.tolists()
+                      if output.logprobs_tensors else None),
             prompt_logprobs_dict={req_id: None
                                   for req_id in req_ids
-                                  }  # TODO(wallas?): prompt logprobs too
+                                  },  # TODO(wallas?): prompt logprobs too
         )
         return model_output
