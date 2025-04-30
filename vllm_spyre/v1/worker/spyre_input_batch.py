@@ -294,7 +294,7 @@ class InputBatch:
         self.req_id_to_index = {}
         self.model_indices_mask.fill_(False)
 
-        self._req_ids = []
+        self._req_ids = [None] * self.max_num_reqs
         self.req_output_token_ids = []
 
         self.greedy_reqs = set()
