@@ -3,7 +3,7 @@ import json
 import os
 import platform
 import time
-from typing import Optional
+from typing import Optional, Union, cast
 
 import torch
 import torch.distributed as dist
@@ -147,7 +147,9 @@ class SpyreWorker(WorkerBaseV1):
             # note: lazy import to avoid importing torch before initializing
             from vllm.utils import init_cached_hf_modules
             init_cached_hf_modules()
-
+        self.model_runner: \
+            Union[StaticBatchingSpyreModelRunner,
+                  ContinuousBatchingSpyreModelRunner]
         if self.model_config.task == "embed":
             raise NotImplementedError
         else:
@@ -260,7 +262,11 @@ class SpyreWorker(WorkerBaseV1):
 
         warmup_start_t = time.time()
 
-        vocab_size = self.model_runner.vocab_size
+        # satisfy mypy
+        model_runner: ContinuousBatchingSpyreModelRunner = \
+            cast(ContinuousBatchingSpyreModelRunner, self.model_runner)
+
+        vocab_size = model_runner.vocab_size
 
         valid_token_ids = [
             i for i in range(1, vocab_size) if i not in set(special_token_ids)
@@ -343,10 +349,10 @@ class SpyreWorker(WorkerBaseV1):
         # free blocks
         for req in dummy_requests:
             logger.debug("Freeing request id: %s", req.req_id)
-            for freed_block in self.model_runner.req_ids2blocks[req.req_id]:
-                self.model_runner.free_blocks.append(freed_block)
-            del self.model_runner.req_ids2blocks[req.req_id]
-            del self.model_runner.req_ids2left_pads[req.req_id]
+            for freed_block in model_runner.req_ids2blocks[req.req_id]:
+                model_runner.free_blocks.append(freed_block)
+            del model_runner.req_ids2blocks[req.req_id]
+            del model_runner.req_ids2left_pads[req.req_id]
 
         # update lazyhandle (once)
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
