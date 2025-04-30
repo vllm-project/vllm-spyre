@@ -5,12 +5,13 @@ from typing import TYPE_CHECKING
 
 from vllm.logger import init_logger
 from vllm.v1.core.sched.scheduler import Scheduler
+from vllm.v1.engine import EngineCoreOutputs
+from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request
 
 import vllm_spyre.envs as envs_spyre
-from vllm_spyre.v1.worker.spyre_model_runner import CBSpyreModelRunnerOutput
-
 from vllm_spyre.platform import SpyrePlatform
+from vllm_spyre.v1.worker.spyre_model_runner import CBSpyreModelRunnerOutput
 
 if TYPE_CHECKING:
     from vllm.v1.core.sched.output import SchedulerOutput
@@ -159,9 +160,9 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         ), "Expecting an instance of CBSpyreModelRunnerOutput"
         "when doing continuous batching."
         self.tkv = model_runner_output.tkv
-        return super(SpyreScheduler, self).update_from_output(scheduler_output,
-                                                              model_runner_output)
-
+        return super(SpyreScheduler,
+                     self).update_from_output(scheduler_output,
+                                              model_runner_output)
 
     def schedule(self) -> "SchedulerOutput":
         """This override adds constraints and then delegates most of the work

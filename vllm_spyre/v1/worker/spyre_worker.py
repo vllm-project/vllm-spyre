@@ -354,7 +354,7 @@ class SpyreWorker(WorkerBaseV1):
             del model_runner.req_ids2blocks[req.req_id]
             del model_runner.req_ids2left_pads[req.req_id]
 
-        self.model_runner.tkv = 0
+        self.model_runner.tkv = 0  # type: ignore[union-attr]
 
         # update lazyhandle (once)
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
