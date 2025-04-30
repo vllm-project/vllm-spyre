@@ -29,6 +29,7 @@ class SpyrePlatform(Platform):
     device_type: str = "cpu"
     supported_quantization: list[str] = ["gptq"]
     _warmup_shapes: Optional[tuple[dict[str, int], ...]] = None
+    _config: VllmConfig = None
 
     @classmethod
     def get_device_name(cls, device_id: int = 0) -> str:
@@ -43,6 +44,7 @@ class SpyrePlatform(Platform):
 
     @classmethod
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:
+        cls._config = vllm_config
         parallel_config = vllm_config.parallel_config
         scheduler_config = vllm_config.scheduler_config
         model_config = vllm_config.model_config
@@ -219,12 +221,12 @@ class SpyrePlatform(Platform):
             # The V1 engine will check the prompt length, but not the prompt +
             # max_tokens.
             if (prompt_len + max_tokens
-                    > envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH):
+                    > cls._config.scheduler_config.max_model_len):
                 raise ValueError(
                     "Could not add request: prompt length is "
                     f"{prompt_len} tokens, maximum number of output tokens is "
                     f"{max_tokens} tokens, but max model context length is "
-                    f"{envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH}.")
+                    f"{cls._config.scheduler_config.max_model_len}.")
         else:
             # For non-continuous batching, check if the request matches a warmup
             # shape
