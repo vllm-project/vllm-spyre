@@ -218,16 +218,21 @@ class SpyrePlatform(Platform):
 
         if envs_spyre.VLLM_SPYRE_USE_CB:
             # For continuous batching, check if the request is within the max
-            # context length.
-            # The V1 engine will check the prompt length, but not the prompt +
-            # max_tokens.
-            if (prompt_len + max_tokens
+            # context length. This needs to take the padded prompt length
+            # into account.
+
+            # ceil division to pad to next block boundary
+            n = prompt_len
+            d = 64  # hardcoded AIU Spyre block size
+            prompt_padding_len = ((n + d - 1) // d) * d
+            if (prompt_padding_len + max_tokens
                     > envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH):
                 raise ValueError(
                     "Could not add request: prompt length is "
-                    f"{prompt_len} tokens, maximum number of output tokens is "
-                    f"{max_tokens} tokens, but max model context length is "
-                    f"{envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH}.")
+                    f"{prompt_len} tokens, which gets padded to "
+                    f"{prompt_padding_len} tokens, maximum number of output "
+                    f"tokens is {max_tokens} tokens, but max model context "
+                    f"length is {envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH}.")
         else:
             # For non-continuous batching, check if the request matches a warmup
             # shape

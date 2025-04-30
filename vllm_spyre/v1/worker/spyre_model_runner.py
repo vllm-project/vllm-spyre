@@ -19,8 +19,8 @@ from vllm_spyre.v1.worker.spyre_input_batch import (CachedRequestState,
                                                     InputBatch)
 
 if TYPE_CHECKING:
-    from vllm_spyre.v1.compat import (CachedRequestData, NewRequestData,
-                                      SchedulerOutput)
+    from vllm.v1.core.sched.output import (CachedRequestData, NewRequestData,
+                                           SchedulerOutput)
 else:
     CachedRequestData = None
     SchedulerOutput = None
