@@ -50,6 +50,11 @@ class SpyrePlatform(Platform):
         if scheduler_config.is_multi_step:
             raise NotImplementedError
 
+        # continuous batching related checks
+        if envs_spyre.VLLM_SPYRE_USE_CB and not envs.VLLM_USE_V1:
+            raise NotImplementedError(
+                "Continuous batching is only implemented for vLLM V1")
+
         # Near future TODO: vLLM will have an api to check whether v0 or v1 is
         # used that isn't just checking the environment variable
 
@@ -69,41 +74,36 @@ class SpyrePlatform(Platform):
                     "vllm_spyre.v1.core.scheduler.ContinuousBatchingSpyreScheduler"
             else:
                 scheduler_config.scheduler_cls = \
-                    "vllm_spyre.v1.core.scheduler.SpyreScheduler"
+                    "vllm_spyre.v1.core.scheduler.StaticBatchingSpyreScheduler"
         else:
             scheduler_config.scheduler_cls = \
                 "vllm_spyre.core.scheduler.SpyreScheduler"
 
-        # Override --max-num-seqs to the biggest warmup batch size
-        # And override --max-model-len to the biggest warmup sequence
-        cls._warmup_shapes = None
-        spyre_warmup_shapes = \
-            cls.get_warmup_shapes(scheduler_config)
-        max_batch_size = 0
-        max_seq_len = 0
-        for shape in spyre_warmup_shapes:
-            max_batch_size = max(max_batch_size, shape['batch_size'])
-            max_seq_len = max(max_seq_len,
-                              shape['prompt_length'] + shape['new_tokens'])
+        if not envs_spyre.VLLM_SPYRE_USE_CB:
+            # Override --max-num-seqs to the biggest warmup batch size
+            # And override --max-model-len to the biggest warmup sequence
+            cls._warmup_shapes = None
+            spyre_warmup_shapes = cls.get_warmup_shapes(scheduler_config)
+            max_batch_size = 0
+            max_seq_len = 0
+            for shape in spyre_warmup_shapes:
+                max_batch_size = max(max_batch_size, shape['batch_size'])
+                max_seq_len = max(max_seq_len,
+                                  shape['prompt_length'] + shape['new_tokens'])
 
-        # if envs.VLLM_USE_V1:
-        #     if envs_spyre.VLLM_SPYRE_USE_CB:
-        #         # For continuous batching we use max_num_seqs to control
-        #         # the max batch size respecting AIU Spyre KV cache size
-        #         scheduler_config.max_num_seqs =\
-        #             envs_spyre.VLLM_SPYRE_MAX_BATCH_SIZE
-        #         # ToDo: this function check_and_update_config is called twice:
-        #         # 1st time scheduler_config.max_num_seqs is what user sets
-        #         # 2nd time scheduler_config.max_num_seqs is 128
-        #     else:
-        #         # The v0 scheduler will run out of
-        #           blocks if this is overridden
-        #         scheduler_config.max_num_seqs = max_batch_size
-
-        # continuous batching related checks
-        if envs_spyre.VLLM_SPYRE_USE_CB and not envs.VLLM_USE_V1:
-            raise NotImplementedError(
-                "Continuous batching is only implemented for vLLM V1")
+        if envs.VLLM_USE_V1:
+            if envs_spyre.VLLM_SPYRE_USE_CB:
+                pass
+                # For continuous batching we use max_num_seqs to control
+                # the max batch size respecting AIU Spyre KV cache size
+                # scheduler_config.max_num_seqs =\
+                #     envs_spyre.VLLM_SPYRE_MAX_BATCH_SIZE
+                # ToDo: this function check_and_update_config is called twice:
+                # 1st time scheduler_config.max_num_seqs is what user sets
+                # 2nd time scheduler_config.max_num_seqs is 128
+            else:
+                # The v0 scheduler will run out of blocks if this is overridden
+                scheduler_config.max_num_seqs = max_batch_size
 
         cache_config = vllm_config.cache_config
 
@@ -117,7 +117,8 @@ class SpyrePlatform(Platform):
             #       one single block.
             # - Set the number of blocks to the maximum number of sequences, so
             #       the scheduler always thinks there's a block available
-            model_config.max_model_len = max_seq_len
+            if not envs_spyre.VLLM_SPYRE_USE_CB:
+                model_config.max_model_len = max_seq_len
             cache_config.block_size = model_config.max_model_len
 
             if envs.VLLM_USE_V1:
@@ -175,9 +176,10 @@ class SpyrePlatform(Platform):
                     "The lists in VLLM_SPYRE_WARMUP_PROMPT_LENS and "
                     "VLLM_SPYRE_WARMUP_NEW_TOKENS must have equal length")
 
-        logger.info("VLLM_SPYRE_WARMUP_PROMPT_LENS = %s", wup_prompt_lens)
-        logger.info("VLLM_SPYRE_WARMUP_NEW_TOKENS = %s", wup_new_tokens)
-        logger.info("VLLM_SPYRE_WARMUP_BATCH_SIZES = %s", wup_batch_sizes)
+        if not envs_spyre.VLLM_SPYRE_USE_CB:
+            logger.info("VLLM_SPYRE_WARMUP_PROMPT_LENS = %s", wup_prompt_lens)
+            logger.info("VLLM_SPYRE_WARMUP_NEW_TOKENS = %s", wup_new_tokens)
+            logger.info("VLLM_SPYRE_WARMUP_BATCH_SIZES = %s", wup_batch_sizes)
 
         cls._warmup_shapes = tuple(
             sorted([{

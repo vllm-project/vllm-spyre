@@ -1,6 +1,6 @@
 """Utilities for selecting and loading Spyre models."""
 import os
-from typing import Optional
+from typing import Any, Optional
 
 import torch
 import torch._inductor.config
@@ -55,16 +55,21 @@ class SpyreCausalLM(nn.Module):
         # False for finished or padded sequences
         self.indices = None
 
+        # number of right pads (relevant for continuous batching only)
+        self.n_pads_right = 0
+
         # FMS Model
-        fms_model = ContinuousBatchingFmsModel if envs_spyre.VLLM_SPYRE_USE_CB\
-            else StaticBatchingFmsModel
-        self.model = fms_model(
-            model_config,
-            parallel_config,
-            scheduler_config,
+        if envs_spyre.VLLM_SPYRE_USE_CB:
+            self.model = ContinuousBatchingFmsModel(model_config,
+                                                    parallel_config)
+        else:
+            self.model = StaticBatchingFmsModel(
+                model_config,
+                parallel_config,
+                scheduler_config,
             max_prompt_length,
-            max_decode_length,
-        )
+                max_decode_length,
+            )
 
     def forward(
         self,
@@ -72,33 +77,47 @@ class SpyreCausalLM(nn.Module):
         positions: torch.Tensor,
         masks: torch.Tensor,
         is_prompt: bool,
-        tkv: Optional[int] = None,
-        active_pages: Optional[list[int]] = None,
+        current_tkv_mask: Optional[torch.Tensor] = None,
+        left_padded_prompt_mask: Optional[torch.Tensor] = None,
+        block_table: Optional[torch.Tensor] = None,
+        slot_mapping: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
 
         if is_prompt and not envs_spyre.VLLM_SPYRE_USE_CB:
-            self.model.past_key_value_states = None
+            self.model.past_key_value_states = None  # type: ignore
 
-        extra_kwargs = {}
+        extra_kwargs: dict[str, Any] = {}
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn_decoder":
             # Bug in 2.3.1 fixed in 2.4.1 for SDPA flash
             # cpu impl when padding too much
             extra_kwargs["attn_algorithm"] = "math"
 
-        # normal prefil or decoding step
+        if envs_spyre.VLLM_SPYRE_USE_CB:
+            extra_kwargs["current_tkv_mask"] = current_tkv_mask
+            extra_kwargs["left_padded_prompt_mask"] = left_padded_prompt_mask
+            extra_kwargs["block_table"] = block_table
+            extra_kwargs["slot_mapping"] = slot_mapping
+
+        # normal prefill or decoding step
         logits = self.model(
             input_ids,
             position_ids=positions,
             mask=masks,
             use_cache=True,
-            only_last_token=True,
-            tkv=tkv,
-            active_pages=active_pages,
+            only_last_token=not envs_spyre.VLLM_SPYRE_USE_CB,
             **extra_kwargs,
         )
 
-        # removing finished or padded sequences
-        logits = logits[self.indices]
+        if envs_spyre.VLLM_SPYRE_USE_CB:
+            if is_prompt and self.n_pads_right > 0:
+                # get last token before the right padding
+                logits = logits[self.indices, -self.n_pads_right - 1, :]
+            else:
+                # just take last token if no right padding
+                logits = logits[self.indices, -1, :]
+        else:
+            # removing finished or padded sequences
+            logits = logits[self.indices]
 
         return logits
 
@@ -153,11 +172,6 @@ class FmsModelBase(nn.Module):
         **kwargs,
     ) -> None:
 
-        if self.dtype is not model_config.dtype:
-            logger.info(
-                "Ignoring user-provided dtype=%s and using dtype=%s instead.",
-                model_config.dtype, self.dtype)
-
         if model_config.quantization == "gptq":
             if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
                 from fms_mo.aiu_addons.gptq import (  # noqa: F401
@@ -175,12 +189,16 @@ class FmsModelBase(nn.Module):
                 "group_size": quant_cfg['group_size'],
                 "desc_act": quant_cfg['desc_act'],
             }
-            data_type = None
+            self.dtype = None
             model_source = "hf_gptq_aiu"
         else:
             linear_config = {"linear_type": "torch_linear"}
-            data_type = self.dtype
             model_source = "hf"
+
+        if self.dtype is not model_config.dtype:
+            logger.info(
+                "Ignoring user-provided dtype=%s and using dtype=%s instead.",
+                model_config.dtype, self.dtype)
 
         is_local = os.path.isdir(model_config.model)
         model_path = model_config.model
@@ -199,7 +217,7 @@ class FmsModelBase(nn.Module):
                                variant=model_config.model,
                                model_path=model_path,
                                source=model_source,
-                               data_type=data_type,
+                               data_type=self.dtype,
                                distributed_strategy=distributed_strategy,
                                group=dist.group.WORLD,
                                fused_weights=fused_weights,
@@ -252,35 +270,39 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         model_config: ModelConfig,
         parallel_config: ParallelConfig,
         scheduler_config: SchedulerConfig,
-        max_prompt_length: int,
-        max_decode_length: int,
     ) -> None:
-        super().__init__(model_config, parallel_config, max_prompt_length,
-                         max_decode_length)
 
-        # physical KV cache on AIU Spyre
+        BLOCK_SIZE = 64
         max_batch = scheduler_config.max_num_seqs
         max_model_len = scheduler_config.max_model_len
 
-        if self.config.model_type == 'llama':
+        if self.config.model_type in {'llama', 'granite'}:
             num_layers = self.config.num_hidden_layers
-            num_kv_heads = self.config.num_key_value_heads
             head_dim = self.config.hidden_size // \
                 self.config.num_attention_heads
         elif self.config.model_type == 'gpt_bigcode':
             num_layers = self.config.n_layer
-            num_kv_heads = 1 if self.config.multi_query else self.config.n_head
             head_dim = self.config.n_embd // self.config.n_head
         else:
-            print(f"[SpyreCausalLM] model type {self.config.model_type} "
-                  f"not supported in ContinuousBatchingFmsModel")
+            raise NotImplementedError(
+                f"[SpyreCausalLM] model type {self.config.model_type} "
+                f"not supported in ContinuousBatchingFmsModel")
 
-        # (layers)x(k,v)x[max_batch, num_kv_heads, max_model_len, head_dim]
-        self.fms_kv_cache: list[tuple[torch.Tensor, torch.Tensor]] = [
-            (torch.empty((max_batch, num_kv_heads, max_model_len, head_dim)),
-             torch.empty((max_batch, num_kv_heads, max_model_len, head_dim)))
-            for i in range(num_layers)
-        ]
+        num_blocks = max_batch * max_model_len // BLOCK_SIZE  # 64
+
+        # List[layers] of Tuple[k,v] of
+        # Tensor[num_blocks, BLOCK_SIZE, num_kv_heads, head_dim]
+        self.past_key_value_states = [(torch.zeros(num_blocks,
+                                                   BLOCK_SIZE,
+                                                   num_kv_heads,
+                                                   head_dim,
+                                                   dtype=self.dtype),
+                                       torch.zeros(num_blocks,
+                                                   BLOCK_SIZE,
+                                                   num_kv_heads,
+                                                   head_dim,
+                                                   dtype=self.dtype))
+                                      for _ in range(num_layers)]
 
     def forward(
         self,
@@ -289,50 +311,36 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         mask: torch.Tensor,
         use_cache: bool,
         only_last_token: bool,
-        tkv: int,
-        active_pages: list[int],
+        current_tkv_mask: torch.Tensor,
+        left_padded_prompt_mask: torch.Tensor,
+        block_table: torch.Tensor,
+        slot_mapping: torch.Tensor,
         **extra_kwargs,
     ) -> torch.Tensor:
 
-        # read-out (dynamic) kv_cache for decoding steps only,
-        # for prefills kv_cache = None
-        if tkv == 0:  # prefil
-            kv_cache = None
-            tkv = input_ids.shape[1]
-        else:  # decode
-            kv_cache = []
-            active_pages_mask = torch.zeros(self.fms_kv_cache[0][0].shape[0],
-                                            dtype=torch.bool)
-            active_pages_mask[active_pages] = True
-            for layer in range(len(self.fms_kv_cache)):
-                kv_cache.append(
-                    (self.fms_kv_cache[layer][0][active_pages_mask, :, :tkv -
-                                                 1, :],
-                     self.fms_kv_cache[layer][1][active_pages_mask, :, :tkv -
-                                                 1, :]))
+        # mark dynamic: Not sure if that's correct/needed here,
+        # copied from fms branch paged_atten_mock
+        if self.past_key_value_states is not None:
+            for layer in self.past_key_value_states:
+                if isinstance(layer, tuple):
+                    for tensor in layer:
+                        torch._dynamo.mark_dynamic(tensor, 2)
 
         output = self.model(
             input_ids,
             position_ids=position_ids,
             mask=mask,
-            past_key_value_states=kv_cache,
+            past_key_value_states=self.past_key_value_states,
             use_cache=use_cache,
             only_last_token=only_last_token,
+            current_tkv_mask=current_tkv_mask,
+            left_padded_prompt_mask=left_padded_prompt_mask,
+            block_table=block_table,
+            slot_mapping=slot_mapping,
             **extra_kwargs,
         )
-        logits, key_value_states = output
 
-        # updating (physical) KV cache: self.fms_kv_cache
-        for idx, page in enumerate(sorted(active_pages)):
-            for layer in range(len(self.fms_kv_cache)):
-                # inserting partial KV cache at correct location
-                # (page, tkv) in the KV cache of the whole batch
-                self.fms_kv_cache[layer][0][
-                    page, :, :tkv, :] = key_value_states[layer][0][
-                        idx, :, :, :]  # [1, 8, L, 128]
-                self.fms_kv_cache[layer][1][
-                    page, :, :tkv, :] = key_value_states[layer][1][
-                        idx, :, :, :]  # [1, 8, L, 128]
+        logits, self.past_key_value_states = output
 
         return logits
 
@@ -360,8 +368,6 @@ class StaticBatchingFmsModel(FmsModelBase):
         mask: torch.Tensor,
         use_cache: bool,
         only_last_token: bool,
-        tkv: int,
-        active_pages: list[int],
         **extra_kwargs,
     ) -> torch.Tensor:
 
@@ -375,7 +381,6 @@ class StaticBatchingFmsModel(FmsModelBase):
             **extra_kwargs,
         )
 
-        logits, past_key_value_states = output
-        self.past_key_value_states = past_key_value_states
+        logits, self.past_key_value_states = output
 
         return logits

@@ -3,14 +3,13 @@ import time
 
 from vllm import LLM, SamplingParams
 
-max_tokens1 = 10
-max_tokens2 = 5
-max_tokens3 = 7
-max_tokens = max([max_tokens1, max_tokens2, max_tokens3])
-max_num_seqs = 2  # defines max batch size
+# RUN with fms branch: https://github.com/foundation-model-stack/
+# foundation-model-stack/tree/paged_attn_mock
 
-os.environ["VLLM_SPYRE_WARMUP_PROMPT_LENS"] = '64'
-os.environ["VLLM_SPYRE_WARMUP_NEW_TOKENS"] = str(max_tokens)
+max_tokens1 = 65
+max_tokens2 = 67
+max_tokens3 = 7
+max_num_seqs = 2  # defines max batch size
 
 # defining here to be able to run/debug directly from VSC (not via terminal)
 os.environ['VLLM_SPYRE_DYNAMO_BACKEND'] = 'eager'
