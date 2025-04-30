@@ -61,13 +61,14 @@ class SpyreCausalLM(nn.Module):
         # FMS Model
         if envs_spyre.VLLM_SPYRE_USE_CB:
             self.model = ContinuousBatchingFmsModel(model_config,
-                                                    parallel_config)
+                                                    parallel_config,
+                                                    scheduler_config)
         else:
             self.model = StaticBatchingFmsModel(
                 model_config,
                 parallel_config,
                 scheduler_config,
-            max_prompt_length,
+                max_prompt_length,
                 max_decode_length,
             )
 
@@ -275,6 +276,17 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         BLOCK_SIZE = 64
         max_batch = scheduler_config.max_num_seqs
         max_model_len = scheduler_config.max_model_len
+
+        # edge case: prompt fills model length: can produce 1 token with prefill
+        max_prompt_length = max_model_len
+        # edge case: prompt will be padded to first block:
+        # can produce 1 token with prefill plus rest of model length
+        max_decode_length = max_model_len - BLOCK_SIZE + 1
+        super().__init__(model_config, parallel_config, max_prompt_length,
+                         max_decode_length)
+
+        # physical KV cache on AIU Spyre: will eventually not live in this class
+        num_kv_heads = model_config.get_num_kv_heads(parallel_config)
 
         if self.config.model_type in {'llama', 'granite'}:
             num_layers = self.config.num_hidden_layers

@@ -28,7 +28,7 @@ else:
 
 from vllm.v1.outputs import ModelRunnerOutput
 
-import vllm_spyre.envs as envs_spyre
+# import vllm_spyre.envs as envs_spyre
 
 logger = init_logger(__name__)
 
