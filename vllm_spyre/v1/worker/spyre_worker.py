@@ -14,6 +14,8 @@ from vllm.distributed import (ensure_model_parallel_initialized,
 from vllm.logger import init_logger
 from vllm.model_executor import set_random_seed
 from vllm.sampling_params import SamplingParams
+from vllm.v1.core.sched.output import (CachedRequestData, NewRequestData,
+                                       SchedulerOutput)
 from vllm.v1.kv_cache_interface import KVCacheConfig, KVCacheSpec
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.worker.worker_base import WorkerBase as WorkerBaseV1
@@ -23,8 +25,6 @@ import vllm_spyre.envs as envs_spyre
 import vllm_spyre.perf_metrics as perf_metrics
 from vllm_spyre.model_executor.model_loader import spyre_setup
 from vllm_spyre.platform import SpyrePlatform
-from vllm_spyre.v1.compat import (CachedRequestData, NewRequestData,
-                                  SchedulerOutput)
 from vllm_spyre.v1.worker.spyre_model_runner import (
     ContinuousBatchingSpyreModelRunner, StaticBatchingSpyreModelRunner)
 
