@@ -1,4 +1,5 @@
 import time
+from collections import deque
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
@@ -568,10 +569,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         NUM_BLOCKS = max_batch_size * max_model_len // self.BLOCK_SIZE  # 64
 
         # TO DO: move to InputBatch
-        self.req_ids2blocks: dict[str, list[int]] = {}
+        self.req_ids2blocks: dict[str, deque[int]] = {}
         self.req_ids2left_pads: dict[str, int] = {}
         self.tkv = 0
-        self.free_blocks = [i for i in range(NUM_BLOCKS)]
+        self.free_blocks = deque([i for i in range(NUM_BLOCKS)])
 
     def _prepare_prompt(
         self,
@@ -608,12 +609,12 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             slot_mapping_i = []
             for pos_i in range(block_padding):
                 if pos_i % self.BLOCK_SIZE == 0:
-                    block_number = self.free_blocks.pop(0)
+                    block_number = self.free_blocks.popleft()
                     block_table_i.append(block_number)
                 block_offset = pos_i % self.BLOCK_SIZE
                 slot = block_number * self.BLOCK_SIZE + block_offset
                 slot_mapping_i.append(slot)
-            self.req_ids2blocks[request_data.req_id] = block_table_i
+            self.req_ids2blocks[request_data.req_id] = deque(block_table_i)
             slot_mapping.append(slot_mapping_i)
 
         # prefils are always of batch size 1 for this milestone
@@ -662,6 +663,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                                         dtype=torch.bool,
                                         device="cpu")
 
+        if envs_spyre.VLLM_SPYRE_RM_PADDED_BLOCKS:
+            self.reduce_left_padding(cached_requests)
+
         for cached_request in cached_requests:
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
@@ -670,7 +674,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             if self.tkv // self.BLOCK_SIZE + 1 > len(
                     self.req_ids2blocks[cached_request.req_id]):
                 self.req_ids2blocks[cached_request.req_id].append(
-                    self.free_blocks.pop(0))
+                    self.free_blocks.popleft())
             block_table.append(self.req_ids2blocks[cached_request.req_id])
             # slot_mapping for all blocks of sequence
             start_slot = block_table[-1][-1] * self.BLOCK_SIZE
@@ -716,6 +720,30 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             slot_mapping=slot_mapping,
             is_prompt=False,
         )
+
+    def reduce_left_padding(self, requests: list[CachedRequestData]) -> None:
+
+        min_left_pad = min(
+            [self.req_ids2left_pads[r.req_id] for r in requests])
+        n_padded_blocks = min_left_pad // self.BLOCK_SIZE
+
+        if n_padded_blocks > 0:
+            logger.debug("Number of removed blocks due to left padding: %d",
+                         n_padded_blocks)
+
+            for req in requests:
+                self.req_ids2left_pads[
+                    req.req_id] -= n_padded_blocks * self.BLOCK_SIZE
+
+                # free blocks
+                for _ in range(n_padded_blocks):
+                    freed_block_id = self.req_ids2blocks[req.req_id].popleft()
+                    self.free_blocks.append(freed_block_id)
+
+        # update tkv
+        self.tkv -= n_padded_blocks * self.BLOCK_SIZE
+
+        return
 
     def pad_input_ids(
         self,
