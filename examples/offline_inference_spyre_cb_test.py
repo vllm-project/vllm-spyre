@@ -16,7 +16,7 @@ os.environ['VLLM_SPYRE_DYNAMO_BACKEND'] = 'eager'
 os.environ['VLLM_SPYRE_USE_CB'] = '1'
 os.environ['VLLM_USE_V1'] = '1'
 
-# leaving environment variables in place for a bit as it sounds like they're 
+# leaving environment variables in place for a bit as it sounds like they're
 # currently used by the torch stack
 os.environ["VLLM_SPYRE_MAX_CONTEXT_LENGTH"] = "2048"
 os.environ["VLLM_SPYRE_MAX_BATCH_SIZE"] = str(max_num_seqs)
