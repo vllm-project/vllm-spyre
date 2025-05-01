@@ -127,10 +127,10 @@ class SpyrePlatform(Platform):
         # set env vars for torch_sendnn to consume
         os.environ[
             "VLLM_SPYRE_MAX_CONTEXT_LENGTH"] = \
-                vllm_config.model_config.max_model_len
+                str(vllm_config.model_config.max_model_len)
         os.environ[
             "VLLM_SPYRE_MAX_BATCH_SIZE"] = \
-                vllm_config.scheduler_config.max_num_seqs
+                str(vllm_config.scheduler_config.max_num_seqs)
 
     @classmethod
     def use_all_gather(cls) -> bool:
