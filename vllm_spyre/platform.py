@@ -59,8 +59,8 @@ class SpyrePlatform(Platform):
 
         if parallel_config.worker_cls == "auto":
             parallel_config.worker_cls = (
-                f'vllm_spyre{".v1" if envs.VLLM_USE_V1 else ""}\
-                    .worker.spyre_worker.SpyreWorker')
+                f'vllm_spyre{".v1" if envs.VLLM_USE_V1 else ""}'\
+                    f'.worker.spyre_worker.SpyreWorker')
 
         # continuous batching related checks
         if not envs_spyre.VLLM_SPYRE_USE_CB:  # no CB
