@@ -60,7 +60,7 @@ class SpyrePlatform(Platform):
         if parallel_config.worker_cls == "auto":
             parallel_config.worker_cls = (
                 f'vllm_spyre{".v1" if envs.VLLM_USE_V1 else ""}'\
-                    f'.worker.spyre_worker.SpyreWorker')
+                    '.worker.spyre_worker.SpyreWorker')
 
         # continuous batching related checks
         if not envs_spyre.VLLM_SPYRE_USE_CB:  # no CB
@@ -79,8 +79,8 @@ class SpyrePlatform(Platform):
             if envs.VLLM_USE_V1:  # No CB with V1
 
                 scheduler_config.scheduler_cls = (
-                    "vllm_spyre.v1.core.scheduler.\
-                        StaticBatchingSpyreScheduler")
+                    "vllm_spyre.v1.core.scheduler."\
+                        "StaticBatchingSpyreScheduler")
                 scheduler_config.max_num_seqs = max_batch_size
             else:  # No CB with V0
                 scheduler_config.scheduler_cls = (
@@ -92,8 +92,8 @@ class SpyrePlatform(Platform):
             else:  # CB with V1
                 # As of 0.7.3 the scheduler for V1 isn't actually pluggable like
                 # this yet
-                scheduler_config.scheduler_cls = "vllm_spyre.v1.core.\
-                        scheduler.ContinuousBatchingSpyreScheduler"
+                scheduler_config.scheduler_cls = "vllm_spyre.v1.core."\
+                        "scheduler.ContinuousBatchingSpyreScheduler"
 
         # Cache and model config aren't set in the individual worker procs
         # These are set in the main engine process
