@@ -144,10 +144,9 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
     running: list[Request]
 
     def __init__(self, *args, **kwargs) -> None:
-        self.tkv = 0
-
         # Initialize SpyreScheduler
         super().__init__(*args, **kwargs)
+        self.tkv = 0
 
     def update_from_output(
         self,
