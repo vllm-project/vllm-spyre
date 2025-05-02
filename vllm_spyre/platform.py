@@ -3,7 +3,6 @@ from typing import TYPE_CHECKING, Optional, Union
 
 import torch
 from vllm.inputs import ProcessorInputs, PromptType
-from vllm.inputs.parse import is_token_prompt
 from vllm.logger import init_logger
 from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import SamplingParams
@@ -207,7 +206,7 @@ class SpyrePlatform(Platform):
             # Only validating generation requests for now
             return None
 
-        if is_token_prompt(prompt):
+        if isinstance(prompt, dict) and "prompt_token_ids" in prompt:
             prompt_len = len(prompt["prompt_token_ids"])
         elif processed_inputs is not None:
             if "encoder" in processed_inputs:
