@@ -62,7 +62,6 @@ class SpyrePlatform(Platform):
                 f'vllm_spyre{".v1" if envs.VLLM_USE_V1 else ""}'\
                     '.worker.spyre_worker.SpyreWorker')
 
-        # continuous batching related checks
         if not envs_spyre.VLLM_SPYRE_USE_CB:  # no CB
             # Override --max-num-seqs to the biggest warmup batch size
             # And override --max-model-len to the biggest warmup sequence
@@ -74,7 +73,8 @@ class SpyrePlatform(Platform):
                 max_batch_size = max(max_batch_size, shape["batch_size"])
                 max_seq_len = max(max_seq_len,
                                   shape["prompt_length"] + shape["new_tokens"])
-            model_config.max_model_len = max_seq_len
+            if model_config is not None:
+                model_config.max_model_len = max_seq_len
 
             if envs.VLLM_USE_V1:  # No CB with V1
 
@@ -85,7 +85,7 @@ class SpyrePlatform(Platform):
             else:  # No CB with V0
                 scheduler_config.scheduler_cls = (
                     "vllm_spyre.core.scheduler.SpyreScheduler")
-        else:  # CB
+        else:  # CB related checks
             if not envs.VLLM_USE_V1:  # CB with V0
                 raise NotImplementedError(
                     "Continuous batching is only implemented for vLLM V1")
@@ -104,15 +104,16 @@ class SpyrePlatform(Platform):
         #       one single block.
         # - Set the number of blocks to the maximum number of sequences, so
         #       the scheduler always thinks there's a block available
-        if envs.VLLM_USE_V1:
-            # The V1 scheduler actually needs 2 blocks for each sequence...
-            cache_config.num_gpu_blocks_override = \
-                scheduler_config.max_num_seqs * 2
-        else:
-            cache_config.num_gpu_blocks_override = \
-                scheduler_config.max_num_seqs
+        if cache_config is not None:
+            if envs.VLLM_USE_V1:
+                # The V1 scheduler actually needs 2 blocks for each sequence...
+                cache_config.num_gpu_blocks_override = \
+                    scheduler_config.max_num_seqs * 2
+            else:
+                cache_config.num_gpu_blocks_override = \
+                    scheduler_config.max_num_seqs
 
-        cache_config.block_size = model_config.max_model_len
+            cache_config.block_size = model_config.max_model_len
 
         logger.info(
             "Overriding configurations based on warmup shapes. "
