@@ -155,9 +155,9 @@ class InputBatch:
         self.req_output_token_ids: list[Optional[list[int]]] = []
 
         # Model indices to mask padded request
-        self.model_indices_mask = torch.zeros(self.max_num_reqs,
-                                              dtype=torch.bool,
-                                              device=device)
+        self.req_indices_mask = torch.zeros(self.max_num_reqs,
+                                            dtype=torch.bool,
+                                            device=device)
 
         # Initialize with max number of requests
         self.padded_batch_size = self.max_num_reqs
@@ -175,12 +175,12 @@ class InputBatch:
         return cast(list[str], self._req_ids)
 
     def get_available_index(self):
-        available_indices = self.model_indices_mask.logical_not().nonzero()
+        available_indices = self.req_indices_mask.logical_not().nonzero()
         available_indices_list = available_indices.squeeze(dim=-1).tolist()
         return available_indices_list[0] if available_indices_list else None
 
     def req_idx_to_dense_index(self, req_index):
-        return self.model_indices_mask[:req_index].sum().item()
+        return self.req_indices_mask[:req_index].sum().item()
 
     def req_id_to_dense_index(self, req_id):
         req_index = self.req_id_to_index[req_id]
@@ -196,8 +196,8 @@ class InputBatch:
         assert req_index is not None
         assert req_index < self.max_num_reqs
 
-        assert self.model_indices_mask[req_index].item() is False
-        self.model_indices_mask[req_index] = True
+        assert self.req_indices_mask[req_index].item() is False
+        self.req_indices_mask[req_index] = True
         req_id = request.req_id
         self._req_ids[req_index] = req_id
 
@@ -205,9 +205,8 @@ class InputBatch:
         # is not synced with self._req_ids, it should use
         # self.model_indices_mask to resolve its index considering masked
         # out requests.
-        shifted_index = self.model_indices_mask[:req_index].sum().item()
-        self.req_output_token_ids.insert(shifted_index,
-                                         request.output_token_ids)
+        dense_index = self.req_idx_to_dense_index(req_index)
+        self.req_output_token_ids.insert(dense_index, request.output_token_ids)
 
         self.req_id_to_index[req_id] = req_index
 
@@ -287,11 +286,10 @@ class InputBatch:
 
     def clear_requests(self):
         '''
-        TODO: While we do not support continuous batch, the simplest solution
-        is to clear the whole batch
+        Clear the batch, mostly used by static batching
         '''
         self.req_id_to_index = {}
-        self.model_indices_mask.fill_(False)
+        self.req_indices_mask.fill_(False)
 
         self._req_ids = [None] * self.max_num_reqs
         self.req_output_token_ids = []
@@ -341,13 +339,13 @@ class InputBatch:
             return None
 
         # Mask out the request
-        self.model_indices_mask[req_index] = False
+        self.req_indices_mask[req_index] = False
 
         # Remove the references
 
         # Index corrected based on the padded/deactivated requests
-        shifted_index = self.model_indices_mask[:req_index].sum().item()
-        self.req_output_token_ids.pop(shifted_index)
+        dense_index = self.req_idx_to_dense_index(req_index)
+        self.req_output_token_ids.pop(dense_index)
         self._req_ids[req_index] = None
 
         self.greedy_reqs.discard(req_id)
@@ -381,7 +379,7 @@ class InputBatch:
     def _make_sampling_metadata(self) -> SamplingMetadata:
 
         # Mask truncated by the num of requests
-        indices_mask = self.model_indices_mask
+        indices_mask = self.req_indices_mask
 
         if not self.all_greedy:
             temperature = self.temperature[indices_mask]
@@ -439,8 +437,8 @@ class InputBatch:
 
     def _make_prompt_token_ids_tensor(self) -> torch.Tensor:
 
-        model_indices_mask_cpu = self.model_indices_mask.numpy()
-        num_prompt_tokens = self.num_prompt_tokens[model_indices_mask_cpu]
+        req_indices_mask_cpu = self.req_indices_mask.numpy()
+        num_prompt_tokens = self.num_prompt_tokens[req_indices_mask_cpu]
         max_prompt_len = num_prompt_tokens.max()
         prompt_token_ids_tensor = torch.empty(
             (self._num_requests, max_prompt_len),
@@ -449,7 +447,7 @@ class InputBatch:
         )
         prompt_token_ids = prompt_token_ids_tensor.numpy()
         prompt_token_ids[:] = self.token_ids_cpu[
-            model_indices_mask_cpu, :max_prompt_len]
+            req_indices_mask_cpu, :max_prompt_len]
         # Use the value of vocab_size as a pad since we don't have a
         # token_id of this value.
 
@@ -470,11 +468,11 @@ class InputBatch:
         This will output: {"B": 0, "C": 1}
         """
 
-        indices = self.model_indices_mask.nonzero().squeeze(dim=-1).tolist()
+        indices = self.req_indices_mask.nonzero().squeeze(dim=-1).tolist()
         return {self._req_ids[idx]: i for i, idx in enumerate(indices)}
 
     def get_model_indices(self):
-        return self.model_indices_mask[:self.padded_batch_size]
+        return self.req_indices_mask[:self.padded_batch_size]
 
     def get_req_index(self, req_id):
         return self.req_id_to_index.get(req_id)
