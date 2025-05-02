@@ -1,4 +1,4 @@
-# Contributing to vLLM-Spyre
+# Contributing
 
 Thank you for contributing to vLLM support on Spyre!
 

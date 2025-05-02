@@ -36,3 +36,30 @@ git clone https://github.com/vllm-project/vllm-spyre.git
 cd vllm-spyre
 VLLM_TARGET_DEVICE=empty uv pip install -e .
 ```
+
+## Documentation
+
+% How to start using vLLM on Spyre?
+
+:::{toctree}
+:caption: Getting Started
+:maxdepth: 1
+
+:::
+
+% What does vLLM-Spyre support?
+
+:::{toctree}
+:caption: Features
+:maxdepth: 1
+
+:::
+
+% How to contribute to the vLLM-Spyre Plugin
+
+:::{toctree}
+:caption: Developer Guide
+:maxdepth: 2
+
+contributing/overview
+:::
