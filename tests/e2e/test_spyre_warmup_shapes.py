@@ -105,20 +105,18 @@ def test_invalid_prompt_len(
     is not divisible by 64.
     '''
 
-    vllm_sampling_params = SamplingParams(
-        max_tokens=1,
-        temperature=0,
-        logprobs=0,
-        ignore_eos=True)
+    vllm_sampling_params = SamplingParams(max_tokens=1,
+                                          temperature=0,
+                                          logprobs=0,
+                                          ignore_eos=True)
 
     with pytest.raises(RuntimeError, match="VLLM_SPYRE_WARMUP_PROMPT_LENS"):
-        generate_spyre_vllm_output(
-            model=model,
-            prompts=prompts,
-            warmup_shapes=warmup_shapes,
-            max_model_len=2048,
-            block_size=64,
-            sampling_params=vllm_sampling_params,
-            tensor_parallel_size=1,
-            backend=backend,
-            vllm_version=vllm_version)
+        generate_spyre_vllm_output(model=model,
+                                   prompts=prompts,
+                                   warmup_shapes=warmup_shapes,
+                                   max_model_len=2048,
+                                   block_size=64,
+                                   sampling_params=vllm_sampling_params,
+                                   tensor_parallel_size=1,
+                                   backend=backend,
+                                   vllm_version=vllm_version)
