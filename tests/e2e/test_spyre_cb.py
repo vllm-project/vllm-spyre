@@ -60,7 +60,8 @@ def test_cb_handling(
     vllm_sampling_params = SamplingParams(max_tokens=20,
                                           temperature=0,
                                           stop="1",
-                                          ignore_eos=True)
+                                          ignore_eos=True,
+                                          logprobs=0)
 
     # Ensure that both:
     # - The model doesn't crash
