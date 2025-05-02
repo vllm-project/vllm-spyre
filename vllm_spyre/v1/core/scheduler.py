@@ -210,7 +210,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
 
     def can_schedule(self, request) -> bool:
         max_prompt_batch_size = 1
-        max_context_len = envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH
+        max_context_len = envs_spyre.VLLM_DT_MAX_CONTEXT_LEN
 
         # running and waiting queues are both empty -> start new batch
         start_new_batch = len(self.running) + len(self.waiting) == 0

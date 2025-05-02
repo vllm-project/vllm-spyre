@@ -569,8 +569,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         super().__init__(vllm_config=vllm_config,
                          is_driver_worker=is_driver_worker)
 
-        max_batch_size = envs_spyre.VLLM_SPYRE_MAX_BATCH_SIZE
-        max_model_len = envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH
+        max_batch_size = envs_spyre.VLLM_DT_MAX_BATCH_SIZE
+        max_model_len = envs_spyre.VLLM_DT_MAX_CONTEXT_LEN
 
         self.BLOCK_SIZE = 64
         NUM_BLOCKS = max_batch_size * max_model_len // self.BLOCK_SIZE  # 64

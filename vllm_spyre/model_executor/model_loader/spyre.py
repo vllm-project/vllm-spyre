@@ -267,8 +267,8 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                  parallel_config: ParallelConfig) -> None:
 
         BLOCK_SIZE = 64
-        max_batch = envs_spyre.VLLM_SPYRE_MAX_BATCH_SIZE
-        max_model_len = envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH
+        max_batch = envs_spyre.VLLM_DT_MAX_BATCH_SIZE
+        max_model_len = envs_spyre.VLLM_DT_MAX_CONTEXT_LEN
 
         # edge case: prompt fills model length: can produce 1 token with prefill
         max_prompt_length = max_model_len

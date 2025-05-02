@@ -96,7 +96,7 @@ class SpyrePlatform(Platform):
                 # For continuous batching we use max_num_seqs to control
                 # the max batch size respecting AIU Spyre KV cache size
                 scheduler_config.max_num_seqs =\
-                    envs_spyre.VLLM_SPYRE_MAX_BATCH_SIZE
+                    envs_spyre.VLLM_DT_MAX_BATCH_SIZE
                 # ToDo: this function check_and_update_config is called twice:
                 # 1st time scheduler_config.max_num_seqs is what user sets
                 # 2nd time scheduler_config.max_num_seqs is 128
@@ -226,13 +226,13 @@ class SpyrePlatform(Platform):
             d = 64  # hardcoded AIU Spyre block size
             prompt_padding_len = ((n + d - 1) // d) * d
             if (prompt_padding_len + max_tokens
-                    > envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH):
+                    > envs_spyre.VLLM_DT_MAX_CONTEXT_LEN):
                 raise ValueError(
                     "Could not add request: prompt length is "
                     f"{prompt_len} tokens, which gets padded to "
                     f"{prompt_padding_len} tokens, maximum number of output "
                     f"tokens is {max_tokens} tokens, but max model context "
-                    f"length is {envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH}.")
+                    f"length is {envs_spyre.VLLM_DT_MAX_CONTEXT_LEN}.")
         else:
             # For non-continuous batching, check if the request matches a warmup
             # shape
