@@ -5,9 +5,13 @@ from typing import TYPE_CHECKING
 
 from vllm.logger import init_logger
 from vllm.v1.core.sched.scheduler import Scheduler
+from vllm.v1.engine import EngineCoreOutputs
+from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request
 
+import vllm_spyre.envs as envs_spyre
 from vllm_spyre.platform import SpyrePlatform
+from vllm_spyre.v1.worker.spyre_model_runner import CBSpyreModelRunnerOutput
 
 if TYPE_CHECKING:
     from vllm.v1.core.sched.output import SchedulerOutput
@@ -142,6 +146,22 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
     def __init__(self, *args, **kwargs) -> None:
         # Initialize SpyreScheduler
         super().__init__(*args, **kwargs)
+        self.tkv = 0
+
+    def update_from_output(
+        self,
+        scheduler_output: SchedulerOutput,
+        model_runner_output: ModelRunnerOutput,
+    ) -> EngineCoreOutputs:
+        # Need an instance of CBSpyreModelRunnerOutput which holds the tkv value
+        assert isinstance(
+            model_runner_output, CBSpyreModelRunnerOutput
+        ), "Expecting an instance of CBSpyreModelRunnerOutput"
+        "when doing continuous batching."
+        self.tkv = model_runner_output.tkv
+        return super(SpyreScheduler,
+                     self).update_from_output(scheduler_output,
+                                              model_runner_output)
 
     def schedule(self) -> "SchedulerOutput":
         """This override adds constraints and then delegates most of the work
@@ -157,7 +177,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
 
         # Check if new requests can be scheduled.
         while self.holdback_queue:
-            if self.can_schedule():
+            if self.can_schedule(self.holdback_queue[0]):
                 # Add request to the waiting queue
                 self.waiting.append(self.holdback_queue.popleft())
             else:
@@ -188,9 +208,19 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
 
         return outputs
 
-    def can_schedule(self) -> bool:
+    def can_schedule(self, request) -> bool:
         max_prompt_batch_size = 1
-        # TODO: add additional checks, e.g. max_tokens
-        return len(self.running)+len(self.waiting) <\
-                self.max_num_running_reqs and\
-                len(self.waiting) < max_prompt_batch_size
+        max_context_len = envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH
+
+        # running and waiting queues are both empty -> start new batch
+        start_new_batch = len(self.running) + len(self.waiting) == 0
+        # check that there is space in the current decode batch
+        cond1 = len(self.running) + len(
+            self.waiting) < self.max_num_running_reqs
+        # check that there is space in the prefill batch
+        cond2 = len(self.waiting) < max_prompt_batch_size
+        # check that the prompt length does not exceed the current tkv
+        cond3 = request.num_prompt_tokens <= self.tkv
+        # check that the number of requested tokens can be served
+        cond4 = request.max_tokens <= (max_context_len - self.tkv)
+        return start_new_batch or (cond1 and cond2 and cond3 and cond4)
