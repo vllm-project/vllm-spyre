@@ -51,6 +51,12 @@ class ModelForwardInputs:
     sampling_metadata: Optional[SamplingMetadata] = None
 
 
+@dataclass
+class CBSpyreModelRunnerOutput(ModelRunnerOutput):
+    # Add the current tkv to the output
+    tkv: int
+
+
 class SpyreModelRunner:
 
     def __init__(
@@ -873,13 +879,14 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # with conditional import
         if not scheduler_output.total_num_scheduled_tokens:
             # Return empty ModelRunnerOuptut if there's no work to do.
-            return ModelRunnerOutput(
+            return CBSpyreModelRunnerOutput(
                 req_ids=[],
                 req_id_to_index={},
                 sampled_token_ids=[],
                 spec_token_ids=None,
                 logprobs=None,
                 prompt_logprobs_dict={},
+                tkv=0,
             )
 
         model_input = self.prepare_model_input(scheduler_output)
@@ -954,7 +961,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         req_ids = [req.req_id for req in scheduled_req]
         req_id_to_index = {req_id: i for i, req_id in enumerate(req_ids)}
 
-        model_output = ModelRunnerOutput(
+        model_output = CBSpyreModelRunnerOutput(
             req_ids=req_ids,
             req_id_to_index=req_id_to_index,
             sampled_token_ids=output.sampled_token_ids.tolist(),
@@ -964,5 +971,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             prompt_logprobs_dict={req_id: None
                                   for req_id in req_ids
                                   },  # TODO(wallas?): prompt logprobs too
+            tkv=self.tkv,
         )
         return model_output
