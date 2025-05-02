@@ -47,24 +47,16 @@ def test_max_prompt_len_and_new_tokens(model: str,
                                 1)
     sampling_params = SamplingParams(max_tokens=1)
 
-    try:
+    with pytest.raises(ValueError, match="warmup"):
         results = llm.generate(prompts=[prompt],
                                sampling_params=sampling_params)
         assert results[0].outputs[0].text == ""
-    except ValueError as e:
-        # V1 will raise on vllm > 0.8.4
-        assert vllm_version == "V1"
-        assert "warmup" in str(e)
 
     # Craft a request with a prompt that fits, but where too many tokens are
     # requested
     prompt = "hello"
     sampling_params = SamplingParams(max_tokens=max_new_tokens + 1)
-    try:
+    with pytest.raises(ValueError, match="warmup"):
         results = llm.generate(prompts=[prompt],
                                sampling_params=sampling_params)
         assert results[0].outputs[0].text == ""
-    except ValueError as e:
-        # V1 will raise on vllm > 0.8.4
-        assert vllm_version == "V1"
-        assert "warmup" in str(e)
