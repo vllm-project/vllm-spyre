@@ -177,7 +177,7 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
                 # lower number of output tokens
                 assert num_decode_tokens >= 3, (
                     "VLLM_SPYRE_WARMUP_NEW_TOKENS must be "
-                    "at least 2 (spyre requirement).")
+                    "at least 3 (spyre requirement).")
             # warmup individual combination
             print(f"[SpyreWorker] Warmup {i+1}/"
                   f"{len(wup_new_tokens)} "
