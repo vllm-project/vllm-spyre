@@ -4,23 +4,19 @@ from collections import deque
 from typing import TYPE_CHECKING
 
 from vllm.logger import init_logger
-from vllm.sampling_params import SamplingParams
-from vllm.v1.engine import EngineCoreOutput, EngineCoreOutputs, FinishReason
+from vllm.v1.core.sched.scheduler import Scheduler
+from vllm.v1.engine import EngineCoreOutputs
 from vllm.v1.outputs import ModelRunnerOutput
-from vllm.v1.request import Request, RequestStatus
+from vllm.v1.request import Request
 
 import vllm_spyre.envs as envs_spyre
-
-try:
-    from vllm.v1.core.sched.scheduler import Scheduler
-except ImportError:
-    from vllm.v1.core.scheduler import Scheduler
+from vllm_spyre.platform import SpyrePlatform
+from vllm_spyre.v1.worker.spyre_model_runner import CBSpyreModelRunnerOutput
 
 if TYPE_CHECKING:
-    from vllm_spyre.v1.core.sched.output import SchedulerOutput
+    from vllm.v1.core.sched.output import SchedulerOutput
 else:
     SchedulerOutput = None
-from vllm_spyre.platform import SpyrePlatform
 
 logger = init_logger(__name__)
 
@@ -40,63 +36,6 @@ class SpyreScheduler(Scheduler):
         # requests scheduled have at least one common warmup shape.
         self.holdback_queue: deque[Request] = deque()
 
-        self.rejected_requests: set[str] = set()
-
-    def update_from_output(
-        self,
-        scheduler_output: SchedulerOutput,
-        model_runner_output: ModelRunnerOutput,
-    ) -> EngineCoreOutputs:
-        """Temporary override to handle rejected requests that were too large
-        to schedule."""
-        reject_outputs = self._handle_rejects()
-        outputs = super().update_from_output(scheduler_output,
-                                             model_runner_output)
-        outputs.outputs.extend(reject_outputs)
-        return outputs
-
-    def _handle_rejects(self) -> list[EngineCoreOutput]:
-        """Temporary solution to reject requests that were too large to
-        schedule. This removes the rejected requests from the scheduler, and 
-        returns empty outputs for them with finish reason `abort`.
-        """
-        if len(self.rejected_requests) == 0:
-            return []
-
-        # Remove rejected requests from all queues
-        reject_outputs = self._reject_from_queue(self.running)
-        reject_outputs.extend(self._reject_from_queue(self.waiting))
-        reject_outputs.extend(self._reject_from_queue(self.holdback_queue))
-        self.rejected_requests.clear()
-
-        return reject_outputs
-
-    def _reject_from_queue(self,
-                           queue: deque[Request]) -> list[EngineCoreOutput]:
-        """Remove rejected requests from a given queue and return a list of 
-        engine core outputs to return for them"""
-        reject_outputs: list[EngineCoreOutput] = []
-        rejected_requests: list[Request] = [
-            request for request in queue
-            if request.request_id in self.rejected_requests
-        ]
-
-        for request in rejected_requests:
-            queue.remove(request)
-            reject_outputs.append(
-                EngineCoreOutput(
-                    request.request_id,
-                    # TODO: FIXME
-                    # Dummy token prevent stats collection crash
-                    new_token_ids=[-1],
-                    finish_reason=FinishReason.ABORT,
-                    stop_reason=NO_WARMUP_FIT_STOP_REASON))
-            request.status = RequestStatus.FINISHED_ABORTED
-            self._free_request(request)
-            self.rejected_requests.remove(request.request_id)
-
-        return reject_outputs
-
 
 class StaticBatchingSpyreScheduler(SpyreScheduler):
     """ Support of static batching """
@@ -109,36 +48,6 @@ class StaticBatchingSpyreScheduler(SpyreScheduler):
         # all warmup shapes that we can support
         self.spyre_warmup_shapes: tuple[dict[str, int], ...] = \
             SpyrePlatform.get_warmup_shapes(self.scheduler_config)
-
-    def add_request(self, request: Request) -> None:
-        """This override rejects requests that fit no warmup shape"""
-        if len(
-                self._get_matching_warmup_shapes(request=request,
-                                                 warmup_shapes=list(
-                                                     self.spyre_warmup_shapes),
-                                                 current_batch_size=0)) == 0:
-            logger.warning(
-                "No applicable warmup shape exists for "
-                "combination of prompt length (%d tokens) "
-                "and maximum number of output tokens to be "
-                "generated (%d tokens) from request id %s",
-                request.num_prompt_tokens, request.sampling_params.max_tokens,
-                request.request_id)
-            # TODO: There are open PRs that should enable raising an error for
-            # a single request like this, which will gracefully return an error
-            # for the request, instead of shutting down the engine.
-            # See https://github.com/vllm-project/vllm/pull/11737
-            # raise ValueError("Request does not fit any spyre warmup shape")
-
-            # For now, we'll insert a dummy request and manually reject it when
-            # we construct the outputs later
-            self.rejected_requests.add(request.request_id)
-            request.prompt_token_ids = [0]
-            request.num_prompt_tokens = 1
-            request.sampling_params = SamplingParams(max_tokens=1)
-
-        # delegate to super of SpyreScheduler: base V1 Scheduler
-        super(SpyreScheduler, self).add_request(request=request)
 
     def schedule(self) -> SchedulerOutput:
         """This override adds constraints and then delegates most of the work
@@ -237,42 +146,22 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
     def __init__(self, *args, **kwargs) -> None:
         # Initialize SpyreScheduler
         super().__init__(*args, **kwargs)
+        self.tkv = 0
 
-    def add_request(self, request: Request) -> None:
-        """This override rejects requests that exceed max context length"""
-
-        # ceil division to pad to next block boundary
-        n = request.num_prompt_tokens
-        d = 64  # hardcoded AIU Spyre block size
-        prompt_padding_len = ((n + d - 1) // d) * d
-        if not prompt_padding_len + request.sampling_params.max_tokens\
-                <= envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH:
-            logger.warning(
-                "Could not add request id %s, prompt length is "
-                "%d tokens, which gets padded to %d tokens, "
-                "maximum number of output tokens is %d tokens, "
-                "but max model context length is %d.",
-                request.request_id,
-                request.num_prompt_tokens,
-                prompt_padding_len,
-                request.sampling_params.max_tokens,
-                envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH,
-            )
-            # TODO: There are open PRs that should enable raising an error for
-            # a single request like this, which will gracefully return an error
-            # for the request, instead of shutting down the engine.
-            # See https://github.com/vllm-project/vllm/pull/11737
-            # raise ValueError("Request does not fit any spyre warmup shape")
-
-            # For now, we'll insert a dummy request and manually reject it when
-            # we construct the outputs later
-            self.rejected_requests.add(request.request_id)
-            request.prompt_token_ids = [0]
-            request.num_prompt_tokens = 1
-            request.sampling_params = SamplingParams(max_tokens=1)
-
-        # delegate to super of SpyreScheduler: base V1 Scheduler
-        super(SpyreScheduler, self).add_request(request=request)
+    def update_from_output(
+        self,
+        scheduler_output: SchedulerOutput,
+        model_runner_output: ModelRunnerOutput,
+    ) -> EngineCoreOutputs:
+        # Need an instance of CBSpyreModelRunnerOutput which holds the tkv value
+        assert isinstance(
+            model_runner_output, CBSpyreModelRunnerOutput
+        ), "Expecting an instance of CBSpyreModelRunnerOutput"
+        "when doing continuous batching."
+        self.tkv = model_runner_output.tkv
+        return super(SpyreScheduler,
+                     self).update_from_output(scheduler_output,
+                                              model_runner_output)
 
     def schedule(self) -> "SchedulerOutput":
         """This override adds constraints and then delegates most of the work
@@ -288,7 +177,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
 
         # Check if new requests can be scheduled.
         while self.holdback_queue:
-            if self.can_schedule():
+            if self.can_schedule(self.holdback_queue[0]):
                 # Add request to the waiting queue
                 self.waiting.append(self.holdback_queue.popleft())
             else:
@@ -319,9 +208,19 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
 
         return outputs
 
-    def can_schedule(self) -> bool:
+    def can_schedule(self, request) -> bool:
         max_prompt_batch_size = 1
-        # TODO: add additional checks, e.g. max_tokens
-        return len(self.running)+len(self.waiting) <\
-                self.max_num_running_reqs and\
-                len(self.waiting) < max_prompt_batch_size
+        max_context_len = envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH
+
+        # running and waiting queues are both empty -> start new batch
+        start_new_batch = len(self.running) + len(self.waiting) == 0
+        # check that there is space in the current decode batch
+        cond1 = len(self.running) + len(
+            self.waiting) < self.max_num_running_reqs
+        # check that there is space in the prefill batch
+        cond2 = len(self.waiting) < max_prompt_batch_size
+        # check that the prompt length does not exceed the current tkv
+        cond3 = request.num_prompt_tokens <= self.tkv
+        # check that the number of requested tokens can be served
+        cond4 = request.max_tokens <= (max_context_len - self.tkv)
+        return start_new_batch or (cond1 and cond2 and cond3 and cond4)
