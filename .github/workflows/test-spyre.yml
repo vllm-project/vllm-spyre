@@ -14,6 +14,7 @@ on:
       - "vllm_spyre/**/*.py"
       - pyproject.toml
       - .github/workflows/test-spyre.yml
+      - "!docs/"
   workflow_dispatch:
 
 env:

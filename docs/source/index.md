@@ -6,14 +6,14 @@ The vLLM Spyre plugin (`vllm-spyre`) is a dedicated backend extension that enabl
 
 ### With Docker
 
-First, download vllm-spyre
+First, download `vllm-spyre`:
 
 ```shell
 git clone https://github.com/vllm-project/vllm-spyre.git
 cd vllm-spyre
 ```
 
-Build image from source
+Build image from source:
 
 ```shell
 docker build . -f Dockerfile.spyre -t vllm-spyre
