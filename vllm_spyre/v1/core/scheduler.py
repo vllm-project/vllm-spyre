@@ -177,7 +177,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
 
         # Check if new requests can be scheduled.
         while self.holdback_queue:
-            if self.can_schedule():
+            if self.can_schedule(self.holdback_queue[0]):
                 # Add request to the waiting queue
                 self.waiting.append(self.holdback_queue.popleft())
             else:
@@ -208,7 +208,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
 
         return outputs
 
-    def can_schedule(self) -> bool:
+    def can_schedule(self, request) -> bool:
         max_prompt_batch_size = 1
         max_context_len = envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH
 
@@ -220,8 +220,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         # check that there is space in the prefill batch
         cond2 = len(self.waiting) < max_prompt_batch_size
         # check that the prompt length does not exceed the current tkv
-        cond3 = self.holdback_queue[0].num_prompt_tokens <= self.tkv
+        cond3 = request.num_prompt_tokens <= self.tkv
         # check that the number of requested tokens can be served
-        cond4 = self.holdback_queue[0].max_tokens <= (max_context_len -
-                                                      self.tkv)
+        cond4 = request.max_tokens <= (max_context_len - self.tkv)
         return start_new_batch or (cond1 and cond2 and cond3 and cond4)
