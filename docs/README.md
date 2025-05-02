@@ -1,6 +1,6 @@
 # vLLM Spyre Plugin documents
 
-Live doc: https://vllm-spyre.readthedocs.io
+Live doc: [vllm-spyre.readthedocs.io](https://vllm-spyre.readthedocs.io)
 
 ## Build the docs
 
@@ -19,4 +19,4 @@ make html
 python -m http.server -d _build/html/
 ```
 
-Launch your browser and open http://localhost:8000/.
+Launch your browser and open [localhost:8000](http://localhost:8000/).
