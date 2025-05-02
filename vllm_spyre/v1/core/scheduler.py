@@ -212,9 +212,16 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         max_prompt_batch_size = 1
         max_context_len = envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH
 
-        return len(self.running)+len(self.waiting) == 0 or\
-            (len(self.running)+len(self.waiting)\
-                < self.max_num_running_reqs and\
-            len(self.waiting) < max_prompt_batch_size and\
-            self.holdback_queue[0].num_prompt_tokens <= self.tkv and\
-            self.holdback_queue[0].max_tokens <= (max_context_len - self.tkv))
+        # running and waiting queues are both empty -> start new batch
+        start_new_batch = len(self.running) + len(self.waiting) == 0
+        # check that there is space in the current decode batch
+        cond1 = len(self.running) + len(
+            self.waiting) < self.max_num_running_reqs
+        # check that there is space in the prefill batch
+        cond2 = len(self.waiting) < max_prompt_batch_size
+        # check that the prompt length does not exceed the current tkv
+        cond3 = self.holdback_queue[0].num_prompt_tokens <= self.tkv
+        # check that the number of requested tokens can be served
+        cond4 = self.holdback_queue[0].max_tokens <= (max_context_len -
+                                                      self.tkv)
+        return start_new_batch or (cond1 and cond2 and cond3 and cond4)
