@@ -1,4 +1,5 @@
 import time
+from collections import deque
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
@@ -19,8 +20,8 @@ from vllm_spyre.v1.worker.spyre_input_batch import (CachedRequestState,
                                                     InputBatch)
 
 if TYPE_CHECKING:
-    from vllm_spyre.v1.compat import (CachedRequestData, NewRequestData,
-                                      SchedulerOutput)
+    from vllm.v1.core.sched.output import (CachedRequestData, NewRequestData,
+                                           SchedulerOutput)
 else:
     CachedRequestData = None
     SchedulerOutput = None
@@ -48,6 +49,12 @@ class ModelForwardInputs:
     is_prompt: Optional[bool] = None
     # temporary until we can get from input_batch
     sampling_metadata: Optional[SamplingMetadata] = None
+
+
+@dataclass
+class CBSpyreModelRunnerOutput(ModelRunnerOutput):
+    # Add the current tkv to the output
+    tkv: int
 
 
 class SpyreModelRunner:
@@ -569,10 +576,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         NUM_BLOCKS = max_batch_size * max_model_len // self.BLOCK_SIZE  # 64
 
         # TO DO: move to InputBatch
-        self.req_ids2blocks: dict[str, list[int]] = {}
+        self.req_ids2blocks: dict[str, deque[int]] = {}
         self.req_ids2left_pads: dict[str, int] = {}
         self.tkv = 0
-        self.free_blocks = [i for i in range(NUM_BLOCKS)]
+        self.free_blocks = deque([i for i in range(NUM_BLOCKS)])
 
     def _prepare_prompt(
         self,
@@ -581,13 +588,16 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         assert len(new_requests) > 0
         input_token_list: list[torch.Tensor] = []
 
-        if len(self.req_ids2blocks) == 0:
-            self.tkv = self.BLOCK_SIZE
-
         # ceil division to pad to next block boundary
-        n = self.tkv
+        new_batch = len(self.req_ids2blocks) == 0
+        max_prompt_len = max([len(r.prompt_token_ids) for r in new_requests])
+        if not new_batch:
+            assert max_prompt_len <= self.tkv
         d = self.BLOCK_SIZE
+        n = max_prompt_len if new_batch else self.tkv
         block_padding = ((n + d - 1) // d) * d
+        if new_batch:
+            self.tkv = block_padding
 
         # Internal state is managed here.
         slot_mapping = []
@@ -606,12 +616,12 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             slot_mapping_i = []
             for pos_i in range(block_padding):
                 if pos_i % self.BLOCK_SIZE == 0:
-                    block_number = self.free_blocks.pop(0)
+                    block_number = self.free_blocks.popleft()
                     block_table_i.append(block_number)
                 block_offset = pos_i % self.BLOCK_SIZE
                 slot = block_number * self.BLOCK_SIZE + block_offset
                 slot_mapping_i.append(slot)
-            self.req_ids2blocks[request_data.req_id] = block_table_i
+            self.req_ids2blocks[request_data.req_id] = deque(block_table_i)
             slot_mapping.append(slot_mapping_i)
 
         # prefils are always of batch size 1 for this milestone
@@ -660,6 +670,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                                         dtype=torch.bool,
                                         device="cpu")
 
+        if envs_spyre.VLLM_SPYRE_RM_PADDED_BLOCKS:
+            self.reduce_left_padding(cached_requests)
+
         for cached_request in cached_requests:
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
@@ -668,7 +681,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             if self.tkv // self.BLOCK_SIZE + 1 > len(
                     self.req_ids2blocks[cached_request.req_id]):
                 self.req_ids2blocks[cached_request.req_id].append(
-                    self.free_blocks.pop(0))
+                    self.free_blocks.popleft())
             block_table.append(self.req_ids2blocks[cached_request.req_id])
             # slot_mapping for all blocks of sequence
             start_slot = block_table[-1][-1] * self.BLOCK_SIZE
@@ -714,6 +727,30 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             slot_mapping=slot_mapping,
             is_prompt=False,
         )
+
+    def reduce_left_padding(self, requests: list[CachedRequestData]) -> None:
+
+        min_left_pad = min(
+            [self.req_ids2left_pads[r.req_id] for r in requests])
+        n_padded_blocks = min_left_pad // self.BLOCK_SIZE
+
+        if n_padded_blocks > 0:
+            logger.debug("Number of removed blocks due to left padding: %d",
+                         n_padded_blocks)
+
+            for req in requests:
+                self.req_ids2left_pads[
+                    req.req_id] -= n_padded_blocks * self.BLOCK_SIZE
+
+                # free blocks
+                for _ in range(n_padded_blocks):
+                    freed_block_id = self.req_ids2blocks[req.req_id].popleft()
+                    self.free_blocks.append(freed_block_id)
+
+        # update tkv
+        self.tkv -= n_padded_blocks * self.BLOCK_SIZE
+
+        return
 
     def pad_input_ids(
         self,
@@ -841,13 +878,14 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # with conditional import
         if not scheduler_output.total_num_scheduled_tokens:
             # Return empty ModelRunnerOuptut if there's no work to do.
-            return ModelRunnerOutput(
+            return CBSpyreModelRunnerOutput(
                 req_ids=[],
                 req_id_to_index={},
                 sampled_token_ids=[],
                 spec_token_ids=None,
                 logprobs=None,
                 prompt_logprobs_dict={},
+                tkv=0,
             )
 
         model_input = self.prepare_model_input(scheduler_output)
@@ -922,7 +960,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         req_ids = [req.req_id for req in scheduled_req]
         req_id_to_index = {req_id: i for i, req_id in enumerate(req_ids)}
 
-        model_output = ModelRunnerOutput(
+        model_output = CBSpyreModelRunnerOutput(
             req_ids=req_ids,
             req_id_to_index=req_id_to_index,
             sampled_token_ids=output.sampled_token_ids.tolist(),
@@ -932,5 +970,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             prompt_logprobs_dict={req_id: None
                                   for req_id in req_ids
                                   },  # TODO(wallas?): prompt logprobs too
+            tkv=self.tkv,
         )
         return model_output
