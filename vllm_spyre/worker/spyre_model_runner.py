@@ -111,10 +111,13 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
                    num_decode_tokens: Iterable[int]) -> None:
         max_pad_length = max(prompt_lens)
         max_decode_length = max(num_decode_tokens)
-        self.model = SpyreCausalLM(self.model_config,
-                                   parallel_config=self.parallel_config,
-                                   max_prompt_length=max_pad_length,
-                                   max_decode_length=max_decode_length)
+        self.model = SpyreCausalLM(
+            self.model_config,
+            parallel_config=self.parallel_config,
+            scheduler_config=self.scheduler_config,
+            max_prompt_length=max_pad_length,
+            max_decode_length=max_decode_length,
+        )
 
     @property
     def vocab_size(self) -> int:

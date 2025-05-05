@@ -119,6 +119,7 @@ class SpyreModelRunner:
         self.model = SpyreCausalLM(
             self.model_config,
             parallel_config=self.parallel_config,
+            scheduler_config=self.scheduler_config,
             max_prompt_length=max_pad_length,
             max_decode_length=max_decode_length,
         )
@@ -586,8 +587,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         super().__init__(vllm_config=vllm_config,
                          is_driver_worker=is_driver_worker)
 
-        max_batch_size = envs_spyre.VLLM_SPYRE_MAX_BATCH_SIZE
-        max_model_len = envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH
+        max_batch_size = vllm_config.scheduler_config.max_num_seqs
+        max_model_len = vllm_config.scheduler_config.max_model_len
 
         self.BLOCK_SIZE = 64
         NUM_BLOCKS = max_batch_size * max_model_len // self.BLOCK_SIZE  # 64
