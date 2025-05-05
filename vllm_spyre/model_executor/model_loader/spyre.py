@@ -8,7 +8,7 @@ import torch.distributed as dist
 import torch.nn as nn
 from fms.models import get_model
 from transformers import PretrainedConfig
-from vllm.config import ModelConfig, ParallelConfig
+from vllm.config import ModelConfig, ParallelConfig, SchedulerConfig
 from vllm.logger import init_logger
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
 from vllm.model_executor.layers.sampler import SamplerOutput, get_sampler
@@ -40,6 +40,7 @@ class SpyreCausalLM(nn.Module):
         self,
         model_config: ModelConfig,
         parallel_config: ParallelConfig,
+        scheduler_config: SchedulerConfig,
         max_prompt_length: int,
         max_decode_length: int,
     ) -> None:
@@ -60,11 +61,13 @@ class SpyreCausalLM(nn.Module):
         # FMS Model
         if envs_spyre.VLLM_SPYRE_USE_CB:
             self.model = ContinuousBatchingFmsModel(model_config,
-                                                    parallel_config)
+                                                    parallel_config,
+                                                    scheduler_config)
         else:
             self.model = StaticBatchingFmsModel(
                 model_config,
                 parallel_config,
+                scheduler_config,
                 max_prompt_length,
                 max_decode_length,
             )
@@ -263,12 +266,16 @@ class FmsModelBase(nn.Module):
 
 class ContinuousBatchingFmsModel(FmsModelBase):
 
-    def __init__(self, model_config: ModelConfig,
-                 parallel_config: ParallelConfig) -> None:
+    def __init__(
+        self,
+        model_config: ModelConfig,
+        parallel_config: ParallelConfig,
+        scheduler_config: SchedulerConfig,
+    ) -> None:
 
         BLOCK_SIZE = 64
-        max_batch = envs_spyre.VLLM_SPYRE_MAX_BATCH_SIZE
-        max_model_len = envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH
+        max_batch = scheduler_config.max_num_seqs
+        max_model_len = scheduler_config.max_model_len
 
         # edge case: prompt fills model length: can produce 1 token with prefill
         max_prompt_length = max_model_len
@@ -348,6 +355,7 @@ class StaticBatchingFmsModel(FmsModelBase):
         self,
         model_config: ModelConfig,
         parallel_config: ParallelConfig,
+        _: SchedulerConfig,
         max_prompt_length: int,
         max_decode_length: int,
     ) -> None:

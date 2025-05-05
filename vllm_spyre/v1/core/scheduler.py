@@ -9,7 +9,6 @@ from vllm.v1.engine import EngineCoreOutputs
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request
 
-import vllm_spyre.envs as envs_spyre
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import CBSpyreModelRunnerOutput
 
@@ -210,7 +209,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
 
     def can_schedule(self, request) -> bool:
         max_prompt_batch_size = 1
-        max_context_len = envs_spyre.VLLM_SPYRE_MAX_CONTEXT_LENGTH
+        max_context_len = self.scheduler_config.max_model_len
 
         # running and waiting queues are both empty -> start new batch
         start_new_batch = len(self.running) + len(self.waiting) == 0
