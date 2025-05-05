@@ -6,24 +6,20 @@ When submitting a PR, please make sure your code passes all linting checks:
 
 ## Linting
 
-### 1. Install Linting Requirements
-
 You can install the linting requirements using either `uv` or `pip`.
 
-#### Using `uv`
+Using `uv`:
 
 ```bash
 uv sync --frozen --group lint
 ```
 
-#### Using `pip`
+Using `pip`:
 
 ```bash
 uv pip compile --group lint > requirements-lint.txt
 pip install -r requirements-lint.txt
 ```
-
-### 2. Run the Formatter
 
 After installing the requirements, run the formatting script:
 
@@ -31,9 +27,7 @@ After installing the requirements, run the formatting script:
 bash format.sh
 ```
 
-### 3. Commit the Changes
-
-Make sure to commit any changes made by the formatter:
+Then, make sure to commit any changes made by the formatter:
 
 ```bash
 git add .
