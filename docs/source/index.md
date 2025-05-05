@@ -13,26 +13,20 @@ The vLLM Spyre plugin (`vllm-spyre`) is a dedicated backend extension that enabl
 
 ## Documentation
 
-% How to start using vLLM on Spyre?
-
 :::{toctree}
 :caption: Getting Started
 :maxdepth: 1
 installation
 :::
 
-% What does vLLM-Spyre support?
-
 :::{toctree}
-:caption: Features
+:caption: User Guide
 :maxdepth: 1
-
+user_guide/supported_features
 :::
-
-% How to contribute to the vLLM-Spyre Plugin
 
 :::{toctree}
 :caption: Developer Guide
-:maxdepth: 1
+:maxdepth: 2
 contributing/overview
 :::
