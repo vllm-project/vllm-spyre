@@ -116,12 +116,8 @@ def test_cb_with_steps(model: str, backend: str, vllm_version: str,
         )
 
         # set env vars
-
         m.setenv("VLLM_SPYRE_USE_CB", "1")
         m.setenv("VLLM_USE_V1", "1")
-
-        m.setenv("VLLM_SPYRE_MAX_CONTEXT_LENGTH", "2048")
-        m.setenv("VLLM_SPYRE_MAX_BATCH_SIZE", str(max_num_seqs))
         m.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
 
         # To get deterministic execution in V1
@@ -129,7 +125,9 @@ def test_cb_with_steps(model: str, backend: str, vllm_version: str,
         m.setenv("VLLM_ENABLE_V1_MULTIPROCESSING", "0")
 
         # start the engine
-        engine_args = EngineArgs(model=model, )
+        engine_args = EngineArgs(
+            model=model, max_model_len=2048, max_num_seqs=max_num_seqs
+        )
 
         engine = V1LLMEngine.from_engine_args(engine_args)
         engine_core = engine.engine_core.engine_core

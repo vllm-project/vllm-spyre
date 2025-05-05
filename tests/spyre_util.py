@@ -222,16 +222,13 @@ def generate_cb_spyre_vllm_output(
 
         m.setenv("VLLM_SPYRE_USE_CB", str(use_cb))
         m.setenv("VLLM_USE_V1", "1")
-
-        m.setenv("VLLM_SPYRE_MAX_CONTEXT_LENGTH", str(max_model_len))
-        m.setenv("VLLM_SPYRE_MAX_BATCH_SIZE",
-                 str(max_num_seqs))  # defines max batch size
         m.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
 
         vllm_model = LLM(
             model=model,
             tokenizer=model,
             max_model_len=max_model_len,
+            max_num_seqs=max_num_seqs,
             block_size=block_size,
             tensor_parallel_size=tensor_parallel_size,
         )
