@@ -6,7 +6,8 @@ import sys
 # platform we will mostly using eager. So, we can disable triton and things
 # can still work.
 if sys.platform.startswith("darwin"):
-    del sys.modules['triton']
+    if sys.modules.get('triton'):
+        del sys.modules['triton']
 
 import operator
 from typing import TYPE_CHECKING, Optional, Union
