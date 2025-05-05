@@ -125,9 +125,9 @@ def test_cb_with_steps(model: str, backend: str, vllm_version: str,
         m.setenv("VLLM_ENABLE_V1_MULTIPROCESSING", "0")
 
         # start the engine
-        engine_args = EngineArgs(
-            model=model, max_model_len=2048, max_num_seqs=max_num_seqs
-        )
+        engine_args = EngineArgs(model=model,
+                                 max_model_len=2048,
+                                 max_num_seqs=max_num_seqs)
 
         engine = V1LLMEngine.from_engine_args(engine_args)
         engine_core = engine.engine_core.engine_core
