@@ -1,3 +1,13 @@
+import sys
+
+# If we are running this plugin in mac, so we assume it's for local development
+# Therefore, there's a problem in vLLM that overrides triton module with a
+# placeholder, and it may mess up things at pytorch (2.5.1). So, in this
+# platform we will mostly using eager. So, we can disable triton and things
+# can still work.
+if sys.platform.startswith("darwin"):
+    del sys.modules['triton']
+
 import operator
 from typing import TYPE_CHECKING, Optional, Union
 
