@@ -18,9 +18,9 @@
 
 # -- Project information -----------------------------------------------------
 
-project = 'vLLM-Spyre'
-copyright = '2025, vLLM-Spyre team'
-author = 'the vLLM-Spyre team'
+project = 'vllm-spyre'
+copyright = '2025, IBM Research'
+author = 'IBM Research'
 
 # The full version, including alpha/beta/rc tags
 release = ''
