@@ -37,9 +37,9 @@ class SpyreWorker(WorkerBaseV1):
 
     def get_kv_cache_spec(self) -> KVCacheSpec:
         """Get specifications for KV cache implementation.
-        
+
         These specs are used to:
-        - build the kv_cache_configs that are then passed to 
+        - build the kv_cache_configs that are then passed to
             initialize_from_config() on this instance
         - determine the number of available kv_cache_blocks, see
             SpyreWorker.determine_available_memory
@@ -70,7 +70,7 @@ class SpyreWorker(WorkerBaseV1):
                 # lower number of output tokens
                 assert num_decode_tokens >= 3, (
                     "VLLM_SPYRE_WARMUP_NEW_TOKENS must be "
-                    "at least 2 (spyre requirement).")
+                    "at least 3 (spyre requirement).")
             # warmup individual combination
             logger.info(
                 "Warmup %d/%d prompt/decode/batchsize-shape "
@@ -98,7 +98,7 @@ class SpyreWorker(WorkerBaseV1):
 
     def determine_available_memory(self) -> int:
         """Return available device memory in bytes.
-        
+
         This is used in conjunction with the result from `get_kv_cache_spec`
         to determine the number of KV cache blocks that can fit on the device.
 
