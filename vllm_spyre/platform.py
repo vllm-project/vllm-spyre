@@ -1,3 +1,15 @@
+import sys
+
+# When running this plugin on a Mac, we assume it's for local development
+# purposes. However, due to a compatibility issue with vLLM, which overrides
+# the Triton module with a placeholder, vLLM may fail to load on macOS. To
+# mitigate this issue, we can safely remove the Triton module (if imported)
+# and rely on PyTorch to handle the absence of Triton, ensuring fine execution
+# in eager mode.
+if sys.platform.startswith("darwin"):
+    if sys.modules.get('triton'):
+        del sys.modules['triton']
+
 import operator
 import os
 from typing import TYPE_CHECKING, Optional, Union
