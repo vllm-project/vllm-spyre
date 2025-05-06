@@ -1,7 +1,8 @@
 ####
-# 
+#
 # # TODO: REMOVE THIS
 import sys
+
 if sys.platform.startswith("darwin"):
     if sys.modules.get('triton'):
         del sys.modules['triton']
@@ -27,7 +28,6 @@ from vllm.platforms import Platform, PlatformEnum
 import vllm_spyre.envs as envs_spyre
 
 logger = init_logger(__name__)
-
 
 
 class SpyrePlatform(Platform):

@@ -350,6 +350,22 @@ class SpyreWorker(WorkerBaseV1):
         logger.info("Warmup decode 1/1...")
         self.execute_model(scheduler_output)
 
+        # Needed to free the input batch
+        # scheduler_output = SchedulerOutput(
+        #     scheduled_new_reqs=[],
+        #     scheduled_cached_reqs=cached_requests,
+        #     num_scheduled_tokens={},
+        #     total_num_scheduled_tokens=batch_size,
+        #     scheduled_spec_decode_tokens={},
+        #     scheduled_encoder_inputs={},
+        #     num_common_prefix_blocks=0,
+        #     finished_req_ids=set([r.req_id for r in dummy_requests]),
+        #     free_encoder_input_ids=[],
+        #     structured_output_request_ids={},
+        #     grammar_bitmask=None,
+        # )
+        # self.execute_model(scheduler_output)
+
         # free blocks and reset tkv
         for req in dummy_requests:
             logger.debug("Freeing request id: %s", req.req_id)

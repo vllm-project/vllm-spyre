@@ -605,6 +605,16 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             vocab_size=vllm_config.model_config.get_vocab_size(),
         )
 
+        # TODO: Remove this once we can prefill and decode
+        # in the same step
+        self.prefill_batch = InputBatch(
+            max_num_reqs=1,  # TODO: review this 
+            max_model_len=vllm_config.model_config.max_model_len,
+            device=self.device,
+            pin_memory=self.pin_memory,
+            vocab_size=vllm_config.model_config.get_vocab_size(),
+        )
+
         # Requests
         self.requests: dict[str, CachedRequestData] = {}
 
@@ -628,11 +638,12 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         # Internal state is managed here.
         slot_mapping = []
-        
+
         # TODO: we are deactivating all, because we
         # only encode or prefill at time.
-        self.input_batch.deactivate_all_requests()
-        
+        # self.input_batch.deactivate_all_requests()
+        self.prefill_batch.clear_requests()
+
         for request_data in new_requests:
             # retrieve initial (unpadded) tokens
             prompt_tokens = request_data.prompt_token_ids
@@ -655,7 +666,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                 slot_mapping_i.append(slot)
             self.req_ids2blocks[request_data.req_id] = deque(block_table_i)
             slot_mapping.append(slot_mapping_i)
-            
+
             # Add new requests to the cached states.
             req_id = request_data.req_id
             sampling_params = request_data.sampling_params
@@ -674,12 +685,15 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             )
             self.requests[req_id] = req_state
             self.input_batch.add_request(req_state)
+            self.prefill_batch.add_request(req_state)
 
         # Refresh sampling metadata after all request are added to the batch
         self.input_batch.refresh_sampling_metadata()
+        self.prefill_batch.refresh_sampling_metadata()
 
-
-        # prefils are always of batch size 1 for this milestone
+        # TODO: Review this in the future
+        # prefills are always of batch size 1 for this milestone
+        # Also, we added an input batch just for that.
         actual_batch_size = len(input_token_list)
         assert actual_batch_size == 1
         self.model.indices = torch.ones(actual_batch_size,
@@ -727,8 +741,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         if envs_spyre.VLLM_SPYRE_RM_PADDED_BLOCKS:
             self.reduce_left_padding(cached_requests)
-        
-        req_ids_to_activate = []    
+
+        req_ids_to_activate = []
         for cached_request in cached_requests:
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
@@ -750,7 +764,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             input_positions.append([seq_len])
             left_padded_prompt_mask.append(
                 self.req_ids2left_pads[cached_request.req_id])
-            
+
             req_ids_to_activate.append(cached_request.req_id)
 
         self.input_batch.activate_requests(req_ids_to_activate)
@@ -895,7 +909,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             model_inputs = \
                 self._prepare_decode(scheduler_output.scheduled_cached_reqs)
 
-        model_inputs.sampling_metadata = self.input_batch.sampling_metadata
+        # TODO: review this, once we can prefill and decode at the same step
+        model_inputs.sampling_metadata = self.prefill_batch.sampling_metadata \
+            if is_prompt else self.input_batch.sampling_metadata
 
         return model_inputs
 

@@ -185,14 +185,15 @@ class InputBatch:
     def req_id_to_dense_index(self, req_id):
         req_index = self.req_id_to_index[req_id]
         return self.req_idx_to_dense_index(req_index)
-    
+
     def deactivate_all_requests(self):
         self.req_indices_mask[:] = False
-        
-    def activate_requests(self, req_ids : torch.tensor):
-        indices = torch.tensor([self.req_id_to_index[req_id] for req_id in req_ids])
+
+    def activate_requests(self, req_ids: torch.tensor):
+        indices = torch.tensor(
+            [self.req_id_to_index[req_id] for req_id in req_ids])
         self.req_indices_mask[indices] = True
- 
+
     def add_request(
         self,
         request: "CachedRequestState",
