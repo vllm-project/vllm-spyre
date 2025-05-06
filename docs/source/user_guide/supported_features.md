@@ -1,4 +1,4 @@
-# Feature Support
+# Supported Features
 
 | Feature                       | V0 | V1 |
 |-------------------------------|----|----|
