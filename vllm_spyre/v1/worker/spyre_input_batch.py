@@ -43,10 +43,12 @@ class InputBatch:
     the indices stored in `model_indices_mask`. Sometimes we need to check it
     to get the correct index of a request see `get_unpadded_output_indices`. 
     
+    For static batching, the correct usage of this class consists in add 
+    requests and clear the whole batch before process more requests. 
     
-    Since we do not yet support continuous batch, the correct usage of this
-    class consists in add requests and clear the whole batch before process
-    more requests. 
+    For continuous batching, when requests are "soft removed", it opens
+    a slot where a new request can be inserted. Then, the request index
+    mask is used to condense the sampling parameters.
     '''
 
     def __init__(
@@ -154,7 +156,8 @@ class InputBatch:
 
         self.req_output_token_ids: list[Optional[list[int]]] = []
 
-        # Model indices to mask padded request
+        # Request indices to mask request, and to be padded afterwards
+        # This is mapped to model.indices
         self.req_indices_mask = torch.zeros(self.max_num_reqs,
                                             dtype=torch.bool,
                                             device=device)
