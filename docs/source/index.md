@@ -23,6 +23,7 @@ installation
 :caption: User Guide
 :maxdepth: 1
 user_guide/supported_features
+user_guide/supported_models
 :::
 
 :::{toctree}
