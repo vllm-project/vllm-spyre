@@ -144,7 +144,7 @@ class SpyreModelRunner:
             seq_len = input_ids_i.size(0)
             if max_len > seq_len:
                 logger.info(
-                    "Left padding request of length %d tokens to %d tokens.",
+                    "Left padding request ofla length %d tokens to %d tokens.",
                     seq_len, max_len)
             pads = torch.ones(max_len - seq_len,
                               dtype=torch.long,
@@ -269,9 +269,6 @@ class SpyreModelRunner:
             req_index = self.input_batch.soft_remove_request(req_id)
             if req_index is not None:
                 removed_req_indices.append(req_index)
-
-        # if removed_req_indices:
-        #     self.input_batch.condense(removed_req_indices)
 
 
 class StaticBatchingSpyreModelRunner(SpyreModelRunner):
@@ -631,6 +628,11 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         # Internal state is managed here.
         slot_mapping = []
+        
+        # TODO: we are deactivating all, because we
+        # only encode or prefill at time.
+        self.input_batch.deactivate_all_requests()
+        
         for request_data in new_requests:
             # retrieve initial (unpadded) tokens
             prompt_tokens = request_data.prompt_token_ids
@@ -666,7 +668,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             req_state = CachedRequestState(
                 req_id=req_id,
                 prompt_token_ids=request_data.prompt_token_ids,
-                prompt=request_data.prompt,
                 sampling_params=sampling_params,
                 generator=generator,
                 output_token_ids=[],
@@ -726,7 +727,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         if envs_spyre.VLLM_SPYRE_RM_PADDED_BLOCKS:
             self.reduce_left_padding(cached_requests)
-
+        
+        req_ids_to_activate = []    
         for cached_request in cached_requests:
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
@@ -748,7 +750,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             input_positions.append([seq_len])
             left_padded_prompt_mask.append(
                 self.req_ids2left_pads[cached_request.req_id])
+            
+            req_ids_to_activate.append(cached_request.req_id)
 
+        self.input_batch.activate_requests(req_ids_to_activate)
         input_tokens = torch.tensor(input_tokens,
                                     dtype=torch.long,
                                     device=self.device)
@@ -886,7 +891,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         if is_prompt:
             model_inputs = \
                 self._prepare_prompt(scheduler_output.scheduled_new_reqs)
-            num_reqs = len(scheduler_output.scheduled_new_reqs)
         else:
             model_inputs = \
                 self._prepare_decode(scheduler_output.scheduled_cached_reqs)

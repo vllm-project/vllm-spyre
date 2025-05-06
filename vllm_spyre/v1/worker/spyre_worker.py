@@ -299,6 +299,9 @@ class SpyreWorker(WorkerBaseV1):
         ]
 
         for i, req in enumerate(dummy_requests):
+            # finished_req_ids=set()
+            # if i > 0:
+            #     finished_req_ids.add(dummy_requests[i - 1].req_id)
             scheduler_output = SchedulerOutput(
                 scheduled_new_reqs=[req],
                 scheduled_cached_reqs=[],
@@ -307,6 +310,7 @@ class SpyreWorker(WorkerBaseV1):
                 scheduled_spec_decode_tokens={},
                 scheduled_encoder_inputs={},
                 num_common_prefix_blocks=0,
+                # finished_req_ids=finished_req_ids,
                 finished_req_ids=set(),
                 free_encoder_input_ids=[],
                 structured_output_request_ids={},
