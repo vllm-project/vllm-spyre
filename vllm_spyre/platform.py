@@ -1,12 +1,3 @@
-####
-#
-# # TODO: REMOVE THIS
-import sys
-
-if sys.platform.startswith("darwin"):
-    if sys.modules.get('triton'):
-        del sys.modules['triton']
-
 import operator
 import os
 from typing import TYPE_CHECKING, Optional, Union
@@ -165,6 +156,11 @@ class SpyrePlatform(Platform):
             return cls._warmup_shapes
         # load warmup shapes and sort by "speed"
         wup_prompt_lens = envs_spyre.VLLM_SPYRE_WARMUP_PROMPT_LENS or []
+        if not all(pl % 64 == 0 for pl in wup_prompt_lens):
+            raise RuntimeError(
+                "All values in VLLM_SPYRE_WARMUP_PROMPT_LENS must be multiples "
+                "of 64.")
+
         wup_batch_sizes = envs_spyre.VLLM_SPYRE_WARMUP_BATCH_SIZES or []
         if len(wup_prompt_lens) != len(wup_batch_sizes):
             raise RuntimeError(
