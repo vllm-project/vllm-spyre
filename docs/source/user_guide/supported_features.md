@@ -5,7 +5,7 @@
 | Chunked Prefill               |    |    |      |
 | Automatic Prefix Caching      |    | 🚧 |      |
 | LoRA                          |    |    |      |
-| Prompt Adapter                | ✅ | ✅ |      |
+| Prompt Adapter                |    |    |      |
 | Speculative Decoding          |    |    |      |
 | Guided Decoding               |    |    |      |
 | Pooling                       |    |    |      |
