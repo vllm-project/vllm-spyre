@@ -40,7 +40,7 @@ class InputBatch:
     For the Spyre, we do something similar, however we do not worry (for now)
     the transfer data from CPU -> GPU as vLLM does. One key difference between 
     those implementations is that we have a mask for active request based on 
-    the indices stored in `model_indices_mask`. Sometimes we need to check it
+    the indices stored in `req_indices_mask`. Sometimes we need to check it
     to get the correct index of a request see `get_unpadded_output_indices`. 
     
     For static batching, the correct usage of this class consists in add 
@@ -177,17 +177,59 @@ class InputBatch:
         # while performing state updates to the batch.
         return cast(list[str], self._req_ids)
 
-    def get_available_index(self):
+    def req_id_to_dense_index(self, req_id) -> int:
+        '''
+        This data structure has 3 types of references for data:
+        
+        - [request id | req_id] : str -> An id of the request, is passed as 
+        input in `add_request`.
+        - [request index | req_index | req_idx] : int -> The index of the data
+        in this batch. This index is aligned with `req_indices_mask` which can
+        deactivate indices in the batch. In static batching, the finished 
+        requests are only deactivated, and the data is not reorganized until
+        the bash is fully processed. On the other hand, in continuous batching, 
+        finished request will have their slots free that can receive new 
+        requests, that is, the batch is continuously being updated.
+        - dense_index : int -> The contiguous index of data. This is the index
+        of the data of the batch when the padding/slots are removed. For 
+        instance, the sampling parameters are generated dense and are aligned
+        to this index.
+        
+        Example:
+        
+        Given the table below, where `_` is an empty slot
+        
+        request index     |  0  |  1  |  2  |  3  |  4  |  6  |
+        request id        | "A" | "B" | "F" |  _  |  _  | "X" |
+        req_indices_mask  |  T  |  T  |  T  |  F  |  F  |  F  |
+        dense index       |  0  |  1  |  2  |  _  |  _  |  3  |
+        
+        If we remove request "B" at request index 1 we will have:
+        
+        request index     |  0  |  1  |  2  |  3  |  4  |  6  |
+        request id        | "A" |  _  | "F" |  _  |  _  | "X" |
+        req_indices_mask  |  T  |  F  |  T  |  F  |  F  |  F  |
+        dense index       |  0  |  _  |  1  |  _  |  _  |  2  |
+    
+        '''
+
+        req_index = self.req_id_to_index[req_id]
+        return self.req_idx_to_dense_index(req_index)
+
+    def req_idx_to_dense_index(self, req_index) -> int:
+        '''
+        Convert a request index to a dense index. See `req_id_to_dense_index`
+        for more.
+        '''
+        return self.req_indices_mask[:req_index].sum().item()
+
+    def get_available_index(self) -> int:
+        '''
+        Find a free slot in the batching, used primarily in continuous batching
+        '''
         available_indices = self.req_indices_mask.logical_not().nonzero()
         available_indices_list = available_indices.squeeze(dim=-1).tolist()
         return available_indices_list[0] if available_indices_list else None
-
-    def req_idx_to_dense_index(self, req_index):
-        return self.req_indices_mask[:req_index].sum().item()
-
-    def req_id_to_dense_index(self, req_id):
-        req_index = self.req_id_to_index[req_id]
-        return self.req_idx_to_dense_index(req_index)
 
     def add_request(
         self,
@@ -206,7 +248,7 @@ class InputBatch:
 
         # NOTE: differently from gpu input batch, self.req_output_token_ids
         # is not synced with self._req_ids, it should use
-        # self.model_indices_mask to resolve its index considering masked
+        # self.req_indices_mask to resolve its index considering masked
         # out requests.
         dense_index = self.req_idx_to_dense_index(req_index)
         self.req_output_token_ids.insert(dense_index, request.output_token_ids)
@@ -333,13 +375,11 @@ class InputBatch:
         For the continuous batching, the removed request indices can be 
         overwritten by new requests
         '''
-        if req_id not in self.req_id_to_index:
-            return
-        # req_index = self.req_id_to_index[req_id]
-        req_index = self.req_id_to_index.pop(req_id)
+        
+        req_index = self.req_id_to_index.pop(req_id, None)
 
         if req_index is None:
-            return None
+            return
 
         # Mask out the request
         self.req_indices_mask[req_index] = False
@@ -466,7 +506,7 @@ class InputBatch:
         be created to be returned in `ModelRunnerOutput`.
 
         For example if:
-        - self.model_indices_mask = [F, T, T, F]
+        - self.req_indices_mask = [F, T, T, F]
         - self.req_id_to_index = {"A": 0, "B": 1, "C": 2, "D": 3}
         This will output: {"B": 0, "C": 1}
         """

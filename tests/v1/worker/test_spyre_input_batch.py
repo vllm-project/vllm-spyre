@@ -21,9 +21,8 @@ MAX_NUM_PROMPT_TOKENS = 64
 def _remove_requests(input_batch: InputBatch, batch_size: int,
                      reqs: list[CachedRequestState]) -> set[str]:
     """
-    Remove some requests randomly from the batch and returns a tuple
-    of 1) set of request removed 2) indices of the requests removed
-    ordered in descending order
+    Remove some requests randomly from the batch and returns a set of 
+    request ids removed 
     """
 
     num_reqs_to_remove = np.random.randint(0, batch_size)
@@ -66,7 +65,6 @@ def _construct_expected_sampling_metadata(
                                          dtype=torch.bool,
                                          device=device)
 
-    # index_in_input_batch = 0
     bad_words_token_ids = {}
     for req in reqs:
         if req.req_id not in req_ids_retained:
