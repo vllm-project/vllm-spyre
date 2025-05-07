@@ -375,7 +375,7 @@ class InputBatch:
         For the continuous batching, the removed request indices can be 
         overwritten by new requests
         '''
-        
+
         req_index = self.req_id_to_index.pop(req_id, None)
 
         if req_index is None:
