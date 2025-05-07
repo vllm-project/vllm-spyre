@@ -1,15 +1,33 @@
 # Supported Features
 
-| Feature                       | V0 | V1 |
-|-------------------------------|----|----|
-| Quantization                  |    |⚠️  |
-| Tensor Parallel               |✅︎  |✅︎  |
-| Prompt Adapter                |✅︎  |✅︎  |
-| Pooling                       |✅︎  |    |
-| LogProbs                      |✅︎  |✅︎  |
-| Prompt logProbs               |✅︎  |✅︎  |
-| Automatic Prefix Caching      |    |🚧  |
+| Feature                       | v0 | v1 | Note |
+|-------------------------------|----|----|------|
+| Chunked Prefill               |    |    |      |
+| Automatic Prefix Caching      |    | 🚧 |      |
+| LoRA                          |    |    |      |
+| Prompt Adapter                | ✅ | ✅ |      |
+| Speculative Decoding          |    |    |      |
+| Guided Decoding               |    |    |      |
+| Pooling                       |    |    |      |
+| Enc-dec                       |    |    |      |
+| Multi Modality                |    |    |      |
+| LogProbs                      | ✅ | ✅ |      |
+| Prompt logProbs               | ✅ | ✅ |      |
+| Async output                  |    |    |      |
+| Multi step scheduler          |    |    |      |
+| Best of                       |    |    |      |
+| Beam search                   |    |    |      |
+| Tensor Parallel               | ✅ | ✅ |      |
+| Pipeline Parallel             |    |    |      |
+| Expert Parallel               |    |    |      |
+| Data Parallel                 |    |    |      |
+| Prefill Decode Disaggregation |    |    |      |
+| Quantization                  |    | ⚠️ |      |
+| Graph Mode                    |    |    |      |
+| Sleep Mode                    |    |    |      |
 
-- ✅︎ indicates that the feature is supported.
-- 🚧 indicates that the feature is planned but not yet supported.
-- ⚠️ indicates that the feature is available but may have known issues or limitations.
+- ✅ Fully operational.
+- ⚠️ Experimental support.
+- 🚧 Under active development.
+- 📅 Planned.
+- ⛔ Not planned or deprecated.
