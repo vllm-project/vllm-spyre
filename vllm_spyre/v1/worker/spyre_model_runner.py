@@ -767,7 +767,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
             req_ids_to_activate.append(cached_request.req_id)
 
-        self.input_batch.activate_requests(req_ids_to_activate)
         input_tokens = torch.tensor(input_tokens,
                                     dtype=torch.long,
                                     device=self.device)
