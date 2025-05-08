@@ -350,15 +350,17 @@ class SpyreWorker(WorkerBaseV1):
         logger.info("Warmup decode 1/1...")
         self.execute_model(scheduler_output)
 
-        # Needed to free the input batch
+        # Needed to clean up the data of model runner
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=[],
             scheduled_cached_reqs=[],
             num_scheduled_tokens={},
-            total_num_scheduled_tokens=batch_size,
+            # NOTE: this means no work to do
+            total_num_scheduled_tokens=0, 
             scheduled_spec_decode_tokens={},
             scheduled_encoder_inputs={},
             num_common_prefix_blocks=0,
+            # The requests to be removed
             finished_req_ids=set([r.req_id for r in dummy_requests]),
             free_encoder_input_ids=[],
             structured_output_request_ids={},
@@ -367,12 +369,12 @@ class SpyreWorker(WorkerBaseV1):
         self.execute_model(scheduler_output)
 
         # free blocks and reset tkv
-        for req in dummy_requests:
-            logger.debug("Freeing request id: %s", req.req_id)
-            for freed_block in model_runner.req_ids2blocks[req.req_id]:
-                model_runner.free_blocks.append(freed_block)
-            del model_runner.req_ids2blocks[req.req_id]
-            del model_runner.req_ids2left_pads[req.req_id]
+        # for req in dummy_requests:
+        #     logger.debug("Freeing request id: %s", req.req_id)
+        #     for freed_block in model_runner.req_ids2blocks[req.req_id]:
+        #         model_runner.free_blocks.append(freed_block)
+        #     del model_runner.req_ids2blocks[req.req_id]
+        #     del model_runner.req_ids2left_pads[req.req_id]
 
         self.model_runner.tkv = 0  # type: ignore[union-attr]
 

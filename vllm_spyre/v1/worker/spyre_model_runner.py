@@ -222,9 +222,7 @@ class SpyreModelRunner:
 
     def _update_states(
             self,
-            scheduler_output: SchedulerOutput,
-            # Update data for continuous batching
-            update_for_cb=False):
+            scheduler_output: SchedulerOutput):
         # Update the states of the running/resumed requests.
         # Update input_batch's `token_ids_cpu`,
         # `num_tokens`. For continuous batching it cleans
@@ -259,16 +257,6 @@ class SpyreModelRunner:
             self.input_batch.token_ids_cpu[
                 req_index,
                 start_token_index:end_token_index] = req_data.new_token_ids
-
-        if not update_for_cb:
-            return
-
-        # Continuous batching stuff
-        removed_req_indices: list[int] = []
-        for req_id in scheduler_output.finished_req_ids:
-            req_index = self.input_batch.soft_remove_request(req_id)
-            if req_index is not None:
-                removed_req_indices.append(req_index)
 
 
 class StaticBatchingSpyreModelRunner(SpyreModelRunner):
@@ -617,6 +605,22 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         # Requests
         self.requests: dict[str, CachedRequestData] = {}
+        
+    def _update_states(self, scheduler_output):
+        
+        super()._update_states(scheduler_output)
+        
+        # Continuous batching stuff
+        for req_id in scheduler_output.finished_req_ids:
+            if req_id in self.req_ids2blocks:
+                logger.debug("Freeing request id: %s", req_id)
+                for freed_block in self.req_ids2blocks[req_id]:
+                    self.free_blocks.append(freed_block)
+                del self.req_ids2blocks[req_id]
+                del self.req_ids2left_pads[req_id]
+        
+        [self.input_batch.remove_request(req_id) \
+            for req_id in scheduler_output.finished_req_ids]
 
     def _prepare_prompt(
         self,
@@ -892,14 +896,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # Also assuming that new sequences are prefills
         is_prompt = len(scheduler_output.scheduled_new_reqs) > 0
 
-        for req_id in scheduler_output.finished_req_ids:
-            if req_id in self.req_ids2blocks:
-                logger.debug("Freeing request id: %s", req_id)
-                for freed_block in self.req_ids2blocks[req_id]:
-                    self.free_blocks.append(freed_block)
-                del self.req_ids2blocks[req_id]
-                del self.req_ids2left_pads[req_id]
-
         # Prepare and return input tensors.
         if is_prompt:
             model_inputs = \
@@ -923,7 +919,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         t0 = time.time()
 
-        self._update_states(scheduler_output, update_for_cb=True)
+        self._update_states(scheduler_output)
         # TODO: change to EMPTY_MODEL_RUNNER_OUTPUT, right now this
         # will be a breaking change, or clumsy to make retrocompatible
         # with conditional import
