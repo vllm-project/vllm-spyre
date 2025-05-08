@@ -261,7 +261,8 @@ class FmsModelBase(nn.Module):
             self.model = torch.compile(
                 self.model,
                 mode=compile_mode,
-                backend=envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND)
+                backend=envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND,
+                options=self.options)
 
 
 class ContinuousBatchingFmsModel(FmsModelBase):
@@ -316,6 +317,10 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                                                    dtype=self.dtype))
                                       for _ in range(num_layers)]
 
+        self.options = {
+            'sendnn.dynamic': True
+        }
+
     def forward(
         self,
         input_ids: torch.Tensor,
@@ -364,6 +369,7 @@ class StaticBatchingFmsModel(FmsModelBase):
 
         # dynamic KV cache
         self.past_key_value_states = None
+        self.options = {}
 
     def forward(
         self,
