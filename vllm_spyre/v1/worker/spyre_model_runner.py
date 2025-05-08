@@ -584,19 +584,12 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.tkv = 0
         self.free_blocks = deque([i for i in range(NUM_BLOCKS)])
 
-        # Batch State
-        self.input_batch = InputBatch(
-            max_num_reqs=vllm_config.scheduler_config.max_num_seqs,
-            max_model_len=vllm_config.model_config.max_model_len,
-            device=self.device,
-            pin_memory=self.pin_memory,
-            vocab_size=vllm_config.model_config.get_vocab_size(),
-        )
-
         # TODO: Remove this once we can prefill and decode
         # in the same step
         self.prefill_batch = InputBatch(
-            max_num_reqs=1,  # TODO: review this 
+            # TODO: review this, currently we only support prefill for 
+            # `batch_size=1`
+            max_num_reqs=1,  
             max_model_len=vllm_config.model_config.max_model_len,
             device=self.device,
             pin_memory=self.pin_memory,
