@@ -359,18 +359,16 @@ class InputBatch:
 
         self._num_requests = 0
 
-    def soft_remove_request(self, req_id: str):
+    def remove_request(self, req_id: str):
         '''
-        Disable requests from the batch
+        Free a slot of a request from the batch
         
-        It does the following
-        - mask out the padded requests.
-        - Remove reference from the sets that track the type of param 
+        It does the following:
+        - mask out the removed request.
+        - Remove reference from the sets that track the type of parameter 
           e.g. greeedy_reqs 
         - Update some containers by reference to update the sampling parameters
-        
-        This method however, does not change the self.req_id_to_index which is
-        needed to keep the map of finished padded requests.
+          e.g. req_output_token_ids
         
         For the continuous batching, the removed request indices can be 
         overwritten by new requests
