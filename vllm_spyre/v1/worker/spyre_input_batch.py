@@ -186,10 +186,10 @@ class InputBatch:
         - [request index | req_index | req_idx] : int -> The index of the data
         in this batch. This index is aligned with `req_indices_mask` which can
         deactivate indices in the batch. In static batching, the finished 
-        requests are only deactivated, and the data is not reorganized until
-        the bash is fully processed. On the other hand, in continuous batching, 
-        finished request will have their slots free that can receive new 
-        requests, that is, the batch is continuously being updated.
+        requests are only deactivated and the data is not reorganized until
+        the batch is fully processed. On the other hand, in continuous 
+        batching, finished request will have their slots free that can receive 
+        new requests, that is, the batch is continuously being updated.
         - dense_index : int -> The contiguous index of data. This is the index
         of the data of the batch when the padding/slots are removed. For 
         instance, the sampling parameters are generated dense and are aligned
@@ -210,6 +210,8 @@ class InputBatch:
         request id        | "A" |  _  | "F" |  _  |  _  | "X" |
         req_indices_mask  |  T  |  F  |  T  |  F  |  F  |  F  |
         dense index       |  0  |  _  |  1  |  _  |  _  |  2  |
+        
+        Note how the dense indices were affected by the removal.
     
         '''
 
@@ -359,18 +361,16 @@ class InputBatch:
 
         self._num_requests = 0
 
-    def soft_remove_request(self, req_id: str):
+    def remove_request(self, req_id: str):
         '''
-        Disable requests from the batch
+        Free a slot of a request from the batch
         
-        It does the following
-        - mask out the padded requests.
-        - Remove reference from the sets that track the type of param 
+        It does the following:
+        - mask out the removed request.
+        - Remove reference from the sets that track the type of parameter 
           e.g. greeedy_reqs 
         - Update some containers by reference to update the sampling parameters
-        
-        This method however, does not change the self.req_id_to_index which is
-        needed to keep the map of finished padded requests.
+          e.g. req_output_token_ids
         
         For the continuous batching, the removed request indices can be 
         overwritten by new requests

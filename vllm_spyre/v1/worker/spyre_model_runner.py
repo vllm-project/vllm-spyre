@@ -435,7 +435,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         else:
             if scheduler_output.finished_req_ids:
                 for req_id in scheduler_output.finished_req_ids:
-                    self.input_batch.soft_remove_request(req_id)
+                    self.input_batch.remove_request(req_id)
                 self.input_batch.refresh_sampling_metadata()
 
             return self._prepare_decode(scheduler_output.scheduled_cached_reqs)

@@ -19,6 +19,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+            # Fetch all history for setuptools_scm to work correctly
+            fetch-depth: 0
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:

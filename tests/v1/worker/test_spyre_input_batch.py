@@ -33,7 +33,7 @@ def _remove_requests(input_batch: InputBatch, batch_size: int,
 
     req_ids_to_remove: set[str] = set()
     for index in req_indices_to_remove:
-        input_batch.soft_remove_request(reqs[index].req_id)
+        input_batch.remove_request(reqs[index].req_id)
         req_ids_to_remove.add(reqs[index].req_id)
     return req_ids_to_remove
 
@@ -250,6 +250,9 @@ def test_sampling_metadata_in_input_batch(batch_size: int):
         reqs, req_ids_retained, input_batch, device=torch.device(device))
 
     compare_results(sampling_metadata, expected_sampling_metadata)
+
+    if len(req_ids_to_remove) == 0:
+        return
 
     # Add more requests
     for req_index in range(len(req_ids_to_remove)):

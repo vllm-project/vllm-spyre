@@ -247,6 +247,10 @@ echo 'vLLM shellcheck:'
 tools/shellcheck.sh
 echo 'vLLM shellcheck: Done'
 
+echo 'vLLM doc-lint:'
+tools/doc-lint.sh
+echo 'vLLM doc-lint: Done'
+
 if ! git diff --quiet &>/dev/null; then
     echo 
     echo "🔍🔍There are files changed by the format checker or by you that are not added and committed:"
@@ -257,7 +261,3 @@ if ! git diff --quiet &>/dev/null; then
 else
     echo "✨🎉 Format check passed! Congratulations! 🎉✨"
 fi
-
-echo 'vLLM doc-lint:'
-tools/doc-lint.sh
-echo 'vLLM doc-lint: Done'
