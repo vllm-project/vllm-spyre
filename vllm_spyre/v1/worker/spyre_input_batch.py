@@ -46,9 +46,9 @@ class InputBatch:
     For static batching, the correct usage of this class consists in add 
     requests and clear the whole batch before process more requests. 
     
-    For continuous batching, when requests are "soft removed", it opens
-    a slot where a new request can be inserted. Then, the request index
-    mask is used to condense the sampling parameters.
+    For continuous batching, when a request is removed, it frees a slot where 
+    a new request can be inserted. Then, the request index mask is used to 
+    condense the sampling parameters.
     '''
 
     def __init__(
