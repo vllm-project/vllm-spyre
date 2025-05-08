@@ -227,8 +227,6 @@ class FmsModelBase(nn.Module):
                                fused_weights=fused_weights,
                                linear_config=linear_config)
 
-        compile_mode = "default"
-
         self.model.eval()
         torch.set_grad_enabled(False)
 
@@ -271,7 +269,6 @@ class FmsModelBase(nn.Module):
 
             self.model = torch.compile(
                 self.model,
-                mode=compile_mode,
                 backend=envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND,
                 options=options,
             )
