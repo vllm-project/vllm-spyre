@@ -253,7 +253,7 @@ def test_sampling_metadata_in_input_batch(batch_size: int):
 
     if len(req_ids_to_remove) == 0:
         return
-    
+
     # Add more requests
     for req_index in range(len(req_ids_to_remove)):
         req: CachedRequestState = _construct_cached_request_state(req_index +
