@@ -210,6 +210,8 @@ class InputBatch:
         request id        | "A" |  _  | "F" |  _  |  _  | "X" |
         req_indices_mask  |  T  |  F  |  T  |  F  |  F  |  F  |
         dense index       |  0  |  _  |  1  |  _  |  _  |  2  |
+        
+        Note how the dense indices were affected by the removal.
     
         '''
 
