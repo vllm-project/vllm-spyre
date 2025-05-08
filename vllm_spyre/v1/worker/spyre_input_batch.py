@@ -186,7 +186,7 @@ class InputBatch:
         - [request index | req_index | req_idx] : int -> The index of the data
         in this batch. This index is aligned with `req_indices_mask` which can
         deactivate indices in the batch. In static batching, the finished 
-        requests are only deactivated, and the data is not reorganized until
+        requests are only deactivated and the data is not reorganized until
         the batch is fully processed. On the other hand, in continuous batching, 
         finished request will have their slots free that can receive new 
         requests, that is, the batch is continuously being updated.
