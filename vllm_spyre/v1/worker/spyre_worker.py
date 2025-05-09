@@ -299,9 +299,6 @@ class SpyreWorker(WorkerBaseV1):
         ]
 
         for i, req in enumerate(dummy_requests):
-            # finished_req_ids=set()
-            # if i > 0:
-            #     finished_req_ids.add(dummy_requests[i - 1].req_id)
             scheduler_output = SchedulerOutput(
                 scheduled_new_reqs=[req],
                 scheduled_cached_reqs=[],
@@ -310,7 +307,6 @@ class SpyreWorker(WorkerBaseV1):
                 scheduled_spec_decode_tokens={},
                 scheduled_encoder_inputs={},
                 num_common_prefix_blocks=0,
-                # finished_req_ids=finished_req_ids,
                 finished_req_ids=set(),
                 free_encoder_input_ids=[],
                 structured_output_request_ids={},
@@ -367,14 +363,6 @@ class SpyreWorker(WorkerBaseV1):
             grammar_bitmask=None,
         )
         self.execute_model(scheduler_output)
-
-        # free blocks and reset tkv
-        # for req in dummy_requests:
-        #     logger.debug("Freeing request id: %s", req.req_id)
-        #     for freed_block in model_runner.req_ids2blocks[req.req_id]:
-        #         model_runner.free_blocks.append(freed_block)
-        #     del model_runner.req_ids2blocks[req.req_id]
-        #     del model_runner.req_ids2left_pads[req.req_id]
 
         self.model_runner.tkv = 0  # type: ignore[union-attr]
 
