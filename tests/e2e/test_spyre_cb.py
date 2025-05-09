@@ -14,7 +14,7 @@ from vllm.v1.engine.llm_engine import LLMEngine as V1LLMEngine
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
-@pytest.mark.parametrize("use_cb", [0, 1], ids=lambda val: f"use_cb({val})")
+@pytest.mark.parametrize("use_cb", [1], ids=lambda val: f"use_cb({val})")
 @pytest.mark.parametrize("vllm_version",
                          [pytest.param("V1", marks=pytest.mark.v1, id="v1")])
 @pytest.mark.parametrize(

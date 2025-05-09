@@ -12,7 +12,7 @@ readme = "README.md"
 license = {text = "Apache 2"}
 dependencies = [
     "fms-model-optimizer>=0.2.0",
-    "ibm-fms==0.0.8",
+    "fms",
     "vllm>=0.8.5",
 ]
 requires-python = ">=3.9"
@@ -53,6 +53,9 @@ override-dependencies = [
 environments = [
     "python_version > '3.9'"
 ]
+
+[tool.uv.sources]
+fms = { git = "https://github.com/foundation-model-stack/foundation-model-stack.git", branch = "paged_attn_mock" }
 
 [tool.ruff]
 # Allow lines to be as long as 80.
