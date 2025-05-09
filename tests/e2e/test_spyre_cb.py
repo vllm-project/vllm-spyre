@@ -15,7 +15,7 @@ from vllm.v1.engine.llm_engine import LLMEngine as V1LLMEngine
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 @pytest.mark.parametrize(
-    "cb", [pytest.param([1], marks=pytest.mark.cb, id="cb")])
+    "cb", [pytest.param(1, marks=pytest.mark.cb, id="cb")])
 # @pytest.mark.parametrize("use_cb", [1], ids=lambda val: f"use_cb({val})")
 # @pytest.mark.parametrize("vllm_version",
 #                          [pytest.param("V1", marks=pytest.mark.v1, id="v1")])
