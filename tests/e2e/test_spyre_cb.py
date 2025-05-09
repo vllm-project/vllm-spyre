@@ -14,9 +14,9 @@ from vllm.v1.engine.llm_engine import LLMEngine as V1LLMEngine
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
-@pytest.mark.parametrize(
-    "cb", [pytest.param(1, marks=pytest.mark.cb, id="cb")])
-# @pytest.mark.parametrize("use_cb", [1], ids=lambda val: f"use_cb({val})")
+@pytest.mark.parametrize("cb",
+                         [pytest.param(1, marks=pytest.mark.cb, id="cb")])
+# commenting v1 since we don't want this test to run with v1 marker yet
 # @pytest.mark.parametrize("vllm_version",
 #                          [pytest.param("V1", marks=pytest.mark.v1, id="v1")])
 @pytest.mark.parametrize(
@@ -92,9 +92,11 @@ def test_cb_handling(
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
+@pytest.mark.parametrize("cb",
+                         [pytest.param(1, marks=pytest.mark.cb, id="cb")])
 # @pytest.mark.parametrize("vllm_version",
 #                          [pytest.param("V1", marks=pytest.mark.v1, id="v1")])
-def test_cb_with_steps(model: str, backend: str, 
+def test_cb_with_steps(model: str, backend: str,
                        monkeypatch: pytest.MonkeyPatch):
     """Test that the spyre worker correctly handles
     continuous batches of requests and one sequence
