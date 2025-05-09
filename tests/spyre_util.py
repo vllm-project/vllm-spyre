@@ -205,6 +205,45 @@ def generate_spyre_vllm_output(model: str, prompts: list[str],
     return results
 
 
+# Support for continuous batching
+def generate_cb_spyre_vllm_output(
+    model: str,
+    prompts: list[str],
+    max_model_len: int,
+    block_size: int,
+    sampling_params: Union[SamplingParams, list[SamplingParams]],
+    tensor_parallel_size: int,
+    backend: str,
+    max_num_seqs: int,
+    use_cb: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[dict[str, Any]]:
+    with monkeypatch.context() as m:
+
+        m.setenv("VLLM_SPYRE_USE_CB", str(use_cb))
+        m.setenv("VLLM_USE_V1", "1")
+        m.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+
+        vllm_model = LLM(
+            model=model,
+            tokenizer=model,
+            max_model_len=max_model_len,
+            max_num_seqs=max_num_seqs,
+            block_size=block_size,
+            tensor_parallel_size=tensor_parallel_size,
+        )
+
+        vllm_outputs = vllm_model.generate(prompts, sampling_params)
+        results = []
+
+        for req_output in vllm_outputs:
+            result = {}
+            result["text"] = req_output.outputs[0].text
+            results.append(result)
+
+        return results
+
+
 # Hugging Face
 def generate_hf_output(
         model: str, prompts: list[str],
