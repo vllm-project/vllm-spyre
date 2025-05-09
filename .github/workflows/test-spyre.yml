@@ -57,6 +57,7 @@ jobs:
             flags: "--timeout=300"
           - name: "cb"
             markers: "cb"
+            repo: "git+https://github.com/foundation-model-stack/foundation-model-stack --branch paged_attn_mock"
             flags: "--timeout=300 --forked"
 
     name: "${{ matrix.test_suite.name }} (${{ matrix.vllm_version.name }})"
