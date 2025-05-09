@@ -356,7 +356,7 @@ class SpyreWorker(WorkerBaseV1):
             scheduled_cached_reqs=[],
             num_scheduled_tokens={},
             # NOTE: this means no work to do
-            total_num_scheduled_tokens=0, 
+            total_num_scheduled_tokens=0,
             scheduled_spec_decode_tokens={},
             scheduled_encoder_inputs={},
             num_common_prefix_blocks=0,

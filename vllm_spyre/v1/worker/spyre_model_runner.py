@@ -144,7 +144,7 @@ class SpyreModelRunner:
             seq_len = input_ids_i.size(0)
             if max_len > seq_len:
                 logger.info(
-                    "Left padding request ofla length %d tokens to %d tokens.",
+                    "Left padding request of length %d tokens to %d tokens.",
                     seq_len, max_len)
             pads = torch.ones(max_len - seq_len,
                               dtype=torch.long,
@@ -220,9 +220,7 @@ class SpyreModelRunner:
         """Turn off warmup mode once the warmup is complete"""
         self.warmup_mode = False
 
-    def _update_states(
-            self,
-            scheduler_output: SchedulerOutput):
+    def _update_states(self, scheduler_output: SchedulerOutput):
         # Update the states of the running/resumed requests.
         # Update input_batch's `token_ids_cpu`,
         # `num_tokens`. For continuous batching it cleans
@@ -587,9 +585,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # TODO: Remove this once we can prefill and decode
         # in the same step
         self.prefill_batch = InputBatch(
-            # TODO: review this, currently we only support prefill for 
+            # TODO: review this, currently we only support prefill for
             # `batch_size=1`
-            max_num_reqs=1,  
+            max_num_reqs=1,
             max_model_len=vllm_config.model_config.max_model_len,
             device=self.device,
             pin_memory=self.pin_memory,
@@ -598,11 +596,11 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         # Requests
         self.requests: dict[str, CachedRequestData] = {}
-        
+
     def _update_states(self, scheduler_output):
-        
+
         super()._update_states(scheduler_output)
-        
+
         # Continuous batching stuff
         for req_id in scheduler_output.finished_req_ids:
             if req_id in self.req_ids2blocks:
@@ -611,7 +609,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                     self.free_blocks.append(freed_block)
                 del self.req_ids2blocks[req_id]
                 del self.req_ids2left_pads[req_id]
-        
+
         [self.input_batch.remove_request(req_id) \
             for req_id in scheduler_output.finished_req_ids]
 
@@ -636,9 +634,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # Internal state is managed here.
         slot_mapping = []
 
-        # TODO: we are deactivating all, because we
-        # only encode or prefill at time.
-        # self.input_batch.deactivate_all_requests()
         self.prefill_batch.clear_requests()
 
         for request_data in new_requests:
