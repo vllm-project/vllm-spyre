@@ -153,20 +153,3 @@ jobs:
           source .venv/bin/activate
           python3 -m pytest ${{ matrix.test_suite.flags }} \
             tests -v -m "${{ matrix.test_suite.markers }}"
-
-      # - name: "Run CB tests"
-      #   env:
-      #     MASTER_PORT: 12355
-      #     MASTER_ADDR: localhost
-      #     DISTRIBUTED_STRATEGY_IGNORE_MODULES: WordEmbedding
-      #   run: |
-      #     # Delete the source code so we can ensure we're testing the installed
-      #     # wheel
-      #     rm -fr vllm_spyre
-      #     # We activate .venv manually and run pytest directly instead of using
-      #     # `uv run`, to avoid having `uv run` re-sync any dependencies or 
-      #     # re-install the vllm_sypre package from source
-      #     source .venv/bin/activate
-      #     pip install git+https://github.com/foundation-model-stack/foundation-model-stack.git@paged_attn_mock --force-reinstall
-
-      #     python3 -m pytest tests -v -m "cb"
