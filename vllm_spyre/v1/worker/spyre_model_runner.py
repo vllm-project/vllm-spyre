@@ -34,7 +34,7 @@ import vllm_spyre.envs as envs_spyre
 logger = init_logger(__name__)
 
 
-@dataclass()
+@dataclass(frozen=True)
 class ModelForwardInputs:
     """
     Used by the SpyreModelRunner.
@@ -47,8 +47,6 @@ class ModelForwardInputs:
     block_table: Optional[torch.Tensor] = None
     slot_mapping: Optional[torch.Tensor] = None
     is_prompt: Optional[bool] = None
-    # temporary until we can get from input_batch
-    sampling_metadata: Optional[SamplingMetadata] = None
 
 
 @dataclass
@@ -892,10 +890,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             model_inputs = \
                 self._prepare_decode(scheduler_output.scheduled_cached_reqs)
 
-        # TODO: review this, once we can prefill and decode at the same step
-        model_inputs.sampling_metadata = self.prefill_batch.sampling_metadata \
-            if is_prompt else self.input_batch.sampling_metadata
-
         return model_inputs
 
     @SpyrePlatform.inference_mode()
@@ -959,7 +953,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             torch._dynamo.mark_static(model_input.slot_mapping, 1)  # always 1
             torch._dynamo.mark_static(model_input.input_positions,
                                       1)  # always 1
-
+            
         # Execute the model
         hidden_states = self.model(
             input_ids=model_input.input_tokens,
@@ -979,11 +973,14 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         logits = self.model.compute_logits(hidden_states, None)
 
         # Sample the next token.
+        # TODO: review this, once we can prefill and decode at the same step
+        sampling_metadata = self.prefill_batch.sampling_metadata \
+            if model_input.is_prompt else self.input_batch.sampling_metadata
         output: SamplerOutput = self.model.sample(
             logits=logits,
             # TODO: Uncomment once Wallas is done with the work
             # sampling_metadata=self.input_batch.sampling_metadata,
-            sampling_metadata=model_input.sampling_metadata,
+            sampling_metadata=sampling_metadata,
         )
         t1 = time.time() - t0
         logger.debug("t_token: %.2fms", (t1 * 1000))
