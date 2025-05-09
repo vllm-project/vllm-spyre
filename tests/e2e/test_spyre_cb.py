@@ -14,9 +14,11 @@ from vllm.v1.engine.llm_engine import LLMEngine as V1LLMEngine
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
+@pytest.mark.parametrize(
+    "cb", [pytest.param("cb", marks=pytest.mark.cb, id="cb")])
 @pytest.mark.parametrize("use_cb", [1], ids=lambda val: f"use_cb({val})")
-@pytest.mark.parametrize("vllm_version",
-                         [pytest.param("V1", marks=pytest.mark.v1, id="v1")])
+# @pytest.mark.parametrize("vllm_version",
+#                          [pytest.param("V1", marks=pytest.mark.v1, id="v1")])
 @pytest.mark.parametrize(
     "prompts",
     [
@@ -47,7 +49,7 @@ def test_cb_handling(
     max_num_seqs: int,
     use_cb: bool,
     prompts: list[str],
-    vllm_version: str,
+    # vllm_version: str,
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Test that the spyre worker correctly handles
@@ -90,9 +92,9 @@ def test_cb_handling(
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
-@pytest.mark.parametrize("vllm_version",
-                         [pytest.param("V1", marks=pytest.mark.v1, id="v1")])
-def test_cb_with_steps(model: str, backend: str, vllm_version: str,
+# @pytest.mark.parametrize("vllm_version",
+#                          [pytest.param("V1", marks=pytest.mark.v1, id="v1")])
+def test_cb_with_steps(model: str, backend: str, 
                        monkeypatch: pytest.MonkeyPatch):
     """Test that the spyre worker correctly handles
     continuous batches of requests and one sequence
