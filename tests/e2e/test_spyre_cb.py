@@ -15,8 +15,8 @@ from vllm.v1.engine.llm_engine import LLMEngine as V1LLMEngine
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 @pytest.mark.parametrize(
-    "cb", [pytest.param("cb", marks=pytest.mark.cb, id="cb")])
-@pytest.mark.parametrize("use_cb", [1], ids=lambda val: f"use_cb({val})")
+    "cb", [pytest.param([1], marks=pytest.mark.cb, id="cb")])
+# @pytest.mark.parametrize("use_cb", [1], ids=lambda val: f"use_cb({val})")
 # @pytest.mark.parametrize("vllm_version",
 #                          [pytest.param("V1", marks=pytest.mark.v1, id="v1")])
 @pytest.mark.parametrize(
@@ -47,7 +47,7 @@ def test_cb_handling(
     model: str,
     backend: str,
     max_num_seqs: int,
-    use_cb: bool,
+    cb: bool,
     prompts: list[str],
     # vllm_version: str,
     monkeypatch: pytest.MonkeyPatch,
@@ -56,7 +56,7 @@ def test_cb_handling(
     continuous batches of requests that
     finish after different numbers of forward passes"""
 
-    if use_cb and len(prompts) < max_num_seqs:
+    if cb and len(prompts) < max_num_seqs:
         pytest.skip("Skipping since this doesn't really test CB")
 
     vllm_sampling_params = SamplingParams(max_tokens=20,
@@ -77,7 +77,7 @@ def test_cb_handling(
         tensor_parallel_size=1,
         backend=backend,
         max_num_seqs=max_num_seqs,
-        use_cb=use_cb,
+        use_cb=cb,
         monkeypatch=monkeypatch,
     )
 
