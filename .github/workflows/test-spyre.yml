@@ -151,5 +151,8 @@ jobs:
           # `uv run`, to avoid having `uv run` re-sync any dependencies or 
           # re-install the vllm_sypre package from source
           source .venv/bin/activate
+          if [ ${{ matrix.test_suite.markers }} == "cb" ]; then
+              pip install git+https://github.com/foundation-model-stack/foundation-model-stack@paged_attn_mock
+          # commands to run if condition is true
           python3 -m pytest ${{ matrix.test_suite.flags }} \
             tests -v -m "${{ matrix.test_suite.markers }}"
