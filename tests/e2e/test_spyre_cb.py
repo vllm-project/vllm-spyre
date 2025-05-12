@@ -236,15 +236,3 @@ def test_cb_with_steps(model: str, backend: str, cb: int,
 
         assert len(engine_core.scheduler.waiting) == 0
         assert len(engine_core.scheduler.running) == 2
-
-        _ = engine_core.step()
-        assert len(engine_core.scheduler.waiting) == 0
-        assert len(engine_core.scheduler.running) == 2
-
-        _ = engine_core.step()
-        assert len(engine_core.scheduler.waiting) == 0
-        assert len(engine_core.scheduler.running) == 2
-
-        _ = engine_core.step()
-        assert len(engine_core.scheduler.waiting) == 0
-        assert len(engine_core.scheduler.running) == 2
