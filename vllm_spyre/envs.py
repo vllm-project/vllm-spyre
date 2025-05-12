@@ -7,8 +7,7 @@ if TYPE_CHECKING:
     VLLM_SPYRE_WARMUP_NEW_TOKENS: Optional[list[int]] = None
     VLLM_SPYRE_WARMUP_BATCH_SIZES: Optional[list[int]] = None
     VLLM_SPYRE_USE_CB: bool = False
-    VLLM_SPYRE_MAX_BATCH_SIZE: int = 0
-    VLLM_SPYRE_MAX_CONTEXT_LENGTH: int = 0
+    VLLM_SPYRE_RM_PADDED_BLOCKS: bool = False
     VLLM_SPYRE_PERF_METRIC_LOGGING_ENABLED: int = 0
     VLLM_SPYRE_PERF_METRIC_LOGGING_DIR: str = "/tmp"
 
@@ -50,13 +49,9 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "VLLM_SPYRE_USE_CB":
     lambda: bool(int(os.getenv("VLLM_SPYRE_USE_CB", "0"))),
 
-    # Maximal supported batch size
-    "VLLM_SPYRE_MAX_BATCH_SIZE":
-    lambda: int(os.getenv("VLLM_SPYRE_MAX_BATCH_SIZE", "0")),
-
-    # Maximal supported context length
-    "VLLM_SPYRE_MAX_CONTEXT_LENGTH":
-    lambda: int(os.getenv("VLLM_SPYRE_MAX_CONTEXT_LENGTH", "0")),
+    # If set, remove redundant (left) padded blocks
+    "VLLM_SPYRE_RM_PADDED_BLOCKS":
+    lambda: bool(int(os.getenv("VLLM_SPYRE_RM_PADDED_BLOCKS", "0"))),
 
     # Enable performance metric logging. This captures startup information
     # such as warmup times, and loading times. It is turned off by default.

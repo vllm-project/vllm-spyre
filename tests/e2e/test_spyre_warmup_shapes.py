@@ -26,7 +26,8 @@ from vllm import SamplingParams
     "warmup_shapes", [[(64, 20, 8),
                        (128, 20, 4)]])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("vllm_version", ["V0", "V1"])
+@pytest.mark.parametrize("vllm_version",
+                         [pytest.param("V1", marks=pytest.mark.v1, id="v1")])
 def test_output(
     model: str,
     prompts: list[str],
@@ -84,3 +85,38 @@ def test_output(
                     backend=backend,
                     vllm_results=vllm_results,
                     hf_results=hf_results)
+
+
+@pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.parametrize("prompts", [["Hello"]])
+@pytest.mark.parametrize("warmup_shapes", [[(65, 1, 1)]])
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+@pytest.mark.parametrize("vllm_version",
+                         [pytest.param("V1", marks=pytest.mark.v1, id="v1")])
+def test_invalid_prompt_len(
+    model: str,
+    prompts: list[str],
+    warmup_shapes: list[tuple[int, int, int]],
+    backend: str,
+    vllm_version: str,
+) -> None:
+    '''
+    Expects an error to be raised if the warmup prompt length
+    is not divisible by 64.
+    '''
+
+    vllm_sampling_params = SamplingParams(max_tokens=1,
+                                          temperature=0,
+                                          logprobs=0,
+                                          ignore_eos=True)
+
+    with pytest.raises(RuntimeError, match="VLLM_SPYRE_WARMUP_PROMPT_LENS"):
+        generate_spyre_vllm_output(model=model,
+                                   prompts=prompts,
+                                   warmup_shapes=warmup_shapes,
+                                   max_model_len=2048,
+                                   block_size=64,
+                                   sampling_params=vllm_sampling_params,
+                                   tensor_parallel_size=1,
+                                   backend=backend,
+                                   vllm_version=vllm_version)

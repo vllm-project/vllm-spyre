@@ -44,13 +44,16 @@ jobs:
             repo: "git+https://github.com/vllm-project/vllm --branch main"
         test_suite:
           - name: "V0-e2e"
-            tests: "V0 and eager"
+            markers: "v0 and cpu and e2e"
             flags: "--timeout=300"
           - name: "V1-e2e"
-            tests: "V1- and eager"
+            markers: "v1 and cpu and e2e"
             flags: "--timeout=300 --forked"
           - name: "V1-worker"
-            tests: "test_sampling_metadata_in_input_batch"
+            markers: "v1 and not e2e"
+            flags: "--timeout=300"
+          - name: "utils"
+            markers: "utils"
             flags: "--timeout=300"
 
     name: "${{ matrix.test_suite.name }} (${{ matrix.vllm_version.name }})"
@@ -145,4 +148,4 @@ jobs:
           # re-install the vllm_sypre package from source
           source .venv/bin/activate
           python3 -m pytest ${{ matrix.test_suite.flags }} \
-            tests -v -k "${{ matrix.test_suite.tests }}"
+            tests -v -m "${{ matrix.test_suite.markers }}"

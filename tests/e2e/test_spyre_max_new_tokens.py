@@ -4,7 +4,7 @@ Run `python -m pytest tests/test_spyre_max_new_tokens.py`.
 """
 
 import pytest
-from spyre_util import (compare_results, generate_hf_output,
+from spyre_util import (VLLM_VERSIONS, compare_results, generate_hf_output,
                         generate_spyre_vllm_output, get_spyre_backend_list,
                         get_spyre_model_list)
 from vllm import SamplingParams
@@ -14,9 +14,9 @@ template = (
     "appropriately completes the request. Be polite in your response to the "
     "user.\n\n### Instruction:\n{}\n\n### Response:")
 
-prompt1 = template.format("Provide a recipe for chicken soup.")
-prompt2 = template.format("Provide a list of instructions for preparing "
-                          "chicken soup for a family of four.")
+prompt1 = template.format(
+    "Provide a list of instructions for preparing chicken soup.")
+prompt2 = template.format("Explain to me why ignorance is bliss.")
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
@@ -27,7 +27,7 @@ prompt2 = template.format("Provide a list of instructions for preparing "
 @pytest.mark.parametrize(
     "warmup_shape", [(64, 10, 4)])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("vllm_version", ["V0", "V1"])
+@pytest.mark.parametrize("vllm_version", VLLM_VERSIONS)
 def test_output(
     model: str,
     prompts: list[str],

@@ -20,7 +20,10 @@ from spyre_util import (compare_embedding_results, get_spyre_backend_list,
                          [(64, 4), (64, 8), (128, 4),
                           (128, 8)])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("vllm_version", ["V0"])  # Todo: V1 support
+@pytest.mark.parametrize(
+    "vllm_version",
+    [pytest.param("V0", marks=pytest.mark.v0, id="v0")
+     ])  # TODO: Replace with VLLM_VERSIONS when v1 is supported.
 def test_output(
     model: str,
     prompts: list[str],
