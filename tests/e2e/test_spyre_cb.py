@@ -118,10 +118,9 @@ def test_cb_with_steps(model: str, backend: str, cb: int,
         # it returns 2 tokens for "1",
         # the first is quotes, the second is the
         # actual number 1.
-        # if model == "llama-194m" \
         stop_token_ids = [tokenizer.encode(stop_token,
                                           add_special_tokens=False)[1]] \
-        if model == "JackFram/llama-160m" \
+        if model == "llama-194m" \
         else tokenizer.encode(stop_token,
                                           add_special_tokens=False)
 
