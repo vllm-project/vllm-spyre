@@ -12,7 +12,6 @@ from vllm.sampling_params import SamplingType
 from vllm.utils import is_pin_memory_available
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.outputs import SamplerOutput
-from vllm.v1.sample.metadata import SamplingMetadata
 
 from vllm_spyre.model_executor.model_loader.spyre import SpyreCausalLM
 from vllm_spyre.platform import SpyrePlatform
@@ -732,7 +731,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         if envs_spyre.VLLM_SPYRE_RM_PADDED_BLOCKS:
             self.reduce_left_padding(cached_requests)
 
-        req_ids_to_activate = []
         for cached_request in cached_requests:
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
@@ -754,8 +752,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             input_positions.append([seq_len])
             left_padded_prompt_mask.append(
                 self.req_ids2left_pads[cached_request.req_id])
-
-            req_ids_to_activate.append(cached_request.req_id)
 
         input_tokens = torch.tensor(input_tokens,
                                     dtype=torch.long,
@@ -953,7 +949,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             torch._dynamo.mark_static(model_input.slot_mapping, 1)  # always 1
             torch._dynamo.mark_static(model_input.input_positions,
                                       1)  # always 1
-            
+
         # Execute the model
         hidden_states = self.model(
             input_ids=model_input.input_tokens,
