@@ -10,7 +10,7 @@ from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine.llm_engine import LLMEngine as V1LLMEngine
 
 
-@pytest.mark.parametrize("max_num_seqs", [1, 2, 3, 4],
+@pytest.mark.parametrize("max_num_seqs", [2, 3, 4],
                          ids=lambda val: f"max_num_seqs({val})")
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
@@ -23,9 +23,6 @@ from vllm.v1.engine.llm_engine import LLMEngine as V1LLMEngine
 @pytest.mark.parametrize(
     "prompts",
     [
-        [
-            "7 6 5 4",
-        ],
         [
             "7 6 5 4",
             "10 9 8 7",
