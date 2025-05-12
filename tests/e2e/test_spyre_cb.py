@@ -5,9 +5,10 @@ Run `python -m pytest tests/test_spyre_cb.py`.
 
 import pytest
 from spyre_util import generate_cb_spyre_vllm_output, get_spyre_model_list
+from transformers import AutoTokenizer
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine.llm_engine import LLMEngine as V1LLMEngine
-from transformers import AutoTokenizer
+
 
 @pytest.mark.parametrize("max_num_seqs", [1, 2, 3, 4],
                          ids=lambda val: f"max_num_seqs({val})")
@@ -117,8 +118,8 @@ def test_cb_with_steps(model: str, backend: str, cb: int,
         sampling_params = SamplingParams(
             max_tokens=max_tokens,
             temperature=0,
-            stop_token_ids=tokenizer.encode(stop_token, 
-                                             add_special_tokens=False),
+            stop_token_ids=tokenizer.encode(stop_token,
+                                            add_special_tokens=False),
             ignore_eos=True,
         )
 
