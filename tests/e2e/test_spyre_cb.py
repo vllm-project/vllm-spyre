@@ -114,12 +114,21 @@ def test_cb_with_steps(model: str, backend: str, cb: int,
 
         tokenizer = AutoTokenizer.from_pretrained(model)
         stop_token = "1"
+        # issue with JackFram/llama-160m tokenizer
+        # it returns 2 tokens for "1",
+        # the first is quotes, the second is the
+        # actual number 1.
+        # if model == "llama-194m" \
+        stop_token_ids = [tokenizer.encode(stop_token,
+                                          add_special_tokens=False)[1]] \
+        if model == "JackFram/llama-160m" \
+        else tokenizer.encode(stop_token,
+                                          add_special_tokens=False)
 
         sampling_params = SamplingParams(
             max_tokens=max_tokens,
             temperature=0,
-            stop_token_ids=tokenizer.encode(stop_token,
-                                            add_special_tokens=False),
+            stop_token_ids=stop_token_ids,
             ignore_eos=True,
         )
 
