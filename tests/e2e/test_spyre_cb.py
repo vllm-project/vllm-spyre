@@ -120,7 +120,7 @@ def test_cb_with_steps(model: str, backend: str, cb: int,
         # actual number 1.
         stop_token_ids = [tokenizer.encode(stop_token,
                                           add_special_tokens=False)[1]] \
-        if model == "llama-194m" \
+        if "llama-194m" in model \
         else tokenizer.encode(stop_token,
                                           add_special_tokens=False)
 
