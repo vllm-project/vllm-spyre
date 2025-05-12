@@ -5,6 +5,7 @@ from vllm.logger import DEFAULT_LOGGING_CONFIG
 
 def register():
     """Register the Spyre platform."""
+    raise Exception("the CI is working!")
     return "vllm_spyre.platform.SpyrePlatform"
 
 
