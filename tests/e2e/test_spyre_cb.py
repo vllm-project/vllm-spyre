@@ -47,7 +47,7 @@ def test_cb_handling(
     model: str,
     backend: str,
     max_num_seqs: int,
-    cb: bool,
+    cb: int,
     prompts: list[str],
     # vllm_version: str,
     monkeypatch: pytest.MonkeyPatch,
@@ -96,7 +96,7 @@ def test_cb_handling(
                          [pytest.param(1, marks=pytest.mark.cb, id="cb")])
 # @pytest.mark.parametrize("vllm_version",
 #                          [pytest.param("V1", marks=pytest.mark.v1, id="v1")])
-def test_cb_with_steps(model: str, backend: str,
+def test_cb_with_steps(model: str, backend: str, cb: int,
                        monkeypatch: pytest.MonkeyPatch):
     """Test that the spyre worker correctly handles
     continuous batches of requests and one sequence
