@@ -134,7 +134,7 @@ def test_cb_with_steps(model: str, backend: str,
 
     request_outputs = engine.step()
     assert len(request_outputs) == 1  # only 1 request
-    assert request_outputs[0].request_id == "1"  # req 1 is decoding
+    assert request_outputs[0].request_id == "1"  # req 1 is decoding (prefill step)
 
     assert len(engine_core.scheduler.waiting) == 0
     assert len(engine_core.scheduler.running) == 1
@@ -147,21 +147,13 @@ def test_cb_with_steps(model: str, backend: str,
 
     request_outputs = engine.step()
     assert len(request_outputs) == 1  # still only 1 request
-    assert request_outputs[0].request_id == "2"  # req 2 is decoding
+    assert request_outputs[0].request_id == "2"  # req 2 is decoding (prefill step)
 
     assert len(engine_core.scheduler.waiting) == 0
     assert len(engine_core.scheduler.running) == 2
 
     request_outputs = engine.step()
-    assert len(request_outputs) == 2
-    assert request_outputs[0].request_id == "2"  # req 2 is decoding
-    assert request_outputs[1].request_id == "1"  # req 1 is decoding
-
-    assert len(engine_core.scheduler.waiting) == 0
-    assert len(engine_core.scheduler.running) == 2
-
-    request_outputs = engine.step()
-    assert len(request_outputs) == 2
+    assert len(request_outputs) == 2  # both requests decoding now
     assert request_outputs[0].request_id == "2"  # req 2 is decoding
     assert request_outputs[1].request_id == "1"  # req 1 is decoding
 
@@ -169,7 +161,15 @@ def test_cb_with_steps(model: str, backend: str,
     assert len(engine_core.scheduler.running) == 2
 
     request_outputs = engine.step()
-    assert len(request_outputs) == 2
+    assert len(request_outputs) == 2  # both requests decoding now
+    assert request_outputs[0].request_id == "2"  # req 2 is decoding
+    assert request_outputs[1].request_id == "1"  # req 1 is decoding
+
+    assert len(engine_core.scheduler.waiting) == 0
+    assert len(engine_core.scheduler.running) == 2
+
+    request_outputs = engine.step()
+    assert len(request_outputs) == 2  # both requests decoding now
     assert request_outputs[0].request_id == "2"  # req 2 is decoding
     assert request_outputs[1].request_id == "1"  # req 1 is decoding
 
@@ -205,7 +205,7 @@ def test_cb_with_steps(model: str, backend: str,
     # req 3 is scheduled now
     request_outputs = engine.step()
     assert len(request_outputs) == 1
-    assert request_outputs[0].request_id == "3"  # req 3 is decoding
+    assert request_outputs[0].request_id == "3"  # req 3 is decoding (prefill step)
 
     assert len(engine_core.scheduler.waiting) == 0
     assert len(engine_core.scheduler.running) == 2
