@@ -230,3 +230,40 @@ def test_cb_with_steps(model: str, backend: str, cb: int,
 
         assert len(engine_core.scheduler.waiting) == 0
         assert len(engine_core.scheduler.running) == 2
+        request_outputs = engine.step()
+        assert len(request_outputs) == 2  # requests 2 and 3 decoding now
+        assert request_outputs[0].request_id == "3"  # req 3 is decoding
+        assert request_outputs[1].request_id == "2"  # req 2 is decoding
+
+        assert len(engine_core.scheduler.waiting) == 0
+        assert len(engine_core.scheduler.running) == 2
+        request_outputs = engine.step()
+        assert len(request_outputs) == 2  # requests 2 and 3 decoding now
+        assert request_outputs[0].request_id == "3"  # req 3 is decoding
+        assert request_outputs[1].request_id == "2"  # req 2 is decoding
+
+        assert len(engine_core.scheduler.waiting) == 0
+        assert len(engine_core.scheduler.running) == 2
+        request_outputs = engine.step()
+        assert len(request_outputs) == 2  # requests 2 and 3 decoding now
+        assert request_outputs[0].request_id == "3"  # req 3 is decoding
+        assert request_outputs[1].request_id == "2"  # req 2 is decoding
+
+        assert len(engine_core.scheduler.waiting) == 0
+        assert len(engine_core.scheduler.running) == 2
+        request_outputs = engine.step()
+        assert len(request_outputs) == 2  # requests 2 and 3 decoding now
+        assert request_outputs[0].request_id == "3"  # req 3 is decoding
+        assert request_outputs[1].request_id == "2"  # req 2 is decoding
+
+        assert len(engine_core.scheduler.waiting) == 0
+        assert len(engine_core.scheduler.running) == 2
+        request_outputs = engine.step()
+        assert len(request_outputs) == 2  # requests 2 and 3 decoding now
+        assert request_outputs[0].request_id == "3"  # req 3 is decoding
+        assert request_outputs[1].request_id == "2"  # req 2 is decoding
+        assert request_outputs[1].finished  # request 2 is done
+        assert request_outputs[1].outputs[0].text == " 6 5 4 3 2 "
+
+        assert len(engine_core.scheduler.waiting) == 0
+        assert len(engine_core.scheduler.running) == 1
