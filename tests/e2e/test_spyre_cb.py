@@ -186,7 +186,7 @@ def test_cb_with_steps(model: str, backend: str,
     assert len(engine_core.scheduler.running) == 2
 
     # add the third request
-    # but since VLLM_SPYRE_MAX_BATCH_SIZE=2
+    # but since max_num_seqs=2
     # this request is waiting
     engine.add_request("3", prompt3, sampling_params)
 
