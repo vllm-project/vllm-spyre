@@ -572,8 +572,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         # TODO: remove this limitation once we update the warm-up logic to
         # support batch_size=1
-        assert max_batch_size >= 2, "Currently, continuous batching must have \
-            batch_size >= 2"
+        assert max_batch_size >= 2, "Currently, continuous batching needs " \
+            "config to set batch_size >= 2"
 
         self.BLOCK_SIZE = 64
         NUM_BLOCKS = max_batch_size * max_model_len // self.BLOCK_SIZE  # 64
