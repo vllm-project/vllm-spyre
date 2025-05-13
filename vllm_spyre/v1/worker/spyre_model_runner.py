@@ -596,9 +596,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             vocab_size=vllm_config.model_config.get_vocab_size(),
         )
 
-        # Requests
-        self.requests: dict[str, CachedRequestData] = {}
-
     def _update_states(self, scheduler_output):
 
         super()._update_states(scheduler_output)
@@ -612,7 +609,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                 del self.req_ids2blocks[req_id]
                 del self.req_ids2left_pads[req_id]
 
-        for req_id in scheduler_output.finished_req_ids:
             del self.requests[req_id]
             self.input_batch.remove_request(req_id)
 
@@ -980,8 +976,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             if model_input.is_prompt else self.input_batch.sampling_metadata
         output: SamplerOutput = self.model.sample(
             logits=logits,
-            # TODO: Uncomment once Wallas is done with the work
-            # sampling_metadata=self.input_batch.sampling_metadata,
             sampling_metadata=sampling_metadata,
         )
         t1 = time.time() - t0
