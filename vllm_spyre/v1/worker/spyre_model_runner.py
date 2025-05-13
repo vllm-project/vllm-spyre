@@ -51,7 +51,7 @@ class ModelForwardInputs:
 @dataclass
 class CBSpyreModelRunnerOutput(ModelRunnerOutput):
     # Add the current tkv to the output
-    tkv: int
+    tkv: int = 0
 
 
 class SpyreModelRunner:
