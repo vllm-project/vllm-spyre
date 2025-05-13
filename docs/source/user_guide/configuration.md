@@ -24,7 +24,7 @@ When running decoder models, vLLM Spyre supports a static batching mode and a co
 
 With static batching, graphs are pre-compiled for the configured batch shapes and each batch must finish processing before a new batch can be scheduled. This adds extra constraints on the sizes of inputs and outputs for each request, and requests that do not fit the precompiled graphs will be rejected.
 
-Static batching mode is enabled by default, and can be explicitly enabled by setting `VLLM_USE_CB=0`. 
+Static batching mode is enabled by default, and can be explicitly enabled by setting `VLLM_USE_CB=0`.
 
 The batch shapes are configured with the `VLLM_SPYRE_WARMUP_*` environment variables. For example, to warm up two graph shapes for one single large requests and four smaller requests you could use:
 
