@@ -96,15 +96,6 @@ def test_cb_with_steps(model: str, backend: str,
     an exit the batch while a new ones gets prefilled
     and appended to the batch"""
 
-    # set env vars
-    monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
-    monkeypatch.setenv("VLLM_USE_V1", "1")
-    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
-
-    # To get deterministic execution in V1
-    # and to enable InprocClient
-    monkeypatch.setenv("VLLM_ENABLE_V1_MULTIPROCESSING", "0")
-
     max_tokens = 20
     max_num_seqs = 2  # defines max batch size
 
@@ -118,6 +109,15 @@ def test_cb_with_steps(model: str, backend: str,
         stop="1",
         ignore_eos=True,
     )
+
+    # set env vars
+    monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
+    monkeypatch.setenv("VLLM_USE_V1", "1")
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+
+    # To get deterministic execution in V1
+    # and to enable InprocClient
+    monkeypatch.setenv("VLLM_ENABLE_V1_MULTIPROCESSING", "0")
 
     # start the engine
     engine_args = EngineArgs(model=model,
@@ -218,3 +218,40 @@ def test_cb_with_steps(model: str, backend: str,
 
     assert len(engine_core.scheduler.waiting) == 0
     assert len(engine_core.scheduler.running) == 2
+    request_outputs = engine.step()
+    assert len(request_outputs) == 2  # requests 2 and 3 decoding now
+    assert request_outputs[0].request_id == "3"  # req 3 is decoding
+    assert request_outputs[1].request_id == "2"  # req 2 is decoding
+
+    assert len(engine_core.scheduler.waiting) == 0
+    assert len(engine_core.scheduler.running) == 2
+    request_outputs = engine.step()
+    assert len(request_outputs) == 2  # requests 2 and 3 decoding now
+    assert request_outputs[0].request_id == "3"  # req 3 is decoding
+    assert request_outputs[1].request_id == "2"  # req 2 is decoding
+
+    assert len(engine_core.scheduler.waiting) == 0
+    assert len(engine_core.scheduler.running) == 2
+    request_outputs = engine.step()
+    assert len(request_outputs) == 2  # requests 2 and 3 decoding now
+    assert request_outputs[0].request_id == "3"  # req 3 is decoding
+    assert request_outputs[1].request_id == "2"  # req 2 is decoding
+
+    assert len(engine_core.scheduler.waiting) == 0
+    assert len(engine_core.scheduler.running) == 2
+    request_outputs = engine.step()
+    assert len(request_outputs) == 2  # requests 2 and 3 decoding now
+    assert request_outputs[0].request_id == "3"  # req 3 is decoding
+    assert request_outputs[1].request_id == "2"  # req 2 is decoding
+
+    assert len(engine_core.scheduler.waiting) == 0
+    assert len(engine_core.scheduler.running) == 2
+    request_outputs = engine.step()
+    assert len(request_outputs) == 2  # requests 2 and 3 decoding now
+    assert request_outputs[0].request_id == "3"  # req 3 is decoding
+    assert request_outputs[1].request_id == "2"  # req 2 is decoding
+    assert request_outputs[1].finished  # request 2 is done
+    assert request_outputs[1].outputs[0].text == " 6 5 4 3 2 "
+
+    assert len(engine_core.scheduler.waiting) == 0
+    assert len(engine_core.scheduler.running) == 1
