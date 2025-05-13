@@ -570,6 +570,11 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         max_batch_size = vllm_config.scheduler_config.max_num_seqs
         max_model_len = vllm_config.scheduler_config.max_model_len
 
+        # TODO: remove this limitation once we update the warm-up logic to
+        # support batch_size=1
+        assert max_batch_size >= 2, "Currently, continuous batching must have \
+            batch_size >= 2"
+
         self.BLOCK_SIZE = 64
         NUM_BLOCKS = max_batch_size * max_model_len // self.BLOCK_SIZE  # 64
 
@@ -607,8 +612,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                 del self.req_ids2blocks[req_id]
                 del self.req_ids2left_pads[req_id]
 
-        [self.input_batch.remove_request(req_id) \
-            for req_id in scheduler_output.finished_req_ids]
+        for req_id in scheduler_output.finished_req_ids:
+            del self.requests[req_id]
+            self.input_batch.remove_request(req_id)
 
     def _prepare_prompt(
         self,
