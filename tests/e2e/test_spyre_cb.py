@@ -5,7 +5,6 @@ Run `python -m pytest tests/test_spyre_cb.py`.
 
 import pytest
 from spyre_util import generate_cb_spyre_vllm_output, get_spyre_model_list
-from transformers import AutoTokenizer
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine.llm_engine import LLMEngine as V1LLMEngine
 
@@ -106,19 +105,10 @@ def test_cb_with_steps(model: str, backend: str, cb: int,
         prompt2 = "10 9 8 7"
         prompt3 = "8 7 6 5"
 
-        tokenizer = AutoTokenizer.from_pretrained(model)
-        stop_token = "1"
-        # There's an issue with JackFram/llama-160m tokenizer it returns 2
-        # tokens for "1", the first is quotes, the second is the actual number
-        # 1. So, we always get the last token id which also works for the case
-        # the tokenizer return a single token id.
-        stop_token_ids = tokenizer.encode(stop_token,
-                                          add_special_tokens=False)[-1:]
-
         sampling_params = SamplingParams(
             max_tokens=max_tokens,
             temperature=0,
-            stop_token_ids=stop_token_ids,
+            stop="1",
             ignore_eos=True,
         )
 
