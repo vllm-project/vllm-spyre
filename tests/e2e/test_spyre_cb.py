@@ -5,7 +5,6 @@ Run `python -m pytest tests/test_spyre_cb.py`.
 
 import pytest
 from spyre_util import generate_cb_spyre_vllm_output, get_spyre_model_list
-from transformers import AutoTokenizer
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine.llm_engine import LLMEngine as V1LLMEngine
 
@@ -106,22 +105,10 @@ def test_cb_with_steps(model: str, backend: str, cb: int,
         prompt2 = "10 9 8 7"
         prompt3 = "8 7 6 5"
 
-        tokenizer = AutoTokenizer.from_pretrained(model)
-        stop_token = "1"
-        # issue with JackFram/llama-160m tokenizer
-        # it returns 2 tokens for "1",
-        # the first is quotes, the second is the
-        # actual number 1.
-        stop_token_ids = [tokenizer.encode(stop_token,
-                                          add_special_tokens=False)[1]] \
-        if "llama-194m" in model \
-        else tokenizer.encode(stop_token,
-                                          add_special_tokens=False)
-
         sampling_params = SamplingParams(
             max_tokens=max_tokens,
             temperature=0,
-            stop_token_ids=stop_token_ids,
+            stop="1",
             ignore_eos=True,
         )
 
@@ -233,3 +220,40 @@ def test_cb_with_steps(model: str, backend: str, cb: int,
 
         assert len(engine_core.scheduler.waiting) == 0
         assert len(engine_core.scheduler.running) == 2
+        request_outputs = engine.step()
+        assert len(request_outputs) == 2  # requests 2 and 3 decoding now
+        assert request_outputs[0].request_id == "3"  # req 3 is decoding
+        assert request_outputs[1].request_id == "2"  # req 2 is decoding
+
+        assert len(engine_core.scheduler.waiting) == 0
+        assert len(engine_core.scheduler.running) == 2
+        request_outputs = engine.step()
+        assert len(request_outputs) == 2  # requests 2 and 3 decoding now
+        assert request_outputs[0].request_id == "3"  # req 3 is decoding
+        assert request_outputs[1].request_id == "2"  # req 2 is decoding
+
+        assert len(engine_core.scheduler.waiting) == 0
+        assert len(engine_core.scheduler.running) == 2
+        request_outputs = engine.step()
+        assert len(request_outputs) == 2  # requests 2 and 3 decoding now
+        assert request_outputs[0].request_id == "3"  # req 3 is decoding
+        assert request_outputs[1].request_id == "2"  # req 2 is decoding
+
+        assert len(engine_core.scheduler.waiting) == 0
+        assert len(engine_core.scheduler.running) == 2
+        request_outputs = engine.step()
+        assert len(request_outputs) == 2  # requests 2 and 3 decoding now
+        assert request_outputs[0].request_id == "3"  # req 3 is decoding
+        assert request_outputs[1].request_id == "2"  # req 2 is decoding
+
+        assert len(engine_core.scheduler.waiting) == 0
+        assert len(engine_core.scheduler.running) == 2
+        request_outputs = engine.step()
+        assert len(request_outputs) == 2  # requests 2 and 3 decoding now
+        assert request_outputs[0].request_id == "3"  # req 3 is decoding
+        assert request_outputs[1].request_id == "2"  # req 2 is decoding
+        assert request_outputs[1].finished  # request 2 is done
+        assert request_outputs[1].outputs[0].text == " 6 5 4 3 2 "
+
+        assert len(engine_core.scheduler.waiting) == 0
+        assert len(engine_core.scheduler.running) == 1
