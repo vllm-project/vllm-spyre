@@ -83,6 +83,7 @@ def test_cb_handling(
         ][0])
 
 
+@pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
