@@ -147,6 +147,7 @@ class FmsModelBase(nn.Module):
         parallel_config: ParallelConfig,
         max_prompt_length: int,
         max_decode_length: int,
+        sendnn_dynamic: bool,
     ) -> None:
         super().__init__()
 
@@ -162,7 +163,8 @@ class FmsModelBase(nn.Module):
                           max_prompt_length=max_prompt_length,
                           max_decode_length=max_decode_length,
                           distributed_strategy="tp"
-                          if parallel_config.world_size > 1 else None)
+                          if parallel_config.world_size > 1 else None,
+                          sendnn_dynamic=sendnn_dynamic)
 
     def load_weights(
         self,
@@ -170,6 +172,7 @@ class FmsModelBase(nn.Module):
         max_prompt_length: int,
         max_decode_length: int,
         distributed_strategy: Optional[str],
+        sendnn_dynamic: bool,
         **kwargs,
     ) -> None:
 
@@ -224,8 +227,6 @@ class FmsModelBase(nn.Module):
                                fused_weights=fused_weights,
                                linear_config=linear_config)
 
-        compile_mode = "default"
-
         self.model.eval()
         torch.set_grad_enabled(False)
 
@@ -258,10 +259,14 @@ class FmsModelBase(nn.Module):
                 max_prompt_length, max_decode_length)
 
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in BACKEND_LIST:
+
+            options = {"sendnn.dynamic": True} if sendnn_dynamic else {}
+
             self.model = torch.compile(
                 self.model,
-                mode=compile_mode,
-                backend=envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND)
+                backend=envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND,
+                options=options,
+            )
 
 
 class ContinuousBatchingFmsModel(FmsModelBase):
@@ -282,8 +287,12 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         # edge case: prompt will be padded to first block:
         # can produce 1 token with prefill plus rest of model length
         max_decode_length = max_model_len - BLOCK_SIZE + 1
-        super().__init__(model_config, parallel_config, max_prompt_length,
-                         max_decode_length)
+
+        super().__init__(model_config,
+                         parallel_config,
+                         max_prompt_length,
+                         max_decode_length,
+                         sendnn_dynamic=True)
 
         # physical KV cache on AIU Spyre: will eventually not live in this class
         num_kv_heads = model_config.get_num_kv_heads(parallel_config)
@@ -359,8 +368,11 @@ class StaticBatchingFmsModel(FmsModelBase):
         max_prompt_length: int,
         max_decode_length: int,
     ) -> None:
-        super().__init__(model_config, parallel_config, max_prompt_length,
-                         max_decode_length)
+        super().__init__(model_config,
+                         parallel_config,
+                         max_prompt_length,
+                         max_decode_length,
+                         sendnn_dynamic=False)
 
         # dynamic KV cache
         self.past_key_value_states = None
