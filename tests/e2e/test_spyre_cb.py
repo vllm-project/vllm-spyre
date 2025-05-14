@@ -289,87 +289,87 @@ def get_params_test_blocks_borders_aligned_prompts():
     checked_steps = [{
         "step": 0,
         "tkv": 0,
-        "num_waiting": 3,
-        "num_running": 0,
+        "waiting": ["0", "1", "2"],
+        "running": [],
         "request_outputs": []
     }, {
         "step": 1,  # Prefill sequence 0
         "tkv": 64,
-        "num_waiting": 2,
-        "num_running": 1,
+        "waiting": ["1", "2"],
+        "running": ["0"],
         "request_outputs": ["0"]  
     }, {
         "step": 2,  # Prefill sequence 1
         "tkv": 64,  # Still 64 because this step is also a prefill
-        "num_waiting": 1,
-        "num_running": 2,
+        "waiting": ["2"],
+        "running": ["1", "0"],
         "request_outputs": ["1"]  
     }, {
         "step": 3,
         "tkv": 65,  # Two decodes increases the tkv
-        "num_waiting": 1,
-        "num_running": 2,
+        "waiting": ["2"],
+        "running": ["1", "0"],
         "request_outputs": ["1", "0"]  # Two sequences are decoded
     }, {
         "step": 4,  # Check normal decode continuation
         "tkv": 66,
-        "num_waiting": 1,
-        "num_running": 2,
+        "waiting": ["2"],
+        "running": ["1", "0"],
         "request_outputs": ["1", "0"]
     }, {
         "step": 65,  # Last step before fist sequence finishes
         "tkv": 127,
-        "num_waiting": 1,
-        "num_running": 2,
+        "waiting": ["2"],
+        "running": ["1", "0"],
         "request_outputs": ["1", "0"]
     }, {
         # Sequence 0 finishes at step 66 
         # (start step + 2 prefills + 64 decodes - 1) = 1 + 2 + 64 - 1 = 66
         "step": 66,  
         "tkv": 128,
-        "num_waiting": 1,
-        "num_running": 1,
+        "waiting": ["2"],
+        "running": ["1"],
         "request_outputs": ["1", "0"]
     }, {
         "step": 67,  # Prefill sequence 2
         "tkv": 128,  # Tkv doesn't increase because it is a prefill
-        "num_waiting": 0,
-        "num_running": 2,
+        "waiting": [],
+        "running": ["2", "1"],
         "request_outputs": ["2"]
     }, {
         "step": 68,  # Decode sequences 1 and 2
         "tkv": 129,
-        "num_waiting": 0,
-        "num_running": 2,
+        "waiting": [],
+        "running": ["2", "1"],
         "request_outputs": ["2", "1"]
     }, {
         # Sequence 1 finishes at step 69
         # (start step + 2 prefills + 66 decodes - 1) = 2 + 2 + 66 - 1 = 69
         "step": 69,
         "tkv": 130,
-        "num_waiting": 0,
-        "num_running": 1,
+        "waiting": [],
+        "running": ["2"],
         "request_outputs": ["2", "1"]
     }, {
         "step": 70,  # Decode sequence 2
         "tkv": 131,
-        "num_waiting": 0,
-        "num_running": 1,
+        "waiting": [],
+        "running": ["2"],
         "request_outputs": ["2"]
     }, {
         # Sequence 2 finishes at step 73 
         # (start step + 1 prefill + 6 decodes - 1) = 67 + 1 + 6 - 1 = 73
         "step": 73,  
         "tkv": 134,
-        "num_waiting": 0,
-        "num_running": 0,
+        "waiting": [],
+        "running": [],
         "request_outputs": ["2"]
     }, {
         # Tkv should be cleared one step later
         "step": 74,
         "tkv": 0,
-        "num_waiting": 0,
-        "num_running": 0,
+        "waiting": [],
+        "running": [],
         "request_outputs": []
     }]
     
@@ -477,17 +477,17 @@ def test_scheduler_cb_steps_tkv(
         # Check step if it is in the provided list of steps to check
         if checked_steps and step == checked_steps[0]["step"]:
             step_ref = checked_steps.popleft()
-            reqs_output_ids = [
+            
+            request_outputs = [
                 req_output.request_id for req_output in request_outputs
             ]
+            waiting = [r.request_id for r in scheduler.waiting]
+            running = [r.request_id for r in scheduler.running]
             
-            assert scheduler.tkv == step_ref["tkv"], \
-                f"Step {step}, tkv"
-            assert len(scheduler.waiting) == step_ref["num_waiting"], \
-                f"Step {step}, num waiting"
-            assert len(scheduler.running) == step_ref["num_running"], \
-                f"Step {step}, num running"
-            assert reqs_output_ids == step_ref["request_outputs"], \
+            assert scheduler.tkv == step_ref["tkv"], f"Step {step}, tkv"
+            assert waiting == step_ref["waiting"], f"Step {step}, num waiting"
+            assert running == step_ref["running"], f"Step {step}, num running"
+            assert request_outputs == step_ref["request_outputs"], \
                 f"Step {step}, request outputs"
 
         # Perform next step
