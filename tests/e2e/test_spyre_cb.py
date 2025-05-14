@@ -362,13 +362,18 @@ def get_params_test_blocks_borders_aligned_prompts():
         "step": 73,  
         "tkv": 134,
         "num_waiting": 0,
-        "num_running": 1,
+        "num_running": 0,
         "request_outputs": ["2"]
+    }, {
+        # Tkv should be cleared one step later
+        "step": 74,
+        "tkv": 0,
+        "num_waiting": 0,
+        "num_running": 0,
+        "request_outputs": []
     }]
     
-    last_step = 73
-    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            last_step)
+    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps)
 
 
 @pytest.mark.a
@@ -378,7 +383,7 @@ def get_params_test_blocks_borders_aligned_prompts():
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize(
-    "seqs_max_tokens,prompts_lengths,steps_add_reqs,checked_steps,last_step",
+    "seqs_max_tokens,prompts_lengths,steps_add_reqs,checked_steps",
     [
         # TODO: add all sensitive steps to testing lists
         get_params_test_blocks_borders_aligned_prompts(),
@@ -393,8 +398,7 @@ def test_scheduler_cb_steps_tkv(
     seqs_max_tokens: list[int],
     prompts_lengths: list[int],
     steps_add_reqs: list[int],
-    checked_steps: list[dict[str, Any]],
-    last_step: int,
+    checked_steps: list[dict[str, Any]]
 ):
     """
     Test that the scheduler correctly schedules requests and that the 
@@ -465,17 +469,11 @@ def test_scheduler_cb_steps_tkv(
 
     # Run steps, until last step is reached (provided through parameter)
     request_outputs = []
-    for step in range(last_step):
+    for step in range(checked_steps[-1]['step'] + 1):
         # Add requests for this step
         while requests and requests[0][0] == step:
             engine_core.add_request(requests.popleft()[1])
         
-        # If initial step: check that tkv is zero and all requests are waiting
-        if step == 0:
-            assert scheduler.tkv == 0, "Step 0 (init), tkv"
-            assert len(scheduler.waiting) != 0, "Step 0 (init), num waiting"
-            assert len(scheduler.running) == 0, "Step 0 (init), num running"
-
         # Check step if it is in the provided list of steps to check
         if checked_steps and step == checked_steps[0]["step"]:
             step_ref = checked_steps.popleft()
@@ -494,13 +492,3 @@ def test_scheduler_cb_steps_tkv(
 
         # Perform next step
         request_outputs = engine_core.step().outputs
-
-    # Assert there is no more running or waiting request after last step
-    assert len(scheduler.waiting) == 0, \
-        "Last step done but still there are waiting requests"
-    assert len(scheduler.running) == 0, \
-        "Last step done but still there are running requests"
-
-    # Tkv in scheduler is cleared one step later
-    _ = engine_core.step().outputs
-    assert scheduler.tkv == 0, "Tkv not cleared two steps after last step"
