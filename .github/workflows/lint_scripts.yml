@@ -1,4 +1,4 @@
-name: Lint shell scripts
+name: Lint Scripts
 
 on:
   push:
@@ -35,4 +35,4 @@ jobs:
 
       - name: "Check shell scripts"
         run: |
-          tools/shellcheck.sh
+          tools/lint_scripts.sh

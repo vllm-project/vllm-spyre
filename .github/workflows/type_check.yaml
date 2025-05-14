@@ -13,7 +13,7 @@ on:
     paths:
       - '**/*.py'
       - '.github/workflows/type_check.yaml'
-      - 'tools/mypy.sh'
+      - 'tools/type_check.sh'
       - 'pyproject.toml'
 
 jobs:
