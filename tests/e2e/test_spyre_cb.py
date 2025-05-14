@@ -329,7 +329,8 @@ def get_params_test_blocks_borders_aligned_prompts():
         "tkv": 128,
         "waiting": ["2"],
         "running": ["1"],
-        "request_outputs": ["1", "0"]
+        "request_outputs": ["1", "0"],
+        "finished_requests": ["0"]
     }, {
         "step": 67,  # Prefill sequence 2
         "tkv": 128,  # Tkv doesn't increase because it is a prefill
@@ -349,7 +350,8 @@ def get_params_test_blocks_borders_aligned_prompts():
         "tkv": 130,
         "waiting": [],
         "running": ["2"],
-        "request_outputs": ["2", "1"]
+        "request_outputs": ["2", "1"],
+        "finished_requests": ["1"]
     }, {
         "step": 70,  # Decode sequence 2
         "tkv": 131,
@@ -363,7 +365,8 @@ def get_params_test_blocks_borders_aligned_prompts():
         "tkv": 134,
         "waiting": [],
         "running": [],
-        "request_outputs": ["2"]
+        "request_outputs": ["2"],
+        "finished_requests": ["2"]
     }, {
         # Tkv should be cleared one step later
         "step": 74,
@@ -385,10 +388,17 @@ def get_params_test_blocks_borders_aligned_prompts():
 @pytest.mark.parametrize(
     "seqs_max_tokens,prompts_lengths,steps_add_reqs,checked_steps",
     [
-        # TODO: add all sensitive steps to testing lists
         get_params_test_blocks_borders_aligned_prompts(),
         # get_params_test_blocks_borders_misaligned_prompts(),  # TODO
-        # get_params_test_new_prompt_arrives_when_one_finishes(),  # TODO
+        
+        # TODO to test additionally at some point:
+        # * test additional constraints from the scheduler (e.g prompt too long)
+        # * test stripping repeated left padding
+        # * test what happens when tkv comes to the end of 2048 block
+        # * test metadata cleanup after last request finishes
+        # * Corner cases:
+        #     * two sequences finish at the same time
+        #     * new prompts arrives when another finishes
     ])
 def test_scheduler_cb_steps_tkv(
     model: str,
@@ -478,17 +488,22 @@ def test_scheduler_cb_steps_tkv(
         if checked_steps and step == checked_steps[0]["step"]:
             step_ref = checked_steps.popleft()
             
-            request_outputs = [
-                req_output.request_id for req_output in request_outputs
-            ]
             waiting = [r.request_id for r in scheduler.waiting]
             running = [r.request_id for r in scheduler.running]
+            out_reqs_ids = [r.request_id for r in request_outputs]
+            out_reqs_finished = [
+                r.request_id for r in request_outputs if r.finished
+            ]
             
             assert scheduler.tkv == step_ref["tkv"], f"Step {step}, tkv"
             assert waiting == step_ref["waiting"], f"Step {step}, num waiting"
             assert running == step_ref["running"], f"Step {step}, num running"
-            assert request_outputs == step_ref["request_outputs"], \
+            assert out_reqs_ids == step_ref["request_outputs"], \
                 f"Step {step}, request outputs"
-
+            
+            ref_finished_reqs = step_ref["finished_requests"] if "finished_requests" in step_ref else []
+            assert out_reqs_finished == ref_finished_reqs, \
+                f"Step {step}, finished request output"
+            
         # Perform next step
         request_outputs = engine_core.step().outputs
