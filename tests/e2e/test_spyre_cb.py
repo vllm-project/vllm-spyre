@@ -322,12 +322,14 @@ def get_params_test_blocks_borders_aligned_prompts():
         "num_waiting": 1,
         "num_running": 2,
         "request_outputs": ["1", "0"]
-    # }, {
-    #     "step": 66,  # Sequence 0 finishes at step 66 (2 prefills + 64 decodes)
-    #     "tkv": 128,
-    #     "num_waiting": 1,
-    #     "num_running": 1,
-    #     "request_outputs": ["1"]  # TODO this fails?? Why do we observe ["1", "0"]?
+    }, {
+        # Sequence 0 finishes at step 66 
+        # (start step + 2 prefills + 64 decodes - 1) = 1 + 2 + 64 - 1 = 66
+        "step": 66,  
+        "tkv": 128,
+        "num_waiting": 1,
+        "num_running": 1,
+        "request_outputs": ["1", "0"]
     }, {
         "step": 67,  # Prefill sequence 2
         "tkv": 128,  # Tkv doesn't increase because it is a prefill
@@ -341,20 +343,22 @@ def get_params_test_blocks_borders_aligned_prompts():
         "num_running": 2,
         "request_outputs": ["2", "1"]
     }, {
-        # Sequence 1 finishes at step 71 (start step + 2 prefills + 67 decodes)
-        "step": 71,
-        "tkv": 132,
+        # Sequence 1 finishes at step 69
+        # (start step + 2 prefills + 66 decodes - 1) = 2 + 2 + 66 - 1 = 69
+        "step": 69,
+        "tkv": 130,
+        "num_waiting": 0,
+        "num_running": 1,
+        "request_outputs": ["2", "1"]
+    }, {
+        "step": 70,  # Decode sequence 2
+        "tkv": 131,
         "num_waiting": 0,
         "num_running": 1,
         "request_outputs": ["2"]
     }, {
-        "step": 72,  # Decode sequence 2
-        "tkv": 133,
-        "num_waiting": 0,
-        "num_running": 1,
-        "request_outputs": ["2"]
-    }, {
-        # Sequence 2 finishes at step 73 (start step + 1 prefill + 7 decodes)
+        # Sequence 2 finishes at step 73 
+        # (start step + 1 prefill + 6 decodes - 1) = 67 + 1 + 6 - 1 = 73
         "step": 73,  
         "tkv": 134,
         "num_waiting": 0,
