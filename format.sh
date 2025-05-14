@@ -110,7 +110,7 @@ echo 'vLLM yapf: Done'
 
 # Run mypy
 echo 'vLLM mypy:'
-tools/mypy.sh
+tools/type_check.sh
 echo 'vLLM mypy: Done'
 
 

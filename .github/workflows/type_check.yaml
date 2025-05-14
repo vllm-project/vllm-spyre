@@ -40,4 +40,4 @@ jobs:
     - name: Mypy
       run: |
         echo "::add-matcher::.github/workflows/matchers/mypy.json"
-        tools/mypy.sh 1 ${{ matrix.python-version }}
+        tools/type_check.sh 1 ${{ matrix.python-version }}
