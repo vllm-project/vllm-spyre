@@ -1,6 +1,6 @@
 # Configuration
 
-For a complete list of configuration options, see <project:./env_vars.md>
+For a complete list of configuration options, see <project:./env_vars.md>.
 
 ## Backend Selection
 
@@ -41,7 +41,7 @@ export VLLM_SPYRE_WARMUP_NEW_TOKENS=1024,256
 ### Continuous Batching
 
 :::{attention}
-Continuous batching is not currently supported on IBM Spyre Accelerators. A CPU-only implementation is available by setting `VLLM_SPYRE_DYNAMO_BACKEND=eager`. Continuous batching can be enabled with `VLLM_USE_CB=1`
+Continuous batching is not currently supported on IBM Spyre Accelerators. A CPU-only implementation is available by setting `VLLM_SPYRE_DYNAMO_BACKEND=eager`. Continuous batching can be enabled with `VLLM_USE_CB=1`.
 :::
 
 Continuous batching works much more like other accelerator implementations on vLLM. Requests can be continually appended to a running batch, and requests that finish generating can be evicted from the batch to make room for more requests. Neither chunked prefill nor prefix caching are currently supported though, so when a request is added to the running batch it must first be paused for a full prefill of the incoming prompt.
