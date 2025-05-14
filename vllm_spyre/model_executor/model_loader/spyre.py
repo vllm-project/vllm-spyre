@@ -260,12 +260,7 @@ class FmsModelBase(nn.Module):
 
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in BACKEND_LIST:
 
-            if sendnn_dynamic:
-                options = {
-                    'sendnn.dynamic': True,
-                }
-            else:
-                options = {}
+            options = {"sendnn.dynamic": True} if sendnn_dynamic else {}
 
             self.model = torch.compile(
                 self.model,
@@ -293,8 +288,11 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         # can produce 1 token with prefill plus rest of model length
         max_decode_length = max_model_len - BLOCK_SIZE + 1
 
-        super().__init__(model_config, parallel_config, max_prompt_length,
-                         max_decode_length, sendnn_dynamic=True)
+        super().__init__(model_config,
+                         parallel_config,
+                         max_prompt_length,
+                         max_decode_length,
+                         sendnn_dynamic=True)
 
         # physical KV cache on AIU Spyre: will eventually not live in this class
         num_kv_heads = model_config.get_num_kv_heads(parallel_config)
@@ -326,7 +324,6 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                                                    head_dim,
                                                    dtype=self.dtype))
                                       for _ in range(num_layers)]
-
 
     def forward(
         self,
@@ -371,8 +368,11 @@ class StaticBatchingFmsModel(FmsModelBase):
         max_prompt_length: int,
         max_decode_length: int,
     ) -> None:
-        super().__init__(model_config, parallel_config, max_prompt_length,
-                         max_decode_length, sendnn_dynamic=False)
+        super().__init__(model_config,
+                         parallel_config,
+                         max_prompt_length,
+                         max_decode_length,
+                         sendnn_dynamic=False)
 
         # dynamic KV cache
         self.past_key_value_states = None
