@@ -143,7 +143,7 @@ def test_cb_with_steps(model: str, backend: str,
 
     request_outputs = engine.step()
     assert len(request_outputs) == 1  # only 1 request
-    assert request_outputs[0].request_id == "1"  # req 1 is decoding (prefill step)
+    assert request_outputs[0].request_id == "1"  # req 1 is decoding (prefill)
 
     assert len(engine_core.scheduler.waiting) == 0
     assert len(engine_core.scheduler.running) == 1
@@ -156,7 +156,7 @@ def test_cb_with_steps(model: str, backend: str,
 
     request_outputs = engine.step()
     assert len(request_outputs) == 1  # still only 1 request
-    assert request_outputs[0].request_id == "2"  # req 2 is decoding (prefill step)
+    assert request_outputs[0].request_id == "2"  # req 2 is decoding (prefill)
 
     assert len(engine_core.scheduler.waiting) == 0
     assert len(engine_core.scheduler.running) == 2
@@ -214,7 +214,7 @@ def test_cb_with_steps(model: str, backend: str,
     # req 3 is scheduled now
     request_outputs = engine.step()
     assert len(request_outputs) == 1
-    assert request_outputs[0].request_id == "3"  # req 3 is decoding (prefill step)
+    assert request_outputs[0].request_id == "3"  # req 3 is decoding (prefill)
 
     assert len(engine_core.scheduler.waiting) == 0
     assert len(engine_core.scheduler.running) == 2
@@ -286,96 +286,110 @@ def get_params_test_blocks_borders_aligned_prompts():
     prompts_lengths = [49, 41, 7]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
 
-    checked_steps = [{
-        "step": 0,
-        "tkv": 0,
-        "waiting": ["0", "1", "2"],
-        "running": [],
-        "request_outputs": []
-    }, {
-        "step": 1,  # Prefill sequence 0
-        "tkv": 64,
-        "waiting": ["1", "2"],
-        "running": ["0"],
-        "request_outputs": ["0"]  
-    }, {
-        "step": 2,  # Prefill sequence 1
-        "tkv": 64,  # Still 64 because this step is also a prefill
-        "waiting": ["2"],
-        "running": ["1", "0"],
-        "request_outputs": ["1"]  
-    }, {
-        "step": 3,
-        "tkv": 65,  # Two decodes increases the tkv
-        "waiting": ["2"],
-        "running": ["1", "0"],
-        "request_outputs": ["1", "0"]  # Two sequences are decoded
-    }, {
-        "step": 4,  # Check normal decode continuation
-        "tkv": 66,
-        "waiting": ["2"],
-        "running": ["1", "0"],
-        "request_outputs": ["1", "0"]
-    }, {
-        "step": 65,  # Last step before fist sequence finishes
-        "tkv": 127,
-        "waiting": ["2"],
-        "running": ["1", "0"],
-        "request_outputs": ["1", "0"]
-    }, {
-        # Sequence 0 finishes at step 66 
-        # (start step + 2 prefills + 64 decodes - 1) = 1 + 2 + 64 - 1 = 66
-        "step": 66,  
-        "tkv": 128,
-        "waiting": ["2"],
-        "running": ["1"],
-        "request_outputs": ["1", "0"],
-        "finished_requests": ["0"]
-    }, {
-        "step": 67,  # Prefill sequence 2
-        "tkv": 128,  # Tkv doesn't increase because it is a prefill
-        "waiting": [],
-        "running": ["2", "1"],
-        "request_outputs": ["2"]
-    }, {
-        "step": 68,  # Decode sequences 1 and 2
-        "tkv": 129,
-        "waiting": [],
-        "running": ["2", "1"],
-        "request_outputs": ["2", "1"]
-    }, {
-        # Sequence 1 finishes at step 69
-        # (start step + 2 prefills + 66 decodes - 1) = 2 + 2 + 66 - 1 = 69
-        "step": 69,
-        "tkv": 130,
-        "waiting": [],
-        "running": ["2"],
-        "request_outputs": ["2", "1"],
-        "finished_requests": ["1"]
-    }, {
-        "step": 70,  # Decode sequence 2
-        "tkv": 131,
-        "waiting": [],
-        "running": ["2"],
-        "request_outputs": ["2"]
-    }, {
-        # Sequence 2 finishes at step 73 
-        # (start step + 1 prefill + 6 decodes - 1) = 67 + 1 + 6 - 1 = 73
-        "step": 73,  
-        "tkv": 134,
-        "waiting": [],
-        "running": [],
-        "request_outputs": ["2"],
-        "finished_requests": ["2"]
-    }, {
-        # Tkv should be cleared one step later
-        "step": 74,
-        "tkv": 0,
-        "waiting": [],
-        "running": [],
-        "request_outputs": []
-    }]
-    
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0", "1", "2"],
+            "running": [],
+            "request_outputs": []
+        },
+        {
+            "step": 1,  # Prefill sequence 0
+            "tkv": 64,
+            "waiting": ["1", "2"],
+            "running": ["0"],
+            "request_outputs": ["0"]
+        },
+        {
+            "step": 2,  # Prefill sequence 1
+            "tkv": 64,  # Still 64 because this step is also a prefill
+            "waiting": ["2"],
+            "running": ["1", "0"],
+            "request_outputs": ["1"]
+        },
+        {
+            "step": 3,
+            "tkv": 65,  # Two decodes increases the tkv
+            "waiting": ["2"],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"]  # Two sequences are decoded
+        },
+        {
+            "step": 4,  # Check normal decode continuation
+            "tkv": 66,
+            "waiting": ["2"],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"]
+        },
+        {
+            "step": 65,  # Last step before first sequence finishes
+            "tkv": 127,
+            "waiting": ["2"],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"]
+        },
+        {
+            # Sequence 0 finishes at step 66
+            # (start step + 2 prefills + 64 decodes - 1) = 1 + 2 + 64 - 1 = 66
+            "step": 66,
+            "tkv": 128,
+            "waiting": ["2"],
+            "running": ["1"],
+            "request_outputs": ["1", "0"],
+            "finished_requests": ["0"]
+        },
+        {
+            "step": 67,  # Prefill sequence 2
+            "tkv": 128,  # Tkv doesn't increase because it is a prefill
+            "waiting": [],
+            "running": ["2", "1"],
+            "request_outputs": ["2"]
+        },
+        {
+            "step": 68,  # Decode sequences 1 and 2
+            "tkv": 129,
+            "waiting": [],
+            "running": ["2", "1"],
+            "request_outputs": ["2", "1"]
+        },
+        {
+            # Sequence 1 finishes at step 69
+            # (start step + 2 prefills + 66 decodes - 1) = 2 + 2 + 66 - 1 = 69
+            "step": 69,
+            "tkv": 130,
+            "waiting": [],
+            "running": ["2"],
+            "request_outputs": ["2", "1"],
+            "finished_requests": ["1"]
+        },
+        {
+            "step": 70,  # Decode sequence 2
+            "tkv": 131,
+            "waiting": [],
+            "running": ["2"],
+            "request_outputs": ["2"]
+        },
+        {
+            # Sequence 2 finishes at step 73
+            # (start step + 1 prefill + 6 decodes - 1) = 67 + 1 + 6 - 1 = 73
+            "step": 73,
+            "tkv": 134,
+            "waiting": [],
+            "running": [],
+            "request_outputs": ["2"],
+            "finished_requests": ["2"]
+        },
+        {
+            # Tkv should be cleared one step later
+            "step": 74,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": []
+        }
+    ]
+
     return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps)
 
 
@@ -390,7 +404,7 @@ def get_params_test_blocks_borders_aligned_prompts():
     [
         get_params_test_blocks_borders_aligned_prompts(),
         # get_params_test_blocks_borders_misaligned_prompts(),  # TODO
-        
+
         # TODO to test additionally at some point:
         # * test additional constraints from the scheduler (e.g prompt too long)
         # * test stripping repeated left padding
@@ -400,16 +414,12 @@ def get_params_test_blocks_borders_aligned_prompts():
         #     * two sequences finish at the same time
         #     * new prompts arrives when another finishes
     ])
-def test_scheduler_cb_steps_tkv(
-    model: str,
-    backend: str,
-    monkeypatch: pytest.MonkeyPatch,
-    max_num_seqs: int,
-    seqs_max_tokens: list[int],
-    prompts_lengths: list[int],
-    steps_add_reqs: list[int],
-    checked_steps: list[dict[str, Any]]
-):
+def test_scheduler_cb_steps_tkv(model: str, backend: str,
+                                monkeypatch: pytest.MonkeyPatch,
+                                max_num_seqs: int, seqs_max_tokens: list[int],
+                                prompts_lengths: list[int],
+                                steps_add_reqs: list[int],
+                                checked_steps: list[dict[str, Any]]):
     """
     Test that the scheduler correctly schedules requests and that the 
     tkv produced by the model runner is correct at each step.
@@ -483,27 +493,27 @@ def test_scheduler_cb_steps_tkv(
         # Add requests for this step
         while requests and requests[0][0] == step:
             engine_core.add_request(requests.popleft()[1])
-        
+
         # Check step if it is in the provided list of steps to check
         if checked_steps and step == checked_steps[0]["step"]:
             step_ref = checked_steps.popleft()
-            
+
             waiting = [r.request_id for r in scheduler.waiting]
             running = [r.request_id for r in scheduler.running]
             out_reqs_ids = [r.request_id for r in request_outputs]
             out_reqs_finished = [
                 r.request_id for r in request_outputs if r.finished
             ]
-            
+
             assert scheduler.tkv == step_ref["tkv"], f"Step {step}, tkv"
             assert waiting == step_ref["waiting"], f"Step {step}, num waiting"
             assert running == step_ref["running"], f"Step {step}, num running"
             assert out_reqs_ids == step_ref["request_outputs"], \
                 f"Step {step}, request outputs"
-            
-            ref_finished_reqs = step_ref["finished_requests"] if "finished_requests" in step_ref else []
+
+            ref_finished_reqs = step_ref.get("finished_requests", [])
             assert out_reqs_finished == ref_finished_reqs, \
                 f"Step {step}, finished request output"
-            
+
         # Perform next step
         request_outputs = engine_core.step().outputs
