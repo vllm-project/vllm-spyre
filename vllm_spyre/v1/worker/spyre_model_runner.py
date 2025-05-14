@@ -104,7 +104,7 @@ class SpyreModelRunner:
         )
 
         # Requests
-        self.requests: dict[str, CachedRequestData] = {}
+        self.requests: dict[str, CachedRequestState] = {}
 
     def get_model(self) -> nn.Module:
         return self.model
@@ -231,7 +231,7 @@ class SpyreModelRunner:
 
             # Update the cached states.
             num_computed_tokens = req_data.num_computed_tokens
-            req_state.num_computed_tokens = num_computed_tokens
+            # req_state.num_computed_tokens = num_computed_tokens
             # Add the sampled token(s) from the previous step (if any).
             # This doesn't include "unverified" tokens like spec decode tokens.
             num_new_tokens = (num_computed_tokens +
@@ -312,7 +312,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
                 sampling_params=sampling_params,
                 generator=generator,
                 output_token_ids=[],
-            )
+                left_padding=0)
             self.requests[req_id] = req_state
             self.input_batch.add_request(req_state)
 
@@ -580,7 +580,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         # TO DO: move to InputBatch
         self.req_ids2blocks: dict[str, deque[int]] = {}
-        self.req_ids2left_pads: dict[str, int] = {}
+        # self.req_ids2left_pads: dict[str, int] = {}
         self.tkv = 0
         self.free_blocks = deque([i for i in range(NUM_BLOCKS)])
 
@@ -607,7 +607,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                 for freed_block in self.req_ids2blocks[req_id]:
                     self.free_blocks.append(freed_block)
                 del self.req_ids2blocks[req_id]
-                del self.req_ids2left_pads[req_id]
+                # Removed below
+                # del self.req_ids2left_pads[req_id]
 
             del self.requests[req_id]
             self.input_batch.remove_request(req_id)
@@ -638,8 +639,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         for request_data in new_requests:
             # retrieve initial (unpadded) tokens
             prompt_tokens = request_data.prompt_token_ids
-            self.req_ids2left_pads[
-                request_data.req_id] = self.tkv - len(prompt_tokens)
+            # self.req_ids2left_pads[
+            #     request_data.req_id] = self.tkv - len(prompt_tokens)
+            left_padding = self.tkv - len(prompt_tokens)
             input_token_list.append(
                 torch.tensor(prompt_tokens,
                              dtype=torch.long,
@@ -673,7 +675,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                 sampling_params=sampling_params,
                 generator=generator,
                 output_token_ids=[],
-            )
+                left_padding=left_padding)
             self.requests[req_id] = req_state
             self.input_batch.add_request(req_state)
             self.prefill_batch.add_request(req_state)
@@ -752,8 +754,11 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             input_tokens.append([generation_token])
             seq_len = cached_request.num_computed_tokens
             input_positions.append([seq_len])
-            left_padded_prompt_mask.append(
-                self.req_ids2left_pads[cached_request.req_id])
+
+            req_state = self.requests[cached_request.req_id]
+            # left_padded_prompt_mask.append(
+            #     self.req_ids2left_pads[cached_request.req_id])
+            left_padded_prompt_mask.append(req_state.left_padding)
 
         input_tokens = torch.tensor(input_tokens,
                                     dtype=torch.long,
@@ -790,8 +795,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
     def reduce_left_padding(self, requests: list[CachedRequestData]) -> None:
 
+        # min_left_pad = min(
+        #     [self.req_ids2left_pads[r.req_id] for r in requests])
         min_left_pad = min(
-            [self.req_ids2left_pads[r.req_id] for r in requests])
+            [self.requests[r.req_id].left_padding for r in requests])
         n_padded_blocks = min_left_pad // self.BLOCK_SIZE
 
         if n_padded_blocks > 0:
@@ -799,8 +806,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                          n_padded_blocks)
 
             for req in requests:
-                self.req_ids2left_pads[
-                    req.req_id] -= n_padded_blocks * self.BLOCK_SIZE
+                # self.req_ids2left_pads[
+                #     req.req_id] -= n_padded_blocks * self.BLOCK_SIZE
+                req_state = self.requests[req.req_id]
+                req_state.left_padding -= n_padded_blocks * self.BLOCK_SIZE
 
                 # free blocks
                 for _ in range(n_padded_blocks):

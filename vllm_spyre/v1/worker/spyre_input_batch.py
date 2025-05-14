@@ -3,6 +3,7 @@
 
 # Based on vllm/vllm/v1/worker/gpu_input_batch.py
 
+from collections import deque
 from dataclasses import dataclass
 from typing import Optional, cast
 
@@ -20,9 +21,11 @@ class CachedRequestState:
     req_id: str
     prompt_token_ids: list[int]
     sampling_params: SamplingParams
+    # num_computed_tokens: int
     generator: Optional[torch.Generator]
 
     output_token_ids: list[int]
+    left_padding: int  # Defaults to 0
 
     @property
     def num_tokens(self) -> int:
@@ -170,6 +173,9 @@ class InputBatch:
 
         # Keep tracking of number of requests
         self._num_requests = 0
+
+        self.req_ids2blocks: dict[str, deque[int]] = {}
+        self.req_ids2left_pads: dict[str, int] = {}
 
     @property
     def req_ids(self) -> list[str]:
