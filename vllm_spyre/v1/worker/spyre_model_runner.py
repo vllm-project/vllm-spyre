@@ -12,7 +12,6 @@ from vllm.sampling_params import SamplingType
 from vllm.utils import is_pin_memory_available
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.outputs import SamplerOutput
-from vllm.v1.sample.metadata import SamplingMetadata
 
 from vllm_spyre.model_executor.model_loader.spyre import SpyreCausalLM
 from vllm_spyre.platform import SpyrePlatform
@@ -34,7 +33,7 @@ import vllm_spyre.envs as envs_spyre
 logger = init_logger(__name__)
 
 
-@dataclass()
+@dataclass(frozen=True)
 class ModelForwardInputs:
     """
     Used by the SpyreModelRunner.
@@ -47,14 +46,12 @@ class ModelForwardInputs:
     block_table: Optional[torch.Tensor] = None
     slot_mapping: Optional[torch.Tensor] = None
     is_prompt: Optional[bool] = None
-    # temporary until we can get from input_batch
-    sampling_metadata: Optional[SamplingMetadata] = None
 
 
 @dataclass
 class CBSpyreModelRunnerOutput(ModelRunnerOutput):
     # Add the current tkv to the output
-    tkv: int
+    tkv: int = 0
 
 
 class SpyreModelRunner:
@@ -96,6 +93,18 @@ class SpyreModelRunner:
 
         # Flag to be turned off after warmup is complete
         self.warmup_mode = True
+
+        # Batch state
+        self.input_batch = InputBatch(
+            max_num_reqs=vllm_config.scheduler_config.max_num_seqs,
+            max_model_len=vllm_config.model_config.max_model_len,
+            device=self.device,
+            pin_memory=self.pin_memory,
+            vocab_size=vllm_config.model_config.get_vocab_size(),
+        )
+
+        # Requests
+        self.requests: dict[str, CachedRequestData] = {}
 
     def get_model(self) -> nn.Module:
         return self.model
@@ -208,6 +217,42 @@ class SpyreModelRunner:
         """Turn off warmup mode once the warmup is complete"""
         self.warmup_mode = False
 
+    def _update_states(self, scheduler_output: SchedulerOutput):
+        # Update the states of the running/resumed requests.
+        # Update input_batch's `token_ids_cpu`,
+        # `num_tokens`. For continuous batching it cleans
+        # finished requests from the batch
+        #
+        # NOTE: req_state.output_token_ids is being mutated.
+
+        for req_data in scheduler_output.scheduled_cached_reqs:
+            req_id = req_data.req_id
+            req_state = self.requests[req_id]
+
+            # Update the cached states.
+            num_computed_tokens = req_data.num_computed_tokens
+            req_state.num_computed_tokens = num_computed_tokens
+            # Add the sampled token(s) from the previous step (if any).
+            # This doesn't include "unverified" tokens like spec decode tokens.
+            num_new_tokens = (num_computed_tokens +
+                              len(req_data.new_token_ids) -
+                              req_state.num_tokens)
+            if num_new_tokens == 1:
+                # Avoid slicing list in most common case.
+                req_state.output_token_ids.append(req_data.new_token_ids[-1])
+            elif num_new_tokens > 0:
+                req_state.output_token_ids.extend(
+                    req_data.new_token_ids[-num_new_tokens:])
+
+            req_index = self.input_batch.get_req_index(req_id)
+            # Add new_token_ids to token_ids_cpu.
+            # TODO: Update for spec decoding in the future
+            start_token_index = num_computed_tokens
+            end_token_index = num_computed_tokens + len(req_data.new_token_ids)
+            self.input_batch.token_ids_cpu[
+                req_index,
+                start_token_index:end_token_index] = req_data.new_token_ids
+
 
 class StaticBatchingSpyreModelRunner(SpyreModelRunner):
 
@@ -223,18 +268,6 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         self._position_ids: torch.Tensor = None
         # attention masks of all the sequences in current batch
         self._mask: torch.Tensor = None
-
-        # Batch state
-        self.input_batch = InputBatch(
-            max_num_reqs=vllm_config.scheduler_config.max_num_seqs,
-            max_model_len=vllm_config.model_config.max_model_len,
-            device=self.device,
-            pin_memory=self.pin_memory,
-            vocab_size=vllm_config.model_config.get_vocab_size(),
-        )
-
-        # Requests
-        self.requests: dict[str, CachedRequestData] = {}
 
         self.spyre_warmup_shapes = SpyrePlatform.get_warmup_shapes(
             self.scheduler_config)
@@ -462,42 +495,6 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         )
         return model_output
 
-    def _update_states(self, scheduler_output: SchedulerOutput):
-        # Update the states of the running/resumed requests.
-        # For now, we are updating input_batch.'s `token_ids_cpu`,
-        # `num_tokens`
-        #
-        # NOTE: req_state.output_token_ids is being mutated.
-        #
-        # Once we have continuous batch, we shall update more data
-        for req_data in scheduler_output.scheduled_cached_reqs:
-            req_id = req_data.req_id
-            req_state = self.requests[req_id]
-
-            # Update the cached states.
-            num_computed_tokens = req_data.num_computed_tokens
-            req_state.num_computed_tokens = num_computed_tokens
-            # Add the sampled token(s) from the previous step (if any).
-            # This doesn't include "unverified" tokens like spec decode tokens.
-            num_new_tokens = (num_computed_tokens +
-                              len(req_data.new_token_ids) -
-                              req_state.num_tokens)
-            if num_new_tokens == 1:
-                # Avoid slicing list in most common case.
-                req_state.output_token_ids.append(req_data.new_token_ids[-1])
-            elif num_new_tokens > 0:
-                req_state.output_token_ids.extend(
-                    req_data.new_token_ids[-num_new_tokens:])
-
-            req_index = self.input_batch.get_req_index(req_id)
-            # Add new_token_ids to token_ids_cpu.
-            # TODO: Update for spec decoding in the future
-            start_token_index = num_computed_tokens
-            end_token_index = num_computed_tokens + len(req_data.new_token_ids)
-            self.input_batch.token_ids_cpu[
-                req_index,
-                start_token_index:end_token_index] = req_data.new_token_ids
-
     def _get_padded_batch_size(self, new_requests: list[NewRequestData]):
         # find warmup shape to be used for padding and batching
         applicable_spyre_warmup_shapes = [
@@ -573,6 +570,11 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         max_batch_size = vllm_config.scheduler_config.max_num_seqs
         max_model_len = vllm_config.scheduler_config.max_model_len
 
+        # TODO: remove this limitation once we update the warm-up logic to
+        # support batch_size=1
+        assert max_batch_size >= 2, "Currently, continuous batching needs " \
+            "config to set batch_size >= 2"
+
         self.BLOCK_SIZE = 64
         NUM_BLOCKS = max_batch_size * max_model_len // self.BLOCK_SIZE  # 64
 
@@ -581,6 +583,34 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.req_ids2left_pads: dict[str, int] = {}
         self.tkv = 0
         self.free_blocks = deque([i for i in range(NUM_BLOCKS)])
+
+        # TODO: Remove this once we can prefill and decode
+        # in the same step
+        self.prefill_batch = InputBatch(
+            # TODO: review this, currently we only support prefill for
+            # `batch_size=1`
+            max_num_reqs=1,
+            max_model_len=vllm_config.model_config.max_model_len,
+            device=self.device,
+            pin_memory=self.pin_memory,
+            vocab_size=vllm_config.model_config.get_vocab_size(),
+        )
+
+    def _update_states(self, scheduler_output):
+
+        super()._update_states(scheduler_output)
+
+        # Continuous batching stuff
+        for req_id in scheduler_output.finished_req_ids:
+            if req_id in self.req_ids2blocks:
+                logger.debug("Freeing request id: %s", req_id)
+                for freed_block in self.req_ids2blocks[req_id]:
+                    self.free_blocks.append(freed_block)
+                del self.req_ids2blocks[req_id]
+                del self.req_ids2left_pads[req_id]
+
+            del self.requests[req_id]
+            self.input_batch.remove_request(req_id)
 
     def _prepare_prompt(
         self,
@@ -602,6 +632,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         # Internal state is managed here.
         slot_mapping = []
+
+        self.prefill_batch.clear_requests()
+
         for request_data in new_requests:
             # retrieve initial (unpadded) tokens
             prompt_tokens = request_data.prompt_token_ids
@@ -625,7 +658,33 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             self.req_ids2blocks[request_data.req_id] = deque(block_table_i)
             slot_mapping.append(slot_mapping_i)
 
-        # prefils are always of batch size 1 for this milestone
+            # Add new requests to the cached states.
+            req_id = request_data.req_id
+            sampling_params = request_data.sampling_params
+            if sampling_params.sampling_type == SamplingType.RANDOM_SEED:
+                generator = torch.Generator(device=self.device)
+                generator.manual_seed(sampling_params.seed)
+            else:
+                generator = None
+
+            req_state = CachedRequestState(
+                req_id=req_id,
+                prompt_token_ids=request_data.prompt_token_ids,
+                sampling_params=sampling_params,
+                generator=generator,
+                output_token_ids=[],
+            )
+            self.requests[req_id] = req_state
+            self.input_batch.add_request(req_state)
+            self.prefill_batch.add_request(req_state)
+
+        # Refresh sampling metadata after all request are added to the batch
+        self.input_batch.refresh_sampling_metadata()
+        self.prefill_batch.refresh_sampling_metadata()
+
+        # TODO: Review this in the future
+        # prefills are always of batch size 1 for this milestone
+        # Also, we added an input batch just for that.
         actual_batch_size = len(input_token_list)
         assert actual_batch_size == 1
         self.model.indices = torch.ones(actual_batch_size,
@@ -821,47 +880,13 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # Also assuming that new sequences are prefills
         is_prompt = len(scheduler_output.scheduled_new_reqs) > 0
 
-        for req_id in scheduler_output.finished_req_ids:
-            if req_id in self.req_ids2blocks:
-                logger.debug("Freeing request id: %s", req_id)
-                for freed_block in self.req_ids2blocks[req_id]:
-                    self.free_blocks.append(freed_block)
-                del self.req_ids2blocks[req_id]
-                del self.req_ids2left_pads[req_id]
-
         # Prepare and return input tensors.
         if is_prompt:
             model_inputs = \
                 self._prepare_prompt(scheduler_output.scheduled_new_reqs)
-            num_reqs = len(scheduler_output.scheduled_new_reqs)
         else:
             model_inputs = \
                 self._prepare_decode(scheduler_output.scheduled_cached_reqs)
-            num_reqs = len(scheduler_output.scheduled_cached_reqs)
-
-        # TODO: Build the rest of the SamplingMetadata correctly
-        dummy_tensors = lambda v: torch.full(
-            (num_reqs, ), v, device=self.device)
-        model_inputs.sampling_metadata = SamplingMetadata(
-            temperature=dummy_tensors(0.0),
-            all_greedy=False,
-            all_random=False,
-            top_p=None,
-            top_k=None,
-            min_p=None,
-            generators={},
-            max_num_logprobs=None,
-            no_penalties=True,
-            prompt_token_ids=None,
-            frequency_penalties=dummy_tensors(0.1),
-            presence_penalties=dummy_tensors(0.1),
-            repetition_penalties=dummy_tensors(0.1),
-            output_token_ids=[[] for _ in range(num_reqs)],
-            min_tokens={},
-            logit_bias=[None for _ in range(num_reqs)],
-            allowed_token_ids_mask=None,
-            bad_words_token_ids=None,
-        )
 
         return model_inputs
 
@@ -874,6 +899,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         t0 = time.time()
 
+        self._update_states(scheduler_output)
         # TODO: change to EMPTY_MODEL_RUNNER_OUTPUT, right now this
         # will be a breaking change, or clumsy to make retrocompatible
         # with conditional import
@@ -945,11 +971,12 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         logits = self.model.compute_logits(hidden_states, None)
 
         # Sample the next token.
+        # TODO: review this, once we can prefill and decode at the same step
+        sampling_metadata = self.prefill_batch.sampling_metadata \
+            if model_input.is_prompt else self.input_batch.sampling_metadata
         output: SamplerOutput = self.model.sample(
             logits=logits,
-            # TODO: Uncomment once Wallas is done with the work
-            # sampling_metadata=self.input_batch.sampling_metadata,
-            sampling_metadata=model_input.sampling_metadata,
+            sampling_metadata=sampling_metadata,
         )
         t1 = time.time() - t0
         logger.debug("t_token: %.2fms", (t1 * 1000))
