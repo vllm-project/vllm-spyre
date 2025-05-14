@@ -1,0 +1,34 @@
+# Global Args #################################################################
+ARG BASE_UBI_IMAGE_TAG=9.4
+ARG PYTHON_VERSION=3.12
+
+# Base Layer ##################################################################
+FROM registry.access.redhat.com/ubi9/ubi-minimal:${BASE_UBI_IMAGE_TAG} AS base
+ARG PYTHON_VERSION
+ENV PYTHON_VERSION=${PYTHON_VERSION}
+WORKDIR /workspace
+
+# Install some basic utilities ##################################################################
+RUN microdnf update -y && microdnf install -y \
+    python${PYTHON_VERSION}-devel python${PYTHON_VERSION}-pip python${PYTHON_VERSION}-wheel git vim gcc g++ kmod\
+    && microdnf clean all
+RUN ln -sf $(which python${PYTHON_VERSION}) /usr/bin/python && \
+    ln -sf $(which pip${PYTHON_VERSION}) /usr/bin/pip
+
+# Install vllm Spyre plugin ##################################################################
+RUN mkdir /workspace/vllm-spyre
+COPY . /workspace/vllm-spyre
+# Torch must be installed first
+RUN pip install torch==2.5.1+cpu --index-url https://download.pytorch.org/whl/cpu
+# Install uv
+RUN pip install uv
+# Install the plugin in a new venv, along with dev deps to test with
+ENV VLLM_TARGET_DEVICE=empty
+RUN cd /workspace/vllm-spyre \
+    && uv venv .venv --system-site-packages \
+    && source .venv/bin/activate \
+    && uv pip install -v -e . --system \
+    && uv sync --frozen --group dev
+ENV VLLM_PLUGINS=spyre
+
+CMD ["/bin/bash"]
