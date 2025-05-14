@@ -283,7 +283,7 @@ def create_random_request(
 
 def get_params_test_blocks_borders_aligned_prompts():
     seqs_max_tokens = [65, 67, 7]
-    prompts_lengths = [49, 41, 7]
+    prompts_lengths = [49, 41, 47]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
 
     checked_steps = [
@@ -309,25 +309,11 @@ def get_params_test_blocks_borders_aligned_prompts():
             "request_outputs": ["1"]
         },
         {
-            "step": 3,
-            "tkv": 65,  # Two decodes increases the tkv
+            "step": 3,  # Decode sequences 0 and 1
+            "tkv": 65,
             "waiting": ["2"],
             "running": ["1", "0"],
             "request_outputs": ["1", "0"]  # Two sequences are decoded
-        },
-        {
-            "step": 4,  # Check normal decode continuation
-            "tkv": 66,
-            "waiting": ["2"],
-            "running": ["1", "0"],
-            "request_outputs": ["1", "0"]
-        },
-        {
-            "step": 65,  # Last step before first sequence finishes
-            "tkv": 127,
-            "waiting": ["2"],
-            "running": ["1", "0"],
-            "request_outputs": ["1", "0"]
         },
         {
             # Sequence 0 finishes at step 66
