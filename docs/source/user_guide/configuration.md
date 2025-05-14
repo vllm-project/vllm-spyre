@@ -2,7 +2,7 @@
 
 For a complete list of configuration options, see :link: ./env_vars :link-type: doc
 
-## Backend selection
+## Backend Selection
 
 The torch.compile backend can be configured with the `VLLM_SPYRE_DYNAMO_BACKEND` environment variable.
 
@@ -16,17 +16,17 @@ To run inference on IBM Spyre Accelerators, the backend should be set as:
 | Embedding | v0 | sendnn | |
 | Embedding | v1 | N/A | Embedding models are not yet supported on V1 |
 
-## Batching modes
+## Batching Modes
 
 When running decoder models, vLLM Spyre supports a static batching mode and a continuous batching mode.
 
-### Static batching
+### Static Batching
 
 With static batching, graphs are pre-compiled for the configured batch shapes and each batch must finish processing before a new batch can be scheduled. This adds extra constraints on the sizes of inputs and outputs for each request, and requests that do not fit the precompiled graphs will be rejected.
 
 Static batching mode is enabled by default, and can be explicitly enabled by setting `VLLM_USE_CB=0`.
 
-The batch shapes are configured with the `VLLM_SPYRE_WARMUP_*` environment variables. For example, to warm up two graph shapes for one single large requests and four smaller requests you could use:
+The batch shapes are configured with the `VLLM_SPYRE_WARMUP_*` environment variables. For example, to warm up two graph shapes for one single large request and four smaller requests you could use:
 
 ```shell
 export VLLM_SPYRE_WARMUP_BATCH_SIZES=1,4
