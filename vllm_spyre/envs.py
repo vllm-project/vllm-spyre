@@ -11,23 +11,28 @@ if TYPE_CHECKING:
     VLLM_SPYRE_PERF_METRIC_LOGGING_ENABLED: int = 0
     VLLM_SPYRE_PERF_METRIC_LOGGING_DIR: str = "/tmp"
 
+# begin-env-vars-definition
+
 environment_variables: dict[str, Callable[[], Any]] = {
     # Defines the prompt lengths the Spyre accelerator should be prepared
-    # for, formatted as comma separated list.
+    # for, formatted as comma separated list. Only applicable in static batching
+    # mode (VLLM_SPYRE_USE_CB=0).
     "VLLM_SPYRE_WARMUP_PROMPT_LENS":
     lambda: [
         int(p) for p in os.getenv(key='VLLM_SPYRE_WARMUP_PROMPT_LENS',
                                   default='64').split(',')
     ],
     # Defines the max output tokens the Spyre accelerator should be prepared
-    # for, formatted as comma separated list.
+    # for, formatted as comma separated list. Only applicable in static batching
+    # mode (VLLM_SPYRE_USE_CB=0).
     "VLLM_SPYRE_WARMUP_NEW_TOKENS":
     lambda: [
         int(d) for d in os.getenv(key='VLLM_SPYRE_WARMUP_NEW_TOKENS',
                                   default='20').split(',')
     ],
     # Defines the batch sizes the Spyre accelerator should be prepared
-    # for, formatted as comma separated list.
+    # for, formatted as comma separated list. Only applicable in static batching
+    # mode (VLLM_SPYRE_USE_CB=0).
     "VLLM_SPYRE_WARMUP_BATCH_SIZES":
     lambda: [
         int(b) for b in os.getenv(key='VLLM_SPYRE_WARMUP_BATCH_SIZES',
@@ -41,15 +46,17 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # - "sendnn": Compile for execution on Spyre hardware for
     #   encoder models
     # - "inductor": Compile for execution on CPU (for debug and testing)
-    # - "eager": Skip compile entirely (for debug and testing
+    # - "eager": Skip compile entirely (for debug and testing)
     "VLLM_SPYRE_DYNAMO_BACKEND":
     lambda: os.getenv("VLLM_SPYRE_DYNAMO_BACKEND", "sendnn_decoder"),
 
-    # If set, use the V1 continuous batching implementation
+    # If set, use the V1 continuous batching implementation. Otherwise, static
+    # batching mode will be enabled.
     "VLLM_SPYRE_USE_CB":
     lambda: bool(int(os.getenv("VLLM_SPYRE_USE_CB", "0"))),
 
-    # If set, remove redundant (left) padded blocks
+    # If set, remove redundant (left) padded blocks. Only applicable in
+    # continuous batching mode.
     "VLLM_SPYRE_RM_PADDED_BLOCKS":
     lambda: bool(int(os.getenv("VLLM_SPYRE_RM_PADDED_BLOCKS", "0"))),
 
@@ -63,6 +70,8 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "VLLM_SPYRE_PERF_METRIC_LOGGING_DIR":
     lambda: os.getenv("VLLM_SPYRE_PERF_METRIC_LOGGING_DIR", "/tmp"),
 }
+
+# end-env-vars-definition
 
 
 def __getattr__(name: str):

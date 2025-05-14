@@ -22,6 +22,8 @@ installation
 :::{toctree}
 :caption: User Guide
 :maxdepth: 1
+user_guide/configuration
+user_guide/env_vars
 user_guide/supported_features
 user_guide/supported_models
 :::
