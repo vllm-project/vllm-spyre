@@ -2,15 +2,15 @@ name: Lint GitHub Actions
 
 on:
   push:
-#    branches:
-#      - "main"
+    branches:
+      - "main"
     paths:
       - '.github/workflows/*.ya?ml'
       - '.github/workflows/actionlint.*'
       - '.github/workflows/matchers/actionlint.json'
   pull_request:
-#    branches:
-#      - "main"
+    branches:
+      - "main"
     paths:
       - '.github/workflows/*.ya?ml'
       - '.github/workflows/actionlint.*'

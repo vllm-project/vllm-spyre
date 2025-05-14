@@ -5,15 +5,15 @@ on:
   # Don't use pull_request.paths filter since this workflow is required for
   # all pull requests on main irrespective of file type or location.
   pull_request:
-#    branches:
-#      - main
+    branches:
+      - main
   push:
-#    branches:
-#      - main
+    branches:
+      - main
     paths:
       - "**/*.py"
       - pyproject.toml
-      # TODO: rename ruff
+      # TODO: rename ruff.json
       - .github/workflows/matchers/ruff.json
       # TODO: underscore or dash to separate words in file names?
       - .github/workflows/lint_code.yml
