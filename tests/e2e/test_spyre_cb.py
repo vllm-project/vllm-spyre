@@ -4,6 +4,7 @@ Run `python -m pytest tests/test_spyre_cb.py`.
 """
 
 from collections import deque
+import copy
 import inspect
 from typing import Any
 
@@ -397,7 +398,25 @@ def get_params_test_blocks_borders_aligned_prompts():
     return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps)
 
 
-@pytest.mark.a
+def augment_checked_steps(checked_steps: list[dict[str, Any]]) -> deque[dict[str,Any]]:
+    # Augment checked_steps: add in-between normal decode steps
+    checked_steps = deque(checked_steps)
+    all_checked_steps = deque()
+    prev_step = None
+    for step in range(checked_steps[-1]["step"] + 1):
+        if checked_steps and step == checked_steps[0]["step"]:
+            prev_step = checked_steps.popleft()
+            all_checked_steps.append(prev_step)
+        elif prev_step is not None:
+            assert prev_step["step"] == step - 1
+            new_step = copy.deepcopy(prev_step)
+            new_step["step"] = step
+            new_step["tkv"] += 1
+            all_checked_steps.append(new_step)
+            prev_step = new_step
+    return all_checked_steps
+
+
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
@@ -423,7 +442,8 @@ def test_scheduler_cb_steps_tkv(model: str, backend: str,
                                 max_num_seqs: int, seqs_max_tokens: list[int],
                                 prompts_lengths: list[int],
                                 steps_add_reqs: list[int],
-                                checked_steps: list[dict[str, Any]]):
+                                checked_steps: list[dict[str, Any]],
+                                auto_check_basic_decode_steps: bool=True):
     """
     Test that the scheduler correctly schedules requests and that the 
     tkv produced by the model runner is correct at each step.
@@ -460,7 +480,6 @@ def test_scheduler_cb_steps_tkv(model: str, backend: str,
                                               for x in checked_steps))):
         raise ValueError(
             "List of checked steps needs to be of increasing order of step")
-    checked_steps = deque(checked_steps)
     # ------
 
     # Setup the engine
@@ -490,6 +509,10 @@ def test_scheduler_cb_steps_tkv(model: str, backend: str,
                                         num_tokens=prompt_length,
                                         sampling_params=sampling_params)
         requests.append((add_step, request))
+
+    # if set, in-between steps are added as normal decode steps
+    if auto_check_basic_decode_steps:
+        checked_steps = augment_checked_steps(checked_steps)
 
     # Run steps, until last step is reached (provided through parameter)
     request_outputs = []
