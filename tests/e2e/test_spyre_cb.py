@@ -299,6 +299,10 @@ def create_random_request(
 
 
 def get_params_test_blocks_borders_aligned_prompts():
+    """ Scenario where it happens that all the sequences get scheduled in a 
+    fashion where they are aligned with the block boundaries (i.e. tkv multiple 
+    of 64 at the time of prefilling)."""
+
     seqs_max_tokens = [65, 67, 7]
     prompts_lengths = [49, 41, 47]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
@@ -397,6 +401,10 @@ def get_params_test_blocks_borders_aligned_prompts():
 
 
 def get_params_test_blocks_borders_misaligned_prompts():
+    """ Scenario where it happens that some sequence gets scheduled in a way 
+    that it is misaligned with the block boundary (i.e. tkv is not a multiple 
+    of 64 at the time of prefilling). """
+
     seqs_max_tokens = [57, 67, 9]
     prompts_lengths = [49, 41, 47]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
@@ -615,7 +623,7 @@ def test_scheduler_cb_steps_tkv(model: str,
     if auto_check_basic_decode_steps:
         checked_steps = augment_checked_steps(checked_steps)
 
-    # Run steps, until last step is reached (provided through parameter)
+    # Run steps, until last step from 'checked_steps' is reached
     request_outputs = []
     for step in range(checked_steps[-1]['step'] + 1):
         # Add requests for this step
