@@ -141,6 +141,8 @@ class SpyrePlatform(Platform):
             vllm_config.model_config.max_model_len)
         os.environ["VLLM_DT_MAX_BATCH_SIZE"] = str(
             vllm_config.scheduler_config.max_num_seqs)
+        
+        vllm_config.cache_config.block_size = 64
 
     @classmethod
     def use_all_gather(cls) -> bool:

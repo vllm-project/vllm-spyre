@@ -575,8 +575,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         assert max_batch_size >= 2, "Currently, continuous batching needs " \
             "config to set batch_size >= 2"
 
-        self.BLOCK_SIZE = 64
-        NUM_BLOCKS = max_batch_size * max_model_len // self.BLOCK_SIZE  # 64
+        self.block_size = vllm_config.cache_config.block_size
+        NUM_BLOCKS = max_batch_size * max_model_len // self.block_size  # 64
 
         # TO DO: move to InputBatch
         self.req_ids2blocks: dict[str, deque[int]] = {}
@@ -625,7 +625,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         max_prompt_len = max([len(r.prompt_token_ids) for r in new_requests])
         if not new_batch:
             assert max_prompt_len <= self.tkv
-        d = self.BLOCK_SIZE
+        d = self.block_size
         n = max_prompt_len if new_batch else self.tkv
         block_padding = ((n + d - 1) // d) * d
         if new_batch:
@@ -651,11 +651,11 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             block_table_i = []
             slot_mapping_i = []
             for pos_i in range(block_padding):
-                if pos_i % self.BLOCK_SIZE == 0:
+                if pos_i % self.block_size == 0:
                     block_number = self.free_blocks.popleft()
                     block_table_i.append(block_number)
-                block_offset = pos_i % self.BLOCK_SIZE
-                slot = block_number * self.BLOCK_SIZE + block_offset
+                block_offset = pos_i % self.block_size
+                slot = block_number * self.block_size + block_offset
                 slot_mapping_i.append(slot)
             self.req_ids2blocks[request_data.req_id] = deque(block_table_i)
             slot_mapping.append(slot_mapping_i)
@@ -740,16 +740,17 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             # or jump decoding?
 
             # adding new blocks if needed
-            if self.tkv // self.BLOCK_SIZE + 1 > len(
+            if self.tkv // self.block_size + 1 > len(
                     self.req_ids2blocks[cached_request.req_id]):
                 self.req_ids2blocks[cached_request.req_id].append(
                     self.free_blocks.popleft())
             block_table.append(self.req_ids2blocks[cached_request.req_id])
             # slot_mapping for all blocks of sequence
-            start_slot = block_table[-1][-1] * self.BLOCK_SIZE
-            offset = self.tkv % self.BLOCK_SIZE
+            start_slot = block_table[-1][-1] * self.block_size
+            offset = self.tkv % self.block_size
             slot = [start_slot + offset]
             slot_mapping.append(slot)
+            
             generation_token = cached_request.new_token_ids[-1]
             input_tokens.append([generation_token])
             seq_len = cached_request.num_computed_tokens
@@ -799,7 +800,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         #     [self.req_ids2left_pads[r.req_id] for r in requests])
         min_left_pad = min(
             [self.requests[r.req_id].left_padding for r in requests])
-        n_padded_blocks = min_left_pad // self.BLOCK_SIZE
+        n_padded_blocks = min_left_pad // self.block_size
 
         if n_padded_blocks > 0:
             logger.debug("Number of removed blocks due to left padding: %d",
@@ -807,9 +808,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
             for req in requests:
                 # self.req_ids2left_pads[
-                #     req.req_id] -= n_padded_blocks * self.BLOCK_SIZE
+                #     req.req_id] -= n_padded_blocks * self.block_size
                 req_state = self.requests[req.req_id]
-                req_state.left_padding -= n_padded_blocks * self.BLOCK_SIZE
+                req_state.left_padding -= n_padded_blocks * self.block_size
 
                 # free blocks
                 for _ in range(n_padded_blocks):
@@ -817,7 +818,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                     self.free_blocks.append(freed_block_id)
 
         # update tkv
-        self.tkv -= n_padded_blocks * self.BLOCK_SIZE
+        self.tkv -= n_padded_blocks * self.block_size
 
         return
 
