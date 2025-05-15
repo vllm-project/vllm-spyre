@@ -278,6 +278,7 @@ def create_random_request(
         eos_token_id=None,
         arrival_time=0,
         lora_request=None,
+        cache_salt=None
     )
 
 
