@@ -106,4 +106,5 @@ html_theme_options = {
 
 
 def setup(app):
-    pass
+    from docs.source.generate_examples import generate_examples
+    generate_examples()
