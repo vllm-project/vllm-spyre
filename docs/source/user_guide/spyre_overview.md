@@ -6,9 +6,9 @@ Spyre builds on the foundation of IBM’s internal AIU research and delivers a s
 
 ## 🔍 Learn More
 
-- 📝 [Meet the IBM Artificial Intelligence Unit](https://research.ibm.com/blog/ibm-artificial-intelligence-unit-aiu)
+- 📚 [Meet the IBM Artificial Intelligence Unit](https://research.ibm.com/blog/ibm-artificial-intelligence-unit-aiu)
 - 📽️ [AI Accelerators: Transforming Scalability & Model Efficiency](https://www.youtube.com/watch?v=KX0qBM-ByAg)
-- 📚 [Spyre Accelerator for IBM Z](https://research.ibm.com/blog/spyre-for-z)
+- 🚀 [Spyre Accelerator for IBM Z](https://research.ibm.com/blog/spyre-for-z)
 
 ## See Also
 
