@@ -1,4 +1,4 @@
-""" Sourced from https://github.com/vllm-project/vllm/blob/main/docs/source/generate_examples.py """
+""" Sourced from https://github.com/vllm-project/vllm/blob/main/docs/source/generate_examples.py """  # noqa: E501
 
 import itertools
 import re
