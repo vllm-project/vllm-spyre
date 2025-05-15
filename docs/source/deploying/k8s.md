@@ -1,8 +1,8 @@
 # Using Kubernetes
 
-The vLLM Documentation on [Deploying with Kubernetes](https://docs.vllm.ai/en/latest/deployment/k8s.html) is a comprehensive guide for configuring deployments of models on kubernetes. This guide highlights some key differences when deploying on kubernetes with Spyre acclerators.
+The vLLM Documentation on [Deploying with Kubernetes](https://docs.vllm.ai/en/latest/deployment/k8s.html) is a comprehensive guide for configuring deployments of models on kubernetes. This guide highlights some key differences when deploying on kubernetes with Spyre accelerators.
 
-## Deploying on Spyre Acclerators
+## Deploying on Spyre Accelerators
 
 **Pre-requisite** Ensure that you have a running Kubernetes cluster with Spyre accelerators.
 
