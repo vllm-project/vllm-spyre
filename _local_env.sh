@@ -1,0 +1,9 @@
+#!/bin/bash
+
+export MASTER_ADDR=localhost
+export MASTER_PORT=29500
+export VLLM_SPYRE_DYNAMO_BACKEND=eager
+export VLLM_SPYRE_TEST_BACKEND_LIST=eager
+export VLLM_ENABLE_V1_MULTIPROCESSING=0
+export VLLM_SPYRE_TEST_MODEL_LIST="JackFram/llama-160m"
+export VLLM_SPYRE_TEST_MODEL_DIR=""
