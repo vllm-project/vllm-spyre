@@ -424,59 +424,52 @@ def get_params_test_blocks_borders_misaligned_prompts():
             "request_outputs": ["1"]
         },
         {
-            "step": 3,
-            "tkv": 65,  # Two decodes increases the tkv
-            "waiting": ["2"],
-            "running": ["1", "0"],
-            "request_outputs": ["1", "0"]  # Two sequences are decoded
-        },
-        {
-            "step": 4,  # Check normal decode continuation
-            "tkv": 66,
+            "step": 3,  # Decode sequences 0 and 1
+            "tkv": 65,
             "waiting": ["2"],
             "running": ["1", "0"],
             "request_outputs": ["1", "0"]
         },
         {
-            "step": 58,  # Last step before first sequence finishes
+            # Sequence 0 finishes at step 58
+            # (start step + 2 prefills + 56 decodes - 1) = 1 + 2 + 56 - 1 = 58
+            "step": 58,
             "tkv": 120,
-            "waiting": ["2"],
-            "running": ["1", "0"],
-            "request_outputs": ["1", "0"]
-        },
-        {
-            # Sequence 0 finishes at step 59
-            # (start step + 2 prefills + 57 decodes - 1) = 1 + 2 + 57 - 1 = 59
-            "step": 59,
-            "tkv": 121,
             "waiting": ["2"],
             "running": ["1"],
             "request_outputs": ["1", "0"],
             "finished_requests": ["0"]
         },
         {
-            "step": 60,  # Prefill sequence 2
-            "tkv": 121,  # Tkv doesn't increase because it is a prefill
+            "step": 59,  # Prefill sequence 2
+            "tkv": 120,  # Tkv doesn't increase because it is a prefill
             "waiting": [],
             "running": ["2", "1"],
             "request_outputs": ["2"]
         },
         {
-            "step": 61,  # Decode sequences 1 and 2
-            "tkv": 122,
+            "step": 60,  # Decode sequences 1 and 2
+            "tkv": 121,
             "waiting": [],
             "running": ["2", "1"],
             "request_outputs": ["2", "1"]
         },
         {
             # Sequence 2 finishes at step 68
-            # (start step + 1 prefill + 8 decodes - 1) = 60 + 1 + 8 - 1 = 68
-            "step": 68,
+            # (start step + 1 prefill + 8 decodes - 1) = 59 + 1 + 8 - 1 = 67
+            "step": 67,
+            "tkv": 128,
+            "waiting": [],
+            "running": ["1"],
+            "request_outputs": ["2", "1"],
+            "finished_requests": ["2"]
+        },
+        {
+            "step": 68,  # Decode sequences 1
             "tkv": 129,
             "waiting": [],
             "running": ["1"],
-            "request_outputs": ["2"],
-            "finished_requests": ["2"]
+            "request_outputs": ["1"]
         },
         {
             # Sequence 1 finishes at step 69
@@ -530,7 +523,7 @@ def augment_checked_steps(
     "seqs_max_tokens,prompts_lengths,steps_add_reqs,checked_steps",
     [
         get_params_test_blocks_borders_aligned_prompts(),
-        # get_params_test_blocks_borders_misaligned_prompts(),
+        get_params_test_blocks_borders_misaligned_prompts(),
 
         # TODO to test additionally at some point:
         # * test additional constraints from the scheduler (e.g prompt too long)
