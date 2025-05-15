@@ -25,6 +25,7 @@ getting_started/examples/examples_index
 :caption: User Guide
 :maxdepth: 1
 user_guide/configuration
+user_guide/local_development
 user_guide/env_vars
 user_guide/supported_features
 user_guide/supported_models
