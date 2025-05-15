@@ -16,9 +16,9 @@
 # import sys
 # sys.path.insert(0, os.path.abspath('.'))
 
-from pathlib import Path
-import sys
 import os
+import sys
+from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.append(os.path.abspath(REPO_ROOT))
