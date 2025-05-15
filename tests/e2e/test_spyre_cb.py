@@ -3,9 +3,9 @@
 Run `python -m pytest tests/test_spyre_cb.py`.
 """
 
-from collections import deque
 import copy
 import inspect
+from collections import deque
 from typing import Any
 
 import pytest
@@ -270,22 +270,20 @@ def test_cb_with_steps(model: str, backend: str,
 def create_random_request(
         request_id: int, num_tokens: int,
         sampling_params: SamplingParams) -> EngineCoreRequest:
-    
+
     # Temporary until 'cache_salt' parameter makes it to a release version
     # in vllm
     if 'cache_salt' in [x[0] for x in inspect.getmembers(EngineCoreRequest)]:
-        return EngineCoreRequest(
-            request_id=str(request_id),
-            prompt_token_ids=[request_id] * num_tokens,
-            mm_inputs=None,
-            mm_hashes=None,
-            mm_placeholders=None,
-            sampling_params=sampling_params,
-            eos_token_id=None,
-            arrival_time=0,
-            lora_request=None,
-            cache_salt=None
-        )
+        return EngineCoreRequest(request_id=str(request_id),
+                                 prompt_token_ids=[request_id] * num_tokens,
+                                 mm_inputs=None,
+                                 mm_hashes=None,
+                                 mm_placeholders=None,
+                                 sampling_params=sampling_params,
+                                 eos_token_id=None,
+                                 arrival_time=0,
+                                 lora_request=None,
+                                 cache_salt=None)
     else:
         return EngineCoreRequest(
             request_id=str(request_id),
@@ -332,7 +330,7 @@ def get_params_test_blocks_borders_aligned_prompts():
             "tkv": 65,
             "waiting": ["2"],
             "running": ["1", "0"],
-            "request_outputs": ["1", "0"]  # Two sequences are decoded
+            "request_outputs": ["1", "0"]
         },
         {
             # Sequence 0 finishes at step 66
@@ -398,7 +396,113 @@ def get_params_test_blocks_borders_aligned_prompts():
     return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps)
 
 
-def augment_checked_steps(checked_steps: list[dict[str, Any]]) -> deque[dict[str,Any]]:
+def get_params_test_blocks_borders_misaligned_prompts():
+    seqs_max_tokens = [57, 67, 9]
+    prompts_lengths = [49, 41, 47]
+    steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0", "1", "2"],
+            "running": [],
+            "request_outputs": []
+        },
+        {
+            "step": 1,  # Prefill sequence 0
+            "tkv": 64,
+            "waiting": ["1", "2"],
+            "running": ["0"],
+            "request_outputs": ["0"]
+        },
+        {
+            "step": 2,  # Prefill sequence 1
+            "tkv": 64,  # Still 64 because this step is also a prefill
+            "waiting": ["2"],
+            "running": ["1", "0"],
+            "request_outputs": ["1"]
+        },
+        {
+            "step": 3,
+            "tkv": 65,  # Two decodes increases the tkv
+            "waiting": ["2"],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"]  # Two sequences are decoded
+        },
+        {
+            "step": 4,  # Check normal decode continuation
+            "tkv": 66,
+            "waiting": ["2"],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"]
+        },
+        {
+            "step": 58,  # Last step before first sequence finishes
+            "tkv": 120,
+            "waiting": ["2"],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"]
+        },
+        {
+            # Sequence 0 finishes at step 59
+            # (start step + 2 prefills + 57 decodes - 1) = 1 + 2 + 57 - 1 = 59
+            "step": 59,
+            "tkv": 121,
+            "waiting": ["2"],
+            "running": ["1"],
+            "request_outputs": ["1", "0"],
+            "finished_requests": ["0"]
+        },
+        {
+            "step": 60,  # Prefill sequence 2
+            "tkv": 121,  # Tkv doesn't increase because it is a prefill
+            "waiting": [],
+            "running": ["2", "1"],
+            "request_outputs": ["2"]
+        },
+        {
+            "step": 61,  # Decode sequences 1 and 2
+            "tkv": 122,
+            "waiting": [],
+            "running": ["2", "1"],
+            "request_outputs": ["2", "1"]
+        },
+        {
+            # Sequence 2 finishes at step 68
+            # (start step + 1 prefill + 8 decodes - 1) = 60 + 1 + 8 - 1 = 68
+            "step": 68,
+            "tkv": 129,
+            "waiting": [],
+            "running": ["1"],
+            "request_outputs": ["2"],
+            "finished_requests": ["2"]
+        },
+        {
+            # Sequence 1 finishes at step 69
+            # (start step + 2 prefills + 66 decodes - 1) = 2 + 2 + 66 - 1 = 69
+            "step": 69,
+            "tkv": 130,
+            "waiting": [],
+            "running": [],
+            "request_outputs": ["1"],
+            "finished_requests": ["1"]
+        },
+        {
+            # Tkv should be cleared one step later
+            "step": 70,  # Decode sequence 2
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": []
+        },
+    ]
+
+    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps)
+
+
+def augment_checked_steps(
+        checked_steps: list[dict[str, Any]]) -> deque[dict[str, Any]]:
     # Augment checked_steps: add in-between normal decode steps
     checked_steps = deque(checked_steps)
     all_checked_steps = deque()
@@ -426,7 +530,7 @@ def augment_checked_steps(checked_steps: list[dict[str, Any]]) -> deque[dict[str
     "seqs_max_tokens,prompts_lengths,steps_add_reqs,checked_steps",
     [
         get_params_test_blocks_borders_aligned_prompts(),
-        # get_params_test_blocks_borders_misaligned_prompts(),  # TODO
+        # get_params_test_blocks_borders_misaligned_prompts(),
 
         # TODO to test additionally at some point:
         # * test additional constraints from the scheduler (e.g prompt too long)
@@ -437,19 +541,23 @@ def augment_checked_steps(checked_steps: list[dict[str, Any]]) -> deque[dict[str
         #     * two sequences finish at the same time
         #     * new prompts arrives when another finishes
     ])
-def test_scheduler_cb_steps_tkv(model: str, backend: str,
+def test_scheduler_cb_steps_tkv(model: str,
+                                backend: str,
                                 monkeypatch: pytest.MonkeyPatch,
-                                max_num_seqs: int, seqs_max_tokens: list[int],
+                                max_num_seqs: int,
+                                seqs_max_tokens: list[int],
                                 prompts_lengths: list[int],
                                 steps_add_reqs: list[int],
                                 checked_steps: list[dict[str, Any]],
-                                auto_check_basic_decode_steps: bool=True):
+                                auto_check_basic_decode_steps: bool = True):
     """
-    Test that the scheduler correctly schedules requests and that the 
-    tkv produced by the model runner is correct at each step.
-    Tested for different scenarios: 
-    * prompts aligning with the boundaries of the blocks, 
-    * prompts misaligning with the boundaries of the blocks
+    Test the scheduler execution by comparing the scheduler attributes at each 
+    step with the provided reference values in 'checked_steps'.
+    
+    If the 'auto_check_basic_decode_steps' argument is set, the missing steps 
+    from 'checked_steps' are automatically generated as decode steps, based on 
+    the existing elements in the list. For that to work, all the prefill steps
+    should be added as well as all the first decode step after a prefill step.
     """
 
     # set env vars
