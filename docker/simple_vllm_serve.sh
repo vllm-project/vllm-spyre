@@ -6,4 +6,4 @@ source /etc/profile.d/ibm-aiu-setup.sh
 # Run `vllm serve` and passthrough all args
 # NB: `exec` is used here to replace the parent process so that signals are
 # handled correctly
-exec vllm serve $@
+exec vllm serve "$@"
