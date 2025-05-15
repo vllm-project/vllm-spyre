@@ -62,3 +62,31 @@
     ```
 
 
+## Debugging using debugpy
+
+`launch.json` content:
+
+```
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python Debugger: local",
+      "type": "debugpy",
+      "request": "attach",
+      "connect": {
+        "host": "localhost",
+        "port": 5678
+      },
+      "justMyCode": false
+    }
+  ]
+}
+
+```
+
+Run using 
+
+```
+python -m debugpy --listen 5678  -m pytest ...
+```
