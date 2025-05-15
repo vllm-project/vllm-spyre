@@ -16,6 +16,13 @@
 # import sys
 # sys.path.insert(0, os.path.abspath('.'))
 
+from pathlib import Path
+import sys
+import os
+
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.append(os.path.abspath(REPO_ROOT))
+
 # -- Project information -----------------------------------------------------
 
 project = 'vllm-spyre'

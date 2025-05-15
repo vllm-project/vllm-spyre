@@ -12,6 +12,6 @@ Spyre builds on the foundation of IBM’s internal AIU research and delivers a s
 
 ## See Also
 
-- <project:./installation.md>
-- <project:../user_guide/configuration.md>
-- <project:../user_guide/supported_features.md>
+- <project:../getting_started/installation.md>
+- <project:./configuration.md>
+- <project:./supported_features.md>
