@@ -316,7 +316,7 @@ def get_params_test_blocks_borders_misaligned_prompts():
         },
         {
             # Tkv should be cleared one step later
-            "step": 70,  # Decode sequence 2
+            "step": 70,
             "tkv": 0,
             "waiting": [],
             "running": [],
