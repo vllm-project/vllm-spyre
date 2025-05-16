@@ -12,7 +12,11 @@
   
     ```sh
    uv sync --frozen --group dev
-   or
+   ```
+  
+or with lint:
+  
+```sh
    uv sync --frozen --group dev --group lint
    ```
 
