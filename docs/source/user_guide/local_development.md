@@ -1,4 +1,8 @@
-# Running tests/debug locally on an M1
+# Local development
+
+You can run the examples and tests locally on a linux or an M1 mac.
+
+## Setup
 
 1. Create a new env
 
@@ -48,7 +52,7 @@
    uv pip install xgrammar==0.1.19
    ```
 
-1. Download model
+1. Download test model (optional)
 
    ```sh
    python -c "from transformers import pipeline; pipeline('text-generation', model='JackFram/llama-160m')"
@@ -72,6 +76,14 @@
     different version of the model using HF API which does not work locally
     on an M1.
 
+1. Run examples
+
+    Note: You will have to change the `model-name` in the example file before running it.
+
+    ```sh
+    HF_HUB_OFFLINE=1 python examples/offline_inference_spyre.py
+    ```
+
 ## Continuous Batching(CB) custom installation
 
 1. Install custom FMS branch for CB:
@@ -85,6 +97,14 @@
    ```sh
    HF_HUB_OFFLINE=1 python -m pytest -v -x tests/e2e -m cb
    ```
+
+1. Run CB example
+
+    Note: You will have to change the `model-name` in the example file before running it.
+
+    ```sh
+    HF_HUB_OFFLINE=1 python examples/offline_inference_spyre_cb.py
+    ```
 
 ## Debugging using debugpy
 
