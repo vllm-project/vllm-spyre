@@ -339,6 +339,9 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         **extra_kwargs,
     ) -> torch.Tensor:
 
+        # import will be not be needed/ handled by FMS soon
+        import fms.utils.aiu.paged  # noqa # pylint: disable=unused-import
+        extra_kwargs['attn_name'] = "aiu_paged_attn"
         output = self.model(
             input_ids,
             position_ids=position_ids,
