@@ -36,7 +36,7 @@ dependency resolution which is required to properly install dependencies like
 
 1. Install `vllm-spyre` locally with dev (and optionally lint) dependencies
   
-   (`--group dev` is enabled by default)
+   __Note: `--group dev` is enabled by default__
 
    ```sh
    uv sync --frozen
