@@ -37,7 +37,7 @@ or with lint:
 
 1. Install xgrammar
    This is needed for testing v1 stuff.
-   version doesn't matter at the moment.
+   Also version doesn't matter at the moment.
 
    ```sh
    uv pip install xgrammar==0.1.19
