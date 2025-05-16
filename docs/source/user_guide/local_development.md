@@ -16,7 +16,7 @@
    uv sync --frozen --group dev
    ```
   
-or with lint:
+    or with lint:
   
 ```sh
    uv sync --frozen --group dev --group lint
