@@ -91,7 +91,7 @@ dependency resolution which is required to properly install dependencies like
    source _local_env.sh
    ```
 
-1. (optional) Install dev dependencies (if spyre was installed in editable mode)
+1. (optional) Install dev dependencies (if spyre was installed without uv)
   
    ```sh
    uv pip install --group dev
