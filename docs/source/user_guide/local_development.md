@@ -22,7 +22,7 @@
    uv sync --frozen --group dev --group lint
    ```
 
-1. Sourcing variables
+1. Sourcing env variables
 
    ```sh
    source _local_env.sh
@@ -51,6 +51,8 @@
    python -c "from transformers import pipeline; pipeline('text-generation', model='JackFram/llama-160m')"
    ```
 
+   Note: Downloading the same model using HF API does not work locally.
+
    Assuming model lands here:
 
    ```sh
@@ -60,19 +62,25 @@
 1. Run tests
   
    ```sh
-   python -m pytest -v -x tests -m "v1 and cpu and e2e"
+   HF_HUB_OFFLINE=1 python -m pytest -v -x tests -m "v1 and cpu and e2e"
     ```
+
+    Note: We have to use `HF_HUB_OFFLINE=1` otherwise vllm tries to download a
+    different version of the model using HF API which does not work locally
+    on an M1.
 
 ## Continuous Batching(CB) custom installation
 
 1. Install custom FMS branch for CB:
 
-   `uv pip install git+https://github.com/foundation-model-stack/foundation-model-stack.git@paged_attn_mock --force-reinstall`
+   ```sh
+   uv pip install git+https://github.com/foundation-model-stack/foundation-model-stack.git@paged_attn_mock --force-reinstall
+   ```
 
 1. Run only CB tests:
 
    ```sh
-   python -m pytest -v -x tests/e2e -m cb
+   HF_HUB_OFFLINE=1 python -m pytest -v -x tests/e2e -m cb
    ```
 
 ## Debugging using debugpy
