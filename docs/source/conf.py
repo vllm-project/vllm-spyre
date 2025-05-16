@@ -16,6 +16,13 @@
 # import sys
 # sys.path.insert(0, os.path.abspath('.'))
 
+import os
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.append(os.path.abspath(REPO_ROOT))
+
 # -- Project information -----------------------------------------------------
 
 project = 'vllm-spyre'
@@ -104,6 +111,37 @@ html_theme_options = {
 # so a file named "default.css" will overwrite the builtin "default.css".
 # html_static_path = ['_static']
 
+myst_heading_anchors = 2
+myst_url_schemes = {
+    'http': None,
+    'https': None,
+    'mailto': None,
+    'ftp': None,
+    "gh-issue": {
+        "url":
+        "https://github.com/vllm-project/vllm-spyre/issues/{{path}}#{{fragment}}",
+        "title": "Issue #{{path}}",
+        "classes": ["github"],
+    },
+    "gh-pr": {
+        "url":
+        "https://github.com/vllm-project/vllm-spyre/pull/{{path}}#{{fragment}}",
+        "title": "Pull Request #{{path}}",
+        "classes": ["github"],
+    },
+    "gh-dir": {
+        "url": "https://github.com/vllm-project/vllm-spyre/tree/main/{{path}}",
+        "title": "{{path}}",
+        "classes": ["github"],
+    },
+    "gh-file": {
+        "url": "https://github.com/vllm-project/vllm-spyre/blob/main/{{path}}",
+        "title": "{{path}}",
+        "classes": ["github"],
+    },
+}
+
 
 def setup(app):
-    pass
+    from docs.source.generate_examples import generate_examples
+    generate_examples()
