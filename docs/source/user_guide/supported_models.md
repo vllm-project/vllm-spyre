@@ -6,8 +6,4 @@ The vLLM Spyre plugin relies on model code implemented by the [Foundation Model 
 | ------------ | --------- |
 | Granite      | ✅        |
 | LLaMA        | ✅        |
-| Bamba        | ✅        |
-| Mistral      | ✅        |
-| Mixtral      | ✅        |
-| GPT-BigCode  | ✅        |
 | RoBERTa      | ✅        |
