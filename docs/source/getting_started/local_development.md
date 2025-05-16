@@ -109,8 +109,11 @@ Note: You will have to change the `model-name` in the example files before
 running it.
 
 ```sh
-python examples/offline_inference_spyre.py
+HF_HUB_OFFLINE=1 python examples/offline_inference_spyre.py
 ```
+
+Note: We have to use `HF_HUB_OFFLINE=1` otherwise vllm tries to download a
+different version of the model using HF API which does not work locally
 
 ## Continuous Batching(CB) custom installation
 
