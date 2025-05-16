@@ -37,6 +37,9 @@
    pip install torch==2.7.0
    ```
 
+   Note: There might be some version resolution errors.
+   Ignore them for now.
+  
 1. Install xgrammar
    (This is needed for testing v1 stuff.
    Also version doesn't matter at the moment.)
