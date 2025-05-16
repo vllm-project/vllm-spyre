@@ -111,6 +111,35 @@ html_theme_options = {
 # so a file named "default.css" will overwrite the builtin "default.css".
 # html_static_path = ['_static']
 
+myst_heading_anchors = 2
+myst_url_schemes = {
+    'http': None,
+    'https': None,
+    'mailto': None,
+    'ftp': None,
+    "gh-issue": {
+        "url":
+        "https://github.com/vllm-project/vllm-spyre/issues/{{path}}#{{fragment}}",
+        "title": "Issue #{{path}}",
+        "classes": ["github"],
+    },
+    "gh-pr": {
+        "url":
+        "https://github.com/vllm-project/vllm-spyre/pull/{{path}}#{{fragment}}",
+        "title": "Pull Request #{{path}}",
+        "classes": ["github"],
+    },
+    "gh-dir": {
+        "url": "https://github.com/vllm-project/vllm-spyre/tree/main/{{path}}",
+        "title": "{{path}}",
+        "classes": ["github"],
+    },
+    "gh-file": {
+        "url": "https://github.com/vllm-project/vllm-spyre/blob/main/{{path}}",
+        "title": "{{path}}",
+        "classes": ["github"],
+    },
+}
 
 def setup(app):
     from docs.source.generate_examples import generate_examples
