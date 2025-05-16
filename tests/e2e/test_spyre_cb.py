@@ -367,23 +367,20 @@ def augment_checked_steps(
         #     * two sequences finish at the same time
         #     * new prompts arrives when another finishes
     ])
-def test_scheduler_cb_steps_tkv(model: str,
-                                backend: str,
+def test_scheduler_cb_steps_tkv(model: str, backend: str,
                                 monkeypatch: pytest.MonkeyPatch,
-                                max_num_seqs: int,
-                                seqs_max_tokens: list[int],
+                                max_num_seqs: int, seqs_max_tokens: list[int],
                                 prompts_lengths: list[int],
                                 steps_add_reqs: list[int],
-                                checked_steps: list[dict[str, Any]],
-                                auto_check_basic_decode_steps: bool = True):
+                                checked_steps: list[dict[str, Any]]):
     """
     Test the scheduler execution by comparing the scheduler attributes at each 
     step with the provided reference values in 'checked_steps'.
     
-    If the 'auto_check_basic_decode_steps' argument is set, the missing steps 
-    from 'checked_steps' are automatically generated as decode steps, based on 
-    the existing elements in the list. For that to work, all the prefill steps
-    should be added as well as all the first decode step after a prefill step.
+    The missing steps from 'checked_steps' are automatically generated as decode
+    steps, based on the existing elements in the list. For that to work, all the
+    prefill steps and the first decode step after them needs be added to 
+    'checked_steps'
     """
 
     # set env vars
@@ -444,9 +441,8 @@ def test_scheduler_cb_steps_tkv(model: str,
                                         sampling_params=sampling_params)
         requests.append((add_step, request))
 
-    # if set, in-between steps are added as normal decode steps
-    if auto_check_basic_decode_steps:
-        checked_steps = augment_checked_steps(checked_steps)
+    # In-between steps are added as normal decode steps
+    checked_steps = augment_checked_steps(checked_steps)
 
     # Run steps, until last step from 'checked_steps' is reached
     request_outputs = []
