@@ -36,8 +36,6 @@ dependency resolution which is required to properly install dependencies like
 
 1. Install `vllm-spyre` locally with dev (and optionally lint) dependencies
   
-   __Note: `--group dev` is enabled by default__
-
    ```sh
    uv sync --frozen
    ```
@@ -47,6 +45,8 @@ dependency resolution which is required to properly install dependencies like
    ```sh
    uv sync --frozen --group lint
    ```
+  
+   > Note: `--group dev` is enabled by default
 
 1. (Optional) Install torch through pip
   
