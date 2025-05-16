@@ -46,7 +46,7 @@ dependency resolution which is required to properly install dependencies like
    uv sync --frozen --group lint
    ```
   
-   > Note: `--group dev` is enabled by default
+   **Note: `--group dev` is enabled by default**
 
 1. (Optional) Install torch through pip
   
