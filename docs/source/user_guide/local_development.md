@@ -12,7 +12,7 @@
 
 1. Install dev (and optionally lint dependencies)
   
-```sh
+    ```sh
    uv sync --frozen --group dev
    or
    uv sync --frozen --group dev --group lint
