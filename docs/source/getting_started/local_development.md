@@ -2,34 +2,50 @@
 
 You can run the examples and tests locally on a linux or an M1 mac.
 
-## Setup
+## Installation
 
+We use the [uv](https://docs.astral.sh/uv/) package manager to manage the
+installation of the plugin and its dependencies. `uv` provides advanced
+dependency resolution which is required to properly install dependencies like
+`vllm` without overwriting critical dependencies like `torch`.
+
+1. Clone vllm-spyre
+
+   ```sh
+   git clone https://github.com/vllm-project/vllm-spyre.git
+   cd vllm-spyre
+   ```
+
+1. Install uv
+  
+   ```sh
+   pip install uv
+   ```
+  
 1. Create a new env
 
    ```sh
    uv venv --python 3.12 --seed
    ```
+
+1. Activate it
   
    ```sh
    source .venv/bin/activate
    ```
 
-1. Install dev (and optionally lint dependencies)
+1. Install vvlm-spyre locally with dev (and optionally lint) dependencies
   
-    ```sh
-   uv sync --frozen --group dev
+   (`--group dev` is enabled by default)
+
+  ```sh
+   uv sync --frozen
    ```
   
-    or with lint:
+   or also with lint:
   
-    ```sh
-   uv sync --frozen --group dev --group lint
-   ```
-
-1. Sourcing env variables
-
    ```sh
-   source _local_env.sh
+   uv sync --frozen --group lint
    ```
 
 1. Install torch through pip
@@ -43,6 +59,8 @@ You can run the examples and tests locally on a linux or an M1 mac.
 
    Note: There might be some version resolution errors.
    Ignore them for now.
+
+### Run tests
   
 1. Install xgrammar
    (This is needed for testing v1 stuff.
@@ -60,28 +78,37 @@ You can run the examples and tests locally on a linux or an M1 mac.
 
    Note: Downloading the same model using HF API does not work locally.
 
-   Assuming model lands here:
+   Assuming the model lands here:
 
    ```sh
    .cache/huggingface/hub/models--JackFram--llama-160m
    ```
 
-### Run tests
-  
-```sh
-HF_HUB_OFFLINE=1 python -m pytest -v -x tests -m "v1 and cpu and e2e"
-```
+1. Source env variables needed for tests
 
-Note: We have to use `HF_HUB_OFFLINE=1` otherwise vllm tries to download a
-different version of the model using HF API which does not work locally
-on an M1.
+   ```sh
+   source _local_env.sh
+   ```
+
+1. (optional) Install dev dependencies (if spyre was installed in editable mode)
+  
+   ```sh
+   uv pip install --group dev
+   ```
+
+1. Run the tests:
+  
+   ```sh
+   python -m pytest -v -x tests -m "v1 and cpu and e2e"
+   ```
 
 ### Run examples
 
-Note: You will have to change the `model-name` in the example file before running it.
+Note: You will have to change the `model-name` in the example files before
+running it.
 
 ```sh
-HF_HUB_OFFLINE=1 python examples/offline_inference_spyre.py
+python examples/offline_inference_spyre.py
 ```
 
 ## Continuous Batching(CB) custom installation

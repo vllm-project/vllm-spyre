@@ -14,3 +14,6 @@ export VLLM_ENABLE_V1_MULTIPROCESSING=0
 export VLLM_SPYRE_TEST_BACKEND_LIST=eager
 export VLLM_SPYRE_TEST_MODEL_LIST="JackFram/llama-160m"
 export VLLM_SPYRE_TEST_MODEL_DIR=""
+# We have to use `HF_HUB_OFFLINE=1` otherwise vllm tries to download a
+# different version of the model using HF API which does not work locally
+export HF_HUB_OFFLINE=1
