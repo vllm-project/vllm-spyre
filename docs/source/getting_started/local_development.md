@@ -48,10 +48,11 @@ dependency resolution which is required to properly install dependencies like
    uv sync --frozen --group lint
    ```
 
-1. Install torch through pip
+1. (Optional) Install torch through pip
   
-   (We can't use uv since pyproject.toml prevents it.
-   Also version doesn't matter at the moment.)
+   This is needed to run examples or tests.
+   We can't use uv since pyproject.toml prevents it.
+   Also version doesn't matter at the moment.
   
    ```sh
    pip install torch==2.7.0
@@ -70,7 +71,7 @@ dependency resolution which is required to properly install dependencies like
    uv pip install xgrammar==0.1.19
    ```
 
-1. Download test model (optional)
+1. Download `JackFram/llama-160m` model for tests (optional)
 
    ```sh
    python -c "from transformers import pipeline; pipeline('text-generation', model='JackFram/llama-160m')"
@@ -78,7 +79,7 @@ dependency resolution which is required to properly install dependencies like
 
    Note: Downloading the same model using HF API does not work locally.
 
-   Assuming the model lands here:
+   We assume the model lands here:
 
    ```sh
    .cache/huggingface/hub/models--JackFram--llama-160m
