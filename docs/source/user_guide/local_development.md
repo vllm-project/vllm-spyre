@@ -1,4 +1,4 @@
-## Running tests/debug locally on an M1
+# Running tests/debug locally on an M1
 
 1. Create a new env
 
@@ -56,7 +56,7 @@
    python -m pytest -v -x tests -m "v1 and cpu and e2e"
     ```
 
-### Continuous Batching(CB) custom installation
+## Continuous Batching(CB) custom installation
 
 1. Install custom FMS branch for CB:
 
