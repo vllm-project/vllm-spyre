@@ -29,6 +29,13 @@ user_guide/supported_models
 :::
 
 :::{toctree}
+:caption: Deploying
+:maxdepth: 1
+deploying/docker
+deploying/k8s
+:::
+
+:::{toctree}
 :caption: Developer Guide
 :maxdepth: 2
 contributing/overview
