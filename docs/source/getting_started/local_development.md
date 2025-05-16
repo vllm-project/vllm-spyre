@@ -1,6 +1,6 @@
 # Local development
 
-You can run the examples and tests locally on a linux or an M1 mac.
+You can run the examples and tests locally on an M1 mac.
 
 ## Installation
 
@@ -117,7 +117,9 @@ different version of the model using HF API which does not work locally
 
 ## Continuous Batching(CB) custom installation
 
-Do this after following all steps for installation above.
+(Temporary section until FMS custom branch is merged to main)
+
+Do this after following all steps for installation and testing above.
 
 1. Install custom FMS branch for CB:
 
