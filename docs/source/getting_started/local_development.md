@@ -66,23 +66,23 @@ You can run the examples and tests locally on a linux or an M1 mac.
    .cache/huggingface/hub/models--JackFram--llama-160m
    ```
 
-1. Run tests
+### Run tests
   
-   ```sh
-   HF_HUB_OFFLINE=1 python -m pytest -v -x tests -m "v1 and cpu and e2e"
-    ```
+```sh
+HF_HUB_OFFLINE=1 python -m pytest -v -x tests -m "v1 and cpu and e2e"
+```
 
-    Note: We have to use `HF_HUB_OFFLINE=1` otherwise vllm tries to download a
-    different version of the model using HF API which does not work locally
-    on an M1.
+Note: We have to use `HF_HUB_OFFLINE=1` otherwise vllm tries to download a
+different version of the model using HF API which does not work locally
+on an M1.
 
-1. Run examples
+### Run examples
 
-    Note: You will have to change the `model-name` in the example file before running it.
+Note: You will have to change the `model-name` in the example file before running it.
 
-    ```sh
-    HF_HUB_OFFLINE=1 python examples/offline_inference_spyre.py
-    ```
+```sh
+HF_HUB_OFFLINE=1 python examples/offline_inference_spyre.py
+```
 
 ## Continuous Batching(CB) custom installation
 
@@ -92,19 +92,19 @@ You can run the examples and tests locally on a linux or an M1 mac.
    uv pip install git+https://github.com/foundation-model-stack/foundation-model-stack.git@paged_attn_mock --force-reinstall
    ```
 
-1. Run only CB tests:
+### Run only CB tests
 
-   ```sh
-   HF_HUB_OFFLINE=1 python -m pytest -v -x tests/e2e -m cb
-   ```
+```sh
+HF_HUB_OFFLINE=1 python -m pytest -v -x tests/e2e -m cb
+```
 
-1. Run CB example
+### Run CB example
 
-    Note: You will have to change the `model-name` in the example file before running it.
+Note: You will have to change the `model-name` in the example file before running it.
 
-    ```sh
-    HF_HUB_OFFLINE=1 python examples/offline_inference_spyre_cb.py
-    ```
+```sh
+HF_HUB_OFFLINE=1 python examples/offline_inference_spyre_cb.py
+```
 
 ## Debugging using debugpy
 
