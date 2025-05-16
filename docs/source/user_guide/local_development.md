@@ -28,22 +28,22 @@ or with lint:
 
 1. Install torch through pip
   
-   We can't use uv since pyproject.toml prevents it.
-   Also version doesn't matter at the moment.
+   (We can't use uv since pyproject.toml prevents it.
+   Also version doesn't matter at the moment.)
   
    ```sh
    pip install torch==2.7.0
    ```
 
 1. Install xgrammar
-   This is needed for testing v1 stuff.
-   Also version doesn't matter at the moment.
+   (This is needed for testing v1 stuff.
+   Also version doesn't matter at the moment.)
 
    ```sh
    uv pip install xgrammar==0.1.19
    ```
 
-1. Install model
+1. Download model
 
    ```sh
    python -c "from transformers import pipeline; pipeline('text-generation', model='JackFram/llama-160m')"
