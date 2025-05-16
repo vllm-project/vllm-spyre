@@ -71,7 +71,7 @@ dependency resolution which is required to properly install dependencies like
    uv pip install xgrammar==0.1.19
    ```
 
-1. Download `JackFram/llama-160m` model for tests (optional)
+2. (optional)  Download `JackFram/llama-160m` model for tests
 
    ```sh
    python -c "from transformers import pipeline; pipeline('text-generation', model='JackFram/llama-160m')"
@@ -85,19 +85,19 @@ dependency resolution which is required to properly install dependencies like
    .cache/huggingface/hub/models--JackFram--llama-160m
    ```
 
-1. Source env variables needed for tests
+3. Source env variables needed for tests
 
    ```sh
    source _local_env.sh
    ```
 
-1. (optional) Install dev dependencies (if spyre was installed without uv)
+4. (optional) Install dev dependencies (if spyre was installed without uv)
   
    ```sh
    uv pip install --group dev
    ```
 
-1. Run the tests:
+5. Run the tests:
   
    ```sh
    python -m pytest -v -x tests -m "v1 and cpu and e2e"
