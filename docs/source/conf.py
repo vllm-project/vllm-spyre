@@ -141,6 +141,7 @@ myst_url_schemes = {
     },
 }
 
+
 def setup(app):
     from docs.source.generate_examples import generate_examples
     generate_examples()
