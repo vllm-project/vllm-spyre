@@ -17,6 +17,7 @@ The vLLM Spyre plugin (`vllm-spyre`) is a dedicated backend extension that enabl
 :caption: Getting Started
 :maxdepth: 1
 installation
+getting_started/local_development
 :::
 
 :::{toctree}
