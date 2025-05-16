@@ -1,5 +1,3 @@
-# Mac
-
 ## Running tests/debug locally on an M1
 
 1. Create a new env
