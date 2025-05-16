@@ -4,7 +4,9 @@
 
    ```sh
    uv venv --python 3.12 --seed
-
+   ```
+  
+   ```sh
    source .venv/bin/activate
    ```
 
