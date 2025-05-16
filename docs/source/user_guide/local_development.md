@@ -23,16 +23,17 @@
    ```
 
 1. Install torch through pip
-   <!-- (can't use uv since pyproject.toml prevents it) -->
-   <!-- version doesn't matter atm -->
-
+  
+   We can't use uv since pyproject.toml prevents it.
+   Also version doesn't matter at the moment.
+  
    ```sh
    pip install torch==2.7.0
    ```
 
 1. Install xgrammar
-   <!-- needed for v1 stuff -->
-   <!-- version doesn't matter atm -->
+   This is needed for testing v1 stuff.
+   version doesn't matter at the moment.
 
    ```sh
    uv pip install xgrammar==0.1.19
