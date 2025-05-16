@@ -114,6 +114,8 @@ python examples/offline_inference_spyre.py
 
 ## Continuous Batching(CB) custom installation
 
+Do this after following all steps for installation above.
+
 1. Install custom FMS branch for CB:
 
    ```sh
