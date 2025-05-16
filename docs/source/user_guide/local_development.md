@@ -18,7 +18,7 @@
   
     or with lint:
   
-```sh
+    ```sh
    uv sync --frozen --group dev --group lint
    ```
 
