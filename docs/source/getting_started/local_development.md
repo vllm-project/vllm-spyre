@@ -34,11 +34,11 @@ dependency resolution which is required to properly install dependencies like
    source .venv/bin/activate
    ```
 
-1. Install vvlm-spyre locally with dev (and optionally lint) dependencies
+1. Install `vllm-spyre` locally with dev (and optionally lint) dependencies
   
    (`--group dev` is enabled by default)
 
-  ```sh
+   ```sh
    uv sync --frozen
    ```
   
