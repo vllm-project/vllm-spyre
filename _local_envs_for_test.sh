@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Env vars to set for CPU only testing
+# Env vars to set for CPU-only testing
 
 # Need to be set for tests to run
 export MASTER_ADDR=localhost

@@ -48,8 +48,8 @@ dependency resolution which is required to properly install dependencies like
 
 1. (Optional) Install torch through pip
   
-   This is needed to run examples or tests.
-   Also version doesn't matter at the moment.
+   If you don't have it installed already. Will be needed
+   for running examples or tests.
   
    ```sh
    pip install torch==2.7.0
