@@ -52,7 +52,7 @@ dependency resolution which is required to properly install dependencies like
    `--group dev` is enabled by default
    :::
 
-2. (Optional) Install torch through pip
+1. (Optional) Install torch through pip
   
    This is needed to run examples or tests.
    We can't use uv since pyproject.toml prevents it.
