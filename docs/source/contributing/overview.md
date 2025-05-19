@@ -84,7 +84,7 @@ Using `-s` with `git commit` will automatically add this header.
    source _local_env.sh
    ```
 
-1. (optional) Install dev dependencies (if vllm-spyre was installed without uv)
+1. (optional) Install dev dependencies (if vllm-spyre was installed without them)
   
    ```sh
    uv pip install --group dev
@@ -96,7 +96,7 @@ Using `-s` with `git commit` will automatically add this header.
    python -m pytest -v -x tests -m "v1 and cpu and e2e"
    ```
 
-### Continuous Batching (CB)
+### Continuous Batching Tests (CB)
 
 :::{attention}
 Temporary section until FMS custom branch is merged to main
@@ -146,5 +146,5 @@ We can debug using `debugpy` in VS code.
 Run using
 
 ```sh
-python -m debugpy --listen 5678  -m pytest ...
+python -m debugpy --listen 5678  -m ...
 ```
