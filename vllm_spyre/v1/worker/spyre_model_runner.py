@@ -575,10 +575,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         assert max_batch_size >= 2, "Currently, continuous batching needs " \
             "config to set batch_size >= 2"
 
-        self.block_size = vllm_config.cache_config.block_size
+        self.block_size = 64
         NUM_BLOCKS = max_batch_size * max_model_len // self.block_size  # 64
 
-        # TO DO: move to InputBatch
+        # TODO: move to a KV cache manager 
         self.req_ids2blocks: dict[str, deque[int]] = {}
         # self.req_ids2left_pads: dict[str, int] = {}
         self.tkv = 0

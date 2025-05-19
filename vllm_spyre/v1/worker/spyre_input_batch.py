@@ -174,8 +174,6 @@ class InputBatch:
         # Keep tracking of number of requests
         self._num_requests = 0
 
-        self.req_ids2blocks: dict[str, deque[int]] = {}
-        self.req_ids2left_pads: dict[str, int] = {}
 
     @property
     def req_ids(self) -> list[str]:
