@@ -67,7 +67,7 @@ dependency resolution which is required to properly install dependencies like
   
 1. (arm64 only) Install xgrammar
    (This is needed for testing v1 stuff for local testing on M1 mac.
-   It's installed on x86_64 automaticaly.
+   It's installed on x86_64 automatically.
    Also version doesn't matter at the moment.)
 
    ```sh
