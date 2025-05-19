@@ -10,6 +10,8 @@ from spyre_util import (compare_results, generate_hf_output,
 from vllm import SamplingParams
 
 
+# temporary for filtering until bug with caching gets fixed
+@pytest.mark.compile_cache_failing
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("prompts", [
     7 * [
