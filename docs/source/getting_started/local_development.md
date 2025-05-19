@@ -48,7 +48,7 @@ dependency resolution which is required to properly install dependencies like
    uv sync --frozen --group lint
    ```
 
-   :::{note}
+   :::{tip}
    `--group dev` is enabled by default
    :::
 
@@ -65,16 +65,14 @@ dependency resolution which is required to properly install dependencies like
    :::{note}
    There might be some version resolution errors.
    Ignore them for now.
-:::
+   :::
 
 ### Run tests
   
 1. (arm64 only) Install xgrammar
-   (This is needed for testing v1 stuff for local testing on arm64 machines.
   
-   :::{note}
+   :::{tip}
    It's installed for x86_64 automatically.
-   Also version doesn't matter at the moment.
    :::
 
    ```sh
@@ -87,7 +85,7 @@ dependency resolution which is required to properly install dependencies like
    python -c "from transformers import pipeline; pipeline('text-generation', model='JackFram/llama-160m')"
    ```
 
-   :::{note}
+   :::{caution}
    Downloading the same model using HF API does not work locally on `arm64`.
    :::
 
@@ -121,22 +119,20 @@ dependency resolution which is required to properly install dependencies like
 
 ### Run examples
 
-:::{note}
-Make sure `model name` aligns with the model that you downloaded
-:::
-
 ```sh
 HF_HUB_OFFLINE=1 python examples/offline_inference_spyre.py
 ```
 
-:::{note}
+:::{caution}
 We use `HF_HUB_OFFLINE=1` otherwise vllm tries to download a
 different version of the model using HF API which might not work locally.
 :::
 
 ## Continuous Batching(CB) custom installation
 
-(Temporary section until FMS custom branch is merged to main)
+:::{important}
+Temporary section until FMS custom branch is merged to main
+:::
 
 Do this after following all steps for installation and testing above.
 
@@ -153,10 +149,6 @@ HF_HUB_OFFLINE=1 python -m pytest -v -x tests/e2e -m cb
 ```
 
 ### Run CB example
-
-:::{note}
-Make sure `model name` aligns with the model that you downloaded
-:::
 
 ```sh
 HF_HUB_OFFLINE=1 python examples/offline_inference_spyre_cb.py
