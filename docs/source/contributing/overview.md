@@ -81,8 +81,11 @@ Using `-s` with `git commit` will automatically add this header.
 1. Source env variables needed for tests
 
    ```sh
-   source _local_env.sh
+   source _local_envs_for_test.sh
    ```
+
+   ```{literalinclude} ../../../vllm_spyre/_local_envs_for_test.sh
+    ```
 
 1. (optional) Install dev dependencies (if vllm-spyre was installed without them)
   
