@@ -61,16 +61,21 @@ dependency resolution which is required to properly install dependencies like
    ```sh
    pip install torch==2.7.0
    ```
-
-   Note: There might be some version resolution errors.
+  
+   :::{note}
+   There might be some version resolution errors.
    Ignore them for now.
+:::
 
 ### Run tests
   
 1. (arm64 only) Install xgrammar
    (This is needed for testing v1 stuff for local testing on arm64 machines.
+  
+   :::{note}
    It's installed for x86_64 automatically.
-   Also version doesn't matter at the moment.)
+   Also version doesn't matter at the moment.
+   :::
 
    ```sh
    uv pip install xgrammar==0.1.19
@@ -82,27 +87,33 @@ dependency resolution which is required to properly install dependencies like
    python -c "from transformers import pipeline; pipeline('text-generation', model='JackFram/llama-160m')"
    ```
 
-   Note: Downloading the same model using HF API does not work locally.
+   :::{note}
+   Downloading the same model using HF API does not work locally on `arm64`.
+   :::
 
+   :::{tip}
+   :class: dropdown
    We assume the model lands here:
 
    ```sh
    .cache/huggingface/hub/models--JackFram--llama-160m
    ```
+  
+:::
 
-3. Source env variables needed for tests
+1. Source env variables needed for tests
 
    ```sh
    source _local_env.sh
    ```
 
-4. (optional) Install dev dependencies (if spyre was installed without uv)
+2. (optional) Install dev dependencies (if spyre was installed without uv)
   
    ```sh
    uv pip install --group dev
    ```
 
-5. Run the tests:
+3. Run the tests:
   
    ```sh
    python -m pytest -v -x tests -m "v1 and cpu and e2e"
@@ -110,14 +121,18 @@ dependency resolution which is required to properly install dependencies like
 
 ### Run examples
 
-Note: Make sure `model name` aligns with the model that you downloaded
+:::{note}
+Make sure `model name` aligns with the model that you downloaded
+:::
 
 ```sh
 HF_HUB_OFFLINE=1 python examples/offline_inference_spyre.py
 ```
 
-Note: We use `HF_HUB_OFFLINE=1` otherwise vllm tries to download a
+:::{note}
+We use `HF_HUB_OFFLINE=1` otherwise vllm tries to download a
 different version of the model using HF API which might not work locally.
+:::
 
 ## Continuous Batching(CB) custom installation
 
@@ -139,7 +154,9 @@ HF_HUB_OFFLINE=1 python -m pytest -v -x tests/e2e -m cb
 
 ### Run CB example
 
-Note: You will have to change the `model-name` in the example file before running it.
+:::{note}
+Make sure `model name` aligns with the model that you downloaded
+:::
 
 ```sh
 HF_HUB_OFFLINE=1 python examples/offline_inference_spyre_cb.py
