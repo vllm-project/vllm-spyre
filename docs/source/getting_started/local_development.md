@@ -125,16 +125,17 @@ HF_HUB_OFFLINE=1 python examples/offline_inference_spyre.py
 
 :::{caution}
 We use `HF_HUB_OFFLINE=1` otherwise vllm tries to download a
-different version of the model using HF API which might not work locally.
+different version of the model using HF API which might not work locally on
+`arm64`.
 :::
 
 ## Continuous Batching(CB) custom installation
 
-:::{important}
+:::{attention}
 Temporary section until FMS custom branch is merged to main
 :::
 
-Do this after following all steps for installation and testing above.
+After following all steps for installation and testing above,
 
 1. Install custom FMS branch for CB:
 
