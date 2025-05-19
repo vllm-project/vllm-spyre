@@ -12,8 +12,9 @@ from vllm.sampling_params import SamplingType
 from vllm.utils import is_pin_memory_available
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.outputs import SamplerOutput
+from vllm.forward_context import set_forward_context
 
-from vllm_spyre.model_executor.model_loader.spyre import SpyreCausalLM
+from vllm_spyre.model_executor.model_loader.spyre import SpyreCausalLM, SpyreAttentionMetadata
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_input_batch import (CachedRequestState,
                                                     InputBatch)
@@ -595,6 +596,42 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             pin_memory=self.pin_memory,
             vocab_size=vllm_config.model_config.get_vocab_size(),
         )
+        
+    def _mark_input_tensors(self, model_input: ModelForwardInputs) -> None:
+        # Marking dimensions static/dynamic
+        if model_input.is_prompt:
+
+            # batch static (batch size 1)
+            torch._dynamo.mark_static(model_input.input_tokens, 0)
+            torch._dynamo.mark_static(model_input.slot_mapping, 0)
+            torch._dynamo.mark_static(model_input.input_positions, 0)
+            torch._dynamo.mark_static(model_input.input_masks, 0)
+
+            # sequence dynamic
+            torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
+            torch._dynamo.mark_dynamic(model_input.slot_mapping, 1)
+            torch._dynamo.mark_dynamic(model_input.input_positions, 1)
+            torch._dynamo.mark_dynamic(model_input.input_masks, 2)
+            torch._dynamo.mark_dynamic(model_input.input_masks, 3)
+
+        # decode
+        else:
+            # mask is no longer used here
+
+            # batch dynamic
+            torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
+            torch._dynamo.mark_dynamic(model_input.block_table, 0)
+            torch._dynamo.mark_dynamic(model_input.slot_mapping, 0)
+            torch._dynamo.mark_dynamic(model_input.input_positions, 0)
+            torch._dynamo.mark_dynamic(model_input.current_tkv_mask, 0)
+            torch._dynamo.mark_dynamic(model_input.left_padded_prompt_mask, 0)
+
+            # sequence
+            torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
+            torch._dynamo.mark_dynamic(model_input.block_table, 1)
+            torch._dynamo.mark_static(model_input.slot_mapping, 1)  # always 1
+            torch._dynamo.mark_static(model_input.input_positions,
+                                      1)  # always 1
 
     def _update_states(self, scheduler_output):
 
@@ -898,7 +935,20 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             model_inputs = \
                 self._prepare_decode(scheduler_output.scheduled_cached_reqs)
 
+        self._mark_input_tensors(model_inputs)
         return model_inputs
+    
+    def build_attn_metadata(self, model_input: ModelForwardInputs) -> SpyreAttentionMetadata:
+        
+        # TODO: probably we can remove some fields of the model input and
+        # update only the SpyreAttentionMetadata
+        attn_metadata = SpyreAttentionMetadata(
+            slot_mapping=model_input.slot_mapping,
+            current_tkv_mask=model_input.current_tkv_mask,
+            left_padded_prompt_mask=model_input.left_padded_prompt_mask,
+            block_table=model_input.block_table
+        )
+        return attn_metadata
 
     @SpyrePlatform.inference_mode()
     def execute_model(
@@ -927,52 +977,20 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         model_input = self.prepare_model_input(scheduler_output)
 
-        # Marking dimensions static/dynamic
-        if model_input.is_prompt:
-
-            # batch static (batch size 1)
-            torch._dynamo.mark_static(model_input.input_tokens, 0)
-            torch._dynamo.mark_static(model_input.slot_mapping, 0)
-            torch._dynamo.mark_static(model_input.input_positions, 0)
-            torch._dynamo.mark_static(model_input.input_masks, 0)
-
-            # sequence dynamic
-            torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
-            torch._dynamo.mark_dynamic(model_input.slot_mapping, 1)
-            torch._dynamo.mark_dynamic(model_input.input_positions, 1)
-            torch._dynamo.mark_dynamic(model_input.input_masks, 2)
-            torch._dynamo.mark_dynamic(model_input.input_masks, 3)
-
-        # decode
-        else:
-            # mask is no longer used here
-
-            # batch dynamic
-            torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
-            torch._dynamo.mark_dynamic(model_input.block_table, 0)
-            torch._dynamo.mark_dynamic(model_input.slot_mapping, 0)
-            torch._dynamo.mark_dynamic(model_input.input_positions, 0)
-            torch._dynamo.mark_dynamic(model_input.current_tkv_mask, 0)
-            torch._dynamo.mark_dynamic(model_input.left_padded_prompt_mask, 0)
-
-            # sequence
-            torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
-            torch._dynamo.mark_dynamic(model_input.block_table, 1)
-            torch._dynamo.mark_static(model_input.slot_mapping, 1)  # always 1
-            torch._dynamo.mark_static(model_input.input_positions,
-                                      1)  # always 1
-
         # Execute the model
-        hidden_states = self.model(
-            input_ids=model_input.input_tokens,
-            positions=model_input.input_positions,
-            masks=model_input.input_masks,
-            is_prompt=model_input.is_prompt,
-            current_tkv_mask=model_input.current_tkv_mask,
-            left_padded_prompt_mask=model_input.left_padded_prompt_mask,
-            block_table=model_input.block_table,
-            slot_mapping=model_input.slot_mapping)
-
+        attn_metadata = self.build_attn_metadata(model_input)
+        with set_forward_context(attn_metadata, self.vllm_config):
+#             current_tkv_mask=model_input.current_tkv_mask,
+#             left_padded_prompt_mask=model_input.left_padded_prompt_mask,
+#             block_table=model_input.block_table,
+#             slot_mapping=model_input.slot_mapping)
+            hidden_states = self.model(
+                input_ids=model_input.input_tokens,
+                positions=model_input.input_positions,
+                masks=model_input.input_masks,
+                is_prompt=model_input.is_prompt)
+        
+        
         # Only perform sampling in the driver worker.
         if not self.is_driver_worker:
             return []
