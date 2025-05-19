@@ -13,12 +13,10 @@ max_tokens3 = 7
 max_num_seqs = 2  # defines max batch size
 
 if platform.machine() == "arm64":
-    print(
-        "Detected arm64 running environment. "
-        "Setting HF_HUB_OFFLINE=1 otherwise vllm tries to download a "
-        "different version of the model using HF API which might not work "
-        "locally on arm64."
-    )
+    print("Detected arm64 running environment. "
+          "Setting HF_HUB_OFFLINE=1 otherwise vllm tries to download a "
+          "different version of the model using HF API which might not work "
+          "locally on arm64.")
     os.environ["HF_HUB_OFFLINE"] = "1"
 
 # defining here to be able to run/debug directly from VSC (not via terminal)
