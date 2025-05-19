@@ -47,10 +47,12 @@ dependency resolution which is required to properly install dependencies like
    ```sh
    uv sync --frozen --group lint
    ```
-  
-   **Note: `--group dev` is enabled by default**
 
-1. (Optional) Install torch through pip
+   :::{note}
+   `--group dev` is enabled by default
+   :::
+
+2. (Optional) Install torch through pip
   
    This is needed to run examples or tests.
    We can't use uv since pyproject.toml prevents it.
@@ -66,8 +68,8 @@ dependency resolution which is required to properly install dependencies like
 ### Run tests
   
 1. (arm64 only) Install xgrammar
-   (This is needed for testing v1 stuff for local testing on M1 mac.
-   It's installed on x86_64 automatically.
+   (This is needed for testing v1 stuff for local testing on arm64 machines.
+   It's installed for x86_64 automatically.
    Also version doesn't matter at the moment.)
 
    ```sh
@@ -109,7 +111,6 @@ dependency resolution which is required to properly install dependencies like
 ### Run examples
 
 Note: Make sure `model name` aligns with the model that you downloaded
-in the previous stepin the example files before running it.
 
 ```sh
 HF_HUB_OFFLINE=1 python examples/offline_inference_spyre.py
