@@ -59,8 +59,3 @@ dependency resolution which is required to properly install dependencies like
    ```sh
    pip install torch==2.7.0
    ```
-  
-   :::{note}
-   There might be some version resolution errors.
-   Ignore them for now.
-   :::
