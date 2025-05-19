@@ -1,6 +1,8 @@
 # Local Development
 
-You can run the examples and tests locally on an M1 mac.
+This document describes how to install and configure vllm-spyre for local
+development without a spyre card. It has been tested on `arm64` (M1 chip)
+and `x86_64` machines.
 
 ## Installation
 
@@ -25,7 +27,7 @@ dependency resolution which is required to properly install dependencies like
 1. Create a new env
 
    ```sh
-   uv venv --python 3.12 --seed
+   uv venv --python 3.12 --seed .venv
    ```
 
 1. Activate it
@@ -37,7 +39,7 @@ dependency resolution which is required to properly install dependencies like
 1. Install `vllm-spyre` locally with dev (and optionally lint) dependencies
   
    ```sh
-   uv sync --frozen
+   uv sync --frozen --active
    ```
   
    or also with lint:
@@ -63,8 +65,9 @@ dependency resolution which is required to properly install dependencies like
 
 ### Run tests
   
-1. Install xgrammar
-   (This is needed for testing v1 stuff.
+1. (arm64 only) Install xgrammar
+   (This is needed for testing v1 stuff for local testing on M1 mac.
+   It's installed on x86_64 automaticaly.
    Also version doesn't matter at the moment.)
 
    ```sh
@@ -105,15 +108,15 @@ dependency resolution which is required to properly install dependencies like
 
 ### Run examples
 
-Note: You will have to change the `model-name` in the example files before
-running it.
+Note: Make sure `model name` aligns with the model that you downloaded
+in the previous stepin the example files before running it.
 
 ```sh
 HF_HUB_OFFLINE=1 python examples/offline_inference_spyre.py
 ```
 
-Note: We have to use `HF_HUB_OFFLINE=1` otherwise vllm tries to download a
-different version of the model using HF API which does not work locally
+Note: We use `HF_HUB_OFFLINE=1` otherwise vllm tries to download a
+different version of the model using HF API which might not work locally.
 
 ## Continuous Batching(CB) custom installation
 
