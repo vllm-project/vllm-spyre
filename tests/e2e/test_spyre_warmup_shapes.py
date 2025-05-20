@@ -34,6 +34,7 @@ def test_output(
     warmup_shapes: list[tuple[int, int, int]],
     backend: str,
     vllm_version: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     '''
     The warmup is based on two shapes, that 'overlap' each
@@ -54,6 +55,8 @@ def test_output(
     test using 'pytest --capture=no tests/spyre/test_spyre_warmup_shapes.py'
     After debugging, DISABLE_ASSERTS should be reset to 'False'.
     '''
+    # temporary until bug with caching gets fixed
+    monkeypatch.setenv("TORCH_SENDNN_CACHE_ENABLE", "0")
 
     max_new_tokens = max([t[1] for t in warmup_shapes])
 
