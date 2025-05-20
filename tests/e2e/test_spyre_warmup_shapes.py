@@ -3,8 +3,6 @@
 Run `python -m pytest tests/test_spyre_warmup_shapes.py`.
 """
 
-import os
-
 import pytest
 from spyre_util import (compare_results, generate_hf_output,
                         generate_spyre_vllm_output, get_spyre_backend_list,
@@ -12,10 +10,6 @@ from spyre_util import (compare_results, generate_hf_output,
 from vllm import SamplingParams
 
 
-# temporary for filtering until bug with caching gets fixed
-@pytest.mark.skipif(
-    os.environ.get("TORCH_SENDNN_CACHE_ENABLE") == "1",
-    reason="torch_sendnn caching is currently broken with this configuration")
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("prompts", [
     7 * [
@@ -40,6 +34,7 @@ def test_output(
     warmup_shapes: list[tuple[int, int, int]],
     backend: str,
     vllm_version: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     '''
     The warmup is based on two shapes, that 'overlap' each
@@ -60,6 +55,8 @@ def test_output(
     test using 'pytest --capture=no tests/spyre/test_spyre_warmup_shapes.py'
     After debugging, DISABLE_ASSERTS should be reset to 'False'.
     '''
+    # temporary until bug with caching gets fixed
+    monkeypatch.setenv("TORCH_SENDNN_CACHE_ENABLE", "0")
 
     max_new_tokens = max([t[1] for t in warmup_shapes])
 
