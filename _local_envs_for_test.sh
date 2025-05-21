@@ -9,7 +9,7 @@ export MASTER_PORT=29500
 # Run on CPU
 export VLLM_SPYRE_DYNAMO_BACKEND=eager
 
-# TODO: doesn't work with MP enabled?
+# TODO: Tests don't work on CPU with MP enabled?
 export VLLM_ENABLE_V1_MULTIPROCESSING=0
 
 # Test related
