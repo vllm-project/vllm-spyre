@@ -424,11 +424,17 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
     ) -> tuple[torch.Tensor, Optional[list[tuple[torch.Tensor,
                                                  torch.Tensor]]]]:
 
+        # For AIU, we should not assign attn_algorithm
+        extra_kargs = {}
+        if attn_algorithm is not None:
+            extra_kargs['attn_algorithm'] = attn_algorithm
+        
         return self.model.model.model(
-            input_ids,
-            mask=mask,
-            position_ids=position_ids,
-            past_key_value_states=past_key_value_states,
-            use_cache=use_cache,
-            only_last_token=only_last_token,
-            attn_algorithm=attn_algorithm)
+                input_ids,
+                mask=mask,
+                position_ids=position_ids,
+                past_key_value_states=past_key_value_states,
+                use_cache=use_cache,
+                only_last_token=only_last_token,
+                **extra_kargs)
+            
