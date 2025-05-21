@@ -33,13 +33,13 @@ dependency resolution which is required to properly install dependencies like
 1. Install `vllm-spyre` locally with dev (and optionally lint) dependencies
   
    ```sh
-   uv sync --frozen --active
+   uv sync --frozen --active --inexact
    ```
   
    or also with lint:
   
    ```sh
-   uv sync --frozen --group lint
+   uv sync --frozen --active --inexact --group lint
    ```
 
    :::{tip}
