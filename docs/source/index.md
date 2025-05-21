@@ -16,7 +16,9 @@ The vLLM Spyre plugin (`vllm-spyre`) is a dedicated backend extension that enabl
 :::{toctree}
 :caption: Getting Started
 :maxdepth: 1
-installation
+getting_started/spyre_overview
+getting_started/installation
+getting_started/examples/examples_index
 :::
 
 :::{toctree}
