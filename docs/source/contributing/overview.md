@@ -11,7 +11,7 @@ You can install the linting requirements using either `uv` or `pip`.
 Using `uv`:
 
 ```bash
-uv sync --frozen --group lint
+uv sync --frozen --group lint --active --inexact
 ```
 
 Using `pip`:
