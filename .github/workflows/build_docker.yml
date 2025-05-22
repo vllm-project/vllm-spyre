@@ -22,7 +22,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CACHE_IMAGE: "ghcr.io/vllm-project/vllm-spyre:build-cache"
-      CACHE_REGISTRY: "ghcr.io"
       QUAY_REPOSITORY: "quay.io/ibm-aiu/vllm-spyre"
 
     permissions:
