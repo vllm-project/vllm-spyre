@@ -14,7 +14,7 @@ These images contain an install of the `torch` package. The specific version ins
 
 ## Using community built images
 
-Community maintained images are also [available on quay](https://quay.io/repository/ibm-aiu/vllm-spyre?tab=tags), the latest x86 build is `quay.io/ibm-aiu/vllm-spyre:latest.x86_64`.
+Community maintained images are also [available on quay](https://quay.io/repository/ibm-aiu/vllm-spyre?tab=tags), the latest x86 build is `quay.io/ibm-aiu/vllm-spyre:latest.amd64`.
 
 :::{caution}
 These images are provided as a reference and come with no support guarantees.

@@ -82,8 +82,8 @@ jobs:
         images: |
           ${{ env.QUAY_REPOSITORY }}
         tags: |
-          type=raw,value=latest.x86_64
-          type=semver,pattern={{version}}.x86_64
+          type=raw,value=latest.amd64
+          type=semver,pattern={{version}}.amd64
 
     - name: "Build and push"
       uses: docker/build-push-action@v5
