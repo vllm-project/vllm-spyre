@@ -49,7 +49,7 @@ The vLLM Documentation on [Deploying with Kubernetes](https://docs.vllm.ai/en/la
         token: "REPLACE_WITH_TOKEN"
       ```
 
-2. Create a deployment and service for the model you want to deploy. This example demonstrates how to deploy ibm-granite/granite-3.3-8b-instruct.
+2. Create a deployment and service for the model you want to deploy. This example demonstrates how to deploy `ibm-granite/granite-3.3-8b-instruct`.
 
       ```yaml
       apiVersion: apps/v1
