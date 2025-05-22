@@ -13,9 +13,7 @@ on:
     paths:
       - "**/*.py"
       - pyproject.toml
-      # TODO: rename ruff.json
       - .github/workflows/matchers/ruff.json
-      # TODO: underscore or dash to separate words in file names?
       - .github/workflows/lint_code.yml
 
 jobs:
