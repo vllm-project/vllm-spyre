@@ -280,6 +280,9 @@ class SpyrePlatform(Platform):
     @classmethod
     def maybe_update_max_tokens(self, prompt_len: int,
                                 default_max_tokens: int) -> int:
+        if self._warmup_shapes is None:
+            return default_max_tokens
+        
         max_new_tokens = 1
         for shape in self._warmup_shapes:
             if prompt_len <= shape['prompt_length']:
