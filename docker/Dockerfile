@@ -1,6 +1,6 @@
 # This is a reference dockerfile for vLLM Spyre support on an x86 host
-ARG BASE_IMAGE_URL="quay.io/wxpe/e2e_stable"
-ARG BASE_IMAGE_TAG="x86-dd2-2025_05_08"
+ARG BASE_IMAGE_URL="quay.io/ibm-aiu/base"
+ARG BASE_IMAGE_TAG="2025_05_15.x86_64"
 
 ##############################################
 # Base
