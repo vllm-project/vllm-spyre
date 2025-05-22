@@ -6,15 +6,11 @@ on:
       - "main"
     paths:
       - '.github/workflows/*.ya?ml'
-      - '.github/workflows/actionlint.*'
-      - '.github/workflows/matchers/actionlint.json'
   pull_request:
     branches:
       - "main"
     paths:
       - '.github/workflows/*.ya?ml'
-      - '.github/workflows/actionlint.*'
-      - '.github/workflows/matchers/actionlint.json'
 
 env:
   LC_ALL: en_US.UTF-8
@@ -36,6 +32,8 @@ jobs:
           fetch-depth: 0
 
       - name: "Run actionlint"
-        run: |
-          echo "::add-matcher::.github/workflows/matchers/actionlint.json"
-          tools/lint_actions.sh -color
+        uses: raven-actions/actionlint@v2
+        with:
+          matcher: true
+          cache: false
+          fail-on-error: false
