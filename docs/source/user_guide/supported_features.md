@@ -2,7 +2,6 @@
 
 This table summarize the status of features on Spyre. By default, those features are planned to be developed using vLLM engine V1.
 
-
 | Feature                       | Status | Note |
 |-------------------------------|--------|------|
 | Chunked Prefill               |   📅   |      |
