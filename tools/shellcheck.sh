@@ -18,5 +18,8 @@ if ! [ -x "$(command -v shellcheck)" ]; then
     export PATH="$PATH:$(pwd)/shellcheck-${scversion}"
 fi
 
-# TODO - fix warnings in .buildkite/run-amd-test.sh
-find . -name "*.sh" -not -path "./.buildkite/run-amd-test.sh" -not -path "./.venv/*" -print0 | xargs -0 -I {} sh -c 'git check-ignore -q "{}" || shellcheck "{}"'
+# Lists all files currently tracked by Git
+# outputs results separated by a null character
+# matches any filename ending with .sh
+# run shellcheck on every .sh file tracked by Git.
+git ls-files -z | grep -z '\.sh$' | xargs -0 -n 1 shellcheck
