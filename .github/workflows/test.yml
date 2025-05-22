@@ -68,7 +68,7 @@ jobs:
           fetch-depth: 1
 
       - name: "Test action lint, TODO: remove"
-        run: echo "Checking commit '${{ github.event.head_commit.message })'*
+        run: echo "Checking commit '${{ github.event.head_commit.message })'"
 
       - name: "Install PyTorch"
         run: |

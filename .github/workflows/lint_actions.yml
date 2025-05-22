@@ -36,4 +36,4 @@ jobs:
         with:
           matcher: true
           cache: false
-          fail-on-error: false
+          fail-on-error: true
