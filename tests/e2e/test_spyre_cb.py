@@ -131,6 +131,7 @@ def get_params_test_blocks_borders_aligned_prompts():
     seqs_max_tokens = [65, 67, 7]
     prompts_lengths = [49, 41, 47]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
+    max_model_len = 2048
 
     checked_steps = [
         {
@@ -222,7 +223,8 @@ def get_params_test_blocks_borders_aligned_prompts():
         }
     ]
 
-    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps)
+    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
+            max_model_len)
 
 
 def get_params_test_blocks_borders_misaligned_prompts():
@@ -233,6 +235,7 @@ def get_params_test_blocks_borders_misaligned_prompts():
     seqs_max_tokens = [57, 67, 9]
     prompts_lengths = [49, 41, 47]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
+    max_model_len = 2048
 
     checked_steps = [
         {
@@ -324,15 +327,17 @@ def get_params_test_blocks_borders_misaligned_prompts():
         },
     ]
 
-    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps)
+    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
+            max_model_len)
 
 
 def get_params_test_scheduler_constraints_tkv():
     """ Scenario where the requested prompt is too long for current tkv value"""
-    
+
     seqs_max_tokens = [57, 67]
     prompts_lengths = [49, 70]
     steps_add_reqs = [0, 0]
+    max_model_len = 2048
 
     checked_steps = [
         {
@@ -343,7 +348,7 @@ def get_params_test_scheduler_constraints_tkv():
             "request_outputs": []
         },
         {
-            "step": 1,  # Prefill sequence 0
+            "step": 1,
             "tkv": 64,
             "waiting": ["1"],
             "running": ["0"],
@@ -412,7 +417,117 @@ def get_params_test_scheduler_constraints_tkv():
         },
     ]
 
-    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps)
+    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
+            max_model_len)
+
+
+def get_params_test_scheduler_constraints_max_prompt_len():
+    """ Scenario where the request goes beyond max_model_len """
+
+    seqs_max_tokens = [67, 57, 80]
+    prompts_lengths = [70, 49, 41]
+    steps_add_reqs = [0, 0, 0]
+    max_model_len = 256
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0", "1", "2"],
+            "running": [],
+            "request_outputs": []
+        },
+        {
+            # Prefill sequence 0
+            "step": 1,
+            "tkv": 128,
+            "waiting": ["1", "2"],
+            "running": ["0"],
+            "request_outputs": ["0"]
+        },
+        {
+            # Prefill sequence 1
+            "step": 2,
+            "tkv": 128,
+            "waiting": ["2"],
+            "running": ["1", "0"],
+            "request_outputs": ["1"]
+        },
+        {
+            # Decode sequences 0 and 1
+            "step": 3,
+            "tkv": 129,
+            "waiting": ["2"],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"]
+        },
+        {
+            # Sequence 1 finishes at step 58
+            # (start step + 1 prefills + 56 decodes - 1) = 2 + 1 + 56 - 1 = 58
+            "step": 58,
+            "tkv": 184,
+            "waiting": ["2"],
+            "running": ["0"],
+            "request_outputs": ["1", "0"],
+            "finished_requests": ["1"]
+        },
+        {
+            # Decode sequence 0
+            # Cannot decode sequence 2: 185 + 80 = 265 > 256
+            "step": 59,
+            "tkv": 185,
+            "waiting": ["2"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+        },
+        {
+            # Sequence 0 finishes at step 68
+            # (start step + 2 prefills + 66 decodes - 1) = 1 + 2 + 66 - 1 = 68
+            "step": 68,
+            "tkv": 194,
+            "waiting": ["2"],
+            "running": [],
+            "request_outputs": ["0"],
+            "finished_requests": ["0"]
+        },
+        {
+            # Prefill sequence 2
+            "step": 69,
+            "tkv": 64,
+            "waiting": [],
+            "running": ["2"],
+            "request_outputs": ["2"],
+        },
+        {
+            # Decode sequence 2
+            "step": 70,
+            "tkv": 65,
+            "waiting": [],
+            "running": ["2"],
+            "request_outputs": ["2"],
+        },
+        {
+            # Sequence 2 finishes at step 148
+            # (start step + 1 prefill + 79 decodes - 1) = 69 + 1 + 79 - 1 = 148
+            "step": 148,
+            "tkv": 143,
+            "waiting": [],
+            "running": [],
+            "request_outputs": ["2"],
+            "finished_requests": ["2"]
+        },
+        {
+            # Tkv should be cleared one step later
+            "step": 149,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": []
+        },
+    ]
+
+    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
+            max_model_len)
 
 
 def augment_checked_steps(
@@ -441,27 +556,26 @@ def augment_checked_steps(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize(
-    "seqs_max_tokens,prompts_lengths,steps_add_reqs,checked_steps",
+    "seqs_max_tokens,prompts_lengths,steps_add_reqs,checked_steps,"
+    "max_model_len",
     [
         get_params_test_blocks_borders_aligned_prompts(),
         get_params_test_blocks_borders_misaligned_prompts(),
         get_params_test_scheduler_constraints_tkv(),
+        get_params_test_scheduler_constraints_max_prompt_len(),
 
         # TODO to test additionally at some point:
-        # * test additional constraints from the scheduler (e.g prompt too long)
         # * test stripping repeated left padding
-        # * test what happens when tkv comes to the end of 2048 block
         # * test metadata cleanup after last request finishes
         # * Corner cases:
         #     * two sequences finish at the same time
         #     * new prompts arrives when another finishes
     ])
-def test_scheduler_cb_steps_tkv(model: str, backend: str,
-                                monkeypatch: pytest.MonkeyPatch,
-                                max_num_seqs: int, seqs_max_tokens: list[int],
-                                prompts_lengths: list[int],
-                                steps_add_reqs: list[int],
-                                checked_steps: list[dict[str, Any]]):
+def test_scheduler_cb_steps_tkv(
+        model: str, backend: str, monkeypatch: pytest.MonkeyPatch,
+        max_num_seqs: int, seqs_max_tokens: list[int],
+        prompts_lengths: list[int], steps_add_reqs: list[int],
+        checked_steps: list[dict[str, Any]], max_model_len: int):
     """
     Test the scheduler execution by comparing the scheduler attributes at each 
     step with the provided reference values in 'checked_steps'.
@@ -505,8 +619,8 @@ def test_scheduler_cb_steps_tkv(model: str, backend: str,
     # Setup the engine
     engine_args = EngineArgs(model=model,
                              tokenizer=model,
-                             max_model_len=2048,
-                             block_size=2048,
+                             max_model_len=max_model_len,
+                             block_size=max_model_len,
                              max_num_seqs=max_num_seqs)
     vllm_config = engine_args.create_engine_config()
     executor_class = Executor.get_class(vllm_config)
