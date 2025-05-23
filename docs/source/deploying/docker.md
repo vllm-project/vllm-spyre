@@ -22,10 +22,10 @@ These images are provided as a reference and come with no support guarantees.
 
 ## Building vLLM Spyre's Docker Image from Source
 
-You can build and run vLLM Spyre from source via the provided <gh-file:docker/Dockerfile>. To build vLLM Spyre:
+You can build and run vLLM Spyre from source via the provided <gh-file:docker/Dockerfile.amd64>. To build vLLM Spyre:
 
 ```shell
-DOCKER_BUILDKIT=1 docker build . --target release --tag vllm/vllm-spyre --file docker/Dockerfile
+DOCKER_BUILDKIT=1 docker build . --target release --tag vllm/vllm-spyre --file docker/Dockerfile.amd64
 ```
 
 :::{note}
