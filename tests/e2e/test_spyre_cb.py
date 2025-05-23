@@ -331,6 +331,97 @@ def get_params_test_blocks_borders_misaligned_prompts():
             max_model_len)
 
 
+def get_params_test_special_finish():
+    """ 2-cases-in-1: (1) Two sequences finish at the same time and (2) a new
+    request arrives when another finishes. """
+
+    seqs_max_tokens = [30, 30, 10]
+    prompts_lengths = [49, 30, 20]
+    steps_add_reqs = [0, 0, 31]
+    max_model_len = 2048
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0", "1"],
+            "running": [],
+            "request_outputs": []
+        },
+        {
+            # Prefill sequence 0
+            "step": 1,
+            "tkv": 64,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"]
+        },
+        {
+            # Prefill sequence 1
+            "step": 2,
+            "tkv": 64,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1"]
+        },
+        {
+            # Decode sequences 0 and 1
+            "step": 3,
+            "tkv": 65,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"]
+        },
+        {
+            # Sequences 0 and 1 finish at step 31
+            # (start step + 2 prefills + 29 decodes - 1) = 1 + 2 + 29 - 1 = 31
+            "step": 31,
+            "tkv": 93,
+            "waiting": ["2"],
+            "running": [],
+            "request_outputs": ["1", "0"],
+            "finished_requests": ["1", "0"]
+        },
+        {
+            # Prefill sequence 2
+            "step": 32,
+            "tkv": 64,
+            "waiting": [],
+            "running": ["2"],
+            "request_outputs": ["2"],
+        },
+        {
+            # Decode sequence 2
+            "step": 33,
+            "tkv": 65,
+            "waiting": [],
+            "running": ["2"],
+            "request_outputs": ["2"],
+        },
+        {
+            # Sequences 2 finishes at step 41
+            # (start step + 1 prefill + 29 decodes - 1) = 32 + 1 + 9 - 1 = 41
+            "step": 41,
+            "tkv": 73,
+            "waiting": [],
+            "running": [],
+            "request_outputs": ["2"],
+            "finished_requests": ["2"]
+        },
+        {
+            # Tkv should be cleared one step later
+            "step": 42,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": [],
+        },
+    ]
+
+    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
+            max_model_len)
+
+
 def get_params_test_scheduler_constraints_tkv():
     """ Scenario where the requested prompt is too long for current tkv value"""
 
@@ -561,15 +652,13 @@ def augment_checked_steps(
     [
         get_params_test_blocks_borders_aligned_prompts(),
         get_params_test_blocks_borders_misaligned_prompts(),
+        get_params_test_special_finish(),
         get_params_test_scheduler_constraints_tkv(),
         get_params_test_scheduler_constraints_max_prompt_len(),
 
         # TODO to test additionally at some point:
         # * test stripping repeated left padding
         # * test metadata cleanup after last request finishes
-        # * Corner cases:
-        #     * two sequences finish at the same time
-        #     * new prompts arrives when another finishes
     ])
 def test_scheduler_cb_steps_tkv(
         model: str, backend: str, monkeypatch: pytest.MonkeyPatch,
