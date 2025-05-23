@@ -1,0 +1,40 @@
+name: Lint GitHub Actions
+
+on:
+  # Trigger the workflow on push or pull request, but only for the main branch.
+  # Don't use pull_request.paths filter since this workflow is required for
+  # all pull requests on main irrespective of file type or location.
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - "main"
+    paths:
+      - '.github/workflows/*.ya?ml'
+
+env:
+  LC_ALL: en_US.UTF-8
+
+defaults:
+  run:
+    shell: bash
+
+permissions:
+  contents: read
+
+jobs:
+  lint-actions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: "Run actionlint"
+        uses: raven-actions/actionlint@v2
+        with:
+          matcher: true
+          cache: false
+          fail-on-error: true
