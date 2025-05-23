@@ -327,6 +327,94 @@ def get_params_test_blocks_borders_misaligned_prompts():
     return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps)
 
 
+def get_params_test_scheduler_constraints_tkv():
+    """ Scenario where the requested prompt is too long for current tkv value"""
+    
+    seqs_max_tokens = [57, 67]
+    prompts_lengths = [49, 70]
+    steps_add_reqs = [0, 0]
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0", "1"],
+            "running": [],
+            "request_outputs": []
+        },
+        {
+            "step": 1,  # Prefill sequence 0
+            "tkv": 64,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"]
+        },
+        {
+            # Decode sequence 0
+            # Cannot prefill sequence 1, because of tkv constraint
+            "step": 2,
+            "tkv": 65,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"]
+        },
+        {
+            # Prefill sequence 1, tkv large enough
+            "step": 8,
+            "tkv": 70,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1"]
+        },
+        {
+            # Decode sequences 0 and 1
+            "step": 9,
+            "tkv": 71,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"]
+        },
+        {
+            # Sequence 0 finishes at step 58
+            # (start step + 2 prefills + 56 decodes - 1) = 1 + 2 + 56 - 1 = 58
+            "step": 58,
+            "tkv": 120,
+            "waiting": [],
+            "running": ["1"],
+            "request_outputs": ["1", "0"],
+            "finished_requests": ["0"]
+        },
+        {
+            # Decode sequence 1
+            "step": 59,
+            "tkv": 121,
+            "waiting": [],
+            "running": ["1"],
+            "request_outputs": ["1"],
+        },
+        {
+            # Sequence 1 finishes at step 74
+            # (start step + 1 prefill + 66 decodes - 1) = 8 + 1 + 66 - 1 = 74
+            "step": 74,
+            "tkv": 136,
+            "waiting": [],
+            "running": [],
+            "request_outputs": ["1"],
+            "finished_requests": ["1"]
+        },
+        {
+            # Tkv should be cleared one step later
+            "step": 75,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": []
+        },
+    ]
+
+    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps)
+
+
 def augment_checked_steps(
         checked_steps: list[dict[str, Any]]) -> deque[dict[str, Any]]:
     # Augment checked_steps: add in-between normal decode steps
@@ -357,6 +445,7 @@ def augment_checked_steps(
     [
         get_params_test_blocks_borders_aligned_prompts(),
         get_params_test_blocks_borders_misaligned_prompts(),
+        get_params_test_scheduler_constraints_tkv(),
 
         # TODO to test additionally at some point:
         # * test additional constraints from the scheduler (e.g prompt too long)
