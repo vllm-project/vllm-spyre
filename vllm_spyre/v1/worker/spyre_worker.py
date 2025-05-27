@@ -54,13 +54,10 @@ class SpyreWorker(WorkerBaseV1):
             self._warmup_spyre_dynamic_size(self.restricted_tokens)
             return
 
-        wup_prompt_lens, wup_new_tokens = zip(
-            *[(s["prompt_length"], s["new_tokens"])
-              for s in self.spyre_warmup_shapes])
-
+        num_shape_combinations = len(self.spyre_warmup_shapes)
         logger.info(
             "Start warming up %d different "
-            "prompt/decode/batchsize-shape combinations.", len(wup_new_tokens))
+            "prompt/decode/batchsize-shape combinations.", len(self.spyre_warmup_shapes))
         all_warmup_start_t = time.time()
         for i, (prompt_len, num_decode_tokens, batch_size) in enumerate([
             (s["prompt_length"], s["new_tokens"], s["batch_size"])
@@ -75,7 +72,7 @@ class SpyreWorker(WorkerBaseV1):
             # warmup individual combination
             logger.info(
                 "Warmup %d/%d prompt/decode/batchsize-shape "
-                "combinations...", i + 1, len(wup_new_tokens))
+                "combinations...", i + 1, num_shape_combinations)
             logger.info(
                 "Warming up for prompt length %d, decoding %d tokens with "
                 "batch size %d", prompt_len, num_decode_tokens, batch_size)
@@ -89,7 +86,7 @@ class SpyreWorker(WorkerBaseV1):
         logger.info(
             "All warmups for %d different prompt/decode/batchsize-shape "
             "combinations finished. Total warmup time %.3fs.",
-            len(wup_new_tokens), all_warmup_total_t)
+            num_shape_combinations, all_warmup_total_t)
         self.model_runner.complete_warmup()
 
     def check_health(self) -> None:
