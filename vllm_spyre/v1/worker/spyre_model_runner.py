@@ -781,7 +781,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             num_blocks = (n + d - 1) // d
             for i in range(num_blocks - len(self.dummy_req_ids2blocks)):
                 self.dummy_req_ids2blocks.append(self.free_blocks.popleft())
-            block_table.append(self.dummy_req_ids2blocks)
+            block_table.append(deque(self.dummy_req_ids2blocks))
             start_slot = block_table[-1][-1] * self.BLOCK_SIZE
             offset = self.tkv % self.BLOCK_SIZE
             slot = [start_slot + offset]
