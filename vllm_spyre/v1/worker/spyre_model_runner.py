@@ -773,7 +773,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         if len(input_tokens) == 1:
             dummy_req_indices = torch.zeros(1, dtype=torch.bool, device="cpu")
             self.model.indices = torch.cat(
-+                (self.model.indices, dummy_req_indices), -1)
+                (self.model.indices, dummy_req_indices), -1)
             assert self.model.indices.size(dim=0) == 2
 
             n = self.tkv + 1
