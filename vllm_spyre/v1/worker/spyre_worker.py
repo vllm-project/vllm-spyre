@@ -426,14 +426,6 @@ class SpyreWorker(WorkerBaseV1):
         warmup_tokens_tensor = valid_token_ids_tensor[torch.randint(
             0, len(valid_token_ids_tensor), (batch_size, prompt_len))]
 
-        extra_kwargs = {}
-        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND not in [
-                "sendnn", "sendnn_decoder"
-        ]:
-            # Bug in 2.3.1 fixed in 2.4.1 for SDPA flash cpu
-            # impl when padding too much
-            extra_kwargs["attn_algorithm"] = "math"
-
         # Set up dummy requests for prefill steps
         dummy_requests = [
             NewRequestData(
