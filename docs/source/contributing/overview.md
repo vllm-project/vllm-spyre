@@ -56,11 +56,19 @@ You can also reach out for support in the `#sig-spyre` channel in the [vLLM Slac
    uv pip install --group dev
    ```
 
-1. Run the tests using [markers](https://github.com/vllm-project/vllm-spyre/blob/main/pyproject.toml#L119):
+1. Run the tests:
   
    ```sh
    python -m pytest -v -x tests -m "v1 and cpu and e2e"
    ```
+
+   Here are a list of `pytest` markers you can use to filter tests:
+
+   :::{literalinclude} ../../../pyproject.toml
+   :start-after: begin-test-markers-definition
+   :end-before: end-test-markers-definition
+   :language: python
+   :::
 
 ### Testing Continuous Batching
 
