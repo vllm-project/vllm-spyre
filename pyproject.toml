@@ -12,7 +12,7 @@ readme = "README.md"
 license = {text = "Apache 2"}
 dependencies = [
     "fms-model-optimizer>=0.2.0",
-    "ibm-fms==0.0.8",
+    "ibm-fms==1.0.0",
     "vllm>=0.8.5",
 ]
 requires-python = ">=3.9"
@@ -98,7 +98,7 @@ check_untyped_defs = true
 follow_imports = "silent"
 
 # After fixing type errors resulting from follow_imports: "skip" -> "silent",
-# move the directory here and remove it from tools/mypy.sh
+# move the directory here and remove it from tools/type_check.sh
 files = [
 ]
 # TODO(woosuk): Include the code from Megatron and HuggingFace.
@@ -151,7 +151,7 @@ lint = [
     "codespell==2.3.0",
     "isort==5.13.2",
     "mypy==1.11.1",
-    "pymarkdownlnt==0.9.26",
+    "pymarkdownlnt==0.9.29",
     "ruff==0.6.5",
     "toml==0.10.2",
     "tomli==2.0.2",
