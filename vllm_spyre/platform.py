@@ -252,8 +252,6 @@ class SpyrePlatform(Platform):
                     f"tokens is {max_tokens} tokens, but max model context "
                     f"length is {cls._config.scheduler_config.max_model_len}.")
         else:
-            # Change code
-            print("foo")
             # For non-continuous batching, check if the request matches a warmup
             # shape
             assert cls._warmup_shapes is not None, "Warmup shapes must be set"
