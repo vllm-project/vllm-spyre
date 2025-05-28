@@ -35,7 +35,7 @@ logger = init_logger(__name__)
 
 @contextlib.contextmanager
 def _maybe_warmup_context():
-    warmup_context = contextlib.nullcontext()
+    warmup_context = contextlib.nullcontext
     if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
         from torch_sendnn import warmup_mode
         warmup_context = warmup_mode
