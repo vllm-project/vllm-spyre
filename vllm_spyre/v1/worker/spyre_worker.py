@@ -32,14 +32,15 @@ from vllm_spyre.v1.worker.spyre_model_runner import (
 
 logger = init_logger(__name__)
 
+
 @contextlib.contextmanager
 def _maybe_warmup_context():
-        warmup_context = contextlib.nullcontext()
-        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
-            from torch_sendnn import warmup_mode
-            warmup_context = warmup_mode
-        with warmup_context():
-            yield
+    warmup_context = contextlib.nullcontext
+    if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
+        from torch_sendnn import warmup_mode
+        warmup_context = warmup_mode
+    with warmup_context():
+        yield
 
 
 class SpyreWorker(WorkerBaseV1):
@@ -67,7 +68,8 @@ class SpyreWorker(WorkerBaseV1):
         num_shape_combinations = len(self.spyre_warmup_shapes)
         logger.info(
             "Start warming up %d different "
-            "prompt/decode/batchsize-shape combinations.", len(self.spyre_warmup_shapes))
+            "prompt/decode/batchsize-shape combinations.",
+            len(self.spyre_warmup_shapes))
         all_warmup_start_t = time.time()
         for i, (prompt_len, num_decode_tokens, batch_size) in enumerate([
             (s["prompt_length"], s["new_tokens"], s["batch_size"])

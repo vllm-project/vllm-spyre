@@ -15,14 +15,16 @@ if TYPE_CHECKING:
 
 logger = init_logger(__name__)
 
+
 def _backend_backwards_compat() -> str:
     val = os.getenv("VLLM_SPYRE_DYNAMO_BACKEND", "sendnn")
     if val == "sendnn_decoder":
-        logger.warning_once("Using 'sendnn_decoder' for "
-            "VLLM_SPYRE_DYNAMO_BACKEND is deprecated. Use 'sendnn' instead"
-        )
+        logger.warning_once(
+            "Using 'sendnn_decoder' for "
+            "VLLM_SPYRE_DYNAMO_BACKEND is deprecated. Use 'sendnn' instead")
         val = 'sendnn'
     return val
+
 
 # begin-env-vars-definition
 
