@@ -83,6 +83,59 @@ def test_output(
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.parametrize("prompts", [[
+    template.format("Provide a list of instructions "
+                    "for preparing chicken soup."),
+]])
+@pytest.mark.parametrize(
+    "warmup_shape", [(64, 20, 4)])  # (prompt_length/new_tokens/batch_size)
+@pytest.mark.parametrize("backend", ["sendnn_decoder"])
+@pytest.mark.parametrize("vllm_version", VLLM_VERSIONS)
+def test_output_sendnn_decoder(
+    model: str,
+    prompts: list[str],
+    warmup_shape: tuple[int, int, int],
+    backend: str,
+    vllm_version: str,
+) -> None:
+    '''
+    Tests the deprecated sendnn_decoder backend, which should fall-back to
+    sendnn
+    '''
+
+    max_new_tokens = warmup_shape[1]
+
+    vllm_sampling_params = SamplingParams(
+        max_tokens=max_new_tokens,
+        temperature=0,
+        logprobs=0,  # return logprobs of generated tokens only
+        ignore_eos=True)
+
+    vllm_results = generate_spyre_vllm_output(
+        model=model,
+        prompts=prompts,
+        warmup_shapes=[warmup_shape],
+        max_model_len=2048,
+        block_size=2048,
+        sampling_params=vllm_sampling_params,
+        tensor_parallel_size=1,
+        backend=backend,
+        vllm_version=vllm_version)
+
+    hf_results = generate_hf_output(model=model,
+                                    prompts=prompts,
+                                    max_new_tokens=max_new_tokens)
+
+    compare_results(model=model,
+                    prompts=prompts,
+                    warmup_shapes=[warmup_shape],
+                    tensor_parallel_size=1,
+                    backend=backend,
+                    vllm_results=vllm_results,
+                    hf_results=hf_results)
+
+
+@pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("vllm_version", VLLM_VERSIONS)
 def test_batch_handling(

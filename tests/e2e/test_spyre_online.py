@@ -58,13 +58,13 @@ def test_openai_serving(remote_openai_server, model, warmup_shape, backend,
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list(quantization="gptq"))
-@pytest.mark.parametrize("backend", ["sendnn_decoder"])
+@pytest.mark.parametrize("backend", ["sendnn"])
 @pytest.mark.parametrize("quantization", ["gptq"])
 @pytest.mark.parametrize("warmup_shape", [[(64, 20, 4)]])
 @pytest.mark.parametrize("vllm_version", VLLM_VERSIONS)
 def test_openai_serving_gptq(remote_openai_server, model, backend,
                              warmup_shape, vllm_version, quantization):
-    """Test online serving a GPTQ model with the sendnn_decoder backend only"""
+    """Test online serving a GPTQ model with the sendnn backend only"""
 
     client = remote_openai_server.get_client()
     completion = client.completions.create(model=model,
