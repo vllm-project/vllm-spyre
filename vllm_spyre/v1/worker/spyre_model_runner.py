@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Optional
 
 import torch
 from torch import nn
+from vllm.attention import AttentionType
 from vllm.config import DeviceConfig, VllmConfig
 from vllm.logger import init_logger
 from vllm.sampling_params import SamplingType
@@ -204,13 +205,12 @@ class SpyreModelRunner:
         # We do at least use the real size from the cache config.
         block_size = self.vllm_config.cache_config.block_size
 
-        attn_spec = FullAttentionSpec(
-            block_size=block_size,
-            num_kv_heads=1,
-            head_size=1,
-            dtype=torch.float16,
-            use_mla=False,
-        )
+        attn_spec = FullAttentionSpec(block_size=block_size,
+                                      num_kv_heads=1,
+                                      head_size=1,
+                                      dtype=torch.float16,
+                                      use_mla=False,
+                                      attn_type=AttentionType.DECODER)
         return {"foo": attn_spec}
 
     def complete_warmup(self):
@@ -444,6 +444,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
                 spec_token_ids=None,
                 logprobs=None,
                 prompt_logprobs_dict={},
+                pooler_output=[],
             )
 
         self._update_states(scheduler_output)
@@ -492,6 +493,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
                 req_id: None
                 for req_id in self.input_batch.req_id_to_index
             },  # TODO(wallas?): prompt logprobs too
+            pooler_output=[],
         )
         return model_output
 
@@ -912,6 +914,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                 spec_token_ids=None,
                 logprobs=None,
                 prompt_logprobs_dict={},
+                pooler_output=[],
                 tkv=0,
             )
 

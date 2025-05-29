@@ -314,10 +314,12 @@ class SpyreWorker(WorkerBaseV1):
             NewRequestData(
                 req_id="warmup-%d" % (i),
                 prompt_token_ids=warmup_tokens_tensor[i].tolist(),
+                token_type_ids=None,
                 mm_inputs=[],
                 mm_hashes=[],
                 mm_positions=[],
                 sampling_params=SamplingParams(max_tokens=num_decode_tokens),
+                pooling_params=None,
                 block_ids=[0],  # not actually used
                 num_computed_tokens=0,
                 lora_request=None,
@@ -442,10 +444,12 @@ class SpyreWorker(WorkerBaseV1):
             NewRequestData(
                 req_id="warmup",
                 prompt_token_ids=warmup_tokens_tensor[i].tolist(),
+                token_type_ids=None,
                 mm_inputs=[],
                 mm_hashes=[],
                 mm_positions=[],
                 sampling_params=SamplingParams(max_tokens=num_decode_tokens),
+                pooling_params=None,
                 block_ids=[0],
                 num_computed_tokens=0,
                 lora_request=None,
