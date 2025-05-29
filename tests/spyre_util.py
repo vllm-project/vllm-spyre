@@ -174,6 +174,9 @@ def generate_spyre_vllm_output(model: str, prompts: list[str],
         str(val) for val in warmup_batch_size)
     os.environ['VLLM_SPYRE_DYNAMO_BACKEND'] = backend
     os.environ['VLLM_USE_V1'] = "1" if vllm_version == "V1" else "0"
+    # Allows to run multiprocess V1 engine without dumping meaningless logs at
+    # shutdown engine this context.
+    os.environ['VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER'] = "1"
 
     vllm_model = LLM(model=model,
                      tokenizer=model,
