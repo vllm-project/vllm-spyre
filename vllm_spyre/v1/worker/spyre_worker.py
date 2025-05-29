@@ -576,9 +576,9 @@ class SpyreWorker(WorkerBaseV1):
 # TODO: review this in the future
 # This setup is a workaround to suppress logs that are dumped at the shutdown
 # of the engine (only on V1) when vllm runs with multiprocess. The undesired
-# behavior happens because g3log from Spyre runtime overrides the signal 
+# behavior happens because g3log from Spyre runtime overrides the signal
 # handler from vLLM when it starts a process for the engine code. Therefore,
-# the engine does not have a chance to gracefully shutdown.  
+# the engine does not have a chance to gracefully shutdown.
 def maybe_override_signals_handler():
     if not (envs.VLLM_USE_V1 and envs.VLLM_ENABLE_V1_MULTIPROCESSING
             and envs_spyre.VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER):
