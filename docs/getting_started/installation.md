@@ -5,51 +5,43 @@ installation of the plugin and its dependencies. `uv` provides advanced
 dependency resolution which is required to properly install dependencies like
 `vllm` without overwriting critical dependencies like `torch`.
 
-1. Clone vllm-spyre
+First, clone the `vllm-spyre` repo:
 
-   ```sh
-   git clone https://github.com/vllm-project/vllm-spyre.git
-   cd vllm-spyre
-   ```
+```sh
+git clone https://github.com/vllm-project/vllm-spyre.git
+cd vllm-spyre
+```
 
-1. Install uv
+Then, install `uv`:
   
-   ```sh
-   pip install uv
-   ```
-  
-1. Create a new env
+```sh
+pip install uv
+```
 
-   ```sh
-   uv venv --python 3.12 --seed .venv
-   ```
+Now, create and activate a new [venv](https://docs.astral.sh/uv/pip/environments/):
+  
+```sh
+uv venv --python 3.12 --seed .venv
+source .venv/bin/activate
+```
 
-1. Activate it
-  
-   ```sh
-   source .venv/bin/activate
-   ```
+To install `vllm-spyre` locally with development dependencies, use the following command:
 
-1. Install `vllm-spyre` locally with dev (and optionally lint) dependencies
-  
-   ```sh
-   uv sync --frozen --active --inexact
-   ```
-  
-   or also with lint:
-  
-   ```sh
-   uv sync --frozen --active --inexact --group lint
-   ```
+```sh
+uv sync --frozen --active --inexact
+```
+
+To include optional linting dependencies, include `--group lint`:
+
+```sh
+uv sync --frozen --active --inexact --group lint
+```
 
 !!! tip
     The `dev` group (i.e. `--group dev`) is enabled by default.
 
-1. (Optional) Install torch through pip
-  
-   If you don't have it installed already. Will be needed
-   for running examples or tests.
-  
-   ```sh
-   pip install torch==2.7.0
-   ```
+Finally, the `torch` is needed to run examples and tests. If it is not already installed, install it using `pip`:
+
+```sh
+pip install torch==2.7.0
+```
