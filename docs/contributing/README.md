@@ -1,8 +1,6 @@
 # Contributing to vLLM Spyre
 
-Thank you for your interest in contributing to the Spyre plugin for vLLM!
-
-There are several ways you can contribute:
+Thank you for your interest in contributing to the Spyre plugin for vLLM! There are several ways you can contribute:
 
 - Identify and report any issues or bugs.
 - Suggest or implement new features.
@@ -17,71 +15,71 @@ You can also reach out for support in the `#sig-spyre` channel in the [vLLM Slac
 ## Testing
 
 ### Testing Locally on CPU (No Spyre card)
-  
-1. Install `xgrammar` (only for `arm64` systems):
-  
-   !!! tip
-   `xgrammar` is automatically installed on `x86_64` systems.
 
-   ```sh
-   uv pip install xgrammar==0.1.19
-   ```
+!!! tip
+      `xgrammar` is automatically installed on `x86_64` systems.
 
-1. (Optional) Download the `JackFram/llama-160m` model:
+Install `xgrammar` (only for `arm64` systems):
 
-   ```sh
-   python -c "from transformers import pipeline; pipeline('text-generation', model='JackFram/llama-160m')"
-   ```
+      ```sh
+      uv pip install xgrammar==0.1.19
+      ``` 
 
-   !!! caution
-   The Hugging Face API download does **not** work on `arm64`.
+Optionally, download the `JackFram/llama-160m` model:
 
-   By default, the model is saved to:
+      ```sh
+      python -c "from transformers import pipeline; pipeline('text-generation', model='JackFram/llama-160m')"
+      ```
 
-   ```sh
-   .cache/huggingface/hub/models--JackFram--llama-160m
-   ```
+!!! caution
+    The Hugging Face API download does **not** work on `arm64`.
 
-1. Source environment variables:
+By default, the model is saved to:
 
-   ```sh
-   source _local_envs_for_test.sh
-   ```
+```sh
+.cache/huggingface/hub/models--JackFram--llama-160m
+```
 
-1. (Optional) Install development dependencies:
+Then, source the environment variables:
+
+```sh
+source _local_envs_for_test.sh
+```
+
+Optionally, install development dependencies:
   
    ```sh
    uv pip install --group dev
    ```
 
-1. Run the tests:
+Now, you can run the tests:
   
    ```sh
    python -m pytest -v -x tests -m "v1 and cpu and e2e"
    ```
 
-   Here are a list of `pytest` markers you can use to filter tests:
+Here is a list of `pytest` markers you can use to filter them:
 
-   --8<-- "../../../pyproject.toml:test-markers-definition"
+```python
+--8<-- "pyproject.toml:test-markers-definition"
+```
 
 ### Testing Continuous Batching
 
 !!! attention
-Continuous batching currently requires the custom installation described below until the FMS custom branch is merged to main.
+    Continuous batching currently requires the custom installation described below until the FMS custom branch is merged to main.
 
-After completing the setup steps above:
+After completing the setup steps above, install custom FMS branch to enable support for continuous batching:
 
-1. Install custom FMS branch to enable support for continuous batching:
+```sh
+uv pip install git+https://github.com/foundation-model-stack/foundation-model-stack.git@paged_attn_mock --force-reinstall
+```
 
-   ```sh
-   uv pip install git+https://github.com/foundation-model-stack/foundation-model-stack.git@paged_attn_mock --force-reinstall
-   ```
+Then, run the continuous batching tests:
 
-2. Run the continuous batching tests:
-
-   ```sh
-   python -m pytest -v -x tests/e2e -m cb
-   ```
+```sh
+python -m pytest -v -x tests/e2e -m cb
+```
 
 ## Pull Requests
 
