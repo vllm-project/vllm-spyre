@@ -399,6 +399,6 @@ class StaticBatchingFmsModel(FmsModelBase):
 
         #logits, self.past_key_value_states = output
         self.past_key_value_states = output
-        logits = self.model.compute_logits(output)
+        #logits = self.model.compute_logits(output)
 
-        return logits
+        return output

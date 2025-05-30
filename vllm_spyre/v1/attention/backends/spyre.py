@@ -17,14 +17,13 @@ from vllm.attention.backends.abstract import (AttentionBackend, AttentionImpl,
 
 from vllm.v1.kv_cache_interface import AttentionSpec
 from vllm.v1.worker.block_table import BlockTable
-from vllm.attention.ops.ipex_attn import PagedAttention, _use_ipex
-from vllm.attention.ops.paged_attn import PagedAttentionMetadata
+from vllm.attention.ops.paged_attn import PagedAttention, PagedAttentionMetadata
 from vllm.logger import init_logger
 
 logger = init_logger(__name__)
 
 class SpyreSDPABackend(AttentionBackend):
-
+    accept_output_buffer: bool = True
     @staticmethod
     def get_name() -> str:
         return "Spyre_SDPA"
@@ -197,6 +196,11 @@ class SpyreSDPABackendImpl(AttentionImpl[SpyreSDPAMetadata]):
         """
         attn_type = self.attn_type
 
+        assert output is not None, "Output tensor must be provided"
+        if attn_metadata is None:
+            # profiling run
+            return output
+
         # Reshape the query, key, and value tensors.
         query = query.view(-1, self.num_heads, self.head_size)
         if key is not None:
@@ -206,14 +210,10 @@ class SpyreSDPABackendImpl(AttentionImpl[SpyreSDPAMetadata]):
         else:
             assert value is None
 
-        if (attn_type != AttentionType.ENCODER and kv_cache.numel() > 0):
-            # KV-cache during decoder-self- or
-            # encoder-decoder-cross-attention, but not
-            # during encoder attention.
-            #
-            # Even if there are no new key/value pairs to cache,
-            # we still need to break out key_cache and value_cache
-            # i.e. for later use by paged attention
+        key_cache = kv_cache
+        value_cache = kv_cache
+        #print("kv cache: ", kv_cache.shape)
+        if kv_cache.numel() > 0:
             key_cache, value_cache = PagedAttention.split_kv_cache(
                 kv_cache, self.num_kv_heads, self.head_size)
 
@@ -248,11 +248,9 @@ class SpyreSDPABackendImpl(AttentionImpl[SpyreSDPAMetadata]):
             assert attn_type != AttentionType.ENCODER_ONLY, (
                 "Encoder-only models should not have decode metadata.")
             # Decoding run.
-            (
-                seq_lens_arg,
-                max_seq_len_arg,
-                block_tables_arg,
-            ) = decode_meta.get_seq_len_block_table_args(attn_type)
+            seq_lens_arg = attn_metadata.seq_lens_tensor
+            max_seq_len_arg = attn_metadata.max_decode_seq_len
+            block_tables_arg = attn_metadata.block_tables
 
             PagedAttention.forward_decode(
                 output[attn_metadata.num_prefill_tokens:, :, :],

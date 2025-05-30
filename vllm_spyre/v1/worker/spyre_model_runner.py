@@ -351,7 +351,10 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
             is_prompt=True,
         )
 
-        self.attn_metadata = self.attn_metadata_builder.build(input)
+        if self.warmup_mode:
+            self.attn_metadata = None
+        else: 
+            self.attn_metadata = self.attn_metadata_builder.build(input)
         return input
 
     def _prepare_decode(
@@ -422,7 +425,6 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
     def prepare_model_input(
             self, scheduler_output: SchedulerOutput) -> ModelForwardInputs:
 
-        # NOTE: We assume that all sequences in the group are all prompts or
         # all decodes.
         # Also assuming that new sequences are prefills
         is_prompt = len(scheduler_output.scheduled_new_reqs) > 0
@@ -475,6 +477,10 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
 
         # Always get the indices from the input_batch
         self.model.indices = self.input_batch.get_model_indices()
+
+        print("Attn_metadata:", self.attn_metadata)
+        if self.warmup_mode:
+            self.attn_metadata = None
 
         with set_forward_context(self.attn_metadata, self.vllm_config, 0):
             # Execute the model
