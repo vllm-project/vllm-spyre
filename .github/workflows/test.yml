@@ -66,12 +66,11 @@ jobs:
       - name: "Get changed source files"
         id: changed-src-files
         uses: tj-actions/changed-files@v46
-        with: # Avoid using single or double quotes for multiline patterns
+        with: # Avoid using single or double quotes for multiline patterns, TODO: add .github/workflows/test.yml
           files: |
             tests/**/*.py
             vllm_spyre/**/*.py
             pyproject.toml
-            .github/workflows/test.yml
 
       - name: "Skip tests for non-source changes"
         if: steps.changed-src-files.outputs.any_changed != 'true'
