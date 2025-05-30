@@ -150,7 +150,7 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
             elif envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in [
                     "sendnn", "sendnn_decoder"
             ]:
-                spyre_setup.spyre_setup(rank=0, world_size=1, verbose=True)
+                spyre_setup.spyre_setup()
 
             ensure_model_parallel_initialized(
                 self.parallel_config.tensor_parallel_size,
