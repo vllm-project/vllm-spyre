@@ -80,10 +80,19 @@ class SpyrePlatform(Platform):
             spyre_warmup_shapes = cls.get_warmup_shapes(scheduler_config)
             max_batch_size = 0
             max_seq_len = 0
+            max_model_len = model_config.max_model_len \
+                if model_config is not None else sys.maxsize
             for shape in spyre_warmup_shapes:
                 max_batch_size = max(max_batch_size, shape["batch_size"])
                 max_seq_len = max(max_seq_len,
                                   shape["prompt_length"] + shape["new_tokens"])
+                if max_seq_len > max_model_len:
+                    raise RuntimeError(
+                        f"Warmup shape [{shape['batch_size']},"
+                        " {shape['prompt_length']}, {shape['new_tokens']}]"
+                        " results in a maximum sequence length of "
+                        "{max_seq_len} which is longer that what the model "
+                        "supports ({max_model_len})")
             if model_config is not None:
                 model_config.max_model_len = max_seq_len
 
