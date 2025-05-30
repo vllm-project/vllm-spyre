@@ -80,9 +80,9 @@ class SpyreCausalLM(nn.Module):
     def forward(
         self,
         input_ids: torch.Tensor,
-        position_ids: torch.Tensor,
+        positions: torch.Tensor,
         #masks: torch.Tensor,
-        intermediate_tensors: Optional[IntermediateTensors],
+        #intermediate_tensors: Optional[IntermediateTensors],
         is_prompt: bool,
         current_tkv_mask: Optional[torch.Tensor] = None,
         left_padded_prompt_mask: Optional[torch.Tensor] = None,
@@ -108,10 +108,8 @@ class SpyreCausalLM(nn.Module):
         # normal prefill or decoding step
         logits = self.model(
             input_ids,
-            position_ids=position_ids,
-            #mask=masks,
-            use_cache=True,
-            only_last_token=not envs_spyre.VLLM_SPYRE_USE_CB,
+            positions=positions,
+            #only_last_token=not envs_spyre.VLLM_SPYRE_USE_CB,
             **extra_kwargs,
         )
 
@@ -331,7 +329,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
     def forward(
         self,
         input_ids: torch.Tensor,
-        position_ids: torch.Tensor,
+        positions: torch.Tensor,
         mask: torch.Tensor,
         use_cache: bool,
         only_last_token: bool,
@@ -344,7 +342,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
 
         output = self.model(
             input_ids,
-            position_ids=position_ids,
+            positions=positions,
             mask=mask,
             past_key_value_states=self.past_key_value_states,
             use_cache=use_cache,
@@ -373,10 +371,11 @@ class StaticBatchingFmsModel(FmsModelBase):
         max_decode_length: int,
     ) -> None:
         super().__init__(model_config,
-                parallel_config,
-                max_prompt_length,
-                max_decode_length,
-                sendnn_dynamic=False)
+                    parallel_config,
+                    vllm_config,
+                    max_prompt_length,
+                    max_decode_length,
+                    sendnn_dynamic=False)
 
         # dynamic KV cache
         self.past_key_value_states = None
@@ -385,20 +384,16 @@ class StaticBatchingFmsModel(FmsModelBase):
     def forward(
         self,
         input_ids: torch.Tensor,
-        position_ids: torch.Tensor,
+        positions: torch.Tensor,
         #mask: torch.Tensor,
-        use_cache: bool,
-        only_last_token: bool,
         **extra_kwargs,
     ) -> torch.Tensor:
 
         output = self.model(
             input_ids,
-            positions=position_ids,
+            positions=positions,
             #mask=mask,
             intermediate_tensors=self.past_key_value_states,
-            use_cache=use_cache,
-            only_last_token=only_last_token,
             **extra_kwargs,
         )
 

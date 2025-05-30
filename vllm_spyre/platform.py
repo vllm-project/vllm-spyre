@@ -59,9 +59,9 @@ class SpyrePlatform(Platform):
                              block_size: int, use_v1: bool,
                              use_mla: bool) -> str:
         logger.info("Using Torch SDPA backend.")
-        return "vllm.attention.backends.torch_sdpa.TorchSDPABackend"
+        #return "vllm.attention.backends.torch_sdpa.TorchSDPABackend"
         #return "vllm.attention.backends.placeholder_attn.PlaceholderAttentionBackend"
-        #return ("vllm.v1.attention.backends.mla.triton_mla.TritonMLABackend")
+        return ("vllm_spyre.v1.attention.backends.spyre.SpyreSDPABackend")
 
     @classmethod
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:
