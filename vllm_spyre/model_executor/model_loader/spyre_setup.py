@@ -13,4 +13,4 @@ def spyre_dist_setup(rank=0, world_size=1, local_rank=0, local_size=1, verbose=F
     if verbose:
         print(f"Distributed rank {os.environ['RANK']} / {os.environ['WORLD_SIZE']}")
 
-    spyre_setup(rank, world_size)
+    spyre_setup()
