@@ -387,7 +387,10 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
             input_masks=self._mask,
             is_prompt=False,
         )
-        self.attn_metadata = self.attn_metadata_builder.build(input)
+        if self.warmup_mode:
+            self.attn_metadata = None
+        else:
+            self.attn_metadata = self.attn_metadata_builder.build(input)
         return input
 
     def _update_position_ids(self) -> None:
@@ -479,16 +482,12 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         self.model.indices = self.input_batch.get_model_indices()
 
         print("Attn_metadata:", self.attn_metadata)
-        if self.warmup_mode:
-            self.attn_metadata = None
 
-        with set_forward_context(self.attn_metadata, self.vllm_config, 0):
+        with set_forward_context(self.attn_metadata, self.vllm_config, virtual_engine=0,):
             # Execute the model
-            hidden_states = self.model(
+            hidden_or_intermediate_states = self.model(
                 input_ids=model_input.input_tokens,
                 positions=model_input.input_positions,
-                #masks=model_input.input_masks,
-                #intermediate_tensors=None,
                 is_prompt=model_input.is_prompt,
             )
 
@@ -497,7 +496,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
             return []
 
         # Compute the logits.
-        logits = self.model.compute_logits(hidden_states, None)
+        logits = self.model.compute_logits(hidden_or_intermediate_states, None)
 
         # Sample the next token.
         output: SamplerOutput = self.model.sample(

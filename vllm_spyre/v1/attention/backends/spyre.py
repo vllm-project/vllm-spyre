@@ -169,7 +169,7 @@ class SpyreSDPABackendImpl(AttentionImpl[SpyreSDPAMetadata]):
             raise NotImplementedError("Encoder self-attention and "
                                       "encoder/decoder cross-attention "
                                       "are not implemented for "
-                                      "PallasAttentionBackendImpl")
+                                      "SpyreSDPABackendImpl")
 
     def forward(
         self,
