@@ -1,9 +1,7 @@
-sphinx
-sphinx-argparse
-sphinx-book-theme
-sphinx-copybutton
-sphinx-design
-sphinx-togglebutton
-myst-parser
-msgspec
-sphinx-substitution-extensions
+mkdocs
+mkdocs-api-autonav
+mkdocs-material
+mkdocstrings-python
+mkdocs-gen-files
+mkdocs-awesome-nav
+python-markdown-math

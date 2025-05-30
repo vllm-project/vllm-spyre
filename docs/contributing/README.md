@@ -1,6 +1,6 @@
-# Contributing
+# Contributing to vLLM Spyre
 
-Thank you for your interest in contributing to Spyre support on vLLM!
+Thank you for your interest in contributing to the Spyre plugin for vLLM!
 
 There are several ways you can contribute:
 
@@ -20,9 +20,8 @@ You can also reach out for support in the `#sig-spyre` channel in the [vLLM Slac
   
 1. Install `xgrammar` (only for `arm64` systems):
   
-   :::{tip}
+   !!! tip
    `xgrammar` is automatically installed on `x86_64` systems.
-   :::
 
    ```sh
    uv pip install xgrammar==0.1.19
@@ -34,9 +33,8 @@ You can also reach out for support in the `#sig-spyre` channel in the [vLLM Slac
    python -c "from transformers import pipeline; pipeline('text-generation', model='JackFram/llama-160m')"
    ```
 
-   :::{caution}
+   !!! caution
    The Hugging Face API download does **not** work on `arm64`.
-   :::
 
    By default, the model is saved to:
 
@@ -64,17 +62,12 @@ You can also reach out for support in the `#sig-spyre` channel in the [vLLM Slac
 
    Here are a list of `pytest` markers you can use to filter tests:
 
-   :::{literalinclude} ../../../pyproject.toml
-   :start-after: begin-test-markers-definition
-   :end-before: end-test-markers-definition
-   :language: python
-   :::
+   --8<-- "../../../pyproject.toml:test-markers-definition"
 
 ### Testing Continuous Batching
 
-:::{attention}
+!!! attention
 Continuous batching currently requires the custom installation described below until the FMS custom branch is merged to main.
-:::
 
 After completing the setup steps above:
 
