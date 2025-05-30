@@ -117,13 +117,14 @@ class SpyreModelRunner:
             self.model_config,
             parallel_config=self.parallel_config,
             scheduler_config=self.scheduler_config,
+            vllm_config=self.vllm_config,
             max_prompt_length=max_pad_length,
             max_decode_length=max_decode_length,
         )
 
     @property
     def vocab_size(self) -> int:
-        return self.model.model.model.config.src_vocab_size
+        return self.model.model.model.config.vocab_size
 
     def _prepare_pad_input_ids(
         self,

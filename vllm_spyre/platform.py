@@ -26,7 +26,7 @@ else:
     ModelConfig = None
     VllmConfig = None
 import vllm.envs as envs
-from vllm.platforms import Platform, PlatformEnum
+from vllm.platforms import Platform, PlatformEnum, _Backend
 
 import vllm_spyre.envs as envs_spyre
 
@@ -54,6 +54,15 @@ class SpyrePlatform(Platform):
         """
         return False
 
+    def get_attn_backend_cls(cls, selected_backend: _Backend, head_size: int,
+                             dtype: torch.dtype, kv_cache_dtype: Optional[str],
+                             block_size: int, use_v1: bool,
+                             use_mla: bool) -> str:
+        logger.info("Using Torch SDPA backend.")
+        return "vllm.attention.backends.torch_sdpa.TorchSDPABackend"
+        #return "vllm.attention.backends.placeholder_attn.PlaceholderAttentionBackend"
+        #return ("vllm.v1.attention.backends.mla.triton_mla.TritonMLABackend")
+
     @classmethod
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:
         cls._config = vllm_config
@@ -61,6 +70,9 @@ class SpyrePlatform(Platform):
         scheduler_config = vllm_config.scheduler_config
         model_config = vllm_config.model_config
         cache_config = vllm_config.cache_config
+        compilation_config = vllm_config.compilation_config
+
+        compilation_config.pass_config.enable_fusion = False
 
         if scheduler_config.is_multi_step:
             raise NotImplementedError

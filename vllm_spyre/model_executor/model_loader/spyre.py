@@ -6,15 +6,17 @@ import torch
 import torch._inductor.config
 import torch.distributed as dist
 import torch.nn as nn
-from fms.models import get_model
+#from fms.models import get_model
+from vllm.model_executor.model_loader import get_model
 from transformers import PretrainedConfig
-from vllm.config import ModelConfig, ParallelConfig, SchedulerConfig
+from vllm.config import ModelConfig, ParallelConfig, SchedulerConfig, VllmConfig
 from vllm.logger import init_logger
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
 from vllm.model_executor.layers.sampler import SamplerOutput, get_sampler
 from vllm.model_executor.model_loader.weight_utils import (
     download_weights_from_hf)
 from vllm.model_executor.sampling_metadata import SamplingMetadata
+from vllm.sequence import IntermediateTensors
 
 import vllm_spyre.envs as envs_spyre
 
@@ -41,6 +43,7 @@ class SpyreCausalLM(nn.Module):
         model_config: ModelConfig,
         parallel_config: ParallelConfig,
         scheduler_config: SchedulerConfig,
+        vllm_config: VllmConfig,
         max_prompt_length: int,
         max_decode_length: int,
     ) -> None:
@@ -62,12 +65,14 @@ class SpyreCausalLM(nn.Module):
         if envs_spyre.VLLM_SPYRE_USE_CB:
             self.model = ContinuousBatchingFmsModel(model_config,
                                                     parallel_config,
-                                                    scheduler_config)
+                                                    scheduler_config,
+                                                    vllm_config)
         else:
             self.model = StaticBatchingFmsModel(
                 model_config,
                 parallel_config,
                 scheduler_config,
+                vllm_config,
                 max_prompt_length,
                 max_decode_length,
             )
@@ -75,8 +80,9 @@ class SpyreCausalLM(nn.Module):
     def forward(
         self,
         input_ids: torch.Tensor,
-        positions: torch.Tensor,
-        masks: torch.Tensor,
+        position_ids: torch.Tensor,
+        #masks: torch.Tensor,
+        intermediate_tensors: Optional[IntermediateTensors],
         is_prompt: bool,
         current_tkv_mask: Optional[torch.Tensor] = None,
         left_padded_prompt_mask: Optional[torch.Tensor] = None,
@@ -102,8 +108,8 @@ class SpyreCausalLM(nn.Module):
         # normal prefill or decoding step
         logits = self.model(
             input_ids,
-            position_ids=positions,
-            mask=masks,
+            position_ids=position_ids,
+            #mask=masks,
             use_cache=True,
             only_last_token=not envs_spyre.VLLM_SPYRE_USE_CB,
             **extra_kwargs,
@@ -145,6 +151,7 @@ class FmsModelBase(nn.Module):
         self,
         model_config: ModelConfig,
         parallel_config: ParallelConfig,
+        vllm_config: VllmConfig,
         max_prompt_length: int,
         max_decode_length: int,
         sendnn_dynamic: bool,
@@ -157,6 +164,7 @@ class FmsModelBase(nn.Module):
 
         # Actual FMS model
         self.model: nn.Module
+        self.vllm_config = vllm_config
 
         # Load the weights from the cached or downloaded files.
         self.load_weights(model_config=model_config,
@@ -165,6 +173,7 @@ class FmsModelBase(nn.Module):
                           distributed_strategy="tp"
                           if parallel_config.world_size > 1 else None,
                           sendnn_dynamic=sendnn_dynamic)
+
 
     def load_weights(
         self,
@@ -217,15 +226,8 @@ class FmsModelBase(nn.Module):
         # we can use fused weights unless running on Spyre
         fused_weights = envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn_decoder"
 
-        self.model = get_model(architecture="hf_configured",
-                               variant=model_config.model,
-                               model_path=model_path,
-                               source=model_source,
-                               data_type=self.dtype,
-                               distributed_strategy=distributed_strategy,
-                               group=dist.group.WORLD,
-                               fused_weights=fused_weights,
-                               linear_config=linear_config)
+        #self.model = get_model(architecture="hf_configured", variant=model_config.model, model_path=model_path, source=model_source, data_type=self.dtype, distributed_strategy=distributed_strategy, group=dist.group.WORLD, fused_weights=fused_weights, linear_config=linear_config)
+        self.model = get_model(vllm_config=self.vllm_config)
 
         self.model.eval()
         torch.set_grad_enabled(False)
@@ -276,6 +278,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         model_config: ModelConfig,
         parallel_config: ParallelConfig,
         scheduler_config: SchedulerConfig,
+        vllm_config: VllmConfig,
     ) -> None:
 
         BLOCK_SIZE = 64
@@ -365,23 +368,25 @@ class StaticBatchingFmsModel(FmsModelBase):
         model_config: ModelConfig,
         parallel_config: ParallelConfig,
         _: SchedulerConfig,
+        vllm_config: VllmConfig,
         max_prompt_length: int,
         max_decode_length: int,
     ) -> None:
         super().__init__(model_config,
-                         parallel_config,
-                         max_prompt_length,
-                         max_decode_length,
-                         sendnn_dynamic=False)
+                parallel_config,
+                max_prompt_length,
+                max_decode_length,
+                sendnn_dynamic=False)
 
         # dynamic KV cache
         self.past_key_value_states = None
+        self.vllm_config = vllm_config
 
     def forward(
         self,
         input_ids: torch.Tensor,
         position_ids: torch.Tensor,
-        mask: torch.Tensor,
+        #mask: torch.Tensor,
         use_cache: bool,
         only_last_token: bool,
         **extra_kwargs,
@@ -389,14 +394,16 @@ class StaticBatchingFmsModel(FmsModelBase):
 
         output = self.model(
             input_ids,
-            position_ids=position_ids,
-            mask=mask,
-            past_key_value_states=self.past_key_value_states,
+            positions=position_ids,
+            #mask=mask,
+            intermediate_tensors=self.past_key_value_states,
             use_cache=use_cache,
             only_last_token=only_last_token,
             **extra_kwargs,
         )
 
-        logits, self.past_key_value_states = output
+        #logits, self.past_key_value_states = output
+        self.past_key_value_states = output
+        logits = self.model.compute_logits(output)
 
         return logits
