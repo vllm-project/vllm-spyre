@@ -1,6 +1,6 @@
 # vLLM Spyre Plugin docs
 
-Live doc: [vllm-spyre.readthedocs.io](https://vllm-spyre.readthedocs.io)
+Live docs: [vllm-spyre.readthedocs.io](https://vllm-spyre.readthedocs.io)
 
 ## Build the docs
 
