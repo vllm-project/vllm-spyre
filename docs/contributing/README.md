@@ -17,28 +17,24 @@ You can also reach out for support in the `#sig-spyre` channel in the [vLLM Slac
 ### Testing Locally on CPU (No Spyre card)
 
 !!! tip
-      `xgrammar` is automatically installed on `x86_64` systems.
+    `xgrammar` is automatically installed on `x86_64` systems.
 
 Install `xgrammar` (only for `arm64` systems):
 
-      ```sh
-      uv pip install xgrammar==0.1.19
-      ``` 
+```sh
+uv pip install xgrammar==0.1.19
+``` 
 
 Optionally, download the `JackFram/llama-160m` model:
 
-      ```sh
-      python -c "from transformers import pipeline; pipeline('text-generation', model='JackFram/llama-160m')"
-      ```
+```sh
+python -c "from transformers import pipeline; pipeline('text-generation', model='JackFram/llama-160m')"
+```
 
 !!! caution
     The Hugging Face API download does **not** work on `arm64`.
 
-By default, the model is saved to:
-
-```sh
-.cache/huggingface/hub/models--JackFram--llama-160m
-```
+By default, the model is saved to `.cache/huggingface/hub/models--JackFram--llama-160m`.
 
 Then, source the environment variables:
 
@@ -47,16 +43,16 @@ source _local_envs_for_test.sh
 ```
 
 Optionally, install development dependencies:
-  
-   ```sh
-   uv pip install --group dev
-   ```
+
+```sh
+uv pip install --group dev
+```
 
 Now, you can run the tests:
   
-   ```sh
-   python -m pytest -v -x tests -m "v1 and cpu and e2e"
-   ```
+```sh
+python -m pytest -v -x tests -m "v1 and cpu and e2e"
+```
 
 Here is a list of `pytest` markers you can use to filter them:
 
@@ -89,26 +85,26 @@ When submitting a PR, please make sure your code passes all linting checks. You 
 
 Using `uv`:
 
-```bash
+```sh
 uv sync --frozen --group lint --active --inexact
 ```
 
 Using `pip`:
 
-```bash
+```sh
 uv pip compile --group lint > requirements-lint.txt
 pip install -r requirements-lint.txt
 ```
 
 After installing the requirements, run the formatting script:
 
-```bash
+```sh
 bash format.sh
 ```
 
 Then, make sure to commit any changes made by the formatter:
 
-```bash
+```sh
 git add .
 git commit -s -m "Apply linting and formatting"
 ```

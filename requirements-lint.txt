@@ -34,7 +34,7 @@ types-pyyaml==6.0.12.20250516
     # via vllm-spyre (pyproject.toml:lint)
 types-requests==2.32.0.20250515
     # via vllm-spyre (pyproject.toml:lint)
-types-setuptools==80.7.0.20250516
+types-setuptools==80.9.0.20250529
     # via vllm-spyre (pyproject.toml:lint)
 typing-extensions==4.13.2
     # via
