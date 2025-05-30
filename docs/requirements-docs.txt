@@ -5,3 +5,4 @@ mkdocstrings-python
 mkdocs-gen-files
 mkdocs-awesome-nav
 python-markdown-math
+regex
