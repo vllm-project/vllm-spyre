@@ -56,32 +56,6 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 RUN rm -rf /tmp/etc
 
 ##############################################
-# Hardware specific release setup stages:
-# DD1 and DD2 require different configurations and have separate release bases
-##############################################
-FROM base as dd2
-
-# Copy over the vllm venv
-COPY --from=builder /opt/vllm /opt/vllm
-
-# Required DD2 environment configuration
-ENV COMPILATION_MODE=offline_decoder \
-    DTLOG_LEVEL=error \
-    DT_DEEPRT_VERBOSE=-1 \
-    DT_OPT=varsub=1,lxopt=1,opfusion=1,arithfold=1,dataopt=1,patchinit=1,patchprog=1,autopilot=1,weipreload=0,kvcacheopt=1,progshareopt=1,dtversion=2 \
-    FLEX_COMPUTE=SENTIENT \
-    FLEX_DEVICE=PF \
-    FLEX_OVERWRITE_NMB_FRAME=1 \
-    FLEX_UNLINK_DEVMEM=false \
-    FLEX_RDMA_MODE_FULL=1 \
-    TOKENIZERS_PARALLELISM=false \
-    TORCH_SENDNN_LOG=CRITICAL
-
-# Required configuration file
-COPY dd2/.senlib.json /home/senuser
-
-
-##############################################
 # Release stage
 ##############################################
 FROM base as release

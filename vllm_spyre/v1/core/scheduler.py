@@ -151,7 +151,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         self,
         scheduler_output: SchedulerOutput,
         model_runner_output: ModelRunnerOutput,
-    ) -> EngineCoreOutputs:
+    ) -> dict[int, EngineCoreOutputs]:
         # Need an instance of CBSpyreModelRunnerOutput which holds the tkv value
         assert isinstance(
             model_runner_output, CBSpyreModelRunnerOutput
