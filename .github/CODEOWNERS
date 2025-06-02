@@ -13,3 +13,6 @@
 
 # Docs
 /docs @rafvasq
+
+# CI
+/.github @joerunde @ckadner
