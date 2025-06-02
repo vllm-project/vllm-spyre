@@ -6,8 +6,6 @@ exclude_docs: |
   *.template.md
 theme:
   name: material
-  # logo: assets/logos/vllm-logo-only-light.ico
-  # favicon: assets/logos/vllm-logo-only-light.ico
   palette:
     # Palette toggle for automatic mode
     - media: "(prefers-color-scheme)"
