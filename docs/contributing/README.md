@@ -29,7 +29,7 @@ pip install -r docs/requirements-docs.txt
 
 #### Start the Development Server
 
-MkDocs comes with a built-in dev-server that lets you preview your documentation as you work on it. 
+MkDocs comes with a built-in dev-server that lets you preview your documentation as you work on it.
 
 Make sure you're in the same directory as the `mkdocs.yml` configuration file in the `vllm-spyre` repository, and then start the server by running the `mkdocs serve` command:
 
