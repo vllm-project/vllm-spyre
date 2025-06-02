@@ -1,0 +1,8 @@
+# See https://help.github.com/articles/about-codeowners/
+# for more info about CODEOWNERS file
+
+# This lists cover the "core" components of vLLM that require careful review
+/vllm_spyre @joerunde
+
+# Docs
+/docs @rafvasq
