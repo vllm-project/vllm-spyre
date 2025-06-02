@@ -12,6 +12,47 @@ If you encounter a bug or have a feature request, please search [existing issues
 
 You can also reach out for support in the `#sig-spyre` channel in the [vLLM Slack](https://inviter.co/vllm-slack) workspace.
 
+## Developing
+
+### Building the docs with MkDocs
+
+#### Install MkDocs and Plugins
+
+Install MkDocs along with the [plugins](https://github.com/vllm-project/vllm-spyre/blob/main/mkdocs.yaml) used in the vLLM Spyre documentation.
+
+```bash
+pip install -r docs/requirements-docs.txt
+```
+
+!!! note
+    Ensure that your Python version is compatible with the plugins (e.g., `mkdocs-awesome-nav` requires Python 3.10+)
+
+#### Start the Development Server
+
+MkDocs comes with a built-in dev-server that lets you preview your documentation as you work on it. 
+
+Make sure you're in the same directory as the `mkdocs.yml` configuration file in the `vllm-spyre` repository, and then start the server by running the `mkdocs serve` command:
+
+```bash
+mkdocs serve
+```
+
+Example output:
+
+```console
+INFO    -  Documentation built in 106.83 seconds
+INFO    -  [22:02:02] Watching paths for changes: 'docs', 'mkdocs.yaml'
+INFO    -  [22:02:02] Serving on http://127.0.0.1:8000/
+```
+
+#### View in Your Browser
+
+Open up [http://127.0.0.1:8000/](http://127.0.0.1:8000/) in your browser to see a live preview:.
+
+#### Learn More
+
+For additional features and advanced configurations, refer to the official [MkDocs Documentation](https://www.mkdocs.org/).
+
 ## Testing
 
 ### Testing Locally on CPU (No Spyre card)
