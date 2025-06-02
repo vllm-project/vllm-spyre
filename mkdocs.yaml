@@ -102,9 +102,6 @@ markdown_extensions:
   - mdx_math:
       enable_dollar_delimiter: true
 
-extra_css:
-  - mkdocs/stylesheets/extra.css
-
 extra_javascript:
   - https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS_HTML
 
