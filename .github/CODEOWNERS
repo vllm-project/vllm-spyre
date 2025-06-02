@@ -6,7 +6,7 @@
 # unless a later match takes precedence
 * @joerunde @yannicks1 @tdoublep @sducouedic
 
-# This lists cover the "core" components of vLLM that require careful review
+# This lists cover the "core" components of vLLM-Spyre that require careful review
 /vllm_spyre @joerunde @prashantgupta24
 
 # Tests
