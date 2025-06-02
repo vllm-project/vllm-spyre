@@ -61,7 +61,7 @@ jobs:
       - name: "Checkout"
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1 # assume PRs are less than 100 commits, >1 needed for tj-actions/changed-files on push
+          fetch-depth: 1
 
       - name: "Get changed source files"
         id: changed-src-files
