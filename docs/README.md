@@ -2,7 +2,7 @@
 
 Live doc: [vllm-spyre.readthedocs.io](https://vllm-spyre.readthedocs.io)
 
-## How to build the docs
+## Build the docs
 
 ```bash
 # Install dependencies.
@@ -13,7 +13,7 @@ make clean
 make html
 ```
 
-## How to view the docs in a web browser
+## Open the docs with your browser
 
 ```bash
 python -m http.server -d _build/html/
