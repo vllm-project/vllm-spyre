@@ -8,7 +8,11 @@
 
 # This lists cover the "core" components of vLLM that require careful review
 /vllm_spyre @joerunde @prashantgupta24
+
+# Tests
 /tests @rafvasq @prashantgupta24
+
+# Examples
 /examples @yannicks1 @prashantgupta24
 
 # Docs
