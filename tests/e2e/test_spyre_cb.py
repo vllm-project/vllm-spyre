@@ -473,4 +473,9 @@ def test_scheduler_cb_steps_tkv(model: str, backend: str,
                 f"Step {step}, finished request output"
 
         # Perform next step
-        request_outputs = engine_core.step().outputs
+        step_output = engine_core.step()
+        # backward compatibility
+        if isinstance(step_output, tuple):
+            request_outputs = step_output[0].outputs
+        else:
+            request_outputs = step_output.outputs

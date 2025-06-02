@@ -6,7 +6,6 @@ on:
   pull_request:
     branches:
       - main
-      - wallas-ignore-docs
     paths-ignore:
       - 'docs/**'
   push:
