@@ -13,7 +13,7 @@ def create_perf_metric_logger(rank: int):
 
 
 class SpyrePerfMetricLoggerBase:
-    """ A no-op base class for use when logging is disabled """
+    """ A no-op base class for use when logging is disabled. """
 
     def __init__(self, rank: int):
         self.rank = rank
