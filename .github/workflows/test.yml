@@ -66,11 +66,12 @@ jobs:
       - name: "Get changed source files"
         id: changed-src-files
         uses: tj-actions/changed-files@v46
-        with: # Avoid using single or double quotes for multiline patterns, TODO: add .github/workflows/test.yml
+        with: # Avoid using single or double quotes for multiline patterns
           files: |
+            .github/workflows/test.yml
+            pyproject.toml
             tests/**/*.py
             vllm_spyre/**/*.py
-            pyproject.toml
 
       - name: "Install PyTorch"
         if: steps.changed-src-files.outputs.any_changed == 'true'
