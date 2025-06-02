@@ -1,9 +1,9 @@
 # See https://help.github.com/articles/about-codeowners/
 # for more info about CODEOWNERS file
 
-# These owners will be the default owners for everything in
-# the repo unless a later match takes precedence, and will be
-# requested for review when someone opens a pull request
+# These owners will be the default owners for everything in the repo
+# and will be requested for review when someone opens a pull request
+# unless a later match takes precedence
 * @joerunde @yannicks1 @tdoublep @sducouedic
 
 # This lists cover the "core" components of vLLM that require careful review
