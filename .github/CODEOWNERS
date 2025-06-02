@@ -3,6 +3,8 @@
 
 # This lists cover the "core" components of vLLM that require careful review
 /vllm_spyre @joerunde
+/tests @joerunde
+/examples @joerunde
 
 # Docs
 /docs @rafvasq
