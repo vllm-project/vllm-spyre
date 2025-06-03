@@ -432,6 +432,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
 
         t0 = time.time()
 
+        self._update_states(scheduler_output)
         # TODO: change to EMPTY_MODEL_RUNNER_OUTPUT, right now this
         # will be a breaking change, or clumsy to make retrocompatible
         # with conditional import
@@ -445,8 +446,6 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
                 logprobs=None,
                 prompt_logprobs_dict={},
             )
-
-        self._update_states(scheduler_output)
 
         model_input = self.prepare_model_input(scheduler_output)
         self._mark_input_tensors(model_input)
