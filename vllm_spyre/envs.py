@@ -12,8 +12,7 @@ if TYPE_CHECKING:
     VLLM_SPYRE_PERF_METRIC_LOGGING_DIR: str = "/tmp"
     VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER: bool = False
 
-# begin-env-vars-definition
-
+# --8<-- [start:env-vars-definition]
 environment_variables: dict[str, Callable[[], Any]] = {
     # Defines the prompt lengths the Spyre accelerator should be prepared
     # for, formatted as comma separated list. Only applicable in static batching
@@ -77,8 +76,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER":
     lambda: os.getenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "0"),
 }
-
-# end-env-vars-definition
+# --8<-- [end:env-vars-definition]
 
 
 def __getattr__(name: str):
