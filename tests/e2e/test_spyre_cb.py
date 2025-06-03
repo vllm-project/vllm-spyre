@@ -569,7 +569,7 @@ def get_params_test_scheduler_constraints_max_prompt_len():
         },
         {
             # Decode sequence 0
-            # Cannot decode sequence 2: 185 + 80 = 265 > 256
+            # Cannot prefill sequence 2: 185 + 80 = 265 > 256
             "step": 59,
             "tkv": 185,
             "waiting": ["2"],
