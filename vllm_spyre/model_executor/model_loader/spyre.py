@@ -315,6 +315,12 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         # is reset to the value returned by the Spyre compiler after warmup
         self._set_past_key_value_states(num_blocks=4)
 
+        # mark the num_blocks dimension dynamic for Spyre compiler for warmup
+        # only, compiler will return the number of blocks it can accommodate
+        for layer in self.past_key_value_states:
+            for tensor in layer:
+                torch._dynamo.mark_dynamic(tensor, 0)
+
     def _set_past_key_value_states(self, num_blocks) -> None:
         # List[layers] of Tuple[k,v] of
         # Tensor[num_blocks, block_size, num_kv_heads, head_dim]
