@@ -575,7 +575,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         assert max_batch_size >= 2, "Currently, continuous batching needs " \
             "config to set batch_size >= 2"
 
-        self.BLOCK_SIZE = 64
+        self.BLOCK_SIZE = 64  # hardcoded Spyre constraint for now
         # This will be set by the Spyre compiler and will be removed here
         # currently consumed by SpyreWorker.get_num_blocks_from_compiler_mock()
         self.n_blocks_spyre = max_batch_size * max_model_len // self.BLOCK_SIZE

@@ -278,8 +278,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         scheduler_config: SchedulerConfig,
     ) -> None:
 
-        BLOCK_SIZE = 64
-        max_batch = scheduler_config.max_num_seqs
+        BLOCK_SIZE = 64  # hardcoded Spyre constraint for now
         max_model_len = scheduler_config.max_model_len
 
         # edge case: prompt fills model length: can produce 1 token with prefill
@@ -295,35 +294,43 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                          sendnn_dynamic=True)
 
         # physical KV cache on AIU Spyre: will eventually not live in this class
-        num_kv_heads = model_config.get_num_kv_heads(parallel_config)
+        self.kv_cache_specs = {'block_size': BLOCK_SIZE}
+        self.kv_cache_specs['num_kv_heads'] = model_config.get_num_kv_heads(
+            parallel_config)
 
         if self.config.model_type in {'llama', 'granite'}:
-            num_layers = self.config.num_hidden_layers
-            head_dim = self.config.hidden_size // \
+            self.kv_cache_specs['num_layers'] = self.config.num_hidden_layers
+            self.kv_cache_specs['head_dim'] = self.config.hidden_size // \
                 self.config.num_attention_heads
         elif self.config.model_type == 'gpt_bigcode':
-            num_layers = self.config.n_layer
-            head_dim = self.config.n_embd // self.config.n_head
+            self.kv_cache_specs['num_layers'] = self.config.n_layer
+            self.kv_cache_specs[
+                'head_dim'] = self.config.n_embd // self.config.n_head
         else:
             raise NotImplementedError(
                 f"[SpyreCausalLM] model type {self.config.model_type} "
                 f"not supported in ContinuousBatchingFmsModel")
 
-        num_blocks = max_batch * max_model_len // BLOCK_SIZE  # 64
+        # set num_blocks to the minimal value of 4 required for warmup
+        # is reset to the value returned by the Spyre compiler after warmup
+        self._set_past_key_value_states(num_blocks=4)
 
+    def _set_past_key_value_states(self, num_blocks) -> None:
         # List[layers] of Tuple[k,v] of
-        # Tensor[num_blocks, BLOCK_SIZE, num_kv_heads, head_dim]
-        self.past_key_value_states = [(torch.zeros(num_blocks,
-                                                   BLOCK_SIZE,
-                                                   num_kv_heads,
-                                                   head_dim,
-                                                   dtype=self.dtype),
-                                       torch.zeros(num_blocks,
-                                                   BLOCK_SIZE,
-                                                   num_kv_heads,
-                                                   head_dim,
-                                                   dtype=self.dtype))
-                                      for _ in range(num_layers)]
+        # Tensor[num_blocks, block_size, num_kv_heads, head_dim]
+        self.past_key_value_states = [
+            (torch.zeros(num_blocks,
+                         self.kv_cache_specs['block_size'],
+                         self.kv_cache_specs['num_kv_heads'],
+                         self.kv_cache_specs['head_dim'],
+                         dtype=self.dtype),
+             torch.zeros(num_blocks,
+                         self.kv_cache_specs['block_size'],
+                         self.kv_cache_specs['num_kv_heads'],
+                         self.kv_cache_specs['head_dim'],
+                         dtype=self.dtype))
+            for _ in range(self.kv_cache_specs['num_layers'])
+        ]
 
     def forward(
         self,

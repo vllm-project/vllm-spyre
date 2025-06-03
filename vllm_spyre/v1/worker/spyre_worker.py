@@ -402,9 +402,11 @@ class SpyreWorker(WorkerBaseV1):
                         ul_stop_time - ul_start_time)
 
         # get the number or pages from the actual Spyre card after the warmup
-        # and set it accordingly in the model runner
+        # and set it accordingly in the model runner and the kv cache size
         n_blocks_spyre = self.get_num_blocks_from_compiler_mock()
         model_runner._set_free_blocks(num_blocks=n_blocks_spyre)
+        model_runner.model.model._set_past_key_value_states(
+            num_blocks=n_blocks_spyre)
 
         warmup_end_t = time.time()
         warmup_total_t = warmup_end_t - warmup_start_t
