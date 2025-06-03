@@ -11,8 +11,7 @@ if TYPE_CHECKING:
     VLLM_SPYRE_PERF_METRIC_LOGGING_ENABLED: int = 0
     VLLM_SPYRE_PERF_METRIC_LOGGING_DIR: str = "/tmp"
 
-# begin-env-vars-definition
-
+# --8<-- [start:env-vars-definition]
 environment_variables: dict[str, Callable[[], Any]] = {
     # Defines the prompt lengths the Spyre accelerator should be prepared
     # for, formatted as comma separated list. Only applicable in static batching
@@ -70,8 +69,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "VLLM_SPYRE_PERF_METRIC_LOGGING_DIR":
     lambda: os.getenv("VLLM_SPYRE_PERF_METRIC_LOGGING_DIR", "/tmp"),
 }
-
-# end-env-vars-definition
+# --8<-- [end:env-vars-definition]
 
 
 def __getattr__(name: str):

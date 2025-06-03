@@ -116,6 +116,8 @@ skip_gitignore = true
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+
+# --8<-- [start:test-markers-definition]
 markers = [
     "skip_global_cleanup",
     "e2e: Tests using end-to-end engine spin-up",
@@ -131,6 +133,7 @@ markers = [
     "utils: Tests for utility functions",
     "worker: Tests for worker logic",
 ]
+# --8<-- [end:test-markers-definition]
 
 [tool.pymarkdown]
 plugins.md013.enabled = false # line-length

@@ -408,7 +408,7 @@ def spyre_vllm_embeddings(model: str, prompts: list[str],
                      block_size=block_size,
                      tensor_parallel_size=tensor_parallel_size)
 
-    vllm_outputs = vllm_model.encode(prompts)
+    vllm_outputs = vllm_model.embed(prompts)
 
     results = []
     for req_output in vllm_outputs:
