@@ -1,0 +1,14 @@
+{
+    "RISCV": {
+        "DOOM": {
+            "enable": false
+        }
+    },
+    "SNT_MCI": {
+        "DCR": {
+            "MCI_CTRL": {
+                "ENABLE_RISCV": "0x0"
+            }
+        }
+    }
+}

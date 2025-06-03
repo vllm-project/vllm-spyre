@@ -1,0 +1,28 @@
+nav:
+  - Home:
+    - vLLM Spyre Plugin: README.md
+    - Getting Started:
+        - Installation: getting_started/installation.md
+    - Deploying:
+        - Docker: deploying/docker.md
+        - Kubernetes: deploying/k8s.md
+    - Examples:
+      - Offline Inference: examples/offline_inference
+      - Other: examples/other
+    - User Guide:
+        - Configuration: user_guide/configuration.md
+        - Environment Variables: user_guide/env_vars.md
+        - Supported Features: user_guide/supported_features.md
+        - Supported Models: user_guide/supported_models.md
+    - Developer Guide:
+      - Contributing: contributing/README.md
+
+  - Getting Started:
+      - Installation: getting_started/installation.md
+  - User Guide:
+      - Configuration: user_guide/configuration.md
+      - Environment Variables: user_guide/env_vars.md
+      - Supported Features: user_guide/supported_features.md
+      - Supported Models: user_guide/supported_models.md
+  - Developer Guide:
+    - Contributing: contributing/README.md
