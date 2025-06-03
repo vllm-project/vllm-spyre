@@ -132,6 +132,7 @@ def get_params_test_blocks_borders_aligned_prompts():
     prompts_lengths = [49, 41, 47]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
     max_model_len = 2048
+    remove_left_padding = False
 
     checked_steps = [
         {
@@ -224,7 +225,7 @@ def get_params_test_blocks_borders_aligned_prompts():
     ]
 
     return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            max_model_len)
+            max_model_len, remove_left_padding)
 
 
 def get_params_test_blocks_borders_misaligned_prompts():
@@ -236,6 +237,7 @@ def get_params_test_blocks_borders_misaligned_prompts():
     prompts_lengths = [49, 41, 47]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
     max_model_len = 2048
+    remove_left_padding = False
 
     checked_steps = [
         {
@@ -328,7 +330,7 @@ def get_params_test_blocks_borders_misaligned_prompts():
     ]
 
     return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            max_model_len)
+            max_model_len, remove_left_padding)
 
 
 def get_params_test_special_finish():
@@ -339,6 +341,7 @@ def get_params_test_special_finish():
     prompts_lengths = [49, 30, 20]
     steps_add_reqs = [0, 0, 31]
     max_model_len = 2048
+    remove_left_padding = False
 
     checked_steps = [
         {
@@ -419,7 +422,7 @@ def get_params_test_special_finish():
     ]
 
     return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            max_model_len)
+            max_model_len, remove_left_padding)
 
 
 def get_params_test_scheduler_constraints_tkv():
@@ -429,6 +432,7 @@ def get_params_test_scheduler_constraints_tkv():
     prompts_lengths = [49, 70]
     steps_add_reqs = [0, 0]
     max_model_len = 2048
+    remove_left_padding = False
 
     checked_steps = [
         {
@@ -509,7 +513,7 @@ def get_params_test_scheduler_constraints_tkv():
     ]
 
     return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            max_model_len)
+            max_model_len, remove_left_padding)
 
 
 def get_params_test_scheduler_constraints_max_prompt_len():
@@ -519,6 +523,7 @@ def get_params_test_scheduler_constraints_max_prompt_len():
     prompts_lengths = [70, 49, 41]
     steps_add_reqs = [0, 0, 0]
     max_model_len = 256
+    remove_left_padding = False
 
     checked_steps = [
         {
@@ -618,7 +623,129 @@ def get_params_test_scheduler_constraints_max_prompt_len():
     ]
 
     return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            max_model_len)
+            max_model_len, remove_left_padding)
+
+
+def get_params_test_remove_left_padding():
+    """" Test the stripping of repeated left padding in continuous batching """
+
+    seqs_max_tokens = [40, 20, 11]
+    prompts_lengths = [20, 14, 5]
+    steps_add_reqs = [0, 30, 31]
+    max_model_len = 2048
+    remove_left_padding = True
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0"],
+            "running": [],
+            "request_outputs": []
+        },
+        {
+            # Prefill sequence 0
+            "step": 1,
+            "tkv": 64,
+            "waiting": [],
+            "running": ["0"],
+            "request_outputs": ["0"]
+        },
+        {
+            # Decode sequence 0
+            "step": 2,
+            "tkv": 65,
+            "waiting": [],
+            "running": ["0"],
+            "request_outputs": ["0"]
+        },
+        {
+            # Decode sequence 0, sequence 1 enters
+            "step": 30,
+            "tkv": 93,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"]
+        },
+        {
+            # Prefill sequence 1, sequence 2 enters
+            "step": 31,
+            "tkv": 93,
+            "waiting": ["2"],
+            "running": ["1", "0"],
+            "request_outputs": ["1"]
+        },
+        {
+            # Decode sequences 0 and 1
+            "step": 32,
+            "tkv": 94,
+            "waiting": ["2"],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"]
+        },
+        {
+            # Sequence 0 finishes at step 41
+            # (start step + 2 prefills + 39 decodes - 1) = 1 + 2 + 39 - 1 = 41
+            "step": 41,
+            "tkv": 103,
+            "waiting": ["2"],
+            "running": ["1"],
+            "request_outputs": ["1", "0"],
+            "finished_requests": ["0"]
+        },
+        {
+            # Prefill sequence 2
+            # TODO @Yannick, should the left padding ideally already be removed?
+            "step": 42,
+            "tkv": 103,  # <-- should be 64?
+            "waiting": [],
+            "running": ["2", "1"],
+            "request_outputs": ["2"]
+        },
+        {
+            # Decode sequences 1 and 2
+            # @Yannick
+            # That value (40) is a bit odd to see since we are used that for the
+            # first block, the two prompts are padded to the right
+            # it is not necessarily a problem though, but might be confusing
+            "step": 43,
+            "tkv": 40,  # 104 - 64 = 40
+            "waiting": [],
+            "running": ["2", "1"],
+            "request_outputs": ["2", "1"]
+        },
+        {
+            # Sequences 1 finishes at step 51
+            # (start step + 2 prefill + 19 decodes - 1) = 31 + 2 + 19 - 1 = 51
+            "step": 51,
+            "tkv": 48,
+            "waiting": [],
+            "running": ["2"],
+            "request_outputs": ["2", "1"],
+            "finished_requests": ["1"]
+        },
+        {
+            # Sequences 2 finishes at step 52
+            # (start step + 1 prefill + 10 decodes - 1) = 42 + 1 + 10 - 1 = 52
+            "step": 52,
+            "tkv": 49,
+            "waiting": [],
+            "running": [],
+            "request_outputs": ["2"],
+            "finished_requests": ["2"]
+        },
+        {
+            # Tkv should be cleared one step later
+            "step": 53,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": [],
+        },
+    ]
+
+    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
+            max_model_len, remove_left_padding)
 
 
 def augment_checked_steps(
@@ -648,23 +775,26 @@ def augment_checked_steps(
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize(
     "seqs_max_tokens,prompts_lengths,steps_add_reqs,checked_steps,"
-    "max_model_len",
-    [
+    "max_model_len,remove_left_padding", [
         get_params_test_blocks_borders_aligned_prompts(),
         get_params_test_blocks_borders_misaligned_prompts(),
         get_params_test_special_finish(),
         get_params_test_scheduler_constraints_tkv(),
         get_params_test_scheduler_constraints_max_prompt_len(),
-
-        # TODO to test additionally at some point:
-        # * test stripping repeated left padding
-        # * test metadata cleanup after last request finishes
+        get_params_test_remove_left_padding(),
     ])
 def test_scheduler_cb_steps_tkv(
-        model: str, backend: str, monkeypatch: pytest.MonkeyPatch,
-        max_num_seqs: int, seqs_max_tokens: list[int],
-        prompts_lengths: list[int], steps_add_reqs: list[int],
-        checked_steps: list[dict[str, Any]], max_model_len: int):
+    model: str,
+    backend: str,
+    monkeypatch: pytest.MonkeyPatch,
+    max_num_seqs: int,
+    seqs_max_tokens: list[int],
+    prompts_lengths: list[int],
+    steps_add_reqs: list[int],
+    checked_steps: list[dict[str, Any]],
+    max_model_len: int,
+    remove_left_padding: bool,
+):
     """
     Test the scheduler execution by comparing the scheduler attributes at each 
     step with the provided reference values in 'checked_steps'.
@@ -679,6 +809,8 @@ def test_scheduler_cb_steps_tkv(
     monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
     monkeypatch.setenv("VLLM_USE_V1", "1")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+    monkeypatch.setenv("VLLM_SPYRE_RM_PADDED_BLOCKS",
+                       "1" if remove_left_padding else "0")
 
     # To get deterministic execution in V1
     # and to enable InprocClient
