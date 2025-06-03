@@ -95,7 +95,7 @@ class PoolingInputBatch(BaseInputBatch[PoolingRequestState]):
         if req_index is None:
             return
 
-        self.pooling_params.pop(req_index, None)
+        self.pooling_params.pop(req_id, None)
 
     def make_pooling_metadata(self) -> PoolingMetadata:
         prompt_token_ids = self._make_prompt_token_ids_tensor()
