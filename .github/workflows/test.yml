@@ -1,21 +1,15 @@
 name: Test
 
 on:
-  # Don't use pull_request.paths filter since this workflow is required for
-  # all pull requests on main irrespective of file type or location
+  # Don't use `paths` or `paths-ignore` filter since this workflow is required
+  # for all pull requests on main irrespective of file type or location
+  # Use `changed-src-files` step to determine if source code was changed
   pull_request:
     branches:
       - main
-    paths-ignore:
-      - 'docs/**'
   push:
     branches:
       - main
-    paths:
-      - "tests/**/*.py"
-      - "vllm_spyre/**/*.py"
-      - pyproject.toml
-      - .github/workflows/test.yml
   workflow_dispatch:
 
 env:
@@ -69,11 +63,23 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: "Get changed source files"
+        id: changed-src-files
+        uses: tj-actions/changed-files@v46
+        with: # Avoid using single or double quotes for multiline patterns
+          files: |
+            .github/workflows/test.yml
+            pyproject.toml
+            tests/**/*.py
+            vllm_spyre/**/*.py
+
       - name: "Install PyTorch"
+        if: steps.changed-src-files.outputs.any_changed == 'true'
         run: |
           pip install torch=="2.5.1+cpu" --index-url https://download.pytorch.org/whl/cpu
 
       - name: "Install uv"
+        if: steps.changed-src-files.outputs.any_changed == 'true'
         uses: astral-sh/setup-uv@v5
         with:
           version: "latest"
@@ -84,11 +90,12 @@ jobs:
             pyproject.toml
 
       - name: "Set vLLM version"
-        if: matrix.vllm_version.repo
+        if: (steps.changed-src-files.outputs.any_changed == 'true' && matrix.vllm_version.repo)
         run: |
           uv add ${{ matrix.vllm_version.repo }}
 
       - name: "Install vLLM with Spyre plugin"
+        if: steps.changed-src-files.outputs.any_changed == 'true'
         run: |
           uv venv .venv --system-site-packages
           source .venv/bin/activate
@@ -101,6 +108,7 @@ jobs:
           uv pip install -v .
 
       - name: "Restore HF models cache"
+        if: steps.changed-src-files.outputs.any_changed == 'true'
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.HF_HUB_CACHE }}
@@ -109,6 +117,7 @@ jobs:
             ${{ runner.os }}-hub-cache
 
       - name: "Download HF models"
+        if: steps.changed-src-files.outputs.any_changed == 'true'
         run: |
           mkdir -p "${VLLM_SPYRE_TEST_MODEL_DIR}"
 
@@ -133,13 +142,14 @@ jobs:
           ls "${VLLM_SPYRE_TEST_MODEL_DIR}" > cached_models.txt
 
       - name: "Save HF models cache"
-        if: ( github.event_name != 'pull_request' && strategy.job-index == 0 )
+        if: ( steps.changed-src-files.outputs.any_changed == 'true' && github.event_name != 'pull_request' && strategy.job-index == 0 )
         uses: actions/cache/save@v4
         with:
           path: ${{ env.HF_HUB_CACHE }}
           key: ${{ runner.os }}-hub-cache-${{ hashFiles('cached_models.txt') }}
 
       - name: "Run tests"
+        if: steps.changed-src-files.outputs.any_changed == 'true'
         env:
           MASTER_PORT: 12355
           MASTER_ADDR: localhost
