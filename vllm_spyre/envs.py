@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     VLLM_SPYRE_RM_PADDED_BLOCKS: bool = False
     VLLM_SPYRE_PERF_METRIC_LOGGING_ENABLED: int = 0
     VLLM_SPYRE_PERF_METRIC_LOGGING_DIR: str = "/tmp"
+    VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER: bool = False
 
 # --8<-- [start:env-vars-definition]
 environment_variables: dict[str, Callable[[], Any]] = {
@@ -68,6 +69,12 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # logs are written to /tmp.
     "VLLM_SPYRE_PERF_METRIC_LOGGING_DIR":
     lambda: os.getenv("VLLM_SPYRE_PERF_METRIC_LOGGING_DIR", "/tmp"),
+
+    # If set, override the signal handler for vllm-spyre on
+    # vLLM V1 + torch_sendnn backend to be able to gracefully
+    # shutdown the engine.
+    "VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER":
+    lambda: bool(int(os.getenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1"))),
 }
 # --8<-- [end:env-vars-definition]
 
