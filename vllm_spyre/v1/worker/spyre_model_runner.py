@@ -576,13 +576,17 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             "config to set batch_size >= 2"
 
         self.BLOCK_SIZE = 64
-        NUM_BLOCKS = max_batch_size * max_model_len // self.BLOCK_SIZE  # 64
+        # This will be set by the Spyre compiler and will be removed here
+        # currently consumed by SpyreWorker.get_num_blocks_from_compiler_mock()
+        self.n_blocks_spyre = max_batch_size * max_model_len // self.BLOCK_SIZE
 
         # TO DO: move to InputBatch
         self.req_ids2blocks: dict[str, deque[int]] = {}
         self.req_ids2left_pads: dict[str, int] = {}
         self.tkv = 0
-        self.free_blocks = deque([i for i in range(NUM_BLOCKS)])
+        # set self.free_blocks to the minimal value of 4 required for warmup
+        # is reset to the value returned by the Spyre compiler after warmup
+        self._set_free_blocks(num_blocks=4)
 
         # TODO: Remove this once we can prefill and decode
         # in the same step
@@ -595,6 +599,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             pin_memory=self.pin_memory,
             vocab_size=vllm_config.model_config.get_vocab_size(),
         )
+
+    def _set_free_blocks(self, num_blocks: int) -> None:
+        self.free_blocks = deque([i for i in range(num_blocks)])
 
     def _update_states(self, scheduler_output):
 

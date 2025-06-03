@@ -390,7 +390,7 @@ class SpyreWorker(WorkerBaseV1):
         )
         self.execute_model(scheduler_output)
 
-        self.model_runner.tkv = 0  # type: ignore[union-attr]
+        model_runner.tkv = 0
 
         # update lazyhandle (once)
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
@@ -401,10 +401,21 @@ class SpyreWorker(WorkerBaseV1):
             logger.info("update_lazyhandle() done (duration: %.3fs)",
                         ul_stop_time - ul_start_time)
 
+        # get the number or pages from the actual Spyre card after the warmup
+        # and set it accordingly in the model runner
+        n_blocks_spyre = self.get_num_blocks_from_compiler_mock()
+        model_runner._set_free_blocks(num_blocks=n_blocks_spyre)
+
         warmup_end_t = time.time()
         warmup_total_t = warmup_end_t - warmup_start_t
         logger.info("Warmup finished.")
         logger.info("Warmup took %.3fs", warmup_total_t)
+
+    def get_num_blocks_from_compiler_mock(self) -> int:
+        """Mock function to return the number of available blocks/pages
+        on Spyre. Will be replaced by a function in torch_sendnn which reads 
+        the actual value provided by the compiler."""
+        return self.model_runner.n_blocks_spyre  # type: ignore[union-attr]
 
     def _warmup_spyre_fixed_size(self, prompt_len, num_decode_tokens,
                                  special_token_ids, batch_size):
