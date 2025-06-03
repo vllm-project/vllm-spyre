@@ -74,7 +74,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # vLLM V1 + torch_sendnn backend to be able to gracefully
     # shutdown the engine.
     "VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER":
-    lambda: bool(os.getenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")),
+    lambda: bool(int(os.getenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1"))),
 }
 # --8<-- [end:env-vars-definition]
 
