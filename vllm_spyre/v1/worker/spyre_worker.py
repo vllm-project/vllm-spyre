@@ -572,7 +572,7 @@ class SpyreWorker(WorkerBaseV1):
         return output if self.is_driver_worker else None
 
 
-# Ref: https://github.com/vllm-project/vllm/blob/b169d5f7b6ad65586c5352030bda154d589a4d89/vllm/v1/engine/core.py#L471 # noqa: E501
+# Ref: https://github.com/vllm-project/vllm/blob/5fbbfe9a4c13094ad72ed3d6b4ef208a7ddc0fd7/vllm/v1/executor/multiproc_executor.py#L446 # noqa: E501
 # TODO: review this in the future
 # This setup is a workaround to suppress logs that are dumped at the shutdown
 # of the engine (only on V1) when vllm runs with multiprocess. The undesired
