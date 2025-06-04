@@ -2,6 +2,7 @@
 import json
 import os
 import platform
+import signal
 import time
 from typing import Optional, Union, cast
 
@@ -413,6 +414,8 @@ class SpyreWorker(WorkerBaseV1):
         logger.info("Warmup finished.")
         logger.info("Warmup took %.3fs", warmup_total_t)
 
+        maybe_override_signals_handler()
+
     def get_num_blocks_from_compiler_mock(self) -> int:
         """Mock function to return the number of available blocks/pages
         on Spyre. Will be replaced by a function in torch_sendnn which reads 
@@ -537,6 +540,7 @@ class SpyreWorker(WorkerBaseV1):
         logger.info(
             "Warmup took %.3fs (for prompt length %d and max output tokens %d)",
             warmup_total_t, prompt_len, num_decode_tokens)
+        maybe_override_signals_handler()
 
     def _warmup_model_forward_pass(
         self,
@@ -579,3 +583,27 @@ class SpyreWorker(WorkerBaseV1):
     ) -> Optional[ModelRunnerOutput]:
         output = self.model_runner.execute_model(scheduler_output)
         return output if self.is_driver_worker else None
+
+
+# Ref: https://github.com/vllm-project/vllm/blob/5fbbfe9a4c13094ad72ed3d6b4ef208a7ddc0fd7/vllm/v1/executor/multiproc_executor.py#L446 # noqa: E501
+# TODO: review this in the future
+# This setup is a workaround to suppress logs that are dumped at the shutdown
+# of the engine (only on V1) when vllm runs with multiprocess. The undesired
+# behavior happens because g3log from Spyre runtime overrides the signal
+# handler from vLLM when it starts a process for the engine code. Therefore,
+# the engine does not have a chance to gracefully shutdown.
+def maybe_override_signals_handler():
+    if not (envs.VLLM_USE_V1 and envs.VLLM_ENABLE_V1_MULTIPROCESSING
+            and envs_spyre.VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER):
+        return
+
+    shutdown_requested = False
+
+    def signal_handler(signum, frame):
+        nonlocal shutdown_requested
+        if not shutdown_requested:
+            shutdown_requested = True
+            raise SystemExit()
+
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
