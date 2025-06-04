@@ -294,7 +294,8 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                          sendnn_dynamic=True)
 
         # physical KV cache on AIU Spyre: will eventually not live in this class
-        self.kv_cache_specs = {'block_size': BLOCK_SIZE}
+        self.kv_cache_specs = {}
+        self.kv_cache_specs['block_size'] = BLOCK_SIZE
         self.kv_cache_specs['num_kv_heads'] = model_config.get_num_kv_heads(
             parallel_config)
 
