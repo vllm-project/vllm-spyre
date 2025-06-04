@@ -181,7 +181,6 @@ def test_full_batch_scheduling(model: str, backend: str, vllm_version: str,
 
     vllm_sampling_params = SamplingParams(max_tokens=20,
                                           temperature=0,
-                                          stop="1",
                                           logprobs=0)
     for i in range(batch_size):
         engine_core.add_request(
