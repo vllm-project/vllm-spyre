@@ -537,3 +537,10 @@ def create_text_prompt(model: str, min_tokens: int, max_tokens: int) -> str:
     assert min_tokens < len(tokenizer.encode(prompt)) < max_tokens
 
     return prompt
+
+
+def skip_unsupported_tp_size(size: int):
+    cards = int(os.getenv("AIU_WORLD_SIZE", "0"))
+    if cards < size:
+        pytest.skip(f"Cannot run TP size {size}: "
+                    f"only {cards} cards are available")

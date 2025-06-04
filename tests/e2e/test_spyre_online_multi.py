@@ -11,7 +11,7 @@ from tests.spyre_util import (VLLM_VERSIONS, get_spyre_backend_list,
 ]])
 @pytest.mark.parametrize(
     "backend", [b for b in get_spyre_backend_list() if "eager" not in str(b)])
-@pytest.mark.parametrize("tensor_parallel_size", ["2"])
+@pytest.mark.parametrize("tensor_parallel_size", ["2", "4", "8"])
 @pytest.mark.parametrize("vllm_version", VLLM_VERSIONS)
 def test_openai_tp_serving(remote_openai_server, model, warmup_shape, backend,
                            vllm_version, tensor_parallel_size):
