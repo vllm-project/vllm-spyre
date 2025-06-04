@@ -174,6 +174,9 @@ def generate_spyre_vllm_output(model: str, prompts: list[str],
         str(val) for val in warmup_batch_size)
     os.environ['VLLM_SPYRE_DYNAMO_BACKEND'] = backend
     os.environ['VLLM_USE_V1'] = "1" if vllm_version == "V1" else "0"
+    # Allows to run multiprocess V1 engine without dumping meaningless logs at
+    # shutdown engine this context.
+    os.environ['VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER'] = "1"
 
     vllm_model = LLM(model=model,
                      tokenizer=model,
@@ -408,7 +411,7 @@ def spyre_vllm_embeddings(model: str, prompts: list[str],
                      block_size=block_size,
                      tensor_parallel_size=tensor_parallel_size)
 
-    vllm_outputs = vllm_model.encode(prompts)
+    vllm_outputs = vllm_model.embed(prompts)
 
     results = []
     for req_output in vllm_outputs:
@@ -534,3 +537,10 @@ def create_text_prompt(model: str, min_tokens: int, max_tokens: int) -> str:
     assert min_tokens < len(tokenizer.encode(prompt)) < max_tokens
 
     return prompt
+
+
+def skip_unsupported_tp_size(size: int):
+    cards = int(os.getenv("AIU_WORLD_SIZE", "0"))
+    if cards < size:
+        pytest.skip(f"Cannot run TP size {size}: "
+                    f"only {cards} cards are available")
