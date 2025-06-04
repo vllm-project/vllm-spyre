@@ -404,7 +404,7 @@ class SpyreWorker(WorkerBaseV1):
 
         # get the number or pages from the actual Spyre card after the warmup
         # and set it accordingly in the model runner and the kv cache size
-        n_blocks_spyre = self.get_num_blocks_from_compiler_mock()
+        n_blocks_spyre = self._get_num_blocks_from_compiler_mock()
         model_runner._set_free_blocks(num_blocks=n_blocks_spyre)
         model_runner.model.model._set_past_key_value_states(
             num_blocks=n_blocks_spyre)
@@ -416,11 +416,18 @@ class SpyreWorker(WorkerBaseV1):
 
         maybe_override_signals_handler()
 
-    def get_num_blocks_from_compiler_mock(self) -> int:
+    def _get_num_blocks_from_compiler_mock(self) -> int:
         """Mock function to return the number of available blocks/pages
         on Spyre. Will be replaced by a function in torch_sendnn which reads 
         the actual value provided by the compiler."""
-        return self.model_runner.n_blocks_spyre  # type: ignore[union-attr]
+
+        max_batch_size = \
+            self.model_runner.vllm_config.scheduler_config.max_num_seqs
+        max_model_len = \
+            self.model_runner.vllm_config.scheduler_config.max_model_len
+        block_size = self.model_runner.BLOCK_SIZE  # type: ignore[union-attr]
+
+        return max_batch_size * max_model_len // block_size
 
     def _warmup_spyre_fixed_size(self, prompt_len, num_decode_tokens,
                                  special_token_ids, batch_size):
