@@ -404,10 +404,10 @@ class SpyreWorker(WorkerBaseV1):
 
         # get the number or pages from the actual Spyre card after the warmup
         # and set it accordingly in the model runner and the kv cache size
-        n_blocks_spyre = self._get_num_blocks_from_compiler_mock()
-        model_runner._set_free_blocks(num_blocks=n_blocks_spyre)
+        n_blocks_avail = self._get_num_blocks_available()
+        model_runner._set_free_blocks(num_blocks=n_blocks_avail)
         model_runner.model.model._set_past_key_value_states(
-            num_blocks=n_blocks_spyre)
+            num_blocks=n_blocks_avail)
 
         warmup_end_t = time.time()
         warmup_total_t = warmup_end_t - warmup_start_t
@@ -416,10 +416,10 @@ class SpyreWorker(WorkerBaseV1):
 
         maybe_override_signals_handler()
 
-    def _get_num_blocks_from_compiler_mock(self) -> int:
-        """Mock function to return the number of available blocks/pages
-        on Spyre. Will be replaced by a function in torch_sendnn which reads 
-        the actual value provided by the compiler."""
+    def _get_num_blocks_available(self) -> int:
+        """Function returns the number of available blocks/pages.
+        Will eventually contain a function in torch_sendnn which reads 
+        the actual value provided by the compiler for backend sendnn_decoder"""
 
         max_batch_size = \
             self.model_runner.vllm_config.scheduler_config.max_num_seqs
@@ -427,7 +427,12 @@ class SpyreWorker(WorkerBaseV1):
             self.model_runner.vllm_config.scheduler_config.max_model_len
         block_size = self.model_runner.BLOCK_SIZE  # type: ignore[union-attr]
 
-        return max_batch_size * max_model_len // block_size
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == 'sendnn_decoder':
+            # TODO: actually calling a function in torch_sendnn which returns
+            # the value set by the Spyre compiler and return it here
+            return max_batch_size * max_model_len // block_size
+        else:  # dynamo backend 'eager'
+            return max_batch_size * max_model_len // block_size
 
     def _warmup_spyre_fixed_size(self, prompt_len, num_decode_tokens,
                                  special_token_ids, batch_size):
