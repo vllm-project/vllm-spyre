@@ -581,7 +581,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # TO DO: move to InputBatch
         self.req_ids2blocks: dict[str, deque[int]] = {}
         self.req_ids2left_pads: dict[str, int] = {}
-        self.tkv = 0
+        self.tkv: int = 0
         self.free_blocks = deque([i for i in range(NUM_BLOCKS)])
         self.dummy_req_ids2blocks: list[int] = []
 
@@ -739,9 +739,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                                         dtype=torch.bool,
                                         device="cpu")
 
-        if envs_spyre.VLLM_SPYRE_RM_PADDED_BLOCKS:
-            self.reduce_left_padding(cached_requests)
-
         for cached_request in cached_requests:
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
@@ -818,27 +815,30 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             is_prompt=False,
         )
 
-    def reduce_left_padding(self, requests: list[CachedRequestData]) -> None:
+    def reduce_left_padding(self) -> None:
 
-        min_left_pad = min(
-            [self.req_ids2left_pads[r.req_id] for r in requests])
+        if len(self.req_ids2left_pads) == 0:
+            return
+
+        min_left_pad = min(self.req_ids2left_pads.values())
         n_padded_blocks = min_left_pad // self.BLOCK_SIZE
+        offset = n_padded_blocks * self.BLOCK_SIZE
 
-        if n_padded_blocks > 0:
+        if offset > 0:
             logger.debug("Number of removed blocks due to left padding: %d",
                          n_padded_blocks)
 
-            for req in requests:
-                self.req_ids2left_pads[
-                    req.req_id] -= n_padded_blocks * self.BLOCK_SIZE
+            for req_id in self.req_ids2left_pads:
+                self.req_ids2left_pads[req_id] -= offset
 
                 # free blocks
                 for _ in range(n_padded_blocks):
-                    freed_block_id = self.req_ids2blocks[req.req_id].popleft()
+                    freed_block_id = self.req_ids2blocks[req_id].popleft()
+                    logger.debug("Freeing block with id: %s", freed_block_id)
                     self.free_blocks.append(freed_block_id)
 
         # update tkv
-        self.tkv -= n_padded_blocks * self.BLOCK_SIZE
+        self.tkv -= offset
 
         return
 
@@ -904,6 +904,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
     def prepare_model_input(
             self, scheduler_output: SchedulerOutput) -> ModelForwardInputs:
+
+        # remove left padding if applicable before next prefil/decode step
+        if envs_spyre.VLLM_SPYRE_RM_PADDED_BLOCKS:
+            self.reduce_left_padding()
 
         # NOTE: We assume that all sequences in the group are all prompts or
         # all decodes.
