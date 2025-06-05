@@ -340,7 +340,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
     ) -> torch.Tensor:
 
         # import will be not be needed/ handled by FMS soon
-        import fms.utils.aiu.paged  # noqa # pylint: disable=unused-import
+        import fms.utils.spyre.paged  # noqa # pylint: disable=unused-import
 
         # specify attention type for continuous batching
         extra_kwargs['attn_name'] = "spyre_paged_attn"
