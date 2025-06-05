@@ -417,7 +417,7 @@ class SpyreWorker(WorkerBaseV1):
     def _get_num_blocks_available(self) -> int:
         """Function returns the number of available blocks/pages.
         Will eventually contain a function in torch_sendnn which reads 
-        the actual value provided by the compiler for backend sendnn_decoder"""
+        the actual value provided by the compiler for backend sendnn"""
 
         max_batch_size = \
             self.model_runner.vllm_config.scheduler_config.max_num_seqs
@@ -425,9 +425,9 @@ class SpyreWorker(WorkerBaseV1):
             self.model_runner.vllm_config.scheduler_config.max_model_len
         block_size = self.model_runner.BLOCK_SIZE  # type: ignore[union-attr]
 
-        min_req_num_blocks = max_batch_size * max_model_len // block_size
+        min_req_num_blocks = max_model_len // block_size
 
-        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == 'sendnn_decoder':
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == 'sendnn':
             # TODO: replace num_blocks_spyre by calling a function in
             # torch_sendnn which returns the value set by the Spyre compiler
             num_blocks_spyre = max_batch_size * max_model_len // block_size
