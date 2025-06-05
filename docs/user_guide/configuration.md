@@ -11,8 +11,8 @@ To run inference on IBM Spyre Accelerators, the backend should be set as:
 
 | Model type | vLLM backend | `VLLM_SPYRE_DYNAMO_BACKEND` configuration | Notes |
 | --- | --- | --- | --- |
-| Decoder | v0 | sendnn_decoder | V0 support for decoder models is deprecated |
-| Decoder | v1 | sendnn_decoder | |
+| Decoder | v0 | sendnn | V0 support for decoder models is deprecated |
+| Decoder | v1 | sendnn | |
 | Embedding | v0 | sendnn | |
 | Embedding | v1 | N/A | Embedding models are not yet supported on V1 |
 
