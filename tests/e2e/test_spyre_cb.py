@@ -701,7 +701,7 @@ def get_params_test_remove_left_padding():
         {
             # Prefill sequence 2
             "step": 42,
-            "tkv": 103,  # TODO expecting 39 for next implementation
+            "tkv": 39,
             "waiting": [],
             "running": ["2", "1"],
             "request_outputs": ["2"]

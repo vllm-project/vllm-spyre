@@ -581,7 +581,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # TO DO: move to InputBatch
         self.req_ids2blocks: dict[str, deque[int]] = {}
         self.req_ids2left_pads: dict[str, int] = {}
-        self.tkv = 0
+        self.tkv: int = 0
         self.free_blocks = deque([i for i in range(NUM_BLOCKS)])
 
         # TODO: Remove this once we can prefill and decode
@@ -785,26 +785,25 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             is_prompt=False,
         )
 
-    def reduce_left_padding(self, requests: list[CachedRequestData]) -> None:
+    def reduce_left_padding(self) -> None:
 
-        if len(requests) == 0:
+        if len(self.req_ids2left_pads) == 0:
             return
 
-        min_left_pad = min(
-            [self.req_ids2left_pads[r.req_id] for r in requests])
+        min_left_pad = min(self.req_ids2left_pads.values())
         n_padded_blocks = min_left_pad // self.BLOCK_SIZE
 
         if n_padded_blocks > 0:
             logger.debug("Number of removed blocks due to left padding: %d",
                          n_padded_blocks)
 
-            for req in requests:
+            for req_id in self.req_ids2left_pads:
                 self.req_ids2left_pads[
-                    req.req_id] -= n_padded_blocks * self.BLOCK_SIZE
+                    req_id] -= n_padded_blocks * self.BLOCK_SIZE
 
                 # free blocks
                 for _ in range(n_padded_blocks):
-                    freed_block_id = self.req_ids2blocks[req.req_id].popleft()
+                    freed_block_id = self.req_ids2blocks[req_id].popleft()
                     self.free_blocks.append(freed_block_id)
 
         # update tkv
@@ -877,8 +876,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         # remove left padding if applicable before next prefil/decode step
         if envs_spyre.VLLM_SPYRE_RM_PADDED_BLOCKS:
-            cached_requests = scheduler_output.scheduled_cached_reqs
-            self.reduce_left_padding(requests=cached_requests)
+            self.reduce_left_padding()
 
         # NOTE: We assume that all sequences in the group are all prompts or
         # all decodes.
