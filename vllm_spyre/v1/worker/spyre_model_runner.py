@@ -730,9 +730,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                                         dtype=torch.bool,
                                         device="cpu")
 
-        if envs_spyre.VLLM_SPYRE_RM_PADDED_BLOCKS:
-            self.reduce_left_padding(cached_requests)
-
         for cached_request in cached_requests:
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
@@ -789,6 +786,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         )
 
     def reduce_left_padding(self, requests: list[CachedRequestData]) -> None:
+
+        if len(requests) == 0:
+            return
 
         min_left_pad = min(
             [self.req_ids2left_pads[r.req_id] for r in requests])
@@ -874,6 +874,11 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
     def prepare_model_input(
             self, scheduler_output: SchedulerOutput) -> ModelForwardInputs:
+
+        # remove left padding if applicable before next prefil/decode step
+        if envs_spyre.VLLM_SPYRE_RM_PADDED_BLOCKS:
+            cached_requests = scheduler_output.scheduled_cached_reqs
+            self.reduce_left_padding(requests=cached_requests)
 
         # NOTE: We assume that all sequences in the group are all prompts or
         # all decodes.
