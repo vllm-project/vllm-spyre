@@ -792,22 +792,23 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         min_left_pad = min(self.req_ids2left_pads.values())
         n_padded_blocks = min_left_pad // self.BLOCK_SIZE
+        offset = n_padded_blocks * self.BLOCK_SIZE
 
-        if n_padded_blocks > 0:
+        if offset > 0:
             logger.debug("Number of removed blocks due to left padding: %d",
                          n_padded_blocks)
 
             for req_id in self.req_ids2left_pads:
-                self.req_ids2left_pads[
-                    req_id] -= n_padded_blocks * self.BLOCK_SIZE
+                self.req_ids2left_pads[req_id] -= offset
 
                 # free blocks
                 for _ in range(n_padded_blocks):
                     freed_block_id = self.req_ids2blocks[req_id].popleft()
+                    logger.debug("Freeing block with id: %s", freed_block_id)
                     self.free_blocks.append(freed_block_id)
 
         # update tkv
-        self.tkv -= n_padded_blocks * self.BLOCK_SIZE
+        self.tkv -= offset
 
         return
 

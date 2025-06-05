@@ -701,7 +701,7 @@ def get_params_test_remove_left_padding():
         {
             # Prefill sequence 2
             "step": 42,
-            "tkv": 39,
+            "tkv": 39,  # left padding reduction: 103 - 64 (block size)
             "waiting": [],
             "running": ["2", "1"],
             "request_outputs": ["2"]
