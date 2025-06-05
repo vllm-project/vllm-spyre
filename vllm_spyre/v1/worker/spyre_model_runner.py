@@ -432,6 +432,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
 
         t0 = time.time()
 
+        self._update_states(scheduler_output)
         # TODO: change to EMPTY_MODEL_RUNNER_OUTPUT, right now this
         # will be a breaking change, or clumsy to make retrocompatible
         # with conditional import
@@ -445,8 +446,6 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
                 logprobs=None,
                 prompt_logprobs_dict={},
             )
-
-        self._update_states(scheduler_output)
 
         model_input = self.prepare_model_input(scheduler_output)
         self._mark_input_tensors(model_input)
@@ -916,41 +915,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             )
 
         model_input = self.prepare_model_input(scheduler_output)
-
-        # Marking dimensions static/dynamic
-        if model_input.is_prompt:
-
-            # batch static (batch size 1)
-            torch._dynamo.mark_static(model_input.input_tokens, 0)
-            torch._dynamo.mark_static(model_input.slot_mapping, 0)
-            torch._dynamo.mark_static(model_input.input_positions, 0)
-            torch._dynamo.mark_static(model_input.input_masks, 0)
-
-            # sequence dynamic
-            torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
-            torch._dynamo.mark_dynamic(model_input.slot_mapping, 1)
-            torch._dynamo.mark_dynamic(model_input.input_positions, 1)
-            torch._dynamo.mark_dynamic(model_input.input_masks, 2)
-            torch._dynamo.mark_dynamic(model_input.input_masks, 3)
-
-        # decode
-        else:
-            # mask is no longer used here
-
-            # batch dynamic
-            torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
-            torch._dynamo.mark_dynamic(model_input.block_table, 0)
-            torch._dynamo.mark_dynamic(model_input.slot_mapping, 0)
-            torch._dynamo.mark_dynamic(model_input.input_positions, 0)
-            torch._dynamo.mark_dynamic(model_input.current_tkv_mask, 0)
-            torch._dynamo.mark_dynamic(model_input.left_padded_prompt_mask, 0)
-
-            # sequence
-            torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
-            torch._dynamo.mark_dynamic(model_input.block_table, 1)
-            torch._dynamo.mark_static(model_input.slot_mapping, 1)  # always 1
-            torch._dynamo.mark_static(model_input.input_positions,
-                                      1)  # always 1
+        self._mark_input_tensors(model_input)
 
         # Execute the model
         hidden_states = self.model(
@@ -1001,3 +966,39 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             tkv=self.tkv,
         )
         return model_output
+
+    def _mark_input_tensors(self, model_input: ModelForwardInputs) -> None:
+        # Marking dimensions static/dynamic
+        if model_input.is_prompt:
+
+            # batch static (batch size 1)
+            torch._dynamo.mark_static(model_input.input_tokens, 0)
+            torch._dynamo.mark_static(model_input.slot_mapping, 0)
+            torch._dynamo.mark_static(model_input.input_positions, 0)
+            torch._dynamo.mark_static(model_input.input_masks, 0)
+
+            # sequence dynamic
+            torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
+            torch._dynamo.mark_dynamic(model_input.slot_mapping, 1)
+            torch._dynamo.mark_dynamic(model_input.input_positions, 1)
+            torch._dynamo.mark_dynamic(model_input.input_masks, 2)
+            torch._dynamo.mark_dynamic(model_input.input_masks, 3)
+
+        # decode
+        else:
+            # mask is no longer used here
+
+            # batch dynamic
+            torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
+            torch._dynamo.mark_dynamic(model_input.block_table, 0)
+            torch._dynamo.mark_dynamic(model_input.slot_mapping, 0)
+            torch._dynamo.mark_dynamic(model_input.input_positions, 0)
+            torch._dynamo.mark_dynamic(model_input.current_tkv_mask, 0)
+            torch._dynamo.mark_dynamic(model_input.left_padded_prompt_mask, 0)
+
+            # sequence
+            torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
+            torch._dynamo.mark_dynamic(model_input.block_table, 1)
+            torch._dynamo.mark_static(model_input.slot_mapping, 1)  # always 1
+            torch._dynamo.mark_static(model_input.input_positions,
+                                      1)  # always 1
