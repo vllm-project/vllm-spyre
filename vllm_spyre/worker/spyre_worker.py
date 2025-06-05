@@ -21,6 +21,7 @@ import vllm_spyre.envs as envs_spyre
 import vllm_spyre.perf_metrics as perf_metrics
 from vllm_spyre.model_executor.model_loader import spyre_setup
 from vllm_spyre.platform import SpyrePlatform
+from vllm_spyre.v1.worker.spyre_worker import _maybe_warmup_context
 from vllm_spyre.worker.spyre_embedding_model_runner import (
     SpyreEmbeddingModelRunner)
 # from vllm.worker.spyre_model_runner import SpyreModelRunner
@@ -82,7 +83,7 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
             torch_profiler_trace_dir = envs.VLLM_TORCH_PROFILER_DIR
             activities = [torch.profiler.ProfilerActivity.CPU]
 
-            if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
+            if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
                 from torch_sendnn import torch_sendnn
                 torch.utils.rename_privateuse1_backend("aiu")
                 torch._register_device_module("aiu",
@@ -118,9 +119,7 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
         torch._C._distributed_c10d._register_process_group(
             "default", dist.group.WORLD)
 
-        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in [
-                "sendnn", "sendnn_decoder"
-        ]:
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
             spyre_setup.spyre_dist_setup(
                 rank=self.rank,
                 world_size=self.parallel_config.world_size,
@@ -147,9 +146,7 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
 
             if self.parallel_config.world_size > 1:
                 self.init_distributed_environment()
-            elif envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in [
-                    "sendnn", "sendnn_decoder"
-            ]:
+            elif envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
                 spyre_setup.spyre_setup()
 
             ensure_model_parallel_initialized(
@@ -256,9 +253,7 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
             0, len(valid_token_ids_tensor), (batch_size, prompt_len))]
 
         extra_kwargs = {}
-        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND not in [
-                "sendnn", "sendnn_decoder"
-        ]:
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn":
             # Bug in 2.3.1 fixed in 2.4.1 for SDPA flash cpu
             # impl when padding too much
             extra_kwargs["attn_algorithm"] = "math"
@@ -266,35 +261,21 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
         print(f"[SpyreWorker] warmup for prompt length "
               f"{prompt_len} and max output tokens {num_decode_tokens}.")
 
-        # 1. trace
         print("[SpyreWorker] warmup 1/2...")
-        # TODO: torch_sendnn.CleanGraph() should be necessary?
-        # warmup 1st forward pass
-        self._warmup_model_forward_pass(warmup_tokens_tensor,
-                                        valid_token_ids_tensor, prompt_len,
-                                        num_decode_tokens, batch_size,
-                                        extra_kwargs)
+        with _maybe_warmup_context():
+            # TODO: torch_sendnn.CleanGraph() should be necessary?
+            # warmup 1st forward pass
+            self._warmup_model_forward_pass(warmup_tokens_tensor,
+                                            valid_token_ids_tensor, prompt_len,
+                                            num_decode_tokens, batch_size,
+                                            extra_kwargs)
         self.perf_metrics.log("warmup 1 time",
                               time.time() - warmup_start_t,
                               batch_size=batch_size,
                               max_tokens=num_decode_tokens,
                               prompt_len=prompt_len)
 
-        # 2. compile
         print("[SpyreWorker] warmup 2/2...")
-        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
-            from torch_sendnn import torch_sendnn
-            ul_start_time = time.time()
-            torch_sendnn.update_lazyhandle()
-            ul_stop_time = time.time()
-            ul_total_t = ul_stop_time - ul_start_time
-            print(f"update_lazyhandle() done (duration: {ul_total_t}s)")
-            self.perf_metrics.log("update_lazyhandle() time",
-                                  ul_total_t,
-                                  batch_size=batch_size,
-                                  max_tokens=num_decode_tokens,
-                                  prompt_len=prompt_len)
-
         # warmup 2nd forward pass
         warmup2_start_t = time.time()
         self._warmup_model_forward_pass(warmup_tokens_tensor,

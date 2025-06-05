@@ -324,7 +324,7 @@ def compare_results(model: str, prompts: list[str],
         print(f"        vLLM:  {repr(vllm_result['text']):s}{err_msg}")
         print()
 
-        assert DISABLE_ASSERTS or backend == 'sendnn_decoder' or\
+        assert DISABLE_ASSERTS or backend == 'sendnn' or\
             hf_result['token_ids'] == vllm_result['token_ids']
 
         if len(hf_result['tokens']) > 0:
@@ -351,13 +351,13 @@ def compare_results(model: str, prompts: list[str],
                     f"{vllm_logprob:14f}  ",
                     end='')
 
-                if backend == 'sendnn_decoder':
+                if backend == 'sendnn':
                     rel_tol = ISCLOSE_REL_TOL_SPYRE
                 else:
                     rel_tol = ISCLOSE_REL_TOL_CPU
 
                 if hf_token_id != vllm_token_id:  # different tokens
-                    if backend == 'sendnn_decoder' and math.isclose(
+                    if backend == 'sendnn' and math.isclose(
                             hf_logprob, vllm_logprob, rel_tol=rel_tol):
                         # probably still OK
                         print('DIVERGING')
@@ -477,7 +477,7 @@ def get_spyre_model_dir_path() -> Path:
 # get model backends from env or default to all and add pytest markers
 def get_spyre_backend_list():
     user_backend_list = os.environ.get("VLLM_SPYRE_TEST_BACKEND_LIST",
-                                       "eager,inductor,sendnn_decoder,sendnn")
+                                       "eager,inductor,sendnn")
 
     backends = []
     for backend in user_backend_list.split(","):
@@ -485,7 +485,7 @@ def get_spyre_backend_list():
         marks = []
         if backend == "eager":
             marks = [pytest.mark.cpu]
-        elif backend == "sendnn_decoder":
+        elif backend == "sendnn":
             marks = [pytest.mark.spyre]
 
         backends.append(pytest.param(backend, marks=marks, id=backend))
