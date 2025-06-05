@@ -614,8 +614,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             self.input_batch.remove_request(req_id)
 
         # free the blocks used for padding to minimum decode batch size of 2
-        if not scheduler_output.total_num_scheduled_tokens \
-                and self.dummy_req_ids2blocks:
+        if self.dummy_req_ids2blocks and \
+                (not scheduler_output.total_num_scheduled_tokens \
+                or len(scheduler_output.scheduled_new_reqs) > 0):
             for freed_block in self.dummy_req_ids2blocks:
                 self.free_blocks.append(freed_block)
             self.dummy_req_ids2blocks = []
@@ -626,12 +627,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
     ) -> ModelForwardInputs:
         assert len(new_requests) > 0
         input_token_list: list[torch.Tensor] = []
-
-        # free the blocks used for padding to minimum decode batch size of 2
-        if self.dummy_req_ids2blocks:
-            for freed_block in self.dummy_req_ids2blocks:
-                self.free_blocks.appendleft(freed_block)
-            self.dummy_req_ids2blocks = []
 
         # ceil division to pad to next block boundary
         new_batch = len(self.req_ids2blocks) == 0
@@ -779,7 +774,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             n = self.tkv + 1
             d = self.BLOCK_SIZE
             num_blocks = (n + d - 1) // d
-            for i in range(num_blocks - len(self.dummy_req_ids2blocks)):
+            for _ in range(num_blocks - len(self.dummy_req_ids2blocks)):
                 self.dummy_req_ids2blocks.append(self.free_blocks.popleft())
             block_table.append(deque(self.dummy_req_ids2blocks))
             start_slot = block_table[-1][-1] * self.BLOCK_SIZE
