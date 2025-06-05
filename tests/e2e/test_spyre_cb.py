@@ -443,6 +443,7 @@ def get_params_test_scheduler_constraints_tkv():
             "request_outputs": []
         },
         {
+            # Prefill sequence 0
             "step": 1,
             "tkv": 64,
             "waiting": ["1"],
