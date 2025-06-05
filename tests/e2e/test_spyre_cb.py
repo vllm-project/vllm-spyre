@@ -700,21 +700,16 @@ def get_params_test_remove_left_padding():
         },
         {
             # Prefill sequence 2
-            # TODO @Yannick, should the left padding ideally already be removed?
             "step": 42,
-            "tkv": 103,  # <-- should be 64?
+            "tkv": 103,  # TODO expecting 39 for next implementation
             "waiting": [],
             "running": ["2", "1"],
             "request_outputs": ["2"]
         },
         {
             # Decode sequences 1 and 2
-            # @Yannick
-            # That value (40) is a bit odd to see since we are used that for the
-            # first block, the two prompts are padded to the right
-            # it is not necessarily a problem though, but might be confusing
             "step": 43,
-            "tkv": 40,  # 104 - 64 = 40
+            "tkv": 40,
             "waiting": [],
             "running": ["2", "1"],
             "request_outputs": ["2", "1"]
