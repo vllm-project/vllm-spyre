@@ -1,8 +1,10 @@
 import os
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
+from vllm.logger import init_logger
+
 if TYPE_CHECKING:
-    VLLM_SPYRE_DYNAMO_BACKEND: str = "sendnn_decoder"
+    VLLM_SPYRE_DYNAMO_BACKEND: str = "sendnn"
     VLLM_SPYRE_WARMUP_PROMPT_LENS: Optional[list[int]] = None
     VLLM_SPYRE_WARMUP_NEW_TOKENS: Optional[list[int]] = None
     VLLM_SPYRE_WARMUP_BATCH_SIZES: Optional[list[int]] = None
@@ -11,6 +13,19 @@ if TYPE_CHECKING:
     VLLM_SPYRE_PERF_METRIC_LOGGING_ENABLED: int = 0
     VLLM_SPYRE_PERF_METRIC_LOGGING_DIR: str = "/tmp"
     VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER: bool = False
+
+logger = init_logger(__name__)
+
+
+def _backend_backwards_compat() -> str:
+    val = os.getenv("VLLM_SPYRE_DYNAMO_BACKEND", "sendnn")
+    if val == "sendnn_decoder":
+        logger.warning_once(
+            "Using 'sendnn_decoder' for "
+            "VLLM_SPYRE_DYNAMO_BACKEND is deprecated. Use 'sendnn' instead")
+        val = 'sendnn'
+    return val
+
 
 # --8<-- [start:env-vars-definition]
 environment_variables: dict[str, Callable[[], Any]] = {
@@ -41,14 +56,13 @@ environment_variables: dict[str, Callable[[], Any]] = {
 
     # Defines the backend that torch.compile will use when using Spyre
     # Available options:
-    # - "sendnn_decoder": Compile for execution on Spyre hardware for
-    #   decoder models
-    # - "sendnn": Compile for execution on Spyre hardware for
-    #   encoder models
+    # - "sendnn": Compile for execution on Spyre hardware
     # - "inductor": Compile for execution on CPU (for debug and testing)
     # - "eager": Skip compile entirely (for debug and testing)
+    #
+    # - "sendnn_decoder": Deprecated in favor of "sendnn"
     "VLLM_SPYRE_DYNAMO_BACKEND":
-    lambda: os.getenv("VLLM_SPYRE_DYNAMO_BACKEND", "sendnn_decoder"),
+    _backend_backwards_compat,
 
     # If set, use the V1 continuous batching implementation. Otherwise, static
     # batching mode will be enabled.
