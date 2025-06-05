@@ -343,7 +343,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         import fms.utils.aiu.paged  # noqa # pylint: disable=unused-import
 
         # specify attention type for continuous batching
-        extra_kwargs['attn_name'] = "aiu_paged_attn"
+        extra_kwargs['attn_name'] = "spyre_paged_attn"
 
         # additional (paged) attention arguments
         extra_kwargs['current_tkv_mask'] = current_tkv_mask
