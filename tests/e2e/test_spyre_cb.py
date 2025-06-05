@@ -4,6 +4,7 @@ Run `python -m pytest tests/test_spyre_cb.py`.
 """
 
 import copy
+import inspect
 from collections import deque
 from typing import Any
 
@@ -95,16 +96,35 @@ def create_random_request(
         request_id: int, num_tokens: int,
         sampling_params: SamplingParams) -> EngineCoreRequest:
 
-    return EngineCoreRequest(request_id=str(request_id),
-                             prompt_token_ids=[request_id] * num_tokens,
-                             mm_inputs=None,
-                             mm_hashes=None,
-                             mm_placeholders=None,
-                             sampling_params=sampling_params,
-                             eos_token_id=None,
-                             arrival_time=0,
-                             lora_request=None,
-                             cache_salt=None)
+    # Temporary until 'data_parallel_rank' parameter makes it to
+    # a release version in vllm
+    if "data_parallel_rank" in [
+            x[0] for x in inspect.getmembers(EngineCoreRequest)
+    ]:
+        return EngineCoreRequest(
+            request_id=str(request_id),
+            prompt_token_ids=[request_id] * num_tokens,
+            mm_inputs=None,
+            mm_hashes=None,
+            mm_placeholders=None,
+            sampling_params=sampling_params,
+            eos_token_id=None,
+            arrival_time=0,
+            lora_request=None,
+            cache_salt=None,
+            data_parallel_rank=None,
+        )
+    else:
+        return EngineCoreRequest(request_id=str(request_id),
+                                 prompt_token_ids=[request_id] * num_tokens,
+                                 mm_inputs=None,
+                                 mm_hashes=None,
+                                 mm_placeholders=None,
+                                 sampling_params=sampling_params,
+                                 eos_token_id=None,
+                                 arrival_time=0,
+                                 lora_request=None,
+                                 cache_salt=None)
 
 
 def get_params_test_blocks_borders_aligned_prompts():
@@ -115,6 +135,8 @@ def get_params_test_blocks_borders_aligned_prompts():
     seqs_max_tokens = [65, 67, 7]
     prompts_lengths = [49, 41, 47]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
+    max_model_len = 2048
+    remove_left_padding = False
 
     checked_steps = [
         {
@@ -206,7 +228,8 @@ def get_params_test_blocks_borders_aligned_prompts():
         }
     ]
 
-    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps)
+    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
+            max_model_len, remove_left_padding)
 
 
 def get_params_test_blocks_borders_misaligned_prompts():
@@ -217,6 +240,8 @@ def get_params_test_blocks_borders_misaligned_prompts():
     seqs_max_tokens = [57, 67, 9]
     prompts_lengths = [49, 41, 47]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
+    max_model_len = 2048
+    remove_left_padding = False
 
     checked_steps = [
         {
@@ -308,7 +333,419 @@ def get_params_test_blocks_borders_misaligned_prompts():
         },
     ]
 
-    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps)
+    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
+            max_model_len, remove_left_padding)
+
+
+def get_params_test_special_finish():
+    """ 2-cases-in-1: (1) Two sequences finish at the same time and (2) a new
+    request arrives when another finishes. """
+
+    seqs_max_tokens = [30, 30, 10]
+    prompts_lengths = [49, 30, 20]
+    steps_add_reqs = [0, 0, 31]
+    max_model_len = 2048
+    remove_left_padding = False
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0", "1"],
+            "running": [],
+            "request_outputs": []
+        },
+        {
+            # Prefill sequence 0
+            "step": 1,
+            "tkv": 64,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"]
+        },
+        {
+            # Prefill sequence 1
+            "step": 2,
+            "tkv": 64,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1"]
+        },
+        {
+            # Decode sequences 0 and 1
+            "step": 3,
+            "tkv": 65,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"]
+        },
+        {
+            # Sequences 0 and 1 finish at step 31
+            # (start step + 2 prefills + 29 decodes - 1) = 1 + 2 + 29 - 1 = 31
+            "step": 31,
+            "tkv": 93,
+            "waiting": ["2"],
+            "running": [],
+            "request_outputs": ["1", "0"],
+            "finished_requests": ["1", "0"]
+        },
+        {
+            # Prefill sequence 2
+            "step": 32,
+            "tkv": 64,
+            "waiting": [],
+            "running": ["2"],
+            "request_outputs": ["2"],
+        },
+        {
+            # Decode sequence 2
+            "step": 33,
+            "tkv": 65,
+            "waiting": [],
+            "running": ["2"],
+            "request_outputs": ["2"],
+        },
+        {
+            # Sequences 2 finishes at step 41
+            # (start step + 1 prefill + 29 decodes - 1) = 32 + 1 + 9 - 1 = 41
+            "step": 41,
+            "tkv": 73,
+            "waiting": [],
+            "running": [],
+            "request_outputs": ["2"],
+            "finished_requests": ["2"]
+        },
+        {
+            # Tkv should be cleared one step later
+            "step": 42,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": [],
+        },
+    ]
+
+    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
+            max_model_len, remove_left_padding)
+
+
+def get_params_test_scheduler_constraints_tkv():
+    """ Scenario where the requested prompt is too long for current tkv value"""
+
+    seqs_max_tokens = [57, 67]
+    prompts_lengths = [49, 70]
+    steps_add_reqs = [0, 0]
+    max_model_len = 2048
+    remove_left_padding = False
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0", "1"],
+            "running": [],
+            "request_outputs": []
+        },
+        {
+            # Prefill sequence 0
+            "step": 1,
+            "tkv": 64,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"]
+        },
+        {
+            # Decode sequence 0
+            # Cannot prefill sequence 1, because of tkv constraint
+            "step": 2,
+            "tkv": 65,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"]
+        },
+        {
+            # Prefill sequence 1, tkv large enough
+            "step": 8,
+            "tkv": 70,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1"]
+        },
+        {
+            # Decode sequences 0 and 1
+            "step": 9,
+            "tkv": 71,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"]
+        },
+        {
+            # Sequence 0 finishes at step 58
+            # (start step + 2 prefills + 56 decodes - 1) = 1 + 2 + 56 - 1 = 58
+            "step": 58,
+            "tkv": 120,
+            "waiting": [],
+            "running": ["1"],
+            "request_outputs": ["1", "0"],
+            "finished_requests": ["0"]
+        },
+        {
+            # Decode sequence 1
+            "step": 59,
+            "tkv": 121,
+            "waiting": [],
+            "running": ["1"],
+            "request_outputs": ["1"],
+        },
+        {
+            # Sequence 1 finishes at step 74
+            # (start step + 1 prefill + 66 decodes - 1) = 8 + 1 + 66 - 1 = 74
+            "step": 74,
+            "tkv": 136,
+            "waiting": [],
+            "running": [],
+            "request_outputs": ["1"],
+            "finished_requests": ["1"]
+        },
+        {
+            # Tkv should be cleared one step later
+            "step": 75,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": []
+        },
+    ]
+
+    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
+            max_model_len, remove_left_padding)
+
+
+def get_params_test_scheduler_constraints_max_prompt_len():
+    """ Scenario where the request goes beyond max_model_len """
+
+    seqs_max_tokens = [67, 57, 80]
+    prompts_lengths = [70, 49, 41]
+    steps_add_reqs = [0, 0, 0]
+    max_model_len = 256
+    remove_left_padding = False
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0", "1", "2"],
+            "running": [],
+            "request_outputs": []
+        },
+        {
+            # Prefill sequence 0
+            "step": 1,
+            "tkv": 128,
+            "waiting": ["1", "2"],
+            "running": ["0"],
+            "request_outputs": ["0"]
+        },
+        {
+            # Prefill sequence 1
+            "step": 2,
+            "tkv": 128,
+            "waiting": ["2"],
+            "running": ["1", "0"],
+            "request_outputs": ["1"]
+        },
+        {
+            # Decode sequences 0 and 1
+            "step": 3,
+            "tkv": 129,
+            "waiting": ["2"],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"]
+        },
+        {
+            # Sequence 1 finishes at step 58
+            # (start step + 1 prefills + 56 decodes - 1) = 2 + 1 + 56 - 1 = 58
+            "step": 58,
+            "tkv": 184,
+            "waiting": ["2"],
+            "running": ["0"],
+            "request_outputs": ["1", "0"],
+            "finished_requests": ["1"]
+        },
+        {
+            # Decode sequence 0
+            # Cannot prefill sequence 2: 185 + 80 = 265 > 256
+            "step": 59,
+            "tkv": 185,
+            "waiting": ["2"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+        },
+        {
+            # Sequence 0 finishes at step 68
+            # (start step + 2 prefills + 66 decodes - 1) = 1 + 2 + 66 - 1 = 68
+            "step": 68,
+            "tkv": 194,
+            "waiting": ["2"],
+            "running": [],
+            "request_outputs": ["0"],
+            "finished_requests": ["0"]
+        },
+        {
+            # Prefill sequence 2
+            "step": 69,
+            "tkv": 64,
+            "waiting": [],
+            "running": ["2"],
+            "request_outputs": ["2"],
+        },
+        {
+            # Decode sequence 2
+            "step": 70,
+            "tkv": 65,
+            "waiting": [],
+            "running": ["2"],
+            "request_outputs": ["2"],
+        },
+        {
+            # Sequence 2 finishes at step 148
+            # (start step + 1 prefill + 79 decodes - 1) = 69 + 1 + 79 - 1 = 148
+            "step": 148,
+            "tkv": 143,
+            "waiting": [],
+            "running": [],
+            "request_outputs": ["2"],
+            "finished_requests": ["2"]
+        },
+        {
+            # Tkv should be cleared one step later
+            "step": 149,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": []
+        },
+    ]
+
+    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
+            max_model_len, remove_left_padding)
+
+
+def get_params_test_remove_left_padding():
+    """" Test the stripping of repeated left padding in continuous batching """
+
+    seqs_max_tokens = [40, 20, 11]
+    prompts_lengths = [20, 14, 5]
+    steps_add_reqs = [0, 30, 31]
+    max_model_len = 2048
+    remove_left_padding = True
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0"],
+            "running": [],
+            "request_outputs": []
+        },
+        {
+            # Prefill sequence 0
+            "step": 1,
+            "tkv": 64,
+            "waiting": [],
+            "running": ["0"],
+            "request_outputs": ["0"]
+        },
+        {
+            # Decode sequence 0
+            "step": 2,
+            "tkv": 65,
+            "waiting": [],
+            "running": ["0"],
+            "request_outputs": ["0"]
+        },
+        {
+            # Decode sequence 0, sequence 1 enters
+            "step": 30,
+            "tkv": 93,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"]
+        },
+        {
+            # Prefill sequence 1, sequence 2 enters
+            "step": 31,
+            "tkv": 93,
+            "waiting": ["2"],
+            "running": ["1", "0"],
+            "request_outputs": ["1"]
+        },
+        {
+            # Decode sequences 0 and 1
+            "step": 32,
+            "tkv": 94,
+            "waiting": ["2"],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"]
+        },
+        {
+            # Sequence 0 finishes at step 41
+            # (start step + 2 prefills + 39 decodes - 1) = 1 + 2 + 39 - 1 = 41
+            "step": 41,
+            "tkv": 103,
+            "waiting": ["2"],
+            "running": ["1"],
+            "request_outputs": ["1", "0"],
+            "finished_requests": ["0"]
+        },
+        {
+            # Prefill sequence 2
+            "step": 42,
+            "tkv": 103,  # TODO expecting 39 for next implementation
+            "waiting": [],
+            "running": ["2", "1"],
+            "request_outputs": ["2"]
+        },
+        {
+            # Decode sequences 1 and 2
+            "step": 43,
+            "tkv": 40,
+            "waiting": [],
+            "running": ["2", "1"],
+            "request_outputs": ["2", "1"]
+        },
+        {
+            # Sequences 1 finishes at step 51
+            # (start step + 2 prefill + 19 decodes - 1) = 31 + 2 + 19 - 1 = 51
+            "step": 51,
+            "tkv": 48,
+            "waiting": [],
+            "running": ["2"],
+            "request_outputs": ["2", "1"],
+            "finished_requests": ["1"]
+        },
+        {
+            # Sequences 2 finishes at step 52
+            # (start step + 1 prefill + 10 decodes - 1) = 42 + 1 + 10 - 1 = 52
+            "step": 52,
+            "tkv": 49,
+            "waiting": [],
+            "running": [],
+            "request_outputs": ["2"],
+            "finished_requests": ["2"]
+        },
+        {
+            # Tkv should be cleared one step later
+            "step": 53,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": [],
+        },
+    ]
+
+    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
+            max_model_len, remove_left_padding)
 
 
 def augment_checked_steps(
@@ -337,26 +774,27 @@ def augment_checked_steps(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize(
-    "seqs_max_tokens,prompts_lengths,steps_add_reqs,checked_steps",
-    [
+    "seqs_max_tokens,prompts_lengths,steps_add_reqs,checked_steps,"
+    "max_model_len,remove_left_padding", [
         get_params_test_blocks_borders_aligned_prompts(),
         get_params_test_blocks_borders_misaligned_prompts(),
-
-        # TODO to test additionally at some point:
-        # * test additional constraints from the scheduler (e.g prompt too long)
-        # * test stripping repeated left padding
-        # * test what happens when tkv comes to the end of 2048 block
-        # * test metadata cleanup after last request finishes
-        # * Corner cases:
-        #     * two sequences finish at the same time
-        #     * new prompts arrives when another finishes
+        get_params_test_special_finish(),
+        get_params_test_scheduler_constraints_tkv(),
+        get_params_test_scheduler_constraints_max_prompt_len(),
+        get_params_test_remove_left_padding(),
     ])
-def test_scheduler_cb_steps_tkv(model: str, backend: str,
-                                monkeypatch: pytest.MonkeyPatch,
-                                max_num_seqs: int, seqs_max_tokens: list[int],
-                                prompts_lengths: list[int],
-                                steps_add_reqs: list[int],
-                                checked_steps: list[dict[str, Any]]):
+def test_scheduler_cb_steps_tkv(
+    model: str,
+    backend: str,
+    monkeypatch: pytest.MonkeyPatch,
+    max_num_seqs: int,
+    seqs_max_tokens: list[int],
+    prompts_lengths: list[int],
+    steps_add_reqs: list[int],
+    checked_steps: list[dict[str, Any]],
+    max_model_len: int,
+    remove_left_padding: bool,
+):
     """
     Test the scheduler execution by comparing the scheduler attributes at each 
     step with the provided reference values in 'checked_steps'.
@@ -371,6 +809,8 @@ def test_scheduler_cb_steps_tkv(model: str, backend: str,
     monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
     monkeypatch.setenv("VLLM_USE_V1", "1")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+    monkeypatch.setenv("VLLM_SPYRE_RM_PADDED_BLOCKS",
+                       "1" if remove_left_padding else "0")
 
     # To get deterministic execution in V1
     # and to enable InprocClient
@@ -400,8 +840,8 @@ def test_scheduler_cb_steps_tkv(model: str, backend: str,
     # Setup the engine
     engine_args = EngineArgs(model=model,
                              tokenizer=model,
-                             max_model_len=2048,
-                             block_size=2048,
+                             max_model_len=max_model_len,
+                             block_size=max_model_len,
                              max_num_seqs=max_num_seqs)
     vllm_config = engine_args.create_engine_config()
     executor_class = Executor.get_class(vllm_config)

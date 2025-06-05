@@ -1,4 +1,5 @@
 """A Spyre worker class."""
+import contextlib
 import json
 import os
 import platform
@@ -33,6 +34,16 @@ from vllm_spyre.v1.worker.spyre_model_runner import (
 logger = init_logger(__name__)
 
 
+@contextlib.contextmanager
+def _maybe_warmup_context():
+    warmup_context = contextlib.nullcontext
+    if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
+        from torch_sendnn import warmup_mode
+        warmup_context = warmup_mode
+    with warmup_context():
+        yield
+
+
 class SpyreWorker(WorkerBaseV1):
     """A worker class that executes the model on a group of Spyre cores.
     """
@@ -55,13 +66,11 @@ class SpyreWorker(WorkerBaseV1):
             self._warmup_spyre_dynamic_size(self.restricted_tokens)
             return
 
-        wup_prompt_lens, wup_new_tokens = zip(
-            *[(s["prompt_length"], s["new_tokens"])
-              for s in self.spyre_warmup_shapes])
-
+        num_shape_combinations = len(self.spyre_warmup_shapes)
         logger.info(
             "Start warming up %d different "
-            "prompt/decode/batchsize-shape combinations.", len(wup_new_tokens))
+            "prompt/decode/batchsize-shape combinations.",
+            len(self.spyre_warmup_shapes))
         all_warmup_start_t = time.time()
         for i, (prompt_len, num_decode_tokens, batch_size) in enumerate([
             (s["prompt_length"], s["new_tokens"], s["batch_size"])
@@ -76,7 +85,7 @@ class SpyreWorker(WorkerBaseV1):
             # warmup individual combination
             logger.info(
                 "Warmup %d/%d prompt/decode/batchsize-shape "
-                "combinations...", i + 1, len(wup_new_tokens))
+                "combinations...", i + 1, num_shape_combinations)
             logger.info(
                 "Warming up for prompt length %d, decoding %d tokens with "
                 "batch size %d", prompt_len, num_decode_tokens, batch_size)
@@ -90,7 +99,7 @@ class SpyreWorker(WorkerBaseV1):
         logger.info(
             "All warmups for %d different prompt/decode/batchsize-shape "
             "combinations finished. Total warmup time %.3fs.",
-            len(wup_new_tokens), all_warmup_total_t)
+            num_shape_combinations, all_warmup_total_t)
         self.model_runner.complete_warmup()
 
     def check_health(self) -> None:
@@ -170,7 +179,7 @@ class SpyreWorker(WorkerBaseV1):
             torch_profiler_trace_dir = envs.VLLM_TORCH_PROFILER_DIR
             activities = [torch.profiler.ProfilerActivity.CPU]
 
-            if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
+            if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
                 from torch_sendnn import torch_sendnn
                 torch.utils.rename_privateuse1_backend("aiu")
                 torch._register_device_module("aiu",
@@ -196,9 +205,7 @@ class SpyreWorker(WorkerBaseV1):
         torch._C._distributed_c10d._register_process_group(
             "default", dist.group.WORLD)
 
-        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in [
-                "sendnn", "sendnn_decoder"
-        ]:
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
             spyre_setup.spyre_dist_setup(
                 rank=self.rank,
                 world_size=self.parallel_config.world_size,
@@ -225,9 +232,7 @@ class SpyreWorker(WorkerBaseV1):
 
             if self.parallel_config.world_size > 1:
                 self.init_distributed_environment()
-            elif envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in [
-                    "sendnn", "sendnn_decoder"
-            ]:
+            elif envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
                 spyre_setup.spyre_setup()
 
             ensure_model_parallel_initialized(
@@ -371,7 +376,9 @@ class SpyreWorker(WorkerBaseV1):
             grammar_bitmask=None,
         )
         logger.info("Warmup decode 1/1...")
-        self.execute_model(scheduler_output)
+
+        with _maybe_warmup_context():
+            self.execute_model(scheduler_output)
 
         # Needed to clean up the data of model runner
         scheduler_output = SchedulerOutput(
@@ -392,15 +399,6 @@ class SpyreWorker(WorkerBaseV1):
         self.execute_model(scheduler_output)
 
         self.model_runner.tkv = 0  # type: ignore[union-attr]
-
-        # update lazyhandle (once)
-        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
-            from torch_sendnn import torch_sendnn
-            ul_start_time = time.time()
-            torch_sendnn.update_lazyhandle()
-            ul_stop_time = time.time()
-            logger.info("update_lazyhandle() done (duration: %.3fs)",
-                        ul_stop_time - ul_start_time)
 
         warmup_end_t = time.time()
         warmup_total_t = warmup_end_t - warmup_start_t
@@ -431,14 +429,6 @@ class SpyreWorker(WorkerBaseV1):
         # Sample from the valid token ids
         warmup_tokens_tensor = valid_token_ids_tensor[torch.randint(
             0, len(valid_token_ids_tensor), (batch_size, prompt_len))]
-
-        extra_kwargs = {}
-        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND not in [
-                "sendnn", "sendnn_decoder"
-        ]:
-            # Bug in 2.3.1 fixed in 2.4.1 for SDPA flash cpu
-            # impl when padding too much
-            extra_kwargs["attn_algorithm"] = "math"
 
         # Set up dummy requests for prefill steps
         dummy_requests = [
@@ -488,27 +478,14 @@ class SpyreWorker(WorkerBaseV1):
 
         # First full forward pass
         logger.info("Warmup forward pass 1/2...")
-        self._warmup_model_forward_pass(scheduler_output, dummy_requests,
-                                        cached_requests, num_decode_tokens)
+        with _maybe_warmup_context():
+            self._warmup_model_forward_pass(scheduler_output, dummy_requests,
+                                            cached_requests, num_decode_tokens)
         self.perf_metrics.log("warmup 1 time",
                               time.time() - warmup_start_t,
                               batch_size=batch_size,
                               max_tokens=num_decode_tokens,
                               prompt_len=prompt_len)
-
-        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
-            from torch_sendnn import torch_sendnn
-            ul_start_time = time.time()
-            torch_sendnn.update_lazyhandle()
-            ul_stop_time = time.time()
-            ul_total_t = ul_stop_time - ul_start_time
-            logger.info("update_lazyhandle() done (duration: %.3fs)",
-                        ul_total_t)
-            self.perf_metrics.log("update_lazyhandle() time",
-                                  ul_total_t,
-                                  batch_size=batch_size,
-                                  max_tokens=num_decode_tokens,
-                                  prompt_len=prompt_len)
 
         # Second full forward pass
         logger.info("Warmup forward pass 2/2...")
