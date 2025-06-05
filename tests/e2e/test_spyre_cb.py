@@ -5,11 +5,13 @@ Run `python -m pytest tests/test_spyre_cb.py`.
 
 import copy
 import inspect
+import random
 from collections import deque
 from typing import Any
 
 import pytest
 from spyre_util import generate_cb_spyre_vllm_output, get_spyre_model_list
+from transformers import AutoTokenizer
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
@@ -92,9 +94,11 @@ def test_cb_handling(
         ][0])
 
 
-def create_random_request(
-        request_id: int, num_tokens: int,
-        sampling_params: SamplingParams) -> EngineCoreRequest:
+def create_random_request(request_id: int, num_tokens: int,
+                          sampling_params: SamplingParams,
+                          vocab: dict[str, int]) -> EngineCoreRequest:
+
+    prompt_token_ids = random.sample(list(vocab.values()), num_tokens)
 
     # Temporary until 'data_parallel_rank' parameter makes it to
     # a release version in vllm
@@ -103,7 +107,7 @@ def create_random_request(
     ]:
         return EngineCoreRequest(
             request_id=str(request_id),
-            prompt_token_ids=[request_id] * num_tokens,
+            prompt_token_ids=prompt_token_ids,
             mm_inputs=None,
             mm_hashes=None,
             mm_placeholders=None,
@@ -116,7 +120,7 @@ def create_random_request(
         )
     else:
         return EngineCoreRequest(request_id=str(request_id),
-                                 prompt_token_ids=[request_id] * num_tokens,
+                                 prompt_token_ids=prompt_token_ids,
                                  mm_inputs=None,
                                  mm_hashes=None,
                                  mm_placeholders=None,
@@ -768,6 +772,7 @@ def augment_checked_steps(
     return all_checked_steps
 
 
+@pytest.mark.a
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
@@ -794,6 +799,7 @@ def test_scheduler_cb_steps_tkv(
     checked_steps: list[dict[str, Any]],
     max_model_len: int,
     remove_left_padding: bool,
+    # compare_output_with_hf: bool,
 ):
     """
     Test the scheduler execution by comparing the scheduler attributes at each 
@@ -851,6 +857,8 @@ def test_scheduler_cb_steps_tkv(
     scheduler: ContinuousBatchingSpyreScheduler = engine_core.scheduler
 
     # Create random requests of specified lengths and max_tokens
+    random.seed(70)  # set seed for random tokens generation reproductibility
+    vocab = AutoTokenizer.from_pretrained(model).vocab
     sorted_reqs_params = zip(steps_add_reqs, seqs_max_tokens, prompts_lengths)
     requests: deque[tuple[int, EngineCoreRequest]] = deque()
     for i, (add_step, max_tokens,
@@ -862,7 +870,8 @@ def test_scheduler_cb_steps_tkv(
                                          ignore_eos=True)
         request = create_random_request(request_id=i,
                                         num_tokens=prompt_length,
-                                        sampling_params=sampling_params)
+                                        sampling_params=sampling_params,
+                                        vocab=vocab)
         requests.append((add_step, request))
 
     # In-between steps are added as normal decode steps
@@ -905,3 +914,5 @@ def test_scheduler_cb_steps_tkv(
                                if engine_core_output is not None else [])
         else:
             request_outputs = step_output.outputs
+        print(f"step {step}: {request_outputs}")
+            
