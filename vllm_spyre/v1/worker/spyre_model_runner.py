@@ -583,6 +583,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.req_ids2left_pads: dict[str, int] = {}
         self.tkv: int = 0
         self.free_blocks = deque([i for i in range(NUM_BLOCKS)])
+        self.dummy_req_ids2blocks: list[int] = []
 
         # TODO: Remove this once we can prefill and decode
         # in the same step
@@ -611,6 +612,14 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
             del self.requests[req_id]
             self.input_batch.remove_request(req_id)
+
+        # free the blocks used for padding to minimum decode batch size of 2
+        if self.dummy_req_ids2blocks and \
+                (not scheduler_output.total_num_scheduled_tokens \
+                or len(scheduler_output.scheduled_new_reqs) > 0):
+            for freed_block in self.dummy_req_ids2blocks:
+                self.free_blocks.append(freed_block)
+            self.dummy_req_ids2blocks = []
 
     def _prepare_prompt(
         self,
@@ -752,6 +761,27 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             left_padded_prompt_mask.append(
                 self.req_ids2left_pads[cached_request.req_id])
 
+        # add padding for minimum batch size of 2
+        if len(input_tokens) == 1:
+            dummy_req_indices = torch.zeros(1, dtype=torch.bool, device="cpu")
+            self.model.indices = torch.cat(
+                (self.model.indices, dummy_req_indices), -1)
+            assert self.model.indices.size(dim=0) == 2
+
+            n = self.tkv + 1
+            d = self.BLOCK_SIZE
+            num_blocks = (n + d - 1) // d
+            for _ in range(num_blocks - len(self.dummy_req_ids2blocks)):
+                self.dummy_req_ids2blocks.append(self.free_blocks.popleft())
+            block_table.append(deque(self.dummy_req_ids2blocks))
+            start_slot = block_table[-1][-1] * self.BLOCK_SIZE
+            offset = self.tkv % self.BLOCK_SIZE
+            slot = [start_slot + offset]
+            slot_mapping.append(slot)
+            input_tokens.append([0])
+            input_positions.append([self.tkv])
+            left_padded_prompt_mask.append(0)
+
         input_tokens = torch.tensor(input_tokens,
                                     dtype=torch.long,
                                     device=self.device)
@@ -771,7 +801,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # update tkv
         self.tkv = self.tkv + 1
 
-        current_tkv_mask = torch.tensor([self.tkv] * len(cached_requests),
+        current_tkv_mask = torch.tensor([self.tkv] * len(input_tokens),
                                         dtype=torch.int64)
 
         return ModelForwardInputs(
