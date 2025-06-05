@@ -8,17 +8,15 @@ TODO: Add section on RHOAI officially supported images, once they exist
 
 Base images containing the driver stack for IBM Spyre accelerators are available from the [ibm-aiu](https://quay.io/repository/ibm-aiu/base?tab=tags) organization on Quay. This includes the `torch_sendnn` package, which is required for using torch with Spyre cards.
 
-:::{attention}
-These images contain an install of the `torch` package. The specific version installed is guaranteed to be compatible with `torch_sendnn`. Overwriting this install with a different version of `torch` may cause issues.
-:::
+!!! attention
+    These images contain an install of the `torch` package. The specific version installed is guaranteed to be compatible with `torch_sendnn`. Overwriting this install with a different version of `torch` may cause issues.
 
 ## Using community built images
 
-Community maintained images are also [available on quay](https://quay.io/repository/ibm-aiu/vllm-spyre?tab=tags), the latest x86 build is `quay.io/ibm-aiu/vllm-spyre:latest.amd64`.
+Community maintained images are also [available on Quay](https://quay.io/repository/ibm-aiu/vllm-spyre?tab=tags), the latest x86 build is `quay.io/ibm-aiu/vllm-spyre:latest.amd64`.
 
-:::{caution}
-These images are provided as a reference and come with no support guarantees.
-:::
+!!! caution
+    These images are provided as a reference and come with no support guarantees.
 
 ## Building vLLM Spyre's Docker Image from Source
 
@@ -28,9 +26,8 @@ You can build and run vLLM Spyre from source via the provided <gh-file:docker/Do
 DOCKER_BUILDKIT=1 docker build . --target release --tag vllm/vllm-spyre --file docker/Dockerfile.amd64
 ```
 
-:::{note}
-This Dockerfile currently only supports the x86 platform
-:::
+!!! note
+    This Dockerfile currently only supports the x86 platform
 
 ## Running vLLM Spyre in a Docker Container
 

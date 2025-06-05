@@ -1,9 +1,8 @@
 name: Lint Code
 
 on:
-  # Trigger the workflow on push or pull request, but only for the main branch.
   # Don't use pull_request.paths filter since this workflow is required for
-  # all pull requests on main irrespective of file type or location.
+  # all pull requests on main irrespective of file type or location
   pull_request:
     branches:
       - main

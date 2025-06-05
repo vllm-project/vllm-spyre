@@ -4,13 +4,12 @@ The vLLM Documentation on [Deploying with Kubernetes](https://docs.vllm.ai/en/la
 
 ## Deploying on Spyre Accelerators
 
-:::{note}
-**Prerequisite** Ensure that you have a running Kubernetes cluster with Spyre accelerators.
-:::
+!!! note
+    **Prerequisite**: Ensure that you have a running Kubernetes cluster with Spyre accelerators.
 
 <!-- TODO: Link to public docs for cluster setup -->
 
-1. Create PVCs and secrets for vLLM. These are all optional.
+1. (Optional) Create PVCs and secrets for vLLM.
 
       ```yaml
       apiVersion: v1
