@@ -1,8 +1,7 @@
 import openai
 import pytest
-
-from tests.spyre_util import (VLLM_VERSIONS, get_spyre_backend_list,
-                              get_spyre_model_list)
+from spyre_util import (VLLM_VERSIONS, get_spyre_backend_list,
+                        get_spyre_model_list)
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
