@@ -427,12 +427,19 @@ class SpyreWorker(WorkerBaseV1):
             self.model_runner.vllm_config.scheduler_config.max_model_len
         block_size = self.model_runner.BLOCK_SIZE  # type: ignore[union-attr]
 
+        min_req_num_blocks = max_batch_size * max_model_len // block_size
+
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == 'sendnn_decoder':
-            # TODO: actually calling a function in torch_sendnn which returns
-            # the value set by the Spyre compiler and return it here
-            return max_batch_size * max_model_len // block_size
+            # TODO: replace num_blocks_spyre by calling a function in
+            # torch_sendnn which returns the value set by the Spyre compiler
+            num_blocks_spyre = max_batch_size * max_model_len // block_size
+            assert num_blocks_spyre >= min_req_num_blocks, (
+                "Number of pages available on Spyre (%d) is not enough to "
+                "serve the current model (need at least %d pages)." %
+                (num_blocks_spyre, min_req_num_blocks))
+            return num_blocks_spyre
         else:  # dynamo backend 'eager'
-            return max_batch_size * max_model_len // block_size
+            return min_req_num_blocks
 
     def _warmup_spyre_fixed_size(self, prompt_len, num_decode_tokens,
                                  special_token_ids, batch_size):
