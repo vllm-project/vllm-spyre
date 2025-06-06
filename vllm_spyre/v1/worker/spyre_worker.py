@@ -426,6 +426,10 @@ class SpyreWorker(WorkerBaseV1):
         block_size = self.model_runner.BLOCK_SIZE  # type: ignore[union-attr]
 
         min_req_num_blocks = max_model_len // block_size
+        # min_req_num_blocks is not enough blocks for the following test:
+        # tests/e2e/test_spyre_cb.py::test_scheduler_cb_steps_tkv
+        # [seqs_max_tokens4-prompts_lengths4-steps_add_reqs4-
+        # checked_steps4-256-False-2-eager-llama-194m]
 
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == 'sendnn':
             # TODO: replace num_blocks_spyre by calling a function in
@@ -437,7 +441,13 @@ class SpyreWorker(WorkerBaseV1):
                 (num_blocks_spyre, min_req_num_blocks))
             return num_blocks_spyre
         else:  # dynamo backend 'eager'
-            return min_req_num_blocks
+            # TODO: how do we get a meaningful value for CPU here
+            num_blocks_cpu = max_batch_size * max_model_len // block_size
+            assert num_blocks_cpu >= min_req_num_blocks, (
+                "Number of pages available on CPU (%d) is not enough to "
+                "serve the current model (need at least %d pages)." %
+                (num_blocks_cpu, min_req_num_blocks))
+            return num_blocks_cpu
 
     def _warmup_spyre_fixed_size(self, prompt_len, num_decode_tokens,
                                  special_token_ids, batch_size):
