@@ -33,7 +33,7 @@ class SpyreSDPABackend(AttentionBackend):
         return SpyreSDPABackendImpl
 
     @staticmethod
-    def get_metadata_cls() -> Type["AttentionMetadata"]:
+    def get_metadata_cls() -> Type["SpyreSDPAMetadata"]:
         return SpyreSDPAMetadata
 
     @staticmethod
@@ -51,13 +51,14 @@ class SpyreSDPABackend(AttentionBackend):
         num_kv_heads: int,
         head_size: int,
     ) -> Tuple[int, ...]:
-        if block_size % 16 != 0:
-            raise ValueError("Block size must be a multiple of 16.")
         return (2, num_blocks, block_size, num_kv_heads, head_size)
+
+    # Should also define swap, copy methods for spyre
 
 @dataclass
 class SpyreSDPAMetadata(AttentionMetadata, PagedAttentionMetadata):
-    seq_lens: Optional[List[int]] = None  # Non-chunked prefill
+    # Assuming non-chunked prefill
+    seq_lens: Optional[List[int]] = None 
     seq_lens_tensor: Optional[List[int]]
 
     @property
@@ -154,16 +155,14 @@ class SpyreSDPABackendImpl(AttentionImpl[SpyreSDPAMetadata]):
 
         assert self.num_heads % self.num_kv_heads == 0
         self.num_queries_per_kv = self.num_heads // self.num_kv_heads
-        supported_head_sizes = PagedAttention.get_supported_head_sizes()
-        if head_size not in supported_head_sizes:
-            raise ValueError(
-                f"Head size {head_size} is not supported by PagedAttention. "
-                f"Supported head sizes are: {supported_head_sizes}.")
 
-        if is_quantized_kv_cache(kv_cache_dtype) and not _use_ipex:
-            raise NotImplementedError(
-                "Spyre SDPA backend FP8 KV cache requires "
-                "intel_extension_for_pytorch support.")
+        # Check for supported head sizes
+        if alibi_slopes is not None:
+            raise NotImplementedError("Alibi slopes is not supported.")
+        if kv_cache_dtype != "auto":
+            raise NotImplementedError("FP8 KV cache dtype is not supported.")
+        if blocksparse_params is not None:
+            raise NotImplementedError("Blocksparse is not supported.")
         self.attn_type = attn_type
         if attn_type != AttentionType.DECODER:
             raise NotImplementedError("Encoder self-attention and "
@@ -187,7 +186,7 @@ class SpyreSDPABackendImpl(AttentionImpl[SpyreSDPAMetadata]):
             query: shape = [num_tokens, num_heads * head_size]
             key: shape = [num_tokens, num_kv_heads * head_size]
             value: shape = [num_tokens, num_kv_heads * head_size]
-            kv_cache = [2, num_blocks, block_size * num_kv_heads * head_size]
+            kv_cache = [2, num_blocks, block_size, num_kv_heads, head_size]
                 NOTE: kv_cache will be an empty tensor with shape [0]
                 for profiling run.
             attn_metadata: Metadata for attention.
@@ -210,63 +209,12 @@ class SpyreSDPABackendImpl(AttentionImpl[SpyreSDPAMetadata]):
         else:
             assert value is None
 
-        key_cache = kv_cache
-        value_cache = kv_cache
-        #print("kv cache: ", kv_cache.shape)
-        if kv_cache.numel() > 0:
-            key_cache, value_cache = PagedAttention.split_kv_cache(
-                kv_cache, self.num_kv_heads, self.head_size)
-
-            if (key is not None) and (value is not None):
-                PagedAttention.write_to_paged_cache(
-                    key, value, key_cache, value_cache, attn_metadata.slot_mapping,
-                    self.kv_cache_dtype, layer._k_scale, layer._v_scale)
-
-        # Decoder self-attention supports chunked prefill.
-        # Encoder/decoder cross-attention requires no chunked
-        # prefill (100% prefill or 100% decode tokens, no mix)
-        num_prefill_tokens = attn_metadata.num_prefill_tokens
-        num_decode_tokens = attn_metadata.num_decode_tokens
-
-        if attn_type == AttentionType.DECODER:
-            # Only enforce this shape-constraint for decoder
-            # self-attention
-            assert key.shape[0] == num_prefill_tokens + num_decode_tokens
-            assert value.shape[0] == num_prefill_tokens + num_decode_tokens
-
-        output = torch.empty_like(query)
-        if prefill_meta := attn_metadata.prefill_metadata:
-            assert attn_metadata.seq_lens is not None
-            self._run_sdpa_forward(output,
-				   query,
-				   key,
-				   value,
-				   prefill_meta,
-				   attn_type=attn_type)
-
-        if decode_meta := attn_metadata.decode_metadata:
-            assert attn_type != AttentionType.ENCODER_ONLY, (
-                "Encoder-only models should not have decode metadata.")
-            # Decoding run.
-            seq_lens_arg = attn_metadata.seq_lens_tensor
-            max_seq_len_arg = attn_metadata.max_decode_seq_len
-            block_tables_arg = attn_metadata.block_tables
-
-            PagedAttention.forward_decode(
-                output[attn_metadata.num_prefill_tokens:, :, :],
-                query[attn_metadata.num_prefill_tokens:, :, :],
-                key_cache,
-                value_cache,
-                block_tables_arg,
-                seq_lens_arg,
-                max_seq_len_arg,
-                self.kv_cache_dtype,
-                self.num_kv_heads,
-                self.scale,
-		None,
-                layer._k_scale,
-                layer._v_scale,
-            )
+        self._run_sdpa_forward(output,
+                               query,
+                               key,
+                               value,
+                               attn_metadata,
+                               attn_type=attn_type)
 
         # Reshape the output tensor.
         return output.view(-1, self.num_heads * self.head_size)
