@@ -1,0 +1,107 @@
+# This is a reference dockerfile for vLLM Spyre support on an x86 host
+ARG BASE_IMAGE_URL="quay.io/ibm-aiu/base"
+ARG BASE_IMAGE_TAG="2025_05_29.amd64"
+
+##############################################
+# Base
+##############################################
+FROM ${BASE_IMAGE_URL}:${BASE_IMAGE_TAG} AS base
+
+USER root
+
+RUN dnf install -y \
+        python3-pip.noarch \
+        python3-wheel.noarch
+
+##############################################
+# Build stage
+##############################################
+FROM base as builder
+
+# This stage builds vLLM Spyre and installs its dependencies into a new venv.
+# This is done with system site-packages access so that we can use the installs
+# of torch_sendnn etc. from the driver image.
+
+# set umask to keep everything group writeable
+SHELL ["/usr/bin/bash", "-lc"]
+RUN echo 'umask 002' >> /etc/profile.d/umask.sh \
+    && chmod g+w /usr/src
+
+# See https://docs.astral.sh/uv/guides/integration/docker/
+# for info on using `uv` in docker builds
+# UV_PYTHON_PREFERENCE=only-system is critical to ensure that we use the same
+# python install from the base driver image.
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_PREFERENCE=only-system \
+    UV_PROJECT_ENVIRONMENT=/opt/vllm
+
+# Create new venv to install everything in
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=cache,target=/root/.cache/uv \
+    pip install uv && \
+    uv venv /opt/vllm --seed --system-site-packages
+
+# Always install vllm with empty target device
+ENV VLLM_TARGET_DEVICE=empty
+
+ADD . /usr/src/vllm-spyre
+
+# Use uv to build the vllm-spyre project, with dependencies locked
+WORKDIR /usr/src/vllm-spyre
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --no-dev --no-editable --frozen
+
+# clean up temp dir
+RUN rm -rf /tmp/etc
+
+##############################################
+# Release stage
+##############################################
+FROM base as release
+
+# Copy over the vllm venv
+COPY --from=builder /opt/vllm /opt/vllm
+
+# Required Spyre environment configuration
+ENV COMPILATION_MODE=offline_decoder \
+    DISTRIBUTED_STRATEGY_IGNORE_MODULES=WordEmbedding,Embedding \
+    DTLOG_LEVEL=error \
+    DT_DEEPRT_VERBOSE=-1 \
+    DT_OPT=varsub=1,lxopt=1,opfusion=1,arithfold=1,dataopt=1,patchinit=1,patchprog=1,autopilot=1,weipreload=0,kvcacheopt=1,progshareopt=1,dtversion=2 \
+    FLEX_COMPUTE=SENTIENT \
+    FLEX_DEVICE=PF \
+    FLEX_OVERWRITE_NMB_FRAME=1 \
+    FLEX_UNLINK_DEVMEM=false \
+    FLEX_RDMA_MODE_FULL=1 \
+    TOKENIZERS_PARALLELISM=false \
+    TORCH_SENDNN_LOG=WARNING
+
+# Required configuration file
+COPY docker/.senlib.json /home/senuser
+
+# Common vLLM-specific env setup
+ENV MASTER_ADDR=localhost \
+    MASTER_PORT=12355 \
+    VLLM_PLUGINS=spyre \
+    VLLM_USE_V1=1
+
+RUN true \
+    && mkdir -p /home/senuser/.cache \
+    && chmod -R g+rwx /home/ \
+    && chown -R senuser:0 /home/
+ENV HOME=/home/senuser
+WORKDIR ${HOME}
+
+USER 2000
+
+ENV PATH="/home/senuser/.local/bin:$PATH"
+
+# Place executables in the environment at the front of the path.
+# This will make the default `python` and `pip` resolve to the uv-managed venv
+ENV PATH="/opt/vllm/bin:$PATH"
+
+# Copy helper script to configure AIUs at runtime before booting vLLM
+COPY docker/simple_vllm_serve.sh /home/senuser
+
+ENTRYPOINT ["/home/senuser/simple_vllm_serve.sh"]

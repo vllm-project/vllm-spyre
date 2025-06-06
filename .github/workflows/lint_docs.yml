@@ -1,19 +1,21 @@
-name: Lint documentation
+name: Lint Docs
 
 on:
+  # Trigger the workflow on push or pull request, but only for the main branch.
+  # Don't use pull_request.paths filter since this workflow is required for
+  # all pull requests on main irrespective of file type or location.
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - main
     paths:
-      - "docs/**"
-  pull_request:
-    branches:
-      - main
-    paths:
+      - "**/*.md"
       - "docs/**"
 
 jobs:
-  doc-lint:
+  lint-docs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -27,4 +29,4 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --only-group lint
       - name: Lint docs
-        run: tools/doc-lint.sh
+        run: tools/lint_docs.sh

@@ -18,7 +18,7 @@ from spyre_util import (compare_embedding_results, get_spyre_backend_list,
 ]])
 @pytest.mark.parametrize("warmup_shape",
                          [(64, 4), (64, 8), (128, 4),
-                          (128, 8)])  # (prompt_length/new_tokens/batch_size)
+                          (128, 8)])  # (prompt_length/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize(
     "vllm_version",

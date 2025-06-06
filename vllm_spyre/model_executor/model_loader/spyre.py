@@ -31,7 +31,7 @@ except ImportError:
     print("WARNING: Disabled: dynamo_tracer")
     pass
 
-BACKEND_LIST = ['sendnn_decoder', 'inductor']
+BACKEND_LIST = ['sendnn', 'inductor']
 
 logger = init_logger(__name__)
 
@@ -94,7 +94,7 @@ class SpyreCausalLM(nn.Module):
             self.model.past_key_value_states = None  # type: ignore
 
         extra_kwargs: dict[str, Any] = {}
-        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn_decoder":
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn":
             # Bug in 2.3.1 fixed in 2.4.1 for SDPA flash
             # cpu impl when padding too much
             extra_kwargs["attn_algorithm"] = "math"
@@ -158,7 +158,7 @@ class FmsModelBase(nn.Module):
 
         self.config: PretrainedConfig = model_config.hf_config
         self.dtype = torch.float16 if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == \
-            'sendnn_decoder' else torch.float32
+            'sendnn' else torch.float32
 
         # Actual FMS model
         self.model: nn.Module
@@ -184,7 +184,7 @@ class FmsModelBase(nn.Module):
     ) -> None:
 
         if model_config.quantization == "gptq":
-            if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
+            if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
                 from fms_mo.aiu_addons.gptq import (  # noqa: F401
                     gptq_aiu_adapter, gptq_aiu_linear)
                 linear_type = "gptq_aiu"
@@ -222,7 +222,7 @@ class FmsModelBase(nn.Module):
                 revision=model_config.revision)
 
         # we can use fused weights unless running on Spyre
-        fused_weights = envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn_decoder"
+        fused_weights = envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn"
 
         #self.model = get_model(architecture="hf_configured", variant=model_config.model, model_path=model_path, source=model_source, data_type=self.dtype, distributed_strategy=distributed_strategy, group=dist.group.WORLD, fused_weights=fused_weights, linear_config=linear_config)
         self.model = get_model(vllm_config=self.vllm_config)

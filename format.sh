@@ -110,7 +110,7 @@ echo 'vLLM yapf: Done'
 
 # Run mypy
 echo 'vLLM mypy:'
-tools/mypy.sh
+tools/type_check.sh
 echo 'vLLM mypy: Done'
 
 
@@ -240,15 +240,15 @@ fi
 echo 'vLLM isort: Done'
 
 echo 'vLLM actionlint:'
-tools/actionlint.sh -color
+tools/lint_actions.sh -color
 echo 'vLLM actionlint: Done'
 
 echo 'vLLM shellcheck:'
-tools/shellcheck.sh
+tools/lint_scripts.sh
 echo 'vLLM shellcheck: Done'
 
 echo 'vLLM doc-lint:'
-tools/doc-lint.sh
+tools/lint_docs.sh
 echo 'vLLM doc-lint: Done'
 
 if ! git diff --quiet &>/dev/null; then

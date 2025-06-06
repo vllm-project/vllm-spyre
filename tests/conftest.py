@@ -15,7 +15,7 @@ if "VLLM_USE_V1" in os.environ:
 
 import pytest
 import torch
-from spyre_util import RemoteOpenAIServer
+from spyre_util import RemoteOpenAIServer, skip_unsupported_tp_size
 from vllm.connections import global_http_connection
 from vllm.distributed import cleanup_dist_env_and_memory
 
@@ -93,6 +93,7 @@ def remote_openai_server(request):
     server_args = ["--quantization", quantization] if quantization else []
     if 'tensor_parallel_size' in params:
         tp_size = params['tensor_parallel_size']
+        skip_unsupported_tp_size(int(tp_size))
         server_args.extend(["--tensor-parallel-size", str(tp_size)])
 
     try:
