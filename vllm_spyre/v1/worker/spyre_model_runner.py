@@ -1,4 +1,5 @@
 import time
+import weakref
 from collections import deque
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -6,7 +7,9 @@ from typing import TYPE_CHECKING, Optional
 
 import torch
 from torch import nn
+from vllm_spyre.v1.attention.backends.spyre import SpyreSDPAMetadata, SpyreSDPABackend
 from vllm.config import DeviceConfig, VllmConfig
+from vllm.forward_context import get_forward_context, set_forward_context
 from vllm.logger import init_logger
 from vllm.sampling_params import SamplingType
 from vllm.utils import is_pin_memory_available
@@ -32,7 +35,6 @@ import vllm_spyre.envs as envs_spyre
 
 logger = init_logger(__name__)
 
-
 @dataclass(frozen=True)
 class ModelForwardInputs:
     """
@@ -46,6 +48,7 @@ class ModelForwardInputs:
     block_table: Optional[torch.Tensor] = None
     slot_mapping: Optional[torch.Tensor] = None
     is_prompt: Optional[bool] = None
+
 
 
 @dataclass
@@ -106,6 +109,9 @@ class SpyreModelRunner:
         # Requests
         self.requests: dict[str, CachedRequestData] = {}
 
+        self.attn_metadata_builder = SpyreSDPABackend.get_builder_cls()()
+        self.attn_metadata: Optional[SpyreSDPAMetadata] = None
+
     def get_model(self) -> nn.Module:
         return self.model
 
@@ -114,16 +120,14 @@ class SpyreModelRunner:
         max_pad_length = max(prompt_lens)
         max_decode_length = max(num_decode_tokens)
         self.model = SpyreCausalLM(
-            self.model_config,
-            parallel_config=self.parallel_config,
-            scheduler_config=self.scheduler_config,
+            vllm_config=self.vllm_config,
             max_prompt_length=max_pad_length,
             max_decode_length=max_decode_length,
         )
 
     @property
     def vocab_size(self) -> int:
-        return self.model.model.model.config.src_vocab_size
+        return self.model.model.model.config.vocab_size
 
     def _prepare_pad_input_ids(
         self,
@@ -286,6 +290,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         # have finished decoding.
         self.input_batch.clear_requests()
         self.requests = {}
+        num_tokens = []
 
         # Build batch and prepare input_token1
         for request_data in new_requests:
@@ -296,6 +301,8 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
                 torch.tensor(prompt_tokens,
                              dtype=torch.long,
                              device=torch.device("cpu")))
+
+            num_tokens.append(len(prompt_tokens))
 
             # Add new requests to the cached states.
             req_id = request_data.req_id
@@ -332,12 +339,18 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         input_tokens, self._position_ids, self._mask = self.pad_input_ids(
             input_token_list, min_pad_length=min_pad_length_batch)
 
-        return ModelForwardInputs(
+        input = ModelForwardInputs(
             input_tokens=input_tokens,
             input_positions=self._position_ids,
             input_masks=self._mask,
             is_prompt=True,
         )
+
+        if self.warmup_mode:
+            self.attn_metadata = None
+        else: 
+            self.attn_metadata = self.attn_metadata_builder.build(input)
+        return input
 
     def _prepare_decode(
         self,
@@ -362,12 +375,18 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         input_tokens = torch.tensor(input_tokens,
                                     dtype=torch.long,
                                     device=self.device)
-        return ModelForwardInputs(
+
+        input = ModelForwardInputs(
             input_tokens=input_tokens,
             input_positions=self._position_ids,
             input_masks=self._mask,
             is_prompt=False,
         )
+        if self.warmup_mode:
+            self.attn_metadata = None
+        else:
+            self.attn_metadata = self.attn_metadata_builder.build(input)
+        return input
 
     def _update_position_ids(self) -> None:
         """Updating the position ids of all sequences
@@ -404,7 +423,6 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
     def prepare_model_input(
             self, scheduler_output: SchedulerOutput) -> ModelForwardInputs:
 
-        # NOTE: We assume that all sequences in the group are all prompts or
         # all decodes.
         # Also assuming that new sequences are prefills
         is_prompt = len(scheduler_output.scheduled_new_reqs) > 0
@@ -458,20 +476,22 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         # Always get the indices from the input_batch
         self.model.indices = self.input_batch.get_model_indices()
 
-        # Execute the model
-        hidden_states = self.model(
-            input_ids=model_input.input_tokens,
-            positions=model_input.input_positions,
-            masks=model_input.input_masks,
-            is_prompt=model_input.is_prompt,
-        )
+        print("Attn_metadata:", self.attn_metadata)
+
+        with set_forward_context(self.attn_metadata, self.vllm_config, virtual_engine=0,):
+            # Execute the model
+            hidden_or_intermediate_states = self.model(
+                input_ids=model_input.input_tokens,
+                positions=model_input.input_positions,
+                is_prompt=model_input.is_prompt,
+            )
 
         # Only perform sampling in the driver worker.
         if not self.is_driver_worker:
             return []
 
         # Compute the logits.
-        logits = self.model.compute_logits(hidden_states, None)
+        logits = self.model.compute_logits(hidden_or_intermediate_states, None)
 
         # Sample the next token.
         output: SamplerOutput = self.model.sample(
@@ -1001,9 +1021,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         if not self.is_driver_worker:
             return []
 
-        # Compute the logits.
-        logits = self.model.compute_logits(hidden_states, None)
-
         # Sample the next token.
         # TODO: review this, once we can prefill and decode at the same step
         sampling_metadata = self.prefill_batch.sampling_metadata \
@@ -1012,6 +1029,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             logits=logits,
             sampling_metadata=sampling_metadata,
         )
+
+        # Compute the logits.
+        logits = self.model.compute_logits(hidden_states, sampling_metadata=sampling_metadata)
+
         t1 = time.time() - t0
         logger.debug("t_token: %.2fms", (t1 * 1000))
 

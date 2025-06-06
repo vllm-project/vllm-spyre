@@ -6,15 +6,16 @@ import torch
 import torch._inductor.config
 import torch.distributed as dist
 import torch.nn as nn
-from fms.models import get_model
+from vllm.model_executor.model_loader import get_model
 from transformers import PretrainedConfig
-from vllm.config import ModelConfig, ParallelConfig, SchedulerConfig
+from vllm.config import ModelConfig, ParallelConfig, SchedulerConfig, VllmConfig
 from vllm.logger import init_logger
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
 from vllm.model_executor.layers.sampler import SamplerOutput, get_sampler
 from vllm.model_executor.model_loader.weight_utils import (
     download_weights_from_hf)
 from vllm.model_executor.sampling_metadata import SamplingMetadata
+from vllm.sequence import IntermediateTensors
 
 import vllm_spyre.envs as envs_spyre
 
@@ -38,16 +39,14 @@ class SpyreCausalLM(nn.Module):
 
     def __init__(
         self,
-        model_config: ModelConfig,
-        parallel_config: ParallelConfig,
-        scheduler_config: SchedulerConfig,
+        vllm_config: VllmConfig,
         max_prompt_length: int,
         max_decode_length: int,
     ) -> None:
         super().__init__()
 
         self.logits_processor = LogitsProcessor(
-            model_config.hf_config.vocab_size, logits_as_input=True)
+            vllm_config.model_config.hf_config.vocab_size, logits_as_input=True)
         self.sampler = get_sampler()
 
         # boolean tensor of length batch size with indices:
@@ -60,14 +59,10 @@ class SpyreCausalLM(nn.Module):
 
         # FMS Model
         if envs_spyre.VLLM_SPYRE_USE_CB:
-            self.model = ContinuousBatchingFmsModel(model_config,
-                                                    parallel_config,
-                                                    scheduler_config)
+            self.model = ContinuousBatchingFmsModel(vllm_config)
         else:
             self.model = StaticBatchingFmsModel(
-                model_config,
-                parallel_config,
-                scheduler_config,
+                vllm_config,
                 max_prompt_length,
                 max_decode_length,
             )
@@ -76,7 +71,6 @@ class SpyreCausalLM(nn.Module):
         self,
         input_ids: torch.Tensor,
         positions: torch.Tensor,
-        masks: torch.Tensor,
         is_prompt: bool,
         current_tkv_mask: Optional[torch.Tensor] = None,
         left_padded_prompt_mask: Optional[torch.Tensor] = None,
@@ -102,10 +96,7 @@ class SpyreCausalLM(nn.Module):
         # normal prefill or decoding step
         logits = self.model(
             input_ids,
-            position_ids=positions,
-            mask=masks,
-            use_cache=True,
-            only_last_token=not envs_spyre.VLLM_SPYRE_USE_CB,
+            positions=positions,
             **extra_kwargs,
         )
 
@@ -143,28 +134,29 @@ class FmsModelBase(nn.Module):
 
     def __init__(
         self,
-        model_config: ModelConfig,
-        parallel_config: ParallelConfig,
+        vllm_config: VllmConfig,
         max_prompt_length: int,
         max_decode_length: int,
         sendnn_dynamic: bool,
     ) -> None:
         super().__init__()
 
-        self.config: PretrainedConfig = model_config.hf_config
+        self.config: PretrainedConfig = vllm_config.model_config.hf_config
         self.dtype = torch.float16 if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == \
             'sendnn' else torch.float32
 
         # Actual FMS model
         self.model: nn.Module
+        self.vllm_config = vllm_config
 
         # Load the weights from the cached or downloaded files.
-        self.load_weights(model_config=model_config,
+        self.load_weights(model_config=vllm_config.model_config,
                           max_prompt_length=max_prompt_length,
                           max_decode_length=max_decode_length,
                           distributed_strategy="tp"
-                          if parallel_config.world_size > 1 else None,
+                          if vllm_config.parallel_config.world_size > 1 else None,
                           sendnn_dynamic=sendnn_dynamic)
+
 
     def load_weights(
         self,
@@ -217,15 +209,7 @@ class FmsModelBase(nn.Module):
         # we can use fused weights unless running on Spyre
         fused_weights = envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn"
 
-        self.model = get_model(architecture="hf_configured",
-                               variant=model_config.model,
-                               model_path=model_path,
-                               source=model_source,
-                               data_type=self.dtype,
-                               distributed_strategy=distributed_strategy,
-                               group=dist.group.WORLD,
-                               fused_weights=fused_weights,
-                               linear_config=linear_config)
+        self.model = get_model(vllm_config=self.vllm_config)
 
         self.model.eval()
         torch.set_grad_enabled(False)
@@ -273,14 +257,12 @@ class ContinuousBatchingFmsModel(FmsModelBase):
 
     def __init__(
         self,
-        model_config: ModelConfig,
-        parallel_config: ParallelConfig,
-        scheduler_config: SchedulerConfig,
+        vllm_config: VllmConfig,
     ) -> None:
 
         BLOCK_SIZE = 64
-        max_batch = scheduler_config.max_num_seqs
-        max_model_len = scheduler_config.max_model_len
+        max_batch = vllm_config.scheduler_config.max_num_seqs
+        max_model_len = vllm_config.scheduler_config.max_model_len
 
         # edge case: prompt fills model length: can produce 1 token with prefill
         max_prompt_length = max_model_len
@@ -288,14 +270,13 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         # can produce 1 token with prefill plus rest of model length
         max_decode_length = max_model_len - BLOCK_SIZE + 1
 
-        super().__init__(model_config,
-                         parallel_config,
+        super().__init__(vllm_config,
                          max_prompt_length,
                          max_decode_length,
                          sendnn_dynamic=True)
 
         # physical KV cache on AIU Spyre: will eventually not live in this class
-        num_kv_heads = model_config.get_num_kv_heads(parallel_config)
+        num_kv_heads = vllm_config.model_config.get_num_kv_heads(vllm_config.parallel_config)
 
         if self.config.model_type in {'llama', 'granite'}:
             num_layers = self.config.num_hidden_layers
@@ -328,10 +309,8 @@ class ContinuousBatchingFmsModel(FmsModelBase):
     def forward(
         self,
         input_ids: torch.Tensor,
-        position_ids: torch.Tensor,
-        mask: torch.Tensor,
+        positions: torch.Tensor,
         use_cache: bool,
-        only_last_token: bool,
         current_tkv_mask: torch.Tensor,
         left_padded_prompt_mask: torch.Tensor,
         block_table: torch.Tensor,
@@ -341,11 +320,9 @@ class ContinuousBatchingFmsModel(FmsModelBase):
 
         output = self.model(
             input_ids,
-            position_ids=position_ids,
-            mask=mask,
+            positions=positions,
             past_key_value_states=self.past_key_value_states,
             use_cache=use_cache,
-            only_last_token=only_last_token,
             current_tkv_mask=current_tkv_mask,
             left_padded_prompt_mask=left_padded_prompt_mask,
             block_table=block_table,
@@ -353,50 +330,42 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             **extra_kwargs,
         )
 
-        logits, self.past_key_value_states = output
+        self.past_key_value_states = output
 
-        return logits
+        return output
 
 
 class StaticBatchingFmsModel(FmsModelBase):
 
     def __init__(
         self,
-        model_config: ModelConfig,
-        parallel_config: ParallelConfig,
-        _: SchedulerConfig,
+        vllm_config: VllmConfig,
         max_prompt_length: int,
         max_decode_length: int,
     ) -> None:
-        super().__init__(model_config,
-                         parallel_config,
-                         max_prompt_length,
-                         max_decode_length,
-                         sendnn_dynamic=False)
+        super().__init__(vllm_config,
+                    max_prompt_length,
+                    max_decode_length,
+                    sendnn_dynamic=False)
 
         # dynamic KV cache
         self.past_key_value_states = None
+        self.vllm_config = vllm_config
 
     def forward(
         self,
         input_ids: torch.Tensor,
-        position_ids: torch.Tensor,
-        mask: torch.Tensor,
-        use_cache: bool,
-        only_last_token: bool,
+        positions: torch.Tensor,
         **extra_kwargs,
     ) -> torch.Tensor:
 
         output = self.model(
             input_ids,
-            position_ids=position_ids,
-            mask=mask,
-            past_key_value_states=self.past_key_value_states,
-            use_cache=use_cache,
-            only_last_token=only_last_token,
+            positions=positions,
+            intermediate_tensors=self.past_key_value_states,
             **extra_kwargs,
         )
 
-        logits, self.past_key_value_states = output
+        self.past_key_value_states = output
 
-        return logits
+        return output
