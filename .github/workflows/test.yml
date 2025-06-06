@@ -164,7 +164,7 @@ jobs:
           source .venv/bin/activate
           if [ ${{ matrix.test_suite.markers }} == "cb" ]; then
           # install custom fms branch
-              uv pip install git+https://github.com/foundation-model-stack/foundation-model-stack@paged_attn_mock --force-reinstall
+              uv pip install git+https://github.com/foundation-model-stack/foundation-model-stack@paged_attn_attn_kwargs_impl --force-reinstall
           fi
           # commands to run if condition is true
           python3 -m pytest ${{ matrix.test_suite.flags }} \
