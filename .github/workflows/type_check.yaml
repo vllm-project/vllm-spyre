@@ -26,7 +26,7 @@ jobs:
       uses: tj-actions/changed-files@v46
       with: # Avoid using single or double quotes for multiline patterns
         files: |
-          .github/workflows/type_check.yml
+          .github/workflows/type_check.yaml
           tools/type_check.sh
           pyproject.toml
           **.py
