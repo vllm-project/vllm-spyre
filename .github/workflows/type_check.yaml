@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
     steps:
     - name: "Checkout"
       uses: actions/checkout@v4
@@ -43,7 +43,7 @@ jobs:
 
     - name: "Install dependencies"
       if: steps.changed-src-files.outputs.any_changed == 'true'
-      run: uv sync --frozen --only-group lint
+      run: uv sync --python ${{ matrix.python-version }} --frozen --only-group lint
 
     - name: "Run mypy"
       if: steps.changed-src-files.outputs.any_changed == 'true'
