@@ -8,8 +8,6 @@ from typing import TYPE_CHECKING, Optional
 import torch
 from torch import nn
 from vllm_spyre.v1.attention.backends.spyre import SpyreSDPAMetadata, SpyreSDPABackend
-from vllm.attention.backends.torch_sdpa import TorchSDPABackend
-from vllm.attention.backends.triton_mla import TritonMLABackend
 from vllm.config import DeviceConfig, VllmConfig
 from vllm.forward_context import get_forward_context, set_forward_context
 from vllm.logger import init_logger
@@ -122,9 +120,6 @@ class SpyreModelRunner:
         max_pad_length = max(prompt_lens)
         max_decode_length = max(num_decode_tokens)
         self.model = SpyreCausalLM(
-            self.model_config,
-            parallel_config=self.parallel_config,
-            scheduler_config=self.scheduler_config,
             vllm_config=self.vllm_config,
             max_prompt_length=max_pad_length,
             max_decode_length=max_decode_length,
