@@ -10,8 +10,12 @@ on:
   pull_request:
     branches:
       - "main"
-    paths-ignore:
-      - "**.md"
+    paths:
+      - ".github/workflows/build_docker.yml"
+      - "docker/**"
+      - "vllm_spyre/**/*.py"
+      - "pyproject.toml"
+      - "uv.lock"
   release:
     types: [published]
 
