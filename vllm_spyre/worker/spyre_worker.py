@@ -218,8 +218,9 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
             print(f"[SpyreWorker] Warming up for prompt length {prompt_len}, "
                   f"decoding {num_decode_tokens} tokens with batch "
                   f"size {batch_size}")
-            self._warmup_spyre_fixed_size(prompt_len, num_decode_tokens,
-                                          restricted_tokens, batch_size)
+            with _maybe_warmup_context():
+                self._warmup_spyre_fixed_size(prompt_len, num_decode_tokens,
+                                              restricted_tokens, batch_size)
         all_warmup_end_t = time.time()
         all_warmup_total_t = all_warmup_end_t - all_warmup_start_t
         self.perf_metrics.log("total warmup time", all_warmup_total_t)
@@ -262,13 +263,11 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
               f"{prompt_len} and max output tokens {num_decode_tokens}.")
 
         print("[SpyreWorker] warmup 1/2...")
-        with _maybe_warmup_context():
-            # TODO: torch_sendnn.CleanGraph() should be necessary?
-            # warmup 1st forward pass
-            self._warmup_model_forward_pass(warmup_tokens_tensor,
-                                            valid_token_ids_tensor, prompt_len,
-                                            num_decode_tokens, batch_size,
-                                            extra_kwargs)
+        # warmup 1st forward pass
+        self._warmup_model_forward_pass(warmup_tokens_tensor,
+                                        valid_token_ids_tensor, prompt_len,
+                                        num_decode_tokens, batch_size,
+                                        extra_kwargs)
         self.perf_metrics.log("warmup 1 time",
                               time.time() - warmup_start_t,
                               batch_size=batch_size,
