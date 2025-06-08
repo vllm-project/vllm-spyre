@@ -107,7 +107,10 @@ class SpyrePlatform(Platform):
                 # As of 0.7.3 the scheduler for V1 isn't actually pluggable like
                 # this yet
                 scheduler_config.scheduler_cls = "vllm_spyre.v1.core."\
-                        "scheduler.ContinuousBatchingSpyreScheduler"
+                        "scheduler.ContinuousBatchingHomogenTkvSpyreScheduler"\
+                              if not envs_spyre.VLLM_SPYRE_HETEROGEN_TKV else \
+                                "vllm_spyre.v1.core.scheduler.Continuous"\
+                                    "BatchingHeterogenTkvSpyreScheduler"
 
         # Cache and model config aren't set in the individual worker procs
         # These are set in the main engine process

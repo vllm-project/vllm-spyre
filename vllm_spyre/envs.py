@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     VLLM_SPYRE_WARMUP_NEW_TOKENS: Optional[list[int]] = None
     VLLM_SPYRE_WARMUP_BATCH_SIZES: Optional[list[int]] = None
     VLLM_SPYRE_USE_CB: bool = False
+    VLLM_SPYRE_HETEROGEN_TKV: bool = False
     VLLM_SPYRE_RM_PADDED_BLOCKS: bool = False
     VLLM_SPYRE_PERF_METRIC_LOGGING_ENABLED: int = 0
     VLLM_SPYRE_PERF_METRIC_LOGGING_DIR: str = "/tmp"
@@ -73,6 +74,11 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # continuous batching mode.
     "VLLM_SPYRE_RM_PADDED_BLOCKS":
     lambda: bool(int(os.getenv("VLLM_SPYRE_RM_PADDED_BLOCKS", "0"))),
+
+    # If set, heterogeneous tkv continuous batching implementation will
+    # be used, otherwise homogeneous tkv
+    "VLLM_SPYRE_HETEROGEN_TKV":
+    lambda: bool(int(os.getenv("VLLM_SPYRE_HETEROGEN_TKV", "0"))),
 
     # Enable performance metric logging. This captures startup information
     # such as warmup times, and loading times. It is turned off by default.

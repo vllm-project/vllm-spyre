@@ -22,6 +22,7 @@ if platform.machine() == "arm64":
 # defining here to be able to run/debug directly from VSC (not via terminal)
 os.environ['VLLM_SPYRE_DYNAMO_BACKEND'] = 'eager'
 os.environ['VLLM_SPYRE_USE_CB'] = '1'
+os.environ['VLLM_SPYRE_HETEROGEN_TKV'] = '0'
 os.environ['VLLM_USE_V1'] = '1'
 
 # Sample prompts.

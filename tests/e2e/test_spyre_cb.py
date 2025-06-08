@@ -15,7 +15,8 @@ from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor
 
-from vllm_spyre.v1.core.scheduler import ContinuousBatchingSpyreScheduler
+from vllm_spyre.v1.core.scheduler import (
+    ContinuousBatchingHomogenTkvSpyreScheduler)
 
 
 @pytest.mark.parametrize("max_num_seqs", [2, 3, 4],
@@ -848,7 +849,8 @@ def test_scheduler_cb_steps_tkv(
     engine_core = EngineCore(vllm_config=vllm_config,
                              executor_class=executor_class,
                              log_stats=False)
-    scheduler: ContinuousBatchingSpyreScheduler = engine_core.scheduler
+    scheduler: ContinuousBatchingHomogenTkvSpyreScheduler = \
+        engine_core.scheduler
 
     # Create random requests of specified lengths and max_tokens
     sorted_reqs_params = zip(steps_add_reqs, seqs_max_tokens, prompts_lengths)
