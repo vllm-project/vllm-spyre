@@ -582,7 +582,8 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(SpyreModelRunner):
         self.req_ids2blocks: dict[str, deque[int]] = {}
         self.req_ids2left_pads: dict[str, int] = {}
         self.tkv: int = 0
-        self.free_blocks = deque([i for i in range(NUM_BLOCKS)])
+        # block id 0 is reserved for padding block_table (make it rectangular)
+        self.free_blocks = deque([i for i in range(1, NUM_BLOCKS + 1)])
         self.dummy_req_ids2blocks: list[int] = []
 
         # TODO: Remove this once we can prefill and decode
@@ -1061,8 +1062,10 @@ class ContinuousBatchingHeterogenTkvSpyreModelRunner(SpyreModelRunner):
         # TO DO: move to InputBatch
         self.req_ids2blocks: dict[str, deque[int]] = {}
         self.req_ids2left_pads: dict[str, int] = {}
-        self.tkv: int = 0
-        self.free_blocks = deque([i for i in range(NUM_BLOCKS)])
+        self.req_ids2tkv: dict[str, int] = {}
+        self.tkv: int = 0  # TODO ysc: delete this
+        # block id 0 is reserved for padding block_table (make it rectangular)
+        self.free_blocks = deque([i for i in range(1, NUM_BLOCKS + 1)])
         self.dummy_req_ids2blocks: list[int] = []
 
         # TODO: Remove this once we can prefill and decode
@@ -1105,19 +1108,8 @@ class ContinuousBatchingHeterogenTkvSpyreModelRunner(SpyreModelRunner):
         self,
         new_requests: list[NewRequestData],
     ) -> ModelForwardInputs:
-        assert len(new_requests) > 0
+        assert len(new_requests) == 1
         input_token_list: list[torch.Tensor] = []
-
-        # ceil division to pad to next block boundary
-        new_batch = len(self.req_ids2blocks) == 0
-        max_prompt_len = max([len(r.prompt_token_ids) for r in new_requests])
-        if not new_batch:
-            assert max_prompt_len <= self.tkv
-        d = self.BLOCK_SIZE
-        n = max_prompt_len if new_batch else self.tkv
-        block_padding = ((n + d - 1) // d) * d
-        if new_batch:
-            self.tkv = block_padding
 
         # Internal state is managed here.
         slot_mapping = []
@@ -1125,10 +1117,17 @@ class ContinuousBatchingHeterogenTkvSpyreModelRunner(SpyreModelRunner):
         self.prefill_batch.clear_requests()
 
         for request_data in new_requests:
+            req_id = request_data.req_id
+            # ceil division to pad to next block boundary
+            d = self.BLOCK_SIZE
+            n = len(request_data.prompt_token_ids)
+            block_padding = ((n + d - 1) // d) * d
+
+            self.req_ids2tkv[req_id] = block_padding
+
             # retrieve initial (unpadded) tokens
             prompt_tokens = request_data.prompt_token_ids
-            self.req_ids2left_pads[
-                request_data.req_id] = self.tkv - len(prompt_tokens)
+            self.req_ids2left_pads[req_id] = block_padding - len(prompt_tokens)
             input_token_list.append(
                 torch.tensor(prompt_tokens,
                              dtype=torch.long,
@@ -1144,11 +1143,10 @@ class ContinuousBatchingHeterogenTkvSpyreModelRunner(SpyreModelRunner):
                 block_offset = pos_i % self.BLOCK_SIZE
                 slot = block_number * self.BLOCK_SIZE + block_offset
                 slot_mapping_i.append(slot)
-            self.req_ids2blocks[request_data.req_id] = deque(block_table_i)
+            self.req_ids2blocks[req_id] = deque(block_table_i)
             slot_mapping.append(slot_mapping_i)
 
             # Add new requests to the cached states.
-            req_id = request_data.req_id
             sampling_params = request_data.sampling_params
             if sampling_params.sampling_type == SamplingType.RANDOM_SEED:
                 generator = torch.Generator(device=self.device)
@@ -1187,7 +1185,9 @@ class ContinuousBatchingHeterogenTkvSpyreModelRunner(SpyreModelRunner):
         # applies left padding to align with tkv of current decode batch
         # and right padding to align with the next block boundary
         input_tokens, position_ids, mask =\
-            self.pad_input_ids(input_token_list, min_pad_length=block_padding)
+            self.pad_input_ids(input_token_list,
+                               min_pad_length=block_padding,
+                               req_id=new_requests[0].req_id)
         mask = mask.unsqueeze(1)
 
         # not needed for prefill
@@ -1215,6 +1215,7 @@ class ContinuousBatchingHeterogenTkvSpyreModelRunner(SpyreModelRunner):
         block_table = []
         slot_mapping = []
         left_padded_prompt_mask = []
+        current_tkv_mask = []
         self.model.indices = torch.ones(len(cached_requests),
                                         dtype=torch.bool,
                                         device="cpu")
@@ -1222,46 +1223,61 @@ class ContinuousBatchingHeterogenTkvSpyreModelRunner(SpyreModelRunner):
         for cached_request in cached_requests:
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
-
+            req_id = cached_request.req_id
             # adding new blocks if needed
-            if self.tkv // self.BLOCK_SIZE + 1 > len(
-                    self.req_ids2blocks[cached_request.req_id]):
-                self.req_ids2blocks[cached_request.req_id].append(
-                    self.free_blocks.popleft())
-            block_table.append(self.req_ids2blocks[cached_request.req_id])
+            if self.req_ids2tkv[req_id] // self.BLOCK_SIZE + 1 > len(
+                    self.req_ids2blocks[req_id]):
+                self.req_ids2blocks[req_id].append(self.free_blocks.popleft())
+            block_table.append(self.req_ids2blocks[req_id].copy())
             # slot_mapping for all blocks of sequence
             start_slot = block_table[-1][-1] * self.BLOCK_SIZE
-            offset = self.tkv % self.BLOCK_SIZE
+            offset = self.req_ids2tkv[req_id] % self.BLOCK_SIZE
             slot = [start_slot + offset]
             slot_mapping.append(slot)
             generation_token = cached_request.new_token_ids[-1]
             input_tokens.append([generation_token])
             seq_len = cached_request.num_computed_tokens
             input_positions.append([seq_len])
-            left_padded_prompt_mask.append(
-                self.req_ids2left_pads[cached_request.req_id])
+            left_padded_prompt_mask.append(self.req_ids2left_pads[req_id])
+            # update tkv
+            self.req_ids2tkv[req_id] = self.req_ids2tkv[req_id] + 1
+            current_tkv_mask.append(self.req_ids2tkv[req_id])
 
         # add padding for minimum batch size of 2
         if len(input_tokens) == 1:
+            # there is only one cached request
+            req_id = cached_requests[0].req_id
             dummy_req_indices = torch.zeros(1, dtype=torch.bool, device="cpu")
             self.model.indices = torch.cat(
                 (self.model.indices, dummy_req_indices), -1)
             assert self.model.indices.size(dim=0) == 2
 
-            n = self.tkv + 1
+            n = self.req_ids2tkv[req_id] + 1
             d = self.BLOCK_SIZE
             num_blocks = (n + d - 1) // d
             for _ in range(num_blocks - len(self.dummy_req_ids2blocks)):
                 self.dummy_req_ids2blocks.append(self.free_blocks.popleft())
-            block_table.append(deque(self.dummy_req_ids2blocks))
+            block_table.append(deque(self.dummy_req_ids2blocks).copy())
             start_slot = block_table[-1][-1] * self.BLOCK_SIZE
-            offset = self.tkv % self.BLOCK_SIZE
+            offset = self.req_ids2tkv[req_id] % self.BLOCK_SIZE
             slot = [start_slot + offset]
             slot_mapping.append(slot)
-            input_tokens.append([0])
-            input_positions.append([self.tkv])
-            left_padded_prompt_mask.append(0)
+            # take values from the only other sequence in the batch
+            input_tokens.append([input_tokens[-1][-1]])
+            input_positions.append([input_positions[-1][-1]])
+            left_padded_prompt_mask.append(left_padded_prompt_mask[-1])
+            current_tkv_mask.append(current_tkv_mask[-1])
 
+        # padding block table with 0 to make it rectangular
+
+        # Find the maximum number of blocks required by any sequence
+        max_n_blocks = max(len(block_list) for block_list in block_table)
+
+        # Pad each block list on the right with 0's to match max_n_blocks
+        for block_list in block_table:
+            block_list.extend([0] * (max_n_blocks - len(block_list)))
+
+        # construct tensors from lists
         input_tokens = torch.tensor(input_tokens,
                                     dtype=torch.long,
                                     device=self.device)
@@ -1271,18 +1287,14 @@ class ContinuousBatchingHeterogenTkvSpyreModelRunner(SpyreModelRunner):
         left_padded_prompt_mask = torch.tensor(left_padded_prompt_mask,
                                                dtype=torch.long,
                                                device=self.device)
-        # construct tensors from lists
+        current_tkv_mask = torch.tensor(current_tkv_mask,
+                                        dtype=torch.long,
+                                        device=self.device)
         slot_mapping = torch.tensor(slot_mapping, dtype=torch.int64)
         block_table = torch.tensor(block_table, dtype=torch.int64)
 
         # not needed for decode
         mask = None
-
-        # update tkv
-        self.tkv = self.tkv + 1
-
-        current_tkv_mask = torch.tensor([self.tkv] * len(input_tokens),
-                                        dtype=torch.int64)
 
         return ModelForwardInputs(
             input_tokens=input_tokens,
@@ -1295,46 +1307,25 @@ class ContinuousBatchingHeterogenTkvSpyreModelRunner(SpyreModelRunner):
             is_prompt=False,
         )
 
-    def reduce_left_padding(self) -> None:
-
-        if len(self.req_ids2left_pads) == 0:
-            return
-
-        min_left_pad = min(self.req_ids2left_pads.values())
-        n_padded_blocks = min_left_pad // self.BLOCK_SIZE
-        offset = n_padded_blocks * self.BLOCK_SIZE
-
-        if offset > 0:
-            logger.debug("Number of removed blocks due to left padding: %d",
-                         n_padded_blocks)
-
-            for req_id in self.req_ids2left_pads:
-                self.req_ids2left_pads[req_id] -= offset
-
-                # free blocks
-                for _ in range(n_padded_blocks):
-                    freed_block_id = self.req_ids2blocks[req_id].popleft()
-                    logger.debug("Freeing block with id: %s", freed_block_id)
-                    self.free_blocks.append(freed_block_id)
-
-        # update tkv
-        self.tkv -= offset
-
-        return
-
     def pad_input_ids(
         self,
         input_ids_list: list[torch.Tensor],
         min_pad_length: int = 0,
+        req_id: str = "",
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-
+        # TODO ysc: discuss with compiler team: do we want to left or right
+        # pad to have prefills a multiple of 64? currently left
+        # (although implemented, right padding is not happening atm)
         # left padding to align with tkv of current decode batch
         input_tokens_left, position_ids_left, mask_left =\
-            super().pad_input_ids(input_ids_list, min_pad_length=self.tkv)
+            super().pad_input_ids(input_ids_list,
+                                  min_pad_length=self.req_ids2tkv[req_id])
 
         # right padding to align with the next block boundary
         left_pad_len = input_tokens_left.shape[1]
         n_pads_right = min_pad_length - left_pad_len
+
+        assert n_pads_right == 0
 
         # set number of right pads for the next model forward pass:
         # need to be excluded before sampling tokens
@@ -1385,10 +1376,6 @@ class ContinuousBatchingHeterogenTkvSpyreModelRunner(SpyreModelRunner):
     def prepare_model_input(
             self, scheduler_output: SchedulerOutput) -> ModelForwardInputs:
 
-        # remove left padding if applicable before next prefil/decode step
-        if envs_spyre.VLLM_SPYRE_RM_PADDED_BLOCKS:
-            self.reduce_left_padding()
-
         # NOTE: We assume that all sequences in the group are all prompts or
         # all decodes.
         # Also assuming that new sequences are prefills
@@ -1426,7 +1413,7 @@ class ContinuousBatchingHeterogenTkvSpyreModelRunner(SpyreModelRunner):
                 spec_token_ids=None,
                 logprobs=None,
                 prompt_logprobs_dict={},
-                tkv=0,
+                tkv=0,  # TODO ysc: replace with empty dict {}
             )
 
         model_input = self.prepare_model_input(scheduler_output)
@@ -1512,6 +1499,6 @@ class ContinuousBatchingHeterogenTkvSpyreModelRunner(SpyreModelRunner):
             prompt_logprobs_dict={req_id: None
                                   for req_id in req_ids
                                   },  # TODO(wallas?): prompt logprobs too
-            tkv=self.tkv,
+            tkv=self.tkv,  # TODO ysc: replace with self.req_ids2tkv
         )
         return model_output

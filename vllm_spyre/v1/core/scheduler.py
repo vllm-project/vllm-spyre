@@ -234,7 +234,7 @@ class ContinuousBatchingHeterogenTkvSpyreScheduler(SpyreScheduler):
         # Initialize SpyreScheduler
         super().__init__(*args, **kwargs)
         print('Using ContinuousBatchingHeterogenTkvSpyreScheduler')
-        self.tkv = 0
+        self.tkv = 0  # TODO ysc: replace with self.req_ids2tkv
 
     def update_from_output(
         self,
@@ -246,6 +246,7 @@ class ContinuousBatchingHeterogenTkvSpyreScheduler(SpyreScheduler):
             model_runner_output, CBSpyreModelRunnerOutput
         ), "Expecting an instance of CBSpyreModelRunnerOutput"
         "when doing continuous batching."
+        # TODO ysc: replace with self.req_ids2tkv
         self.tkv = model_runner_output.tkv
         return super(SpyreScheduler,
                      self).update_from_output(scheduler_output,
@@ -298,7 +299,7 @@ class ContinuousBatchingHeterogenTkvSpyreScheduler(SpyreScheduler):
 
     def can_schedule(self, request) -> bool:
         max_prompt_batch_size = 1
-        max_context_len = self.scheduler_config.max_model_len
+        # max_context_len = self.scheduler_config.max_model_len
 
         # running and waiting queues are both empty -> start new batch
         start_new_batch = len(self.running) + len(self.waiting) == 0
@@ -307,8 +308,6 @@ class ContinuousBatchingHeterogenTkvSpyreScheduler(SpyreScheduler):
             self.waiting) < self.max_num_running_reqs
         # check that there is space in the prefill batch
         cond2 = len(self.waiting) < max_prompt_batch_size
-        # check that the prompt length does not exceed the current tkv
-        cond3 = request.num_prompt_tokens <= self.tkv
-        # check that the number of requested tokens can be served
-        cond4 = request.max_tokens <= (max_context_len - self.tkv)
-        return start_new_batch or (cond1 and cond2 and cond3 and cond4)
+        # TODO ysc: additional conditions wrt max_context_len
+        # and self.req_ids2tkv
+        return start_new_batch or (cond1 and cond2)
