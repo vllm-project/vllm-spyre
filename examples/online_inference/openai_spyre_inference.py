@@ -7,10 +7,11 @@ First, start the server with the following command:
         --max-model-len=2048 \
         --block-size=2048
 
-By default, the server will use a batch size of 1, a max prompt length of 64 tokens, and a max of 20 decode tokens.
+By default, the server will use a batch size of 1, a max prompt length of 64 
+tokens, and a max of 20 decode tokens.
 
-You can change these with the env variables VLLM_SPYRE_WARMUP_BATCH_SIZES, VLLM_SPYRE_WARMUP_PROMPT_LENS,
-and VLLM_SPYRE_WARMUP_NEW_TOKENS.
+You can change these with the env variables VLLM_SPYRE_WARMUP_BATCH_SIZES, 
+VLLM_SPYRE_WARMUP_PROMPT_LENS, and VLLM_SPYRE_WARMUP_NEW_TOKENS.
 """
 
 import time
@@ -32,14 +33,17 @@ model = models.data[0].id
 
 template = (
     "Below is an instruction that describes a task. Write a response that "
-    "appropriately completes the request. Be polite in your response to the user.\n\n"
-    "### Instruction:\n{}\n\n### Response:"
+    "appropriately completes the request. Be polite in your response to the "
+    "user.\n\n### Instruction:\n{}\n\n### Response:"
 )
 
 instructions = [
-    "Provide a list of instructions for preparing chicken soup for a family of four.",
-    "Please compare New York City and Zurich and provide a list of attractions for each city.",
-    "Provide detailed instructions for preparing asparagus soup for a family of four."
+    "Provide a list of instructions for preparing chicken soup for a family" + \
+        " of four.",
+    "Please compare New York City and Zurich and provide a list of" + \
+        " attractions for each city.",
+    "Provide detailed instructions for preparing asparagus soup for a" + \
+        " family of four.",
 ]
 
 prompts = [template.format(instr) for instr in instructions]

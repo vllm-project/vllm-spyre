@@ -27,7 +27,8 @@ template = (
     "user.\n\n### Instruction:\n{}\n\n### Response:")
 prompts = [
     template.format(
-        "Provide a list of instructions for preparing chicken soup for a family of four."
+        "Provide a list of instructions for preparing chicken soup for a" + \
+        " family of four.",
     )
 ]
 

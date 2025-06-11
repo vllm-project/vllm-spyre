@@ -1,5 +1,6 @@
 """
-This example shows how to run offline inference using continuous batching on CPU.
+This example shows how to run offline inference using continuous batching 
+on CPU.
 """
 
 import os
@@ -33,7 +34,8 @@ template = (
     "user.\n\n### Instruction:\n{}\n\n### Response:")
 
 instructions = [
-    "Provide a list of instructions for preparing chicken soup for a family of four.",
+    "Provide a list of instructions for preparing chicken soup for a family" + \
+        " of four.",
     "Provide instructions for preparing chicken soup.",
     "Provide a list of instructions for preparing chicken soup for a family.",
 ]
