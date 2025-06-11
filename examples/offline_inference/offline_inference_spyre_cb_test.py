@@ -78,7 +78,7 @@ def main():
     llm = LLM(model=args.model,
             tokenizer=args.model,
             max_model_len=args.max_model_len,
-            block_size=args.max_model_len,
+            block_size=2048,
             max_num_seqs=max_num_seqs)
 
     # Generate texts from the prompts. The output is a list of RequestOutput objects
