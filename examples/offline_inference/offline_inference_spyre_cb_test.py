@@ -14,6 +14,7 @@ def main():
     parser.add_argument("--model", type=str, default="/models/llama-194m")
     parser.add_argument("--max_model_len", type=int, default=2048)
     parser.add_argument("--max_num_seqs", type=int, default=2)
+    parser.add_argument("--tp", type=int, default=1)
     args = parser.parse_args()
     
     max_tokens1 = 65
@@ -79,7 +80,8 @@ def main():
             tokenizer=args.model,
             max_model_len=args.max_model_len,
             block_size=2048,
-            max_num_seqs=max_num_seqs)
+            max_num_seqs=max_num_seqs,
+            tensor_parallel_size=args.tp)
 
     # Generate texts from the prompts. The output is a list of RequestOutput objects
     # that contain the prompt, generated text, and other information.
