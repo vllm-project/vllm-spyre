@@ -1,15 +1,16 @@
-""" Test for online serving.
+""" 
+This example shows how to use Spyre with vLLM for running online inference.
 
-On the server side, run the following commands
+First, start the server with the following command:
     python3 -m vllm.entrypoints.openai.api_server \
         --model /models/llama-7b-chat/ \
         --max-model-len=2048 \
         --block-size=2048
 
-Then the default batch size 1, max prompt length of 64 and maximum of 20
-ecode tokens is used. Otherwise change the behavior with the environment 
-variables `VLLM_SPYRE_WARMUP_BATCH_SIZES`, `VLLM_SPYRE_WARMUP_PROMPT_LENS`, 
-and `VLLM_SPYRE_WARMUP_NEW_TOKENS`.
+By default, the server will use a batch size of 1, a max prompt length of 64 tokens, and a max of 20 decode tokens.
+
+You can change these with the env variables VLLM_SPYRE_WARMUP_BATCH_SIZES, VLLM_SPYRE_WARMUP_PROMPT_LENS,
+and VLLM_SPYRE_WARMUP_NEW_TOKENS.
 """
 
 import time
@@ -31,23 +32,19 @@ model = models.data[0].id
 
 template = (
     "Below is an instruction that describes a task. Write a response that "
-    "appropriately completes the request. Be polite in your response to the "
-    "user.\n\n### Instruction:\n{}\n\n### Response:")
-prompt1 = template.format(
-    "Provide a list of instructions for preparing chicken soup for a family "
-    "of four.")
+    "appropriately completes the request. Be polite in your response to the user.\n\n"
+    "### Instruction:\n{}\n\n### Response:"
+)
 
-prompt2 = template.format(
-    "Please compare New York City and Zurich and provide a list of attractions "
-    "for each city.")
+instructions = [
+    "Provide a list of instructions for preparing chicken soup for a family of four.",
+    "Please compare New York City and Zurich and provide a list of attractions for each city.",
+    "Provide detailed instructions for preparing asparagus soup for a family of four."
+]
 
-prompt3 = template.format(
-    "Provide detailed instructions for preparing asparagus soup for a family "
-    "of four.")
+prompts = [template.format(instr) for instr in instructions]
 
-prompts = [prompt1, prompt2, prompt3]
-
-# make sure that the specified batch size is in VLLM_SPYRE_WARMUP_BATCH_SIZES
+# This batch size must match VLLM_SPYRE_WARMUP_BATCH_SIZES
 batch_size = 1
 print('submitting prompts of batch size', batch_size)
 
@@ -55,7 +52,6 @@ print('submitting prompts of batch size', batch_size)
 for i in range(0, len(prompts), batch_size):
     prompt = prompts[i:i + batch_size]
 
-    # Completion API
     stream = False
     max_tokens = 20
 

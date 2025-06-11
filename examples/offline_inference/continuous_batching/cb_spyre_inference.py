@@ -1,16 +1,20 @@
+"""
+This example shows how to run offline inference using continuous batching on CPU.
+"""
+
 import os
 import platform
 import time
 
 from vllm import LLM, SamplingParams
 
-# RUN with fms branch: https://github.com/foundation-model-stack/
-# foundation-model-stack/tree/paged_attn_mock
+# Continuous batching currently requires the installation of the branch 
+# https://github.com/foundation-model-stack/foundation-model-stack/tree/paged_attn_mock
 
 max_tokens1 = 65
 max_tokens2 = 67
 max_tokens3 = 7
-max_num_seqs = 2  # defines max batch size
+max_num_seqs = 2  # max batch size
 
 if platform.machine() == "arm64":
     print("Detected arm64 running environment. "
@@ -19,49 +23,28 @@ if platform.machine() == "arm64":
           "locally on arm64.")
     os.environ["HF_HUB_OFFLINE"] = "1"
 
-# defining here to be able to run/debug directly from VSC (not via terminal)
 os.environ['VLLM_SPYRE_DYNAMO_BACKEND'] = 'eager'
 os.environ['VLLM_SPYRE_USE_CB'] = '1'
 os.environ['VLLM_USE_V1'] = '1'
 
-# Sample prompts.
 template = (
     "Below is an instruction that describes a task. Write a response that "
     "appropriately completes the request. Be polite in your response to the "
     "user.\n\n### Instruction:\n{}\n\n### Response:")
 
-prompt1 = template.format(
-    "Provide a list of instructions for preparing chicken soup for a family "
-    "of four.")
-
-prompt2 = template.format("Provide instructions for preparing chicken soup.")
-
-prompt3 = template.format(
-    "Provide a list of instructions for preparing chicken soup for a family.")
-
-prompts = [
-    prompt1,
-    prompt2,
-    prompt3,
+instructions = [
+    "Provide a list of instructions for preparing chicken soup for a family of four.",
+    "Provide instructions for preparing chicken soup.",
+    "Provide a list of instructions for preparing chicken soup for a family.",
 ]
 
-# Create a sampling params object.
-sampling_params1 = SamplingParams(max_tokens=max_tokens1,
-                                  temperature=0.0,
-                                  ignore_eos=True)
+prompts = [template.format(instr) for instr in instructions]
 
-sampling_params2 = SamplingParams(max_tokens=max_tokens2,
-                                  temperature=0.0,
-                                  ignore_eos=True)
-
-sampling_params3 = SamplingParams(max_tokens=max_tokens3,
-                                  temperature=0.0,
-                                  ignore_eos=True)
+max_tokens_list = [max_tokens1, max_tokens2, max_tokens3]
 
 sampling_params = [
-    sampling_params1,
-    sampling_params2,
-    sampling_params3,
+    SamplingParams(max_tokens=mt, temperature=0.0, ignore_eos=True)
+    for mt in max_tokens_list
 ]
 
 # Create an LLM.
