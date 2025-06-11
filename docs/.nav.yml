@@ -23,6 +23,7 @@ nav:
   - Deploying:
     - Docker: deploying/docker.md
     - Kubernetes: deploying/k8s.md
+    - Red Hat OpenShift AI: deploying/rhoai.md
   - User Guide:
     - Configuration: user_guide/configuration.md
     - Environment Variables: user_guide/env_vars.md
