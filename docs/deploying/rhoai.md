@@ -6,11 +6,10 @@ This example shows how to use KServe with RHOAI to deploy a model on OpenShift, 
 
 ## Deploying with KServe
 
-!!! note
-    **Prerequisites**: 
-    - A running Kubernetes cluster with RHOAI installed
-    - Image pull credentials for `registry.redhat.io/rhelai1`
-    - Spyre accelerators available in the cluster
+!!! note "Prerequisites"
+    * A running Kubernetes cluster with RHOAI installed
+    * Image pull credentials for `registry.redhat.io/rhelai1`
+    * Spyre accelerators available in the cluster
 
 <!-- TODO: Link to public docs for cluster setup -->
 
