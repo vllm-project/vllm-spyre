@@ -1,17 +1,20 @@
 # Using Red Hat OpenShift AI
 
-[Red Hat OpenShift AI](https://www.redhat.com/en/products/ai/openshift-ai) is a cloud-native AI platform that bundles together many popular model management projects, including [kserve](https://kserve.github.io/website/latest/).
+[Red Hat OpenShift AI](https://www.redhat.com/en/products/ai/openshift-ai) is a cloud-native AI platform that bundles together many popular model management projects, including [KServe](https://kserve.github.io/website/latest/).
 
-This example shows how to use kserve with RHOAI to deploy a model on OpenShift, using a modelcar image to load the model without requiring any connection to huggingface hub.
+This example shows how to use KServe with RHOAI to deploy a model on OpenShift, using a modelcar image to load the model without requiring any connection to Huggingface Hub.
 
-## Deploying with kserve
+## Deploying with KServe
 
 !!! note
-    **Prerequisite**: Ensure that you have a running Kubernetes cluster with RHOAI installed, image pull credentials for `registry.redhat.io/rhelai1`, and Spyre accelerators.
+    **Prerequisites**: 
+    - A running Kubernetes cluster with RHOAI installed
+    - Image pull credentials for `registry.redhat.io/rhelai1`
+    - Spyre accelerators available in the cluster
 
 <!-- TODO: Link to public docs for cluster setup -->
 
-1. Create a ServingRuntime to be used for your models
+1. Create a ServingRuntime to serve your models.
 
       ```yaml
         apiVersion: serving.kserve.io/v1alpha1
@@ -49,7 +52,7 @@ This example shows how to use kserve with RHOAI to deploy a model on OpenShift, 
                   protocol: TCP
       ```
 
-2. Create an InferenceService for each model you want to deploy. This example demonstrates how to deploy `ibm-granite/granite-3.1-8b-instruct`.
+2. Create an InferenceService for each model you want to deploy. This example demonstrates how to deploy the [Granite](https://www.ibm.com/granite) model `ibm-granite/granite-3.1-8b-instruct`.
 
       ```yaml
       apiVersion: serving.kserve.io/v1beta1
