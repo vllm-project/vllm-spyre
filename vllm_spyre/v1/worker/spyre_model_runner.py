@@ -1252,7 +1252,7 @@ class ContinuousBatchingHeterogenTkvSpyreModelRunner(SpyreModelRunner):
                 (self.model.indices, dummy_req_indices), -1)
             assert self.model.indices.size(dim=0) == 2
 
-            n = self.req_ids2tkv[req_id] + 1
+            n = self.req_ids2tkv[req_id]
             d = self.BLOCK_SIZE
             num_blocks = (n + d - 1) // d
             for _ in range(num_blocks - len(self.dummy_req_ids2blocks)):
