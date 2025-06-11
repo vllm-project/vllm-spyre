@@ -6,6 +6,7 @@ nav:
     - Deploying:
       - Docker: deploying/docker.md
       - Kubernetes: deploying/k8s.md
+      - Red Hat OpenShift AI: deploying/rhoai.md
     - Examples:
       - Offline Inference: examples/offline_inference
       - Other: examples/other
