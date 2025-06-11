@@ -260,8 +260,11 @@ class FmsModelBase(nn.Module):
 
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in BACKEND_LIST:
 
+            logger.debug("Performing compilation using dynamic shapes")
+
             options = {"sendnn.dynamic": True} if sendnn_dynamic else {}
 
+            logger.info(f"Compiling backend: {envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND}, options: {options}")
             self.model = torch.compile(
                 self.model,
                 backend=envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND,
@@ -372,7 +375,7 @@ class StaticBatchingFmsModel(FmsModelBase):
                          parallel_config,
                          max_prompt_length,
                          max_decode_length,
-                         sendnn_dynamic=False)
+                         sendnn_dynamic=True)
 
         # dynamic KV cache
         self.past_key_value_states = None
