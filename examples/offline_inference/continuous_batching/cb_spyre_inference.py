@@ -9,7 +9,7 @@ import time
 
 from vllm import LLM, SamplingParams
 
-# Continuous batching currently requires the installation of the branch 
+# Continuous batching currently requires the installation of the branch
 # https://github.com/foundation-model-stack/foundation-model-stack/tree/paged_attn_mock
 
 max_tokens1 = 65

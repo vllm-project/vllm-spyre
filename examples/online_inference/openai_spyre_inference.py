@@ -34,8 +34,7 @@ model = models.data[0].id
 template = (
     "Below is an instruction that describes a task. Write a response that "
     "appropriately completes the request. Be polite in your response to the "
-    "user.\n\n### Instruction:\n{}\n\n### Response:"
-)
+    "user.\n\n### Instruction:\n{}\n\n### Response:")
 
 instructions = [
     "Provide a list of instructions for preparing chicken soup for a family" + \

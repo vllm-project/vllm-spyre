@@ -32,12 +32,10 @@ os.environ["MASTER_PORT"] = "12355"
 template = (
     "Below is an instruction that describes a task. Write a response that "
     "appropriately completes the request. Be polite in your response to the "
-    "user.\n\n### Instruction:\n{}\n\n### Response:"
-)
+    "user.\n\n### Instruction:\n{}\n\n### Response:")
 prompt1 = template.format(
     "Provide a list of instructions for preparing chicken soup for a family "
-    "of four."
-)
+    "of four.")
 prompts = [
     prompt1,
 ]
