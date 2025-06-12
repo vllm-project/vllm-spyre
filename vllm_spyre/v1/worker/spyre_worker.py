@@ -434,19 +434,27 @@ class SpyreWorker(WorkerBaseV1):
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == 'sendnn':
             # TODO: replace num_blocks_spyre by calling a function in
             # torch_sendnn which returns the value set by the Spyre compiler
-            num_blocks_spyre = max_batch_size * max_model_len // block_size
+            num_blocks_spyre = max_batch_size * min_req_num_blocks
             assert num_blocks_spyre >= min_req_num_blocks, (
                 "Number of pages available on Spyre (%d) is not enough to "
                 "serve the current model (need at least %d pages)." %
                 (num_blocks_spyre, min_req_num_blocks))
+            logger.info("Number of Spyre blocks: %d", num_blocks_spyre)
+            logger.info(
+                "Max number of sequences (batch size) at full context "
+                "length: %.1f", num_blocks_spyre / min_req_num_blocks)
             return num_blocks_spyre
         else:  # dynamo backend 'eager'
             # TODO: how do we get a meaningful value for CPU here
-            num_blocks_cpu = max_batch_size * max_model_len // block_size
+            num_blocks_cpu = max_batch_size * min_req_num_blocks
             assert num_blocks_cpu >= min_req_num_blocks, (
                 "Number of pages available on CPU (%d) is not enough to "
                 "serve the current model (need at least %d pages)." %
                 (num_blocks_cpu, min_req_num_blocks))
+            logger.info("Number of CPU blocks: %d", num_blocks_cpu)
+            logger.info(
+                "Max number of sequences (batch size) at full context "
+                "length: %.1f", num_blocks_cpu / min_req_num_blocks)
             return num_blocks_cpu
 
     def _warmup_spyre_fixed_size(self, prompt_len, num_decode_tokens,
