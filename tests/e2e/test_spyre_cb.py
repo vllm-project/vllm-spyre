@@ -136,7 +136,6 @@ def get_params_test_blocks_borders_aligned_prompts():
     prompts_lengths = [49, 41, 47]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
     max_model_len = 2048
-    remove_left_padding = False
 
     checked_steps = [
         {
@@ -229,7 +228,7 @@ def get_params_test_blocks_borders_aligned_prompts():
     ]
 
     return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            max_model_len, remove_left_padding)
+            max_model_len)
 
 
 def get_params_test_blocks_borders_misaligned_prompts():
@@ -241,7 +240,6 @@ def get_params_test_blocks_borders_misaligned_prompts():
     prompts_lengths = [49, 41, 47]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
     max_model_len = 2048
-    remove_left_padding = False
 
     checked_steps = [
         {
@@ -334,7 +332,7 @@ def get_params_test_blocks_borders_misaligned_prompts():
     ]
 
     return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            max_model_len, remove_left_padding)
+            max_model_len)
 
 
 def get_params_test_special_finish():
@@ -345,7 +343,6 @@ def get_params_test_special_finish():
     prompts_lengths = [49, 30, 20]
     steps_add_reqs = [0, 0, 31]
     max_model_len = 2048
-    remove_left_padding = False
 
     checked_steps = [
         {
@@ -426,7 +423,7 @@ def get_params_test_special_finish():
     ]
 
     return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            max_model_len, remove_left_padding)
+            max_model_len)
 
 
 def get_params_test_scheduler_constraints_tkv():
@@ -436,7 +433,6 @@ def get_params_test_scheduler_constraints_tkv():
     prompts_lengths = [49, 70]
     steps_add_reqs = [0, 0]
     max_model_len = 2048
-    remove_left_padding = False
 
     checked_steps = [
         {
@@ -518,7 +514,7 @@ def get_params_test_scheduler_constraints_tkv():
     ]
 
     return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            max_model_len, remove_left_padding)
+            max_model_len)
 
 
 def get_params_test_scheduler_constraints_max_prompt_len():
@@ -528,7 +524,6 @@ def get_params_test_scheduler_constraints_max_prompt_len():
     prompts_lengths = [70, 49, 41]
     steps_add_reqs = [0, 0, 0]
     max_model_len = 256
-    remove_left_padding = False
 
     checked_steps = [
         {
@@ -628,7 +623,7 @@ def get_params_test_scheduler_constraints_max_prompt_len():
     ]
 
     return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            max_model_len, remove_left_padding)
+            max_model_len)
 
 
 def get_params_test_remove_left_padding():
@@ -638,7 +633,6 @@ def get_params_test_remove_left_padding():
     prompts_lengths = [20, 14, 5]
     steps_add_reqs = [0, 30, 31]
     max_model_len = 2048
-    remove_left_padding = True
 
     checked_steps = [
         {
@@ -745,7 +739,7 @@ def get_params_test_remove_left_padding():
     ]
 
     return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            max_model_len, remove_left_padding)
+            max_model_len)
 
 
 def augment_checked_steps(
@@ -775,7 +769,7 @@ def augment_checked_steps(
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize(
     "seqs_max_tokens,prompts_lengths,steps_add_reqs,checked_steps,"
-    "max_model_len,remove_left_padding", [
+    "max_model_len", [
         get_params_test_blocks_borders_aligned_prompts(),
         get_params_test_blocks_borders_misaligned_prompts(),
         get_params_test_special_finish(),
@@ -793,7 +787,6 @@ def test_scheduler_cb_steps_tkv(
     steps_add_reqs: list[int],
     checked_steps: list[dict[str, Any]],
     max_model_len: int,
-    remove_left_padding: bool,
 ):
     """
     Test the scheduler execution by comparing the scheduler attributes at each 
@@ -809,8 +802,6 @@ def test_scheduler_cb_steps_tkv(
     monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
     monkeypatch.setenv("VLLM_USE_V1", "1")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
-    monkeypatch.setenv("VLLM_SPYRE_RM_PADDED_BLOCKS",
-                       "1" if remove_left_padding else "0")
 
     # To get deterministic execution in V1
     # and to enable InprocClient
