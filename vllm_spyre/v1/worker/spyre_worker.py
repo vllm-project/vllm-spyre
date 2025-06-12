@@ -439,10 +439,12 @@ class SpyreWorker(WorkerBaseV1):
                 "Number of pages available on Spyre (%d) is not enough to "
                 "serve the current model (need at least %d pages)." %
                 (num_blocks_spyre, min_req_num_blocks))
-            logger.info("Number of Spyre blocks: %d", num_blocks_spyre)
-            logger.info(
-                "Max number of sequences (batch size) at full context "
-                "length: %.1f", num_blocks_spyre / min_req_num_blocks)
+            max_concurrency_spyre = num_blocks_spyre * block_size \
+                / max_model_len
+            logger.info("Spyre KV cache size: %s tokens",
+                        num_blocks_spyre * block_size)
+            logger.info("Maximum concurrency for %s tokens per request: %.2fx",
+                        str(max_model_len), max_concurrency_spyre)
             return num_blocks_spyre
         else:  # dynamo backend 'eager'
             # TODO: how do we get a meaningful value for CPU here
@@ -451,10 +453,11 @@ class SpyreWorker(WorkerBaseV1):
                 "Number of pages available on CPU (%d) is not enough to "
                 "serve the current model (need at least %d pages)." %
                 (num_blocks_cpu, min_req_num_blocks))
-            logger.info("Number of CPU blocks: %d", num_blocks_cpu)
-            logger.info(
-                "Max number of sequences (batch size) at full context "
-                "length: %.1f", num_blocks_cpu / min_req_num_blocks)
+            max_concurrency_cpu = num_blocks_cpu * block_size / max_model_len
+            logger.info("CPU KV cache size: %s tokens",
+                        num_blocks_cpu * block_size)
+            logger.info("Maximum concurrency for %s tokens per request: %.2fx",
+                        str(max_model_len), max_concurrency_cpu)
             return num_blocks_cpu
 
     def _warmup_spyre_fixed_size(self, prompt_len, num_decode_tokens,
