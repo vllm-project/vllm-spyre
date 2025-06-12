@@ -583,8 +583,7 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(SpyreModelRunner):
         self.req_ids2left_pads: dict[str, int] = {}
         self.tkv: int = 0
         # block id 0 is reserved for padding block_table (make it rectangular)
-        self.free_blocks = deque([i for i in range(1, NUM_BLOCKS + 1)])
-        self.dummy_req_ids2blocks: list[int] = []
+        self.free_blocks = deque([i for i in range(1, NUM_BLOCKS)])
 
         # TODO: Remove this once we can prefill and decode
         # in the same step
@@ -613,14 +612,6 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(SpyreModelRunner):
 
             del self.requests[req_id]
             self.input_batch.remove_request(req_id)
-
-        # free the blocks used for padding to minimum decode batch size of 2
-        if self.dummy_req_ids2blocks and \
-                (not scheduler_output.total_num_scheduled_tokens \
-                or len(scheduler_output.scheduled_new_reqs) > 0):
-            for freed_block in self.dummy_req_ids2blocks:
-                self.free_blocks.append(freed_block)
-            self.dummy_req_ids2blocks = []
 
     def _prepare_prompt(
         self,
@@ -768,13 +759,7 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(SpyreModelRunner):
             self.model.indices = torch.cat(
                 (self.model.indices, dummy_req_indices), -1)
             assert self.model.indices.size(dim=0) == 2
-
-            n = self.tkv + 1
-            d = self.BLOCK_SIZE
-            num_blocks = (n + d - 1) // d
-            for _ in range(num_blocks - len(self.dummy_req_ids2blocks)):
-                self.dummy_req_ids2blocks.append(self.free_blocks.popleft())
-            block_table.append(deque(self.dummy_req_ids2blocks))
+            block_table.append(deque([0 for i in range(len(block_table[0]))]))
             start_slot = block_table[-1][-1] * self.BLOCK_SIZE
             offset = self.tkv % self.BLOCK_SIZE
             slot = [start_slot + offset]
@@ -1065,8 +1050,7 @@ class ContinuousBatchingHeterogenTkvSpyreModelRunner(SpyreModelRunner):
         self.req_ids2tkv: dict[str, int] = {}
         self.tkv: int = 0  # TODO ysc: delete this
         # block id 0 is reserved for padding block_table (make it rectangular)
-        self.free_blocks = deque([i for i in range(1, NUM_BLOCKS + 1)])
-        self.dummy_req_ids2blocks: list[int] = []
+        self.free_blocks = deque([i for i in range(1, NUM_BLOCKS)])
 
         # TODO: Remove this once we can prefill and decode
         # in the same step
@@ -1095,14 +1079,6 @@ class ContinuousBatchingHeterogenTkvSpyreModelRunner(SpyreModelRunner):
 
             del self.requests[req_id]
             self.input_batch.remove_request(req_id)
-
-        # free the blocks used for padding to minimum decode batch size of 2
-        if self.dummy_req_ids2blocks and \
-                (not scheduler_output.total_num_scheduled_tokens \
-                or len(scheduler_output.scheduled_new_reqs) > 0):
-            for freed_block in self.dummy_req_ids2blocks:
-                self.free_blocks.append(freed_block)
-            self.dummy_req_ids2blocks = []
 
     def _prepare_prompt(
         self,
@@ -1251,13 +1227,7 @@ class ContinuousBatchingHeterogenTkvSpyreModelRunner(SpyreModelRunner):
             self.model.indices = torch.cat(
                 (self.model.indices, dummy_req_indices), -1)
             assert self.model.indices.size(dim=0) == 2
-
-            n = self.req_ids2tkv[req_id]
-            d = self.BLOCK_SIZE
-            num_blocks = (n + d - 1) // d
-            for _ in range(num_blocks - len(self.dummy_req_ids2blocks)):
-                self.dummy_req_ids2blocks.append(self.free_blocks.popleft())
-            block_table.append(deque(self.dummy_req_ids2blocks).copy())
+            block_table.append(deque([0 for i in range(len(block_table[0]))]))
             start_slot = block_table[-1][-1] * self.BLOCK_SIZE
             offset = self.req_ids2tkv[req_id] % self.BLOCK_SIZE
             slot = [start_slot + offset]
