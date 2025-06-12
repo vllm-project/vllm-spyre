@@ -616,15 +616,15 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         # Continuous batching stuff
         for req_id in scheduler_output.finished_req_ids:
-            if req_id in self.req_ids2blocks:
+            # requests may be cancelled from the client side while in the queue
+            if req_id in self.requests:
                 logger.debug("Freeing request id: %s", req_id)
                 for freed_block in self.req_ids2blocks[req_id]:
                     self.free_blocks.append(freed_block)
                 del self.req_ids2blocks[req_id]
                 del self.req_ids2left_pads[req_id]
-
-            del self.requests[req_id]
-            self.input_batch.remove_request(req_id)
+                del self.requests[req_id]
+                self.input_batch.remove_request(req_id)
 
         # free the blocks used for padding to minimum decode batch size of 2
         if self.dummy_req_ids2blocks and \
