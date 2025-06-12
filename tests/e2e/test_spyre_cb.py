@@ -202,7 +202,7 @@ def get_params_test_blocks_borders_aligned_prompts():
         },
         {
             "step": 70,  # Decode sequence 2
-            "tkv": 131,
+            "tkv": 67,
             "waiting": [],
             "running": ["2"],
             "request_outputs": ["2"]
@@ -211,7 +211,7 @@ def get_params_test_blocks_borders_aligned_prompts():
             # Sequence 2 finishes at step 73
             # (start step + 1 prefill + 6 decodes - 1) = 67 + 1 + 6 - 1 = 73
             "step": 73,
-            "tkv": 134,
+            "tkv": 70,
             "waiting": [],
             "running": [],
             "request_outputs": ["2"],
