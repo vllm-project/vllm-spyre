@@ -144,7 +144,7 @@ python -m pytest -v -x tests/e2e -m cb
 
 1. `/opt/sentient/bin/aiu-query-devices` in the pod can be used to see the connectivity between the `AIUs` on the machine. You can also glean this from the env vars that are like `AIU_TIER_\d_SET_\d_RANK_\d`.
   
-1. `SPYRE_DEVICES=2,3` can be used to select which devices will be selected for each `RANK`.
+1. `SPYRE_DEVICES=2,3` can be used to select which devices will be selected for each `RANK`. This is similar to how `CUDA_VISIBLE_DEVICES` works for GPU.
       1. An alternative is to use `AIU_WORLD_RANK_\d=0000:aa:00.0` to explicitly map ranks to `PCI` addresses (make sure there are no duplicates used at runtime).
 1. `DTLOG_LEVEL=INFO` (piped to file) can help you see what device addresses are actually in use. Look for the string `Opened: SEN:VFIO`.
 1. A bash script that uses `/opt/sentient/senlib/bin/senlib_unit_test` to check each `AIU` allocated to the pod to see if they work for a basic test:
