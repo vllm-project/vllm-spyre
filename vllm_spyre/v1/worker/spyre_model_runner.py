@@ -617,7 +617,7 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(SpyreModelRunner):
         self,
         new_requests: list[NewRequestData],
     ) -> ModelForwardInputs:
-        assert len(new_requests) > 0
+        assert len(new_requests) == 1
         input_token_list: list[torch.Tensor] = []
 
         # ceil division to pad to next block boundary
@@ -637,10 +637,10 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(SpyreModelRunner):
         self.prefill_batch.clear_requests()
 
         for request_data in new_requests:
+            req_id = request_data.req_id
             # retrieve initial (unpadded) tokens
             prompt_tokens = request_data.prompt_token_ids
-            self.req_ids2left_pads[
-                request_data.req_id] = self.tkv - len(prompt_tokens)
+            self.req_ids2left_pads[req_id] = self.tkv - len(prompt_tokens)
             input_token_list.append(
                 torch.tensor(prompt_tokens,
                              dtype=torch.long,
@@ -656,11 +656,10 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(SpyreModelRunner):
                 block_offset = pos_i % self.BLOCK_SIZE
                 slot = block_number * self.BLOCK_SIZE + block_offset
                 slot_mapping_i.append(slot)
-            self.req_ids2blocks[request_data.req_id] = deque(block_table_i)
+            self.req_ids2blocks[req_id] = deque(block_table_i)
             slot_mapping.append(slot_mapping_i)
 
             # Add new requests to the cached states.
-            req_id = request_data.req_id
             sampling_params = request_data.sampling_params
             if sampling_params.sampling_type == SamplingType.RANDOM_SEED:
                 generator = torch.Generator(device=self.device)
@@ -734,13 +733,12 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(SpyreModelRunner):
         for cached_request in cached_requests:
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
-
+            req_id = cached_request.req_id
             # adding new blocks if needed
             if self.tkv // self.BLOCK_SIZE + 1 > len(
-                    self.req_ids2blocks[cached_request.req_id]):
-                self.req_ids2blocks[cached_request.req_id].append(
-                    self.free_blocks.popleft())
-            block_table.append(self.req_ids2blocks[cached_request.req_id])
+                    self.req_ids2blocks[req_id]):
+                self.req_ids2blocks[req_id].append(self.free_blocks.popleft())
+            block_table.append(self.req_ids2blocks[req_id])
             # slot_mapping for all blocks of sequence
             start_slot = block_table[-1][-1] * self.BLOCK_SIZE
             offset = self.tkv % self.BLOCK_SIZE
@@ -750,8 +748,7 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(SpyreModelRunner):
             input_tokens.append([generation_token])
             seq_len = cached_request.num_computed_tokens
             input_positions.append([seq_len])
-            left_padded_prompt_mask.append(
-                self.req_ids2left_pads[cached_request.req_id])
+            left_padded_prompt_mask.append(self.req_ids2left_pads[req_id])
 
         # add padding for minimum batch size of 2
         if len(input_tokens) == 1:
