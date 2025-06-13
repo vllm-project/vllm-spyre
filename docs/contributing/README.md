@@ -1,21 +1,3 @@
-- [Contributing to vLLM Spyre](#contributing-to-vllm-spyre)
-  - [Issues](#issues)
-  - [Developing](#developing)
-    - [Docs](#docs)
-      - [Building the docs with MkDocs](#building-the-docs-with-mkdocs)
-        - [Install MkDocs and Plugins](#install-mkdocs-and-plugins)
-        - [Start the Development Server](#start-the-development-server)
-        - [View in Your Browser](#view-in-your-browser)
-        - [Learn More](#learn-more)
-  - [Testing](#testing)
-    - [Testing Locally on CPU (No Spyre card)](#testing-locally-on-cpu-no-spyre-card)
-    - [Testing Continuous Batching](#testing-continuous-batching)
-  - [Debugging](#debugging)
-  - [Pull Requests](#pull-requests)
-    - [Linting](#linting)
-    - [DCO and Signed-off-by](#dco-and-signed-off-by)
-  - [License](#license)
-
 # Contributing to vLLM Spyre
 
 Thank you for your interest in contributing to the Spyre plugin for vLLM! There are several ways you can contribute:
