@@ -23,7 +23,7 @@ You can also reach out for support in the `#sig-spyre` channel in the [vLLM Slac
 Install MkDocs along with the [plugins](https://github.com/vllm-project/vllm-spyre/blob/main/mkdocs.yaml) used in the vLLM Spyre documentation.
 
 ```bash
-pip install -r docs/requirements-docs.txt
+uv pip install -r docs/requirements-docs.txt
 ```
 
 !!! note
@@ -126,32 +126,34 @@ python -m pytest -v -x tests/e2e -m cb
     You can actually `oc edit` a pod and change the image without having the pod schedule to a different node! (useful for testing if software or hardware is the issue).
 
 1. `Topology Aware Allocation`:
-   1. This mode supports users to request a special set of AIU cards based on `PCI` topology. By using this mode, we can guarantee to pick up AIU cards of a particular class in the node.  
-      1. `Tier0` provides a set of cards in the same `PCI` switch.
-      2. `Tier1` provides a set of cards from at most on-hop away `PCI` switch.
-      3. `Tier2` provides a set of cards from at most two-hops away `PCI` switch.
+      1. This mode supports users to request a special set of AIU cards based on `PCI` topology. By using this mode, we can guarantee to pick up AIU cards of a particular class in the node.  
+         - `Tier0` provides a set of cards in the same `PCI` switch.
+         - `Tier1` provides a set of cards from at most on-hop away `PCI` switch.
+         - `Tier2` provides a set of cards from at most two-hops away `PCI` switch.
 
-   2. Running a Multi AIU Job using `ibm.com/aiu_pf_tier0,tier1,tier2`:
-      1. This resource type is used for picking up a topology aware card set, which is required to run tensor parallel (`TP`) workloads more effectively. By using `tierX` class resource, `TP` users can automatically get a best performing card set for the workload.
+      2. Running a Multi AIU Job using `ibm.com/aiu_pf_tier0,tier1,tier2`:
+         - This resource type is used for picking up a topology aware card set, which is required to run tensor parallel (`TP`) workloads more effectively. By using `tierX` class resource, `TP` users can automatically get a best performing card set for the workload.
 
-   3. The maximum number of allocatable resources in each tier depends on the platform & cluster, but we can get up to:
-      1. `4` cards from `tier0`
-      2. `8` cards from `tier1`
-      3. `16` cards from `tier2`.
+      3. The maximum number of allocatable resources in each tier depends on the platform & cluster, but we can get up to:
+         - `Tier0` - `4` cards
+         - `Tier1` - `8` cards
+         - `Tier2` - `16` cards
   
-    **Note**: If you specify `ibm.com/aiu_pf_tier0: 5` in your yaml, the pod will never be scheduled because the maximum set of cards in `tier0` is `4`.
-   4. Devices in `tier0` can do `peer-to-peer (P2P) RDMA`, devices on different trees use `Host DMA` sharing files through `/dev/shm`.
+      4. Devices in `tier0` can do `peer-to-peer (P2P) RDMA`, devices on different trees use `Host DMA` sharing files through `/dev/shm`.
 
-2. `/opt/sentient/bin/aiu-query-devices` in the pod can be used to see the connectivity between the `AIUs` on the machine. You can also glean this from the env vars that are like `AIU_TIER_\d_SET_\d_RANK_\d`.
+    !!! warning
+        If you specify `ibm.com/aiu_pf_tier0: 5` in your yaml, the pod will never be scheduled because the maximum set of cards in `tier0` is `4`.
 
-3. `SPYRE_DEVICES=2,3` can be used to select which devices will be selected for each `RANK`.
-   1. An alternative is to use `AIU_WORLD_RANK_\d=0000:aa:00.0` to explicitly map ranks to `PCI` addresses (make sure there are no duplicates used at runtime).
-4. with `DTLOG_LEVEL=INFO` (piped to file) you can look for the string `Opened: SEN:VFIO` to see what device addresses are actually in use.
-5. A bash script that uses `/opt/sentient/senlib/bin/senlib_unit_test` to check each `AIU` allocated to the pod to see if they work for a basic test:
-
-    ```sh
+1. `/opt/sentient/bin/aiu-query-devices` in the pod can be used to see the connectivity between the `AIUs` on the machine. You can also glean this from the env vars that are like `AIU_TIER_\d_SET_\d_RANK_\d`.
+  
+1. `SPYRE_DEVICES=2,3` can be used to select which devices will be selected for each `RANK`.
+      1. An alternative is to use `AIU_WORLD_RANK_\d=0000:aa:00.0` to explicitly map ranks to `PCI` addresses (make sure there are no duplicates used at runtime).
+1. `DTLOG_LEVEL=INFO` (piped to file) can help you see what device addresses are actually in use. Look for the string `Opened: SEN:VFIO`.
+1. A bash script that uses `/opt/sentient/senlib/bin/senlib_unit_test` to check each `AIU` allocated to the pod to see if they work for a basic test:
+  
+ ```sh
     #!/bin/bash
-
+   
     cleanup_done=0
     cleanup() {
     if [ "$cleanup_done" -eq 0 ] && [ -f ~/.senlib.json.bak ]; then
@@ -161,11 +163,11 @@ python -m pytest -v -x tests/e2e -m cb
     fi
     kill -- -$PPID
     wait
-    exit
+ exit
     }
 
     trap cleanup EXIT SIGINT
-
+   
     # Create backup .senlib.json if it doesn't exist
     if [ -f ~/.senlib.json ]; then
     if [ ! -f ~/.senlib.json.bak ]; then
@@ -173,9 +175,9 @@ python -m pytest -v -x tests/e2e -m cb
         cp ~/.senlib.json ~/.senlib.json.bak
     else
         echo "~/.senlib.json.bak already exists"
+ fi
     fi
-    fi
-
+   
     for device_id in $(jq -r .GENERAL.sen_bus_id[] /etc/aiu/senlib_config.json); do
     echo "======================================================================"
     echo "Checking AIU ${device_id}"
@@ -184,8 +186,8 @@ python -m pytest -v -x tests/e2e -m cb
     # run in background to not override bash signal handler
     timeout 10 /opt/sentient/senlib/bin/senlib_unit_test --gtest_filter=SmlPF1VF0.Open &
     wait
-    done
-    ```
+ done
+ ```
 
 ## Pull Requests
 
