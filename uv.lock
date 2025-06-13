@@ -4816,7 +4816,7 @@ lint = [
 requires-dist = [
     { name = "fms-model-optimizer", specifier = ">=0.2.0" },
     { name = "ibm-fms", specifier = "==1.0.0" },
-    { name = "vllm", specifier = ">0.9.0,!=0.9.1" },
+    { name = "vllm", specifier = ">=0.9.0,!=0.9.1" },
 ]
 
 [package.metadata.requires-dev]
