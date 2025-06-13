@@ -557,7 +557,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
                     torch._dynamo.mark_dynamic(tensor, 2)
 
 
-class ContinuousBatchingHomogenTkvSpyreModelRunner(SpyreModelRunner):
+class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
     def __init__(
         self,
@@ -581,7 +581,10 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(SpyreModelRunner):
         # TO DO: move to InputBatch
         self.req_ids2blocks: dict[str, deque[int]] = {}
         self.req_ids2left_pads: dict[str, int] = {}
+        # only for homogeneous tkv
         self.tkv: int = 0
+        # only for heterogeneous tkv
+        self.req_ids2tkv: dict[str, int] = {}
         # block id 0 is reserved for padding block_table (make it rectangular)
         self.free_blocks = deque([i for i in range(1, NUM_BLOCKS)])
 
@@ -596,6 +599,12 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(SpyreModelRunner):
             pin_memory=self.pin_memory,
             vocab_size=vllm_config.model_config.get_vocab_size(),
         )
+
+    def _prepare_prompt(self, _):
+        raise NotImplementedError("Subclasses must implement _prepare_prompt")
+
+    def _prepare_decode(self, _):
+        raise NotImplementedError("Subclasses must implement _prepare_decode")
 
     def _update_states(self, scheduler_output):
 
@@ -612,6 +621,144 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(SpyreModelRunner):
 
             del self.requests[req_id]
             self.input_batch.remove_request(req_id)
+
+    def prepare_model_input(
+            self, scheduler_output: SchedulerOutput) -> ModelForwardInputs:
+
+        # NOTE: We assume that all sequences in the group are all prompts or
+        # all decodes.
+        # Also assuming that new sequences are prefills
+        is_prompt = len(scheduler_output.scheduled_new_reqs) > 0
+
+        # Prepare and return input tensors.
+        if is_prompt:
+            model_inputs = \
+                self._prepare_prompt(scheduler_output.scheduled_new_reqs)
+        else:
+            model_inputs = \
+                self._prepare_decode(scheduler_output.scheduled_cached_reqs)
+
+        return model_inputs
+
+    @SpyrePlatform.inference_mode()
+    def execute_model(
+        self,
+        scheduler_output: SchedulerOutput,
+        **kwargs,
+    ) -> ModelRunnerOutput:
+
+        t0 = time.time()
+
+        self._update_states(scheduler_output)
+        # TODO: change to EMPTY_MODEL_RUNNER_OUTPUT, right now this
+        # will be a breaking change, or clumsy to make retrocompatible
+        # with conditional import
+        if not scheduler_output.total_num_scheduled_tokens:
+            # Return empty ModelRunnerOuptut if there's no work to do.
+            return CBSpyreModelRunnerOutput(
+                req_ids=[],
+                req_id_to_index={},
+                sampled_token_ids=[],
+                spec_token_ids=None,
+                logprobs=None,
+                prompt_logprobs_dict={},
+                tkv=0,  # only used for homogeneous tkv scheduling
+            )
+
+        model_input = self.prepare_model_input(scheduler_output)
+
+        # Marking dimensions static/dynamic
+        if model_input.is_prompt:
+
+            # batch static (batch size 1)
+            torch._dynamo.mark_static(model_input.input_tokens, 0)
+            torch._dynamo.mark_static(model_input.slot_mapping, 0)
+            torch._dynamo.mark_static(model_input.input_positions, 0)
+            torch._dynamo.mark_static(model_input.input_masks, 0)
+
+            # sequence dynamic
+            torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
+            torch._dynamo.mark_dynamic(model_input.slot_mapping, 1)
+            torch._dynamo.mark_dynamic(model_input.input_positions, 1)
+            torch._dynamo.mark_dynamic(model_input.input_masks, 2)
+            torch._dynamo.mark_dynamic(model_input.input_masks, 3)
+
+        # decode
+        else:
+            # mask is no longer used here
+
+            # batch dynamic
+            torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
+            torch._dynamo.mark_dynamic(model_input.block_table, 0)
+            torch._dynamo.mark_dynamic(model_input.slot_mapping, 0)
+            torch._dynamo.mark_dynamic(model_input.input_positions, 0)
+            torch._dynamo.mark_dynamic(model_input.current_tkv_mask, 0)
+            torch._dynamo.mark_dynamic(model_input.left_padded_prompt_mask, 0)
+
+            # sequence
+            torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
+            torch._dynamo.mark_dynamic(model_input.block_table, 1)
+            torch._dynamo.mark_static(model_input.slot_mapping, 1)  # always 1
+            torch._dynamo.mark_static(model_input.input_positions,
+                                      1)  # always 1
+
+        # Execute the model
+        hidden_states = self.model(
+            input_ids=model_input.input_tokens,
+            positions=model_input.input_positions,
+            masks=model_input.input_masks,
+            is_prompt=model_input.is_prompt,
+            current_tkv_mask=model_input.current_tkv_mask,
+            left_padded_prompt_mask=model_input.left_padded_prompt_mask,
+            block_table=model_input.block_table,
+            slot_mapping=model_input.slot_mapping)
+
+        # Only perform sampling in the driver worker.
+        if not self.is_driver_worker:
+            return []
+
+        # Compute the logits.
+        logits = self.model.compute_logits(hidden_states, None)
+
+        # Sample the next token.
+        # TODO: review this, once we can prefill and decode at the same step
+        sampling_metadata = self.prefill_batch.sampling_metadata \
+            if model_input.is_prompt else self.input_batch.sampling_metadata
+        output: SamplerOutput = self.model.sample(
+            logits=logits,
+            sampling_metadata=sampling_metadata,
+        )
+        t1 = time.time() - t0
+        logger.debug("t_token: %.2fms", (t1 * 1000))
+
+        is_prompt = len(scheduler_output.scheduled_new_reqs) > 0
+        scheduled_req = (scheduler_output.scheduled_new_reqs if is_prompt else
+                         scheduler_output.scheduled_cached_reqs)
+        # since same order as in _prepare_prompt/decode req_ids2idx not needed
+        req_ids = [req.req_id for req in scheduled_req]
+        req_id_to_index = {req_id: i for i, req_id in enumerate(req_ids)}
+
+        model_output = CBSpyreModelRunnerOutput(
+            req_ids=req_ids,
+            req_id_to_index=req_id_to_index,
+            sampled_token_ids=output.sampled_token_ids.tolist(),
+            spec_token_ids=None,
+            logprobs=(output.logprobs_tensors.tolists()
+                      if output.logprobs_tensors else None),
+            prompt_logprobs_dict={req_id: None
+                                  for req_id in req_ids
+                                  },  # TODO(wallas?): prompt logprobs too
+            tkv=self.tkv,  # only used for homogeneous tkv scheduling
+        )
+        return model_output
+
+
+class ContinuousBatchingHomogenTkvSpyreModelRunner(
+        ContinuousBatchingSpyreModelRunner):
+
+    def __init__(self, *args, **kwargs) -> None:
+        # Initialize ContinuousBatchingSpyreModelRunner
+        super().__init__(*args, **kwargs)
 
     def _prepare_prompt(
         self,
@@ -833,7 +980,8 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(SpyreModelRunner):
 
         # left padding to align with tkv of current decode batch
         input_tokens_left, position_ids_left, mask_left =\
-            super().pad_input_ids(input_ids_list, min_pad_length=self.tkv)
+            super(ContinuousBatchingSpyreModelRunner, self).pad_input_ids(
+                input_ids_list, min_pad_length=self.tkv)
 
         # right padding to align with the next block boundary
         left_pad_len = input_tokens_left.shape[1]
@@ -892,190 +1040,15 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(SpyreModelRunner):
         if envs_spyre.VLLM_SPYRE_RM_PADDED_BLOCKS:
             self.reduce_left_padding()
 
-        # NOTE: We assume that all sequences in the group are all prompts or
-        # all decodes.
-        # Also assuming that new sequences are prefills
-        is_prompt = len(scheduler_output.scheduled_new_reqs) > 0
-
-        # Prepare and return input tensors.
-        if is_prompt:
-            model_inputs = \
-                self._prepare_prompt(scheduler_output.scheduled_new_reqs)
-        else:
-            model_inputs = \
-                self._prepare_decode(scheduler_output.scheduled_cached_reqs)
-
-        return model_inputs
-
-    @SpyrePlatform.inference_mode()
-    def execute_model(
-        self,
-        scheduler_output: SchedulerOutput,
-        **kwargs,
-    ) -> ModelRunnerOutput:
-
-        t0 = time.time()
-
-        self._update_states(scheduler_output)
-        # TODO: change to EMPTY_MODEL_RUNNER_OUTPUT, right now this
-        # will be a breaking change, or clumsy to make retrocompatible
-        # with conditional import
-        if not scheduler_output.total_num_scheduled_tokens:
-            # Return empty ModelRunnerOuptut if there's no work to do.
-            return CBSpyreModelRunnerOutput(
-                req_ids=[],
-                req_id_to_index={},
-                sampled_token_ids=[],
-                spec_token_ids=None,
-                logprobs=None,
-                prompt_logprobs_dict={},
-                tkv=0,
-            )
-
-        model_input = self.prepare_model_input(scheduler_output)
-
-        # Marking dimensions static/dynamic
-        if model_input.is_prompt:
-
-            # batch static (batch size 1)
-            torch._dynamo.mark_static(model_input.input_tokens, 0)
-            torch._dynamo.mark_static(model_input.slot_mapping, 0)
-            torch._dynamo.mark_static(model_input.input_positions, 0)
-            torch._dynamo.mark_static(model_input.input_masks, 0)
-
-            # sequence dynamic
-            torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
-            torch._dynamo.mark_dynamic(model_input.slot_mapping, 1)
-            torch._dynamo.mark_dynamic(model_input.input_positions, 1)
-            torch._dynamo.mark_dynamic(model_input.input_masks, 2)
-            torch._dynamo.mark_dynamic(model_input.input_masks, 3)
-
-        # decode
-        else:
-            # mask is no longer used here
-
-            # batch dynamic
-            torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
-            torch._dynamo.mark_dynamic(model_input.block_table, 0)
-            torch._dynamo.mark_dynamic(model_input.slot_mapping, 0)
-            torch._dynamo.mark_dynamic(model_input.input_positions, 0)
-            torch._dynamo.mark_dynamic(model_input.current_tkv_mask, 0)
-            torch._dynamo.mark_dynamic(model_input.left_padded_prompt_mask, 0)
-
-            # sequence
-            torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
-            torch._dynamo.mark_dynamic(model_input.block_table, 1)
-            torch._dynamo.mark_static(model_input.slot_mapping, 1)  # always 1
-            torch._dynamo.mark_static(model_input.input_positions,
-                                      1)  # always 1
-
-        # Execute the model
-        hidden_states = self.model(
-            input_ids=model_input.input_tokens,
-            positions=model_input.input_positions,
-            masks=model_input.input_masks,
-            is_prompt=model_input.is_prompt,
-            current_tkv_mask=model_input.current_tkv_mask,
-            left_padded_prompt_mask=model_input.left_padded_prompt_mask,
-            block_table=model_input.block_table,
-            slot_mapping=model_input.slot_mapping)
-
-        # Only perform sampling in the driver worker.
-        if not self.is_driver_worker:
-            return []
-
-        # Compute the logits.
-        logits = self.model.compute_logits(hidden_states, None)
-
-        # Sample the next token.
-        # TODO: review this, once we can prefill and decode at the same step
-        sampling_metadata = self.prefill_batch.sampling_metadata \
-            if model_input.is_prompt else self.input_batch.sampling_metadata
-        output: SamplerOutput = self.model.sample(
-            logits=logits,
-            sampling_metadata=sampling_metadata,
-        )
-        t1 = time.time() - t0
-        logger.debug("t_token: %.2fms", (t1 * 1000))
-
-        is_prompt = len(scheduler_output.scheduled_new_reqs) > 0
-        scheduled_req = (scheduler_output.scheduled_new_reqs if is_prompt else
-                         scheduler_output.scheduled_cached_reqs)
-        # since same order as in _prepare_prompt/decode req_ids2idx not needed
-        req_ids = [req.req_id for req in scheduled_req]
-        req_id_to_index = {req_id: i for i, req_id in enumerate(req_ids)}
-
-        model_output = CBSpyreModelRunnerOutput(
-            req_ids=req_ids,
-            req_id_to_index=req_id_to_index,
-            sampled_token_ids=output.sampled_token_ids.tolist(),
-            spec_token_ids=None,
-            logprobs=(output.logprobs_tensors.tolists()
-                      if output.logprobs_tensors else None),
-            prompt_logprobs_dict={req_id: None
-                                  for req_id in req_ids
-                                  },  # TODO(wallas?): prompt logprobs too
-            tkv=self.tkv,
-        )
-        return model_output
+        return super().prepare_model_input(scheduler_output=scheduler_output)
 
 
-class ContinuousBatchingHeterogenTkvSpyreModelRunner(SpyreModelRunner):
+class ContinuousBatchingHeterogenTkvSpyreModelRunner(
+        ContinuousBatchingSpyreModelRunner):
 
-    def __init__(
-        self,
-        vllm_config: VllmConfig,
-        is_driver_worker: bool,
-    ):
-        super().__init__(vllm_config=vllm_config,
-                         is_driver_worker=is_driver_worker)
-        print('Using ContinuousBatchingHeterogenTkvSpyreModelRunner')
-        max_batch_size = vllm_config.scheduler_config.max_num_seqs
-        max_model_len = vllm_config.scheduler_config.max_model_len
-
-        # TODO: remove this limitation once we update the warm-up logic to
-        # support batch_size=1
-        assert max_batch_size >= 2, "Currently, continuous batching needs " \
-            "config to set batch_size >= 2"
-
-        self.BLOCK_SIZE = 64
-        NUM_BLOCKS = max_batch_size * max_model_len // self.BLOCK_SIZE  # 64
-
-        # TO DO: move to InputBatch
-        self.req_ids2blocks: dict[str, deque[int]] = {}
-        self.req_ids2left_pads: dict[str, int] = {}
-        self.req_ids2tkv: dict[str, int] = {}
-        self.tkv: int = 0  # TODO ysc: delete this
-        # block id 0 is reserved for padding block_table (make it rectangular)
-        self.free_blocks = deque([i for i in range(1, NUM_BLOCKS)])
-
-        # TODO: Remove this once we can prefill and decode
-        # in the same step
-        self.prefill_batch = InputBatch(
-            # TODO: review this, currently we only support prefill for
-            # `batch_size=1`
-            max_num_reqs=1,
-            max_model_len=vllm_config.model_config.max_model_len,
-            device=self.device,
-            pin_memory=self.pin_memory,
-            vocab_size=vllm_config.model_config.get_vocab_size(),
-        )
-
-    def _update_states(self, scheduler_output):
-
-        super()._update_states(scheduler_output)
-
-        # Continuous batching stuff
-        for req_id in scheduler_output.finished_req_ids:
-            if req_id in self.req_ids2blocks:
-                logger.debug("Freeing request id: %s", req_id)
-                for freed_block in self.req_ids2blocks[req_id]:
-                    self.free_blocks.append(freed_block)
-                del self.req_ids2blocks[req_id]
-                del self.req_ids2left_pads[req_id]
-
-            del self.requests[req_id]
-            self.input_batch.remove_request(req_id)
+    def __init__(self, *args, **kwargs) -> None:
+        # Initialize ContinuousBatchingSpyreModelRunner
+        super().__init__(*args, **kwargs)
 
     def _prepare_prompt(
         self,
@@ -1285,8 +1258,8 @@ class ContinuousBatchingHeterogenTkvSpyreModelRunner(SpyreModelRunner):
         # (although implemented, right padding is not happening atm)
         # left padding to align with tkv of current decode batch
         input_tokens_left, position_ids_left, mask_left =\
-            super().pad_input_ids(input_ids_list,
-                                  min_pad_length=self.req_ids2tkv[req_id])
+            super(ContinuousBatchingSpyreModelRunner, self).pad_input_ids(
+                input_ids_list, min_pad_length=self.req_ids2tkv[req_id])
 
         # right padding to align with the next block boundary
         left_pad_len = input_tokens_left.shape[1]
@@ -1339,133 +1312,3 @@ class ContinuousBatchingHeterogenTkvSpyreModelRunner(SpyreModelRunner):
             mask = mask_left
 
         return input_tokens, position_ids, mask
-
-    def prepare_model_input(
-            self, scheduler_output: SchedulerOutput) -> ModelForwardInputs:
-
-        # NOTE: We assume that all sequences in the group are all prompts or
-        # all decodes.
-        # Also assuming that new sequences are prefills
-        is_prompt = len(scheduler_output.scheduled_new_reqs) > 0
-
-        # Prepare and return input tensors.
-        if is_prompt:
-            model_inputs = \
-                self._prepare_prompt(scheduler_output.scheduled_new_reqs)
-        else:
-            model_inputs = \
-                self._prepare_decode(scheduler_output.scheduled_cached_reqs)
-
-        return model_inputs
-
-    @SpyrePlatform.inference_mode()
-    def execute_model(
-        self,
-        scheduler_output: SchedulerOutput,
-        **kwargs,
-    ) -> ModelRunnerOutput:
-
-        t0 = time.time()
-
-        self._update_states(scheduler_output)
-        # TODO: change to EMPTY_MODEL_RUNNER_OUTPUT, right now this
-        # will be a breaking change, or clumsy to make retrocompatible
-        # with conditional import
-        if not scheduler_output.total_num_scheduled_tokens:
-            # Return empty ModelRunnerOuptut if there's no work to do.
-            return CBSpyreModelRunnerOutput(
-                req_ids=[],
-                req_id_to_index={},
-                sampled_token_ids=[],
-                spec_token_ids=None,
-                logprobs=None,
-                prompt_logprobs_dict={},
-                tkv=0,  # TODO ysc: replace with empty dict {}
-            )
-
-        model_input = self.prepare_model_input(scheduler_output)
-
-        # Marking dimensions static/dynamic
-        if model_input.is_prompt:
-
-            # batch static (batch size 1)
-            torch._dynamo.mark_static(model_input.input_tokens, 0)
-            torch._dynamo.mark_static(model_input.slot_mapping, 0)
-            torch._dynamo.mark_static(model_input.input_positions, 0)
-            torch._dynamo.mark_static(model_input.input_masks, 0)
-
-            # sequence dynamic
-            torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
-            torch._dynamo.mark_dynamic(model_input.slot_mapping, 1)
-            torch._dynamo.mark_dynamic(model_input.input_positions, 1)
-            torch._dynamo.mark_dynamic(model_input.input_masks, 2)
-            torch._dynamo.mark_dynamic(model_input.input_masks, 3)
-
-        # decode
-        else:
-            # mask is no longer used here
-
-            # batch dynamic
-            torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
-            torch._dynamo.mark_dynamic(model_input.block_table, 0)
-            torch._dynamo.mark_dynamic(model_input.slot_mapping, 0)
-            torch._dynamo.mark_dynamic(model_input.input_positions, 0)
-            torch._dynamo.mark_dynamic(model_input.current_tkv_mask, 0)
-            torch._dynamo.mark_dynamic(model_input.left_padded_prompt_mask, 0)
-
-            # sequence
-            torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
-            torch._dynamo.mark_dynamic(model_input.block_table, 1)
-            torch._dynamo.mark_static(model_input.slot_mapping, 1)  # always 1
-            torch._dynamo.mark_static(model_input.input_positions,
-                                      1)  # always 1
-
-        # Execute the model
-        hidden_states = self.model(
-            input_ids=model_input.input_tokens,
-            positions=model_input.input_positions,
-            masks=model_input.input_masks,
-            is_prompt=model_input.is_prompt,
-            current_tkv_mask=model_input.current_tkv_mask,
-            left_padded_prompt_mask=model_input.left_padded_prompt_mask,
-            block_table=model_input.block_table,
-            slot_mapping=model_input.slot_mapping)
-
-        # Only perform sampling in the driver worker.
-        if not self.is_driver_worker:
-            return []
-
-        # Compute the logits.
-        logits = self.model.compute_logits(hidden_states, None)
-
-        # Sample the next token.
-        # TODO: review this, once we can prefill and decode at the same step
-        sampling_metadata = self.prefill_batch.sampling_metadata \
-            if model_input.is_prompt else self.input_batch.sampling_metadata
-        output: SamplerOutput = self.model.sample(
-            logits=logits,
-            sampling_metadata=sampling_metadata,
-        )
-        t1 = time.time() - t0
-        logger.debug("t_token: %.2fms", (t1 * 1000))
-
-        is_prompt = len(scheduler_output.scheduled_new_reqs) > 0
-        scheduled_req = (scheduler_output.scheduled_new_reqs if is_prompt else
-                         scheduler_output.scheduled_cached_reqs)
-        # since same order as in _prepare_prompt/decode req_ids2idx not needed
-        req_ids = [req.req_id for req in scheduled_req]
-        req_id_to_index = {req_id: i for i, req_id in enumerate(req_ids)}
-
-        model_output = CBSpyreModelRunnerOutput(
-            req_ids=req_ids,
-            req_id_to_index=req_id_to_index,
-            sampled_token_ids=output.sampled_token_ids.tolist(),
-            spec_token_ids=None,
-            logprobs=(output.logprobs_tensors.tolists()
-                      if output.logprobs_tensors else None),
-            prompt_logprobs_dict={req_id: None
-                                  for req_id in req_ids
-                                  },  # TODO(wallas?): prompt logprobs too
-            tkv=self.tkv,  # TODO ysc: replace with self.req_ids2tkv
-        )
-        return model_output
