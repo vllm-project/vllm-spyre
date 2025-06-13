@@ -9,7 +9,7 @@ from collections import deque
 from typing import Any
 
 import pytest
-from spyre_util import generate_cb_spyre_vllm_output, get_spyre_model_list
+from spyre_util import generate_cb_spyre_vllm_output, get_spyre_backend_list, get_spyre_model_list
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
@@ -17,17 +17,12 @@ from vllm.v1.executor.abstract import Executor
 
 from vllm_spyre.v1.core.scheduler import ContinuousBatchingSpyreScheduler
 
-
+@pytest.mark.cb
+@pytest.mark.v1
 @pytest.mark.parametrize("max_num_seqs", [2, 3, 4],
                          ids=lambda val: f"max_num_seqs({val})")
 @pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize(
-    "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
-@pytest.mark.parametrize("cb",
-                         [pytest.param(1, marks=pytest.mark.cb, id="cb")])
-# commenting v1 since we don't want this test to run with v1 marker yet
-# @pytest.mark.parametrize("vllm_version",
-#                          [pytest.param("V1", marks=pytest.mark.v1, id="v1")])
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize(
     "prompts",
     [
@@ -53,9 +48,7 @@ def test_cb_handling(
     model: str,
     backend: str,
     max_num_seqs: int,
-    cb: int,
     prompts: list[str],
-    # vllm_version: str,
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Test that the spyre worker correctly handles
@@ -80,7 +73,7 @@ def test_cb_handling(
         tensor_parallel_size=1,
         backend=backend,
         max_num_seqs=max_num_seqs,
-        use_cb=cb,
+        use_cb=1,
         monkeypatch=monkeypatch,
     )
 
@@ -647,9 +640,9 @@ def augment_checked_steps(
 
 
 @pytest.mark.cb
+@pytest.mark.v1
 @pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize(
-    "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize(
     "seqs_max_tokens,prompts_lengths,steps_add_reqs,checked_steps,"
