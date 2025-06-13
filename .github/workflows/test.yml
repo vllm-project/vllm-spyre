@@ -70,6 +70,7 @@ jobs:
           files: |
             .github/workflows/test.yml
             pyproject.toml
+            uv.lock
             tests/**/*.py
             vllm_spyre/**/*.py
 

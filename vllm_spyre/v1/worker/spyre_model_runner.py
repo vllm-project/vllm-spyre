@@ -28,8 +28,6 @@ else:
 
 from vllm.v1.outputs import ModelRunnerOutput
 
-import vllm_spyre.envs as envs_spyre
-
 logger = init_logger(__name__)
 
 
@@ -1037,8 +1035,7 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(
             self, scheduler_output: SchedulerOutput) -> ModelForwardInputs:
 
         # remove left padding if applicable before next prefil/decode step
-        if envs_spyre.VLLM_SPYRE_RM_PADDED_BLOCKS:
-            self.reduce_left_padding()
+        self.reduce_left_padding()
 
         return super().prepare_model_input(scheduler_output=scheduler_output)
 
