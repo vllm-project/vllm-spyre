@@ -1,3 +1,8 @@
+"""
+This example shows how to use Spyre with vLLM for running offline inference 
+with multiple cards.
+"""
+
 import gc
 import os
 import platform
@@ -18,13 +23,12 @@ os.environ["VLLM_SPYRE_WARMUP_PROMPT_LENS"] = '64'
 os.environ["VLLM_SPYRE_WARMUP_NEW_TOKENS"] = str(max_tokens)
 os.environ['VLLM_SPYRE_WARMUP_BATCH_SIZES'] = '1'
 
-# stuff for multi-spyre
+# Multi-spyre related variables
 os.environ["TORCHINDUCTOR_COMPILE_THREADS"] = "1"
 os.environ["DISTRIBUTED_STRATEGY_IGNORE_MODULES"] = "WordEmbedding"
 os.environ["MASTER_ADDR"] = "localhost"
 os.environ["MASTER_PORT"] = "12355"
 
-# Sample prompts.
 template = (
     "Below is an instruction that describes a task. Write a response that "
     "appropriately completes the request. Be polite in your response to the "

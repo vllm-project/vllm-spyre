@@ -8,7 +8,7 @@ nav:
         - Kubernetes: deploying/k8s.md
     - Examples:
       - Offline Inference: examples/offline_inference
-      - Other: examples/other
+      - Online Inference: examples/online_inference
     - User Guide:
         - Configuration: user_guide/configuration.md
         - Environment Variables: user_guide/env_vars.md
