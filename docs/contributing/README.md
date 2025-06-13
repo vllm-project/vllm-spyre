@@ -12,13 +12,11 @@ If you encounter a bug or have a feature request, please search [existing issues
 
 You can also reach out for support in the `#sig-spyre` channel in the [vLLM Slack](https://inviter.co/vllm-slack) workspace.
 
-## Developing
+## Docs
 
-### Docs
+### Building the docs with MkDocs
 
-#### Building the docs with MkDocs
-
-##### Install MkDocs and Plugins
+#### Install MkDocs and Plugins
 
 Install MkDocs along with the [plugins](https://github.com/vllm-project/vllm-spyre/blob/main/mkdocs.yaml) used in the vLLM Spyre documentation.
 
@@ -29,7 +27,7 @@ uv pip install -r docs/requirements-docs.txt
 !!! note
     Ensure that your Python version is compatible with the plugins (e.g., `mkdocs-awesome-nav` requires Python 3.10+)
 
-##### Start the Development Server
+#### Start the Development Server
 
 MkDocs comes with a built-in dev-server that lets you preview your documentation as you work on it.
 
@@ -47,11 +45,11 @@ INFO    -  [22:02:02] Watching paths for changes: 'docs', 'mkdocs.yaml'
 INFO    -  [22:02:02] Serving on http://127.0.0.1:8000/
 ```
 
-##### View in Your Browser
+#### View in Your Browser
 
 Open up [http://127.0.0.1:8000/](http://127.0.0.1:8000/) in your browser to see a live preview:.
 
-##### Learn More
+#### Learn More
 
 For additional features and advanced configurations, refer to the official [MkDocs Documentation](https://www.mkdocs.org/).
 
@@ -151,7 +149,7 @@ python -m pytest -v -x tests/e2e -m cb
 1. `DTLOG_LEVEL=INFO` (piped to file) can help you see what device addresses are actually in use. Look for the string `Opened: SEN:VFIO`.
 1. A bash script that uses `/opt/sentient/senlib/bin/senlib_unit_test` to check each `AIU` allocated to the pod to see if they work for a basic test:
   
-    ```python
+    ```shell
     --8<-- "tools/check_aiu.sh"
     ```
 
