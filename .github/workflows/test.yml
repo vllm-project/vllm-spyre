@@ -48,19 +48,12 @@ jobs:
           - name: "V1-cb"
             markers: "v1 and cpu and cb"
             flags: "--timeout=300 --forked"
-          - name: "V1-worker"
-            markers: "v1 and not e2e"
+          - name: "V1-worker and utils"
+            markers: "v1 and not e2e or utils"
             flags: "--timeout=300"
           - name: "utils"
             markers: "utils"
             flags: "--timeout=300"
-        exclude: # see https://github.com/fprime-community/native-images-action/commit/611e79677e8a128f9c3f6a6c40aac4cb6ec0ced8
-          - {test_suite: utils,
-            vllm_version: {
-              name: vLLM:main,
-              repo: "git+https://github.com/vllm-project/vllm --branch main"}
-            }
-
 
     name: "${{ matrix.test_suite.name }} (${{ matrix.vllm_version.name }})"
 
