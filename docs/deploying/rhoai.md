@@ -16,6 +16,7 @@ This example shows how to use KServe with RHOAI to deploy a model on OpenShift, 
 1. Create a ServingRuntime to serve your models.
 
       ```yaml
+        oc apply -f - <<EOF
         apiVersion: serving.kserve.io/v1alpha1
         kind: ServingRuntime
         metadata:
@@ -49,11 +50,13 @@ This example shows how to use KServe with RHOAI to deploy a model on OpenShift, 
               ports:
                 - containerPort: 8000
                   protocol: TCP
+        EOF
       ```
 
 2. Create an InferenceService for each model you want to deploy. This example demonstrates how to deploy the [Granite](https://www.ibm.com/granite) model `ibm-granite/granite-3.1-8b-instruct`.
 
       ```yaml
+      oc apply -f - <<EOF
       apiVersion: serving.kserve.io/v1beta1
       kind: InferenceService
       metadata:
@@ -95,13 +98,9 @@ This example shows how to use KServe with RHOAI to deploy a model on OpenShift, 
               emptyDir:
                 medium: Memory
                 sizeLimit: "2Gi"
+      EOF
       ```
 
-3. Deploy and Test
+3. Test your InferenceService
 
-      Apply the manifests using `oc apply -f <filename>`:
-
-      ```console
-      oc apply -f servingruntime.yaml
-      oc apply -f inferenceservice.yaml
-      ```
+    Refer to the [KServe documentation on model inference with vLLM](https://kserve.github.io/website/latest/modelserving/v1beta1/llm/huggingface/text_generation/#perform-model-inference_1).
