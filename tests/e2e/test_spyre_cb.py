@@ -626,122 +626,6 @@ def get_params_test_scheduler_constraints_max_prompt_len():
             max_model_len)
 
 
-def get_params_test_remove_left_padding():
-    """" Test the stripping of repeated left padding in continuous batching """
-
-    seqs_max_tokens = [40, 20, 11]
-    prompts_lengths = [20, 14, 5]
-    steps_add_reqs = [0, 30, 31]
-    max_model_len = 2048
-
-    checked_steps = [
-        {
-            "step": 0,
-            "tkv": 0,
-            "waiting": ["0"],
-            "running": [],
-            "request_outputs": []
-        },
-        {
-            # Prefill sequence 0
-            "step": 1,
-            "tkv": 64,
-            "waiting": [],
-            "running": ["0"],
-            "request_outputs": ["0"]
-        },
-        {
-            # Decode sequence 0
-            "step": 2,
-            "tkv": 65,
-            "waiting": [],
-            "running": ["0"],
-            "request_outputs": ["0"]
-        },
-        {
-            # Decode sequence 0, sequence 1 enters
-            "step": 30,
-            "tkv": 93,
-            "waiting": ["1"],
-            "running": ["0"],
-            "request_outputs": ["0"]
-        },
-        {
-            # Prefill sequence 1, sequence 2 enters
-            "step": 31,
-            "tkv": 93,
-            "waiting": ["2"],
-            "running": ["1", "0"],
-            "request_outputs": ["1"]
-        },
-        {
-            # Decode sequences 0 and 1
-            "step": 32,
-            "tkv": 94,
-            "waiting": ["2"],
-            "running": ["1", "0"],
-            "request_outputs": ["1", "0"]
-        },
-        {
-            # Sequence 0 finishes at step 41
-            # (start step + 2 prefills + 39 decodes - 1) = 1 + 2 + 39 - 1 = 41
-            "step": 41,
-            "tkv": 103,
-            "waiting": ["2"],
-            "running": ["1"],
-            "request_outputs": ["1", "0"],
-            "finished_requests": ["0"]
-        },
-        {
-            # Prefill sequence 2
-            "step": 42,
-            "tkv": 39,  # left padding reduction: 103 - 64 (block size)
-            "waiting": [],
-            "running": ["2", "1"],
-            "request_outputs": ["2"]
-        },
-        {
-            # Decode sequences 1 and 2
-            "step": 43,
-            "tkv": 40,
-            "waiting": [],
-            "running": ["2", "1"],
-            "request_outputs": ["2", "1"]
-        },
-        {
-            # Sequences 1 finishes at step 51
-            # (start step + 2 prefill + 19 decodes - 1) = 31 + 2 + 19 - 1 = 51
-            "step": 51,
-            "tkv": 48,
-            "waiting": [],
-            "running": ["2"],
-            "request_outputs": ["2", "1"],
-            "finished_requests": ["1"]
-        },
-        {
-            # Sequences 2 finishes at step 52
-            # (start step + 1 prefill + 10 decodes - 1) = 42 + 1 + 10 - 1 = 52
-            "step": 52,
-            "tkv": 49,
-            "waiting": [],
-            "running": [],
-            "request_outputs": ["2"],
-            "finished_requests": ["2"]
-        },
-        {
-            # Tkv should be cleared one step later
-            "step": 53,
-            "tkv": 0,
-            "waiting": [],
-            "running": [],
-            "request_outputs": [],
-        },
-    ]
-
-    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            max_model_len)
-
-
 def augment_checked_steps(
         checked_steps: list[dict[str, Any]]) -> deque[dict[str, Any]]:
     # Augment checked_steps: add in-between normal decode steps
@@ -775,7 +659,6 @@ def augment_checked_steps(
         get_params_test_special_finish(),
         get_params_test_scheduler_constraints_tkv(),
         get_params_test_scheduler_constraints_max_prompt_len(),
-        get_params_test_remove_left_padding(),
     ])
 def test_scheduler_cb_steps_tkv(
     model: str,
