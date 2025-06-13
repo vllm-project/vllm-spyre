@@ -12,7 +12,7 @@ readme = "README.md"
 license = {text = "Apache 2"}
 dependencies = [
     "fms-model-optimizer>=0.2.0",
-    "ibm-fms==1.0.0",
+    "ibm-fms>=1.1.0",
     "vllm>=0.9.0",
 ]
 requires-python = ">=3.9"

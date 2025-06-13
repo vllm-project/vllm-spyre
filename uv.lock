@@ -1366,13 +1366,13 @@ hf-xet = [
 
 [[package]]
 name = "ibm-fms"
-version = "1.0.0"
+version = "1.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "torch", marker = "python_full_version >= '3.10' and sys_platform == 'never'" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f9/c5/960cbde1eb640115e7ffab3878ed0da3ee46364810fd790ba7a2d607bc2c/ibm_fms-1.0.0-py3-none-any.whl", hash = "sha256:b943744cc15777f8a4971f0feefd6bb089beec549e29cec8bbd9999c17b62ce5", size = 160644, upload-time = "2025-05-16T18:57:35.2Z" },
+    { url = "https://files.pythonhosted.org/packages/e6/53/29c8588a74e7909756201e85e28c761641e80ec02205fbbfab86fe09b0e4/ibm_fms-1.1.0-py3-none-any.whl", hash = "sha256:f0fed9a07f1f166e8e676b4060c0f40e43371a72894afbf3a8ad98e61e1bf07e", size = 166993, upload-time = "2025-06-13T19:57:33.557Z" },
 ]
 
 [[package]]
@@ -4815,8 +4815,8 @@ lint = [
 [package.metadata]
 requires-dist = [
     { name = "fms-model-optimizer", specifier = ">=0.2.0" },
-    { name = "ibm-fms", specifier = "==1.0.0" },
-    { name = "vllm", specifier = ">=0.9.0,!=0.9.1" },
+    { name = "ibm-fms", specifier = ">=1.1.0" },
+    { name = "vllm", specifier = ">=0.9.0" },
 ]
 
 [package.metadata.requires-dev]
