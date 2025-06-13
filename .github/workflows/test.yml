@@ -51,9 +51,6 @@ jobs:
           - name: "V1-worker and utils"
             markers: "v1 and not e2e or utils"
             flags: "--timeout=300"
-          - name: "utils"
-            markers: "utils"
-            flags: "--timeout=300"
 
     name: "${{ matrix.test_suite.name }} (${{ matrix.vllm_version.name }})"
 
