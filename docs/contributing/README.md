@@ -140,7 +140,7 @@ python -m pytest -v -x tests/e2e -m cb
       4. Devices in `tier0` can do `peer-to-peer (P2P) RDMA`, devices on different trees use `Host DMA` sharing files through `/dev/shm`.
 
     !!! warning
-        If you specify `ibm.com/aiu_pf_tier0: 5` in your yaml, the pod will never be scheduled because the maximum set of cards in `tier0` is `4`.
+        If you request cards greater than the cards supported by the switch, the pod will never be scheduled. In the above example, if you specify `ibm.com/aiu_pf_tier0: 5` in your yaml, the pod will never be scheduled because the maximum set of cards in `tier0` was specified as `4`.
 
 1. `/opt/sentient/bin/aiu-query-devices` in the pod can be used to see the connectivity between the `AIUs` on the machine. You can also glean this from the env vars that are like `AIU_TIER_\d_SET_\d_RANK_\d`.
   
