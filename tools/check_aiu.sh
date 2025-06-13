@@ -19,12 +19,12 @@ cleanup() {
 trap cleanup EXIT SIGINT
 
 # Create backup .senlib.json if it doesn't exist
-if [ -f ~/.senlib.json ]; then
-  if [ ! -f ~/.senlib.json.bak ]; then
-    echo "Creating backup of ~/.senlib.json"
-    cp ~/.senlib.json ~/.senlib.json.bak
+if [ -f "$HOME"/.senlib.json ]; then
+  if [ ! -f "$HOME"/.senlib.json.bak ]; then
+    echo "Creating backup of $HOME/.senlib.json"
+    cp "$HOME"/.senlib.json "$HOME"/.senlib.json.bak
   else
-    echo "~/.senlib.json.bak already exists"
+    echo "$HOME/.senlib.json.bak already exists"
   fi
 fi
 
