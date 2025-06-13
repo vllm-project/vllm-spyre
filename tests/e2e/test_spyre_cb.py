@@ -9,13 +9,15 @@ from collections import deque
 from typing import Any
 
 import pytest
-from spyre_util import generate_cb_spyre_vllm_output, get_spyre_backend_list, get_spyre_model_list
+from spyre_util import (generate_cb_spyre_vllm_output, get_spyre_backend_list,
+                        get_spyre_model_list)
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor
 
 from vllm_spyre.v1.core.scheduler import ContinuousBatchingSpyreScheduler
+
 
 @pytest.mark.cb
 @pytest.mark.v1
