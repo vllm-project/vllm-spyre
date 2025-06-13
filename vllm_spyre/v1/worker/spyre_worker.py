@@ -398,7 +398,14 @@ class SpyreWorker(WorkerBaseV1):
         )
         self.execute_model(scheduler_output)
 
-        self.model_runner.tkv = 0  # type: ignore[union-attr]
+        model_runner.tkv = 0
+
+        # get the number or pages from the actual Spyre card after the warmup
+        # and set it accordingly in the model runner and the kv cache size
+        n_blocks_avail = self._get_num_blocks_available()
+        model_runner._set_free_blocks(num_blocks=n_blocks_avail)
+        model_runner.model.model._set_past_key_value_states(
+            num_blocks=n_blocks_avail)
 
         warmup_end_t = time.time()
         warmup_total_t = warmup_end_t - warmup_start_t
@@ -406,6 +413,52 @@ class SpyreWorker(WorkerBaseV1):
         logger.info("Warmup took %.3fs", warmup_total_t)
 
         maybe_override_signals_handler()
+
+    def _get_num_blocks_available(self) -> int:
+        """Function returns the number of available blocks/pages.
+        Will eventually contain a function in torch_sendnn which reads 
+        the actual value provided by the compiler for backend sendnn"""
+
+        max_batch_size = \
+            self.model_runner.vllm_config.scheduler_config.max_num_seqs
+        max_model_len = \
+            self.model_runner.vllm_config.scheduler_config.max_model_len
+        block_size = self.model_runner.BLOCK_SIZE  # type: ignore[union-attr]
+
+        min_req_num_blocks = max_model_len // block_size
+        # min_req_num_blocks is not enough blocks for the following test:
+        # tests/e2e/test_spyre_cb.py::test_scheduler_cb_steps_tkv
+        # [seqs_max_tokens4-prompts_lengths4-steps_add_reqs4-
+        # checked_steps4-256-False-2-eager-llama-194m]
+
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == 'sendnn':
+            # TODO: replace num_blocks_spyre by calling a function in
+            # torch_sendnn which returns the value set by the Spyre compiler
+            num_blocks_spyre = max_batch_size * min_req_num_blocks
+            assert num_blocks_spyre >= min_req_num_blocks, (
+                "Number of pages available on Spyre (%d) is not enough to "
+                "serve the current model (need at least %d pages)." %
+                (num_blocks_spyre, min_req_num_blocks))
+            max_concurrency_spyre = num_blocks_spyre * block_size \
+                / max_model_len
+            logger.info("Spyre KV cache size: %s tokens",
+                        num_blocks_spyre * block_size)
+            logger.info("Maximum concurrency for %s tokens per request: %.2fx",
+                        str(max_model_len), max_concurrency_spyre)
+            return num_blocks_spyre
+        else:  # dynamo backend 'eager'
+            # TODO: how do we get a meaningful value for CPU here
+            num_blocks_cpu = max_batch_size * min_req_num_blocks
+            assert num_blocks_cpu >= min_req_num_blocks, (
+                "Number of pages available on CPU (%d) is not enough to "
+                "serve the current model (need at least %d pages)." %
+                (num_blocks_cpu, min_req_num_blocks))
+            max_concurrency_cpu = num_blocks_cpu * block_size / max_model_len
+            logger.info("CPU KV cache size: %s tokens",
+                        num_blocks_cpu * block_size)
+            logger.info("Maximum concurrency for %s tokens per request: %.2fx",
+                        str(max_model_len), max_concurrency_cpu)
+            return num_blocks_cpu
 
     def _warmup_spyre_fixed_size(self, prompt_len, num_decode_tokens,
                                  special_token_ids, batch_size):

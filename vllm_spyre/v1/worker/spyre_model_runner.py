@@ -565,22 +565,20 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         super().__init__(vllm_config=vllm_config,
                          is_driver_worker=is_driver_worker)
 
-        max_batch_size = vllm_config.scheduler_config.max_num_seqs
-        max_model_len = vllm_config.scheduler_config.max_model_len
-
         # TODO: remove this limitation once we update the warm-up logic to
         # support batch_size=1
-        assert max_batch_size >= 2, "Currently, continuous batching needs " \
-            "config to set batch_size >= 2"
+        assert vllm_config.scheduler_config.max_num_seqs >= 2, "Currently, " \
+            "continuous batching needs config to set batch_size >= 2"
 
-        self.BLOCK_SIZE = 64
-        NUM_BLOCKS = max_batch_size * max_model_len // self.BLOCK_SIZE  # 64
+        self.BLOCK_SIZE = 64  # hardcoded Spyre constraint for now
 
         # TO DO: move to InputBatch
         self.req_ids2blocks: dict[str, deque[int]] = {}
         self.req_ids2left_pads: dict[str, int] = {}
         self.tkv: int = 0
-        self.free_blocks = deque([i for i in range(NUM_BLOCKS)])
+        # set self.free_blocks to the minimal value of 4 required for warmup
+        # is reset to the value returned by the Spyre compiler after warmup
+        self._set_free_blocks(num_blocks=4)
         self.dummy_req_ids2blocks: list[int] = []
 
         # TODO: Remove this once we can prefill and decode
@@ -594,6 +592,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             pin_memory=self.pin_memory,
             vocab_size=vllm_config.model_config.get_vocab_size(),
         )
+
+    def _set_free_blocks(self, num_blocks: int) -> None:
+        self.free_blocks = deque([i for i in range(num_blocks)])
 
     def _update_states(self, scheduler_output):
 
