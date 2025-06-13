@@ -579,7 +579,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.tkv: int = 0
         # only for heterogeneous tkv
         self.req_ids2tkv: dict[str, int] = {}
-        
+
         # set self.free_blocks to the minimal value of 4 required for warmup
         # is reset to the value returned by the Spyre compiler after warmup
         self._set_free_blocks(num_blocks=4)
@@ -597,8 +597,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         )
 
     def _set_free_blocks(self, num_blocks: int) -> None:
-        # block id 0 is reserved for padding block_table (make it rectangular)
-        self.free_blocks = deque([i for i in range(1, num_blocks)])
+        # block id 0 is used for padding block_table (make it rectangular),
+        # but the id can be reused to store actual token cache since block pads
+        #  will be skipped due according to the attention mask
+        self.free_blocks = deque([i for i in range(num_blocks)])
 
     def _prepare_prompt(self, _):
         raise NotImplementedError("Subclasses must implement _prepare_prompt")
