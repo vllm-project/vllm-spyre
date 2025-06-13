@@ -9,6 +9,7 @@ from vllm.v1.engine import EngineCoreOutputs
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request
 
+import vllm_spyre.envs as envs_spyre
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import CBSpyreModelRunnerOutput
 
@@ -136,8 +137,9 @@ class StaticBatchingSpyreScheduler(SpyreScheduler):
         ]
 
 
-class ContinuousBatchingHomogenTkvSpyreScheduler(SpyreScheduler):
-    """ Support of continuous batching with homogeneous tkv"""
+class ContinuousBatchingSpyreScheduler(SpyreScheduler):
+    """ Support of continuous batching with homogeneous or
+     heterogeneous tkv"""
 
     # inherited from V1 base scheduler but mypy needs to know the type
     running: list[Request]
@@ -218,96 +220,18 @@ class ContinuousBatchingHomogenTkvSpyreScheduler(SpyreScheduler):
             self.waiting) < self.max_num_running_reqs
         # check that there is space in the prefill batch
         cond2 = len(self.waiting) < max_prompt_batch_size
+
+        # conditions for homogeneous tkv only:
         # check that the prompt length does not exceed the current tkv
         cond3 = request.num_prompt_tokens <= self.tkv
         # check that the number of requested tokens can be served
         cond4 = request.max_tokens <= (max_context_len - self.tkv)
-        return start_new_batch or (cond1 and cond2 and cond3 and cond4)
 
-
-class ContinuousBatchingHeterogenTkvSpyreScheduler(SpyreScheduler):
-    """ Support of continuous batching with heterogeneous tkv"""
-    # inherited from V1 base scheduler but mypy needs to know the type
-    running: list[Request]
-
-    def __init__(self, *args, **kwargs) -> None:
-        # Initialize SpyreScheduler
-        super().__init__(*args, **kwargs)
-        print('Using ContinuousBatchingHeterogenTkvSpyreScheduler')
-        self.tkv = 0  # TODO ysc: replace with self.req_ids2tkv
-
-    def update_from_output(
-        self,
-        scheduler_output: SchedulerOutput,
-        model_runner_output: ModelRunnerOutput,
-    ) -> dict[int, EngineCoreOutputs]:
-        # Need an instance of CBSpyreModelRunnerOutput which holds the tkv value
-        assert isinstance(
-            model_runner_output, CBSpyreModelRunnerOutput
-        ), "Expecting an instance of CBSpyreModelRunnerOutput"
-        "when doing continuous batching."
-        # TODO ysc: replace with self.req_ids2tkv
-        self.tkv = model_runner_output.tkv
-        return super(SpyreScheduler,
-                     self).update_from_output(scheduler_output,
-                                              model_runner_output)
-
-    def schedule(self) -> "SchedulerOutput":
-        """This override adds constraints and then delegates most of the work
-        to the base scheduler
-
-        To avoid additional specialization, some requests are held back from the
-        base scheduler but are restored after.
-        """
-        # First purge the full waiting queue into our holdback queue, preserving
-        # priority
-        while self.waiting:
-            self.holdback_queue.append(self.waiting.popleft())
-
-        # Check if new requests can be scheduled.
-        while self.holdback_queue:
-            if self.can_schedule(self.holdback_queue[0]):
-                # Add request to the waiting queue
-                self.waiting.append(self.holdback_queue.popleft())
-            else:
-                # Otherwise, we simply stop here so that the scheduler
-                # can work with the batch we have
-                break
-
-        # Schedule Prefill and Decode separately
-        if len(self.waiting) > 0:
-            # For prefill, hide current decodes from the scheduler
-            running_holdback = self.running
-            self.running = []
-            logger.debug(
-                "Scheduling a prefill step of %d requests, holding back %d "
-                "requests", len(self.waiting), len(self.holdback_queue))
+        if envs_spyre.VLLM_SPYRE_HETEROGEN_TKV:
+            # heterogeneous tkv scheduling conditions
+            conds = [cond1, cond2]
         else:
-            running_holdback = []
-            logger.debug("Scheduling a decode step of %d requests",
-                         len(self.running))
+            # homogeneous tkv scheduling conditions
+            conds = [cond1, cond2, cond3, cond4]
 
-        # delegate to super of SpyreScheduler: base V1 Scheduler
-        outputs = super(SpyreScheduler, self).schedule()
-
-        # restore holdbacks after running the base scheduler
-        self.running = self.running + running_holdback
-        while self.holdback_queue:
-            self.waiting.append(self.holdback_queue.popleft())
-
-        return outputs
-
-    def can_schedule(self, request) -> bool:
-        max_prompt_batch_size = 1
-        # max_context_len = self.scheduler_config.max_model_len
-
-        # running and waiting queues are both empty -> start new batch
-        start_new_batch = len(self.running) + len(self.waiting) == 0
-        # check that there is space in the current decode batch
-        cond1 = len(self.running) + len(
-            self.waiting) < self.max_num_running_reqs
-        # check that there is space in the prefill batch
-        cond2 = len(self.waiting) < max_prompt_batch_size
-        # TODO ysc: additional conditions wrt max_context_len
-        # and self.req_ids2tkv
-        return start_new_batch or (cond1 and cond2)
+        return start_new_batch or all(conds)
