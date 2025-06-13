@@ -202,7 +202,7 @@ def get_params_test_blocks_borders_aligned_prompts():
         },
         {
             "step": 70,  # Decode sequence 2
-            "tkv": 67,
+            "tkv": 67,  # tkv is reset by 64 due to removing the padded block
             "waiting": [],
             "running": ["2"],
             "request_outputs": ["2"]
