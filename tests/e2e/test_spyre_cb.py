@@ -104,7 +104,6 @@ def test_cb_max_tokens(
     backend: str,
     max_num_seqs: int,
     cb: int,
-    # vllm_version: str,
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Test that continuous batches of requests that
