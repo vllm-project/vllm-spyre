@@ -91,6 +91,7 @@ def test_cb_handling(
                 for i in range(int(prompt.split()[-1]) - 1, 1, -1)) + " "
         ][0])
 
+
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
@@ -115,7 +116,6 @@ def test_cb_max_tokens(
     max_tokens = 20
 
     overflow_prompt = " ".join(["a"] * max_model_len)
-    valid_prompt = "a b c d e"
 
     vllm_sampling_params = SamplingParams(max_tokens=max_tokens,
                                           temperature=0,
@@ -136,6 +136,7 @@ def test_cb_max_tokens(
             use_cb=cb,
             monkeypatch=monkeypatch,
         )
+
 
 def create_random_request(
         request_id: int, num_tokens: int,
