@@ -98,9 +98,7 @@ def test_cb_handling(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 @pytest.mark.parametrize("cb",
                          [pytest.param(1, marks=pytest.mark.cb, id="cb")])
-# commenting v1 since we don't want this test to run with v1 marker yet
-# @pytest.mark.parametrize("vllm_version",
-#                          [pytest.param("V1", marks=pytest.mark.v1, id="v1")])
+# @pytest.mark.v1
 def test_cb_max_tokens(
     model: str,
     backend: str,
