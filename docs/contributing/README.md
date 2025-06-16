@@ -123,35 +123,64 @@ python -m pytest -v -x tests/e2e -m cb
 !!! tip
     You can actually `oc edit` a pod and change the image without having the pod schedule to a different node! (useful for testing if software or hardware is the issue).
 
-1. `Topology Aware Allocation`:
-      1. This mode supports users to request a special set of AIU cards based on `PCI` topology. By using this mode, we can guarantee to pick up AIU cards of a particular class in the node.  
-         - `Tier0` provides a set of cards in the same `PCI` switch.
-         - `Tier1` provides a set of cards from at most one-hop away `PCI` switch.
-         - `Tier2` provides a set of cards from at most two-hops away `PCI` switch.
-
-      2. Running a Multi AIU Job using `ibm.com/aiu_pf_tier0,tier1,tier2`:
-         - This resource type is used for picking up a topology aware card set, which is required to run tensor parallel (`TP`) workloads more effectively. By using `tierX` class resource, `TP` users can automatically get a best performing card set for the workload.
-
-      3. The maximum number of allocatable resources in each tier depends on the platform & cluster, but we can get up to:
-         - `Tier0` - `4` cards
-         - `Tier1` - `8` cards
-         - `Tier2` - `16` cards
+1. The script `/opt/sentient/bin/aiu-query-devices` in the pod can be used to see the connectivity between the `AIUs` on the machine. You can also infer this from environment variables with names like `AIU_TIER_\d_SET_\d_RANK_\d`.
   
-      4. Devices in `tier0` can do `peer-to-peer (P2P) RDMA`, devices on different trees use `Host DMA` sharing files through `/dev/shm`.
-
-    !!! warning
-        If you request cards greater than the cards supported by the switch, the pod will never be scheduled. In the above example, if you specify `ibm.com/aiu_pf_tier0: 5` in your yaml, the pod will never be scheduled because the maximum set of cards in `tier0` was specified as `4`.
-
-1. `/opt/sentient/bin/aiu-query-devices` in the pod can be used to see the connectivity between the `AIUs` on the machine. You can also infer this from environment variables with names like `AIU_TIER_\d_SET_\d_RANK_\d`.
+2. `SPYRE_DEVICES` can be used to select which devices will be selected for each `RANK`. This is similar to how `CUDA_VISIBLE_DEVICES` works for GPU.
   
-1. `SPYRE_DEVICES=2,3` can be used to select which devices will be selected for each `RANK`. This is similar to how `CUDA_VISIBLE_DEVICES` works for GPU.
-      1. An alternative is to use `AIU_WORLD_RANK_\d=0000:aa:00.0` to explicitly map ranks to `PCI` addresses (make sure there are no duplicates used at runtime).
-1. `DTLOG_LEVEL=INFO` (piped to file) can help you see what device addresses are actually in use. Look for the string `Opened: SEN:VFIO`.
-1. A bash script that uses `/opt/sentient/senlib/bin/senlib_unit_test` to check each `AIU` allocated to the pod to see if they work for a basic test:
+    !!! example
+        `0,2,4,6` will assign rank `0` to AIU index `0`, rank `1` to AIU index `2`, rank `2` to AIU index `4`, and rank `3` to AIU index `6`.
+  
+    - An alternative is to use `AIU_WORLD_RANK_\d=0000:aa:00.0` to explicitly map ranks to `PCI` addresses (make sure there are no duplicates used at runtime).
+  
+3. A bash script that uses `/opt/sentient/senlib/bin/senlib_unit_test` to check each `AIU` allocated to the pod to see if they work for a basic test:
   
     ```shell
     --8<-- "tools/check_aiu.sh"
     ```
+
+### Logging levels
+
+Various log levels that can be configured:
+
+- `DTLOG_LEVEL` - `TRACE, DEBUG, INFO, WARNING, ERROR`
+- `TORCH_SENDNN_LOG` - `WARNING, CRITICAL`
+- `VLLM_LOGGING_LEVEL` - `DEBUG, INFO, WARNING, ERROR`
+
+!!! tip
+    `DTLOG_LEVEL=INFO` (piped to file) can help you see what device addresses are actually in use. Look for the string `Opened: SEN:VFIO`.
+
+!!! tip
+    In order to stop massive log spew, this configuration is ideal:
+    ```
+    export DTLOG_LEVEL=ERROR
+    export TORCH_SENDNN_LOG=CRITICAL
+    ```
+
+### `Topology Aware Allocation`
+
+This section is specific to the AIU operator and scheduling workloads onto specific cards.
+
+(TODO: link to docs once they exist)
+
+1. This mode supports users to request a special set of AIU cards based on `PCI` topology. By using this mode, we can guarantee to pick up AIU cards of a particular class in the node:
+  
+    - `Tier0` provides a set of cards in the same `PCI` switch.
+    - `Tier1` provides a set of cards from at most one-hop away `PCI` switch.
+    - `Tier2` provides a set of cards from at most two-hops away `PCI` switch.
+
+2. Running a Multi AIU Job using `ibm.com/aiu_pf_tier0,tier1,tier2`:
+  
+    - This resource type is used for picking up a topology aware card set, which is required to run tensor parallel (`TP`) workloads more effectively. By using `tierX` class resource, `TP` users can automatically get a best performing card set for the workload.
+
+3. The maximum number of allocatable resources in each tier depends on the platform & cluster, but we can get up to:
+    - `Tier0` - `4` cards
+    - `Tier1` - `8` cards
+    - `Tier2` - `16` cards
+
+4. Devices in `tier0` can do `peer-to-peer (P2P) RDMA`, devices on different trees use `Host DMA` sharing files through `/dev/shm`.
+
+    !!! warning
+        If you request cards greater than the cards supported by the switch, the pod will never be scheduled. In the above example, if you specify `ibm.com/aiu_pf_tier0: 5` in your yaml, the pod will never be scheduled because the maximum set of cards in `tier0` was specified as `4`.
 
 ## Pull Requests
 
