@@ -121,7 +121,7 @@ python -m pytest -v -x tests/e2e -m cb
 ## Debugging
 
 !!! tip
-    You can actually `oc edit` a pod and change the image without having the pod schedule to a different node! (useful for testing if software or hardware is the issue).
+    You can `oc edit` a pod and change the image without having the pod schedule to a different node. This can be useful for testing whether software or hardware is the issue.
 
 - The script `/opt/sentient/bin/aiu-query-devices` in the pod can be used to see the connectivity between the `AIUs` on the machine. You can also infer this from environment variables with names like `AIU_TIER_\d_SET_\d_RANK_\d`.
   
