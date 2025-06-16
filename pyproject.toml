@@ -144,6 +144,7 @@ plugins.md024.allow_different_nesting = true # no-duplicate-headers
 [dependency-groups]
 dev = [
     "pytest==8.3.4",
+    "pytest-asyncio>=1.0.0",
     "pytest-forked==1.6.0",
     "pytest-timeout==2.3.1",
     "requests==2.32.3",
