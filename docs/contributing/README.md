@@ -126,7 +126,7 @@ python -m pytest -v -x tests/e2e -m cb
 1. `Topology Aware Allocation`:
       1. This mode supports users to request a special set of AIU cards based on `PCI` topology. By using this mode, we can guarantee to pick up AIU cards of a particular class in the node.  
          - `Tier0` provides a set of cards in the same `PCI` switch.
-         - `Tier1` provides a set of cards from at most on-hop away `PCI` switch.
+         - `Tier1` provides a set of cards from at most one-hop away `PCI` switch.
          - `Tier2` provides a set of cards from at most two-hops away `PCI` switch.
 
       2. Running a Multi AIU Job using `ibm.com/aiu_pf_tier0,tier1,tier2`:
@@ -142,7 +142,7 @@ python -m pytest -v -x tests/e2e -m cb
     !!! warning
         If you request cards greater than the cards supported by the switch, the pod will never be scheduled. In the above example, if you specify `ibm.com/aiu_pf_tier0: 5` in your yaml, the pod will never be scheduled because the maximum set of cards in `tier0` was specified as `4`.
 
-1. `/opt/sentient/bin/aiu-query-devices` in the pod can be used to see the connectivity between the `AIUs` on the machine. You can also glean this from the env vars that are like `AIU_TIER_\d_SET_\d_RANK_\d`.
+1. `/opt/sentient/bin/aiu-query-devices` in the pod can be used to see the connectivity between the `AIUs` on the machine. You can also infer this from environment variables with names like `AIU_TIER_\d_SET_\d_RANK_\d`.
   
 1. `SPYRE_DEVICES=2,3` can be used to select which devices will be selected for each `RANK`. This is similar to how `CUDA_VISIBLE_DEVICES` works for GPU.
       1. An alternative is to use `AIU_WORLD_RANK_\d=0000:aa:00.0` to explicitly map ranks to `PCI` addresses (make sure there are no duplicates used at runtime).
