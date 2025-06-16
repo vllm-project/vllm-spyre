@@ -101,6 +101,4 @@ This example shows how to use KServe with RHOAI to deploy a model on OpenShift, 
       EOF
       ```
 
-3. Test your InferenceService
-
-    Refer to the [KServe documentation on model inference with vLLM](https://kserve.github.io/website/latest/modelserving/v1beta1/llm/huggingface/text_generation/#perform-model-inference_1).
+3. To test your InferenceService, refer to the [KServe documentation on model inference with vLLM](https://kserve.github.io/website/latest/modelserving/v1beta1/llm/huggingface/text_generation/#perform-model-inference_1).
