@@ -115,6 +115,10 @@ async def test_abort(
                 max_num_seqs=8,
                 block_size=2048,
             ))
+        has_unfinished_requests = \
+            engine.output_processor.has_unfinished_requests \
+            if isinstance(engine, AsyncLLM) \
+            else engine.engine.has_unfinished_requests
         after.callback(engine.shutdown if isinstance(engine, AsyncLLM) else
                        engine.shutdown_background_loop)
 
@@ -158,7 +162,7 @@ async def test_abort(
                     f"expected {expected_tokens}")
 
         # Make sure all aborted requests were really aborted
-        assert not engine.output_processor.has_unfinished_requests()
+        assert not has_unfinished_requests()
 
         # Confirm that the server is still up and functioning
         request_id = f"request-{REQUEST_IDS_TO_ABORT[0]}"
@@ -167,4 +171,4 @@ async def test_abort(
                      NUM_EXPECTED_TOKENS))
         num_generated_tokens, request_id = await task
         assert num_generated_tokens == NUM_EXPECTED_TOKENS
-        assert not engine.output_processor.has_unfinished_requests()
+        assert not has_unfinished_requests()
