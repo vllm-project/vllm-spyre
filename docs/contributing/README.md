@@ -123,16 +123,16 @@ python -m pytest -v -x tests/e2e -m cb
 !!! tip
     You can actually `oc edit` a pod and change the image without having the pod schedule to a different node! (useful for testing if software or hardware is the issue).
 
-1. The script `/opt/sentient/bin/aiu-query-devices` in the pod can be used to see the connectivity between the `AIUs` on the machine. You can also infer this from environment variables with names like `AIU_TIER_\d_SET_\d_RANK_\d`.
+- The script `/opt/sentient/bin/aiu-query-devices` in the pod can be used to see the connectivity between the `AIUs` on the machine. You can also infer this from environment variables with names like `AIU_TIER_\d_SET_\d_RANK_\d`.
   
-2. `SPYRE_DEVICES` can be used to select which devices will be selected for each `RANK`. This is similar to how `CUDA_VISIBLE_DEVICES` works for GPU.
+- `SPYRE_DEVICES` can be used to select which devices will be selected for each `RANK`. This is similar to how `CUDA_VISIBLE_DEVICES` works for GPU.
   
     !!! example
         `0,2,4,6` will assign rank `0` to AIU index `0`, rank `1` to AIU index `2`, rank `2` to AIU index `4`, and rank `3` to AIU index `6`.
   
-   - An alternative is to use `AIU_WORLD_RANK_\d=0000:aa:00.0` to explicitly map ranks to `PCI` addresses (make sure there are no duplicates used at runtime).
+    - An alternative is to use `AIU_WORLD_RANK_\d=0000:aa:00.0` to explicitly map ranks to `PCI` addresses (make sure there are no duplicates used at runtime).
   
-3. A bash script that uses `/opt/sentient/senlib/bin/senlib_unit_test` to check each `AIU` allocated to the pod to see if they work for a basic test:
+- A bash script that uses `/opt/sentient/senlib/bin/senlib_unit_test` to check each `AIU` allocated to the pod to see if they work for a basic test:
   
     ```shell
     --8<-- "tools/check_aiu.sh"
