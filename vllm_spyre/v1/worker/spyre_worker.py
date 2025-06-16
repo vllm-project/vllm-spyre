@@ -247,9 +247,6 @@ class SpyreWorker(WorkerBaseV1):
 
     def initialize_cache(self, num_gpu_blocks: int,
                          num_cpu_blocks: int) -> None:
-        """Initialize the KV cache.
-        """
-
         self.cache_config.num_gpu_blocks = num_gpu_blocks
         self.cache_config.num_cpu_blocks = num_cpu_blocks
 
