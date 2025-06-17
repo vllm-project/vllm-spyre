@@ -13,7 +13,7 @@ from vllm.utils import is_pin_memory_available
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.outputs import SamplerOutput
 
-# from vllm_spyre.model_executor.model_loader.spyre import SpyreCausalLM
+from vllm_spyre.model_executor.model_loader.spyre import SpyreCausalLM
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_input_batch import (CachedRequestState,
                                                     InputBatch)
@@ -109,11 +109,6 @@ class SpyreModelRunner:
 
     def load_model(self, prompt_lens: Iterable[int],
                    num_decode_tokens: Iterable[int]) -> None:
-        # Lazy import to avoid load torch_sendnn runtime before it is really
-        # necessary. This solve issues of running forked tests that share
-        # some resources from parent to children which can have problems
-        # of caching even though the test run in isolated subprocesses.
-        from vllm_spyre.model_executor.model_loader.spyre import SpyreCausalLM
         max_pad_length = max(prompt_lens)
         max_decode_length = max(num_decode_tokens)
         self.model = SpyreCausalLM(
