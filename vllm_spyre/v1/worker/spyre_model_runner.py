@@ -1134,7 +1134,7 @@ class ContinuousBatchingHeterogenTkvSpyreModelRunner(
         input_tokens, position_ids, mask =\
             self.pad_input_ids(input_token_list,
                                min_pad_length=block_padding,
-                               req_id=new_requests[0].req_id)
+                               padding_side="left")
         mask = mask.unsqueeze(1)
 
         # not needed for prefill
@@ -1252,64 +1252,74 @@ class ContinuousBatchingHeterogenTkvSpyreModelRunner(
         self,
         input_ids_list: list[torch.Tensor],
         min_pad_length: int = 0,
-        req_id: str = "",
+        padding_side: str = "left",  # "left" or "right"
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        # TODO ysc: discuss with compiler team: do we want to left or right
-        # pad to have prefills a multiple of 64? currently left
-        # (although implemented, right padding is not happening atm)
-        # left padding to align with tkv of current decode batch
+        '''This function applies left/right padding to next block boundary.
+        Prefils have to be multiples of block size (64) on Spyre
+        '''
+        assert padding_side in {"left", "right"}
+
+        # apply left padding to input_tokens, position_ids and mask
+
+        # padding_side == "left": left padding to next block boundary
+        # else if "right": not applying any padding, only constructs tensors
+        min_pad_length_left = min_pad_length if padding_side == "left" else -1
+
         input_tokens_left, position_ids_left, mask_left =\
             super(ContinuousBatchingSpyreModelRunner, self).pad_input_ids(
-                input_ids_list, min_pad_length=self.req_ids2tkv[req_id])
+                input_ids_list, min_pad_length=min_pad_length_left)
 
-        # right padding to align with the next block boundary
         left_pad_len = input_tokens_left.shape[1]
+        n_pads_left = left_pad_len - len(input_ids_list[0])
         n_pads_right = min_pad_length - left_pad_len
 
-        assert n_pads_right == 0
-
-        # set number of right pads for the next model forward pass:
-        # need to be excluded before sampling tokens
-        self.model.n_pads_right = n_pads_right
-
-        if n_pads_right > 0:
-            # apply right padding to input_tokens, position_ids and mask
-            logger.info(
-                "Right padding request of length %d tokens to %d tokens.",
-                left_pad_len, min_pad_length)
-
-            input_tokens_right = torch.tensor(
-                [[self.pad_token_id for i in range(n_pads_right)]],
-                device=input_tokens_left.device,
-                dtype=input_tokens_left.dtype)
-            input_tokens = torch.concat(
-                (input_tokens_left, input_tokens_right), dim=1)
-
-            # Note: same output with i as padding for position ids
-            pos_start = position_ids_left[0][-1] + 1
-            position_ids_right = torch.tensor(
-                [[0 for i in range(pos_start, pos_start + n_pads_right)]],
-                device=position_ids_left.device,
-                dtype=position_ids_left.dtype)
-            position_ids = torch.concat(
-                (position_ids_left, position_ids_right), dim=1)
-
-            # pad left padded mask with -inf to the next block boundary
-            mask = torch.nn.functional.pad(mask_left,
-                                           (0, n_pads_right, 0, n_pads_right),
-                                           value=-torch.inf)
-
-            # lower triangle: 0.0, upper triangle -inf
-            mask_pads = torch.zeros(n_pads_right, n_pads_right)
-            mask_pads[~torch.tril(torch.ones(n_pads_right, n_pads_right)).bool(
-            )] = float('-inf')
-
-            # insert triangular matrix for right pads
-            mask[:, -n_pads_right:, -n_pads_right:] = mask_pads.unsqueeze(0)
+        if padding_side == "left":
+            assert n_pads_right == 0
+            assert left_pad_len == min_pad_length
+            return input_tokens_left, position_ids_left, mask_left
         else:
-            # no right padding needed
-            input_tokens = input_tokens_left
-            position_ids = position_ids_left
-            mask = mask_left
+            assert n_pads_left == 0
+            # update number of right pads for the next model forward pass:
+            # need to be excluded before sampling tokens
+            self.model.n_pads_right = n_pads_right
+            if n_pads_right == 0:
+                # in case when prompt is a multiple of the block size (64)
+                # no right padding is required and we can exit here
+                return input_tokens_left, position_ids_left, mask_left
 
-        return input_tokens, position_ids, mask
+        # apply right padding to input_tokens, position_ids and mask
+        logger.info("Right padding request of length %d tokens to %d tokens.",
+                    left_pad_len, min_pad_length)
+
+        input_tokens_pads = torch.tensor(
+            [[self.pad_token_id for i in range(n_pads_right)]],
+            device=input_tokens_left.device,
+            dtype=input_tokens_left.dtype)
+        input_tokens_right = torch.concat(
+            (input_tokens_left, input_tokens_pads), dim=1)
+
+        # Note: same output with i as padding for position ids
+        pos_start = position_ids_left[0][-1] + 1
+        position_ids_pads = torch.tensor(
+            [[0 for i in range(pos_start, pos_start + n_pads_right)]],
+            device=position_ids_left.device,
+            dtype=position_ids_left.dtype)
+        position_ids_right = torch.concat(
+            (position_ids_left, position_ids_pads), dim=1)
+
+        # pad left padded mask with -inf to the next block boundary
+        mask_right = torch.nn.functional.pad(
+            mask_left, (0, n_pads_right, 0, n_pads_right), value=-torch.inf)
+
+        # lower triangle: 0.0, upper triangle -inf
+        mask_pads = torch.zeros(n_pads_right, n_pads_right)
+        mask_pads[~torch.tril(torch.ones(n_pads_right, n_pads_right)).bool(
+        )] = float('-inf')
+
+        # insert triangular matrix for right pads
+        mask_right[:, -n_pads_right:, -n_pads_right:] = mask_pads.unsqueeze(0)
+
+        right_pad_len = input_tokens_right.shape[1]
+        assert right_pad_len == min_pad_length
+
+        return input_tokens_right, position_ids_right, mask_right
