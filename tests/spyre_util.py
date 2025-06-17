@@ -1,3 +1,4 @@
+import inspect
 import math
 import os
 import subprocess
@@ -15,6 +16,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, SamplingParams
 from vllm.entrypoints.openai.cli_args import make_arg_parser
 from vllm.utils import FlexibleArgumentParser, get_open_port
+from vllm.v1.engine import EngineCoreRequest
 
 DISABLE_ASSERTS = False  # used for debugging
 
@@ -537,6 +539,41 @@ def create_text_prompt(model: str, min_tokens: int, max_tokens: int) -> str:
     assert min_tokens < len(tokenizer.encode(prompt)) < max_tokens
 
     return prompt
+
+
+def create_random_request(
+        request_id: int, num_tokens: int,
+        sampling_params: SamplingParams) -> EngineCoreRequest:
+
+    # Temporary until 'data_parallel_rank' parameter makes it to
+    # a release version in vllm
+    if "data_parallel_rank" in [
+            x[0] for x in inspect.getmembers(EngineCoreRequest)
+    ]:
+        return EngineCoreRequest(
+            request_id=str(request_id),
+            prompt_token_ids=[request_id] * num_tokens,
+            mm_inputs=None,
+            mm_hashes=None,
+            mm_placeholders=None,
+            sampling_params=sampling_params,
+            eos_token_id=None,
+            arrival_time=0,
+            lora_request=None,
+            cache_salt=None,
+            data_parallel_rank=None,
+        )
+    else:
+        return EngineCoreRequest(request_id=str(request_id),
+                                 prompt_token_ids=[request_id] * num_tokens,
+                                 mm_inputs=None,
+                                 mm_hashes=None,
+                                 mm_placeholders=None,
+                                 sampling_params=sampling_params,
+                                 eos_token_id=None,
+                                 arrival_time=0,
+                                 lora_request=None,
+                                 cache_salt=None)
 
 
 def skip_unsupported_tp_size(size: int):
