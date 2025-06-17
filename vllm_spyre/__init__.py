@@ -1,6 +1,9 @@
+import importlib.metadata
 from logging.config import dictConfig
 
 from vllm.logger import DEFAULT_LOGGING_CONFIG
+
+__version__ = importlib.metadata.version("vllm_spyre")
 
 
 def register():

@@ -1,6 +1,6 @@
 """Verification of Spyre warmup shapes
 
-Run `python -m pytest tests/test_spyre_warmup_shapes.py`.
+Run `python -m pytest tests/e2e/test_spyre_warmup_shapes.py`.
 """
 
 import pytest

@@ -1,12 +1,12 @@
 """Verification of vLLM output by comparing with HF
 
-Run `python -m pytest tests/test_spyre_tensor_parallel.py`.
+Run `python -m pytest tests/e2e/test_spyre_tensor_parallel.py`.
 """
 
 import pytest
 from spyre_util import (VLLM_VERSIONS, compare_results, generate_hf_output,
                         generate_spyre_vllm_output, get_spyre_backend_list,
-                        get_spyre_model_list)
+                        get_spyre_model_list, skip_unsupported_tp_size)
 from vllm import SamplingParams
 
 
@@ -21,7 +21,7 @@ from vllm import SamplingParams
     "warmup_shapes",
     [[(64, 20, 4)]])  #,[(64,20,8)],[(128,20,4)],[(128,20,8)]])
 # (prompt_length/new_tokens/batch_size)
-@pytest.mark.parametrize("tp_size", [2])
+@pytest.mark.parametrize("tp_size", [2, 4, 8])
 @pytest.mark.parametrize(
     "backend", [b for b in get_spyre_backend_list() if "eager" not in str(b)])
 @pytest.mark.parametrize("vllm_version", VLLM_VERSIONS)
@@ -46,6 +46,7 @@ def test_output(
     test using 'pytest --capture=no tests/spyre/test_spyre_tensore_parallel.py'
     After debugging, DISABLE_ASSERTS should be reset to 'False'.
     '''
+    skip_unsupported_tp_size(tp_size)
 
     max_new_tokens = max([t[1] for t in warmup_shapes])
 

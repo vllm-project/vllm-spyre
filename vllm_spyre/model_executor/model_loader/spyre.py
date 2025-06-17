@@ -22,17 +22,12 @@ from vllm.model_executor.sampling_metadata import SamplingMetadata
 import vllm_spyre.envs as envs_spyre
 
 try:
-    from torch_sendnn import torch_sendnn  # noqa: F401
-except ImportError:
-    print("WARNING: Disabled: torch_sendnn")
-    pass
-try:
     import backends.dynamo_tracer  # noqa: F401
 except ImportError:
     print("WARNING: Disabled: dynamo_tracer")
     pass
 
-BACKEND_LIST = ['sendnn_decoder', 'inductor']
+BACKEND_LIST = ['sendnn', 'inductor']
 
 logger = init_logger(__name__)
 
@@ -97,7 +92,7 @@ class SpyreCausalLM(nn.Module):
             self.model.past_key_value_states = None  # type: ignore
 
         extra_kwargs: dict[str, Any] = {}
-        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn_decoder":
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn":
             # Bug in 2.3.1 fixed in 2.4.1 for SDPA flash
             # cpu impl when padding too much
             extra_kwargs["attn_algorithm"] = "math"
@@ -162,7 +157,7 @@ class FmsModelBase(nn.Module):
 
         self.config: PretrainedConfig = model_config.hf_config
         self.dtype = torch.float16 if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == \
-            'sendnn_decoder' else torch.float32
+            'sendnn' else torch.float32
 
         # Actual FMS model
         self.model: nn.Module
@@ -186,7 +181,7 @@ class FmsModelBase(nn.Module):
     ) -> None:
 
         if model_config.quantization == "gptq":
-            if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
+            if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
                 from fms_mo.aiu_addons.gptq import (  # noqa: F401
                     gptq_aiu_adapter, gptq_aiu_linear)
                 linear_type = "gptq_aiu"
@@ -224,7 +219,7 @@ class FmsModelBase(nn.Module):
                 revision=model_config.revision)
 
         # we can use fused weights unless running on Spyre
-        fused_weights = envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn_decoder"
+        fused_weights = envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn"
 
         self.model = get_model(architecture="hf_configured",
                                variant=model_config.model,
@@ -271,6 +266,15 @@ class FmsModelBase(nn.Module):
 
             options = {"sendnn.dynamic": True} if sendnn_dynamic else {}
 
+            # Lazy import to avoid load torch_sendnn runtime before it is really
+            # necessary. This solve issues of running forked tests that share
+            # some resources from parent to children which can have problems
+            # of caching even though the test run in isolated subprocesses.
+            try:
+                from torch_sendnn import torch_sendnn  # noqa: F401
+            except ImportError:
+                print("WARNING: Disabled: torch_sendnn")
+
             self.model = torch.compile(
                 self.model,
                 backend=envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND,
@@ -287,8 +291,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         scheduler_config: SchedulerConfig,
     ) -> None:
 
-        BLOCK_SIZE = 64
-        max_batch = scheduler_config.max_num_seqs
+        BLOCK_SIZE = 64  # hardcoded Spyre constraint for now
         max_model_len = scheduler_config.max_model_len
 
         # edge case: prompt fills model length: can produce 1 token with prefill
@@ -304,35 +307,50 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                          sendnn_dynamic=True)
 
         # physical KV cache on AIU Spyre: will eventually not live in this class
-        num_kv_heads = model_config.get_num_kv_heads(parallel_config)
+        self.kv_cache_specs = {}
+        self.kv_cache_specs['block_size'] = BLOCK_SIZE
+        self.kv_cache_specs['num_kv_heads'] = model_config.get_num_kv_heads(
+            parallel_config)
 
         if self.config.model_type in {'llama', 'granite'}:
-            num_layers = self.config.num_hidden_layers
-            head_dim = self.config.hidden_size // \
+            self.kv_cache_specs['num_layers'] = self.config.num_hidden_layers
+            self.kv_cache_specs['head_dim'] = self.config.hidden_size // \
                 self.config.num_attention_heads
         elif self.config.model_type == 'gpt_bigcode':
-            num_layers = self.config.n_layer
-            head_dim = self.config.n_embd // self.config.n_head
+            self.kv_cache_specs['num_layers'] = self.config.n_layer
+            self.kv_cache_specs[
+                'head_dim'] = self.config.n_embd // self.config.n_head
         else:
             raise NotImplementedError(
                 f"[SpyreCausalLM] model type {self.config.model_type} "
                 f"not supported in ContinuousBatchingFmsModel")
 
-        num_blocks = max_batch * max_model_len // BLOCK_SIZE  # 64
+        # set num_blocks to the minimal value of 4 required for warmup
+        # is reset to the value returned by the Spyre compiler after warmup
+        self._set_past_key_value_states(num_blocks=4)
 
+        # mark the num_blocks dimension dynamic for Spyre compiler for warmup
+        # only, compiler will return the number of blocks it can accommodate
+        for layer in self.past_key_value_states:
+            for tensor in layer:
+                torch._dynamo.mark_dynamic(tensor, 0)
+
+    def _set_past_key_value_states(self, num_blocks) -> None:
         # List[layers] of Tuple[k,v] of
-        # Tensor[num_blocks, BLOCK_SIZE, num_kv_heads, head_dim]
-        self.past_key_value_states = [(torch.zeros(num_blocks,
-                                                   BLOCK_SIZE,
-                                                   num_kv_heads,
-                                                   head_dim,
-                                                   dtype=self.dtype),
-                                       torch.zeros(num_blocks,
-                                                   BLOCK_SIZE,
-                                                   num_kv_heads,
-                                                   head_dim,
-                                                   dtype=self.dtype))
-                                      for _ in range(num_layers)]
+        # Tensor[num_blocks, block_size, num_kv_heads, head_dim]
+        self.past_key_value_states = [
+            (torch.zeros(num_blocks,
+                         self.kv_cache_specs['block_size'],
+                         self.kv_cache_specs['num_kv_heads'],
+                         self.kv_cache_specs['head_dim'],
+                         dtype=self.dtype),
+             torch.zeros(num_blocks,
+                         self.kv_cache_specs['block_size'],
+                         self.kv_cache_specs['num_kv_heads'],
+                         self.kv_cache_specs['head_dim'],
+                         dtype=self.dtype))
+            for _ in range(self.kv_cache_specs['num_layers'])
+        ]
 
     def forward(
         self,

@@ -1,12 +1,15 @@
 """A Spyre worker class."""
+import contextlib
 import json
 import os
 import platform
+import signal
 import time
 from typing import Optional, Union, cast
 
 import torch
 import torch.distributed as dist
+import vllm.envs as envs
 from huggingface_hub import hf_hub_download
 from vllm.config import VllmConfig
 from vllm.distributed import (ensure_model_parallel_initialized,
@@ -31,6 +34,16 @@ from vllm_spyre.v1.worker.spyre_model_runner import (
 logger = init_logger(__name__)
 
 
+@contextlib.contextmanager
+def _maybe_warmup_context():
+    warmup_context = contextlib.nullcontext
+    if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
+        from torch_sendnn import warmup_mode
+        warmup_context = warmup_mode
+    with warmup_context():
+        yield
+
+
 class SpyreWorker(WorkerBaseV1):
     """A worker class that executes the model on a group of Spyre cores.
     """
@@ -53,13 +66,11 @@ class SpyreWorker(WorkerBaseV1):
             self._warmup_spyre_dynamic_size(self.restricted_tokens)
             return
 
-        wup_prompt_lens, wup_new_tokens = zip(
-            *[(s["prompt_length"], s["new_tokens"])
-              for s in self.spyre_warmup_shapes])
-
+        num_shape_combinations = len(self.spyre_warmup_shapes)
         logger.info(
             "Start warming up %d different "
-            "prompt/decode/batchsize-shape combinations.", len(wup_new_tokens))
+            "prompt/decode/batchsize-shape combinations.",
+            len(self.spyre_warmup_shapes))
         all_warmup_start_t = time.time()
         for i, (prompt_len, num_decode_tokens, batch_size) in enumerate([
             (s["prompt_length"], s["new_tokens"], s["batch_size"])
@@ -74,7 +85,7 @@ class SpyreWorker(WorkerBaseV1):
             # warmup individual combination
             logger.info(
                 "Warmup %d/%d prompt/decode/batchsize-shape "
-                "combinations...", i + 1, len(wup_new_tokens))
+                "combinations...", i + 1, num_shape_combinations)
             logger.info(
                 "Warming up for prompt length %d, decoding %d tokens with "
                 "batch size %d", prompt_len, num_decode_tokens, batch_size)
@@ -88,7 +99,7 @@ class SpyreWorker(WorkerBaseV1):
         logger.info(
             "All warmups for %d different prompt/decode/batchsize-shape "
             "combinations finished. Total warmup time %.3fs.",
-            len(wup_new_tokens), all_warmup_total_t)
+            num_shape_combinations, all_warmup_total_t)
         self.model_runner.complete_warmup()
 
     def check_health(self) -> None:
@@ -162,6 +173,31 @@ class SpyreWorker(WorkerBaseV1):
                 self.spyre_warmup_shapes = SpyrePlatform.get_warmup_shapes(
                     self.vllm_config.scheduler_config)
         self._env_initialized = False
+        # Torch profiler. Enabled and configured through env vars:
+        # VLLM_TORCH_PROFILER_DIR=/path/to/save/trace
+        if envs.VLLM_TORCH_PROFILER_DIR:
+            torch_profiler_trace_dir = envs.VLLM_TORCH_PROFILER_DIR
+            activities = [torch.profiler.ProfilerActivity.CPU]
+
+            if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
+                from torch_sendnn import torch_sendnn
+                torch.utils.rename_privateuse1_backend("aiu")
+                torch._register_device_module("aiu",
+                                              torch_sendnn.sendnn_backend)
+                torch.utils.generate_methods_for_privateuse1_backend()
+                activities.append(torch.profiler.ProfilerActivity.PrivateUse1)
+
+            self.profiler = torch.profiler.profile(
+                activities=activities,
+                record_shapes=True,
+                with_stack=True,
+                on_trace_ready=torch.profiler.tensorboard_trace_handler(
+                    torch_profiler_trace_dir, use_gzip=True))
+            print(
+                "[SpyreWorker] Profiling enabled. Traces will be saved to: %s",
+                torch_profiler_trace_dir)
+        else:
+            self.profiler = None
 
     def init_distributed_environment(self) -> None:
         """Initialize the distributed environment."""
@@ -169,9 +205,7 @@ class SpyreWorker(WorkerBaseV1):
         torch._C._distributed_c10d._register_process_group(
             "default", dist.group.WORLD)
 
-        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in [
-                "sendnn", "sendnn_decoder"
-        ]:
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
             spyre_setup.spyre_dist_setup(
                 rank=self.rank,
                 world_size=self.parallel_config.world_size,
@@ -198,10 +232,8 @@ class SpyreWorker(WorkerBaseV1):
 
             if self.parallel_config.world_size > 1:
                 self.init_distributed_environment()
-            elif envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in [
-                    "sendnn", "sendnn_decoder"
-            ]:
-                spyre_setup.spyre_setup(rank=0, world_size=1, verbose=True)
+            elif envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
+                spyre_setup.spyre_setup()
 
             ensure_model_parallel_initialized(
                 self.parallel_config.tensor_parallel_size,
@@ -212,6 +244,11 @@ class SpyreWorker(WorkerBaseV1):
 
         # Set random seed.
         set_random_seed(self.model_config.seed)
+
+    def initialize_cache(self, num_gpu_blocks: int,
+                         num_cpu_blocks: int) -> None:
+        self.cache_config.num_gpu_blocks = num_gpu_blocks
+        self.cache_config.num_cpu_blocks = num_cpu_blocks
 
     def load_model(self):
         assert self._env_initialized
@@ -344,7 +381,9 @@ class SpyreWorker(WorkerBaseV1):
             grammar_bitmask=None,
         )
         logger.info("Warmup decode 1/1...")
-        self.execute_model(scheduler_output)
+
+        with _maybe_warmup_context():
+            self.execute_model(scheduler_output)
 
         # Needed to clean up the data of model runner
         scheduler_output = SchedulerOutput(
@@ -364,21 +403,67 @@ class SpyreWorker(WorkerBaseV1):
         )
         self.execute_model(scheduler_output)
 
-        self.model_runner.tkv = 0  # type: ignore[union-attr]
+        model_runner.tkv = 0
 
-        # update lazyhandle (once)
-        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
-            from torch_sendnn import torch_sendnn
-            ul_start_time = time.time()
-            torch_sendnn.update_lazyhandle()
-            ul_stop_time = time.time()
-            logger.info("update_lazyhandle() done (duration: %.3fs)",
-                        ul_stop_time - ul_start_time)
+        # get the number or pages from the actual Spyre card after the warmup
+        # and set it accordingly in the model runner and the kv cache size
+        n_blocks_avail = self._get_num_blocks_available()
+        model_runner._set_free_blocks(num_blocks=n_blocks_avail)
+        model_runner.model.model._set_past_key_value_states(
+            num_blocks=n_blocks_avail)
 
         warmup_end_t = time.time()
         warmup_total_t = warmup_end_t - warmup_start_t
         logger.info("Warmup finished.")
         logger.info("Warmup took %.3fs", warmup_total_t)
+
+        maybe_override_signals_handler()
+
+    def _get_num_blocks_available(self) -> int:
+        """Function returns the number of available blocks/pages.
+        Will eventually contain a function in torch_sendnn which reads 
+        the actual value provided by the compiler for backend sendnn"""
+
+        max_batch_size = \
+            self.model_runner.vllm_config.scheduler_config.max_num_seqs
+        max_model_len = \
+            self.model_runner.vllm_config.scheduler_config.max_model_len
+        block_size = self.model_runner.BLOCK_SIZE  # type: ignore[union-attr]
+
+        min_req_num_blocks = max_model_len // block_size
+        # min_req_num_blocks is not enough blocks for the following test:
+        # tests/e2e/test_spyre_cb.py::test_scheduler_cb_steps_tkv
+        # [seqs_max_tokens4-prompts_lengths4-steps_add_reqs4-
+        # checked_steps4-256-False-2-eager-llama-194m]
+
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == 'sendnn':
+            # TODO: replace num_blocks_spyre by calling a function in
+            # torch_sendnn which returns the value set by the Spyre compiler
+            num_blocks_spyre = max_batch_size * min_req_num_blocks
+            assert num_blocks_spyre >= min_req_num_blocks, (
+                "Number of pages available on Spyre (%d) is not enough to "
+                "serve the current model (need at least %d pages)." %
+                (num_blocks_spyre, min_req_num_blocks))
+            max_concurrency_spyre = num_blocks_spyre * block_size \
+                / max_model_len
+            logger.info("Spyre KV cache size: %s tokens",
+                        num_blocks_spyre * block_size)
+            logger.info("Maximum concurrency for %s tokens per request: %.2fx",
+                        str(max_model_len), max_concurrency_spyre)
+            return num_blocks_spyre
+        else:  # dynamo backend 'eager'
+            # TODO: how do we get a meaningful value for CPU here
+            num_blocks_cpu = max_batch_size * min_req_num_blocks
+            assert num_blocks_cpu >= min_req_num_blocks, (
+                "Number of pages available on CPU (%d) is not enough to "
+                "serve the current model (need at least %d pages)." %
+                (num_blocks_cpu, min_req_num_blocks))
+            max_concurrency_cpu = num_blocks_cpu * block_size / max_model_len
+            logger.info("CPU KV cache size: %s tokens",
+                        num_blocks_cpu * block_size)
+            logger.info("Maximum concurrency for %s tokens per request: %.2fx",
+                        str(max_model_len), max_concurrency_cpu)
+            return num_blocks_cpu
 
     def _warmup_spyre_fixed_size(self, prompt_len, num_decode_tokens,
                                  special_token_ids, batch_size):
@@ -402,14 +487,6 @@ class SpyreWorker(WorkerBaseV1):
         # Sample from the valid token ids
         warmup_tokens_tensor = valid_token_ids_tensor[torch.randint(
             0, len(valid_token_ids_tensor), (batch_size, prompt_len))]
-
-        extra_kwargs = {}
-        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND not in [
-                "sendnn", "sendnn_decoder"
-        ]:
-            # Bug in 2.3.1 fixed in 2.4.1 for SDPA flash cpu
-            # impl when padding too much
-            extra_kwargs["attn_algorithm"] = "math"
 
         # Set up dummy requests for prefill steps
         dummy_requests = [
@@ -459,27 +536,14 @@ class SpyreWorker(WorkerBaseV1):
 
         # First full forward pass
         logger.info("Warmup forward pass 1/2...")
-        self._warmup_model_forward_pass(scheduler_output, dummy_requests,
-                                        cached_requests, num_decode_tokens)
+        with _maybe_warmup_context():
+            self._warmup_model_forward_pass(scheduler_output, dummy_requests,
+                                            cached_requests, num_decode_tokens)
         self.perf_metrics.log("warmup 1 time",
                               time.time() - warmup_start_t,
                               batch_size=batch_size,
                               max_tokens=num_decode_tokens,
                               prompt_len=prompt_len)
-
-        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_decoder":
-            from torch_sendnn import torch_sendnn
-            ul_start_time = time.time()
-            torch_sendnn.update_lazyhandle()
-            ul_stop_time = time.time()
-            ul_total_t = ul_stop_time - ul_start_time
-            logger.info("update_lazyhandle() done (duration: %.3fs)",
-                        ul_total_t)
-            self.perf_metrics.log("update_lazyhandle() time",
-                                  ul_total_t,
-                                  batch_size=batch_size,
-                                  max_tokens=num_decode_tokens,
-                                  prompt_len=prompt_len)
 
         # Second full forward pass
         logger.info("Warmup forward pass 2/2...")
@@ -498,6 +562,7 @@ class SpyreWorker(WorkerBaseV1):
         logger.info(
             "Warmup took %.3fs (for prompt length %d and max output tokens %d)",
             warmup_total_t, prompt_len, num_decode_tokens)
+        maybe_override_signals_handler()
 
     def _warmup_model_forward_pass(
         self,
@@ -517,6 +582,14 @@ class SpyreWorker(WorkerBaseV1):
         for _ in range(num_decode_tokens - 1):
             self.execute_model(scheduler_output)
 
+    def profile(self, is_start=True):
+        if self.profiler is None:
+            raise RuntimeError("Profiler is not enabled.")
+        if is_start:
+            self.profiler.start()
+        else:
+            self.profiler.stop()
+
     @property
     def do_metadata_broadcast(self) -> bool:
         return True
@@ -532,3 +605,27 @@ class SpyreWorker(WorkerBaseV1):
     ) -> Optional[ModelRunnerOutput]:
         output = self.model_runner.execute_model(scheduler_output)
         return output if self.is_driver_worker else None
+
+
+# Ref: https://github.com/vllm-project/vllm/blob/5fbbfe9a4c13094ad72ed3d6b4ef208a7ddc0fd7/vllm/v1/executor/multiproc_executor.py#L446 # noqa: E501
+# TODO: review this in the future
+# This setup is a workaround to suppress logs that are dumped at the shutdown
+# of the engine (only on V1) when vllm runs with multiprocess. The undesired
+# behavior happens because g3log from Spyre runtime overrides the signal
+# handler from vLLM when it starts a process for the engine code. Therefore,
+# the engine does not have a chance to gracefully shutdown.
+def maybe_override_signals_handler():
+    if not (envs.VLLM_USE_V1 and envs.VLLM_ENABLE_V1_MULTIPROCESSING
+            and envs_spyre.VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER):
+        return
+
+    shutdown_requested = False
+
+    def signal_handler(signum, frame):
+        nonlocal shutdown_requested
+        if not shutdown_requested:
+            shutdown_requested = True
+            raise SystemExit()
+
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)

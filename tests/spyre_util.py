@@ -1,3 +1,4 @@
+import inspect
 import math
 import os
 import subprocess
@@ -15,6 +16,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, SamplingParams
 from vllm.entrypoints.openai.cli_args import make_arg_parser
 from vllm.utils import FlexibleArgumentParser, get_open_port
+from vllm.v1.engine import EngineCoreRequest
 
 DISABLE_ASSERTS = False  # used for debugging
 
@@ -174,6 +176,9 @@ def generate_spyre_vllm_output(model: str, prompts: list[str],
         str(val) for val in warmup_batch_size)
     os.environ['VLLM_SPYRE_DYNAMO_BACKEND'] = backend
     os.environ['VLLM_USE_V1'] = "1" if vllm_version == "V1" else "0"
+    # Allows to run multiprocess V1 engine without dumping meaningless logs at
+    # shutdown engine this context.
+    os.environ['VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER'] = "1"
 
     vllm_model = LLM(model=model,
                      tokenizer=model,
@@ -321,7 +326,7 @@ def compare_results(model: str, prompts: list[str],
         print(f"        vLLM:  {repr(vllm_result['text']):s}{err_msg}")
         print()
 
-        assert DISABLE_ASSERTS or backend == 'sendnn_decoder' or\
+        assert DISABLE_ASSERTS or backend == 'sendnn' or\
             hf_result['token_ids'] == vllm_result['token_ids']
 
         if len(hf_result['tokens']) > 0:
@@ -348,13 +353,13 @@ def compare_results(model: str, prompts: list[str],
                     f"{vllm_logprob:14f}  ",
                     end='')
 
-                if backend == 'sendnn_decoder':
+                if backend == 'sendnn':
                     rel_tol = ISCLOSE_REL_TOL_SPYRE
                 else:
                     rel_tol = ISCLOSE_REL_TOL_CPU
 
                 if hf_token_id != vllm_token_id:  # different tokens
-                    if backend == 'sendnn_decoder' and math.isclose(
+                    if backend == 'sendnn' and math.isclose(
                             hf_logprob, vllm_logprob, rel_tol=rel_tol):
                         # probably still OK
                         print('DIVERGING')
@@ -408,7 +413,7 @@ def spyre_vllm_embeddings(model: str, prompts: list[str],
                      block_size=block_size,
                      tensor_parallel_size=tensor_parallel_size)
 
-    vllm_outputs = vllm_model.encode(prompts)
+    vllm_outputs = vllm_model.embed(prompts)
 
     results = []
     for req_output in vllm_outputs:
@@ -474,7 +479,7 @@ def get_spyre_model_dir_path() -> Path:
 # get model backends from env or default to all and add pytest markers
 def get_spyre_backend_list():
     user_backend_list = os.environ.get("VLLM_SPYRE_TEST_BACKEND_LIST",
-                                       "eager,inductor,sendnn_decoder,sendnn")
+                                       "eager,inductor,sendnn")
 
     backends = []
     for backend in user_backend_list.split(","):
@@ -482,7 +487,7 @@ def get_spyre_backend_list():
         marks = []
         if backend == "eager":
             marks = [pytest.mark.cpu]
-        elif backend == "sendnn_decoder":
+        elif backend == "sendnn":
             marks = [pytest.mark.spyre]
 
         backends.append(pytest.param(backend, marks=marks, id=backend))
@@ -534,3 +539,45 @@ def create_text_prompt(model: str, min_tokens: int, max_tokens: int) -> str:
     assert min_tokens < len(tokenizer.encode(prompt)) < max_tokens
 
     return prompt
+
+
+def create_random_request(
+        request_id: int, num_tokens: int,
+        sampling_params: SamplingParams) -> EngineCoreRequest:
+
+    # Temporary until 'data_parallel_rank' parameter makes it to
+    # a release version in vllm
+    if "data_parallel_rank" in [
+            x[0] for x in inspect.getmembers(EngineCoreRequest)
+    ]:
+        return EngineCoreRequest(
+            request_id=str(request_id),
+            prompt_token_ids=[request_id] * num_tokens,
+            mm_inputs=None,
+            mm_hashes=None,
+            mm_placeholders=None,
+            sampling_params=sampling_params,
+            eos_token_id=None,
+            arrival_time=0,
+            lora_request=None,
+            cache_salt=None,
+            data_parallel_rank=None,
+        )
+    else:
+        return EngineCoreRequest(request_id=str(request_id),
+                                 prompt_token_ids=[request_id] * num_tokens,
+                                 mm_inputs=None,
+                                 mm_hashes=None,
+                                 mm_placeholders=None,
+                                 sampling_params=sampling_params,
+                                 eos_token_id=None,
+                                 arrival_time=0,
+                                 lora_request=None,
+                                 cache_salt=None)
+
+
+def skip_unsupported_tp_size(size: int):
+    cards = int(os.getenv("AIU_WORLD_SIZE", "0"))
+    if cards < size:
+        pytest.skip(f"Cannot run TP size {size}: "
+                    f"only {cards} cards are available")

@@ -1,6 +1,6 @@
 """Verification of vLLM output by comparing with HF
 
-Run `python -m pytest tests/test_spyre_max_new_tokens.py`.
+Run `python -m pytest tests/e2e/test_spyre_max_new_tokens.py`.
 """
 
 import pytest

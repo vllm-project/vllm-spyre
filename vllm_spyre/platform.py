@@ -77,7 +77,10 @@ class SpyrePlatform(Platform):
             # Override --max-num-seqs to the biggest warmup batch size
             # And override --max-model-len to the biggest warmup sequence
             cls._warmup_shapes = None
-            spyre_warmup_shapes = cls.get_warmup_shapes(scheduler_config)
+            max_model_len = model_config.max_model_len \
+                if model_config is not None else sys.maxsize
+            spyre_warmup_shapes = cls.get_warmup_shapes(
+                scheduler_config, max_model_len)
             max_batch_size = 0
             max_seq_len = 0
             for shape in spyre_warmup_shapes:
@@ -109,12 +112,15 @@ class SpyrePlatform(Platform):
         # Cache and model config aren't set in the individual worker procs
         # These are set in the main engine process
 
-        # To disable any paged attention ops in the base scheduler, we both:
+        # To disable any paged attention ops in the base scheduler, we:
         # - Set the block size (in tokens) to the maximum sequence length
         #       so that the scheduler thinks an entire sequence will fit in
         #       one single block.
         # - Set the number of blocks to the maximum number of sequences, so
         #       the scheduler always thinks there's a block available
+        # - Set `max_num_batched_tokens` to the size of a full batch of full
+        #       length requests, so that the scheduler will always have token
+        #       budget available to schedule a full batch
         if cache_config is not None:
             if envs.VLLM_USE_V1:
                 # The V1 scheduler actually needs 2 blocks for each sequence...
@@ -125,6 +131,8 @@ class SpyrePlatform(Platform):
                     scheduler_config.max_num_seqs
 
             cache_config.block_size = model_config.max_model_len
+            scheduler_config.max_num_batched_tokens = (
+                model_config.max_model_len * scheduler_config.max_num_seqs)
 
         logger.info(
             "Overriding configurations based on warmup shapes. "
@@ -164,7 +172,10 @@ class SpyrePlatform(Platform):
         return torch.no_grad()
 
     @classmethod
-    def get_warmup_shapes(cls, scheduler_config) -> tuple[dict[str, int], ...]:
+    def get_warmup_shapes(
+            cls,
+            scheduler_config,
+            max_model_len: int = sys.maxsize) -> tuple[dict[str, int], ...]:
         if cls._warmup_shapes is not None:
             return cls._warmup_shapes
         # load warmup shapes and sort by "speed"
@@ -200,6 +211,16 @@ class SpyrePlatform(Platform):
             } for pl, nt, bs in zip(wup_prompt_lens, wup_new_tokens,
                                     wup_batch_sizes)],
                    key=operator.itemgetter('batch_size', 'prompt_length')))
+
+        for shape in cls._warmup_shapes:
+            max_seq_len = shape["prompt_length"] + shape["new_tokens"]
+            if max_seq_len > max_model_len:
+                raise RuntimeError(
+                    f"Warmup shape [{shape['batch_size']},"
+                    " {shape['prompt_length']}, {shape['new_tokens']}]"
+                    " results in a maximum sequence length of "
+                    "{max_seq_len} which is longer that what the model "
+                    "supports ({max_model_len})")
         return cls._warmup_shapes
 
     @classmethod
