@@ -19,11 +19,6 @@ from vllm.model_executor.sampling_metadata import SamplingMetadata
 import vllm_spyre.envs as envs_spyre
 
 try:
-    from torch_sendnn import torch_sendnn  # noqa: F401
-except ImportError:
-    print("WARNING: Disabled: torch_sendnn")
-    pass
-try:
     import backends.dynamo_tracer  # noqa: F401
 except ImportError:
     print("WARNING: Disabled: dynamo_tracer")
@@ -261,6 +256,15 @@ class FmsModelBase(nn.Module):
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in BACKEND_LIST:
 
             options = {"sendnn.dynamic": True} if sendnn_dynamic else {}
+
+            # Lazy import to avoid load torch_sendnn runtime before it is really
+            # necessary. This solve issues of running forked tests that share
+            # some resources from parent to children which can have problems
+            # of caching even though the test run in isolated subprocesses.
+            try:
+                from torch_sendnn import torch_sendnn  # noqa: F401
+            except ImportError:
+                print("WARNING: Disabled: torch_sendnn")
 
             self.model = torch.compile(
                 self.model,

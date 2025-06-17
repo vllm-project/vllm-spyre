@@ -3,8 +3,6 @@
 Run `python -m pytest tests/e2e/test_spyre_warmup_shapes.py`.
 """
 
-import os
-
 import pytest
 from spyre_util import (compare_results, generate_hf_output,
                         generate_spyre_vllm_output, get_spyre_backend_list,
@@ -12,10 +10,6 @@ from spyre_util import (compare_results, generate_hf_output,
 from vllm import SamplingParams
 
 
-# temporary for filtering until bug with caching gets fixed
-@pytest.mark.skipif(
-    os.environ.get("TORCH_SENDNN_CACHE_ENABLE") == "1",
-    reason="torch_sendnn caching is currently broken with this configuration")
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("prompts", [
     7 * [
