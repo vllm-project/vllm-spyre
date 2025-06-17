@@ -314,7 +314,10 @@ class ContinuousBatchingFmsModel(FmsModelBase):
 
         # set num_blocks to the minimal value of 4 required for warmup
         # is reset to the value returned by the Spyre compiler after warmup
-        self._set_past_key_value_states(num_blocks=4)
+        # self._set_past_key_value_states(num_blocks=4)
+        num_blocks = (scheduler_config.max_num_seqs * max_model_len //
+                      self.BLOCK_SIZE)
+        self._set_past_key_value_states(num_blocks=num_blocks)
 
         # mark the num_blocks dimension dynamic for Spyre compiler for warmup
         # only, compiler will return the number of blocks it can accommodate.
