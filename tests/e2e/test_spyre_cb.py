@@ -116,7 +116,6 @@ def test_cb_max_tokens(
 
     vllm_sampling_params = SamplingParams(max_tokens=max_tokens,
                                           temperature=0,
-                                          stop="1",
                                           ignore_eos=True,
                                           logprobs=0)
 
