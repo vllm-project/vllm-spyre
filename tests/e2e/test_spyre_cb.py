@@ -1,6 +1,6 @@
 """Verification of continuous batching
 
-Run `python -m pytest tests/test_spyre_cb.py`.
+Run `python -m pytest tests/e2e/test_spyre_cb.py`.
 """
 
 import copy
