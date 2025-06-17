@@ -223,30 +223,41 @@ def generate_cb_spyre_vllm_output(
     use_cb: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> list[dict[str, Any]]:
-    with monkeypatch.context() as m:
 
-        m.setenv("VLLM_SPYRE_USE_CB", str(use_cb))
-        m.setenv("VLLM_USE_V1", "1")
-        m.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+    monkeypatch.setenv("VLLM_SPYRE_USE_CB", str(use_cb))
+    monkeypatch.setenv("VLLM_USE_V1", "1")
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
 
-        vllm_model = LLM(
-            model=model,
-            tokenizer=model,
-            max_model_len=max_model_len,
-            max_num_seqs=max_num_seqs,
-            block_size=block_size,
-            tensor_parallel_size=tensor_parallel_size,
-        )
+    vllm_model = LLM(
+        model=model,
+        tokenizer=model,
+        max_model_len=max_model_len,
+        max_num_seqs=max_num_seqs,
+        block_size=block_size,
+        tensor_parallel_size=tensor_parallel_size,
+    )
 
-        vllm_outputs = vllm_model.generate(prompts, sampling_params)
-        results = []
+    vllm_outputs = vllm_model.generate(prompts, sampling_params)
+    results = []
 
-        for req_output in vllm_outputs:
-            result = {}
-            result["text"] = req_output.outputs[0].text
-            results.append(result)
+    for req_output in vllm_outputs:
+        result = {}
+        result['text'] = req_output.outputs[0].text
+        # TODO: Workaround for V1, if request does not fit in a warmup shape
+        # token_ids may be filled with -1.
+        token_ids = [t for t in req_output.outputs[0].token_ids if t >= 0]
+        result['token_ids'] = tuple(token_ids)
+        result['tokens'] = tuple([
+            req_output.outputs[0].logprobs[i][t].decoded_token
+            for i, t in enumerate(result['token_ids'])
+        ])
+        result['logprobs'] = tuple([
+            req_output.outputs[0].logprobs[i][t].logprob
+            for i, t in enumerate(result['token_ids'])
+        ])
+        results.append(result)
 
-        return results
+    return results
 
 
 # Hugging Face

@@ -8,7 +8,8 @@ from collections import deque
 from typing import Any
 
 import pytest
-from spyre_util import (create_random_request, generate_cb_spyre_vllm_output,
+from spyre_util import (compare_results, create_random_request,
+                        generate_cb_spyre_vllm_output, generate_hf_output,
                         get_spyre_model_list)
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine import EngineCoreRequest
@@ -16,6 +17,11 @@ from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor
 
 from vllm_spyre.v1.core.scheduler import ContinuousBatchingSpyreScheduler
+
+template = (
+    "Below is an instruction that describes a task. Write a response that "
+    "appropriately completes the request. Be polite in your response to the "
+    "user.\n\n### Instruction:\n{}\n\n### Response:")
 
 
 @pytest.mark.parametrize("max_num_seqs", [2, 3, 4],
@@ -28,27 +34,15 @@ from vllm_spyre.v1.core.scheduler import ContinuousBatchingSpyreScheduler
 # commenting v1 since we don't want this test to run with v1 marker yet
 # @pytest.mark.parametrize("vllm_version",
 #                          [pytest.param("V1", marks=pytest.mark.v1, id="v1")])
-@pytest.mark.parametrize(
-    "prompts",
-    [
-        [
-            "7 6 5 4",
-            "10 9 8 7",
-        ],
-        [
-            "7 6 5 4",
-            "10 9 8 7",
-            "8 7 6 5",
-        ],
-        [
-            "7 6 5 4",
-            "10 9 8 7",
-            "8 7 6 5",
-            "9 8 7 6",
-        ],
-    ],
-    ids=lambda val: f"num_prompts({len(val)})",
-)
+@pytest.mark.parametrize("prompts", [[
+    template.format("Provide a list of instructions "
+                    "for preparing chicken soup."),
+    template.format("Provide me a list of things that I can do with my "
+                    "new found wealth."),
+    template.format(
+        "how do I add multiple new columns in m for power query or power bi?"),
+    template.format("Convert char to string in Java."),
+]])
 def test_cb_handling(
     model: str,
     backend: str,
@@ -62,9 +56,10 @@ def test_cb_handling(
     continuous batches of requests that
     finish after different numbers of forward passes"""
 
-    vllm_sampling_params = SamplingParams(max_tokens=20,
+    max_tokens = 20
+
+    vllm_sampling_params = SamplingParams(max_tokens=max_tokens,
                                           temperature=0,
-                                          stop="1",
                                           ignore_eos=True,
                                           logprobs=0)
 
@@ -84,12 +79,17 @@ def test_cb_handling(
         monkeypatch=monkeypatch,
     )
 
-    for i, prompt in enumerate(prompts):
-        assert (vllm_results[i]["text"] == [
-            " " + " ".join(
-                str(i)
-                for i in range(int(prompt.split()[-1]) - 1, 1, -1)) + " "
-        ][0])
+    hf_results = generate_hf_output(model=model,
+                                    prompts=prompts,
+                                    max_new_tokens=max_tokens)
+
+    compare_results(model=model,
+                    prompts=prompts,
+                    warmup_shapes=[],
+                    tensor_parallel_size=1,
+                    backend=backend,
+                    vllm_results=vllm_results,
+                    hf_results=hf_results)
 
 
 @pytest.mark.parametrize("max_num_seqs", [2])
