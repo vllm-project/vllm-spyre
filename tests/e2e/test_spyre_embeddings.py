@@ -1,6 +1,6 @@
 """Verification of vLLM output by comparing with HF
 
-Run `python -m pytest tests/test_spyre_embeddings.py`.
+Run `python -m pytest tests/e2e/test_spyre_embeddings.py`.
 """
 
 import pytest

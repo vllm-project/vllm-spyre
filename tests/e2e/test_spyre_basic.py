@@ -1,13 +1,12 @@
 """Verification of vLLM output by comparing with HF
 
-Run `python -m pytest tests/test_spyre_basic.py`.
+Run `python -m pytest tests/e2e/test_spyre_basic.py`.
 """
 
 import pytest
-from e2e.test_spyre_cb import create_random_request
-from spyre_util import (VLLM_VERSIONS, compare_results, generate_hf_output,
-                        generate_spyre_vllm_output, get_spyre_backend_list,
-                        get_spyre_model_list)
+from spyre_util import (VLLM_VERSIONS, compare_results, create_random_request,
+                        generate_hf_output, generate_spyre_vllm_output,
+                        get_spyre_backend_list, get_spyre_model_list)
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor

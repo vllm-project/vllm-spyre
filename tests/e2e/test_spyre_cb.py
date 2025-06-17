@@ -1,15 +1,15 @@
 """Verification of continuous batching
 
-Run `python -m pytest tests/test_spyre_cb.py`.
+Run `python -m pytest tests/e2e/test_spyre_cb.py`.
 """
 
 import copy
-import inspect
 from collections import deque
 from typing import Any
 
 import pytest
-from spyre_util import generate_cb_spyre_vllm_output, get_spyre_model_list
+from spyre_util import (create_random_request, generate_cb_spyre_vllm_output,
+                        get_spyre_model_list)
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
@@ -133,41 +133,6 @@ def test_cb_max_tokens(
             use_cb=cb,
             monkeypatch=monkeypatch,
         )
-
-
-def create_random_request(
-        request_id: int, num_tokens: int,
-        sampling_params: SamplingParams) -> EngineCoreRequest:
-
-    # Temporary until 'data_parallel_rank' parameter makes it to
-    # a release version in vllm
-    if "data_parallel_rank" in [
-            x[0] for x in inspect.getmembers(EngineCoreRequest)
-    ]:
-        return EngineCoreRequest(
-            request_id=str(request_id),
-            prompt_token_ids=[request_id] * num_tokens,
-            mm_inputs=None,
-            mm_hashes=None,
-            mm_placeholders=None,
-            sampling_params=sampling_params,
-            eos_token_id=None,
-            arrival_time=0,
-            lora_request=None,
-            cache_salt=None,
-            data_parallel_rank=None,
-        )
-    else:
-        return EngineCoreRequest(request_id=str(request_id),
-                                 prompt_token_ids=[request_id] * num_tokens,
-                                 mm_inputs=None,
-                                 mm_hashes=None,
-                                 mm_placeholders=None,
-                                 sampling_params=sampling_params,
-                                 eos_token_id=None,
-                                 arrival_time=0,
-                                 lora_request=None,
-                                 cache_salt=None)
 
 
 def get_params_test_blocks_borders_aligned_prompts():
