@@ -156,7 +156,7 @@ Various log levels that can be configured:
     export TORCH_SENDNN_LOG=CRITICAL
     ```
 
-### `Topology Aware Allocation`
+### Topology Aware Allocation
 
 This section is specific to the AIU operator and scheduling workloads onto specific cards.
 
