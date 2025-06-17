@@ -1,6 +1,6 @@
 """Verification of continuous batching
 
-Run `python -m pytest tests/test_spyre_cb_heterog_tkv.py`.
+Run `python -m pytest tests/e2e/test_spyre_cb_heterog_tkv.py`.
 """
 
 import copy
@@ -61,6 +61,8 @@ def test_cb_handling(
     """Test that the spyre worker correctly handles
     continuous batches of requests that
     finish after different numbers of forward passes"""
+
+    # monkeypatch.setenv("VLLM_SPYRE_HETEROGEN_TKV", "1")
 
     vllm_sampling_params = SamplingParams(max_tokens=20,
                                           temperature=0,
@@ -685,6 +687,7 @@ def test_scheduler_cb_steps_tkv(
     monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
     monkeypatch.setenv("VLLM_USE_V1", "1")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+    # monkeypatch.setenv("VLLM_SPYRE_HETEROGEN_TKV", "1")
 
     # To get deterministic execution in V1
     # and to enable InprocClient
@@ -760,7 +763,7 @@ def test_scheduler_cb_steps_tkv(
                 r.request_id for r in request_outputs if r.finished
             ]
 
-            assert scheduler.tkv == step_ref["tkv"], f"Step {step}, tkv"
+            assert scheduler.tkvs[0] == step_ref["tkv"], f"Step {step}, tkv"
             assert waiting == step_ref["waiting"], f"Step {step}, num waiting"
             assert running == step_ref["running"], f"Step {step}, num running"
             assert out_reqs_ids == step_ref["request_outputs"], \

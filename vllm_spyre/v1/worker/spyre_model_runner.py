@@ -13,6 +13,7 @@ from vllm.utils import is_pin_memory_available
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.outputs import SamplerOutput
 
+import vllm_spyre.envs as envs_spyre
 from vllm_spyre.model_executor.model_loader.spyre import SpyreCausalLM
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_input_batch import (CachedRequestState,
@@ -49,7 +50,7 @@ class ModelForwardInputs:
 @dataclass
 class CBSpyreModelRunnerOutput(ModelRunnerOutput):
     # Add the current tkv to the output
-    tkv: int = 0
+    tkvs: tuple[int] = (0, )
 
 
 class SpyreModelRunner:
@@ -664,7 +665,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                 spec_token_ids=None,
                 logprobs=None,
                 prompt_logprobs_dict={},
-                tkv=0,  # only used for homogeneous tkv scheduling
+                tkvs=(0, ),  # only used for homogeneous tkv scheduling
             )
 
         model_input = self.prepare_model_input(scheduler_output)
@@ -739,6 +740,11 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # since same order as in _prepare_prompt/decode req_ids2idx not needed
         req_ids = [req.req_id for req in scheduled_req]
         req_id_to_index = {req_id: i for i, req_id in enumerate(req_ids)}
+        tkvs = [
+            self.req_ids2tkv[r]
+            if envs_spyre.VLLM_SPYRE_HETEROGEN_TKV else self.tkv
+            for r in req_ids
+        ]
 
         model_output = CBSpyreModelRunnerOutput(
             req_ids=req_ids,
@@ -750,7 +756,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             prompt_logprobs_dict={req_id: None
                                   for req_id in req_ids
                                   },  # TODO(wallas?): prompt logprobs too
-            tkv=self.tkv,  # only used for homogeneous tkv scheduling
+            tkvs=tuple(tkvs),  # only used for homogeneous tkv scheduling
         )
         return model_output
 

@@ -147,7 +147,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
     def __init__(self, *args, **kwargs) -> None:
         # Initialize SpyreScheduler
         super().__init__(*args, **kwargs)
-        self.tkv = 0  # only used for homogeneous tkv scheduling
+        self.tkvs = (0, )  # only used for homogeneous tkv scheduling
 
     def update_from_output(
         self,
@@ -159,7 +159,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             model_runner_output, CBSpyreModelRunnerOutput
         ), "Expecting an instance of CBSpyreModelRunnerOutput"
         "when doing continuous batching."
-        self.tkv = model_runner_output.tkv
+        self.tkvs = model_runner_output.tkvs
         return super(SpyreScheduler,
                      self).update_from_output(scheduler_output,
                                               model_runner_output)
@@ -223,9 +223,9 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
 
         # conditions for homogeneous tkv only:
         # check that the prompt length does not exceed the current tkv
-        cond3 = request.num_prompt_tokens <= self.tkv
+        cond3 = request.num_prompt_tokens <= self.tkvs[0]
         # check that the number of requested tokens can be served
-        cond4 = request.max_tokens <= (max_context_len - self.tkv)
+        cond4 = request.max_tokens <= (max_context_len - self.tkvs[0])
 
         if envs_spyre.VLLM_SPYRE_HETEROGEN_TKV:
             # heterogeneous tkv scheduling conditions
