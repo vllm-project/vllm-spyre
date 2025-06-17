@@ -92,6 +92,48 @@ def test_cb_handling(
         ][0])
 
 
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.parametrize(
+    "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
+@pytest.mark.parametrize("cb",
+                         [pytest.param(1, marks=pytest.mark.cb, id="cb")])
+# @pytest.mark.v1
+def test_cb_max_tokens(
+    model: str,
+    backend: str,
+    max_num_seqs: int,
+    cb: int,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Test that continuous batches of requests that
+    are longer than the max_model_len are correctly rejected"""
+
+    max_model_len = 2048
+    max_tokens = 20
+
+    overflow_prompt = " ".join(["a"] * max_model_len)
+
+    vllm_sampling_params = SamplingParams(max_tokens=max_tokens,
+                                          temperature=0,
+                                          ignore_eos=True,
+                                          logprobs=0)
+
+    with pytest.raises(ValueError, match="max model context length"):
+        generate_cb_spyre_vllm_output(
+            model=model,
+            prompts=overflow_prompt,
+            max_model_len=max_model_len,
+            block_size=max_model_len,
+            sampling_params=vllm_sampling_params,
+            tensor_parallel_size=1,
+            backend=backend,
+            max_num_seqs=max_num_seqs,
+            use_cb=cb,
+            monkeypatch=monkeypatch,
+        )
+
+
 def get_params_test_blocks_borders_aligned_prompts():
     """ Scenario where it happens that all the sequences get scheduled in a 
     fashion where they are aligned with the block boundaries (i.e. tkv multiple 
