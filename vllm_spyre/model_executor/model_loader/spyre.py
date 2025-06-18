@@ -318,13 +318,16 @@ class ContinuousBatchingFmsModel(FmsModelBase):
 
         # set num_blocks to the minimal value of 4 required for warmup
         # is reset to the value returned by the Spyre compiler after warmup
-        self._set_past_key_value_states(num_blocks=4)
+        # self._set_past_key_value_states(num_blocks=4)
+        num_blocks = scheduler_config.max_num_seqs * max_model_len // BLOCK_SIZE
+        self._set_past_key_value_states(num_blocks=num_blocks)
 
         # mark the num_blocks dimension dynamic for Spyre compiler for warmup
-        # only, compiler will return the number of blocks it can accommodate
-        for layer in self.past_key_value_states:
-            for tensor in layer:
-                torch._dynamo.mark_dynamic(tensor, 0)
+        # only, compiler will return the number of blocks it can accommodate.
+        # (This is not yet supported by the compiler)
+        # for layer in self.past_key_value_states:
+        #     for tensor in layer:
+        #         torch._dynamo.mark_dynamic(tensor, 0)
 
     def _set_past_key_value_states(self, num_blocks) -> None:
         # List[layers] of Tuple[k,v] of
@@ -357,6 +360,18 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         **extra_kwargs,
     ) -> torch.Tensor:
 
+        # import will be not be needed/ handled by FMS soon
+        import fms.utils.spyre.paged  # noqa # pylint: disable=unused-import
+
+        # specify attention type for continuous batching
+        extra_kwargs['attn_name'] = "spyre_paged_attn"
+
+        # additional (paged) attention arguments
+        extra_kwargs['current_tkv_mask'] = current_tkv_mask
+        extra_kwargs['left_padded_prompt_mask'] = left_padded_prompt_mask
+        extra_kwargs['block_table'] = block_table
+        extra_kwargs['slot_mapping'] = slot_mapping
+
         output = self.model(
             input_ids,
             position_ids=position_ids,
@@ -364,10 +379,6 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             past_key_value_states=self.past_key_value_states,
             use_cache=use_cache,
             only_last_token=only_last_token,
-            current_tkv_mask=current_tkv_mask,
-            left_padded_prompt_mask=left_padded_prompt_mask,
-            block_table=block_table,
-            slot_mapping=slot_mapping,
             **extra_kwargs,
         )
 
@@ -404,6 +415,9 @@ class StaticBatchingFmsModel(FmsModelBase):
         only_last_token: bool,
         **extra_kwargs,
     ) -> torch.Tensor:
+
+        # specify attention type for static batching
+        extra_kwargs['attn_name'] = "sdpa_bidirectional"
 
         output = self.model(
             input_ids,
