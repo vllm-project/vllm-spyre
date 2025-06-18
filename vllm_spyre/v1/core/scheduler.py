@@ -147,7 +147,9 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
     def __init__(self, *args, **kwargs) -> None:
         # Initialize SpyreScheduler
         super().__init__(*args, **kwargs)
-        self.tkvs = (0, )  # only used for homogeneous tkv scheduling
+        # used for homogeneous tkv scheduling and for step level testing
+        # in the heterogeneous case
+        self.tkvs: tuple[int, ...] = (0, )
 
     def update_from_output(
         self,
