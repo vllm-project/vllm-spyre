@@ -214,10 +214,10 @@ class SpyrePlatform(Platform):
             if max_seq_len > max_model_len:
                 raise RuntimeError(
                     f"Warmup shape [{shape['batch_size']},"
-                    " {shape['prompt_length']}, {shape['new_tokens']}]"
-                    " results in a maximum sequence length of "
-                    "{max_seq_len} which is longer that what the model "
-                    "supports ({max_model_len})")
+                    f" {shape['prompt_length']}, {shape['new_tokens']}]"
+                    f" results in a maximum sequence length of "
+                    f"{max_seq_len} which is longer that what the model "
+                    f"supports ({max_model_len})")
         return cls._warmup_shapes
 
     @classmethod
