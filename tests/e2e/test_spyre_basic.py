@@ -33,12 +33,8 @@ template = (
     "warmup_shape", [(64, 20, 4), (64, 20, 8), (128, 20, 4),
                      (128, 20, 8)])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def test_output(
-    model: str,
-    prompts: list[str],
-    warmup_shape: tuple[int, int, int],
-    backend: str
-) -> None:
+def test_output(model: str, prompts: list[str],
+                warmup_shape: tuple[int, int, int], backend: str) -> None:
     '''
     The warmup is based on a single shape. After the warmup,
     one request with the provided prompts is input to vLLM.
@@ -180,8 +176,7 @@ def test_batch_handling(
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def test_full_batch_scheduling(model: str, backend: str,
-                               monkeypatch):
+def test_full_batch_scheduling(model: str, backend: str, monkeypatch):
     """Test that we can schedule a full batch of prompts."""
 
     # We need to ensure here that the max number of tokens in a full batch
