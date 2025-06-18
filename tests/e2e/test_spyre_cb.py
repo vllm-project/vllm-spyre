@@ -19,7 +19,6 @@ from vllm_spyre.v1.core.scheduler import ContinuousBatchingSpyreScheduler
 
 
 @pytest.mark.cb
-@pytest.mark.v1
 @pytest.mark.parametrize("max_num_seqs", [2, 3, 4],
                          ids=lambda val: f"max_num_seqs({val})")
 @pytest.mark.parametrize("model", get_spyre_model_list())
@@ -92,7 +91,6 @@ def test_cb_handling(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 @pytest.mark.parametrize("cb",
                          [pytest.param(1, marks=pytest.mark.cb, id="cb")])
-# @pytest.mark.v1
 def test_cb_max_tokens(
     model: str,
     backend: str,
@@ -648,7 +646,6 @@ def augment_checked_steps(
 
 
 @pytest.mark.cb
-@pytest.mark.v1
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("max_num_seqs", [2])
