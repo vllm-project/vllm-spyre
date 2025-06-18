@@ -445,7 +445,7 @@ class SpyreWorker(WorkerBaseV1):
 
         min_req_num_blocks = max_model_len // block_size
         # min_req_num_blocks is not enough blocks for the following test:
-        # tests/e2e/test_spyre_cb.py::test_scheduler_cb_steps_tkv
+        # tests/e2e/test_spyre_cb_homog_tkv.py::test_scheduler_cb_steps_tkv
         # [seqs_max_tokens4-prompts_lengths4-steps_add_reqs4-
         # checked_steps4-256-False-2-eager-llama-194m]
 
