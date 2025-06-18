@@ -1076,11 +1076,14 @@ class ContinuousBatchingHeterogenTkvSpyreModelRunner(
             n = len(request_data.prompt_token_ids)
             block_padding = ((n + d - 1) // d) * d
 
-            self.req_ids2tkv[req_id] = block_padding
+            curr_tkv = n if envs_spyre.VLLM_SPYRE_RIGHT_PADS else block_padding
+            self.req_ids2tkv[req_id] = curr_tkv
 
             # retrieve initial (unpadded) tokens
             prompt_tokens = request_data.prompt_token_ids
-            self.req_ids2left_pads[req_id] = block_padding - len(prompt_tokens)
+            curr_left_pads = 0 if envs_spyre.VLLM_SPYRE_RIGHT_PADS else (
+                block_padding - len(prompt_tokens))
+            self.req_ids2left_pads[req_id] = curr_left_pads
             input_token_list.append(
                 torch.tensor(prompt_tokens,
                              dtype=torch.long,
@@ -1137,10 +1140,11 @@ class ContinuousBatchingHeterogenTkvSpyreModelRunner(
         # get position ids and attention mask
         # applies left padding to align with tkv of current decode batch
         # and right padding to align with the next block boundary
+        padding_side = "right" if envs_spyre.VLLM_SPYRE_RIGHT_PADS else "left"
         input_tokens, position_ids, mask =\
             self.pad_input_ids(input_token_list,
                                min_pad_length=block_padding,
-                               padding_side="left")
+                               padding_side=padding_side)
         mask = mask.unsqueeze(1)
 
         # not needed for prefill
