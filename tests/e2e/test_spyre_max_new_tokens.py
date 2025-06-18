@@ -4,7 +4,7 @@ Run `python -m pytest tests/e2e/test_spyre_max_new_tokens.py`.
 """
 
 import pytest
-from spyre_util import (VLLM_VERSIONS, compare_results, generate_hf_output,
+from spyre_util import (compare_results, generate_hf_output,
                         generate_spyre_vllm_output, get_spyre_backend_list,
                         get_spyre_model_list)
 from vllm import SamplingParams
@@ -27,14 +27,12 @@ prompt2 = template.format("Explain to me why ignorance is bliss.")
 @pytest.mark.parametrize(
     "warmup_shape", [(64, 10, 4)])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("vllm_version", VLLM_VERSIONS)
 def test_output(
     model: str,
     prompts: list[str],
     stop_last: bool,
     warmup_shape: tuple[int, int, int],
     backend: str,
-    vllm_version: str,
 ) -> None:
     '''
     The warmup is based on a single shape. After the warmup,
@@ -86,8 +84,7 @@ def test_output(
         block_size=2048,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
-        backend=backend,
-        vllm_version=vllm_version)
+        backend=backend)
 
     hf_results = generate_hf_output(model=model,
                                     prompts=prompts,
