@@ -8,9 +8,14 @@ from collections import deque
 from typing import Any
 
 import pytest
+<<<<<<< HEAD
 from spyre_util import (compare_results, create_random_request,
                         generate_hf_output, generate_spyre_vllm_output,
                         get_spyre_model_list)
+=======
+from spyre_util import (create_random_request, generate_cb_spyre_vllm_output,
+                        get_spyre_backend_list, get_spyre_model_list)
+>>>>>>> origin/main
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
@@ -23,6 +28,7 @@ template = (
     "appropriately completes the request. Be polite in your response to the "
     "user.\n\n### Instruction:\n{}\n\n### Response:")
 
+<<<<<<< HEAD
 
 @pytest.mark.cb
 @pytest.mark.parametrize("max_num_seqs", [2, 3, 4],
@@ -41,6 +47,35 @@ template = (
         "how do I add multiple new columns in m for power query or power bi?"),
     template.format("Convert char to string in Java."),
 ]])
+=======
+@pytest.mark.cb
+@pytest.mark.v1
+@pytest.mark.parametrize("max_num_seqs", [2, 3, 4],
+                         ids=lambda val: f"max_num_seqs({val})")
+@pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+@pytest.mark.parametrize(
+    "prompts",
+    [
+        [
+            "7 6 5 4",
+            "10 9 8 7",
+        ],
+        [
+            "7 6 5 4",
+            "10 9 8 7",
+            "8 7 6 5",
+        ],
+        [
+            "7 6 5 4",
+            "10 9 8 7",
+            "8 7 6 5",
+            "9 8 7 6",
+        ],
+    ],
+    ids=lambda val: f"num_prompts({len(val)})",
+)
+>>>>>>> origin/main
 def test_cb_handling(
     model: str,
     backend: str,
@@ -648,9 +683,9 @@ def augment_checked_steps(
 
 
 @pytest.mark.cb
+@pytest.mark.v1
 @pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize(
-    "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize(
     "seqs_max_tokens,prompts_lengths,steps_add_reqs,checked_steps,"
