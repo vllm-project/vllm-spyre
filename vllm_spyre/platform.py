@@ -65,19 +65,29 @@ class SpyrePlatform(Platform):
         if scheduler_config.is_multi_step:
             raise NotImplementedError
 
+        is_decoder = model_config.task == "generate"
+        is_embedding = model_config.task == "embed"
+
         # v0 is only supported for embedding models, and embedding models must
         # be run on v0
-        if model_config.task == "embed" and envs.VLLM_USE_V1:
+        if is_embedding and envs.VLLM_USE_V1:
             raise ValueError("Embedding models are only supported on v0")
-        elif model_config.task == "generate" and not envs.VLLM_USE_V1:
+        elif is_decoder and not envs.VLLM_USE_V1:
             raise ValueError("Decoder models are only supported on v1")
+        elif not is_decoder and not is_embedding:
+            raise ValueError("Only the 'generate' and 'embed' tasks are "
+                             "supported")
 
         if parallel_config.worker_cls == "auto":
             parallel_config.worker_cls = (
                 f'vllm_spyre{".v1" if envs.VLLM_USE_V1 else ""}'\
                     '.worker.spyre_worker.SpyreWorker')
 
-        if not envs_spyre.VLLM_SPYRE_USE_CB:  # Static batching
+        if envs_spyre.VLLM_SPYRE_USE_CB and is_decoder:
+            scheduler_config.scheduler_cls = "vllm_spyre.v1.core."\
+                "scheduler.ContinuousBatchingSpyreScheduler"
+        else:
+            # Static batching or embedding model.
             # Override --max-num-seqs to the biggest warmup batch size
             # And override --max-model-len to the biggest warmup sequence
             cls._warmup_shapes = None
@@ -94,17 +104,13 @@ class SpyrePlatform(Platform):
             model_config.max_model_len = max_seq_len
             scheduler_config.max_num_seqs = max_batch_size
 
-            scheduler_config.scheduler_cls = (
-                "vllm_spyre.v1.core.scheduler."\
-                    "StaticBatchingSpyreScheduler")
-        else:  # Continuous batching
-            scheduler_config.scheduler_cls = "vllm_spyre.v1.core."\
-                "scheduler.ContinuousBatchingSpyreScheduler"
-
-        if model_config.task == "embed":
-            # Embeddings still need the old v0 schedule
-            scheduler_config.scheduler_cls = (
-                "vllm_spyre.core.scheduler.SpyreScheduler")
+            if is_decoder:
+                scheduler_config.scheduler_cls = (
+                    "vllm_spyre.v1.core.scheduler."\
+                        "StaticBatchingSpyreScheduler")
+            elif is_embedding:
+                scheduler_config.scheduler_cls = (
+                    "vllm_spyre.core.scheduler.SpyreScheduler")
 
         # To disable any paged attention ops in the base scheduler, we:
         # - Set the block size (in tokens) to the maximum sequence length
