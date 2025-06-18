@@ -43,10 +43,10 @@ jobs:
             markers: "cpu and e2e and not cb"
             flags: "--timeout=300 --forked"
           - name: "cb"
-            markers: "and cpu and cb"
+            markers: "cpu and cb"
             flags: "--timeout=300 --forked"
           - name: "worker and utils"
-            markers: "and not e2e or utils"
+            markers: "not e2e"
             flags: "--timeout=300"
 
     name: "${{ matrix.test_suite.name }} (${{ matrix.vllm_version.name }})"
