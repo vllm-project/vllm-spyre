@@ -252,6 +252,11 @@ class SpyreWorker(WorkerBaseV1):
         # Set random seed.
         set_random_seed(self.model_config.seed)
 
+    def initialize_cache(self, num_gpu_blocks: int,
+                         num_cpu_blocks: int) -> None:
+        self.cache_config.num_gpu_blocks = num_gpu_blocks
+        self.cache_config.num_cpu_blocks = num_cpu_blocks
+
     def load_model(self):
         assert self._env_initialized
 

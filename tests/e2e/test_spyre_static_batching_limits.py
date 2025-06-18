@@ -1,6 +1,6 @@
 """Verification of handling prompt length exceeding warmup shapes
 
-Run `python -m pytest tests/test_spyre_max_prompt_length.py`.
+Run `python -m pytest tests/e2e/test_spyre_max_prompt_length.py`.
 """
 
 import pytest

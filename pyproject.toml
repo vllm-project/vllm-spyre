@@ -13,7 +13,7 @@ license = {text = "Apache 2"}
 dependencies = [
     "fms-model-optimizer>=0.2.0",
     "ibm-fms==1.0.0",
-    "vllm>=0.9.0",
+    "vllm>=0.9.0,!=0.9.1",
 ]
 requires-python = ">=3.9"
 dynamic = ["version"]
@@ -140,6 +140,8 @@ plugins.md013.enabled = false # line-length
 plugins.md041.enabled = false # first-line-h1
 plugins.md033.enabled = false # inline-html
 plugins.md024.allow_different_nesting = true # no-duplicate-headers
+plugins.md007.enabled = true
+plugins.md007.indent = 4
 
 [dependency-groups]
 dev = [

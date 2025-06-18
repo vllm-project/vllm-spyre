@@ -61,6 +61,8 @@ The vLLM Documentation on [Deploying with Kubernetes](https://docs.vllm.ai/en/la
         labels:
           app: granite-8b-instruct
       spec:
+        # Defaults to 600 and must be set higher if your startupProbe needs to wait longer than that 
+        progressDeadlineSeconds: 1200
         replicas: 1
         selector:
           matchLabels:
@@ -70,6 +72,8 @@ The vLLM Documentation on [Deploying with Kubernetes](https://docs.vllm.ai/en/la
             labels:
               app: granite-8b-instruct
           spec:
+            # Required for scheduling spyre cards
+            schedulerName: aiu-scheduler
             volumes:
             - name: hf-cache-volume
               persistentVolumeClaim:
@@ -127,15 +131,19 @@ The vLLM Documentation on [Deploying with Kubernetes](https://docs.vllm.ai/en/la
                 httpGet:
                   path: /health
                   port: 8000
-                # Long startup delays are necessary for graph compilation
-                initialDelaySeconds: 1200
                 periodSeconds: 10
               readinessProbe:
                 httpGet:
                   path: /health
                   port: 8000
-                initialDelaySeconds: 600
                 periodSeconds: 5
+              startupProbe:
+                httpGet:
+                  path: /health
+                  port: 8000
+                periodSeconds: 10
+                # Long startup delays are necessary for graph compilation
+                failureThreshold: 120
       ---
       apiVersion: v1
       kind: Service
