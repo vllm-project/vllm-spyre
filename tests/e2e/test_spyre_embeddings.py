@@ -23,7 +23,7 @@ from spyre_util import (compare_embedding_results, get_spyre_backend_list,
 @pytest.mark.parametrize(
     "vllm_version",
     [pytest.param("V0", marks=pytest.mark.v0, id="v0")
-     ])  # TODO: Replace with VLLM_VERSIONS when v1 is supported.
+     ])  # TODO: Remove it when v1 is supported.
 def test_output(
     model: str,
     prompts: list[str],
