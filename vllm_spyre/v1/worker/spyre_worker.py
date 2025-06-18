@@ -61,7 +61,7 @@ class SpyreWorker(WorkerBaseV1):
 
     def compile_or_warm_up_model(self) -> None:
         """Prepare model for execution through compilation/warmup."""
-        # TO DO: implement warmup for continuous batching
+
         if envs_spyre.VLLM_SPYRE_USE_CB:
             with _maybe_warmup_context():
                 self._warmup_spyre_dynamic_size(self.restricted_tokens)
@@ -454,7 +454,6 @@ class SpyreWorker(WorkerBaseV1):
                         str(max_model_len), max_concurrency_spyre)
             return num_blocks_spyre
         else:  # dynamo backend 'eager'
-            # TODO: how do we get a meaningful value for CPU here
             num_blocks_cpu = max_batch_size * min_req_num_blocks
             assert num_blocks_cpu >= min_req_num_blocks, (
                 "Number of pages available on CPU (%d) is not enough to "
