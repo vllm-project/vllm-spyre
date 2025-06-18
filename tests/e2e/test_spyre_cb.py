@@ -69,8 +69,8 @@ def test_cb_handling(
     vllm_results = generate_cb_spyre_vllm_output(
         model=model,
         prompts=prompts,
-        max_model_len=2048,
-        block_size=2048,
+        max_model_len=128,
+        block_size=128,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
         backend=backend,
