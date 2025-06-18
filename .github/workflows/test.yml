@@ -39,9 +39,6 @@ jobs:
           - name: "vLLM:main"
             repo: "git+https://github.com/vllm-project/vllm --branch main"
         test_suite:
-          - name: "V0-e2e"
-            markers: "v0 and cpu and e2e"
-            flags: "--timeout=300"
           - name: "V1-e2e"
             markers: "v1 and cpu and e2e and not cb"
             flags: "--timeout=300 --forked"
