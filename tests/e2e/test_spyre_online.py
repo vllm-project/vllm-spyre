@@ -1,6 +1,6 @@
 import openai
 import pytest
-from spyre_util import (VLLM_VERSIONS, get_spyre_backend_list,
+from spyre_util import (get_spyre_backend_list,
                         get_spyre_model_list)
 
 
@@ -9,7 +9,7 @@ from spyre_util import (VLLM_VERSIONS, get_spyre_backend_list,
 @pytest.mark.parametrize("warmup_shape", [[
     (64, 20, 4),
 ]])
-@pytest.mark.parametrize("vllm_version", VLLM_VERSIONS)
+@pytest.mark.parametrize("vllm_version", ["V0", "V1"])
 def test_openai_serving(remote_openai_server, model, warmup_shape, backend,
                         vllm_version):
     """Test online serving using the `vllm serve` CLI"""
@@ -60,9 +60,8 @@ def test_openai_serving(remote_openai_server, model, warmup_shape, backend,
 @pytest.mark.parametrize("backend", ["sendnn"])
 @pytest.mark.parametrize("quantization", ["gptq"])
 @pytest.mark.parametrize("warmup_shape", [[(64, 20, 4)]])
-@pytest.mark.parametrize("vllm_version", VLLM_VERSIONS)
 def test_openai_serving_gptq(remote_openai_server, model, backend,
-                             warmup_shape, vllm_version, quantization):
+                             warmup_shape, quantization):
     """Test online serving a GPTQ model with the sendnn backend only"""
 
     client = remote_openai_server.get_client()

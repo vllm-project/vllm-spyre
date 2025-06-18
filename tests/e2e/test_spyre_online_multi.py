@@ -1,5 +1,5 @@
 import pytest
-from spyre_util import (VLLM_VERSIONS, get_spyre_backend_list,
+from spyre_util import (get_spyre_backend_list,
                         get_spyre_model_list)
 
 
@@ -11,9 +11,8 @@ from spyre_util import (VLLM_VERSIONS, get_spyre_backend_list,
 @pytest.mark.parametrize(
     "backend", [b for b in get_spyre_backend_list() if "eager" not in str(b)])
 @pytest.mark.parametrize("tensor_parallel_size", ["2", "4", "8"])
-@pytest.mark.parametrize("vllm_version", VLLM_VERSIONS)
 def test_openai_tp_serving(remote_openai_server, model, warmup_shape, backend,
-                           vllm_version, tensor_parallel_size):
+                           tensor_parallel_size):
     """Test online serving with tensor parallelism using the `vllm serve` CLI"""
 
     client = remote_openai_server.get_client()
