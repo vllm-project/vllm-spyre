@@ -8,8 +8,7 @@ from spyre_util import get_spyre_backend_list, get_spyre_model_list
 @pytest.mark.parametrize("warmup_shape", [[
     (64, 20, 4),
 ]])
-def test_openai_serving(remote_openai_server, model, warmup_shape, backend,
-                        vllm_version):
+def test_openai_serving(remote_openai_server, model, warmup_shape, backend):
     """Test online serving using the `vllm serve` CLI"""
 
     client = remote_openai_server.get_client()
