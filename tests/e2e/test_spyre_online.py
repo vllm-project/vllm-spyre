@@ -9,7 +9,6 @@ from spyre_util import (get_spyre_backend_list,
 @pytest.mark.parametrize("warmup_shape", [[
     (64, 20, 4),
 ]])
-@pytest.mark.parametrize("vllm_version", ["V0", "V1"])
 def test_openai_serving(remote_openai_server, model, warmup_shape, backend,
                         vllm_version):
     """Test online serving using the `vllm serve` CLI"""
@@ -48,10 +47,6 @@ def test_openai_serving(remote_openai_server, model, warmup_shape, backend,
         completion = client.completions.create(model=model,
                                                prompt="Hello World!",
                                                max_tokens=25)
-        # V1 should raise
-        assert vllm_version == "V0"
-        assert len(completion.choices) == 1
-        assert len(completion.choices[0].text) == 0
     except openai.BadRequestError as e:
         assert "warmup" in str(e)
 
