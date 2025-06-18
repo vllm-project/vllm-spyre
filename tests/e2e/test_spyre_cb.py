@@ -19,7 +19,9 @@ from vllm_spyre.v1.core.scheduler import ContinuousBatchingSpyreScheduler
 
 
 @pytest.mark.cb
-@pytest.mark.parametrize("max_num_seqs", [2, 3, 4],
+# Spyre cards currently support batch size 2 only
+#@pytest.mark.parametrize("max_num_seqs", [2, 3, 4],
+@pytest.mark.parametrize("max_num_seqs", [2],
                          ids=lambda val: f"max_num_seqs({val})")
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
@@ -134,7 +136,7 @@ def get_params_test_blocks_borders_aligned_prompts():
     seqs_max_tokens = [65, 67, 7]
     prompts_lengths = [49, 41, 47]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
-    max_model_len = 2048
+    max_model_len = 256
 
     checked_steps = [
         {
@@ -238,7 +240,7 @@ def get_params_test_blocks_borders_misaligned_prompts():
     seqs_max_tokens = [57, 67, 9]
     prompts_lengths = [49, 41, 47]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
-    max_model_len = 2048
+    max_model_len = 256
 
     checked_steps = [
         {
@@ -341,7 +343,7 @@ def get_params_test_special_finish():
     seqs_max_tokens = [30, 30, 10]
     prompts_lengths = [49, 30, 20]
     steps_add_reqs = [0, 0, 31]
-    max_model_len = 2048
+    max_model_len = 256
 
     checked_steps = [
         {
@@ -431,7 +433,7 @@ def get_params_test_scheduler_constraints_tkv():
     seqs_max_tokens = [57, 67]
     prompts_lengths = [49, 70]
     steps_add_reqs = [0, 0]
-    max_model_len = 2048
+    max_model_len = 256
 
     checked_steps = [
         {
