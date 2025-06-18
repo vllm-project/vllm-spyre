@@ -34,6 +34,7 @@ def test_output(
     warmup_shapes: list[tuple[int, int, int]],
     backend: str,
     vllm_version: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     '''
     The warmup is based on two shapes, that 'overlap' each
@@ -72,7 +73,8 @@ def test_output(
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
         backend=backend,
-        vllm_version=vllm_version)
+        vllm_version=vllm_version,
+        monkeypatch=monkeypatch)
 
     hf_results = generate_hf_output(model=model,
                                     prompts=prompts,
@@ -99,6 +101,7 @@ def test_invalid_prompt_len(
     warmup_shapes: list[tuple[int, int, int]],
     backend: str,
     vllm_version: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     '''
     Expects an error to be raised if the warmup prompt length
@@ -119,4 +122,5 @@ def test_invalid_prompt_len(
                                    sampling_params=vllm_sampling_params,
                                    tensor_parallel_size=1,
                                    backend=backend,
-                                   vllm_version=vllm_version)
+                                   vllm_version=vllm_version,
+                                   monkeypatch=monkeypatch)

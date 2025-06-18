@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 from spyre_util import (compare_results, create_random_request,
-                        generate_cb_spyre_vllm_output, generate_hf_output,
+                        generate_hf_output, generate_spyre_vllm_output,
                         get_spyre_model_list)
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine import EngineCoreRequest
@@ -24,16 +24,14 @@ template = (
     "user.\n\n### Instruction:\n{}\n\n### Response:")
 
 
+@pytest.mark.cb
 @pytest.mark.parametrize("max_num_seqs", [2, 3, 4],
                          ids=lambda val: f"max_num_seqs({val})")
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
-@pytest.mark.parametrize("cb",
-                         [pytest.param(1, marks=pytest.mark.cb, id="cb")])
 # commenting v1 since we don't want this test to run with v1 marker yet
-# @pytest.mark.parametrize("vllm_version",
-#                          [pytest.param("V1", marks=pytest.mark.v1, id="v1")])
+# @pytest.mark.v1
 @pytest.mark.parametrize("prompts", [[
     template.format("Provide a list of instructions "
                     "for preparing chicken soup."),
@@ -47,9 +45,7 @@ def test_cb_handling(
     model: str,
     backend: str,
     max_num_seqs: int,
-    cb: int,
     prompts: list[str],
-    # vllm_version: str,
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Test that the spyre worker correctly handles
@@ -66,7 +62,7 @@ def test_cb_handling(
     # Ensure that both:
     # - The model doesn't crash
     # - The output sequences are correct
-    vllm_results = generate_cb_spyre_vllm_output(
+    vllm_results = generate_spyre_vllm_output(
         model=model,
         prompts=prompts,
         max_model_len=2048,
@@ -75,9 +71,9 @@ def test_cb_handling(
         tensor_parallel_size=1,
         backend=backend,
         max_num_seqs=max_num_seqs,
-        use_cb=cb,
-        monkeypatch=monkeypatch,
-    )
+        use_cb=True,
+        vllm_version="V1",  # CB runs in V1 only
+        monkeypatch=monkeypatch)
 
     hf_results = generate_hf_output(model=model,
                                     prompts=prompts,
@@ -92,18 +88,16 @@ def test_cb_handling(
                     hf_results=hf_results)
 
 
+@pytest.mark.cb
+# @pytest.mark.v1
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
-@pytest.mark.parametrize("cb",
-                         [pytest.param(1, marks=pytest.mark.cb, id="cb")])
-# @pytest.mark.v1
 def test_cb_max_tokens(
     model: str,
     backend: str,
     max_num_seqs: int,
-    cb: int,
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Test that continuous batches of requests that
@@ -120,7 +114,7 @@ def test_cb_max_tokens(
                                           logprobs=0)
 
     with pytest.raises(ValueError, match="max model context length"):
-        generate_cb_spyre_vllm_output(
+        generate_spyre_vllm_output(
             model=model,
             prompts=overflow_prompt,
             max_model_len=max_model_len,
@@ -129,9 +123,9 @@ def test_cb_max_tokens(
             tensor_parallel_size=1,
             backend=backend,
             max_num_seqs=max_num_seqs,
-            use_cb=cb,
-            monkeypatch=monkeypatch,
-        )
+            use_cb=True,
+            vllm_version="V1",  # CB runs in V1 only
+            monkeypatch=monkeypatch)
 
 
 def get_params_test_blocks_borders_aligned_prompts():

@@ -40,6 +40,7 @@ def test_output(
     warmup_shape: tuple[int, int, int],
     backend: str,
     vllm_version: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     '''
     The warmup is based on a single shape. After the warmup,
@@ -71,7 +72,8 @@ def test_output(
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
         backend=backend,
-        vllm_version=vllm_version)
+        vllm_version=vllm_version,
+        monkeypatch=monkeypatch)
 
     hf_results = generate_hf_output(model=model,
                                     prompts=prompts,
@@ -101,6 +103,7 @@ def test_output_sendnn_decoder(
     warmup_shape: tuple[int, int, int],
     backend: str,
     vllm_version: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     '''
     Tests the deprecated sendnn_decoder backend, which should fall-back to
@@ -124,7 +127,8 @@ def test_output_sendnn_decoder(
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
         backend=backend,
-        vllm_version=vllm_version)
+        vllm_version=vllm_version,
+        monkeypatch=monkeypatch)
 
     hf_results = generate_hf_output(model=model,
                                     prompts=prompts,
@@ -146,6 +150,7 @@ def test_batch_handling(
     model: str,
     backend: str,
     vllm_version: str,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     """Test that the spyre worker correctly handles batches of requests that
     finish after different numbers of forward passes"""
@@ -179,7 +184,8 @@ def test_batch_handling(
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
         backend=backend,
-        vllm_version=vllm_version)
+        vllm_version=vllm_version,
+        monkeypatch=monkeypatch)
 
     assert vllm_results[0]["text"] == " 3 2 "
     assert vllm_results[1]["text"] == " 6 5 4 3 2 "

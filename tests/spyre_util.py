@@ -156,62 +156,7 @@ def patch_warmup_shapes(warmup_shapes: list[tuple[int, int, int]],
 
 
 # vLLM / Spyre
-def generate_spyre_vllm_output(model: str, prompts: list[str],
-                               warmup_shapes: list[tuple[int, int, int]],
-                               max_model_len: int, block_size: int,
-                               sampling_params: Union[SamplingParams,
-                                                      list[SamplingParams]],
-                               tensor_parallel_size: int, backend: str,
-                               vllm_version: str) -> list[dict[str, Any]]:
-
-    warmup_prompt_length = [t[0] for t in warmup_shapes]
-    warmup_new_tokens = [t[1] for t in warmup_shapes]
-    warmup_batch_size = [t[2] for t in warmup_shapes]
-
-    os.environ['VLLM_SPYRE_WARMUP_PROMPT_LENS'] = ','.join(
-        str(val) for val in warmup_prompt_length)
-    os.environ['VLLM_SPYRE_WARMUP_NEW_TOKENS'] = ','.join(
-        str(val) for val in warmup_new_tokens)
-    os.environ['VLLM_SPYRE_WARMUP_BATCH_SIZES'] = ','.join(
-        str(val) for val in warmup_batch_size)
-    os.environ['VLLM_SPYRE_DYNAMO_BACKEND'] = backend
-    os.environ['VLLM_USE_V1'] = "1" if vllm_version == "V1" else "0"
-    # Allows to run multiprocess V1 engine without dumping meaningless logs at
-    # shutdown engine this context.
-    os.environ['VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER'] = "1"
-
-    vllm_model = LLM(model=model,
-                     tokenizer=model,
-                     max_model_len=max_model_len,
-                     block_size=block_size,
-                     tensor_parallel_size=tensor_parallel_size)
-
-    vllm_outputs = vllm_model.generate(prompts, sampling_params)
-
-    results = []
-
-    for req_output in vllm_outputs:
-        result = {}
-        result['text'] = req_output.outputs[0].text
-        # TODO: Workaround for V1, if request does not fit in a warmup shape
-        # token_ids may be filled with -1.
-        token_ids = [t for t in req_output.outputs[0].token_ids if t >= 0]
-        result['token_ids'] = tuple(token_ids)
-        result['tokens'] = tuple([
-            req_output.outputs[0].logprobs[i][t].decoded_token
-            for i, t in enumerate(result['token_ids'])
-        ])
-        result['logprobs'] = tuple([
-            req_output.outputs[0].logprobs[i][t].logprob
-            for i, t in enumerate(result['token_ids'])
-        ])
-        results.append(result)
-
-    return results
-
-
-# Support for continuous batching
-def generate_cb_spyre_vllm_output(
+def generate_spyre_vllm_output(
     model: str,
     prompts: list[str],
     max_model_len: int,
@@ -219,14 +164,36 @@ def generate_cb_spyre_vllm_output(
     sampling_params: Union[SamplingParams, list[SamplingParams]],
     tensor_parallel_size: int,
     backend: str,
-    max_num_seqs: int,
-    use_cb: int,
+    vllm_version: str,
     monkeypatch: pytest.MonkeyPatch,
+    warmup_shapes: Optional[list[tuple[int, int, int]]] = None,
+    max_num_seqs: Optional[int] = None,
+    use_cb: bool = False,
 ) -> list[dict[str, Any]]:
 
-    monkeypatch.setenv("VLLM_SPYRE_USE_CB", str(use_cb))
-    monkeypatch.setenv("VLLM_USE_V1", "1")
+    # ---- For static batching ----
+    if warmup_shapes:
+        assert not use_cb, "Warmup shapes through environment variables have "\
+            "been deprecated in continuous batching"
+
+        warmup_prompt_length = [t[0] for t in warmup_shapes]
+        warmup_new_tokens = [t[1] for t in warmup_shapes]
+        warmup_batch_size = [t[2] for t in warmup_shapes]
+
+        monkeypatch.setenv("VLLM_SPYRE_WARMUP_PROMPT_LENS",
+                           ",".join(str(val) for val in warmup_prompt_length))
+        monkeypatch.setenv("VLLM_SPYRE_WARMUP_NEW_TOKENS",
+                           ",".join(str(val) for val in warmup_new_tokens))
+        monkeypatch.setenv("VLLM_SPYRE_WARMUP_BATCH_SIZES",
+                           ",".join(str(val) for val in warmup_batch_size))
+    # --------------
+    monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1" if use_cb else "0")
+    monkeypatch.setenv("VLLM_USE_V1", "1" if vllm_version == "V1" else "0")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+
+    # Allows to run multiprocess V1 engine without dumping meaningless logs at
+    # shutdown engine this context.
+    monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
     vllm_model = LLM(
         model=model,

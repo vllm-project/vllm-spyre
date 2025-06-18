@@ -32,6 +32,7 @@ def test_output(
     tp_size: int,
     backend: str,
     vllm_version: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     '''
     The warmup is based on one or multiple shapes. After the warmup,
@@ -65,7 +66,8 @@ def test_output(
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=tp_size,
         backend=backend,
-        vllm_version=vllm_version)
+        vllm_version=vllm_version,
+        monkeypatch=monkeypatch)
 
     hf_results = generate_hf_output(model=model,
                                     prompts=prompts,
