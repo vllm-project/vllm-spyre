@@ -156,8 +156,8 @@ def generate_spyre_vllm_output(model: str, prompts: list[str],
                                max_model_len: int, block_size: int,
                                sampling_params: Union[SamplingParams,
                                                       list[SamplingParams]],
-                               tensor_parallel_size: int, backend: str,
-                               vllm_version: str) -> list[dict[str, Any]]:
+                               tensor_parallel_size: int,
+                               backend: str) -> list[dict[str, Any]]:
 
     warmup_prompt_length = [t[0] for t in warmup_shapes]
     warmup_new_tokens = [t[1] for t in warmup_shapes]
@@ -170,7 +170,7 @@ def generate_spyre_vllm_output(model: str, prompts: list[str],
     os.environ['VLLM_SPYRE_WARMUP_BATCH_SIZES'] = ','.join(
         str(val) for val in warmup_batch_size)
     os.environ['VLLM_SPYRE_DYNAMO_BACKEND'] = backend
-    os.environ['VLLM_USE_V1'] = "1" if vllm_version == "V1" else "0"
+    os.environ['VLLM_USE_V1'] = "1"
     # Allows to run multiprocess V1 engine without dumping meaningless logs at
     # shutdown engine this context.
     os.environ['VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER'] = "1"
