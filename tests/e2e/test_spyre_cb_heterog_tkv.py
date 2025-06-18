@@ -4,7 +4,6 @@ Run `python -m pytest tests/e2e/test_spyre_cb_heterog_tkv.py`.
 """
 
 import copy
-import inspect
 from collections import deque
 from typing import Any
 
@@ -93,8 +92,6 @@ def test_cb_handling(
                 str(i)
                 for i in range(int(prompt.split()[-1]) - 1, 1, -1)) + " "
         ][0])
-
-
 
 
 def get_params_test_blocks_borders_aligned_prompts():
