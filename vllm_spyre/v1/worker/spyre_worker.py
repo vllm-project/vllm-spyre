@@ -330,6 +330,7 @@ class SpyreWorker(WorkerBaseV1):
                 mm_hashes=[],
                 mm_positions=[],
                 sampling_params=SamplingParams(max_tokens=num_decode_tokens),
+                pooling_params=None,
                 block_ids=[0],  # not actually used
                 num_computed_tokens=0,
                 lora_request=None,
@@ -496,6 +497,7 @@ class SpyreWorker(WorkerBaseV1):
                 mm_hashes=[],
                 mm_positions=[],
                 sampling_params=SamplingParams(max_tokens=num_decode_tokens),
+                pooling_params=None,
                 block_ids=[0],
                 num_computed_tokens=0,
                 lora_request=None,
