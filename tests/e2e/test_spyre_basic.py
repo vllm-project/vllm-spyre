@@ -4,7 +4,7 @@ Run `python -m pytest tests/e2e/test_spyre_basic.py`.
 """
 
 import pytest
-from spyre_util import (VLLM_VERSIONS, compare_results, create_random_request,
+from spyre_util import (compare_results, create_random_request,
                         generate_hf_output, generate_spyre_vllm_output,
                         get_spyre_backend_list, get_spyre_model_list)
 from vllm import EngineArgs, SamplingParams
@@ -33,13 +33,11 @@ template = (
     "warmup_shape", [(64, 20, 4), (64, 20, 8), (128, 20, 4),
                      (128, 20, 8)])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("vllm_version", VLLM_VERSIONS)
 def test_output(
     model: str,
     prompts: list[str],
     warmup_shape: tuple[int, int, int],
     backend: str,
-    vllm_version: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     '''
@@ -72,7 +70,6 @@ def test_output(
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
         backend=backend,
-        vllm_version=vllm_version,
         monkeypatch=monkeypatch)
 
     hf_results = generate_hf_output(model=model,
@@ -96,13 +93,11 @@ def test_output(
 @pytest.mark.parametrize(
     "warmup_shape", [(64, 20, 4)])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", ["sendnn_decoder"])
-@pytest.mark.parametrize("vllm_version", VLLM_VERSIONS)
 def test_output_sendnn_decoder(
     model: str,
     prompts: list[str],
     warmup_shape: tuple[int, int, int],
     backend: str,
-    vllm_version: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     '''
@@ -127,7 +122,6 @@ def test_output_sendnn_decoder(
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
         backend=backend,
-        vllm_version=vllm_version,
         monkeypatch=monkeypatch)
 
     hf_results = generate_hf_output(model=model,
@@ -145,11 +139,9 @@ def test_output_sendnn_decoder(
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("vllm_version", VLLM_VERSIONS)
 def test_batch_handling(
     model: str,
     backend: str,
-    vllm_version: str,
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Test that the spyre worker correctly handles batches of requests that
@@ -184,7 +176,6 @@ def test_batch_handling(
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
         backend=backend,
-        vllm_version=vllm_version,
         monkeypatch=monkeypatch)
 
     assert vllm_results[0]["text"] == " 3 2 "
@@ -195,10 +186,7 @@ def test_batch_handling(
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("vllm_version",
-                         [pytest.param("V1", marks=pytest.mark.v1, id="v1")])
-def test_full_batch_scheduling(model: str, backend: str, vllm_version: str,
-                               monkeypatch):
+def test_full_batch_scheduling(model: str, backend: str, monkeypatch):
     """Test that we can schedule a full batch of prompts."""
 
     # We need to ensure here that the max number of tokens in a full batch

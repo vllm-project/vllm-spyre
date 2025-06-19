@@ -4,7 +4,7 @@ Run `python -m pytest tests/e2e/test_spyre_tensor_parallel.py`.
 """
 
 import pytest
-from spyre_util import (VLLM_VERSIONS, compare_results, generate_hf_output,
+from spyre_util import (compare_results, generate_hf_output,
                         generate_spyre_vllm_output, get_spyre_backend_list,
                         get_spyre_model_list, skip_unsupported_tp_size)
 from vllm import SamplingParams
@@ -24,14 +24,12 @@ from vllm import SamplingParams
 @pytest.mark.parametrize("tp_size", [2, 4, 8])
 @pytest.mark.parametrize(
     "backend", [b for b in get_spyre_backend_list() if "eager" not in str(b)])
-@pytest.mark.parametrize("vllm_version", VLLM_VERSIONS)
 def test_output(
     model: str,
     prompts: list[str],
     warmup_shapes: list[tuple[int, int, int]],
     tp_size: int,
     backend: str,
-    vllm_version: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     '''
@@ -66,7 +64,6 @@ def test_output(
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=tp_size,
         backend=backend,
-        vllm_version=vllm_version,
         monkeypatch=monkeypatch)
 
     hf_results = generate_hf_output(model=model,

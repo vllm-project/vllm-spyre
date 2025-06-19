@@ -121,8 +121,6 @@ pythonpath = ["."]
 markers = [
     "skip_global_cleanup",
     "e2e: Tests using end-to-end engine spin-up",
-    "v0: Tests using vLLM v0 engine",
-    "v1: Tests using vLLM v1 engine",
     "cb: Continuous batching tests",
     "cpu: Tests using CPU (i.e. eager) backend",
     "spyre: Tests using Spyre hardware backend",

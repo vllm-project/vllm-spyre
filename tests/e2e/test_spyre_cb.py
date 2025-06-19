@@ -8,14 +8,9 @@ from collections import deque
 from typing import Any
 
 import pytest
-<<<<<<< HEAD
 from spyre_util import (compare_results, create_random_request,
                         generate_hf_output, generate_spyre_vllm_output,
-                        get_spyre_model_list)
-=======
-from spyre_util import (create_random_request, generate_cb_spyre_vllm_output,
                         get_spyre_backend_list, get_spyre_model_list)
->>>>>>> origin/main
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
@@ -28,16 +23,12 @@ template = (
     "appropriately completes the request. Be polite in your response to the "
     "user.\n\n### Instruction:\n{}\n\n### Response:")
 
-<<<<<<< HEAD
 
 @pytest.mark.cb
 @pytest.mark.parametrize("max_num_seqs", [2, 3, 4],
                          ids=lambda val: f"max_num_seqs({val})")
 @pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize(
-    "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
-# commenting v1 since we don't want this test to run with v1 marker yet
-# @pytest.mark.v1
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("prompts", [[
     template.format("Provide a list of instructions "
                     "for preparing chicken soup."),
@@ -47,35 +38,6 @@ template = (
         "how do I add multiple new columns in m for power query or power bi?"),
     template.format("Convert char to string in Java."),
 ]])
-=======
-@pytest.mark.cb
-@pytest.mark.v1
-@pytest.mark.parametrize("max_num_seqs", [2, 3, 4],
-                         ids=lambda val: f"max_num_seqs({val})")
-@pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize(
-    "prompts",
-    [
-        [
-            "7 6 5 4",
-            "10 9 8 7",
-        ],
-        [
-            "7 6 5 4",
-            "10 9 8 7",
-            "8 7 6 5",
-        ],
-        [
-            "7 6 5 4",
-            "10 9 8 7",
-            "8 7 6 5",
-            "9 8 7 6",
-        ],
-    ],
-    ids=lambda val: f"num_prompts({len(val)})",
-)
->>>>>>> origin/main
 def test_cb_handling(
     model: str,
     backend: str,
@@ -107,7 +69,6 @@ def test_cb_handling(
         backend=backend,
         max_num_seqs=max_num_seqs,
         use_cb=True,
-        vllm_version="V1",  # CB runs in V1 only
         monkeypatch=monkeypatch)
 
     hf_results = generate_hf_output(model=model,
@@ -124,7 +85,6 @@ def test_cb_handling(
 
 
 @pytest.mark.cb
-# @pytest.mark.v1
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
@@ -149,18 +109,16 @@ def test_cb_max_tokens(
                                           logprobs=0)
 
     with pytest.raises(ValueError, match="max model context length"):
-        generate_spyre_vllm_output(
-            model=model,
-            prompts=overflow_prompt,
-            max_model_len=max_model_len,
-            block_size=max_model_len,
-            sampling_params=vllm_sampling_params,
-            tensor_parallel_size=1,
-            backend=backend,
-            max_num_seqs=max_num_seqs,
-            use_cb=True,
-            vllm_version="V1",  # CB runs in V1 only
-            monkeypatch=monkeypatch)
+        generate_spyre_vllm_output(model=model,
+                                   prompts=overflow_prompt,
+                                   max_model_len=max_model_len,
+                                   block_size=max_model_len,
+                                   sampling_params=vllm_sampling_params,
+                                   tensor_parallel_size=1,
+                                   backend=backend,
+                                   max_num_seqs=max_num_seqs,
+                                   use_cb=True,
+                                   monkeypatch=monkeypatch)
 
 
 def get_params_test_blocks_borders_aligned_prompts():
@@ -683,7 +641,6 @@ def augment_checked_steps(
 
 
 @pytest.mark.cb
-@pytest.mark.v1
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("max_num_seqs", [2])

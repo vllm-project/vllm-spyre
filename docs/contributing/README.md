@@ -92,7 +92,7 @@ uv pip install --group dev
 Now, you can run the tests:
   
 ```sh
-python -m pytest -v -x tests -m "v1 and cpu and e2e"
+python -m pytest -v -x tests -m "cpu and e2e"
 ```
 
 Here is a list of `pytest` markers you can use to filter them:

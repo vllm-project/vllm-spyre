@@ -26,14 +26,11 @@ from vllm import SamplingParams
     "warmup_shapes", [[(64, 20, 8),
                        (128, 20, 4)]])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("vllm_version",
-                         [pytest.param("V1", marks=pytest.mark.v1, id="v1")])
 def test_output(
     model: str,
     prompts: list[str],
     warmup_shapes: list[tuple[int, int, int]],
     backend: str,
-    vllm_version: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     '''
@@ -73,7 +70,6 @@ def test_output(
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
         backend=backend,
-        vllm_version=vllm_version,
         monkeypatch=monkeypatch)
 
     hf_results = generate_hf_output(model=model,
@@ -93,14 +89,11 @@ def test_output(
 @pytest.mark.parametrize("prompts", [["Hello"]])
 @pytest.mark.parametrize("warmup_shapes", [[(65, 1, 1)]])
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("vllm_version",
-                         [pytest.param("V1", marks=pytest.mark.v1, id="v1")])
 def test_invalid_prompt_len(
     model: str,
     prompts: list[str],
     warmup_shapes: list[tuple[int, int, int]],
     backend: str,
-    vllm_version: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     '''
@@ -122,5 +115,4 @@ def test_invalid_prompt_len(
                                    sampling_params=vllm_sampling_params,
                                    tensor_parallel_size=1,
                                    backend=backend,
-                                   vllm_version=vllm_version,
                                    monkeypatch=monkeypatch)

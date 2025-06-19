@@ -23,11 +23,6 @@ DISABLE_ASSERTS = False  # used for debugging
 ISCLOSE_REL_TOL_CPU = 0.1
 ISCLOSE_REL_TOL_SPYRE = 0.35
 
-VLLM_VERSIONS = [
-    pytest.param("V0", marks=pytest.mark.v0, id="v0"),
-    pytest.param("V1", marks=pytest.mark.v1, id="v1"),
-]
-
 
 class RemoteOpenAIServer:
     """Subprocess wrapper that boots a vllm server with `vllm serve` for testing
@@ -164,7 +159,6 @@ def generate_spyre_vllm_output(
     sampling_params: Union[SamplingParams, list[SamplingParams]],
     tensor_parallel_size: int,
     backend: str,
-    vllm_version: str,
     monkeypatch: pytest.MonkeyPatch,
     warmup_shapes: Optional[list[tuple[int, int, int]]] = None,
     max_num_seqs: Optional[int] = None,
@@ -188,7 +182,7 @@ def generate_spyre_vllm_output(
                            ",".join(str(val) for val in warmup_batch_size))
     # --------------
     monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1" if use_cb else "0")
-    monkeypatch.setenv("VLLM_USE_V1", "1" if vllm_version == "V1" else "0")
+    monkeypatch.setenv("VLLM_USE_V1", "1")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
 
     # Allows to run multiprocess V1 engine without dumping meaningless logs at
