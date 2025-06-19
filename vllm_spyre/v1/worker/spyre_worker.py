@@ -90,10 +90,8 @@ class SpyreWorker(WorkerBaseV1):
             logger.info(
                 "Warming up for prompt length %d, decoding %d tokens with "
                 "batch size %d", prompt_len, num_decode_tokens, batch_size)
-            with _maybe_warmup_context():
-                self._warmup_spyre_fixed_size(prompt_len, num_decode_tokens,
-                                              self.restricted_tokens,
-                                              batch_size)
+            self._warmup_spyre_fixed_size(prompt_len, num_decode_tokens,
+                                          self.restricted_tokens, batch_size)
         all_warmup_end_t = time.time()
         all_warmup_total_t = all_warmup_end_t - all_warmup_start_t
         self.perf_metrics.log("total warmup time", all_warmup_total_t)
@@ -537,8 +535,10 @@ class SpyreWorker(WorkerBaseV1):
 
         # First full forward pass
         logger.info("Warmup forward pass 1/2...")
-        self._warmup_model_forward_pass(scheduler_output, dummy_requests,
-                                        cached_requests, num_decode_tokens)
+        # The fixed size warmup needs to happen only in here
+        with _maybe_warmup_context():
+            self._warmup_model_forward_pass(scheduler_output, dummy_requests,
+                                            cached_requests, num_decode_tokens)
         self.perf_metrics.log("warmup 1 time",
                               time.time() - warmup_start_t,
                               batch_size=batch_size,
