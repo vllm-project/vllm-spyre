@@ -39,7 +39,7 @@ fi
 
 # Create a senlib_config.json to use only specified AIU id's.
 tmpfile=$(mktemp -t senlib_config_XXXXXXX.json)
-cat <<EOF | jq --argjson newValues "$(for i in ${VLLM_AIU_PCIE_IDS}; do echo $i; done | jq -R . | jq -s .)" '.GENERAL.sen_bus_id = $newValues' > $tmpfile
+cat <<EOF | jq --argjson newValues "$(for i in ${VLLM_AIU_PCIE_IDS}; do echo "$i"; done | jq -R . | jq -s .)" '.GENERAL.sen_bus_id = $newValues' > "$tmpfile"
 {
   "GENERAL": {
     "target": "SOC",
@@ -53,18 +53,18 @@ cat <<EOF | jq --argjson newValues "$(for i in ${VLLM_AIU_PCIE_IDS}; do echo $i;
   }
 }
 EOF
-sudo mv $tmpfile /etc/aiu/senlib_config.json
+sudo mv "$tmpfile" /etc/aiu/senlib_config.json
 
 # Reconfigure AIU's, and update the envvars to reflect changes
 . /etc/bashrc-sentient-env.sh
 setup_multi_aiu_env
 
 # Activate the vllm venv if not already active
-if [[ "x" == "x$VIRTUAL_ENV" ]] ; then
+if [[ -z "$VIRTUAL_ENV" ]] ; then
     source /opt/vllm/bin/activate
 fi
 
 # Start the vllm server with given model and detected parallelism.
 DEFAULT_ARGS="--model ${VLLM_MODEL_PATH} -tp ${AIU_WORLD_SIZE}"
-exec python -m vllm.entrypoints.openai.api_server ${DEFAULT_ARGS} $@
+exec python -m vllm.entrypoints.openai.api_server "${DEFAULT_ARGS}" "$@"
 

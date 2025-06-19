@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
-
 """
 Example usage:
-python3 container-scripts/spyre_vllm_benchmark.py --prompt-dir $HOME/prompts/ --tokenizer-dir $HOME/models/granite-3.3-8b-instruct --output-dir $HOME/output/ --port 8000 --max-tokens 64 --min-tokens 64
+python3 container-scripts/spyre_vllm_benchmark.py --prompt-dir $HOME/prompts/ 
+--tokenizer-dir $HOME/models/granite-3.3-8b-instruct --output-dir $HOME/output/
+--port 8000 --max-tokens 64 --min-tokens 64
 """
 
 # Imports
 import argparse
-import requests
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
-from openai import OpenAI, APIConnectionError
+
+import requests
+from openai import APIConnectionError, OpenAI
 from transformers import AutoTokenizer, PreTrainedTokenizer
+
 
 # Classes
 class InferenceResults(NamedTuple):
@@ -24,33 +27,61 @@ class InferenceResults(NamedTuple):
     ttft: float
     itl: float
 
+
 # Functions
 def parse_args():
-    parser = argparse.ArgumentParser(description="VLLM Spyre inference benchmarking script.")
-    parser.add_argument("--prompt-dir", required=True, type=str, help="Path to directory containing .txt files")
-    parser.add_argument("--tokenizer-dir", required=True, type=str, help="Path to a directory containing a tokenizer")
-    parser.add_argument("--port", required=False, help="Port of running container to connect to.", default=8000)
-    parser.add_argument("--max-tokens", required=False, type=int, help="Maximum number of tokens to generate", default=64)
-    parser.add_argument("--min-tokens", required=False, type=int, help="Minimum number of tokens to generate", default=0)
-    parser.add_argument("--output-dir", required=False, type=Path, help="Output directory to dump results and performance metrics", default=None)
+    parser = argparse.ArgumentParser(
+        description="VLLM Spyre inference benchmarking script.")
+    parser.add_argument("--prompt-dir",
+                        required=True,
+                        type=str,
+                        help="Path to directory containing .txt files")
+    parser.add_argument("--tokenizer-dir",
+                        required=True,
+                        type=str,
+                        help="Path to a directory containing a tokenizer")
+    parser.add_argument("--port",
+                        required=False,
+                        help="Port of running container to connect to.",
+                        default=8000)
+    parser.add_argument("--max-tokens",
+                        required=False,
+                        type=int,
+                        help="Maximum number of tokens to generate",
+                        default=64)
+    parser.add_argument("--min-tokens",
+                        required=False,
+                        type=int,
+                        help="Minimum number of tokens to generate",
+                        default=0)
+    parser.add_argument("--output-dir",
+                        required=False,
+                        type=Path,
+                        help="Output directory for results",
+                        default=None)
     return parser.parse_args()
+
 
 def create_client(api_key: str, base_url: str) -> OpenAI:
     """
     Creates and returns an OpenAI client.
 
     Args:
-        api_key (str): The OpenAI API key. Often set to "EMPTY" for local inference setups.
-        base_url (str): The base URL of the OpenAI-compatible API, e.g., "http://localhost:8000/v1".
+        api_key (str): The OpenAI API key. 
+                       Often set to "EMPTY" for local inference setups.
+        base_url (str): The base URL of the OpenAI-compatible API. 
+                        e.g., "http://localhost:8000/v1".
 
     Returns:
-        OpenAI: An instance of the OpenAI client initialized with the provided API key and base URL.
+        OpenAI: An instance of the OpenAI client, 
+                initialized with the provided API key and base URL.
     """
     client = OpenAI(
         api_key=api_key,
         base_url=base_url,
     )
     return client
+
 
 def test_server_connection(client: OpenAI, endpoint: str) -> bool:
     """
@@ -61,7 +92,7 @@ def test_server_connection(client: OpenAI, endpoint: str) -> bool:
         endpoint (str): The relative endpoint to test (e.g., "/models/").
 
     Returns:
-        bool: True if the server responds with a 200 status code; False otherwise.
+        bool: True if the server responds with a 200 status code.
     """
     try:
         base_url = str(client.base_url).rstrip("/")
@@ -70,6 +101,7 @@ def test_server_connection(client: OpenAI, endpoint: str) -> bool:
     except requests.RequestException as e:
         print(e)
         return False
+
 
 def connect(client: OpenAI, endpoint: str, max_tries: int = 5) -> None:
     """
@@ -98,20 +130,24 @@ def connect(client: OpenAI, endpoint: str, max_tries: int = 5) -> None:
             print(f"Connection attempt {tries + 1} failed: {e}")
         time.sleep(1)
         tries += 1
-    raise RuntimeError(f"Failed to connect to {endpoint} after {max_tries} attempts.")
+    raise RuntimeError(
+        f"Failed to connect to {endpoint} after {max_tries} attempts.")
+
 
 def get_tokenizer(model_path: str):
     """
     Loads and returns a tokenizer from the specified model path.
 
     Args:
-        model_path (str): Path to the pretrained model directory or identifier from Hugging Face Hub.
+        model_path (str): Path to the pretrained model directory or 
+                          identifier from Hugging Face Hub.
 
     Returns:
         PreTrainedTokenizer: A tokenizer instance loaded from model_path.
     """
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     return tokenizer
+
 
 def get_model_from_server(client: OpenAI) -> str:
     """
@@ -136,6 +172,7 @@ def get_model_from_server(client: OpenAI) -> str:
         exit(1)
     return model
 
+
 def process_input_prompts(prompt_dir: str) -> list[Path]:
     """
     Collects all `.txt` prompt files from the specified directory.
@@ -144,7 +181,7 @@ def process_input_prompts(prompt_dir: str) -> list[Path]:
         prompt_dir (str): Path to the directory containing prompt files.
 
     Returns:
-        list[Path]: List of Paths to the `.txt` prompt files found in the directory.
+        list[Path]: List of Paths to the `.txt` files found in the directory.
     """
     prompt_list = list(Path(prompt_dir).glob("*.txt"))
     if not prompt_list:
@@ -153,17 +190,24 @@ def process_input_prompts(prompt_dir: str) -> list[Path]:
     print(f"Found {len(prompt_list)} prompt files at {prompt_dir}")
     return prompt_list
 
-def save_results(output_dir: Path, prompt_files: list[Path], model: str, results: InferenceResults):
-    """
-    Saves model inference outputs and performance metrics to the specified output directory.
 
-    Each prompt's generated output is written to a separate text file named after the prompt,
-    and performance metrics are written to a single `performance_metrics.txt` file.
+def save_results(output_dir: Path, prompt_files: list[Path], model: str,
+                 results: InferenceResults):
+    """
+    Saves model inference outputs and performance metrics to the specified 
+    output directory.
+
+    Each prompt's generated output is written to a separate text file named 
+    after the prompt, and performance metrics are written to a single 
+    `performance_metrics.txt` file.
 
     Args:
-        output_dir (Path): The directory in which to save the output files. Created if it doesn't exist.
-        prompt_files (list[Path]): A list of prompt file paths that were used for inference.
-        results (InferenceResults): An object containing model outputs and performance metrics.
+        output_dir (Path): The directory in which to save the output files. 
+                           Created if it doesn't exist.
+        prompt_files (list[Path]): A list of prompt file paths that were used
+                                   for inference.
+        results (InferenceResults): An object containing model outputs and 
+                                    performance metrics.
 
     Returns:
         None
@@ -191,42 +235,45 @@ def save_results(output_dir: Path, prompt_files: list[Path], model: str, results
     with open(metrics_filename, "w") as f:
         f.write(f"Results for inference with model: {model}\n")
         f.write(f"Inference Time: {results.inference_time:.4f}s\n")
-        f.write(f"Inference Time w/o TTFT: {results.inference_time_no_ttft:.4f}s\n")
+        f.write(
+            f"Inference Time w/o TTFT: {results.inference_time_no_ttft:.4f}s\n"
+        )
         f.write(f"Output Token Count: {results.output_token_count}\n")
         f.write(f"TTFT: {results.ttft:.4f}s\n")
         f.write(f"ITL: {results.itl:.4f}s/token\n")
 
     print(f"Saved results to {output_dir}")
 
-def run_inference(
-    client: OpenAI,
-    model: str,
-    tokenizer: PreTrainedTokenizer,
-    prompt_files: list[Path],
-    max_tokens: int,
-    min_tokens: int
-) -> InferenceResults:
+
+def run_inference(client: OpenAI, model: str, tokenizer: PreTrainedTokenizer,
+                  prompt_files: list[Path], max_tokens: int,
+                  min_tokens: int) -> InferenceResults:
     """
     Runs inference using an OpenAI-compatible client on a set of text prompts.
 
-    This function reads prompt files, tokenizes the inputs, sends them to the server for 
-    streamed completion, and calculates performance metrics such as inference time, 
-    time to first token (TTFT), and inter-token latency (ITL).
+    This function reads prompt files, tokenizes the inputs, sends them to the
+    server for streamed completion, and calculates performance metrics such as
+    inference time, time to first token (TTFT), and inter-token latency (ITL).
 
     Args:
         client (OpenAI): An instance of the OpenAI client.
         model (str): The model ID to use for inference.
-        tokenizer (PreTrainedTokenizer): The tokenizer used to compute token counts.
-        prompt_files (list[Path]): A list of file paths pointing to `.txt` prompt files.
+        tokenizer (PreTrainedTokenizer): The tokenizer used to compute token 
+                                         counts.
+        prompt_files (list[Path]): A list of file paths pointing to `.txt` 
+                                   prompt files.
         max_tokens (int): Maximum number of tokens to generate per prompt.
         min_tokens (int): Minimum number of tokens to generate per prompt.
 
     Returns:
         InferenceMetrics:
-            - outputs (list[str]): Raw list of generated text completions for each prompt.
+            - outputs (list[str]): Raw list of generated text completions for 
+                                   each prompt.
             - inference_time (float): Total time taken for inference (seconds).
-            - inference_time_no_ttft (float): Time taken for inference excluding ttft (seconds).
-            - output_token_count (int): Total number of output tokens generated across all prompts.
+            - inference_time_no_ttft (float): Time taken for inference 
+                                              excluding ttft (seconds).
+            - output_token_count (int): Total number of output tokens generated
+                                        across all prompts.
             - ttft (float): Time to first token (seconds).
             - itl (float): Inter-token latency (seconds per token).
     
@@ -237,8 +284,8 @@ def run_inference(
     prompts = [p.read_text() for p in prompt_files]
     # Get token count for each prompt
     for i, (prompt_text, prompt_file) in enumerate(zip(prompts, prompt_files)):
-            token_count = len(tokenizer(prompt_text)["input_ids"])
-            print(f"Prompt file: {prompt_file.name} | Prompt #{i} token count: {token_count}")
+        token_count = len(tokenizer(prompt_text)["input_ids"])
+        print(f"{prompt_file.name} | Prompt #{i} token count: {token_count}")
 
     # Single prompt test run
     print("Starting single prompt test run")
@@ -250,18 +297,17 @@ def run_inference(
             max_tokens=max_tokens,
             stream=True,
             temperature=0.0,
-            extra_body=dict(min_tokens=min_tokens)
-        )
+            extra_body=dict(min_tokens=min_tokens))
 
         output = [""]
         for chunk in test_response:
             idx = chunk.choices[0].index
             output[idx] += chunk.choices[0].text
     except Exception as e:
-        print(f"Error during single prompt test run:\n")
+        print("Error during single prompt test run:\n")
         print(e)
     print("Completed single prompt test run")
-    
+
     print("Starting inference")
     try:
         # Submit inference payload
@@ -272,32 +318,34 @@ def run_inference(
             max_tokens=max_tokens,
             stream=True,
             temperature=0.0,
-            extra_body=dict(min_tokens=min_tokens)
-        )
-        
+            extra_body=dict(min_tokens=min_tokens))
+
         # Collect streamed tokens
         outputs = [""] * len(prompts)
         first_token_time = None
         for chunk in response:
             if first_token_time is None:
-                    first_token_time = time.perf_counter()
-                    ttft = first_token_time - start_time
+                first_token_time = time.perf_counter()
+                ttft = first_token_time - start_time
             idx = chunk.choices[0].index
             outputs[idx] += chunk.choices[0].text
         end_time = time.perf_counter()
         print("Inference complete")
-        
+
         # Calculate results
         inference_time = end_time - start_time
         inference_time_no_ttft = inference_time - ttft
-        output_token_count = sum(len(tokenizer(output)["input_ids"]) for output in outputs)
+        output_token_count = sum(
+            len(tokenizer(output)["input_ids"]) for output in outputs)
         inter_token_tokens = max(output_token_count - 1, 1)
         itl = inference_time_no_ttft / inter_token_tokens
     except Exception as e:
-        print(f"Error during inference:\n")
+        print("Error during inference:\n")
         print(e)
 
-    return InferenceResults(outputs, inference_time, inference_time_no_ttft, output_token_count, ttft, itl)
+    return InferenceResults(outputs, inference_time, inference_time_no_ttft,
+                            output_token_count, ttft, itl)
+
 
 def main():
     # Collect command line arguments
@@ -319,15 +367,17 @@ def main():
         model = get_model_from_server(client)
 
         # Inference step
-        results = run_inference(client, model, tokenizer, prompt_list, max_tokens, min_tokens)
+        results = run_inference(client, model, tokenizer, prompt_list,
+                                max_tokens, min_tokens)
 
         # Print results
         for file, result in zip(prompt_list, results.outputs):
             print(f"\n== Output for {file.name} ==\n{result}\n")
         print("\n== Inference Performance Metrics ==")
         print(f"Inference Time: {results.inference_time:.4f}s")
-        print(f"Inference Time w/o TTFT: {results.inference_time_no_ttft:.4f}s")
-        print(f"Number of Output Tokens Generated: {results.output_token_count} tokens")
+        print(
+            f"Inference Time w/o TTFT: {results.inference_time_no_ttft:.4f}s")
+        print(f"Output Tokens Generated: {results.output_token_count} tokens")
         print(f"Time to First Token: {results.ttft:.4f}s")
         print(f"Inter-Token Latency: {results.itl:.4f}s/tok")
 
@@ -338,6 +388,6 @@ def main():
         print("Server connection failed")
         exit(1)
 
+
 if __name__ == "__main__":
     main()
-
