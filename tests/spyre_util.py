@@ -226,7 +226,7 @@ def generate_cb_spyre_vllm_output(
 
         vllm_model = LLM(
             model=model,
-            tokenizer=model,
+            tokenizer="ibm-granite/granite-3.2-8b-instruct",
             max_model_len=max_model_len,
             max_num_seqs=max_num_seqs,
             block_size=block_size,
@@ -504,8 +504,10 @@ def get_spyre_model_list(isEmbeddings=False, quantization=None):
                                               "granite-3.0-8b-instruct-gptq")
         marks = [pytest.mark.decoder, pytest.mark.quantized, pytest.mark.spyre]
     else:
-        user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST",
-                                              "llama-194m")
+        user_test_model_list = os.environ.get(
+            "VLLM_SPYRE_TEST_MODEL_LIST",
+            "tiny-models/granite-3.2-8b-layers-3-step-100000",
+        )
         marks = [pytest.mark.decoder]
 
     test_model_list = []
