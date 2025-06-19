@@ -65,6 +65,6 @@ if [[ -z "$VIRTUAL_ENV" ]] ; then
 fi
 
 # Start the vllm server with given model and detected parallelism.
-DEFAULT_ARGS="--model ${VLLM_MODEL_PATH} -tp ${AIU_WORLD_SIZE}"
-exec python -m vllm.entrypoints.openai.api_server "${DEFAULT_ARGS}" "$@"
+DEFAULT_ARGS=(--model "${VLLM_MODEL_PATH}" -tp "${AIU_WORLD_SIZE}")
+exec python -m vllm.entrypoints.openai.api_server "${DEFAULT_ARGS[@]}" "$@"
 
