@@ -7,14 +7,15 @@ from typing import TYPE_CHECKING, Optional
 import torch
 from torch import nn
 from vllm.config import DeviceConfig, VllmConfig
+from vllm.forward_context import set_forward_context
 from vllm.logger import init_logger
 from vllm.sampling_params import SamplingType
 from vllm.utils import is_pin_memory_available
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.outputs import SamplerOutput
-from vllm.forward_context import set_forward_context
 
-from vllm_spyre.model_executor.model_loader.spyre import SpyreCausalLM, SpyreAttentionMetadata
+from vllm_spyre.model_executor.model_loader.spyre import (
+    SpyreAttentionMetadata, SpyreCausalLM)
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_input_batch import (CachedRequestState,
                                                     InputBatch)
@@ -574,7 +575,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.block_size = 64
         # NUM_BLOCKS = max_batch_size * max_model_len // self.block_size  # 64
 
-        # TODO: move to a KV cache manager 
+        # TODO: move to a KV cache manager
         self.req_ids2blocks: dict[str, deque[int]] = {}
 
         # self.req_ids2left_pads: dict[str, int] = {}
@@ -595,7 +596,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             pin_memory=self.pin_memory,
             vocab_size=vllm_config.model_config.get_vocab_size(),
         )
-        
+
     def _mark_input_tensors(self, model_input: ModelForwardInputs) -> None:
         # Marking dimensions static/dynamic
         if model_input.is_prompt:
@@ -794,7 +795,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             offset = self.tkv % self.block_size
             slot = [start_slot + offset]
             slot_mapping.append(slot)
-            
+
             generation_token = cached_request.new_token_ids[-1]
             input_tokens.append([generation_token])
             seq_len = cached_request.num_computed_tokens
@@ -813,13 +814,13 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             assert self.model.indices.size(dim=0) == 2
 
             n = self.tkv + 1
-            d = self.BLOCK_SIZE
+            d = self.block_size
             num_blocks = (n + d - 1) // d
             for _ in range(num_blocks - len(self.dummy_req_ids2blocks)):
                 self.dummy_req_ids2blocks.append(self.free_blocks.popleft())
             block_table.append(deque(self.dummy_req_ids2blocks))
-            start_slot = block_table[-1][-1] * self.BLOCK_SIZE
-            offset = self.tkv % self.BLOCK_SIZE
+            start_slot = block_table[-1][-1] * self.block_size
+            offset = self.tkv % self.block_size
             slot = [start_slot + offset]
             slot_mapping.append(slot)
             input_tokens.append([0])
@@ -861,14 +862,11 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
     def reduce_left_padding(self) -> None:
 
-        # TODO
-        # if len(self.req_ids2left_pads) == 0:
-        #     return
-        
-        # TODO
         requests = self.requests.values()
+        if len(self.requests) == 0:
+            return
 
-        min_left_pad = min([self.requests[r.req_id].left_padding for r in requests])
+        min_left_pad = min([r.left_padding for r in requests])
         n_padded_blocks = min_left_pad // self.block_size
         offset = n_padded_blocks * self.block_size
 
@@ -877,22 +875,16 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                          n_padded_blocks)
 
             for req in requests:
-                req_id = req.req_id # TODO
-                # self.req_ids2left_pads[
-                #     req.req_id] -= n_padded_blocks * self.block_size
-                req_state = self.requests[req.req_id]
-                req_state.left_padding -= offset
+                req.left_padding -= offset
 
                 # free blocks
                 for _ in range(n_padded_blocks):
-                    freed_block_id = self.req_ids2blocks[req_id].popleft()
+                    freed_block_id = self.req_ids2blocks[req.req_id].popleft()
                     logger.debug("Freeing block with id: %s", freed_block_id)
                     self.free_blocks.append(freed_block_id)
 
         # update tkv
         self.tkv -= offset
-
-        return
 
     def pad_input_ids(
         self,
@@ -975,17 +967,17 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         self._mark_input_tensors(model_inputs)
         return model_inputs
-    
-    def build_attn_metadata(self, model_input: ModelForwardInputs) -> SpyreAttentionMetadata:
-        
+
+    def build_attn_metadata(
+            self, model_input: ModelForwardInputs) -> SpyreAttentionMetadata:
+
         # TODO: probably we can remove some fields of the model input and
         # update only the SpyreAttentionMetadata
         attn_metadata = SpyreAttentionMetadata(
             slot_mapping=model_input.slot_mapping,
             current_tkv_mask=model_input.current_tkv_mask,
             left_padded_prompt_mask=model_input.left_padded_prompt_mask,
-            block_table=model_input.block_table
-        )
+            block_table=model_input.block_table)
         return attn_metadata
 
     @SpyrePlatform.inference_mode()
@@ -1018,17 +1010,15 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # Execute the model
         attn_metadata = self.build_attn_metadata(model_input)
         with set_forward_context(attn_metadata, self.vllm_config):
-#             current_tkv_mask=model_input.current_tkv_mask,
-#             left_padded_prompt_mask=model_input.left_padded_prompt_mask,
-#             block_table=model_input.block_table,
-#             slot_mapping=model_input.slot_mapping)
-            hidden_states = self.model(
-                input_ids=model_input.input_tokens,
-                positions=model_input.input_positions,
-                masks=model_input.input_masks,
-                is_prompt=model_input.is_prompt)
-        
-        
+            #  current_tkv_mask=model_input.current_tkv_mask,
+            #  left_padded_prompt_mask=model_input.left_padded_prompt_mask,
+            #  block_table=model_input.block_table,
+            #  slot_mapping=model_input.slot_mapping)
+            hidden_states = self.model(input_ids=model_input.input_tokens,
+                                       positions=model_input.input_positions,
+                                       masks=model_input.input_masks,
+                                       is_prompt=model_input.is_prompt)
+
         # Only perform sampling in the driver worker.
         if not self.is_driver_worker:
             return []

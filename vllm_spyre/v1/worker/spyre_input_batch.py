@@ -3,7 +3,6 @@
 
 # Based on vllm/vllm/v1/worker/gpu_input_batch.py
 
-from collections import deque
 from dataclasses import dataclass
 from typing import Optional, cast
 
@@ -173,7 +172,6 @@ class InputBatch:
 
         # Keep tracking of number of requests
         self._num_requests = 0
-
 
     @property
     def req_ids(self) -> list[str]:

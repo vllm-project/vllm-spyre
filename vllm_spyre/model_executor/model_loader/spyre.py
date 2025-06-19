@@ -1,7 +1,7 @@
 """Utilities for selecting and loading Spyre models."""
 import os
-from typing import Any, Optional, cast
 from dataclasses import dataclass
+from typing import Any, Optional, cast
 
 import torch
 import torch._inductor.config
@@ -10,9 +10,8 @@ import torch.nn as nn
 from fms.models import get_model
 from transformers import PretrainedConfig
 from vllm.config import ModelConfig, ParallelConfig, SchedulerConfig
-from vllm.logger import init_logger
 from vllm.forward_context import get_forward_context
-from vllm.attention.backends.abstract import AttentionMetadata
+from vllm.logger import init_logger
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
 from vllm.model_executor.layers.sampler import SamplerOutput, get_sampler
 from vllm.model_executor.model_loader.weight_utils import (
@@ -31,12 +30,14 @@ BACKEND_LIST = ['sendnn', 'inductor']
 
 logger = init_logger(__name__)
 
+
 @dataclass
 class SpyreAttentionMetadata:
     slot_mapping: torch.Tensor = None
-    current_tkv_mask : torch.Tensor = None
-    left_padded_prompt_mask : torch.Tensor = None
-    block_table : torch.Tensor = None
+    current_tkv_mask: torch.Tensor = None
+    left_padded_prompt_mask: torch.Tensor = None
+    block_table: torch.Tensor = None
+
 
 class SpyreCausalLM(nn.Module):
 
@@ -363,8 +364,9 @@ class ContinuousBatchingFmsModel(FmsModelBase):
     ) -> torch.Tensor:
 
         forward_context = get_forward_context()
-        
-        attn_metadata = cast(SpyreAttentionMetadata, forward_context.attn_metadata)
+
+        attn_metadata = cast(SpyreAttentionMetadata,
+                             forward_context.attn_metadata)
 
         output = self.model(
             input_ids,
