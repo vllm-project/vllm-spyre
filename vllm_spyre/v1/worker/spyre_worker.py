@@ -1,11 +1,12 @@
 """A Spyre worker class."""
 import contextlib
+import inspect
 import json
 import os
 import platform
 import signal
 import time
-from typing import Optional, Union, cast
+from typing import Any, Optional, Union, cast
 
 import torch
 import torch.distributed as dist
@@ -324,6 +325,13 @@ class SpyreWorker(WorkerBaseV1):
         warmup_tokens_tensor = valid_token_ids_tensor[torch.randint(
             0, len(valid_token_ids_tensor), (batch_size, prompt_len))]
 
+        # TODO temporary until 'pooling_params' makes it to a release version
+        # in vllm
+        extra_kwargs: dict[str, Any] = {}
+        if "pooling_params" in [
+                x[0] for x in inspect.getmembers(NewRequestData)
+        ]:
+            extra_kwargs["poolin_params"] = None
         dummy_requests = [
             NewRequestData(
                 req_id="warmup-%d" % (i),
@@ -335,7 +343,7 @@ class SpyreWorker(WorkerBaseV1):
                 block_ids=[0],  # not actually used
                 num_computed_tokens=0,
                 lora_request=None,
-            ) for i in range(batch_size)
+                **extra_kwargs) for i in range(batch_size)
         ]
 
         for i, req in enumerate(dummy_requests):
@@ -489,6 +497,14 @@ class SpyreWorker(WorkerBaseV1):
         warmup_tokens_tensor = valid_token_ids_tensor[torch.randint(
             0, len(valid_token_ids_tensor), (batch_size, prompt_len))]
 
+        # TODO temporary until 'pooling_params' makes it to a release version
+        # in vllm
+        extra_kwargs: dict[str, Any] = {}
+        if "pooling_params" in [
+                x[0] for x in inspect.getmembers(NewRequestData)
+        ]:
+            extra_kwargs["poolin_params"] = None
+
         # Set up dummy requests for prefill steps
         dummy_requests = [
             NewRequestData(
@@ -501,7 +517,7 @@ class SpyreWorker(WorkerBaseV1):
                 block_ids=[0],
                 num_computed_tokens=0,
                 lora_request=None,
-            ) for i in range(batch_size)
+                **extra_kwargs) for i in range(batch_size)
         ]
 
         # Set up dummy cached_requests for decode steps
