@@ -428,7 +428,7 @@ class SpyreWorker(WorkerBaseV1):
             self.model_runner.vllm_config.scheduler_config.max_num_seqs
         max_model_len = \
             self.model_runner.vllm_config.scheduler_config.max_model_len
-        block_size = self.model_runner.BLOCK_SIZE  # type: ignore[union-attr]
+        block_size = self.model_runner.block_size  # type: ignore[union-attr]
 
         min_req_num_blocks = max_model_len // block_size
         # min_req_num_blocks is not enough blocks for the following test:
