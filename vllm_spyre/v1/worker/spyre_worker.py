@@ -1,6 +1,5 @@
 """A Spyre worker class."""
 import contextlib
-import inspect
 import json
 import os
 import platform
@@ -328,9 +327,7 @@ class SpyreWorker(WorkerBaseV1):
         # TODO temporary until 'pooling_params' makes it to a release version
         # in vllm
         extra_kwargs: dict[str, Any] = {}
-        if "pooling_params" in [
-                x[0] for x in inspect.getmembers(NewRequestData)
-        ]:
+        if "pooling_params" in NewRequestData.__dataclass_fields__:
             extra_kwargs["pooling_params"] = None
         dummy_requests = [
             NewRequestData(
@@ -500,9 +497,7 @@ class SpyreWorker(WorkerBaseV1):
         # TODO temporary until 'pooling_params' makes it to a release version
         # in vllm
         extra_kwargs: dict[str, Any] = {}
-        if "pooling_params" in [
-                x[0] for x in inspect.getmembers(NewRequestData)
-        ]:
+        if "pooling_params" in NewRequestData.__dataclass_fields__:
             extra_kwargs["pooling_params"] = None
 
         # Set up dummy requests for prefill steps
