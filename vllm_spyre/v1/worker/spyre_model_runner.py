@@ -486,12 +486,6 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         t1 = time.time() - t0
         logger.debug("t_token: %.2fms", (t1 * 1000))
 
-        # TODO temporary until 'pooler_output' makes it to a release version
-        # in vllm
-        extra_kwargs: dict[str, Any] = {}  # type: ignore[no-redef]
-        if "pooler_output" in ModelRunnerOutput.__dataclass_fields__:
-            extra_kwargs["pooler_output"] = None
-
         model_output = ModelRunnerOutput(
             req_ids=self.input_batch.requests_ids,
             req_id_to_index=self.input_batch.get_unpadded_output_indices(),
@@ -951,17 +945,17 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         t0 = time.time()
 
+        # TODO temporary until 'pooler_output' makes it to a release version
+        # in vllm
+        extra_kwargs: dict[str, Any] = {}
+        if "pooler_output" in CBSpyreModelRunnerOutput.__dataclass_fields__:
+            extra_kwargs["pooler_output"] = None
+
         self._update_states(scheduler_output)
         # TODO: change to EMPTY_MODEL_RUNNER_OUTPUT, right now this
         # will be a breaking change, or clumsy to make retrocompatible
         # with conditional import
         if not scheduler_output.total_num_scheduled_tokens:
-
-            # TODO temporary until 'pooler_output' makes it to a release version
-            # in vllm
-            extra_kwargs: dict[str, Any] = {}
-            if "pooler_output" in CBSpyreModelRunnerOutput.__dataclass_fields__:
-                extra_kwargs["pooler_output"] = None
 
             # Return empty ModelRunnerOuptut if there's no work to do.
             return CBSpyreModelRunnerOutput(req_ids=[],
@@ -1045,12 +1039,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # since same order as in _prepare_prompt/decode req_ids2idx not needed
         req_ids = [req.req_id for req in scheduled_req]
         req_id_to_index = {req_id: i for i, req_id in enumerate(req_ids)}
-
-        # TODO temporary until 'pooler_output' makes it to a release version
-        # in vllm
-        extra_kwargs: dict[str, Any] = {}  # type: ignore[no-redef]
-        if "pooler_output" in CBSpyreModelRunnerOutput.__dataclass_fields__:
-            extra_kwargs["pooler_output"] = None
 
         model_output = CBSpyreModelRunnerOutput(
             req_ids=req_ids,
