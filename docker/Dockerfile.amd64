@@ -68,7 +68,6 @@ ENV COMPILATION_MODE=offline_decoder \
     DISTRIBUTED_STRATEGY_IGNORE_MODULES=WordEmbedding,Embedding \
     DTLOG_LEVEL=error \
     DT_DEEPRT_VERBOSE=-1 \
-    DT_OPT=varsub=1,lxopt=1,opfusion=1,arithfold=1,dataopt=1,patchinit=1,patchprog=1,autopilot=1,weipreload=0,kvcacheopt=1,progshareopt=1,dtversion=2 \
     FLEX_COMPUTE=SENTIENT \
     FLEX_DEVICE=PF \
     FLEX_OVERWRITE_NMB_FRAME=1 \
