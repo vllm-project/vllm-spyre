@@ -582,7 +582,13 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.tkv: int = 0
         # set self.free_blocks to the minimal value of 4 required for warmup
         # is reset to the value returned by the Spyre compiler after warmup
-        self._set_free_blocks(num_blocks=4)
+        # self._set_free_blocks(num_blocks=4)
+        # for the time being we set this to num_blocks consistent with the
+        # cache dimension of ContinuousBatchingFmsModel.past_key_value_states
+        num_blocks = (vllm_config.scheduler_config.max_num_seqs *
+                      vllm_config.model_config.max_model_len //
+                      self.block_size)
+        self._set_free_blocks(num_blocks=num_blocks)
         self.dummy_req_ids2blocks: list[int] = []
 
         # TODO: Remove this once we can prefill and decode

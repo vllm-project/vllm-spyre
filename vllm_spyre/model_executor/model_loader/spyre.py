@@ -328,13 +328,16 @@ class ContinuousBatchingFmsModel(FmsModelBase):
 
         # set num_blocks to the minimal value of 4 required for warmup
         # is reset to the value returned by the Spyre compiler after warmup
-        self._set_past_key_value_states(num_blocks=4)
+        # self._set_past_key_value_states(num_blocks=4)
+        num_blocks = scheduler_config.max_num_seqs * max_model_len // BLOCK_SIZE
+        self._set_past_key_value_states(num_blocks=num_blocks)
 
         # mark the num_blocks dimension dynamic for Spyre compiler for warmup
-        # only, compiler will return the number of blocks it can accommodate
-        for layer in self.past_key_value_states:
-            for tensor in layer:
-                torch._dynamo.mark_dynamic(tensor, 0)
+        # only, compiler will return the number of blocks it can accommodate.
+        # (This is not yet supported by the compiler)
+        # for layer in self.past_key_value_states:
+        #     for tensor in layer:
+        #         torch._dynamo.mark_dynamic(tensor, 0)
 
     def _set_past_key_value_states(self, num_blocks) -> None:
         # List[layers] of Tuple[k,v] of
@@ -367,6 +370,11 @@ class ContinuousBatchingFmsModel(FmsModelBase):
 
         attn_metadata = cast(SpyreAttentionMetadata,
                              forward_context.attn_metadata)
+        # import will be not be needed/ handled by FMS soon
+        import fms.utils.spyre.paged  # noqa # pylint: disable=unused-import
+
+        # specify attention type for continuous batching
+        extra_kwargs['attn_name'] = "spyre_paged_attn"
 
         output = self.model(
             input_ids,
@@ -415,6 +423,9 @@ class StaticBatchingFmsModel(FmsModelBase):
         only_last_token: bool,
         **extra_kwargs,
     ) -> torch.Tensor:
+
+        # specify attention type for static batching
+        extra_kwargs['attn_name'] = "sdpa_bidirectional"
 
         output = self.model(
             input_ids,

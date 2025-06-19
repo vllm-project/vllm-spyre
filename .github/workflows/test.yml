@@ -39,21 +39,18 @@ jobs:
           - name: "vLLM:main"
             repo: "git+https://github.com/vllm-project/vllm --branch main"
         test_suite:
-          - name: "V0-e2e"
-            markers: "v0 and cpu and e2e"
-            flags: "--timeout=300"
-          - name: "V1-e2e"
-            markers: "v1 and cpu and e2e"
+          - name: "static batching"
+            markers: "cpu and decoder and not cb"
             flags: "--timeout=300 --forked"
-          - name: "V1-worker"
-            markers: "v1 and not e2e"
-            flags: "--timeout=300"
-          - name: "utils"
-            markers: "utils"
-            flags: "--timeout=300"
-          - name: "cb"
-            markers: "cb"
+          - name: "embedding"
+            markers: "cpu and embedding"
             flags: "--timeout=300 --forked"
+          - name: "continuous batching"
+            markers: "cpu and cb"
+            flags: "--timeout=300 --forked"
+          - name: "worker and utils"
+            markers: "not e2e"
+            flags: "--timeout=300"
 
     name: "${{ matrix.test_suite.name }} (${{ matrix.vllm_version.name }})"
 
@@ -163,10 +160,6 @@ jobs:
           # `uv run`, to avoid having `uv run` re-sync any dependencies or 
           # re-install the vllm_sypre package from source
           source .venv/bin/activate
-          if [ ${{ matrix.test_suite.markers }} == "cb" ]; then
-          # install custom fms branch
-              uv pip install git+https://github.com/foundation-model-stack/foundation-model-stack@paged_attn_mock --force-reinstall
-          fi
           # commands to run if condition is true
           python3 -m pytest ${{ matrix.test_suite.flags }} \
             tests -v -m "${{ matrix.test_suite.markers }}"

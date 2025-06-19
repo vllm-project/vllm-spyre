@@ -68,7 +68,6 @@ def remote_openai_server(request):
         model = params['model']
         warmup_shape = params['warmup_shape']
         backend = params['backend']
-        vllm_version = params['vllm_version']
     except KeyError as e:
         raise pytest.UsageError(
             "Error setting up remote_openai_server params") from e
@@ -79,14 +78,13 @@ def remote_openai_server(request):
     warmup_prompt_length = [t[0] for t in warmup_shape]
     warmup_new_tokens = [t[1] for t in warmup_shape]
     warmup_batch_size = [t[2] for t in warmup_shape]
-    v1_flag = "1" if vllm_version == "V1" else "0"
     env_dict = {
         "VLLM_SPYRE_WARMUP_PROMPT_LENS":
         ','.join(map(str, warmup_prompt_length)),
         "VLLM_SPYRE_WARMUP_NEW_TOKENS": ','.join(map(str, warmup_new_tokens)),
         "VLLM_SPYRE_WARMUP_BATCH_SIZES": ','.join(map(str, warmup_batch_size)),
         "VLLM_SPYRE_DYNAMO_BACKEND": backend,
-        "VLLM_USE_V1": v1_flag
+        "VLLM_USE_V1": "1"
     }
 
     # Add extra server args if present in test

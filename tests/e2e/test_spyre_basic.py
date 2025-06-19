@@ -4,7 +4,7 @@ Run `python -m pytest tests/e2e/test_spyre_basic.py`.
 """
 
 import pytest
-from spyre_util import (VLLM_VERSIONS, compare_results, create_random_request,
+from spyre_util import (compare_results, create_random_request,
                         generate_hf_output, generate_spyre_vllm_output,
                         get_spyre_backend_list, get_spyre_model_list)
 from vllm import EngineArgs, SamplingParams
@@ -33,14 +33,8 @@ template = (
     "warmup_shape", [(64, 20, 4), (64, 20, 8), (128, 20, 4),
                      (128, 20, 8)])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("vllm_version", VLLM_VERSIONS)
-def test_output(
-    model: str,
-    prompts: list[str],
-    warmup_shape: tuple[int, int, int],
-    backend: str,
-    vllm_version: str,
-) -> None:
+def test_output(model: str, prompts: list[str],
+                warmup_shape: tuple[int, int, int], backend: str) -> None:
     '''
     The warmup is based on a single shape. After the warmup,
     one request with the provided prompts is input to vLLM.
@@ -70,8 +64,7 @@ def test_output(
         block_size=2048,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
-        backend=backend,
-        vllm_version=vllm_version)
+        backend=backend)
 
     hf_results = generate_hf_output(model=model,
                                     prompts=prompts,
@@ -94,13 +87,11 @@ def test_output(
 @pytest.mark.parametrize(
     "warmup_shape", [(64, 20, 4)])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", ["sendnn_decoder"])
-@pytest.mark.parametrize("vllm_version", VLLM_VERSIONS)
 def test_output_sendnn_decoder(
     model: str,
     prompts: list[str],
     warmup_shape: tuple[int, int, int],
     backend: str,
-    vllm_version: str,
 ) -> None:
     '''
     Tests the deprecated sendnn_decoder backend, which should fall-back to
@@ -123,8 +114,7 @@ def test_output_sendnn_decoder(
         block_size=2048,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
-        backend=backend,
-        vllm_version=vllm_version)
+        backend=backend)
 
     hf_results = generate_hf_output(model=model,
                                     prompts=prompts,
@@ -141,11 +131,9 @@ def test_output_sendnn_decoder(
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("vllm_version", VLLM_VERSIONS)
 def test_batch_handling(
     model: str,
     backend: str,
-    vllm_version: str,
 ):
     """Test that the spyre worker correctly handles batches of requests that
     finish after different numbers of forward passes"""
@@ -178,8 +166,7 @@ def test_batch_handling(
         block_size=2048,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
-        backend=backend,
-        vllm_version=vllm_version)
+        backend=backend)
 
     assert vllm_results[0]["text"] == " 3 2 "
     assert vllm_results[1]["text"] == " 6 5 4 3 2 "
@@ -189,10 +176,7 @@ def test_batch_handling(
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("vllm_version",
-                         [pytest.param("V1", marks=pytest.mark.v1, id="v1")])
-def test_full_batch_scheduling(model: str, backend: str, vllm_version: str,
-                               monkeypatch):
+def test_full_batch_scheduling(model: str, backend: str, monkeypatch):
     """Test that we can schedule a full batch of prompts."""
 
     # We need to ensure here that the max number of tokens in a full batch

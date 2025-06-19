@@ -61,9 +61,10 @@ class SpyreWorker(WorkerBaseV1):
 
     def compile_or_warm_up_model(self) -> None:
         """Prepare model for execution through compilation/warmup."""
-        # TO DO: implement warmup for continuous batching
+
         if envs_spyre.VLLM_SPYRE_USE_CB:
-            self._warmup_spyre_dynamic_size(self.restricted_tokens)
+            with _maybe_warmup_context():
+                self._warmup_spyre_dynamic_size(self.restricted_tokens)
             return
 
         num_shape_combinations = len(self.spyre_warmup_shapes)
@@ -382,8 +383,7 @@ class SpyreWorker(WorkerBaseV1):
         )
         logger.info("Warmup decode 1/1...")
 
-        with _maybe_warmup_context():
-            self.execute_model(scheduler_output)
+        self.execute_model(scheduler_output)
 
         # Needed to clean up the data of model runner
         scheduler_output = SchedulerOutput(
@@ -452,7 +452,6 @@ class SpyreWorker(WorkerBaseV1):
                         str(max_model_len), max_concurrency_spyre)
             return num_blocks_spyre
         else:  # dynamo backend 'eager'
-            # TODO: how do we get a meaningful value for CPU here
             num_blocks_cpu = max_batch_size * min_req_num_blocks
             assert num_blocks_cpu >= min_req_num_blocks, (
                 "Number of pages available on CPU (%d) is not enough to "
@@ -536,6 +535,7 @@ class SpyreWorker(WorkerBaseV1):
 
         # First full forward pass
         logger.info("Warmup forward pass 1/2...")
+        # The fixed size warmup needs to happen only in here
         with _maybe_warmup_context():
             self._warmup_model_forward_pass(scheduler_output, dummy_requests,
                                             cached_requests, num_decode_tokens)
