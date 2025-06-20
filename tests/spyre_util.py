@@ -1,4 +1,3 @@
-import inspect
 import math
 import os
 import subprocess
@@ -540,35 +539,24 @@ def create_random_request(
         request_id: int, num_tokens: int,
         sampling_params: SamplingParams) -> EngineCoreRequest:
 
-    # Temporary until 'data_parallel_rank' parameter makes it to
-    # a release version in vllm
-    if "data_parallel_rank" in [
-            x[0] for x in inspect.getmembers(EngineCoreRequest)
-    ]:
-        return EngineCoreRequest(
-            request_id=str(request_id),
-            prompt_token_ids=[request_id] * num_tokens,
-            mm_inputs=None,
-            mm_hashes=None,
-            mm_placeholders=None,
-            sampling_params=sampling_params,
-            eos_token_id=None,
-            arrival_time=0,
-            lora_request=None,
-            cache_salt=None,
-            data_parallel_rank=None,
-        )
-    else:
-        return EngineCoreRequest(request_id=str(request_id),
-                                 prompt_token_ids=[request_id] * num_tokens,
-                                 mm_inputs=None,
-                                 mm_hashes=None,
-                                 mm_placeholders=None,
-                                 sampling_params=sampling_params,
-                                 eos_token_id=None,
-                                 arrival_time=0,
-                                 lora_request=None,
-                                 cache_salt=None)
+    # Temporary until these parameters make it to a release version in vllm
+    extra_kwargs: dict[str, Any] = {}
+    if "data_parallel_rank" in EngineCoreRequest.__annotations__:
+        extra_kwargs["data_parallel_rank"] = None
+    if "pooling_params" in EngineCoreRequest.__annotations__:
+        extra_kwargs["pooling_params"] = None
+
+    return EngineCoreRequest(request_id=str(request_id),
+                             prompt_token_ids=[request_id] * num_tokens,
+                             mm_inputs=None,
+                             mm_hashes=None,
+                             mm_placeholders=None,
+                             sampling_params=sampling_params,
+                             eos_token_id=None,
+                             arrival_time=0,
+                             lora_request=None,
+                             cache_salt=None,
+                             **extra_kwargs)
 
 
 def skip_unsupported_tp_size(size: int):

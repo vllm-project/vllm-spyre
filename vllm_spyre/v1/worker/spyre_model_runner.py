@@ -2,7 +2,7 @@ import time
 from collections import deque
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import torch
 from torch import nn
@@ -430,6 +430,12 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
 
         t0 = time.time()
 
+        # TODO temporary until 'pooler_output' makes it to a release version
+        # in vllm
+        extra_kwargs: dict[str, Any] = {}
+        if "pooler_output" in ModelRunnerOutput.__dataclass_fields__:
+            extra_kwargs["pooler_output"] = None
+
         # TODO: change to EMPTY_MODEL_RUNNER_OUTPUT, right now this
         # will be a breaking change, or clumsy to make retrocompatible
         # with conditional import
@@ -442,6 +448,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
                 spec_token_ids=None,
                 logprobs=None,
                 prompt_logprobs_dict={},
+                **extra_kwargs,
             )
 
         self._update_states(scheduler_output)
@@ -490,6 +497,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
                 req_id: None
                 for req_id in self.input_batch.req_id_to_index
             },  # TODO(wallas?): prompt logprobs too
+            **extra_kwargs,
         )
         return model_output
 
@@ -937,21 +945,27 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         t0 = time.time()
 
+        # TODO temporary until 'pooler_output' makes it to a release version
+        # in vllm
+        extra_kwargs: dict[str, Any] = {}
+        if "pooler_output" in CBSpyreModelRunnerOutput.__dataclass_fields__:
+            extra_kwargs["pooler_output"] = None
+
         self._update_states(scheduler_output)
         # TODO: change to EMPTY_MODEL_RUNNER_OUTPUT, right now this
         # will be a breaking change, or clumsy to make retrocompatible
         # with conditional import
         if not scheduler_output.total_num_scheduled_tokens:
+
             # Return empty ModelRunnerOuptut if there's no work to do.
-            return CBSpyreModelRunnerOutput(
-                req_ids=[],
-                req_id_to_index={},
-                sampled_token_ids=[],
-                spec_token_ids=None,
-                logprobs=None,
-                prompt_logprobs_dict={},
-                tkv=0,
-            )
+            return CBSpyreModelRunnerOutput(req_ids=[],
+                                            req_id_to_index={},
+                                            sampled_token_ids=[],
+                                            spec_token_ids=None,
+                                            logprobs=None,
+                                            prompt_logprobs_dict={},
+                                            tkv=0,
+                                            **extra_kwargs)
 
         model_input = self.prepare_model_input(scheduler_output)
 
@@ -1037,5 +1051,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                                   for req_id in req_ids
                                   },  # TODO(wallas?): prompt logprobs too
             tkv=self.tkv,
+            **extra_kwargs,
         )
         return model_output
