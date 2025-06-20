@@ -207,6 +207,7 @@ def generate_spyre_vllm_output(model: str, prompts: list[str],
 # Support for continuous batching
 def generate_cb_spyre_vllm_output(
     model: str,
+    tokenizer: str,
     prompts: list[str],
     max_model_len: int,
     block_size: int,
@@ -225,7 +226,7 @@ def generate_cb_spyre_vllm_output(
 
         vllm_model = LLM(
             model=model,
-            tokenizer=model,
+            tokenizer=tokenizer,
             max_model_len=max_model_len,
             max_num_seqs=max_num_seqs,
             block_size=block_size,
@@ -503,8 +504,10 @@ def get_spyre_model_list(isEmbeddings=False, quantization=None):
                                               "granite-3.0-8b-instruct-gptq")
         marks = [pytest.mark.decoder, pytest.mark.quantized, pytest.mark.spyre]
     else:
-        user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST",
-                                              "llama-194m")
+        user_test_model_list = os.environ.get(
+            "VLLM_SPYRE_TEST_MODEL_LIST",
+            "llama-194m",
+        )
         marks = [pytest.mark.decoder]
 
     test_model_list = []
@@ -513,6 +516,29 @@ def get_spyre_model_list(isEmbeddings=False, quantization=None):
         test_model_list.append(
             pytest.param(model_path, marks=marks, id=model.strip()))
     return test_model_list
+
+
+def get_spyre_model_list_w_tokenizer():
+    test_model_list = get_spyre_model_list()
+    tokenizer_list = os.environ.get(
+        "VLLM_SPYRE_TEST_TOKENIZER_LIST",
+        "",
+    )
+    tokenizer_list_split = tokenizer_list.split(",")
+
+    model_list_w_tokenizer = []
+    for index, model in enumerate(test_model_list):
+        model_path = model.values[0]
+        tokenizer = (tokenizer_list_split[index].strip()
+                     if tokenizer_list != "" else model_path)
+        model_list_w_tokenizer.append(
+            pytest.param(
+                model_path,
+                tokenizer,
+                id=f"model({model_path}), tokenizer({tokenizer.strip()})",
+            ))
+
+    return model_list_w_tokenizer
 
 
 def create_text_prompt(model: str, min_tokens: int, max_tokens: int) -> str:
