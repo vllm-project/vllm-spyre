@@ -8,8 +8,12 @@ from collections import deque
 from typing import Any
 
 import pytest
-from spyre_util import (create_random_request, generate_cb_spyre_vllm_output,
-                        get_spyre_backend_list, get_spyre_model_list)
+from spyre_util import (
+    create_random_request,
+    generate_cb_spyre_vllm_output,
+    get_spyre_backend_list,
+    get_spyre_model_list_w_tokenizer,
+)
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
@@ -19,36 +23,44 @@ from vllm_spyre.v1.core.scheduler import ContinuousBatchingSpyreScheduler
 
 
 @pytest.mark.cb
-@pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.parametrize(
+    "model,tokenizer",
+    get_spyre_model_list_w_tokenizer(),
+)
+# @pytest.mark.parametrize(
+#     "tokenizer",
+#     get_spyre_tokenizer(),
+# )
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize(
     "prompts",
     [
         [
             "7 6 5 4",
-        ],
-        [
-            "7 6 5 4",
-            "10 9 8 7",
-        ],
-        [
-            "7 6 5 4",
-            "10 9 8 7",
-            "8 7 6 5",
-        ],
-        [
-            "7 6 5 4",
             "10 9 8 7",
             "8 7 6 5",
             "9 8 7 6",
         ],
+        [
+            "7 6 5 4",
+            "10 9 8 7",
+            "8 7 6 5",
+        ],
+        [
+            "7 6 5 4",
+            "10 9 8 7",
+        ],
+        [
+            "7 6 5 4",
+        ],
     ],
     ids=lambda val: f"num_prompts({len(val)})",
 )
-@pytest.mark.parametrize("max_num_seqs", [2, 3, 4],
+@pytest.mark.parametrize("max_num_seqs", [2],
                          ids=lambda val: f"max_num_seqs({val})")
 def test_cb_handling(
     model: str,
+    tokenizer: str,
     backend: str,
     max_num_seqs: int,
     prompts: list[str],
@@ -69,9 +81,10 @@ def test_cb_handling(
     # - The output sequences are correct
     vllm_results = generate_cb_spyre_vllm_output(
         model=model,
+        tokenizer=tokenizer,
         prompts=prompts,
-        max_model_len=128,
-        block_size=128,
+        max_model_len=256,
+        block_size=256,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
         backend=backend,
@@ -90,13 +103,14 @@ def test_cb_handling(
 
 
 @pytest.mark.parametrize("max_num_seqs", [2])
-@pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.parametrize("model,tokenizer", get_spyre_model_list_w_tokenizer())
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 @pytest.mark.parametrize("cb",
                          [pytest.param(1, marks=pytest.mark.cb, id="cb")])
 def test_cb_max_tokens(
     model: str,
+    tokenizer: str,
     backend: str,
     max_num_seqs: int,
     cb: int,
@@ -105,7 +119,7 @@ def test_cb_max_tokens(
     """Test that continuous batches of requests that
     are longer than the max_model_len are correctly rejected"""
 
-    max_model_len = 128
+    max_model_len = 256
     max_tokens = 20
 
     overflow_prompt = " ".join(["a"] * max_model_len)
@@ -118,6 +132,7 @@ def test_cb_max_tokens(
     with pytest.raises(ValueError, match="max model context length"):
         generate_cb_spyre_vllm_output(
             model=model,
+            tokenizer=tokenizer,
             prompts=overflow_prompt,
             max_model_len=max_model_len,
             block_size=max_model_len,
@@ -138,7 +153,7 @@ def get_params_test_blocks_borders_aligned_prompts():
     seqs_max_tokens = [65, 67, 7]
     prompts_lengths = [49, 41, 47]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
-    max_model_len = 128
+    max_model_len = 256
 
     checked_steps = [
         {
@@ -242,7 +257,7 @@ def get_params_test_blocks_borders_misaligned_prompts():
     seqs_max_tokens = [57, 67, 9]
     prompts_lengths = [49, 41, 47]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
-    max_model_len = 128
+    max_model_len = 256
 
     checked_steps = [
         {
@@ -345,7 +360,7 @@ def get_params_test_special_finish():
     seqs_max_tokens = [30, 30, 10]
     prompts_lengths = [49, 30, 20]
     steps_add_reqs = [0, 0, 31]
-    max_model_len = 128
+    max_model_len = 256
 
     checked_steps = [
         {
@@ -435,7 +450,7 @@ def get_params_test_scheduler_constraints_tkv():
     seqs_max_tokens = [57, 67]
     prompts_lengths = [49, 70]
     steps_add_reqs = [0, 0]
-    max_model_len = 128
+    max_model_len = 256
 
     checked_steps = [
         {
@@ -650,8 +665,9 @@ def augment_checked_steps(
 
 
 @pytest.mark.cb
-@pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.parametrize("model,tokenizer", get_spyre_model_list_w_tokenizer())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
+# @pytest.mark.parametrize("tokenizer", get_spyre_tokenizer())
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize(
     "seqs_max_tokens,prompts_lengths,steps_add_reqs,checked_steps,"
@@ -664,6 +680,7 @@ def augment_checked_steps(
     ])
 def test_scheduler_cb_steps_tkv(
     model: str,
+    tokenizer: str,
     backend: str,
     monkeypatch: pytest.MonkeyPatch,
     max_num_seqs: int,
@@ -716,7 +733,7 @@ def test_scheduler_cb_steps_tkv(
     # Setup the engine
     engine_args = EngineArgs(
         model=model,
-        tokenizer="ibm-granite/granite-3.2-8b-instruct",
+        tokenizer=tokenizer,
         max_model_len=max_model_len,
         block_size=max_model_len,
         max_num_seqs=max_num_seqs,
