@@ -150,38 +150,54 @@ def patch_warmup_shapes(warmup_shapes: list[tuple[int, int, int]],
 
 
 # vLLM / Spyre
-def generate_spyre_vllm_output(model: str, prompts: list[str],
-                               warmup_shapes: list[tuple[int, int, int]],
-                               max_model_len: int, block_size: int,
-                               sampling_params: Union[SamplingParams,
-                                                      list[SamplingParams]],
-                               tensor_parallel_size: int,
-                               backend: str) -> list[dict[str, Any]]:
+def generate_spyre_vllm_output(
+    model: str,
+    prompts: list[str],
+    max_model_len: int,
+    block_size: int,
+    sampling_params: Union[SamplingParams, list[SamplingParams]],
+    tensor_parallel_size: int,
+    backend: str,
+    monkeypatch: pytest.MonkeyPatch,
+    warmup_shapes: Optional[list[tuple[int, int, int]]] = None,
+    max_num_seqs: Optional[int] = None,
+    use_cb: bool = False,
+) -> list[dict[str, Any]]:
 
-    warmup_prompt_length = [t[0] for t in warmup_shapes]
-    warmup_new_tokens = [t[1] for t in warmup_shapes]
-    warmup_batch_size = [t[2] for t in warmup_shapes]
+    # ---- For static batching ----
+    if warmup_shapes:
+        assert not use_cb, "Warmup shapes through environment variables have "\
+            "been deprecated in continuous batching"
 
-    os.environ['VLLM_SPYRE_WARMUP_PROMPT_LENS'] = ','.join(
-        str(val) for val in warmup_prompt_length)
-    os.environ['VLLM_SPYRE_WARMUP_NEW_TOKENS'] = ','.join(
-        str(val) for val in warmup_new_tokens)
-    os.environ['VLLM_SPYRE_WARMUP_BATCH_SIZES'] = ','.join(
-        str(val) for val in warmup_batch_size)
-    os.environ['VLLM_SPYRE_DYNAMO_BACKEND'] = backend
-    os.environ['VLLM_USE_V1'] = "1"
+        warmup_prompt_length = [t[0] for t in warmup_shapes]
+        warmup_new_tokens = [t[1] for t in warmup_shapes]
+        warmup_batch_size = [t[2] for t in warmup_shapes]
+
+        monkeypatch.setenv("VLLM_SPYRE_WARMUP_PROMPT_LENS",
+                           ",".join(str(val) for val in warmup_prompt_length))
+        monkeypatch.setenv("VLLM_SPYRE_WARMUP_NEW_TOKENS",
+                           ",".join(str(val) for val in warmup_new_tokens))
+        monkeypatch.setenv("VLLM_SPYRE_WARMUP_BATCH_SIZES",
+                           ",".join(str(val) for val in warmup_batch_size))
+    # --------------
+    monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1" if use_cb else "0")
+    monkeypatch.setenv("VLLM_USE_V1", "1")
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+
     # Allows to run multiprocess V1 engine without dumping meaningless logs at
     # shutdown engine this context.
-    os.environ['VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER'] = "1"
+    monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
-    vllm_model = LLM(model=model,
-                     tokenizer=model,
-                     max_model_len=max_model_len,
-                     block_size=block_size,
-                     tensor_parallel_size=tensor_parallel_size)
+    vllm_model = LLM(
+        model=model,
+        tokenizer=model,
+        max_model_len=max_model_len,
+        max_num_seqs=max_num_seqs,
+        block_size=block_size,
+        tensor_parallel_size=tensor_parallel_size,
+    )
 
     vllm_outputs = vllm_model.generate(prompts, sampling_params)
-
     results = []
 
     for req_output in vllm_outputs:
@@ -202,45 +218,6 @@ def generate_spyre_vllm_output(model: str, prompts: list[str],
         results.append(result)
 
     return results
-
-
-# Support for continuous batching
-def generate_cb_spyre_vllm_output(
-    model: str,
-    prompts: list[str],
-    max_model_len: int,
-    block_size: int,
-    sampling_params: Union[SamplingParams, list[SamplingParams]],
-    tensor_parallel_size: int,
-    backend: str,
-    max_num_seqs: int,
-    use_cb: int,
-    monkeypatch: pytest.MonkeyPatch,
-) -> list[dict[str, Any]]:
-    with monkeypatch.context() as m:
-
-        m.setenv("VLLM_SPYRE_USE_CB", str(use_cb))
-        m.setenv("VLLM_USE_V1", "1")
-        m.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
-
-        vllm_model = LLM(
-            model=model,
-            tokenizer=model,
-            max_model_len=max_model_len,
-            max_num_seqs=max_num_seqs,
-            block_size=block_size,
-            tensor_parallel_size=tensor_parallel_size,
-        )
-
-        vllm_outputs = vllm_model.generate(prompts, sampling_params)
-        results = []
-
-        for req_output in vllm_outputs:
-            result = {}
-            result["text"] = req_output.outputs[0].text
-            results.append(result)
-
-        return results
 
 
 # Hugging Face

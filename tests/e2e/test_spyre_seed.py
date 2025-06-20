@@ -29,6 +29,7 @@ def test_seed(
     seed: int,
     warmup_shape: tuple[int, int, int],
     backend: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     '''
     The warmup is based on a single shape. After the warmup,
@@ -57,7 +58,8 @@ def test_seed(
         block_size=2048,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
-        backend=backend)
+        backend=backend,
+        monkeypatch=monkeypatch)
 
     # compare all generated outputs against the first generated output
     for vllm_result in vllm_results:
