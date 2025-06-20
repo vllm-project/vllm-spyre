@@ -1,6 +1,6 @@
 """Verification of continuous batching
 
-Run `python -m pytest tests/e2e/test_spyre_cb.py`.
+Run `python -m pytest tests/e2e/test_spyre_cb_heterog_tkv.py`.
 """
 
 import copy
@@ -55,6 +55,7 @@ def test_cb_handling(
     continuous batches of requests that
     finish after different numbers of forward passes"""
 
+    monkeypatch.setenv("VLLM_SPYRE_HETEROGEN_TKV", "1")
     vllm_sampling_params = SamplingParams(max_tokens=20,
                                           temperature=0,
                                           stop="1",
@@ -101,6 +102,7 @@ def test_cb_max_tokens(
     """Test that continuous batches of requests that
     are longer than the max_model_len are correctly rejected"""
 
+    monkeypatch.setenv("VLLM_SPYRE_HETEROGEN_TKV", "1")
     max_model_len = 2048
     max_tokens = 20
 
@@ -139,28 +141,29 @@ def get_params_test_blocks_borders_aligned_prompts():
     checked_steps = [
         {
             "step": 0,
-            "tkv": 0,
+            "tkv_0": 0,
             "waiting": ["0", "1", "2"],
             "running": [],
             "request_outputs": []
         },
         {
             "step": 1,  # Prefill sequence 0
-            "tkv": 64,
+            "tkv_0": 49,
             "waiting": ["1", "2"],
             "running": ["0"],
             "request_outputs": ["0"]
         },
         {
             "step": 2,  # Prefill sequence 1
-            "tkv": 64,  # Still 64 because this step is also a prefill
+            "tkv_0": 41,
             "waiting": ["2"],
             "running": ["1", "0"],
             "request_outputs": ["1"]
         },
         {
             "step": 3,  # Decode sequences 0 and 1
-            "tkv": 65,
+            "tkv_0": 42,
+            "tkv_1": 50,
             "waiting": ["2"],
             "running": ["1", "0"],
             "request_outputs": ["1", "0"]
@@ -169,7 +172,8 @@ def get_params_test_blocks_borders_aligned_prompts():
             # Sequence 0 finishes at step 66
             # (start step + 2 prefills + 64 decodes - 1) = 1 + 2 + 64 - 1 = 66
             "step": 66,
-            "tkv": 128,
+            "tkv_0": 105,
+            "tkv_1": 113,
             "waiting": ["2"],
             "running": ["1"],
             "request_outputs": ["1", "0"],
@@ -177,14 +181,15 @@ def get_params_test_blocks_borders_aligned_prompts():
         },
         {
             "step": 67,  # Prefill sequence 2
-            "tkv": 128,  # Tkv doesn't increase because it is a prefill
+            "tkv_0": 47,
             "waiting": [],
             "running": ["2", "1"],
             "request_outputs": ["2"]
         },
         {
             "step": 68,  # Decode sequences 1 and 2
-            "tkv": 129,
+            "tkv_0": 48,
+            "tkv_1": 106,
             "waiting": [],
             "running": ["2", "1"],
             "request_outputs": ["2", "1"]
@@ -193,7 +198,8 @@ def get_params_test_blocks_borders_aligned_prompts():
             # Sequence 1 finishes at step 69
             # (start step + 2 prefills + 66 decodes - 1) = 2 + 2 + 66 - 1 = 69
             "step": 69,
-            "tkv": 130,
+            "tkv_0": 49,
+            "tkv_1": 107,
             "waiting": [],
             "running": ["2"],
             "request_outputs": ["2", "1"],
@@ -201,7 +207,7 @@ def get_params_test_blocks_borders_aligned_prompts():
         },
         {
             "step": 70,  # Decode sequence 2
-            "tkv": 67,  # tkv is reset by 64 due to removing the padded block
+            "tkv_0": 50,
             "waiting": [],
             "running": ["2"],
             "request_outputs": ["2"]
@@ -210,7 +216,7 @@ def get_params_test_blocks_borders_aligned_prompts():
             # Sequence 2 finishes at step 73
             # (start step + 1 prefill + 6 decodes - 1) = 67 + 1 + 6 - 1 = 73
             "step": 73,
-            "tkv": 70,
+            "tkv_0": 53,
             "waiting": [],
             "running": [],
             "request_outputs": ["2"],
@@ -219,13 +225,12 @@ def get_params_test_blocks_borders_aligned_prompts():
         {
             # Tkv should be cleared one step later
             "step": 74,
-            "tkv": 0,
+            "tkv_0": 0,
             "waiting": [],
             "running": [],
             "request_outputs": []
         }
     ]
-
     return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
             max_model_len)
 
@@ -243,28 +248,29 @@ def get_params_test_blocks_borders_misaligned_prompts():
     checked_steps = [
         {
             "step": 0,
-            "tkv": 0,
+            "tkv_0": 0,
             "waiting": ["0", "1", "2"],
             "running": [],
             "request_outputs": []
         },
         {
             "step": 1,  # Prefill sequence 0
-            "tkv": 64,
+            "tkv_0": 49,
             "waiting": ["1", "2"],
             "running": ["0"],
             "request_outputs": ["0"]
         },
         {
             "step": 2,  # Prefill sequence 1
-            "tkv": 64,  # Still 64 because this step is also a prefill
+            "tkv_0": 41,
             "waiting": ["2"],
             "running": ["1", "0"],
             "request_outputs": ["1"]
         },
         {
             "step": 3,  # Decode sequences 0 and 1
-            "tkv": 65,
+            "tkv_0": 42,
+            "tkv_1": 50,
             "waiting": ["2"],
             "running": ["1", "0"],
             "request_outputs": ["1", "0"]
@@ -273,7 +279,8 @@ def get_params_test_blocks_borders_misaligned_prompts():
             # Sequence 0 finishes at step 58
             # (start step + 2 prefills + 56 decodes - 1) = 1 + 2 + 56 - 1 = 58
             "step": 58,
-            "tkv": 120,
+            "tkv_0": 97,
+            "tkv_1": 105,
             "waiting": ["2"],
             "running": ["1"],
             "request_outputs": ["1", "0"],
@@ -281,23 +288,25 @@ def get_params_test_blocks_borders_misaligned_prompts():
         },
         {
             "step": 59,  # Prefill sequence 2
-            "tkv": 120,  # Tkv doesn't increase because it is a prefill
+            "tkv_0": 47,
             "waiting": [],
             "running": ["2", "1"],
             "request_outputs": ["2"]
         },
         {
             "step": 60,  # Decode sequences 1 and 2
-            "tkv": 121,
+            "tkv_0": 48,
+            "tkv_1": 98,
             "waiting": [],
             "running": ["2", "1"],
             "request_outputs": ["2", "1"]
         },
         {
-            # Sequence 2 finishes at step 68
+            # Sequence 2 finishes at step 67
             # (start step + 1 prefill + 8 decodes - 1) = 59 + 1 + 8 - 1 = 67
             "step": 67,
-            "tkv": 128,
+            "tkv_0": 55,
+            "tkv_1": 105,
             "waiting": [],
             "running": ["1"],
             "request_outputs": ["2", "1"],
@@ -305,7 +314,7 @@ def get_params_test_blocks_borders_misaligned_prompts():
         },
         {
             "step": 68,  # Decode sequences 1
-            "tkv": 129,
+            "tkv_0": 106,
             "waiting": [],
             "running": ["1"],
             "request_outputs": ["1"]
@@ -314,7 +323,7 @@ def get_params_test_blocks_borders_misaligned_prompts():
             # Sequence 1 finishes at step 69
             # (start step + 2 prefills + 66 decodes - 1) = 2 + 2 + 66 - 1 = 69
             "step": 69,
-            "tkv": 130,
+            "tkv_0": 107,
             "waiting": [],
             "running": [],
             "request_outputs": ["1"],
@@ -323,13 +332,12 @@ def get_params_test_blocks_borders_misaligned_prompts():
         {
             # Tkv should be cleared one step later
             "step": 70,
-            "tkv": 0,
+            "tkv_0": 0,
             "waiting": [],
             "running": [],
             "request_outputs": []
         },
     ]
-
     return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
             max_model_len)
 
@@ -346,7 +354,7 @@ def get_params_test_special_finish():
     checked_steps = [
         {
             "step": 0,
-            "tkv": 0,
+            "tkv_0": 0,
             "waiting": ["0", "1"],
             "running": [],
             "request_outputs": []
@@ -354,7 +362,7 @@ def get_params_test_special_finish():
         {
             # Prefill sequence 0
             "step": 1,
-            "tkv": 64,
+            "tkv_0": 49,
             "waiting": ["1"],
             "running": ["0"],
             "request_outputs": ["0"]
@@ -362,7 +370,7 @@ def get_params_test_special_finish():
         {
             # Prefill sequence 1
             "step": 2,
-            "tkv": 64,
+            "tkv_0": 30,
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": ["1"]
@@ -370,7 +378,8 @@ def get_params_test_special_finish():
         {
             # Decode sequences 0 and 1
             "step": 3,
-            "tkv": 65,
+            "tkv_0": 31,
+            "tkv_1": 50,
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": ["1", "0"]
@@ -379,7 +388,8 @@ def get_params_test_special_finish():
             # Sequences 0 and 1 finish at step 31
             # (start step + 2 prefills + 29 decodes - 1) = 1 + 2 + 29 - 1 = 31
             "step": 31,
-            "tkv": 93,
+            "tkv_0": 59,
+            "tkv_1": 78,
             "waiting": ["2"],
             "running": [],
             "request_outputs": ["1", "0"],
@@ -388,7 +398,7 @@ def get_params_test_special_finish():
         {
             # Prefill sequence 2
             "step": 32,
-            "tkv": 64,
+            "tkv_0": 20,
             "waiting": [],
             "running": ["2"],
             "request_outputs": ["2"],
@@ -396,7 +406,7 @@ def get_params_test_special_finish():
         {
             # Decode sequence 2
             "step": 33,
-            "tkv": 65,
+            "tkv_0": 21,
             "waiting": [],
             "running": ["2"],
             "request_outputs": ["2"],
@@ -405,7 +415,7 @@ def get_params_test_special_finish():
             # Sequences 2 finishes at step 41
             # (start step + 1 prefill + 29 decodes - 1) = 32 + 1 + 9 - 1 = 41
             "step": 41,
-            "tkv": 73,
+            "tkv_0": 29,
             "waiting": [],
             "running": [],
             "request_outputs": ["2"],
@@ -414,7 +424,7 @@ def get_params_test_special_finish():
         {
             # Tkv should be cleared one step later
             "step": 42,
-            "tkv": 0,
+            "tkv_0": 0,
             "waiting": [],
             "running": [],
             "request_outputs": [],
@@ -436,7 +446,7 @@ def get_params_test_scheduler_constraints_tkv():
     checked_steps = [
         {
             "step": 0,
-            "tkv": 0,
+            "tkv_0": 0,
             "waiting": ["0", "1"],
             "running": [],
             "request_outputs": []
@@ -444,32 +454,26 @@ def get_params_test_scheduler_constraints_tkv():
         {
             # Prefill sequence 0
             "step": 1,
-            "tkv": 64,
+            "tkv_0": 49,
             "waiting": ["1"],
             "running": ["0"],
             "request_outputs": ["0"]
         },
+        # note: for homogeneous tkv we cannot prefill sequence 1 at this point
+        # as tkv is to small: 70 (needed) > 64 (current), with heterogeneous ok
         {
-            # Decode sequence 0
-            # Cannot prefill sequence 1, because of tkv constraint
+            # Prefill sequence 1
             "step": 2,
-            "tkv": 65,
-            "waiting": ["1"],
-            "running": ["0"],
-            "request_outputs": ["0"]
-        },
-        {
-            # Prefill sequence 1, tkv large enough
-            "step": 8,
-            "tkv": 70,
+            "tkv_0": 70,
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": ["1"]
         },
         {
-            # Decode sequences 0 and 1
-            "step": 9,
-            "tkv": 71,
+            # Decode sequence 0 and 1
+            "step": 3,
+            "tkv_0": 71,
+            "tkv_1": 50,
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": ["1", "0"]
@@ -478,7 +482,8 @@ def get_params_test_scheduler_constraints_tkv():
             # Sequence 0 finishes at step 58
             # (start step + 2 prefills + 56 decodes - 1) = 1 + 2 + 56 - 1 = 58
             "step": 58,
-            "tkv": 120,
+            "tkv_0": 126,
+            "tkv_1": 105,
             "waiting": [],
             "running": ["1"],
             "request_outputs": ["1", "0"],
@@ -487,16 +492,16 @@ def get_params_test_scheduler_constraints_tkv():
         {
             # Decode sequence 1
             "step": 59,
-            "tkv": 121,
+            "tkv_0": 127,
             "waiting": [],
             "running": ["1"],
             "request_outputs": ["1"],
         },
         {
-            # Sequence 1 finishes at step 74
-            # (start step + 1 prefill + 66 decodes - 1) = 8 + 1 + 66 - 1 = 74
-            "step": 74,
-            "tkv": 136,
+            # Sequence 1 finishes at step 68
+            # (start step + 1 prefill + 66 decodes - 1) = 2 + 1 + 66 - 1 = 68
+            "step": 68,
+            "tkv_0": 136,
             "waiting": [],
             "running": [],
             "request_outputs": ["1"],
@@ -504,8 +509,8 @@ def get_params_test_scheduler_constraints_tkv():
         },
         {
             # Tkv should be cleared one step later
-            "step": 75,
-            "tkv": 0,
+            "step": 69,
+            "tkv_0": 0,
             "waiting": [],
             "running": [],
             "request_outputs": []
@@ -527,7 +532,7 @@ def get_params_test_scheduler_constraints_max_prompt_len():
     checked_steps = [
         {
             "step": 0,
-            "tkv": 0,
+            "tkv_0": 0,
             "waiting": ["0", "1", "2"],
             "running": [],
             "request_outputs": []
@@ -535,7 +540,7 @@ def get_params_test_scheduler_constraints_max_prompt_len():
         {
             # Prefill sequence 0
             "step": 1,
-            "tkv": 128,
+            "tkv_0": 70,
             "waiting": ["1", "2"],
             "running": ["0"],
             "request_outputs": ["0"]
@@ -543,7 +548,7 @@ def get_params_test_scheduler_constraints_max_prompt_len():
         {
             # Prefill sequence 1
             "step": 2,
-            "tkv": 128,
+            "tkv_0": 49,
             "waiting": ["2"],
             "running": ["1", "0"],
             "request_outputs": ["1"]
@@ -551,7 +556,8 @@ def get_params_test_scheduler_constraints_max_prompt_len():
         {
             # Decode sequences 0 and 1
             "step": 3,
-            "tkv": 129,
+            "tkv_0": 50,
+            "tkv_1": 71,
             "waiting": ["2"],
             "running": ["1", "0"],
             "request_outputs": ["1", "0"]
@@ -560,52 +566,56 @@ def get_params_test_scheduler_constraints_max_prompt_len():
             # Sequence 1 finishes at step 58
             # (start step + 1 prefills + 56 decodes - 1) = 2 + 1 + 56 - 1 = 58
             "step": 58,
-            "tkv": 184,
+            "tkv_0": 105,
+            "tkv_1": 126,
             "waiting": ["2"],
             "running": ["0"],
             "request_outputs": ["1", "0"],
             "finished_requests": ["1"]
         },
-        {
-            # Decode sequence 0
-            # Cannot prefill sequence 2: 185 + 80 = 265 > 256
-            "step": 59,
-            "tkv": 185,
-            "waiting": ["2"],
-            "running": ["0"],
-            "request_outputs": ["0"],
-        },
-        {
-            # Sequence 0 finishes at step 68
-            # (start step + 2 prefills + 66 decodes - 1) = 1 + 2 + 66 - 1 = 68
-            "step": 68,
-            "tkv": 194,
-            "waiting": ["2"],
-            "running": [],
-            "request_outputs": ["0"],
-            "finished_requests": ["0"]
-        },
+        # note: for homogeneous tkv we cannot prefill sequence 2 here as
+        # tkv is to big: 185 + 80 = 265 > 256, but with heterogeneous we can...
         {
             # Prefill sequence 2
+            "step": 59,
+            "tkv_0": 41,
+            "waiting": [],
+            "running": ["2", "0"],
+            "request_outputs": ["2"],
+        },
+        {
+            # Decode sequences 0 and 2
+            "step": 60,
+            "tkv_0": 42,
+            "tkv_1": 127,
+            "waiting": [],
+            "running": ["2", "0"],
+            "request_outputs": ["2", "0"],
+        },
+        {
+            # Sequence 0 finishes at step 69
+            # (start step + 3 prefills + 66 decodes - 1) = 1 + 3 + 66 - 1 = 69
             "step": 69,
-            "tkv": 64,
+            "tkv_0": 51,
+            "tkv_1": 136,
             "waiting": [],
             "running": ["2"],
-            "request_outputs": ["2"],
+            "request_outputs": ["2", "0"],
+            "finished_requests": ["0"]
         },
         {
             # Decode sequence 2
             "step": 70,
-            "tkv": 65,
+            "tkv_0": 52,
             "waiting": [],
             "running": ["2"],
             "request_outputs": ["2"],
         },
         {
-            # Sequence 2 finishes at step 148
-            # (start step + 1 prefill + 79 decodes - 1) = 69 + 1 + 79 - 1 = 148
-            "step": 148,
-            "tkv": 143,
+            # Sequence 2 finishes at step 138
+            # (start step + 1 prefill + 79 decodes - 1) = 59 + 1 + 79 - 1 = 138
+            "step": 138,
+            "tkv_0": 120,
             "waiting": [],
             "running": [],
             "request_outputs": ["2"],
@@ -613,8 +623,8 @@ def get_params_test_scheduler_constraints_max_prompt_len():
         },
         {
             # Tkv should be cleared one step later
-            "step": 149,
-            "tkv": 0,
+            "step": 139,
+            "tkv_0": 0,
             "waiting": [],
             "running": [],
             "request_outputs": []
@@ -639,7 +649,9 @@ def augment_checked_steps(
             assert prev_step["step"] == step - 1
             new_step = copy.deepcopy(prev_step)
             new_step["step"] = step
-            new_step["tkv"] += 1
+            n_tkvs = sum(k.startswith('tkv') for k in new_step)
+            for i in range(n_tkvs):
+                new_step["tkv_" + str(i)] += 1
             all_checked_steps.append(new_step)
             prev_step = new_step
     return all_checked_steps
@@ -683,6 +695,7 @@ def test_scheduler_cb_steps_tkv(
     monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
     monkeypatch.setenv("VLLM_USE_V1", "1")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+    monkeypatch.setenv("VLLM_SPYRE_HETEROGEN_TKV", "1")
 
     # To get deterministic execution in V1
     # and to enable InprocClient
@@ -758,7 +771,9 @@ def test_scheduler_cb_steps_tkv(
                 r.request_id for r in request_outputs if r.finished
             ]
 
-            assert scheduler.tkv == step_ref["tkv"], f"Step {step}, tkv"
+            for i, tkv in enumerate(scheduler.tkvs):
+                assert tkv == step_ref["tkv_" +
+                                       str(i)], f"Step {step}, tkv_{i}"
             assert waiting == step_ref["waiting"], f"Step {step}, num waiting"
             assert running == step_ref["running"], f"Step {step}, num running"
             assert out_reqs_ids == step_ref["request_outputs"], \

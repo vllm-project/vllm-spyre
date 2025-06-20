@@ -9,6 +9,7 @@ from vllm.v1.engine import EngineCoreOutputs
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request
 
+import vllm_spyre.envs as envs_spyre
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import CBSpyreModelRunnerOutput
 
@@ -137,7 +138,8 @@ class StaticBatchingSpyreScheduler(SpyreScheduler):
 
 
 class ContinuousBatchingSpyreScheduler(SpyreScheduler):
-    """ Support of continuous batching """
+    """ Support of continuous batching with homogeneous or
+     heterogeneous tkv"""
 
     # inherited from V1 base scheduler but mypy needs to know the type
     running: list[Request]
@@ -145,7 +147,9 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
     def __init__(self, *args, **kwargs) -> None:
         # Initialize SpyreScheduler
         super().__init__(*args, **kwargs)
-        self.tkv = 0
+        # used for homogeneous tkv scheduling and for step level testing
+        # in the heterogeneous case
+        self.tkvs: tuple[int, ...] = (0, )
 
     def update_from_output(
         self,
@@ -157,7 +161,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             model_runner_output, CBSpyreModelRunnerOutput
         ), "Expecting an instance of CBSpyreModelRunnerOutput"
         "when doing continuous batching."
-        self.tkv = model_runner_output.tkv
+        self.tkvs = model_runner_output.tkvs
         return super(SpyreScheduler,
                      self).update_from_output(scheduler_output,
                                               model_runner_output)
@@ -218,8 +222,18 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             self.waiting) < self.max_num_running_reqs
         # check that there is space in the prefill batch
         cond2 = len(self.waiting) < max_prompt_batch_size
+
+        # conditions for homogeneous tkv only:
         # check that the prompt length does not exceed the current tkv
-        cond3 = request.num_prompt_tokens <= self.tkv
+        cond3 = request.num_prompt_tokens <= self.tkvs[0]
         # check that the number of requested tokens can be served
-        cond4 = request.max_tokens <= (max_context_len - self.tkv)
-        return start_new_batch or (cond1 and cond2 and cond3 and cond4)
+        cond4 = request.max_tokens <= (max_context_len - self.tkvs[0])
+
+        if envs_spyre.VLLM_SPYRE_HETEROGEN_TKV:
+            # heterogeneous tkv scheduling conditions
+            conds = [cond1, cond2]
+        else:
+            # homogeneous tkv scheduling conditions
+            conds = [cond1, cond2, cond3, cond4]
+
+        return start_new_batch or all(conds)
