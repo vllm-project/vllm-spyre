@@ -789,12 +789,13 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(
     def __init__(self, *args, **kwargs) -> None:
         # Initialize ContinuousBatchingSpyreModelRunner
         super().__init__(*args, **kwargs)
+        self.dummy_req_ids2blocks: list[int] = []
 
     def _prepare_prompt(
         self,
         new_requests: list[NewRequestData],
     ) -> ModelForwardInputs:
-        assert len(new_requests) == 1
+        assert len(new_requests) > 0
         input_token_list: list[torch.Tensor] = []
 
         # ceil division to pad to next block boundary
@@ -814,10 +815,10 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(
         self.prefill_batch.clear_requests()
 
         for request_data in new_requests:
-            req_id = request_data.req_id
             # retrieve initial (unpadded) tokens
             prompt_tokens = request_data.prompt_token_ids
-            self.req_ids2left_pads[req_id] = self.tkv - len(prompt_tokens)
+            self.req_ids2left_pads[
+                request_data.req_id] = self.tkv - len(prompt_tokens)
             input_token_list.append(
                 torch.tensor(prompt_tokens,
                              dtype=torch.long,
@@ -833,10 +834,11 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(
                 block_offset = pos_i % self.BLOCK_SIZE
                 slot = block_number * self.BLOCK_SIZE + block_offset
                 slot_mapping_i.append(slot)
-            self.req_ids2blocks[req_id] = deque(block_table_i)
+            self.req_ids2blocks[request_data.req_id] = deque(block_table_i)
             slot_mapping.append(slot_mapping_i)
 
             # Add new requests to the cached states.
+            req_id = request_data.req_id
             sampling_params = request_data.sampling_params
             if sampling_params.sampling_type == SamplingType.RANDOM_SEED:
                 generator = torch.Generator(device=self.device)
@@ -910,12 +912,13 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(
         for cached_request in cached_requests:
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
-            req_id = cached_request.req_id
+
             # adding new blocks if needed
             if self.tkv // self.BLOCK_SIZE + 1 > len(
-                    self.req_ids2blocks[req_id]):
-                self.req_ids2blocks[req_id].append(self.free_blocks.popleft())
-            block_table.append(self.req_ids2blocks[req_id])
+                    self.req_ids2blocks[cached_request.req_id]):
+                self.req_ids2blocks[cached_request.req_id].append(
+                    self.free_blocks.popleft())
+            block_table.append(self.req_ids2blocks[cached_request.req_id])
             # slot_mapping for all blocks of sequence
             start_slot = block_table[-1][-1] * self.BLOCK_SIZE
             offset = self.tkv % self.BLOCK_SIZE
@@ -925,7 +928,8 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(
             input_tokens.append([generation_token])
             seq_len = cached_request.num_computed_tokens
             input_positions.append([seq_len])
-            left_padded_prompt_mask.append(self.req_ids2left_pads[req_id])
+            left_padded_prompt_mask.append(
+                self.req_ids2left_pads[cached_request.req_id])
 
         # add padding for minimum batch size of 2
         if len(input_tokens) == 1:
@@ -933,7 +937,13 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(
             self.model.indices = torch.cat(
                 (self.model.indices, dummy_req_indices), -1)
             assert self.model.indices.size(dim=0) == 2
-            block_table.append(deque([0 for i in range(len(block_table[0]))]))
+
+            n = self.tkv + 1
+            d = self.BLOCK_SIZE
+            num_blocks = (n + d - 1) // d
+            for _ in range(num_blocks - len(self.dummy_req_ids2blocks)):
+                self.dummy_req_ids2blocks.append(self.free_blocks.popleft())
+            block_table.append(deque(self.dummy_req_ids2blocks))
             start_slot = block_table[-1][-1] * self.BLOCK_SIZE
             offset = self.tkv % self.BLOCK_SIZE
             slot = [start_slot + offset]
@@ -1062,6 +1072,18 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(
             mask = mask_left
 
         return input_tokens, position_ids, mask
+
+    def _update_states(self, scheduler_output):
+
+        super()._update_states(scheduler_output)
+
+        # free the blocks used for padding to minimum decode batch size of 2
+        if self.dummy_req_ids2blocks and \
+                (not scheduler_output.total_num_scheduled_tokens \
+                or len(scheduler_output.scheduled_new_reqs) > 0):
+            for freed_block in self.dummy_req_ids2blocks:
+                self.free_blocks.append(freed_block)
+            self.dummy_req_ids2blocks = []
 
     def prepare_model_input(
             self, scheduler_output: SchedulerOutput) -> ModelForwardInputs:
