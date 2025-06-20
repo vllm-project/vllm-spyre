@@ -30,6 +30,7 @@ def test_get_spyre_model_list_w_tokenizer_default(monkeypatch):
     with monkeypatch.context() as m:
         m.setenv("VLLM_SPYRE_TEST_MODEL_LIST", "llama-194m, "
                  "all-roberta-large-v1")
+        m.setenv("VLLM_SPYRE_TEST_MODEL_DIR", "models")
 
         model_tokenizer_list = get_spyre_model_list_w_tokenizer()
         # model
@@ -50,6 +51,7 @@ def test_get_spyre_model_list_w_tokenizer_w_values(monkeypatch):
     with monkeypatch.context() as m:
         m.setenv("VLLM_SPYRE_TEST_MODEL_LIST", "llama-194m, "
                  "tiny-granite")
+        m.setenv("VLLM_SPYRE_TEST_MODEL_DIR", "models")
         m.setenv("VLLM_SPYRE_TEST_TOKENIZER_LIST", "models/llama-tokenizer, "
                  "ibm-granite/granite-3.2-8b")
 
