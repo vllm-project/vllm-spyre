@@ -312,6 +312,7 @@ class SpyreModelRunner:
             sampling_metadata=self.input_batch.sampling_metadata,
         )
 
+
         model_output = ModelRunnerOutput(
             req_ids=self.input_batch.requests_ids,
             req_id_to_index=self.input_batch.get_unpadded_output_indices(),
@@ -789,6 +790,14 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         cached_requests: list[CachedRequestData],
     ) -> ModelForwardInputs:
         assert len(cached_requests) > 0
+        
+        
+        cached_reqs_len = len(cached_requests)
+        # input_tokens = cached_reqs_len * [None]
+        # input_positions = cached_reqs_len * [None]
+        # block_table = cached_reqs_len * [None]
+        # slot_mapping = cached_reqs_len * [None]
+        # left_padded_prompt_mask = cached_reqs_len * [None]
         input_tokens = []
         input_positions = []
         block_table = []
@@ -798,9 +807,16 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                                         dtype=torch.bool,
                                         device="cpu")
 
-        for cached_request in cached_requests:
+        assert len(self.input_batch.req_id_to_index) == len(cached_requests)        
+        # TODO(wallas): I think we can do better here, without sorting and
+        # creating a intermediary dictionary
+        cached_reqs_map = { c.req_id : c for c in cached_requests }
+        req_ids = self.input_batch.sorted_requests_ids
+        
+        for req_id in req_ids:
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
+            cached_request = cached_reqs_map[req_id]
 
             # adding new blocks if needed
             if self.tkv // self.block_size + 1 > len(
@@ -1044,16 +1060,14 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         logger.debug("t_token: %.2fms", (t1 * 1000))
 
         is_prompt = len(scheduler_output.scheduled_new_reqs) > 0
-        scheduled_req = (scheduler_output.scheduled_new_reqs if is_prompt else
-                         scheduler_output.scheduled_cached_reqs)
-        # since same order as in _prepare_prompt/decode req_ids2idx not needed
-        req_ids = [req.req_id for req in scheduled_req]
-        req_id_to_index = {req_id: i for i, req_id in enumerate(req_ids)}
+        req_id_to_index = self.prefill_batch.get_unpadded_output_indices() \
+            if is_prompt else self.input_batch.get_unpadded_output_indices()
 
+        # NOTE(wallas): I'm pretty sure that we or vllm don't use req_ids 
+        # for nothing.
         model_output = CBSpyreModelRunnerOutput(
-            req_ids=self.input_batch.requests_ids,
+            req_ids=req_id_to_index.keys(), 
             req_id_to_index=req_id_to_index,
-            # req_id_to_index=self.input_batch.get_unpadded_output_indices(),
             sampled_token_ids=output.sampled_token_ids.tolist(),
             spec_token_ids=None,
             logprobs=(output.logprobs_tensors.tolists()
