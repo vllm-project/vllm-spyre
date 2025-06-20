@@ -20,11 +20,10 @@ class CachedRequestState:
     req_id: str
     prompt_token_ids: list[int]
     sampling_params: SamplingParams
-    # num_computed_tokens: int
     generator: Optional[torch.Generator]
 
     output_token_ids: list[int]
-    left_padding: int  # Defaults to 0
+    left_padding: int  # Defaults to 0, i. e. not padding
 
     @property
     def num_tokens(self) -> int:
