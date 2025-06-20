@@ -714,11 +714,13 @@ def test_scheduler_cb_steps_tkv(
     # ------
 
     # Setup the engine
-    engine_args = EngineArgs(model=model,
-                             tokenizer=model,
-                             max_model_len=max_model_len,
-                             block_size=max_model_len,
-                             max_num_seqs=max_num_seqs)
+    engine_args = EngineArgs(
+        model=model,
+        tokenizer="ibm-granite/granite-3.2-8b-instruct",
+        max_model_len=max_model_len,
+        block_size=max_model_len,
+        max_num_seqs=max_num_seqs,
+    )
     vllm_config = engine_args.create_engine_config()
     executor_class = Executor.get_class(vllm_config)
     engine_core = EngineCore(vllm_config=vllm_config,
