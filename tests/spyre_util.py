@@ -490,47 +490,6 @@ def get_spyre_backend_list():
     return backends
 
 
-# # get model names from env, if not set then default to "llama-194m"
-# # For multiple values:
-# # export SPYRE_TEST_MODEL_LIST="llama-194m,all-roberta-large-v1"
-# def get_spyre_model_list(isEmbeddings=False, quantization=None):
-#     spyre_model_dir_path = get_spyre_model_dir_path()
-
-#     if isEmbeddings:
-#         user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST",
-#                                               "all-roberta-large-v1")
-#         marks = [pytest.mark.embedding]
-#     elif quantization == "gptq":
-#         user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST",
-#                                               "granite-3.0-8b-instruct-gptq")
-#         marks = [pytest.mark.decoder, pytest.mark.quantized, pytest.mark.spyre]
-#     else:
-#         user_test_model_list = os.environ.get(
-#             "VLLM_SPYRE_TEST_MODEL_LIST",
-#             "tiny-models/granite-3.2-8b-layers-3-step-100000",
-#         )
-#         marks = [pytest.mark.decoder]
-
-#     tokenizer_list = os.environ.get(
-#         "VLLM_SPYRE_TEST_TOKENIZER_LIST",
-#         [],
-#     )
-
-#     test_model_list = []
-#     for index, model in enumerate(user_test_model_list.split(",")):
-#         model_path = str(spyre_model_dir_path / model.strip())
-#         tokenizer = tokenizer_list[index] \
-#             if len(tokenizer_list) > 0 else model_path
-#         test_model_list.append(
-#             pytest.param(
-#                 model_path,
-#                 tokenizer,
-#                 marks=marks,
-#                 id=f"model({model.strip()}), tokenizer({tokenizer})",
-#             ))
-#     return test_model_list
-
-
 # get model names from env, if not set then default to "llama-194m"
 # For multiple values:
 # export SPYRE_TEST_MODEL_LIST="llama-194m,all-roberta-large-v1"
@@ -580,18 +539,6 @@ def get_spyre_model_list_w_tokenizer():
             ))
 
     return model_list_w_tokenizer
-
-
-# def get_spyre_tokenizer():
-#     tokenizer_list = os.environ.get(
-#         "VLLM_SPYRE_TEST_TOKENIZER_LIST",
-#         get_spyre_model_list(),
-#     )
-#     return_list = [
-#         pytest.param(tokenizer.values[0], id=f"tokenizer({tokenizer.values[0].strip()})")
-#         for tokenizer in tokenizer_list
-#     ]
-#     return return_list
 
 
 def create_text_prompt(model: str, min_tokens: int, max_tokens: int) -> str:
