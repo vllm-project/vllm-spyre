@@ -525,11 +525,12 @@ def get_spyre_model_list_w_tokenizer():
         "VLLM_SPYRE_TEST_TOKENIZER_LIST",
         "",
     )
+    tokenizer_list_split = tokenizer_list.split(",")
 
     model_list_w_tokenizer = []
     for index, model in enumerate(test_model_list):
         model_path = model.values[0]
-        tokenizer = (tokenizer_list.split(",")[index].strip()
+        tokenizer = (tokenizer_list_split[index].strip()
                      if tokenizer_list != "" else model_path)
         model_list_w_tokenizer.append(
             pytest.param(
