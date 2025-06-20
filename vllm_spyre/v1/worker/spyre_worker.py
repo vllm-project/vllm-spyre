@@ -5,7 +5,7 @@ import os
 import platform
 import signal
 import time
-from typing import Optional, Union, cast
+from typing import Any, Optional, Union, cast
 
 import torch
 import torch.distributed as dist
@@ -63,9 +63,10 @@ class SpyreWorker(WorkerBaseV1):
 
     def compile_or_warm_up_model(self) -> None:
         """Prepare model for execution through compilation/warmup."""
-        # TO DO: implement warmup for continuous batching
+
         if envs_spyre.VLLM_SPYRE_USE_CB:
-            self._warmup_spyre_dynamic_size(self.restricted_tokens)
+            with _maybe_warmup_context():
+                self._warmup_spyre_dynamic_size(self.restricted_tokens)
             return
 
         num_shape_combinations = len(self.spyre_warmup_shapes)
@@ -334,6 +335,11 @@ class SpyreWorker(WorkerBaseV1):
         warmup_tokens_tensor = valid_token_ids_tensor[torch.randint(
             0, len(valid_token_ids_tensor), (batch_size, prompt_len))]
 
+        # TODO temporary until 'pooling_params' makes it to a release version
+        # in vllm
+        extra_kwargs: dict[str, Any] = {}
+        if "pooling_params" in NewRequestData.__dataclass_fields__:
+            extra_kwargs["pooling_params"] = None
         dummy_requests = [
             NewRequestData(
                 req_id="warmup-%d" % (i),
@@ -345,7 +351,7 @@ class SpyreWorker(WorkerBaseV1):
                 block_ids=[0],  # not actually used
                 num_computed_tokens=0,
                 lora_request=None,
-            ) for i in range(batch_size)
+                **extra_kwargs) for i in range(batch_size)
         ]
 
         for i, req in enumerate(dummy_requests):
@@ -395,8 +401,7 @@ class SpyreWorker(WorkerBaseV1):
         )
         logger.info("Warmup decode 1/1...")
 
-        with _maybe_warmup_context():
-            self.execute_model(scheduler_output)
+        self.execute_model(scheduler_output)
 
         # Needed to clean up the data of model runner
         scheduler_output = SchedulerOutput(
@@ -465,7 +470,6 @@ class SpyreWorker(WorkerBaseV1):
                         str(max_model_len), max_concurrency_spyre)
             return num_blocks_spyre
         else:  # dynamo backend 'eager'
-            # TODO: how do we get a meaningful value for CPU here
             num_blocks_cpu = max_batch_size * min_req_num_blocks
             assert num_blocks_cpu >= min_req_num_blocks, (
                 "Number of pages available on CPU (%d) is not enough to "
@@ -501,6 +505,12 @@ class SpyreWorker(WorkerBaseV1):
         warmup_tokens_tensor = valid_token_ids_tensor[torch.randint(
             0, len(valid_token_ids_tensor), (batch_size, prompt_len))]
 
+        # TODO temporary until 'pooling_params' makes it to a release version
+        # in vllm
+        extra_kwargs: dict[str, Any] = {}
+        if "pooling_params" in NewRequestData.__dataclass_fields__:
+            extra_kwargs["pooling_params"] = None
+
         # Set up dummy requests for prefill steps
         dummy_requests = [
             NewRequestData(
@@ -513,7 +523,7 @@ class SpyreWorker(WorkerBaseV1):
                 block_ids=[0],
                 num_computed_tokens=0,
                 lora_request=None,
-            ) for i in range(batch_size)
+                **extra_kwargs) for i in range(batch_size)
         ]
 
         # Set up dummy cached_requests for decode steps
@@ -549,6 +559,7 @@ class SpyreWorker(WorkerBaseV1):
 
         # First full forward pass
         logger.info("Warmup forward pass 1/2...")
+        # The fixed size warmup needs to happen only in here
         with _maybe_warmup_context():
             self._warmup_model_forward_pass(scheduler_output, dummy_requests,
                                             cached_requests, num_decode_tokens)

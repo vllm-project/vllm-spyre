@@ -1,4 +1,3 @@
-import inspect
 import math
 import os
 import subprocess
@@ -22,11 +21,6 @@ DISABLE_ASSERTS = False  # used for debugging
 
 ISCLOSE_REL_TOL_CPU = 0.1
 ISCLOSE_REL_TOL_SPYRE = 0.35
-
-VLLM_VERSIONS = [
-    pytest.param("V0", marks=pytest.mark.v0, id="v0"),
-    pytest.param("V1", marks=pytest.mark.v1, id="v1"),
-]
 
 
 class RemoteOpenAIServer:
@@ -161,8 +155,8 @@ def generate_spyre_vllm_output(model: str, prompts: list[str],
                                max_model_len: int, block_size: int,
                                sampling_params: Union[SamplingParams,
                                                       list[SamplingParams]],
-                               tensor_parallel_size: int, backend: str,
-                               vllm_version: str) -> list[dict[str, Any]]:
+                               tensor_parallel_size: int,
+                               backend: str) -> list[dict[str, Any]]:
 
     warmup_prompt_length = [t[0] for t in warmup_shapes]
     warmup_new_tokens = [t[1] for t in warmup_shapes]
@@ -175,7 +169,7 @@ def generate_spyre_vllm_output(model: str, prompts: list[str],
     os.environ['VLLM_SPYRE_WARMUP_BATCH_SIZES'] = ','.join(
         str(val) for val in warmup_batch_size)
     os.environ['VLLM_SPYRE_DYNAMO_BACKEND'] = backend
-    os.environ['VLLM_USE_V1'] = "1" if vllm_version == "V1" else "0"
+    os.environ['VLLM_USE_V1'] = "1"
     # Allows to run multiprocess V1 engine without dumping meaningless logs at
     # shutdown engine this context.
     os.environ['VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER'] = "1"
@@ -545,35 +539,24 @@ def create_random_request(
         request_id: int, num_tokens: int,
         sampling_params: SamplingParams) -> EngineCoreRequest:
 
-    # Temporary until 'data_parallel_rank' parameter makes it to
-    # a release version in vllm
-    if "data_parallel_rank" in [
-            x[0] for x in inspect.getmembers(EngineCoreRequest)
-    ]:
-        return EngineCoreRequest(
-            request_id=str(request_id),
-            prompt_token_ids=[request_id] * num_tokens,
-            mm_inputs=None,
-            mm_hashes=None,
-            mm_placeholders=None,
-            sampling_params=sampling_params,
-            eos_token_id=None,
-            arrival_time=0,
-            lora_request=None,
-            cache_salt=None,
-            data_parallel_rank=None,
-        )
-    else:
-        return EngineCoreRequest(request_id=str(request_id),
-                                 prompt_token_ids=[request_id] * num_tokens,
-                                 mm_inputs=None,
-                                 mm_hashes=None,
-                                 mm_placeholders=None,
-                                 sampling_params=sampling_params,
-                                 eos_token_id=None,
-                                 arrival_time=0,
-                                 lora_request=None,
-                                 cache_salt=None)
+    # Temporary until these parameters make it to a release version in vllm
+    extra_kwargs: dict[str, Any] = {}
+    if "data_parallel_rank" in EngineCoreRequest.__annotations__:
+        extra_kwargs["data_parallel_rank"] = None
+    if "pooling_params" in EngineCoreRequest.__annotations__:
+        extra_kwargs["pooling_params"] = None
+
+    return EngineCoreRequest(request_id=str(request_id),
+                             prompt_token_ids=[request_id] * num_tokens,
+                             mm_inputs=None,
+                             mm_hashes=None,
+                             mm_placeholders=None,
+                             sampling_params=sampling_params,
+                             eos_token_id=None,
+                             arrival_time=0,
+                             lora_request=None,
+                             cache_salt=None,
+                             **extra_kwargs)
 
 
 def skip_unsupported_tp_size(size: int):
