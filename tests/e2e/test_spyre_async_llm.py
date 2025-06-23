@@ -1,6 +1,5 @@
 import asyncio
 from contextlib import ExitStack
-from typing import Optional
 
 import pytest
 from spyre_util import get_spyre_backend_list, get_spyre_model_list
@@ -18,8 +17,6 @@ async def generate(
     output_kind: RequestOutputKind,
     max_tokens: int,
     n: int = 1,
-    prompt_logprobs: Optional[int] = None,
-    cancel_after: Optional[int] = None,
 ) -> tuple[int, str]:
     # Ensure generate doesn't complete too fast for cancellation test.
     await asyncio.sleep(0.2)
@@ -31,7 +28,6 @@ async def generate(
         output_kind=output_kind,
         seed=42,
         n=n,
-        prompt_logprobs=prompt_logprobs,
     )
     async for out in engine.generate(request_id=request_id,
                                      prompt=prompt,
@@ -42,9 +38,6 @@ async def generate(
             count += num_tokens
         else:
             count = num_tokens
-
-        if cancel_after is not None and count >= cancel_after:
-            return count, request_id
 
         await asyncio.sleep(0.01)
 
