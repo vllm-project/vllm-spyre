@@ -23,7 +23,7 @@ template = (
     "appropriately completes the request. Be polite in your response to the "
     "user.\n\n### Instruction:\n{}\n\n### Response:")
 
-prompts = ([[
+prompts = ([
     template.format("Provide a list of instructions "
                     "for preparing chicken soup."),
     template.format("Provide me a list of things that I can do with my "
@@ -32,7 +32,7 @@ prompts = ([[
         "how do I add multiple new columns in m for power query or \
             power bi?"),
     template.format("Convert char to string in Java."),
-]], )
+], )
 
 
 @pytest.mark.cb
