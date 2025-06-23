@@ -11,11 +11,6 @@ from vllm.engine.async_llm_engine import AsyncLLMEngine
 from vllm.sampling_params import RequestOutputKind
 from vllm.v1.engine.async_llm import AsyncLLM
 
-VLLM_VERSIONS = [
-    pytest.param("V0", marks=pytest.mark.v0, id="v0"),
-    pytest.param("V1", marks=pytest.mark.v1, id="v1"),
-]
-
 
 async def generate(
     engine: AsyncLLM | AsyncLLMEngine,
@@ -59,7 +54,7 @@ async def generate(
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("vllm_version", VLLM_VERSIONS)
+@pytest.mark.parametrize("vllm_version", ["V0", "V1"])
 @pytest.mark.parametrize("cb",
                          [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
 @pytest.mark.parametrize("warmup_shapes", [[
