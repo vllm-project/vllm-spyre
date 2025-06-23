@@ -46,7 +46,7 @@ async def generate(
         if cancel_after is not None and count >= cancel_after:
             return count, request_id
 
-        await asyncio.sleep(0.0)
+        await asyncio.sleep(0.01)
 
     return count, request_id
 
