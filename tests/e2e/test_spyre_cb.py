@@ -23,23 +23,16 @@ template = (
     "appropriately completes the request. Be polite in your response to the "
     "user.\n\n### Instruction:\n{}\n\n### Response:")
 
-prompts = (
-    [
-        [
-            template.format(
-                "Provide a list of instructions " "for preparing chicken soup."
-            ),
-            template.format(
-                "Provide me a list of things that I can do with my " "new found wealth."
-            ),
-            template.format(
-                "how do I add multiple new columns in m for power query or \
-            power bi?"
-            ),
-            template.format("Convert char to string in Java."),
-        ]
-    ],
-)
+prompts = ([[
+    template.format("Provide a list of instructions "
+                    "for preparing chicken soup."),
+    template.format("Provide me a list of things that I can do with my "
+                    "new found wealth."),
+    template.format(
+        "how do I add multiple new columns in m for power query or \
+            power bi?"),
+    template.format("Convert char to string in Java."),
+]], )
 
 
 @pytest.mark.cb
@@ -56,18 +49,26 @@ def test_cb_batch_handling(
     continuous batches of requests that
     finish after different numbers of forward passes"""
 
-    sampling_params1 = SamplingParams(
-        max_tokens=5, min_tokens=5, temperature=0, ignore_eos=True, logprobs=0
-    )
-    sampling_params2 = SamplingParams(
-        max_tokens=30,  min_tokens=30, temperature=0, ignore_eos=True, logprobs=0
-    )
-    sampling_params3 = SamplingParams(
-        max_tokens=10,  min_tokens=10, temperature=0, ignore_eos=True, logprobs=0
-    )
-    sampling_params4 = SamplingParams(
-        max_tokens=5,  min_tokens=5, temperature=0, ignore_eos=True, logprobs=0
-    )
+    sampling_params1 = SamplingParams(max_tokens=5,
+                                      min_tokens=5,
+                                      temperature=0,
+                                      ignore_eos=True,
+                                      logprobs=0)
+    sampling_params2 = SamplingParams(max_tokens=30,
+                                      min_tokens=30,
+                                      temperature=0,
+                                      ignore_eos=True,
+                                      logprobs=0)
+    sampling_params3 = SamplingParams(max_tokens=10,
+                                      min_tokens=10,
+                                      temperature=0,
+                                      ignore_eos=True,
+                                      logprobs=0)
+    sampling_params4 = SamplingParams(max_tokens=5,
+                                      min_tokens=5,
+                                      temperature=0,
+                                      ignore_eos=True,
+                                      logprobs=0)
 
     vllm_sampling_params = [
         sampling_params1,
@@ -88,9 +89,9 @@ def test_cb_batch_handling(
         use_cb=True,
         monkeypatch=monkeypatch,
     )
-    hf_results = generate_hf_output(
-        model=model, prompts=prompts, max_new_tokens=[5, 30, 10, 5]
-    )
+    hf_results = generate_hf_output(model=model,
+                                    prompts=prompts,
+                                    max_new_tokens=[5, 30, 10, 5])
 
     compare_results(
         model=model,
@@ -107,9 +108,8 @@ def test_cb_batch_handling(
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("prompts", prompts)
-@pytest.mark.parametrize(
-    "max_num_seqs", [2, 3, 4], ids=lambda val: f"max_num_seqs({val})"
-)
+@pytest.mark.parametrize("max_num_seqs", [2, 3, 4],
+                         ids=lambda val: f"max_num_seqs({val})")
 def test_cb_output(
     model: str,
     backend: str,
