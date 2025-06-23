@@ -38,16 +38,15 @@ template = (
         "how do I add multiple new columns in m for power query or power bi?"),
     template.format("Convert char to string in Java."),
 ]])
-def test_cb_handling(
+def test_cb_output(
     model: str,
     backend: str,
     max_num_seqs: int,
     prompts: list[str],
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Test that the spyre worker correctly handles
-    continuous batches of requests that
-    finish after different numbers of forward passes"""
+    """Test that the spyre worker correctly outputs
+    continuous batches of requests by comparing to HF"""
 
     max_tokens = 20
 
@@ -56,9 +55,6 @@ def test_cb_handling(
                                           ignore_eos=True,
                                           logprobs=0)
 
-    # Ensure that both:
-    # - The model doesn't crash
-    # - The output sequences are correct
     vllm_results = generate_spyre_vllm_output(
         model=model,
         prompts=prompts,
