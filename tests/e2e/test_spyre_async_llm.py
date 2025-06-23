@@ -1,5 +1,4 @@
 import asyncio
-import os
 from contextlib import ExitStack
 from typing import Optional
 
@@ -54,7 +53,6 @@ async def generate(
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("vllm_version", ["V0", "V1"])
 @pytest.mark.parametrize("cb",
                          [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
 @pytest.mark.parametrize("warmup_shapes", [[
@@ -66,7 +64,6 @@ async def generate(
 async def test_abort(
     model: str,
     backend: str,
-    vllm_version: str,
     cb: int,
     warmup_shapes: list[list[int]],
     output_kind: RequestOutputKind,
@@ -74,17 +71,14 @@ async def test_abort(
 ):
     """Test handling of cancelled requests"""
 
-    if cb == 1:
-        if vllm_version != "V1":
-            pytest.skip("CB tests require V1")
-        if backend != "eager":
-            pytest.skip("CB requires eager")
+    if cb == 1 and backend != "eager":
+        pytest.skip("CB requires eager")
 
     with monkeypatch.context() as m, ExitStack() as after:
+        m.setenv("VLLM_USE_V1", "1")
+        m.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
         if cb == 1:
             m.setenv("VLLM_SPYRE_USE_CB", "1")
-            m.setenv("VLLM_USE_V1", "1")
-            m.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
         else:
             warmup_prompt_length = [t[0] for t in warmup_shapes]
             warmup_new_tokens = [t[1] for t in warmup_shapes]
@@ -96,13 +90,9 @@ async def test_abort(
                      ','.join(str(val) for val in warmup_new_tokens))
             m.setenv('VLLM_SPYRE_WARMUP_BATCH_SIZES',
                      ','.join(str(val) for val in warmup_batch_size))
-            m.setenv('VLLM_SPYRE_DYNAMO_BACKEND', backend)
-            m.setenv('VLLM_USE_V1', "1" if vllm_version == "V1" else "0")
 
         # Async LLM API is a little different between v0 and V1
-        EngineClass = AsyncLLM if os.environ[
-            "VLLM_USE_V1"] == 1 else AsyncLLMEngine
-        engine = EngineClass.from_engine_args(
+        engine = AsyncLLM.from_engine_args(
             AsyncEngineArgs(
                 model=model,
                 tokenizer=model,
@@ -111,11 +101,8 @@ async def test_abort(
                 block_size=2048,
             ))
         has_unfinished_requests = \
-            engine.output_processor.has_unfinished_requests \
-            if isinstance(engine, AsyncLLM) \
-            else engine.engine.has_unfinished_requests
-        after.callback(engine.shutdown if isinstance(engine, AsyncLLM) else
-                       engine.shutdown_background_loop)
+            engine.output_processor.has_unfinished_requests
+        after.callback(engine.shutdown)
 
         # Test structure here mirrors upstream vLLM test_abort:
         # https://github.com/vllm-project/vllm/blob/e6aab5de2999187c6cf0206f2d63ab6d7a0b6964/tests/v1/engine/test_async_llm.py#L160
