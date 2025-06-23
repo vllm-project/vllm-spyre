@@ -48,8 +48,9 @@ class ModelForwardInputs:
 
 @dataclass
 class CBSpyreModelRunnerOutput(ModelRunnerOutput):
-    # Add the current tkv to the output
+    # Add the current tkv and the number of free blocks to the output
     tkv: int = 0
+    n_free_blocks: int = 0
 
 
 class SpyreModelRunner:
@@ -965,6 +966,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                                             logprobs=None,
                                             prompt_logprobs_dict={},
                                             tkv=0,
+                                            n_free_blocks=len(
+                                                self.free_blocks),
                                             **extra_kwargs)
 
         model_input = self.prepare_model_input(scheduler_output)
@@ -1051,6 +1054,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                                   for req_id in req_ids
                                   },  # TODO(wallas?): prompt logprobs too
             tkv=self.tkv,
+            n_free_blocks=len(self.free_blocks),
             **extra_kwargs,
         )
         return model_output

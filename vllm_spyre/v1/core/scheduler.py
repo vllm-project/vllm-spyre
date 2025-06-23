@@ -146,6 +146,8 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         # Initialize SpyreScheduler
         super().__init__(*args, **kwargs)
         self.tkv = 0
+        self.n_free_blocks = 0
+        self.BLOCK_SIZE = 64  # hardcoded Spyre constraint for now
 
     def update_from_output(
         self,
@@ -158,6 +160,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         ), "Expecting an instance of CBSpyreModelRunnerOutput"
         "when doing continuous batching."
         self.tkv = model_runner_output.tkv
+        self.n_free_blocks = model_runner_output.n_free_blocks
         return super(SpyreScheduler,
                      self).update_from_output(scheduler_output,
                                               model_runner_output)
@@ -222,4 +225,10 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         cond3 = request.num_prompt_tokens <= self.tkv
         # check that the number of requested tokens can be served
         cond4 = request.max_tokens <= (max_context_len - self.tkv)
-        return start_new_batch or (cond1 and cond2 and cond3 and cond4)
+        # check that there are enough free blocks/pages remaining
+        n = self.tkv + request.max_tokens
+        d = self.BLOCK_SIZE
+        num_blocks = (n + d - 1) // d
+        cond5 = num_blocks <= self.n_free_blocks
+        return start_new_batch or (cond1 and cond2 and cond3 and cond4
+                                   and cond5)
