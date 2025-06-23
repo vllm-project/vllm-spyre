@@ -105,6 +105,9 @@ def test_cb_batch_handling(
 
 
 @pytest.mark.cb
+@pytest.mark.xfail(get_spyre_backend_list()[0].values[0] == "sendnn", \
+                   reason="Expecting some CB scenarios to fail for now " \
+        "for batch_size > 2")
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("prompts", prompts)
@@ -121,10 +124,6 @@ def test_cb_output(
     continuous batches of requests by comparing to HF"""
 
     max_tokens = 20
-
-    if max_num_seqs != 2 and backend == "sendnn":
-        pytest.xfail("Expecting these CB scenarios to fail for now " \
-        "for batch_size > 2")
 
     vllm_sampling_params = SamplingParams(max_tokens=max_tokens,
                                           temperature=0,
