@@ -33,8 +33,13 @@ template = (
     "warmup_shape", [(64, 20, 4), (64, 20, 8), (128, 20, 4),
                      (128, 20, 8)])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def test_output(model: str, prompts: list[str],
-                warmup_shape: tuple[int, int, int], backend: str) -> None:
+def test_output(
+    model: str,
+    prompts: list[str],
+    warmup_shape: tuple[int, int, int],
+    backend: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     '''
     The warmup is based on a single shape. After the warmup,
     one request with the provided prompts is input to vLLM.
@@ -64,7 +69,8 @@ def test_output(model: str, prompts: list[str],
         block_size=2048,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
-        backend=backend)
+        backend=backend,
+        monkeypatch=monkeypatch)
 
     hf_results = generate_hf_output(model=model,
                                     prompts=prompts,
@@ -92,6 +98,7 @@ def test_output_sendnn_decoder(
     prompts: list[str],
     warmup_shape: tuple[int, int, int],
     backend: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     '''
     Tests the deprecated sendnn_decoder backend, which should fall-back to
@@ -114,7 +121,8 @@ def test_output_sendnn_decoder(
         block_size=2048,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
-        backend=backend)
+        backend=backend,
+        monkeypatch=monkeypatch)
 
     hf_results = generate_hf_output(model=model,
                                     prompts=prompts,
@@ -134,6 +142,7 @@ def test_output_sendnn_decoder(
 def test_batch_handling(
     model: str,
     backend: str,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     """Test that the spyre worker correctly handles batches of requests that
     finish after different numbers of forward passes"""
@@ -166,7 +175,8 @@ def test_batch_handling(
         block_size=2048,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
-        backend=backend)
+        backend=backend,
+        monkeypatch=monkeypatch)
 
     assert vllm_results[0]["text"] == " 3 2 "
     assert vllm_results[1]["text"] == " 6 5 4 3 2 "
