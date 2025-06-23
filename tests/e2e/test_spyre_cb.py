@@ -25,8 +25,6 @@ template = (
 
 
 @pytest.mark.cb
-@pytest.mark.parametrize("max_num_seqs", [2, 3, 4],
-                         ids=lambda val: f"max_num_seqs({val})")
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("prompts", [[
@@ -38,6 +36,8 @@ template = (
         "how do I add multiple new columns in m for power query or power bi?"),
     template.format("Convert char to string in Java."),
 ]])
+@pytest.mark.parametrize("max_num_seqs", [2, 3, 4],
+                         ids=lambda val: f"max_num_seqs({val})")
 def test_cb_output(
     model: str,
     backend: str,
