@@ -20,8 +20,8 @@ parser.add_argument("--max_num_seqs", type=int, default=2)
 parser.add_argument("--tp", type=int, default=1)
 args = parser.parse_args()
 
-max_tokens1 = 65
-max_tokens2 = 67
+max_tokens1 = 7
+max_tokens2 = 8
 max_tokens3 = 7
 max_num_seqs = args.max_num_seqs  # defines the max batch size
 
