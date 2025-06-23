@@ -27,15 +27,19 @@ template = (
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("prompts", [[
-    template.format("Provide a list of instructions "
-                    "for preparing chicken soup."),
-    template.format("Provide me a list of things that I can do with my "
-                    "new found wealth."),
-    template.format(
-        "how do I add multiple new columns in m for power query or power bi?"),
-    template.format("Convert char to string in Java."),
-]])
+@pytest.mark.parametrize(
+    "prompts",
+    [[
+        template.format("Provide a list of instructions "
+                        "for preparing chicken soup."),
+        template.format("Provide me a list of things that I can do with my "
+                        "new found wealth."),
+        template.format(
+            "how do I add multiple new columns in m for power query or \
+            power bi?"),
+        template.format("Convert char to string in Java."),
+    ]],
+)
 @pytest.mark.parametrize("max_num_seqs", [2, 3, 4],
                          ids=lambda val: f"max_num_seqs({val})")
 def test_cb_output(
@@ -49,6 +53,10 @@ def test_cb_output(
     continuous batches of requests by comparing to HF"""
 
     max_tokens = 20
+
+    if max_num_seqs != 2 and backend == "sendnn":
+        pytest.xfail("Expecting these CB scenarios to fail for now." \
+        "Spyre cards don't support batch_sze > 2 for now")
 
     vllm_sampling_params = SamplingParams(max_tokens=max_tokens,
                                           temperature=0,
