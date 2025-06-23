@@ -147,7 +147,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         super().__init__(*args, **kwargs)
         self.tkv = 0
         self.n_free_blocks = 0
-        self.BLOCK_SIZE = 64  # hardcoded Spyre constraint for now
+        self.BLOCK_SIZE = SpyrePlatform.get_block_size()
 
     def update_from_output(
         self,

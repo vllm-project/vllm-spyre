@@ -579,7 +579,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         assert vllm_config.scheduler_config.max_num_seqs >= 2, "Currently, " \
             "continuous batching needs config to set batch_size >= 2"
 
-        self.BLOCK_SIZE = 64  # hardcoded Spyre constraint for now
+        self.BLOCK_SIZE = SpyrePlatform.get_block_size()
 
         # TO DO: move to InputBatch
         self.req_ids2blocks: dict[str, deque[int]] = {}
