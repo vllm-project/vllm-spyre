@@ -62,8 +62,8 @@ def test_cb_handling(
     vllm_results = generate_spyre_vllm_output(
         model=model,
         prompts=prompts,
-        max_model_len=2048,
-        block_size=2048,
+        max_model_len=256,
+        block_size=256,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
         backend=backend,
@@ -98,7 +98,7 @@ def test_cb_max_tokens(
     """Test that continuous batches of requests that
     are longer than the max_model_len are correctly rejected"""
 
-    max_model_len = 2048
+    max_model_len = 256
     max_tokens = 20
 
     overflow_prompt = " ".join(["a"] * max_model_len)
@@ -129,7 +129,7 @@ def get_params_test_blocks_borders_aligned_prompts():
     seqs_max_tokens = [65, 67, 7]
     prompts_lengths = [49, 41, 47]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
-    max_model_len = 2048
+    max_model_len = 256
 
     checked_steps = [
         {
@@ -233,7 +233,7 @@ def get_params_test_blocks_borders_misaligned_prompts():
     seqs_max_tokens = [57, 67, 9]
     prompts_lengths = [49, 41, 47]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
-    max_model_len = 2048
+    max_model_len = 256
 
     checked_steps = [
         {
@@ -336,7 +336,7 @@ def get_params_test_special_finish():
     seqs_max_tokens = [30, 30, 10]
     prompts_lengths = [49, 30, 20]
     steps_add_reqs = [0, 0, 31]
-    max_model_len = 2048
+    max_model_len = 256
 
     checked_steps = [
         {
@@ -426,7 +426,7 @@ def get_params_test_scheduler_constraints_tkv():
     seqs_max_tokens = [57, 67]
     prompts_lengths = [49, 70]
     steps_add_reqs = [0, 0]
-    max_model_len = 2048
+    max_model_len = 256
 
     checked_steps = [
         {
