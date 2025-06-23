@@ -869,10 +869,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         left_pad_len = input_tokens_left.shape[1]
         n_pads_right = min_pad_length - left_pad_len
 
-        # set number of right pads for the next model forward pass:
-        # need to be excluded before sampling tokens
-        self.model.n_pads_right = n_pads_right
-
         if n_pads_right > 0:
             # apply right padding to input_tokens, position_ids and mask
             logger.info(
