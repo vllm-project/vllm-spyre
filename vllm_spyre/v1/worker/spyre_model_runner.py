@@ -332,7 +332,7 @@ class SpyreModelRunner:
             prompt_logprobs_dict={
                 req_id: None
                 for req_id in self.input_batch.req_id_to_index
-            },  # TODO: take a decision to prompt logprobs
+            },  # TODO: take a decision regarding prompt logprobs
         )
 
         return model_output
