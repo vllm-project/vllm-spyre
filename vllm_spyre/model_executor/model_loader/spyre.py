@@ -83,10 +83,6 @@ class SpyreCausalLM(nn.Module):
         positions: torch.Tensor,
         masks: torch.Tensor,
         is_prompt: bool,
-        # current_tkv_mask: Optional[torch.Tensor] = None,
-        # left_padded_prompt_mask: Optional[torch.Tensor] = None,
-        # block_table: Optional[torch.Tensor] = None,
-        # slot_mapping: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
 
         if is_prompt and not envs_spyre.VLLM_SPYRE_USE_CB:
@@ -97,12 +93,6 @@ class SpyreCausalLM(nn.Module):
             # Bug in 2.3.1 fixed in 2.4.1 for SDPA flash
             # cpu impl when padding too much
             extra_kwargs["attn_algorithm"] = "math"
-
-        # if envs_spyre.VLLM_SPYRE_USE_CB:
-        #     extra_kwargs["current_tkv_mask"] = current_tkv_mask
-        #     extra_kwargs["left_padded_prompt_mask"] = left_padded_prompt_mask
-        #     extra_kwargs["block_table"] = block_table
-        #     extra_kwargs["slot_mapping"] = slot_mapping
 
         # normal prefill or decoding step
         logits = self.model(

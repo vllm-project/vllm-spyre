@@ -265,13 +265,13 @@ class SpyreModelRunner:
                 del self.requests[req_id]
             self.input_batch.refresh_sampling_metadata()
 
-    def _prepare_prompt(
+    def prepare_prompt(
         self,
         new_requests: list[NewRequestData],
     ) -> ModelForwardInputs:
         raise NotImplementedError
 
-    def _prepare_decode(
+    def prepare_decode(
         self,
         cached_requests: list[CachedRequestData],
     ) -> ModelForwardInputs:
@@ -290,9 +290,9 @@ class SpyreModelRunner:
             # Assert no running requests
             assert len(scheduler_output.scheduled_cached_reqs) == 0
 
-            return self._prepare_prompt(scheduler_output.scheduled_new_reqs)
+            return self.prepare_prompt(scheduler_output.scheduled_new_reqs)
         else:
-            return self._prepare_decode(scheduler_output.scheduled_cached_reqs)
+            return self.prepare_decode(scheduler_output.scheduled_cached_reqs)
 
     def base_execute_model(self, scheduler_output: SchedulerOutput, **kwargs):
 
@@ -356,7 +356,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         self.spyre_warmup_shapes = SpyrePlatform.get_warmup_shapes(
             self.scheduler_config)
 
-    def _prepare_prompt(
+    def prepare_prompt(
         self,
         new_requests: list[NewRequestData],
     ) -> ModelForwardInputs:
@@ -426,7 +426,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
 
         return model_input
 
-    def _prepare_decode(
+    def prepare_decode(
         self,
         cached_requests: list[CachedRequestData],
     ) -> ModelForwardInputs:
@@ -687,7 +687,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                 self.free_blocks.append(freed_block)
             self.dummy_req_ids2blocks = []
 
-    def _prepare_prompt(
+    def prepare_prompt(
         self,
         new_requests: list[NewRequestData],
     ) -> ModelForwardInputs:
@@ -796,7 +796,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         return model_inputs
 
-    def _prepare_decode(
+    def prepare_decode(
         self,
         cached_requests: list[CachedRequestData],
     ) -> ModelForwardInputs:
