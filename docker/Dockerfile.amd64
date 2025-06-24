@@ -1,6 +1,6 @@
 # This is a reference dockerfile for vLLM Spyre support on an x86 host
-ARG BASE_IMAGE_URL="quay.io/ibm-aiu/base"
-ARG BASE_IMAGE_TAG="2025_05_29.amd64"
+ARG BASE_IMAGE_URL="quay.io/ibm-aiu/spyre-base"
+ARG BASE_IMAGE_TAG="2025_06_18-amd64"
 
 ##############################################
 # Base
@@ -68,7 +68,6 @@ ENV COMPILATION_MODE=offline_decoder \
     DISTRIBUTED_STRATEGY_IGNORE_MODULES=WordEmbedding,Embedding \
     DTLOG_LEVEL=error \
     DT_DEEPRT_VERBOSE=-1 \
-    DT_OPT=varsub=1,lxopt=1,opfusion=1,arithfold=1,dataopt=1,patchinit=1,patchprog=1,autopilot=1,weipreload=0,kvcacheopt=1,progshareopt=1,dtversion=2 \
     FLEX_COMPUTE=SENTIENT \
     FLEX_DEVICE=PF \
     FLEX_OVERWRITE_NMB_FRAME=1 \
