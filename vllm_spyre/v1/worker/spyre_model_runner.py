@@ -761,13 +761,11 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         n_blocks = 0
         for cached_request in cached_requests:
+            req_id = cached_request.req_id
             # adding new blocks if needed
-            if self.tkv // self.BLOCK_SIZE + 1 > len(
-                    self.req_ids2blocks[cached_request.req_id]):
-                self.req_ids2blocks[cached_request.req_id].append(
-                    self.free_blocks.popleft())
-            n_blocks = max(n_blocks,
-                           len(self.req_ids2blocks[cached_request.req_id]))
+            if self.tkv % self.BLOCK_SIZE == 0:
+                self.req_ids2blocks[req_id].append(self.free_blocks.popleft())
+            n_blocks = max(n_blocks, len(self.req_ids2blocks[req_id]))
 
         for cached_request in cached_requests:
             # TODO: Will this always just be one token ID if there's no spec
