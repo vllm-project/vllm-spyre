@@ -28,7 +28,7 @@ else:
     SchedulerOutput = None
     NewRequestData = None
 
-from vllm.v1.outputs import ModelRunnerOutput
+from vllm.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, ModelRunnerOutput
 
 logger = init_logger(__name__)
 
@@ -491,14 +491,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         # with conditional import
         if not scheduler_output.total_num_scheduled_tokens:
             # Return empty ModelRunnerOuptut if there's no work to do.
-            return ModelRunnerOutput(
-                req_ids=[],
-                req_id_to_index={},
-                sampled_token_ids=[],
-                spec_token_ids=None,
-                logprobs=None,
-                prompt_logprobs_dict={},
-            )
+            return EMPTY_MODEL_RUNNER_OUTPUT
 
         model_input = self.prepare_model_input(scheduler_output)
 
