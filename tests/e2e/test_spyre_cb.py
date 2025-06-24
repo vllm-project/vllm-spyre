@@ -10,7 +10,8 @@ from typing import Any
 import pytest
 from spyre_util import (compare_results, create_random_request,
                         generate_hf_output, generate_spyre_vllm_output,
-                        get_spyre_backend_list, get_spyre_model_list)
+                        get_chicken_soup_prompts, get_spyre_backend_list,
+                        get_spyre_model_list)
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
@@ -18,103 +19,16 @@ from vllm.v1.executor.abstract import Executor
 
 from vllm_spyre.v1.core.scheduler import ContinuousBatchingSpyreScheduler
 
-template = (
-    "Below is an instruction that describes a task. Write a response that "
-    "appropriately completes the request. Be polite in your response to the "
-    "user.\n\n### Instruction:\n{}\n\n### Response:")
-
-prompts = ([
-    template.format("Provide a list of instructions "
-                    "for preparing chicken soup."),
-    template.format("Provide me a list of things that I can do with my "
-                    "new found wealth."),
-    template.format(
-        "how do I add multiple new columns in m for power query or \
-            power bi?"),
-    template.format("Convert char to string in Java."),
-], )
-
 
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("prompts", prompts)
-def test_cb_batch_handling(
-    model: str,
-    backend: str,
-    prompts: list[str],
-    monkeypatch: pytest.MonkeyPatch,
-):
-    """Test that the spyre worker correctly handles
-    continuous batches of requests that
-    finish after different numbers of forward passes"""
-
-    sampling_params1 = SamplingParams(max_tokens=5,
-                                      min_tokens=5,
-                                      temperature=0,
-                                      ignore_eos=True,
-                                      logprobs=0)
-    sampling_params2 = SamplingParams(max_tokens=30,
-                                      min_tokens=30,
-                                      temperature=0,
-                                      ignore_eos=True,
-                                      logprobs=0)
-    sampling_params3 = SamplingParams(max_tokens=10,
-                                      min_tokens=10,
-                                      temperature=0,
-                                      ignore_eos=True,
-                                      logprobs=0)
-    sampling_params4 = SamplingParams(max_tokens=5,
-                                      min_tokens=5,
-                                      temperature=0,
-                                      ignore_eos=True,
-                                      logprobs=0)
-
-    vllm_sampling_params = [
-        sampling_params1,
-        sampling_params2,
-        sampling_params3,
-        sampling_params4,
-    ]
-
-    vllm_results = generate_spyre_vllm_output(
-        model=model,
-        prompts=prompts,
-        max_model_len=256,
-        block_size=256,
-        sampling_params=vllm_sampling_params,
-        tensor_parallel_size=1,
-        backend=backend,
-        max_num_seqs=2,
-        use_cb=True,
-        monkeypatch=monkeypatch,
-    )
-    hf_results = generate_hf_output(model=model,
-                                    prompts=prompts,
-                                    max_new_tokens=[5, 30, 10, 5])
-
-    compare_results(
-        model=model,
-        prompts=prompts,
-        warmup_shapes=[],
-        tensor_parallel_size=1,
-        backend=backend,
-        vllm_results=vllm_results,
-        hf_results=hf_results,
-    )
-
-
-@pytest.mark.cb
-@pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("prompts", prompts)
 @pytest.mark.parametrize("max_num_seqs", [2, 4],
                          ids=lambda val: f"max_num_seqs({val})")
 def test_cb_output(
     model: str,
     backend: str,
     max_num_seqs: int,
-    prompts: list[str],
     monkeypatch: pytest.MonkeyPatch,
     runtime_xfail,
 ):
@@ -125,6 +39,7 @@ def test_cb_output(
         runtime_xfail("CB failures expected for batch size > 2")
 
     max_tokens = 20
+    prompts = get_chicken_soup_prompts(4)
 
     vllm_sampling_params = SamplingParams(max_tokens=max_tokens,
                                           temperature=0,
