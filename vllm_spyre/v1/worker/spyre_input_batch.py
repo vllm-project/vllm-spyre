@@ -566,7 +566,8 @@ class InputBatch:
     @property
     def requests_ids(self) -> list[str]:
         return list(self.req_id_to_index.keys())
-    
+
     @property
     def sorted_requests_ids(self) -> list[str]:
-        return sorted(self.req_id_to_index, key=self.req_id_to_index.get)
+        return sorted(self.req_id_to_index,
+                      key=self.req_id_to_index.get)  # type: ignore

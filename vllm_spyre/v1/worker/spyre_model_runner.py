@@ -217,12 +217,12 @@ class SpyreModelRunner:
         """Turn off warmup mode once the warmup is complete"""
         self.warmup_mode = False
 
-    def build_attn_metadata(
-        self, _: ModelForwardInputs) -> SpyreAttentionMetadata:
+    def build_attn_metadata(self,
+                            _: ModelForwardInputs) -> SpyreAttentionMetadata:
 
         attn_metadata = SpyreAttentionMetadata()
         return attn_metadata
-    
+
     def _update_states(self, scheduler_output: SchedulerOutput):
         # Update the states of the running/resumed requests.
         # Update input_batch's `token_ids_cpu`,
@@ -258,12 +258,24 @@ class SpyreModelRunner:
             self.input_batch.token_ids_cpu[
                 req_index,
                 start_token_index:end_token_index] = req_data.new_token_ids
-            
+
         if scheduler_output.finished_req_ids:
             for req_id in scheduler_output.finished_req_ids:
                 self.input_batch.remove_request(req_id)
                 del self.requests[req_id]
             self.input_batch.refresh_sampling_metadata()
+
+    def _prepare_prompt(
+        self,
+        new_requests: list[NewRequestData],
+    ) -> ModelForwardInputs:
+        raise NotImplementedError
+
+    def _prepare_decode(
+        self,
+        cached_requests: list[CachedRequestData],
+    ) -> ModelForwardInputs:
+        raise NotImplementedError
 
     def prepare_model_input(
             self, scheduler_output: SchedulerOutput) -> ModelForwardInputs:
@@ -281,11 +293,9 @@ class SpyreModelRunner:
             return self._prepare_prompt(scheduler_output.scheduled_new_reqs)
         else:
             return self._prepare_decode(scheduler_output.scheduled_cached_reqs)
-        
-    def base_execute_model(self, 
-                           scheduler_output: SchedulerOutput,
-                           **kwargs):
-        
+
+    def base_execute_model(self, scheduler_output: SchedulerOutput, **kwargs):
+
         model_input = self.prepare_model_input(scheduler_output)
 
         # Always get the indices from the input_batch
@@ -312,7 +322,6 @@ class SpyreModelRunner:
             sampling_metadata=self.input_batch.sampling_metadata,
         )
 
-
         model_output = ModelRunnerOutput(
             req_ids=self.input_batch.requests_ids,
             req_id_to_index=self.input_batch.get_unpadded_output_indices(),
@@ -325,9 +334,10 @@ class SpyreModelRunner:
                 for req_id in self.input_batch.req_id_to_index
             },  # TODO: take a decision to prompt logprobs
         )
-        
+
         return model_output
-    
+
+
 class StaticBatchingSpyreModelRunner(SpyreModelRunner):
 
     def __init__(
@@ -485,7 +495,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         t0 = time.time()
 
         self._update_states(scheduler_output)
-        
+
         extra_kwargs: dict[str, Any] = {}
         if "pooler_output" in ModelRunnerOutput.__dataclass_fields__:
             extra_kwargs["pooler_output"] = None
@@ -538,9 +548,9 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
             },  # TODO: take a decision to prompt logprobs
             **extra_kwargs,
         )
-        
+
         self._mark_input_tensors(model_input)
-        
+
         return model_output
 
     def _get_padded_batch_size(self, new_requests: list[NewRequestData]):
@@ -665,7 +675,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                     self.free_blocks.append(freed_block)
                 del self.req_ids2blocks[req_id]
 
-
         # free the blocks used for padding to minimum decode batch size of 2
         if self.dummy_req_ids2blocks and \
                 (not scheduler_output.total_num_scheduled_tokens \
@@ -778,9 +787,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             slot_mapping=slot_mapping,
             is_prompt=True,
         )
-        
+
         mark_input_tensors_for_cb(model_inputs)
-        
+
         return model_inputs
 
     def _prepare_decode(
@@ -788,14 +797,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         cached_requests: list[CachedRequestData],
     ) -> ModelForwardInputs:
         assert len(cached_requests) > 0
-        
-        
-        cached_reqs_len = len(cached_requests)
-        # input_tokens = cached_reqs_len * [None]
-        # input_positions = cached_reqs_len * [None]
-        # block_table = cached_reqs_len * [None]
-        # slot_mapping = cached_reqs_len * [None]
-        # left_padded_prompt_mask = cached_reqs_len * [None]
+
         input_tokens = []
         input_positions = []
         block_table = []
@@ -805,12 +807,12 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                                         dtype=torch.bool,
                                         device="cpu")
 
-        assert len(self.input_batch.req_id_to_index) == len(cached_requests)        
+        assert len(self.input_batch.req_id_to_index) == len(cached_requests)
         # TODO(wallas): I think we can do better here, without sorting and
         # creating a intermediary dictionary
-        cached_reqs_map = { c.req_id : c for c in cached_requests }
+        cached_reqs_map = {c.req_id: c for c in cached_requests}
         req_ids = self.input_batch.sorted_requests_ids
-        
+
         for req_id in req_ids:
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
@@ -891,9 +893,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             slot_mapping=slot_mapping,
             is_prompt=False,
         )
-        
+
         mark_input_tensors_for_cb(model_inputs)
-        
+
         return model_inputs
 
     def reduce_left_padding(self) -> None:
@@ -982,7 +984,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         return input_tokens, position_ids, mask
 
-
     def build_attn_metadata(
             self, model_input: ModelForwardInputs) -> SpyreAttentionMetadata:
 
@@ -994,15 +995,14 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             left_padded_prompt_mask=model_input.left_padded_prompt_mask,
             block_table=model_input.block_table)
         return attn_metadata
-    
+
     def prepare_model_input(
-        self, scheduler_output: SchedulerOutput) -> ModelForwardInputs:
+            self, scheduler_output: SchedulerOutput) -> ModelForwardInputs:
 
         # remove left padding if applicable before next prefil/decode step
         self.reduce_left_padding()
-        
+
         return super().prepare_model_input(scheduler_output)
-        
 
     @SpyrePlatform.inference_mode()
     def execute_model(
@@ -1036,7 +1036,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                                             **extra_kwargs)
 
         model_input = self.prepare_model_input(scheduler_output)
-        
+
         # Execute the model
         attn_metadata = self.build_attn_metadata(model_input)
         with set_forward_context(attn_metadata, self.vllm_config):
@@ -1067,22 +1067,24 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         req_id_to_index = self.prefill_batch.get_unpadded_output_indices() \
             if is_prompt else self.input_batch.get_unpadded_output_indices()
 
-        # NOTE(wallas): I'm pretty sure that we or vllm don't use req_ids 
+        # NOTE(wallas): I'm pretty sure that we or vllm don't use req_ids
         # for nothing.
         model_output = CBSpyreModelRunnerOutput(
-            req_ids=req_id_to_index.keys(), 
+            req_ids=req_id_to_index.keys(),
             req_id_to_index=req_id_to_index,
             sampled_token_ids=output.sampled_token_ids.tolist(),
             spec_token_ids=None,
             logprobs=(output.logprobs_tensors.tolists()
                       if output.logprobs_tensors else None),
-            prompt_logprobs_dict={req_id: None
-                                  for req_id in self.input_batch.req_id_to_index
-                                  },  # TODO(wallas?): prompt logprobs too
+            prompt_logprobs_dict={
+                req_id: None
+                for req_id in self.input_batch.req_id_to_index
+            },  # TODO(wallas?): prompt logprobs too
             tkv=self.tkv,
             **extra_kwargs,
         )
         return model_output
+
 
 def mark_input_tensors_for_cb(model_input: ModelForwardInputs) -> None:
     # Marking dimensions static/dynamic
@@ -1117,6 +1119,4 @@ def mark_input_tensors_for_cb(model_input: ModelForwardInputs) -> None:
         torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
         torch._dynamo.mark_dynamic(model_input.block_table, 1)
         torch._dynamo.mark_static(model_input.slot_mapping, 1)  # always 1
-        torch._dynamo.mark_static(model_input.input_positions,
-                                    1)  # always 1
-            
+        torch._dynamo.mark_static(model_input.input_positions, 1)  # always 1
