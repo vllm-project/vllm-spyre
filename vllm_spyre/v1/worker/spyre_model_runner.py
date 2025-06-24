@@ -788,7 +788,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                                         dtype=torch.int64)
 
         # add padding for minimum batch size of 2
-        if input_tokens.shape[0] == 1:
+        if len(cached_requests) == 1:
             padd_seq_indices = torch.zeros(1, dtype=torch.bool, device="cpu")
             self.model.indices = torch.cat(
                 (self.model.indices, padd_seq_indices), -1)
