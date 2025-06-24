@@ -416,12 +416,15 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         input_tokens, self._position_ids, self._mask = self.pad_input_ids(
             input_token_list, min_pad_length=min_pad_length_batch)
 
-        return ModelForwardInputs(
+        model_input = ModelForwardInputs(
             input_tokens=input_tokens,
             input_positions=self._position_ids,
             input_masks=self._mask,
             is_prompt=True,
         )
+        self._mark_input_tensors(model_input)
+
+        return model_input
 
     def _prepare_decode(
         self,
@@ -446,12 +449,15 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         input_tokens = torch.tensor(input_tokens,
                                     dtype=torch.long,
                                     device=self.device)
-        return ModelForwardInputs(
+        model_input = ModelForwardInputs(
             input_tokens=input_tokens,
             input_positions=self._position_ids,
             input_masks=self._mask,
             is_prompt=False,
         )
+        self._mark_input_tensors(model_input)
+
+        return model_input
 
     def _update_position_ids(self) -> None:
         """Updating the position ids of all sequences
@@ -548,8 +554,6 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
             },  # TODO: take a decision to prompt logprobs
             **extra_kwargs,
         )
-
-        self._mark_input_tensors(model_input)
 
         return model_output
 
