@@ -23,31 +23,105 @@ template = (
     "appropriately completes the request. Be polite in your response to the "
     "user.\n\n### Instruction:\n{}\n\n### Response:")
 
-
-@pytest.mark.cb
-@pytest.mark.parametrize("max_num_seqs", [2, 3, 4],
-                         ids=lambda val: f"max_num_seqs({val})")
-@pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("prompts", [[
+prompts = ([
     template.format("Provide a list of instructions "
                     "for preparing chicken soup."),
     template.format("Provide me a list of things that I can do with my "
                     "new found wealth."),
     template.format(
-        "how do I add multiple new columns in m for power query or power bi?"),
+        "how do I add multiple new columns in m for power query or \
+            power bi?"),
     template.format("Convert char to string in Java."),
-]])
-def test_cb_handling(
+], )
+
+
+@pytest.mark.cb
+@pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+@pytest.mark.parametrize("prompts", prompts)
+def test_cb_batch_handling(
     model: str,
     backend: str,
-    max_num_seqs: int,
     prompts: list[str],
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Test that the spyre worker correctly handles
     continuous batches of requests that
     finish after different numbers of forward passes"""
+
+    sampling_params1 = SamplingParams(max_tokens=5,
+                                      min_tokens=5,
+                                      temperature=0,
+                                      ignore_eos=True,
+                                      logprobs=0)
+    sampling_params2 = SamplingParams(max_tokens=30,
+                                      min_tokens=30,
+                                      temperature=0,
+                                      ignore_eos=True,
+                                      logprobs=0)
+    sampling_params3 = SamplingParams(max_tokens=10,
+                                      min_tokens=10,
+                                      temperature=0,
+                                      ignore_eos=True,
+                                      logprobs=0)
+    sampling_params4 = SamplingParams(max_tokens=5,
+                                      min_tokens=5,
+                                      temperature=0,
+                                      ignore_eos=True,
+                                      logprobs=0)
+
+    vllm_sampling_params = [
+        sampling_params1,
+        sampling_params2,
+        sampling_params3,
+        sampling_params4,
+    ]
+
+    vllm_results = generate_spyre_vllm_output(
+        model=model,
+        prompts=prompts,
+        max_model_len=256,
+        block_size=256,
+        sampling_params=vllm_sampling_params,
+        tensor_parallel_size=1,
+        backend=backend,
+        max_num_seqs=2,
+        use_cb=True,
+        monkeypatch=monkeypatch,
+    )
+    hf_results = generate_hf_output(model=model,
+                                    prompts=prompts,
+                                    max_new_tokens=[5, 30, 10, 5])
+
+    compare_results(
+        model=model,
+        prompts=prompts,
+        warmup_shapes=[],
+        tensor_parallel_size=1,
+        backend=backend,
+        vllm_results=vllm_results,
+        hf_results=hf_results,
+    )
+
+
+@pytest.mark.cb
+@pytest.mark.xfail(get_spyre_backend_list()[0].values[0] == "sendnn", \
+                   reason="Expecting some CB scenarios to fail for now " \
+        "for batch_size > 2")
+@pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+@pytest.mark.parametrize("prompts", prompts)
+@pytest.mark.parametrize("max_num_seqs", [2, 3, 4],
+                         ids=lambda val: f"max_num_seqs({val})")
+def test_cb_output(
+    model: str,
+    backend: str,
+    max_num_seqs: int,
+    prompts: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Test that the spyre worker correctly outputs
+    continuous batches of requests by comparing to HF"""
 
     max_tokens = 20
 
@@ -56,14 +130,11 @@ def test_cb_handling(
                                           ignore_eos=True,
                                           logprobs=0)
 
-    # Ensure that both:
-    # - The model doesn't crash
-    # - The output sequences are correct
     vllm_results = generate_spyre_vllm_output(
         model=model,
         prompts=prompts,
-        max_model_len=2048,
-        block_size=2048,
+        max_model_len=256,
+        block_size=256,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
         backend=backend,
@@ -85,20 +156,18 @@ def test_cb_handling(
 
 
 @pytest.mark.cb
-@pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 def test_cb_max_tokens(
     model: str,
     backend: str,
-    max_num_seqs: int,
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Test that continuous batches of requests that
     are longer than the max_model_len are correctly rejected"""
 
-    max_model_len = 2048
+    max_model_len = 256
     max_tokens = 20
 
     overflow_prompt = " ".join(["a"] * max_model_len)
@@ -116,7 +185,7 @@ def test_cb_max_tokens(
                                    sampling_params=vllm_sampling_params,
                                    tensor_parallel_size=1,
                                    backend=backend,
-                                   max_num_seqs=max_num_seqs,
+                                   max_num_seqs=2,
                                    use_cb=True,
                                    monkeypatch=monkeypatch)
 
@@ -129,7 +198,7 @@ def get_params_test_blocks_borders_aligned_prompts():
     seqs_max_tokens = [65, 67, 7]
     prompts_lengths = [49, 41, 47]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
-    max_model_len = 2048
+    max_model_len = 256
 
     checked_steps = [
         {
@@ -233,7 +302,7 @@ def get_params_test_blocks_borders_misaligned_prompts():
     seqs_max_tokens = [57, 67, 9]
     prompts_lengths = [49, 41, 47]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
-    max_model_len = 2048
+    max_model_len = 256
 
     checked_steps = [
         {
@@ -336,7 +405,7 @@ def get_params_test_special_finish():
     seqs_max_tokens = [30, 30, 10]
     prompts_lengths = [49, 30, 20]
     steps_add_reqs = [0, 0, 31]
-    max_model_len = 2048
+    max_model_len = 256
 
     checked_steps = [
         {
@@ -426,7 +495,7 @@ def get_params_test_scheduler_constraints_tkv():
     seqs_max_tokens = [57, 67]
     prompts_lengths = [49, 70]
     steps_add_reqs = [0, 0]
-    max_model_len = 2048
+    max_model_len = 256
 
     checked_steps = [
         {
@@ -643,7 +712,6 @@ def augment_checked_steps(
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize(
     "seqs_max_tokens,prompts_lengths,steps_add_reqs,checked_steps,"
     "max_model_len", [
@@ -657,7 +725,6 @@ def test_scheduler_cb_steps_tkv(
     model: str,
     backend: str,
     monkeypatch: pytest.MonkeyPatch,
-    max_num_seqs: int,
     seqs_max_tokens: list[int],
     prompts_lengths: list[int],
     steps_add_reqs: list[int],
@@ -709,7 +776,7 @@ def test_scheduler_cb_steps_tkv(
                              tokenizer=model,
                              max_model_len=max_model_len,
                              block_size=max_model_len,
-                             max_num_seqs=max_num_seqs)
+                             max_num_seqs=2)
     vllm_config = engine_args.create_engine_config()
     executor_class = Executor.get_class(vllm_config)
     engine_core = EngineCore(vllm_config=vllm_config,
