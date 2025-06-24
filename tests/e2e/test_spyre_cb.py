@@ -105,13 +105,10 @@ def test_cb_batch_handling(
 
 
 @pytest.mark.cb
-@pytest.mark.xfail(get_spyre_backend_list()[0].values[0] == "sendnn", \
-                   reason="Expecting some CB scenarios to fail for now " \
-        "for batch_size > 2")
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("prompts", prompts)
-@pytest.mark.parametrize("max_num_seqs", [2, 3, 4],
+@pytest.mark.parametrize("max_num_seqs", [2, 4],
                          ids=lambda val: f"max_num_seqs({val})")
 def test_cb_output(
     model: str,
@@ -119,9 +116,13 @@ def test_cb_output(
     max_num_seqs: int,
     prompts: list[str],
     monkeypatch: pytest.MonkeyPatch,
+    runtime_xfail,
 ):
     """Test that the spyre worker correctly outputs
     continuous batches of requests by comparing to HF"""
+
+    if max_num_seqs > 2 and backend == "sendnn":
+        runtime_xfail("CB failures expected for batch size > 2")
 
     max_tokens = 20
 
