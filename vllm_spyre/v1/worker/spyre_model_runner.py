@@ -298,9 +298,6 @@ class SpyreModelRunner:
 
         model_input = self.prepare_model_input(scheduler_output)
 
-        # Always get the indices from the input_batch
-        self.model.indices = self.input_batch.get_model_indices()
-
         # Execute the model
         hidden_states = self.model(
             input_ids=model_input.input_tokens,
@@ -422,7 +419,9 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
             input_masks=self._mask,
             is_prompt=True,
         )
+
         self._mark_input_tensors(model_input)
+        self.model.indices = self.input_batch.get_model_indices()
 
         return model_input
 
@@ -456,6 +455,10 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
             is_prompt=False,
         )
         self._mark_input_tensors(model_input)
+
+        # TODO: Added here temporarily until we can remove dummy token
+        # for batch_size = 1
+        self.model.indices = self.input_batch.get_model_indices()
 
         return model_input
 
@@ -500,31 +503,25 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
 
         t0 = time.time()
 
-        self._update_states(scheduler_output)
-
         extra_kwargs: dict[str, Any] = {}
         if "pooler_output" in ModelRunnerOutput.__dataclass_fields__:
             extra_kwargs["pooler_output"] = None
 
-        # TODO: change to EMPTY_MODEL_RUNNER_OUTPUT, right now this
-        # will be a breaking change, or clumsy to make retrocompatible
-        # with conditional import
+        self._update_states(scheduler_output)
+
         if not scheduler_output.total_num_scheduled_tokens:
             # Return empty ModelRunnerOuptut if there's no work to do.
             return EMPTY_MODEL_RUNNER_OUTPUT
 
         model_input = self.prepare_model_input(scheduler_output)
 
-        # Always get the indices from the input_batch
-        self.model.indices = self.input_batch.get_model_indices()
-
         # Execute the model
-        hidden_states = self.model(
-            input_ids=model_input.input_tokens,
-            positions=model_input.input_positions,
-            masks=model_input.input_masks,
-            is_prompt=model_input.is_prompt,
-        )
+        attn_metadata = self.build_attn_metadata(model_input)
+        with set_forward_context(attn_metadata, self.vllm_config):
+            hidden_states = self.model(input_ids=model_input.input_tokens,
+                                       positions=model_input.input_positions,
+                                       masks=model_input.input_masks,
+                                       is_prompt=model_input.is_prompt)
 
         # Only perform sampling in the driver worker.
         if not self.is_driver_worker:
@@ -651,8 +648,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self._set_free_blocks(num_blocks=num_blocks)
         self.dummy_req_ids2blocks: list[int] = []
 
-        # TODO: Remove this once we can prefill and decode
-        # in the same step
+        # TODO: Remove this once we can prefill and decode in the same step
         self.prefill_batch = InputBatch(
             # TODO: review this, currently we only support prefill for
             # `batch_size=1`
@@ -840,8 +836,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             input_positions.append([seq_len])
 
             req_state = self.requests[cached_request.req_id]
-            # left_padded_prompt_mask.append(
-            #     self.req_ids2left_pads[cached_request.req_id])
             left_padded_prompt_mask.append(req_state.left_padding)
 
         # add padding for minimum batch size of 2
