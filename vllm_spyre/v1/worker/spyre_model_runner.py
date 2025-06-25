@@ -223,6 +223,12 @@ class SpyreModelRunner:
         attn_metadata = SpyreAttentionMetadata()
         return attn_metadata
 
+    def get_sampling_metadata(self, model_input: ModelForwardInputs):
+        return self.input_batch.sampling_metadata
+
+    def get_req_id_to_index(self, model_input: ModelForwardInputs):
+        return self.input_batch.get_unpadded_output_indices()
+
     def _update_states(self, scheduler_output: SchedulerOutput):
         # Update the states of the running/resumed requests.
         # Update input_batch's `token_ids_cpu`,
@@ -296,15 +302,27 @@ class SpyreModelRunner:
 
     def base_execute_model(self, scheduler_output: SchedulerOutput, **kwargs):
 
+        t0 = time.time()
+
+        extra_kwargs: dict[str, Any] = {}
+        if "pooler_output" in ModelRunnerOutput.__dataclass_fields__:
+            extra_kwargs["pooler_output"] = None
+
+        self._update_states(scheduler_output)
+
+        if not scheduler_output.total_num_scheduled_tokens:
+            # Return empty ModelRunnerOuptut if there's no work to do.
+            return EMPTY_MODEL_RUNNER_OUTPUT
+
         model_input = self.prepare_model_input(scheduler_output)
 
         # Execute the model
-        hidden_states = self.model(
-            input_ids=model_input.input_tokens,
-            positions=model_input.input_positions,
-            masks=model_input.input_masks,
-            is_prompt=model_input.is_prompt,
-        )
+        attn_metadata = self.build_attn_metadata(model_input)
+        with set_forward_context(attn_metadata, self.vllm_config):
+            hidden_states = self.model(input_ids=model_input.input_tokens,
+                                       positions=model_input.input_positions,
+                                       masks=model_input.input_masks,
+                                       is_prompt=model_input.is_prompt)
 
         # Only perform sampling in the driver worker.
         if not self.is_driver_worker:
@@ -314,14 +332,20 @@ class SpyreModelRunner:
         logits = self.model.compute_logits(hidden_states, None)
 
         # Sample the next token.
+        sampling_metata = self.get_sampling_metadata(model_input)
         output: SamplerOutput = self.model.sample(
             logits=logits,
-            sampling_metadata=self.input_batch.sampling_metadata,
+            sampling_metadata=sampling_metata,
         )
+        t1 = time.time() - t0
+        logger.debug("t_token: %.2fms", (t1 * 1000))
+
+        # Get mapping between requests ids to the index within the batch
+        req_id_to_index = self.get_req_id_to_index(model_input)
 
         model_output = ModelRunnerOutput(
-            req_ids=self.input_batch.requests_ids,
-            req_id_to_index=self.input_batch.get_unpadded_output_indices(),
+            req_ids=req_id_to_index.keys(),
+            req_id_to_index=req_id_to_index,
             sampled_token_ids=output.sampled_token_ids.tolist(),
             spec_token_ids=None,
             logprobs=(output.logprobs_tensors.tolists()
@@ -330,6 +354,7 @@ class SpyreModelRunner:
                 req_id: None
                 for req_id in self.input_batch.req_id_to_index
             },  # TODO: take a decision regarding prompt logprobs
+            **extra_kwargs,
         )
 
         return model_output
@@ -501,58 +526,9 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         **kwargs,
     ) -> ModelRunnerOutput:
 
-        t0 = time.time()
+        # t0 = time.time()
 
-        extra_kwargs: dict[str, Any] = {}
-        if "pooler_output" in ModelRunnerOutput.__dataclass_fields__:
-            extra_kwargs["pooler_output"] = None
-
-        self._update_states(scheduler_output)
-
-        if not scheduler_output.total_num_scheduled_tokens:
-            # Return empty ModelRunnerOuptut if there's no work to do.
-            return EMPTY_MODEL_RUNNER_OUTPUT
-
-        model_input = self.prepare_model_input(scheduler_output)
-
-        # Execute the model
-        attn_metadata = self.build_attn_metadata(model_input)
-        with set_forward_context(attn_metadata, self.vllm_config):
-            hidden_states = self.model(input_ids=model_input.input_tokens,
-                                       positions=model_input.input_positions,
-                                       masks=model_input.input_masks,
-                                       is_prompt=model_input.is_prompt)
-
-        # Only perform sampling in the driver worker.
-        if not self.is_driver_worker:
-            return []
-
-        # Compute the logits.
-        logits = self.model.compute_logits(hidden_states, None)
-
-        # Sample the next token.
-        output: SamplerOutput = self.model.sample(
-            logits=logits,
-            sampling_metadata=self.input_batch.sampling_metadata,
-        )
-        t1 = time.time() - t0
-        logger.debug("t_token: %.2fms", (t1 * 1000))
-
-        model_output = ModelRunnerOutput(
-            req_ids=self.input_batch.requests_ids,
-            req_id_to_index=self.input_batch.get_unpadded_output_indices(),
-            sampled_token_ids=output.sampled_token_ids.tolist(),
-            spec_token_ids=None,
-            logprobs=(output.logprobs_tensors.tolists()
-                      if output.logprobs_tensors else None),
-            prompt_logprobs_dict={
-                req_id: None
-                for req_id in self.input_batch.req_id_to_index
-            },  # TODO: take a decision to prompt logprobs
-            **extra_kwargs,
-        )
-
-        return model_output
+        return self.base_execute_model(scheduler_output, **kwargs)
 
     def _get_padded_batch_size(self, new_requests: list[NewRequestData]):
         # find warmup shape to be used for padding and batching
@@ -658,6 +634,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             pin_memory=self.pin_memory,
             vocab_size=vllm_config.model_config.get_vocab_size(),
         )
+
+        self.decode_batch = self.input_batch
 
     def _set_free_blocks(self, num_blocks: int) -> None:
         self.free_blocks = deque([i for i in range(num_blocks)])
@@ -994,6 +972,17 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             block_table=model_input.block_table)
         return attn_metadata
 
+    def get_sampling_metadata(self, model_input: ModelForwardInputs):
+        return self.prefill_batch.sampling_metadata \
+            if model_input.is_prompt else self.input_batch.sampling_metadata
+
+    def get_req_id_to_index(self, model_input: ModelForwardInputs):
+        is_prompt = model_input.is_prompt
+        req_id_to_index = self.prefill_batch.get_unpadded_output_indices() \
+            if is_prompt else self.input_batch.get_unpadded_output_indices()
+
+        return req_id_to_index
+
     def prepare_model_input(
             self, scheduler_output: SchedulerOutput) -> ModelForwardInputs:
 
@@ -1052,8 +1041,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         # Sample the next token.
         # TODO: review this, once we can prefill and decode at the same step
-        sampling_metadata = self.prefill_batch.sampling_metadata \
-            if model_input.is_prompt else self.input_batch.sampling_metadata
+        sampling_metadata = self.get_sampling_metadata(model_input)
+
         output: SamplerOutput = self.model.sample(
             logits=logits,
             sampling_metadata=sampling_metadata,
@@ -1061,9 +1050,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         t1 = time.time() - t0
         logger.debug("t_token: %.2fms", (t1 * 1000))
 
-        is_prompt = len(scheduler_output.scheduled_new_reqs) > 0
-        req_id_to_index = self.prefill_batch.get_unpadded_output_indices() \
-            if is_prompt else self.input_batch.get_unpadded_output_indices()
+        req_id_to_index = self.get_req_id_to_index(model_input)
 
         # NOTE(wallas): I'm pretty sure that we or vllm don't use req_ids
         # for nothing.
