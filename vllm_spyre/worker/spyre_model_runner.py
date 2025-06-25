@@ -10,7 +10,6 @@ from vllm.config import (DeviceConfig, ModelConfig, ParallelConfig,
 from vllm.logger import init_logger
 from vllm.model_executor import SamplingMetadata
 from vllm.model_executor.layers.sampler import SamplerOutput
-from vllm.platforms import current_platform
 from vllm.sequence import IntermediateTensors, SequenceGroupMetadata
 from vllm.utils import is_pin_memory_available
 from vllm.worker.model_runner_base import (
@@ -19,6 +18,7 @@ from vllm.worker.model_runner_base import (
     _init_sampling_metadata_from_tensor_dict)
 
 from vllm_spyre.model_executor.model_loader.spyre import SpyreCausalLM
+from vllm_spyre.platform import SpyrePlatform
 
 if TYPE_CHECKING:
     from vllm.attention.backends.abstract import AttentionBackend
@@ -80,7 +80,7 @@ class SpyreModelRunner(ModelRunnerBase[ModelInputForSpyre]):
         self.scheduler_config = scheduler_config
         self.device_config = device_config
         self.is_driver_worker = is_driver_worker
-        self.spyre_warmup_shapes = current_platform.get_warmup_shapes(
+        self.spyre_warmup_shapes = SpyrePlatform.get_warmup_shapes(
             self.scheduler_config)
 
         self.pad_token_id = 0
