@@ -1,7 +1,7 @@
 import time
 from collections import deque
 from collections.abc import Iterable
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional
 
 import torch
@@ -305,10 +305,6 @@ class SpyreModelRunner:
 
         t0 = time.time()
 
-        extra_kwargs: dict[str, Any] = {}
-        if "pooler_output" in ModelRunnerOutput.__dataclass_fields__:
-            extra_kwargs["pooler_output"] = None
-
         self.update_states(scheduler_output)
 
         if not scheduler_output.total_num_scheduled_tokens:
@@ -345,6 +341,10 @@ class SpyreModelRunner:
 
         # Get mapping between requests ids to the index within the batch
         req_id_to_index = self.get_req_id_to_index(model_input)
+
+        extra_kwargs: dict[str, Any] = {}
+        if "pooler_output" in ModelRunnerOutput.__dataclass_fields__:
+            extra_kwargs["pooler_output"] = None
 
         model_output = ModelRunnerOutput(
             req_ids=req_id_to_index.keys(),
@@ -1000,10 +1000,17 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         output = self.base_execute_model(scheduler_output, **kwargs)
 
         if not output:
-            # TODO: Review this! see `base_execute_model``
+            # TODO: Review this! see `base_execute_model`
             return []
 
-        return CBSpyreModelRunnerOutput(**asdict(output), tkv=self.tkv)
+        return CBSpyreModelRunnerOutput(
+            req_ids=output.req_ids,
+            req_id_to_index=output.req_id_to_index,
+            sampled_token_ids=output.sampled_token_ids,
+            spec_token_ids=output.spec_token_ids,
+            logprobs=output.logprobs,
+            prompt_logprobs_dict=output.prompt_logprobs_dict,
+            tkv=self.tkv)
 
 
 def mark_input_tensors_for_cb(model_input: ModelForwardInputs) -> None:
