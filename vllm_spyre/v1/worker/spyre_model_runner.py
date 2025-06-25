@@ -1,7 +1,7 @@
 import time
 from collections import deque
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any, Optional
 
 import torch
@@ -347,7 +347,7 @@ class SpyreModelRunner:
             extra_kwargs["pooler_output"] = None
 
         model_output = ModelRunnerOutput(
-            req_ids=req_id_to_index.keys(),
+            req_ids=list(req_id_to_index.keys()),
             req_id_to_index=req_id_to_index,
             sampled_token_ids=output.sampled_token_ids.tolist(),
             spec_token_ids=None,
@@ -1003,14 +1003,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             # TODO: Review this! see `base_execute_model`
             return []
 
-        return CBSpyreModelRunnerOutput(
-            req_ids=output.req_ids,
-            req_id_to_index=output.req_id_to_index,
-            sampled_token_ids=output.sampled_token_ids,
-            spec_token_ids=output.spec_token_ids,
-            logprobs=output.logprobs,
-            prompt_logprobs_dict=output.prompt_logprobs_dict,
-            tkv=self.tkv)
+        out_tkv = self.tkv if \
+            scheduler_output.total_num_scheduled_tokens > 0 else 0
+
+        return CBSpyreModelRunnerOutput(**asdict(output), tkv=out_tkv)
 
 
 def mark_input_tensors_for_cb(model_input: ModelForwardInputs) -> None:
