@@ -1003,6 +1003,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             # TODO: Review this! see `base_execute_model`
             return []
 
+        out_tkv = self.tkv if \
+            scheduler_output.total_num_scheduled_tokens > 0 else 0
+
         return CBSpyreModelRunnerOutput(
             req_ids=output.req_ids,
             req_id_to_index=output.req_id_to_index,
@@ -1010,7 +1013,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             spec_token_ids=output.spec_token_ids,
             logprobs=output.logprobs,
             prompt_logprobs_dict=output.prompt_logprobs_dict,
-            tkv=self.tkv)
+            tkv=out_tkv)
 
 
 def mark_input_tensors_for_cb(model_input: ModelForwardInputs) -> None:
