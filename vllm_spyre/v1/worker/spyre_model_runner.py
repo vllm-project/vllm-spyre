@@ -269,7 +269,7 @@ class SpyreModelRunner:
         if scheduler_output.finished_req_ids:
             for req_id in scheduler_output.finished_req_ids:
                 self.input_batch.remove_request(req_id)
-                del self.requests[req_id]
+                self.requests.pop(req_id, None)
             self.input_batch.refresh_sampling_metadata()
 
     def prepare_prompt(
@@ -648,11 +648,11 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # TODO: move to kv cache manager
         # Continuous batching: free blocks
         for req_id in scheduler_output.finished_req_ids:
-            if req_id in self.req_ids2blocks:
+            if blocks_to_free := self.req_ids2blocks.pop(req_id, None):
                 logger.debug("Freeing request id: %s", req_id)
-                for freed_block in self.req_ids2blocks[req_id]:
-                    self.free_blocks.append(freed_block)
-                del self.req_ids2blocks[req_id]
+                for block_id in blocks_to_free:
+                    logger.debug("Freeing block with id: %s", block_id)
+                    self.free_blocks.append(block_id)
 
         # free the blocks used for padding to minimum decode batch size of 2
         if self.dummy_req_ids2blocks and \
@@ -688,8 +688,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         for request_data in new_requests:
             # retrieve initial (unpadded) tokens
             prompt_tokens = request_data.prompt_token_ids
-            # self.req_ids2left_pads[
-            #     request_data.req_id] = self.tkv - len(prompt_tokens)
             left_padding = self.tkv - len(prompt_tokens)
             input_token_list.append(
                 torch.tensor(prompt_tokens,
