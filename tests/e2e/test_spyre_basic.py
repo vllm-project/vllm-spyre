@@ -168,9 +168,10 @@ def test_batch_handling(model: str, backend: str, cb: int,
     ]
 
     kwargs = {
+        "max_num_seqs": 2,
         "use_cb": True
     } if cb == 1 else {
-        "warmup_shapes": ((64, 20, 2), )
+        "warmup_shapes": ((64, 20, 4), )
     }
 
     vllm_results = generate_spyre_vllm_output(
@@ -181,7 +182,6 @@ def test_batch_handling(model: str, backend: str, cb: int,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
         backend=backend,
-        max_num_seqs=2,
         monkeypatch=monkeypatch,
         **kwargs)
     hf_results = generate_hf_output(model=model,

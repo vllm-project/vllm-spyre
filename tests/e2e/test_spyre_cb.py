@@ -114,7 +114,6 @@ def get_params_test_blocks_borders_aligned_prompts():
     seqs_max_tokens = [65, 67, 7]
     prompts_lengths = [49, 41, 47]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
-    max_model_len = 256
 
     checked_steps = [
         {
@@ -206,8 +205,7 @@ def get_params_test_blocks_borders_aligned_prompts():
         }
     ]
 
-    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            max_model_len)
+    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps)
 
 
 def get_params_test_blocks_borders_misaligned_prompts():
@@ -218,7 +216,6 @@ def get_params_test_blocks_borders_misaligned_prompts():
     seqs_max_tokens = [57, 67, 9]
     prompts_lengths = [49, 41, 47]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
-    max_model_len = 256
 
     checked_steps = [
         {
@@ -310,8 +307,7 @@ def get_params_test_blocks_borders_misaligned_prompts():
         },
     ]
 
-    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            max_model_len)
+    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps)
 
 
 def get_params_test_special_finish():
@@ -321,7 +317,6 @@ def get_params_test_special_finish():
     seqs_max_tokens = [30, 30, 10]
     prompts_lengths = [49, 30, 20]
     steps_add_reqs = [0, 0, 31]
-    max_model_len = 256
 
     checked_steps = [
         {
@@ -401,8 +396,7 @@ def get_params_test_special_finish():
         },
     ]
 
-    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            max_model_len)
+    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps)
 
 
 def get_params_test_scheduler_constraints_tkv():
@@ -411,7 +405,6 @@ def get_params_test_scheduler_constraints_tkv():
     seqs_max_tokens = [57, 67]
     prompts_lengths = [49, 70]
     steps_add_reqs = [0, 0]
-    max_model_len = 256
 
     checked_steps = [
         {
@@ -492,8 +485,7 @@ def get_params_test_scheduler_constraints_tkv():
         },
     ]
 
-    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            max_model_len)
+    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps)
 
 
 def get_params_test_scheduler_constraints_max_prompt_len():
@@ -502,7 +494,6 @@ def get_params_test_scheduler_constraints_max_prompt_len():
     seqs_max_tokens = [67, 57, 80]
     prompts_lengths = [70, 49, 41]
     steps_add_reqs = [0, 0, 0]
-    max_model_len = 256
 
     checked_steps = [
         {
@@ -601,8 +592,7 @@ def get_params_test_scheduler_constraints_max_prompt_len():
         },
     ]
 
-    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            max_model_len)
+    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps)
 
 
 def augment_checked_steps(
@@ -629,8 +619,7 @@ def augment_checked_steps(
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize(
-    "seqs_max_tokens,prompts_lengths,steps_add_reqs,checked_steps,"
-    "max_model_len", [
+    "seqs_max_tokens,prompts_lengths,steps_add_reqs,checked_steps", [
         get_params_test_blocks_borders_aligned_prompts(),
         get_params_test_blocks_borders_misaligned_prompts(),
         get_params_test_special_finish(),
@@ -645,7 +634,6 @@ def test_scheduler_cb_steps_tkv(
     prompts_lengths: list[int],
     steps_add_reqs: list[int],
     checked_steps: list[dict[str, Any]],
-    max_model_len: int,
 ):
     """
     Test the scheduler execution by comparing the scheduler attributes at each 
@@ -665,6 +653,8 @@ def test_scheduler_cb_steps_tkv(
     # To get deterministic execution in V1
     # and to enable InprocClient
     monkeypatch.setenv("VLLM_ENABLE_V1_MULTIPROCESSING", "0")
+
+    max_model_len = 256
 
     # Input parameters sanity check, not actual testing
     # ------
