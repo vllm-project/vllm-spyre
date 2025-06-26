@@ -220,9 +220,10 @@ class SpyreModelRunner:
     def build_attn_metadata(self,
                             _: ModelForwardInputs) -> SpyreAttentionMetadata:
 
-        # TODO: probably sooner we will need
-        attn_metadata = SpyreAttentionMetadata()
-        return attn_metadata
+        # TODO: probably sooner we will need a more sophisticated way to switch
+        # build attention metadata based on model/attention. But for now, a
+        # simple method override is good enough.
+        return SpyreAttentionMetadata()
 
     def get_sampling_metadata(self, model_input: ModelForwardInputs):
         return self.input_batch.sampling_metadata
@@ -272,13 +273,13 @@ class SpyreModelRunner:
                 self.requests.pop(req_id, None)
             self.input_batch.refresh_sampling_metadata()
 
-    def prepare_prompt(
+    def _prepare_prompt(
         self,
         new_requests: list[NewRequestData],
     ) -> ModelForwardInputs:
         raise NotImplementedError
 
-    def prepare_decode(
+    def _prepare_decode(
         self,
         cached_requests: list[CachedRequestData],
     ) -> ModelForwardInputs:
@@ -296,9 +297,9 @@ class SpyreModelRunner:
             # Assert no running requests
             assert len(scheduler_output.scheduled_cached_reqs) == 0
 
-            return self.prepare_prompt(scheduler_output.scheduled_new_reqs)
+            return self._prepare_prompt(scheduler_output.scheduled_new_reqs)
         else:
-            return self.prepare_decode(scheduler_output.scheduled_cached_reqs)
+            return self._prepare_decode(scheduler_output.scheduled_cached_reqs)
 
     @SpyrePlatform.inference_mode()
     def execute_model(
@@ -383,7 +384,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         self.spyre_warmup_shapes = SpyrePlatform.get_warmup_shapes(
             self.scheduler_config)
 
-    def prepare_prompt(
+    def _prepare_prompt(
         self,
         new_requests: list[NewRequestData],
     ) -> ModelForwardInputs:
@@ -455,7 +456,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
 
         return model_input
 
-    def prepare_decode(
+    def _prepare_decode(
         self,
         cached_requests: list[CachedRequestData],
     ) -> ModelForwardInputs:
@@ -655,7 +656,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                 self.free_blocks.append(freed_block)
             self.dummy_req_ids2blocks = []
 
-    def prepare_prompt(
+    def _prepare_prompt(
         self,
         new_requests: list[NewRequestData],
     ) -> ModelForwardInputs:
@@ -762,7 +763,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         return model_inputs
 
-    def prepare_decode(
+    def _prepare_decode(
         self,
         cached_requests: list[CachedRequestData],
     ) -> ModelForwardInputs:
