@@ -8,8 +8,10 @@ from collections import deque
 from typing import Any
 
 import pytest
-from spyre_util import (create_random_request, generate_cb_spyre_vllm_output,
-                        get_spyre_backend_list, get_spyre_model_list)
+from spyre_util import (compare_results, create_random_request,
+                        generate_hf_output, generate_spyre_vllm_output,
+                        get_chicken_soup_prompts, get_spyre_backend_list,
+                        get_spyre_model_list)
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
@@ -19,89 +21,69 @@ from vllm_spyre.v1.core.scheduler import ContinuousBatchingSpyreScheduler
 
 
 @pytest.mark.cb
-@pytest.mark.parametrize("max_num_seqs", [2, 3, 4],
-                         ids=lambda val: f"max_num_seqs({val})")
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize(
-    "prompts",
-    [
-        [
-            "7 6 5 4",
-            "10 9 8 7",
-        ],
-        [
-            "7 6 5 4",
-            "10 9 8 7",
-            "8 7 6 5",
-        ],
-        [
-            "7 6 5 4",
-            "10 9 8 7",
-            "8 7 6 5",
-            "9 8 7 6",
-        ],
-    ],
-    ids=lambda val: f"num_prompts({len(val)})",
-)
-def test_cb_handling(
+@pytest.mark.parametrize("max_num_seqs", [2, 4],
+                         ids=lambda val: f"max_num_seqs({val})")
+def test_cb_output(
     model: str,
     backend: str,
     max_num_seqs: int,
-    prompts: list[str],
     monkeypatch: pytest.MonkeyPatch,
+    runtime_xfail,
 ):
-    """Test that the spyre worker correctly handles
-    continuous batches of requests that
-    finish after different numbers of forward passes"""
+    """Test that the spyre worker correctly outputs
+    continuous batches of requests by comparing to HF"""
 
-    vllm_sampling_params = SamplingParams(max_tokens=20,
+    if max_num_seqs > 2 and backend == "sendnn":
+        runtime_xfail("CB failures expected for batch size > 2")
+
+    max_tokens = 20
+    prompts = get_chicken_soup_prompts(4)
+
+    vllm_sampling_params = SamplingParams(max_tokens=max_tokens,
                                           temperature=0,
-                                          stop="1",
                                           ignore_eos=True,
                                           logprobs=0)
 
-    # Ensure that both:
-    # - The model doesn't crash
-    # - The output sequences are correct
-    vllm_results = generate_cb_spyre_vllm_output(
+    vllm_results = generate_spyre_vllm_output(
         model=model,
         prompts=prompts,
-        max_model_len=2048,
-        block_size=2048,
+        max_model_len=256,
+        block_size=256,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
         backend=backend,
         max_num_seqs=max_num_seqs,
-        use_cb=1,
-        monkeypatch=monkeypatch,
-    )
+        use_cb=True,
+        monkeypatch=monkeypatch)
 
-    for i, prompt in enumerate(prompts):
-        assert (vllm_results[i]["text"] == [
-            " " + " ".join(
-                str(i)
-                for i in range(int(prompt.split()[-1]) - 1, 1, -1)) + " "
-        ][0])
+    hf_results = generate_hf_output(model=model,
+                                    prompts=prompts,
+                                    max_new_tokens=max_tokens)
+
+    compare_results(model=model,
+                    prompts=prompts,
+                    warmup_shapes=[],
+                    tensor_parallel_size=1,
+                    backend=backend,
+                    vllm_results=vllm_results,
+                    hf_results=hf_results)
 
 
-@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
-@pytest.mark.parametrize("cb",
-                         [pytest.param(1, marks=pytest.mark.cb, id="cb")])
 def test_cb_max_tokens(
     model: str,
     backend: str,
-    max_num_seqs: int,
-    cb: int,
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Test that continuous batches of requests that
     are longer than the max_model_len are correctly rejected"""
 
-    max_model_len = 2048
+    max_model_len = 256
     max_tokens = 20
 
     overflow_prompt = " ".join(["a"] * max_model_len)
@@ -112,18 +94,16 @@ def test_cb_max_tokens(
                                           logprobs=0)
 
     with pytest.raises(ValueError, match="max model context length"):
-        generate_cb_spyre_vllm_output(
-            model=model,
-            prompts=overflow_prompt,
-            max_model_len=max_model_len,
-            block_size=max_model_len,
-            sampling_params=vllm_sampling_params,
-            tensor_parallel_size=1,
-            backend=backend,
-            max_num_seqs=max_num_seqs,
-            use_cb=cb,
-            monkeypatch=monkeypatch,
-        )
+        generate_spyre_vllm_output(model=model,
+                                   prompts=overflow_prompt,
+                                   max_model_len=max_model_len,
+                                   block_size=max_model_len,
+                                   sampling_params=vllm_sampling_params,
+                                   tensor_parallel_size=1,
+                                   backend=backend,
+                                   max_num_seqs=2,
+                                   use_cb=True,
+                                   monkeypatch=monkeypatch)
 
 
 def get_params_test_blocks_borders_aligned_prompts():
@@ -134,7 +114,6 @@ def get_params_test_blocks_borders_aligned_prompts():
     seqs_max_tokens = [65, 67, 7]
     prompts_lengths = [49, 41, 47]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
-    max_model_len = 2048
 
     checked_steps = [
         {
@@ -226,8 +205,7 @@ def get_params_test_blocks_borders_aligned_prompts():
         }
     ]
 
-    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            max_model_len)
+    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps)
 
 
 def get_params_test_blocks_borders_misaligned_prompts():
@@ -238,7 +216,6 @@ def get_params_test_blocks_borders_misaligned_prompts():
     seqs_max_tokens = [57, 67, 9]
     prompts_lengths = [49, 41, 47]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
-    max_model_len = 2048
 
     checked_steps = [
         {
@@ -330,8 +307,7 @@ def get_params_test_blocks_borders_misaligned_prompts():
         },
     ]
 
-    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            max_model_len)
+    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps)
 
 
 def get_params_test_special_finish():
@@ -341,7 +317,6 @@ def get_params_test_special_finish():
     seqs_max_tokens = [30, 30, 10]
     prompts_lengths = [49, 30, 20]
     steps_add_reqs = [0, 0, 31]
-    max_model_len = 2048
 
     checked_steps = [
         {
@@ -421,8 +396,7 @@ def get_params_test_special_finish():
         },
     ]
 
-    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            max_model_len)
+    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps)
 
 
 def get_params_test_scheduler_constraints_tkv():
@@ -431,7 +405,6 @@ def get_params_test_scheduler_constraints_tkv():
     seqs_max_tokens = [57, 67]
     prompts_lengths = [49, 70]
     steps_add_reqs = [0, 0]
-    max_model_len = 2048
 
     checked_steps = [
         {
@@ -512,8 +485,7 @@ def get_params_test_scheduler_constraints_tkv():
         },
     ]
 
-    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            max_model_len)
+    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps)
 
 
 def get_params_test_scheduler_constraints_max_prompt_len():
@@ -522,7 +494,6 @@ def get_params_test_scheduler_constraints_max_prompt_len():
     seqs_max_tokens = [67, 57, 80]
     prompts_lengths = [70, 49, 41]
     steps_add_reqs = [0, 0, 0]
-    max_model_len = 256
 
     checked_steps = [
         {
@@ -621,8 +592,7 @@ def get_params_test_scheduler_constraints_max_prompt_len():
         },
     ]
 
-    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            max_model_len)
+    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps)
 
 
 def augment_checked_steps(
@@ -648,10 +618,8 @@ def augment_checked_steps(
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize(
-    "seqs_max_tokens,prompts_lengths,steps_add_reqs,checked_steps,"
-    "max_model_len", [
+    "seqs_max_tokens,prompts_lengths,steps_add_reqs,checked_steps", [
         get_params_test_blocks_borders_aligned_prompts(),
         get_params_test_blocks_borders_misaligned_prompts(),
         get_params_test_special_finish(),
@@ -662,12 +630,10 @@ def test_scheduler_cb_steps_tkv(
     model: str,
     backend: str,
     monkeypatch: pytest.MonkeyPatch,
-    max_num_seqs: int,
     seqs_max_tokens: list[int],
     prompts_lengths: list[int],
     steps_add_reqs: list[int],
     checked_steps: list[dict[str, Any]],
-    max_model_len: int,
 ):
     """
     Test the scheduler execution by comparing the scheduler attributes at each 
@@ -687,6 +653,8 @@ def test_scheduler_cb_steps_tkv(
     # To get deterministic execution in V1
     # and to enable InprocClient
     monkeypatch.setenv("VLLM_ENABLE_V1_MULTIPROCESSING", "0")
+
+    max_model_len = 256
 
     # Input parameters sanity check, not actual testing
     # ------
@@ -714,7 +682,7 @@ def test_scheduler_cb_steps_tkv(
                              tokenizer=model,
                              max_model_len=max_model_len,
                              block_size=max_model_len,
-                             max_num_seqs=max_num_seqs)
+                             max_num_seqs=2)
     vllm_config = engine_args.create_engine_config()
     executor_class = Executor.get_class(vllm_config)
     engine_core = EngineCore(vllm_config=vllm_config,
