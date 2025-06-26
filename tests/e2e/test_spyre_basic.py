@@ -6,36 +6,22 @@ Run `python -m pytest tests/e2e/test_spyre_basic.py`.
 import pytest
 from spyre_util import (compare_results, create_random_request,
                         generate_hf_output, generate_spyre_vllm_output,
-                        get_spyre_backend_list, get_spyre_model_list)
+                        get_chicken_soup_prompts, get_spyre_backend_list,
+                        get_spyre_model_list)
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor
 
 from vllm_spyre.v1.core.scheduler import StaticBatchingSpyreScheduler
 
-template = (
-    "Below is an instruction that describes a task. Write a response that "
-    "appropriately completes the request. Be polite in your response to the "
-    "user.\n\n### Instruction:\n{}\n\n### Response:")
-
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize("prompts", [[
-    template.format("Provide a list of instructions "
-                    "for preparing chicken soup."),
-    template.format("Provide me a list of things that I can do with my "
-                    "new found wealth."),
-    template.format(
-        "how do I add multiple new columns in m for power query or power bi?"),
-    template.format("Convert char to string in Java."),
-]])
 @pytest.mark.parametrize(
     "warmup_shape", [(64, 20, 4), (64, 20, 8), (128, 20, 4),
                      (128, 20, 8)])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_output(
     model: str,
-    prompts: list[str],
     warmup_shape: tuple[int, int, int],
     backend: str,
     monkeypatch: pytest.MonkeyPatch,
@@ -52,6 +38,7 @@ def test_output(
     test using 'pytest --capture=no tests/spyre/test_spyre_basic.py'
     After debugging, DISABLE_ASSERTS should be reset to 'False'.
     '''
+    prompts = get_chicken_soup_prompts(4)
 
     max_new_tokens = warmup_shape[1]
 
@@ -86,16 +73,15 @@ def test_output(
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize("prompts", [[
-    template.format("Provide a list of instructions "
-                    "for preparing chicken soup."),
-]])
 @pytest.mark.parametrize(
     "warmup_shape", [(64, 20, 4)])  # (prompt_length/new_tokens/batch_size)
-@pytest.mark.parametrize("backend", ["sendnn_decoder"])
+@pytest.mark.parametrize(
+    "backend",
+    pytest.param("sendnn_decoder",
+                 marks=pytest.mark.spyre,
+                 id="sendnn_decoder"))
 def test_output_sendnn_decoder(
     model: str,
-    prompts: list[str],
     warmup_shape: tuple[int, int, int],
     backend: str,
     monkeypatch: pytest.MonkeyPatch,
@@ -106,6 +92,7 @@ def test_output_sendnn_decoder(
     '''
 
     max_new_tokens = warmup_shape[1]
+    prompts = get_chicken_soup_prompts(1)
 
     vllm_sampling_params = SamplingParams(
         max_tokens=max_new_tokens,
@@ -139,49 +126,77 @@ def test_output_sendnn_decoder(
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def test_batch_handling(
-    model: str,
-    backend: str,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    """Test that the spyre worker correctly handles batches of requests that
+@pytest.mark.parametrize("cb",
+                         [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
+def test_batch_handling(model: str, backend: str, cb: int,
+                        monkeypatch: pytest.MonkeyPatch, runtime_xfail):
+    """Test that the spyre worker correctly handles
+    continuous batches of requests that
     finish after different numbers of forward passes"""
 
-    # Test with batch size 4
-    warmup_shape = (64, 20, 4)
+    if cb == 1:
+        runtime_xfail("Batch handling bug with continuous batching")
 
-    # Have the model count down to one and stop
-    vllm_sampling_params = SamplingParams(max_tokens=20,
-                                          temperature=0,
-                                          stop="1",
-                                          logprobs=0)
-    # Importantly, these prompts are ordered so that they don't finish in the
-    # order given
-    prompts = [
-        "7 6 5 4",
-        "10 9 8 7",
-        "8 7 6 5",
-        "10 9 8 7 ",
+    prompts = get_chicken_soup_prompts(4)
+
+    sampling_params1 = SamplingParams(max_tokens=5,
+                                      min_tokens=5,
+                                      temperature=0,
+                                      ignore_eos=True,
+                                      logprobs=0)
+    sampling_params2 = SamplingParams(max_tokens=20,
+                                      min_tokens=20,
+                                      temperature=0,
+                                      ignore_eos=True,
+                                      logprobs=0)
+    sampling_params3 = SamplingParams(max_tokens=10,
+                                      min_tokens=10,
+                                      temperature=0,
+                                      ignore_eos=True,
+                                      logprobs=0)
+    sampling_params4 = SamplingParams(max_tokens=5,
+                                      min_tokens=5,
+                                      temperature=0,
+                                      ignore_eos=True,
+                                      logprobs=0)
+
+    vllm_sampling_params = [
+        sampling_params1,
+        sampling_params2,
+        sampling_params3,
+        sampling_params4,
     ]
-    # Ensure that both:
 
-    # - The model doesn't crash
-    # - The output sequences are correct
+    kwargs = {
+        "max_num_seqs": 2,
+        "use_cb": True
+    } if cb == 1 else {
+        "warmup_shapes": ((64, 20, 4), )
+    }
+
     vllm_results = generate_spyre_vllm_output(
         model=model,
         prompts=prompts,
-        warmup_shapes=[warmup_shape],
-        max_model_len=2048,
-        block_size=2048,
+        max_model_len=256,
+        block_size=256,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
         backend=backend,
-        monkeypatch=monkeypatch)
+        monkeypatch=monkeypatch,
+        **kwargs)
+    hf_results = generate_hf_output(model=model,
+                                    prompts=prompts,
+                                    max_new_tokens=[5, 20, 10, 5])
 
-    assert vllm_results[0]["text"] == " 3 2 "
-    assert vllm_results[1]["text"] == " 6 5 4 3 2 "
-    assert vllm_results[2]["text"] == " 4 3 2 "
-    assert vllm_results[3]["text"] == "6 5 4 3 2 "
+    compare_results(
+        model=model,
+        prompts=prompts,
+        warmup_shapes=[],
+        tensor_parallel_size=1,
+        backend=backend,
+        vllm_results=vllm_results,
+        hf_results=hf_results,
+    )
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
