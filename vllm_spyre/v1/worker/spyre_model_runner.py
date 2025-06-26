@@ -957,12 +957,11 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         # TODO: probably we can remove some fields of the model input and
         # update only the SpyreAttentionMetadata
-        attn_metadata = SpyreAttentionMetadata(
+        return SpyreAttentionMetadata(
             slot_mapping=model_input.slot_mapping,
             current_tkv_mask=model_input.current_tkv_mask,
             left_padded_prompt_mask=model_input.left_padded_prompt_mask,
             block_table=model_input.block_table)
-        return attn_metadata
 
     def get_sampling_metadata(self, model_input: ModelForwardInputs):
         return self.prefill_batch.sampling_metadata \
@@ -992,10 +991,11 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         output = super().execute_model(scheduler_output, **kwargs)
 
-        out_tkv = self.tkv if \
-            scheduler_output.total_num_scheduled_tokens > 0 else 0
-
-        return CBSpyreModelRunnerOutput(**asdict(output), tkv=out_tkv)
+        return CBSpyreModelRunnerOutput(
+            **asdict(output),
+            tkv=self.tkv
+            if scheduler_output.total_num_scheduled_tokens > 0 else 0,
+        )
 
 
 def mark_input_tensors_for_cb(model_input: ModelForwardInputs) -> None:
