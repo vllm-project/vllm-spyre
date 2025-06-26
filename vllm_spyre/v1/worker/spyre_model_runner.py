@@ -245,7 +245,6 @@ class SpyreModelRunner:
 
             # Update the cached states.
             num_computed_tokens = req_data.num_computed_tokens
-            # req_state.num_computed_tokens = num_computed_tokens
             # Add the sampled token(s) from the previous step (if any).
             # This doesn't include "unverified" tokens like spec decode tokens.
             num_new_tokens = (num_computed_tokens +
