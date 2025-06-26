@@ -229,6 +229,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         n = self.tkv + request.max_tokens
         d = self.BLOCK_SIZE
         num_blocks = (n + d - 1) // d
+        # TODO ysc: also consider "reserved" blocks for current requests
         cond5 = num_blocks <= self.n_free_blocks
         return start_new_batch or (cond1 and cond2 and cond3 and cond4
                                    and cond5)
