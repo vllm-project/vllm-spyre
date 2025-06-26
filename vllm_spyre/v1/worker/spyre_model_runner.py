@@ -2,7 +2,7 @@ import time
 from collections import deque
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 import torch
 from torch import nn
@@ -23,10 +23,12 @@ from vllm_spyre.v1.worker.spyre_input_batch import (CachedRequestState,
 if TYPE_CHECKING:
     from vllm.v1.core.sched.output import (CachedRequestData, NewRequestData,
                                            SchedulerOutput)
+    from vllm.v1.sample.metadata import SamplingMetadata
 else:
     CachedRequestData = None
     SchedulerOutput = None
     NewRequestData = None
+    SamplingMetadata = None
 
 from vllm.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, ModelRunnerOutput
 
@@ -225,10 +227,10 @@ class SpyreModelRunner:
         # simple method override is good enough.
         return SpyreAttentionMetadata()
 
-    def get_sampling_metadata(self, model_input: ModelForwardInputs):
+    def get_sampling_metadata(self, _: bool) -> SamplingMetadata:
         return self.input_batch.sampling_metadata
 
-    def get_req_id_to_index(self, model_input: ModelForwardInputs):
+    def get_req_id_to_index(self, _: bool) -> dict[str, int]:
         return self.input_batch.get_unpadded_output_indices()
 
     def update_states(self, scheduler_output: SchedulerOutput):
@@ -272,16 +274,11 @@ class SpyreModelRunner:
                 self.requests.pop(req_id, None)
             self.input_batch.refresh_sampling_metadata()
 
-    def _prepare_prompt(
-        self,
-        new_requests: list[NewRequestData],
-    ) -> ModelForwardInputs:
+    def _prepare_prompt(self, _: list[NewRequestData]) -> ModelForwardInputs:
         raise NotImplementedError
 
-    def _prepare_decode(
-        self,
-        cached_requests: list[CachedRequestData],
-    ) -> ModelForwardInputs:
+    def _prepare_decode(self,
+                        _: list[CachedRequestData]) -> ModelForwardInputs:
         raise NotImplementedError
 
     def prepare_model_input(
@@ -332,8 +329,10 @@ class SpyreModelRunner:
         # Compute the logits.
         logits = self.model.compute_logits(hidden_states, None)
 
+        is_prefill = cast(bool, model_input.is_prompt)
+
         # Sample the next token.
-        sampling_metata = self.get_sampling_metadata(model_input)
+        sampling_metata = self.get_sampling_metadata(is_prefill)
         output: SamplerOutput = self.model.sample(
             logits=logits,
             sampling_metadata=sampling_metata,
@@ -342,7 +341,7 @@ class SpyreModelRunner:
         logger.debug("t_token: %.2fms", (t1 * 1000))
 
         # Get mapping between requests ids to the index within the batch
-        req_id_to_index = self.get_req_id_to_index(model_input)
+        req_id_to_index = self.get_req_id_to_index(is_prefill)
 
         extra_kwargs: dict[str, Any] = {}
         if "pooler_output" in ModelRunnerOutput.__dataclass_fields__:
@@ -487,7 +486,8 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         self._mark_input_tensors(model_input)
 
         # TODO: Added here temporarily until we can remove dummy token
-        # for batch_size = 1
+        # for batch_size=1. Once we can do that, we shall move it to
+        # execute_model on SpyreModelRunner for both static and CB.
         self.model.indices = self.input_batch.get_model_indices()
 
         return model_input
@@ -628,8 +628,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             pin_memory=self.pin_memory,
             vocab_size=vllm_config.model_config.get_vocab_size(),
         )
-
-        self.decode_batch = self.input_batch
 
     def _set_free_blocks(self, num_blocks: int) -> None:
         self.free_blocks = deque([i for i in range(num_blocks)])
@@ -778,8 +776,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                                         device="cpu")
 
         assert len(self.input_batch.req_id_to_index) == len(cached_requests)
-        # TODO(wallas): I think we can do better here, without sorting and
-        # creating a intermediary dictionary
+        # TODO(wallas): I think we can do better here, without sorting or
+        # creating an intermediary dictionary
         cached_reqs_map = {c.req_id: c for c in cached_requests}
         req_ids = self.input_batch.sorted_requests_ids
 
@@ -963,14 +961,13 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             left_padded_prompt_mask=model_input.left_padded_prompt_mask,
             block_table=model_input.block_table)
 
-    def get_sampling_metadata(self, model_input: ModelForwardInputs):
+    def get_sampling_metadata(self, is_prefill: bool) -> SamplingMetadata:
         return self.prefill_batch.sampling_metadata \
-            if model_input.is_prompt else self.input_batch.sampling_metadata
+            if is_prefill else self.input_batch.sampling_metadata
 
-    def get_req_id_to_index(self, model_input: ModelForwardInputs):
-        is_prompt = model_input.is_prompt
+    def get_req_id_to_index(self, is_prefill: bool) -> dict[str, int]:
         req_id_to_index = self.prefill_batch.get_unpadded_output_indices() \
-            if is_prompt else self.input_batch.get_unpadded_output_indices()
+            if is_prefill else self.input_batch.get_unpadded_output_indices()
 
         return req_id_to_index
 
