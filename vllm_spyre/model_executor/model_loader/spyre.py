@@ -37,6 +37,7 @@ class SpyreAttentionMetadata:
     current_tkv_mask: torch.Tensor = None
     left_padded_prompt_mask: torch.Tensor = None
     block_table: torch.Tensor = None
+    only_last_token: bool = False
 
 
 class SpyreCausalLM(nn.Module):
@@ -100,7 +101,6 @@ class SpyreCausalLM(nn.Module):
             position_ids=positions,
             mask=masks,
             use_cache=True,
-            only_last_token=not envs_spyre.VLLM_SPYRE_USE_CB,
             **extra_kwargs,
         )
 
@@ -352,7 +352,6 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         position_ids: torch.Tensor,
         mask: torch.Tensor,
         use_cache: bool,
-        only_last_token: bool,
         **extra_kwargs,
     ) -> torch.Tensor:
 
@@ -366,13 +365,15 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         # specify attention type for continuous batching
         extra_kwargs['attn_name'] = "spyre_paged_attn"
 
+        print("(cb) only_last_token", attn_metadata.only_last_token)
+
         output = self.model(
             input_ids,
             position_ids=position_ids,
             mask=mask,
             past_key_value_states=self.past_key_value_states,
             use_cache=use_cache,
-            only_last_token=only_last_token,
+            only_last_token=attn_metadata.only_last_token,
             current_tkv_mask=attn_metadata.current_tkv_mask,
             left_padded_prompt_mask=attn_metadata.left_padded_prompt_mask,
             block_table=attn_metadata.block_table,
@@ -410,12 +411,16 @@ class StaticBatchingFmsModel(FmsModelBase):
         position_ids: torch.Tensor,
         mask: torch.Tensor,
         use_cache: bool,
-        only_last_token: bool,
         **extra_kwargs,
     ) -> torch.Tensor:
 
+        forward_context = get_forward_context()
+
+        attn_metadata = cast(SpyreAttentionMetadata,
+                             forward_context.attn_metadata)
         # specify attention type for static batching
         extra_kwargs['attn_name'] = "sdpa_bidirectional"
+        print("(sb) only_last_token", attn_metadata.only_last_token)
 
         output = self.model(
             input_ids,
@@ -423,7 +428,7 @@ class StaticBatchingFmsModel(FmsModelBase):
             mask=mask,
             past_key_value_states=self.past_key_value_states,
             use_cache=use_cache,
-            only_last_token=only_last_token,
+            only_last_token=attn_metadata.only_last_token,
             **extra_kwargs,
         )
 

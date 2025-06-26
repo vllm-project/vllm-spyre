@@ -12,7 +12,8 @@ from vllm.logger import init_logger
 from vllm.sampling_params import SamplingType
 from vllm.utils import is_pin_memory_available
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
-from vllm.v1.outputs import SamplerOutput
+
+from vllm.v1.outputs import SamplerOutput, LogprobsTensors
 
 from vllm_spyre.model_executor.model_loader.spyre import (
     SpyreAttentionMetadata, SpyreCausalLM)
@@ -219,19 +220,23 @@ class SpyreModelRunner:
         """Turn off warmup mode once the warmup is complete"""
         self.warmup_mode = False
 
-    def build_attn_metadata(self,
-                            _: ModelForwardInputs) -> SpyreAttentionMetadata:
+    def build_attn_metadata(self, model_input: ModelForwardInputs) -> SpyreAttentionMetadata:
 
         # TODO: probably sooner we will need a more sophisticated way to switch
         # build attention metadata based on model/attention. But for now, a
         # simple method override is good enough.
-        return SpyreAttentionMetadata()
+        attn_metadata = SpyreAttentionMetadata()
+        attn_metadata.only_last_token = self.no_prompt_logprob(model_input)
+        return attn_metadata
 
     def get_sampling_metadata(self, _: bool) -> SamplingMetadata:
         return self.input_batch.sampling_metadata
 
     def get_req_id_to_index(self, _: bool) -> dict[str, int]:
         return self.input_batch.get_unpadded_output_indices()
+    
+    def no_prompt_logprob(self, _: ModelForwardInputs) -> bool:
+        return self.input_batch.no_prompt_logprob
 
     def update_states(self, scheduler_output: SchedulerOutput):
         # Update the states of the running/resumed requests.
@@ -267,12 +272,87 @@ class SpyreModelRunner:
             self.input_batch.token_ids_cpu[
                 req_index,
                 start_token_index:end_token_index] = req_data.new_token_ids
+            # Remove the entry for prompt_logprobs for this requst, if it exists
+            self.input_batch.num_prompt_logprobs.pop(req_id, None)
 
         if scheduler_output.finished_req_ids:
             for req_id in scheduler_output.finished_req_ids:
                 self.input_batch.remove_request(req_id)
                 self.requests.pop(req_id, None)
             self.input_batch.refresh_sampling_metadata()
+            
+    def _get_prompt_logprobs_dict(
+        self,
+        hidden_states: torch.Tensor,
+        model_inputs: ModelForwardInputs,
+    ) -> dict[str, Optional[LogprobsTensors]]:
+        """Calculate prompt logprobs from hidden states"""
+
+        num_prompt_logprobs_dict = self.input_batch.num_prompt_logprobs
+        if not num_prompt_logprobs_dict:
+            return {}
+        
+        # TODO: For chunked prefill, this will need to be updated to hold state
+        # for prompt logprobs across multiple model iterations.
+        # This assumes no chunked prefill for now
+        prompt_logprobs_dict: dict[str, Optional[LogprobsTensors]] = {}
+
+        # Since prompt logprobs are a rare feature, prioritize simple,
+        # maintainable loop over optimal performance.
+        for req_id, num_prompt_logprobs in num_prompt_logprobs_dict.items():
+            # Get metadata for this request.
+            request = self.requests[req_id]
+            num_prompt_tokens = len(request.prompt_token_ids)
+            prompt_token_ids = torch.tensor(request.prompt_token_ids).to(
+                self.device, non_blocking=True)
+
+            # No chunked prefill, so we always start at index 0, token 1.
+            # (First token has no logprobs because there's no context)
+            start_tok = 1
+            num_logits = num_prompt_tokens - start_tok
+
+            # Get the logits corresponding to this req's prompt tokens.
+
+            print(f"\n\n\thidden_states_shape: {hidden_states.shape}")
+
+            req_idx = self.input_batch.req_id_to_index[req_id]
+            req_idx = self.get_req_id_to_index(model_inputs)
+            # offset = self.query_start_loc_np[req_idx].item()
+            # TODO: handle multipe reqs in batch
+            # offset needs to account for left padding.
+            hidden_states = hidden_states[req_idx]
+            offset = hidden_states.shape[0] - num_prompt_tokens
+
+            print(f"\n\n\toffset: {offset}")
+
+            prompt_hidden_states = hidden_states[offset:offset + num_logits]
+            logits = self.model.compute_logits(prompt_hidden_states, None)
+
+            print(f"\n\n\tprompt_logits shape: {logits.shape}")
+
+            # Get the "target" tokens for each index. For prompt at index i,
+            # the token at prompt index i+1 is the "sampled" token we want
+            # to gather the logprob for.
+            tgt_token_ids = prompt_token_ids[start_tok:start_tok + num_logits]
+
+            # Compute prompt logprobs.
+            logprobs = self.model.sampler.compute_logprobs(logits)
+            token_ids, logprobs, ranks = self.model.sampler.gather_logprobs(
+                logprobs, num_prompt_logprobs, tgt_token_ids)
+            
+            print(f"\n\n\tlogprobs_shape: {logprobs.shape}\n\n")
+
+            # To support chunked prefill, we will need to copy the chunks into
+            # saved state at each iteration.
+            # For now, we can just return the full tensors.
+            logprobs_tensors = LogprobsTensors(
+                logprob_token_ids=token_ids,
+                logprobs=logprobs,
+                selected_token_ranks=ranks
+            )
+            prompt_logprobs_dict[req_id] = logprobs_tensors
+
+        return prompt_logprobs_dict
 
     def _prepare_prompt(self, _: list[NewRequestData]) -> ModelForwardInputs:
         raise NotImplementedError
@@ -346,6 +426,9 @@ class SpyreModelRunner:
         if "pooler_output" in ModelRunnerOutput.__dataclass_fields__:
             extra_kwargs["pooler_output"] = None
 
+        print(f"hidden_states shape: {hidden_states.shape}")
+        prompt_logprobs_dicts = self._get_prompt_logprobs_dict(hidden_states=hidden_states, model_inputs=model_input)
+
         model_output = ModelRunnerOutput(
             req_ids=list(req_id_to_index.keys()),
             req_id_to_index=req_id_to_index,
@@ -353,10 +436,7 @@ class SpyreModelRunner:
             spec_token_ids=None,
             logprobs=(output.logprobs_tensors.tolists()
                       if output.logprobs_tensors else None),
-            prompt_logprobs_dict={
-                req_id: None
-                for req_id in self.input_batch.req_id_to_index
-            },  # TODO: take a decision regarding prompt logprobs
+            prompt_logprobs_dict=prompt_logprobs_dicts,
             **extra_kwargs,
         )
 
@@ -958,7 +1038,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             slot_mapping=model_input.slot_mapping,
             current_tkv_mask=model_input.current_tkv_mask,
             left_padded_prompt_mask=model_input.left_padded_prompt_mask,
-            block_table=model_input.block_table)
+            block_table=model_input.block_table,
+            only_last_token=False)
 
     def get_sampling_metadata(self, is_prefill: bool) -> SamplingMetadata:
         return self.prefill_batch.sampling_metadata \
@@ -969,6 +1050,11 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             if is_prefill else self.input_batch.get_unpadded_output_indices()
 
         return req_id_to_index
+    
+    def no_prompt_logprob(self, model_input: ModelForwardInputs) -> bool:
+        if model_input.is_prompt:
+            return self.prefill_batch.no_prompt_logprob
+        return True
 
     def prepare_model_input(
             self, scheduler_output: SchedulerOutput) -> ModelForwardInputs:
