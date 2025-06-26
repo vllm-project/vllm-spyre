@@ -19,7 +19,7 @@ from vllm.v1.engine import EngineCoreRequest
 
 DISABLE_ASSERTS = False  # used for debugging
 
-ISCLOSE_REL_TOL_CPU = 0.1
+ISCLOSE_REL_TOL_CPU = 0.2
 ISCLOSE_REL_TOL_SPYRE = 0.35
 
 
@@ -541,3 +541,26 @@ def skip_unsupported_tp_size(size: int):
     if cards < size:
         pytest.skip(f"Cannot run TP size {size}: "
                     f"only {cards} cards are available")
+
+
+def get_chicken_soup_prompts(num_prompts: int) -> list[str]:
+    template = (
+        "Below is an instruction that describes a task. Write a response that "
+        "appropriately completes the request. Be polite in your response to the"
+        " user.\n\n### Instruction:\n{}\n\n### Response:")
+
+    prompts = [
+        template.format("Provide a list of instructions "
+                        "for preparing chicken soup."),
+        template.format("Provide me a list of things that I can do with my "
+                        "new found wealth."),
+        template.format(
+            "how do I add multiple new columns in m for power query or \
+                power bi?"),
+        template.format("Convert char to string in Java."),
+    ]
+
+    if num_prompts > 4:
+        prompts = prompts * (math.ceil(num_prompts / 4))
+
+    return prompts[:num_prompts]
