@@ -300,8 +300,12 @@ class SpyreModelRunner:
         else:
             return self.prepare_decode(scheduler_output.scheduled_cached_reqs)
 
-    def base_execute_model(self, scheduler_output: SchedulerOutput,
-                           **kwargs) -> ModelRunnerOutput:
+    @SpyrePlatform.inference_mode()
+    def execute_model(
+        self,
+        scheduler_output: SchedulerOutput,
+        **kwargs,
+    ) -> ModelRunnerOutput:
 
         t0 = time.time()
 
@@ -323,9 +327,7 @@ class SpyreModelRunner:
 
         # Only perform sampling in the driver worker.
         if not self.is_driver_worker:
-            # TODO: check this, we should return ModelRunnerOutput in this
-            # method, why is it returning list here?
-            return []
+            return EMPTY_MODEL_RUNNER_OUTPUT
 
         # Compute the logits.
         logits = self.model.compute_logits(hidden_states, None)
@@ -521,15 +523,6 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
             masks_new.append(mask_new)
 
         self._mask = torch.stack(masks_new, dim=0)
-
-    @SpyrePlatform.inference_mode()
-    def execute_model(
-        self,
-        scheduler_output: SchedulerOutput,
-        **kwargs,
-    ) -> ModelRunnerOutput:
-
-        return self.base_execute_model(scheduler_output, **kwargs)
 
     def _get_padded_batch_size(self, new_requests: list[NewRequestData]):
         # find warmup shape to be used for padding and batching
@@ -997,11 +990,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         **kwargs,
     ) -> ModelRunnerOutput:
 
-        output = self.base_execute_model(scheduler_output, **kwargs)
-
-        if not output:
-            # TODO: Review this! see `base_execute_model`
-            return []
+        output = super().execute_model(scheduler_output, **kwargs)
 
         out_tkv = self.tkv if \
             scheduler_output.total_num_scheduled_tokens > 0 else 0
