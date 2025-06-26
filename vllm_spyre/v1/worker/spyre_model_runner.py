@@ -13,6 +13,7 @@ from vllm.utils import is_pin_memory_available
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.outputs import SamplerOutput
 
+import vllm_spyre.envs as envs_spyre
 from vllm_spyre.model_executor.model_loader.spyre import SpyreCausalLM
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_input_batch import (CachedRequestState,
@@ -593,6 +594,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         num_blocks = (vllm_config.scheduler_config.max_num_seqs *
                       vllm_config.model_config.max_model_len //
                       self.BLOCK_SIZE)
+        # overwrite n_blocks_avail for testing scheduler constraints
+        if envs_spyre.VLLM_SPYRE_N_BLOCKS > 0:
+            num_blocks = envs_spyre.VLLM_SPYRE_N_BLOCKS
         self._set_free_blocks(num_blocks=num_blocks)
         self.dummy_req_ids2blocks: list[int] = []
 

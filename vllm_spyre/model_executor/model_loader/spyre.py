@@ -321,6 +321,9 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         # is reset to the value returned by the Spyre compiler after warmup
         # self._set_past_key_value_states(num_blocks=4)
         num_blocks = scheduler_config.max_num_seqs * max_model_len // BLOCK_SIZE
+        # overwrite n_blocks_avail for testing scheduler constraints
+        if envs_spyre.VLLM_SPYRE_N_BLOCKS > 0:
+            num_blocks = envs_spyre.VLLM_SPYRE_N_BLOCKS
         self._set_past_key_value_states(num_blocks=num_blocks)
 
         # mark the num_blocks dimension dynamic for Spyre compiler for warmup
