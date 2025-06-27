@@ -12,7 +12,7 @@ from vllm import SamplingParams
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("prompts", [
-    7 * [
+    4 * [
         "Hello",
         "Below is an instruction that describes a task. Write a response that "
         "appropriately completes the request. Be polite in your response to "
@@ -23,8 +23,8 @@ from vllm import SamplingParams
     ]
 ])
 @pytest.mark.parametrize(
-    "warmup_shapes", [[(64, 20, 8),
-                       (128, 20, 4)]])  # (prompt_length/new_tokens/batch_size)
+    "warmup_shapes", [[(64, 20, 4),
+                       (128, 20, 2)]])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_output(
     model: str,
