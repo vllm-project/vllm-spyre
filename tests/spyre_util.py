@@ -465,9 +465,11 @@ def get_spyre_backend_list():
     return backends
 
 
-# get model names from env, if not set then default to "llama-194m"
+# get model names from env, if not set then default to
+# "ibm-ai-platform/micro-g3.3-8b-instruct-1b"
 # For multiple values:
-# export SPYRE_TEST_MODEL_LIST="llama-194m,all-roberta-large-v1"
+# export VLLM_SPYRE_TEST_MODEL_LIST=\
+#   "ibm-ai-platform/micro-g3.3-8b-instruct-1b,all-roberta-large-v1"
 def get_spyre_model_list(isEmbeddings=False, quantization=None):
     spyre_model_dir_path = get_spyre_model_dir_path()
 
@@ -480,8 +482,9 @@ def get_spyre_model_list(isEmbeddings=False, quantization=None):
                                               "granite-3.0-8b-instruct-gptq")
         marks = [pytest.mark.decoder, pytest.mark.quantized, pytest.mark.spyre]
     else:
-        user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST",
-                                              "llama-194m")
+        user_test_model_list = os.environ.get(
+            "VLLM_SPYRE_TEST_MODEL_LIST",
+            "ibm-ai-platform/micro-g3.3-8b-instruct-1b")
         marks = [pytest.mark.decoder]
 
     test_model_list = []

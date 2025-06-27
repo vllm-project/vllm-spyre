@@ -125,9 +125,9 @@ jobs:
           # be removed by an admin or can be left to expire after 7 days.
           
           download_jackfram_llama() {
-            python -c "from transformers import pipeline; pipeline('text-generation', model='JackFram/llama-160m')"
-            VARIANT=$(ls "${HF_HUB_CACHE}/models--JackFram--llama-160m/snapshots/")
-            ln -s "${HF_HUB_CACHE}/models--JackFram--llama-160m/snapshots/${VARIANT}" "${VLLM_SPYRE_TEST_MODEL_DIR}/llama-194m"
+            python -c "from transformers import pipeline; pipeline('text-generation', model='ibm-ai-platform/micro-g3.3-8b-instruct-1b')"
+            VARIANT=$(ls "${HF_HUB_CACHE}/models--ibm-ai-platform--micro-g3.3-8b-instruct-1b/snapshots/")
+            ln -s "${HF_HUB_CACHE}/models--ibm-ai-platform--micro-g3.3-8b-instruct-1b/snapshots/${VARIANT}" "${VLLM_SPYRE_TEST_MODEL_DIR}/ibm-ai-platform/micro-g3.3-8b-instruct-1b"
           }
           download_roberta_large() {
             python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-roberta-large-v1')"
