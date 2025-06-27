@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     VLLM_SPYRE_WARMUP_NEW_TOKENS: Optional[list[int]] = None
     VLLM_SPYRE_WARMUP_BATCH_SIZES: Optional[list[int]] = None
     VLLM_SPYRE_USE_CB: bool = False
+    VLLM_SPYRE_N_BLOCKS: int = 0
     VLLM_SPYRE_PERF_METRIC_LOGGING_ENABLED: int = 0
     VLLM_SPYRE_PERF_METRIC_LOGGING_DIR: str = "/tmp"
     VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER: bool = False
@@ -67,6 +68,11 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # batching mode will be enabled.
     "VLLM_SPYRE_USE_CB":
     lambda: bool(int(os.getenv("VLLM_SPYRE_USE_CB", "0"))),
+
+    # If set, use the V1 continuous batching implementation. Otherwise, static
+    # batching mode will be enabled.
+    "VLLM_SPYRE_N_BLOCKS":
+    lambda: int(os.getenv("VLLM_SPYRE_N_BLOCKS", 0)),
 
     # Enable performance metric logging. This captures startup information
     # such as warmup times, and loading times. It is turned off by default.

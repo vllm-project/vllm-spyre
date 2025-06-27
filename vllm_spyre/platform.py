@@ -41,6 +41,7 @@ class SpyrePlatform(Platform):
     device_type: str = "cpu"
     supported_quantization: list[str] = ["gptq"]
     _warmup_shapes: Optional[tuple[dict[str, int], ...]] = None
+    _block_size: int = 64  # hardcoded Spyre constraint for now
     _config: VllmConfig = None
 
     @classmethod
@@ -221,6 +222,10 @@ class SpyrePlatform(Platform):
         return cls._warmup_shapes
 
     @classmethod
+    def get_block_size(cls) -> int:
+        return cls._block_size
+
+    @classmethod
     def supports_v1(cls, model_config: ModelConfig) -> bool:
         """Returns whether the current platform can support v1 for the supplied
         model configuration.
@@ -261,7 +266,7 @@ class SpyrePlatform(Platform):
 
             # ceil division to pad to next block boundary
             n = prompt_len
-            d = 64  # hardcoded AIU Spyre block size
+            d = cls._block_size
             prompt_padding_len = ((n + d - 1) // d) * d
             if (prompt_padding_len + max_tokens
                     > cls._config.scheduler_config.max_model_len):

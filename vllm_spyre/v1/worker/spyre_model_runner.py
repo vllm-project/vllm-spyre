@@ -14,6 +14,7 @@ from vllm.utils import is_pin_memory_available
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.outputs import SamplerOutput
 
+import vllm_spyre.envs as envs_spyre
 from vllm_spyre.model_executor.model_loader.spyre import (
     SpyreAttentionMetadata, SpyreCausalLM)
 from vllm_spyre.platform import SpyrePlatform
@@ -52,8 +53,9 @@ class ModelForwardInputs:
 
 @dataclass
 class CBSpyreModelRunnerOutput(ModelRunnerOutput):
-    # Add the current tkv to the output
+    # Add the current tkv and the number of free blocks to the output
     tkv: int = 0
+    n_free_blocks: int = 0
 
 
 class SpyreModelRunner:
@@ -600,7 +602,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         assert vllm_config.scheduler_config.max_num_seqs >= 2, "Currently, " \
             "continuous batching needs config to set batch_size >= 2"
 
-        self.block_size = 64
+        self.block_size = SpyrePlatform.get_block_size()
 
         # TODO: move to a KV cache manager
         self.req_ids2blocks: dict[str, deque[int]] = {}
@@ -614,6 +616,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         num_blocks = (vllm_config.scheduler_config.max_num_seqs *
                       vllm_config.model_config.max_model_len //
                       self.block_size)
+        # overwrite n_blocks_avail for testing scheduler constraints
+        if envs_spyre.VLLM_SPYRE_N_BLOCKS > 0:
+            num_blocks = envs_spyre.VLLM_SPYRE_N_BLOCKS
         self._set_free_blocks(num_blocks=num_blocks)
         self.dummy_req_ids2blocks: list[int] = []
 
@@ -991,6 +996,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             **asdict(output),
             tkv=self.tkv
             if scheduler_output.total_num_scheduled_tokens > 0 else 0,
+            n_free_blocks=len(self.free_blocks),
         )
 
 
