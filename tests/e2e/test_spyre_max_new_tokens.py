@@ -17,7 +17,6 @@ from vllm import SamplingParams
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_output(
     model: str,
-    prompts: list[str],
     stop_last: bool,
     warmup_shape: tuple[int, int, int],
     backend: str,
