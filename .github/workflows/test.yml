@@ -133,6 +133,7 @@ jobs:
           }
           download_tinygranite &
           download_roberta_large &
+          download_tinyllama &
           wait
           ls "${HF_HUB_CACHE}" > cached_models.txt
 
@@ -149,6 +150,7 @@ jobs:
           MASTER_PORT: 12355
           MASTER_ADDR: localhost
           DISTRIBUTED_STRATEGY_IGNORE_MODULES: WordEmbedding
+          VLLM_SPYRE_TEST_MODEL_LIST: "${{ matrix.test_suite.name == 'static batching' && 'JackFram/llama-160m' || '' }}"
         run: |
           # Delete the source code so we can ensure we're testing the installed
           # wheel
@@ -160,9 +162,9 @@ jobs:
 
           # Super hack- the static batching tests require the tiniest of models.
           # The way this is set up, only decoder tests will function.
-          if [ ${{ matrix.test_suite.name }} == "static batching" ]; then
-            echo "VLLM_SPYRE_TEST_MODEL_LIST=JackFram/llama-160m" >> "$GITHUB_ENV"
-          fi
+          # if [ ${{ matrix.test_suite.name }} == "static batching" ]; then
+          #   echo "VLLM_SPYRE_TEST_MODEL_LIST=JackFram/llama-160m" >> "$GITHUB_ENV"
+          # fi
 
           python3 -m pytest ${{ matrix.test_suite.flags }} \
             tests -v -m "${{ matrix.test_suite.markers }}"
