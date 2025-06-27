@@ -755,7 +755,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             is_prompt=True,
         )
 
-        mark_input_tensors_for_cb(model_inputs)
+        _mark_input_tensors(model_inputs)
 
         return model_inputs
 
@@ -859,7 +859,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             is_prompt=False,
         )
 
-        mark_input_tensors_for_cb(model_inputs)
+        _mark_input_tensors(model_inputs)
 
         return model_inputs
 
@@ -994,7 +994,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         )
 
 
-def mark_input_tensors_for_cb(model_input: ModelForwardInputs) -> None:
+def _mark_input_tensors(model_input: ModelForwardInputs) -> None:
     # Marking dimensions static/dynamic
     if model_input.is_prompt:
 
