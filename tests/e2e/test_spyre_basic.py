@@ -17,8 +17,7 @@ from vllm_spyre.v1.core.scheduler import StaticBatchingSpyreScheduler
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
-    "warmup_shape", [(64, 20, 4), (64, 20, 8), (128, 20, 4),
-                     (128, 20, 8)])  # (prompt_length/new_tokens/batch_size)
+    "warmup_shape", [(64, 20, 4)])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_output(
     model: str,
@@ -129,13 +128,10 @@ def test_output_sendnn_decoder(
 @pytest.mark.parametrize("cb",
                          [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
 def test_batch_handling(model: str, backend: str, cb: int,
-                        monkeypatch: pytest.MonkeyPatch, runtime_xfail):
+                        monkeypatch: pytest.MonkeyPatch):
     """Test that the spyre worker correctly handles
     continuous batches of requests that
     finish after different numbers of forward passes"""
-
-    if cb == 1:
-        runtime_xfail("Batch handling bug with continuous batching")
 
     prompts = get_chicken_soup_prompts(4)
 

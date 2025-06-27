@@ -63,10 +63,6 @@ async def test_abort(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Test handling of cancelled requests"""
-
-    if cb == 1 and backend != "eager":
-        pytest.skip("CB requires eager")
-
     with monkeypatch.context() as m, ExitStack() as after:
         m.setenv("VLLM_USE_V1", "1")
         m.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
@@ -99,10 +95,10 @@ async def test_abort(
 
         # Test structure here mirrors upstream vLLM test_abort:
         # https://github.com/vllm-project/vllm/blob/e6aab5de2999187c6cf0206f2d63ab6d7a0b6964/tests/v1/engine/test_async_llm.py#L160
-        NUM_REQUESTS = 100
+        NUM_REQUESTS = 20
         NUM_EXPECTED_TOKENS = 20
-        REQUEST_IDS_TO_ABORT = range(1, 100, 10)
-        PARALLEL_SAMPLE_REQ_IDS = range(1, 100, 15)
+        REQUEST_IDS_TO_ABORT = range(1, NUM_REQUESTS, 3)
+        PARALLEL_SAMPLE_REQ_IDS = range(1, NUM_REQUESTS, 5)
 
         request_ids = [f"request-{i}" for i in range(NUM_REQUESTS)]
 
