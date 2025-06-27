@@ -1,6 +1,7 @@
 """Utilities for selecting and loading Spyre models."""
 import os
-from typing import Any, Optional
+from dataclasses import dataclass
+from typing import Any, Optional, cast
 
 import torch
 import torch._inductor.config
@@ -9,6 +10,7 @@ import torch.nn as nn
 from fms.models import get_model
 from transformers import PretrainedConfig
 from vllm.config import ModelConfig, ParallelConfig, SchedulerConfig
+from vllm.forward_context import get_forward_context
 from vllm.logger import init_logger
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
 from vllm.model_executor.layers.sampler import SamplerOutput, get_sampler
@@ -28,6 +30,14 @@ except ImportError:
 BACKEND_LIST = ['sendnn', 'inductor']
 
 logger = init_logger(__name__)
+
+
+@dataclass
+class SpyreAttentionMetadata:
+    slot_mapping: torch.Tensor = None
+    current_tkv_mask: torch.Tensor = None
+    left_padded_prompt_mask: torch.Tensor = None
+    block_table: torch.Tensor = None
 
 
 class SpyreCausalLM(nn.Module):
@@ -74,10 +84,6 @@ class SpyreCausalLM(nn.Module):
         positions: torch.Tensor,
         masks: torch.Tensor,
         is_prompt: bool,
-        current_tkv_mask: Optional[torch.Tensor] = None,
-        left_padded_prompt_mask: Optional[torch.Tensor] = None,
-        block_table: Optional[torch.Tensor] = None,
-        slot_mapping: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
 
         if is_prompt and not envs_spyre.VLLM_SPYRE_USE_CB:
@@ -88,12 +94,6 @@ class SpyreCausalLM(nn.Module):
             # Bug in 2.3.1 fixed in 2.4.1 for SDPA flash
             # cpu impl when padding too much
             extra_kwargs["attn_algorithm"] = "math"
-
-        if envs_spyre.VLLM_SPYRE_USE_CB:
-            extra_kwargs["current_tkv_mask"] = current_tkv_mask
-            extra_kwargs["left_padded_prompt_mask"] = left_padded_prompt_mask
-            extra_kwargs["block_table"] = block_table
-            extra_kwargs["slot_mapping"] = slot_mapping
 
         # normal prefill or decoding step
         logits = self.model(
@@ -357,24 +357,18 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         mask: torch.Tensor,
         use_cache: bool,
         only_last_token: bool,
-        current_tkv_mask: torch.Tensor,
-        left_padded_prompt_mask: torch.Tensor,
-        block_table: torch.Tensor,
-        slot_mapping: torch.Tensor,
         **extra_kwargs,
     ) -> torch.Tensor:
 
+        forward_context = get_forward_context()
+
+        attn_metadata = cast(SpyreAttentionMetadata,
+                             forward_context.attn_metadata)
         # import will be not be needed/ handled by FMS soon
         import fms.utils.spyre.paged  # noqa # pylint: disable=unused-import
 
         # specify attention type for continuous batching
         extra_kwargs['attn_name'] = "spyre_paged_attn"
-
-        # additional (paged) attention arguments
-        extra_kwargs['current_tkv_mask'] = current_tkv_mask
-        extra_kwargs['left_padded_prompt_mask'] = left_padded_prompt_mask
-        extra_kwargs['block_table'] = block_table
-        extra_kwargs['slot_mapping'] = slot_mapping
 
         output = self.model(
             input_ids,
@@ -383,6 +377,10 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             past_key_value_states=self.past_key_value_states,
             use_cache=use_cache,
             only_last_token=only_last_token,
+            current_tkv_mask=attn_metadata.current_tkv_mask,
+            left_padded_prompt_mask=attn_metadata.left_padded_prompt_mask,
+            block_table=attn_metadata.block_table,
+            slot_mapping=attn_metadata.slot_mapping,
             **extra_kwargs,
         )
 

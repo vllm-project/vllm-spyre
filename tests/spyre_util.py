@@ -441,9 +441,11 @@ def compare_embedding_results(model: str, prompts: list[str],
         assert math.isclose(sim, 1.0, rel_tol=0.05)
 
 
-# get model directory path from env, if not set then default to "models".
+# get model directory path from env
+# if unset, test model paths are assumed to be either hf hub names or absolute
+# paths
 def get_spyre_model_dir_path() -> Path:
-    model_dir_path = os.environ.get("VLLM_SPYRE_TEST_MODEL_DIR", "models")
+    model_dir_path = os.environ.get("VLLM_SPYRE_TEST_MODEL_DIR", "")
     return Path(model_dir_path)
 
 
@@ -465,23 +467,33 @@ def get_spyre_backend_list():
     return backends
 
 
-# get model names from env, if not set then default to "llama-194m"
-# For multiple values:
-# export SPYRE_TEST_MODEL_LIST="llama-194m,all-roberta-large-v1"
+# get model names from env, if not set then use default models for each type.
+# Multiple models can be specified with a comma separated list in
+# VLLM_SPYRE_TEST_MODEL_LIST
 def get_spyre_model_list(isEmbeddings=False, quantization=None):
     spyre_model_dir_path = get_spyre_model_dir_path()
 
+    def _get_or_default(env: str, default: str) -> str:
+        """Handle empty strings in env var"""
+        val = os.environ.get(env, default)
+        if not val:
+            val = default
+        return val
+
     if isEmbeddings:
-        user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST",
-                                              "all-roberta-large-v1")
+        user_test_model_list = _get_or_default(
+            "VLLM_SPYRE_TEST_MODEL_LIST",
+            "sentence-transformers/all-roberta-large-v1")
         marks = [pytest.mark.embedding]
     elif quantization == "gptq":
-        user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST",
-                                              "granite-3.0-8b-instruct-gptq")
+        # TODO: need a HF hub reference here as a default
+        user_test_model_list = _get_or_default("VLLM_SPYRE_TEST_MODEL_LIST",
+                                               "granite-3.0-8b-instruct-gptq")
         marks = [pytest.mark.decoder, pytest.mark.quantized, pytest.mark.spyre]
     else:
-        user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST",
-                                              "llama-194m")
+        user_test_model_list = _get_or_default(
+            "VLLM_SPYRE_TEST_MODEL_LIST",
+            "ibm-ai-platform/micro-g3.3-8b-instruct-1b")
         marks = [pytest.mark.decoder]
 
     test_model_list = []
