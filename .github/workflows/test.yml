@@ -160,11 +160,5 @@ jobs:
           # re-install the vllm_sypre package from source
           source .venv/bin/activate
 
-          # Super hack- the static batching tests require the tiniest of models.
-          # The way this is set up, only decoder tests will function.
-          # if [ ${{ matrix.test_suite.name }} == "static batching" ]; then
-          #   echo "VLLM_SPYRE_TEST_MODEL_LIST=JackFram/llama-160m" >> "$GITHUB_ENV"
-          # fi
-
           python3 -m pytest ${{ matrix.test_suite.flags }} \
             tests -v -m "${{ matrix.test_suite.markers }}"
