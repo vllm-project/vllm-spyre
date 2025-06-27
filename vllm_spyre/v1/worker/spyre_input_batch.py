@@ -23,7 +23,7 @@ class CachedRequestState:
     generator: Optional[torch.Generator]
 
     output_token_ids: list[int]
-    left_padding: int  # Defaults to 0, i. e. not padding
+    left_padding: int = 0  # Defaults to 0, i. e. not padding
 
     @property
     def num_tokens(self) -> int:

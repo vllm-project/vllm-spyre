@@ -332,10 +332,9 @@ class SpyreModelRunner:
         is_prefill = cast(bool, model_input.is_prompt)
 
         # Sample the next token.
-        sampling_metata = self.get_sampling_metadata(is_prefill)
         output: SamplerOutput = self.model.sample(
             logits=logits,
-            sampling_metadata=sampling_metata,
+            sampling_metadata=self.get_sampling_metadata(is_prefill),
         )
         t1 = time.time() - t0
         logger.debug("t_token: %.2fms", (t1 * 1000))
