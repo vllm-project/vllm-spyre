@@ -147,8 +147,7 @@ class FmsModelBase(nn.Module):
         super().__init__()
 
         self.config: PretrainedConfig = model_config.hf_config
-        self.dtype = torch.float16 if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == \
-            'sendnn' else torch.float32
+        self.dtype = torch.float16
 
         # Actual FMS model
         self.model: nn.Module
