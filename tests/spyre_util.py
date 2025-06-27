@@ -10,6 +10,7 @@ import numpy as np
 import openai
 import pytest
 import requests
+import torch
 from sentence_transformers import SentenceTransformer, util
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, SamplingParams
@@ -228,7 +229,8 @@ def generate_hf_output(
     if not isinstance(max_new_tokens, list):
         max_new_tokens = [max_new_tokens] * len(prompts)
 
-    hf_model = AutoModelForCausalLM.from_pretrained(model)
+    hf_model = AutoModelForCausalLM.from_pretrained(model,
+                                                    torch_dtype=torch.float16)
     hf_tokenizer = AutoTokenizer.from_pretrained(model)
 
     results = []
