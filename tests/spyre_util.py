@@ -473,18 +473,25 @@ def get_spyre_backend_list():
 def get_spyre_model_list(isEmbeddings=False, quantization=None):
     spyre_model_dir_path = get_spyre_model_dir_path()
 
+    def _get_or_default(env: str, default: str) -> str:
+        """Handle empty strings in env var"""
+        val = os.environ.get(env, default)
+        if not val:
+            val = default
+        return val
+
     if isEmbeddings:
-        user_test_model_list = os.environ.get(
+        user_test_model_list = _get_or_default(
             "VLLM_SPYRE_TEST_MODEL_LIST",
             "sentence-transformers/all-roberta-large-v1")
         marks = [pytest.mark.embedding]
     elif quantization == "gptq":
         # TODO: need a HF hub reference here as a default
-        user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST",
-                                              "granite-3.0-8b-instruct-gptq")
+        user_test_model_list = _get_or_default("VLLM_SPYRE_TEST_MODEL_LIST",
+                                               "granite-3.0-8b-instruct-gptq")
         marks = [pytest.mark.decoder, pytest.mark.quantized, pytest.mark.spyre]
     else:
-        user_test_model_list = os.environ.get(
+        user_test_model_list = _get_or_default(
             "VLLM_SPYRE_TEST_MODEL_LIST",
             "ibm-ai-platform/micro-g3.3-8b-instruct-1b")
         marks = [pytest.mark.decoder]
