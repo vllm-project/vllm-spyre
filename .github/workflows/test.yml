@@ -17,7 +17,6 @@ env:
   VLLM_CPU_DISABLE_AVX512: "true"
   VLLM_TARGET_DEVICE: "empty"
   VLLM_PLUGINS: "spyre"
-  VLLM_SPYRE_TEST_MODEL_DIR: "${{ github.workspace }}/models"
   HF_HUB_CACHE: "${{ github.workspace }}/.cache/huggingface/hub"
 
 concurrency:
@@ -117,8 +116,6 @@ jobs:
       - name: "Download HF models"
         if: steps.changed-src-files.outputs.any_changed == 'true'
         run: |
-          mkdir -p "${VLLM_SPYRE_TEST_MODEL_DIR}"
-
           # We are caching HF models (HF_HUB_CACHE) for reliability rather than speed, since HF downloads are flaky for concurrent jobs.
           # Be careful when adding models to the cache here, as the GHA cache is limited to 10 GB.
           # If a new model is added here, hashFiles('cached_models.txt') should create a new hash key. The previous cache blob can then
@@ -126,19 +123,14 @@ jobs:
           
           download_tinygranite() {
             python -c "from transformers import pipeline; pipeline('text-generation', model='ibm-ai-platform/micro-g3.3-8b-instruct-1b')"
-            VARIANT=$(ls "${HF_HUB_CACHE}/models--ibm-ai-platform--micro-g3.3-8b-instruct-1b/snapshots/")
-            mkdir -p "${VLLM_SPYRE_TEST_MODEL_DIR}/ibm-ai-platform"
-            ln -s "${HF_HUB_CACHE}/models--ibm-ai-platform--micro-g3.3-8b-instruct-1b/snapshots/${VARIANT}" "${VLLM_SPYRE_TEST_MODEL_DIR}/ibm-ai-platform/micro-g3.3-8b-instruct-1b"
           }
           download_roberta_large() {
             python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-roberta-large-v1')"
-            VARIANT=$(ls "${HF_HUB_CACHE}/models--sentence-transformers--all-roberta-large-v1/snapshots/")
-            ln -s "${HF_HUB_CACHE}/models--sentence-transformers--all-roberta-large-v1/snapshots/${VARIANT}" "${VLLM_SPYRE_TEST_MODEL_DIR}/all-roberta-large-v1"
           }
           download_tinygranite &
           download_roberta_large &
           wait
-          ls "${VLLM_SPYRE_TEST_MODEL_DIR}" > cached_models.txt
+          ls "${HF_HUB_CACHE}" > cached_models.txt
 
       - name: "Save HF models cache"
         if: ( steps.changed-src-files.outputs.any_changed == 'true' && github.event_name != 'pull_request' && strategy.job-index == 0 )
