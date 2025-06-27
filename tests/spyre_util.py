@@ -467,17 +467,16 @@ def get_spyre_backend_list():
     return backends
 
 
-# get model names from env, if not set then default to
-# "ibm-ai-platform/micro-g3.3-8b-instruct-1b"
-# For multiple values:
-# export VLLM_SPYRE_TEST_MODEL_LIST=\
-#   "ibm-ai-platform/micro-g3.3-8b-instruct-1b,sentence-transformers/all-roberta-large-v1"
+# get model names from env, if not set then use default models for each type.
+# Multiple models can be specified with a comma separated list in
+# VLLM_SPYRE_TEST_MODEL_LIST
 def get_spyre_model_list(isEmbeddings=False, quantization=None):
     spyre_model_dir_path = get_spyre_model_dir_path()
 
     if isEmbeddings:
-        user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST",
-                                              "sentence-transformers/all-roberta-large-v1")
+        user_test_model_list = os.environ.get(
+            "VLLM_SPYRE_TEST_MODEL_LIST",
+            "sentence-transformers/all-roberta-large-v1")
         marks = [pytest.mark.embedding]
     elif quantization == "gptq":
         # TODO: need a HF hub reference here as a default
