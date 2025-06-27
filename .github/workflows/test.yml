@@ -162,8 +162,7 @@ jobs:
 
           # Super hack- the static batching tests require the tiniest of models.
           The way this is set up, only decoder tests will function.
-          echo $matrix.test_suite.name 
-          if [ ${{ matrix.test_suite.name }} == "static batching" ]; then
+          if [ "${{ matrix.test_suite.name }}" == "static_batching" ]; then
             echo "VLLM_SPYRE_TEST_MODEL_LIST=JackFram/llama-160m" >> "$GITHUB_ENV"
           fi
 
