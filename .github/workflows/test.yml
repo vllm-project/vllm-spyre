@@ -127,7 +127,7 @@ jobs:
           download_tinygranite() {
             python -c "from transformers import pipeline; pipeline('text-generation', model='ibm-ai-platform/micro-g3.3-8b-instruct-1b')"
             VARIANT=$(ls "${HF_HUB_CACHE}/models--ibm-ai-platform--micro-g3.3-8b-instruct-1b/snapshots/")
-            mkdir -p ${VLLM_SPYRE_TEST_MODEL_DIR}/ibm-ai-platform
+            mkdir -p "${VLLM_SPYRE_TEST_MODEL_DIR}/ibm-ai-platform"
             ln -s "${HF_HUB_CACHE}/models--ibm-ai-platform--micro-g3.3-8b-instruct-1b/snapshots/${VARIANT}" "${VLLM_SPYRE_TEST_MODEL_DIR}/ibm-ai-platform/micro-g3.3-8b-instruct-1b"
           }
           download_roberta_large() {
