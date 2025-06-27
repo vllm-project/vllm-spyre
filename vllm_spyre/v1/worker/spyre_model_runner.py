@@ -642,9 +642,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                 for block_id in blocks_to_free:
                     logger.debug("Freeing block with id: %s", block_id)
                     self.free_blocks.append(block_id)
-            self.req_ids2left_pads.pop(req_id, None)
-            self.requests.pop(req_id, None)
-            self.input_batch.remove_request(req_id)
 
     def _prepare_prompt(
         self,
