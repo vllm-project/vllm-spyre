@@ -14,7 +14,9 @@ from vllm import LLM, SamplingParams
 # https://github.com/foundation-model-stack/foundation-model-stack/tree/paged_attn_mock
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--model", type=str, default="/models/llama-194m")
+parser.add_argument("--model",
+                    type=str,
+                    default="ibm-ai-platform/micro-g3.3-8b-instruct-1b")
 parser.add_argument("--max_model_len", type=int, default=2048)
 parser.add_argument("--max_num_seqs", type=int, default=2)
 parser.add_argument("--tp", type=int, default=1)

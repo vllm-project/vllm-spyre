@@ -66,16 +66,16 @@ Install `xgrammar` (only for `arm64` systems):
 uv pip install xgrammar==0.1.19
 ``` 
 
-Optionally, download the `JackFram/llama-160m` model:
+Optionally, download the `ibm-ai-platform/micro-g3.3-8b-instruct-1b` model:
 
 ```sh
-python -c "from transformers import pipeline; pipeline('text-generation', model='JackFram/llama-160m')"
+python -c "from transformers import pipeline; pipeline('text-generation', model='ibm-ai-platform/micro-g3.3-8b-instruct-1b')"
 ```
 
 !!! caution
     The Hugging Face API download does **not** work on `arm64`.
 
-By default, the model is saved to `.cache/huggingface/hub/models--JackFram--llama-160m`.
+By default, the model is saved to `.cache/huggingface/hub/models--ibm-ai-platform--micro-g3.3-8b-instruct-1b`.
 
 Then, source the environment variables:
 
