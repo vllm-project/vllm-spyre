@@ -147,7 +147,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         super().__init__(*args, **kwargs)
         self.tkv = 0
         self.n_free_blocks = 0
-        self.BLOCK_SIZE = SpyrePlatform.get_block_size()
+        self.block_size = SpyrePlatform.get_block_size()
 
     def update_from_output(
         self,
@@ -227,7 +227,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         cond4 = request.max_tokens <= (max_context_len - self.tkv)
         # check that there are enough free blocks/pages remaining
         n = self.tkv + request.max_tokens
-        d = self.BLOCK_SIZE
+        d = self.block_size
         num_blocks = (n + d - 1) // d
         # TODO ysc: also consider "reserved" blocks for current requests
         cond5 = num_blocks <= self.n_free_blocks
