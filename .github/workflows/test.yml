@@ -103,6 +103,8 @@ jobs:
           # This needs to be done after `uv sync`, or the wheel install will be
           # overwritten.
           uv pip install -v .
+          # overwrite fms v1.1 with feature branch only_last_token_rework
+          uv pip install "git+https://github.com/foundation-model-stack/foundation-model-stack.git@only_last_token_rework" --system
 
       - name: "Restore HF models cache"
         if: steps.changed-src-files.outputs.any_changed == 'true'
