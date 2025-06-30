@@ -23,6 +23,7 @@ class CachedRequestState:
     generator: Optional[torch.Generator]
 
     output_token_ids: list[int]
+    left_padding: int = 0  # Defaults to 0, i. e. not padding
 
     @property
     def num_tokens(self) -> int:
@@ -565,3 +566,8 @@ class InputBatch:
     @property
     def requests_ids(self) -> list[str]:
         return list(self.req_id_to_index.keys())
+
+    @property
+    def sorted_requests_ids(self) -> list[str]:
+        return sorted(self.req_id_to_index,
+                      key=self.req_id_to_index.get)  # type: ignore

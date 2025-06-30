@@ -57,6 +57,20 @@ def dynamo_reset():
     torch._dynamo.reset()
 
 
+# See https://github.com/okken/pytest-runtime-xfail/blob/master/pytest_runtime_xfail.py
+# This allows us to conditionally set expected failures at test runtime
+@pytest.fixture()
+def runtime_xfail(request):
+    """
+    Call runtime_xfail() to mark running test as xfail.
+    """
+
+    def _xfail(reason=''):
+        request.node.add_marker(pytest.mark.xfail(reason=reason))
+
+    return _xfail
+
+
 @pytest.fixture(scope="function")
 def remote_openai_server(request):
     """ Fixture to set up a test server."""

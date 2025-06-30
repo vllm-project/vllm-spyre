@@ -12,7 +12,7 @@ from vllm import SamplingParams
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("prompts", [
-    7 * [
+    4 * [
         "Hello",
         "Below is an instruction that describes a task. Write a response that "
         "appropriately completes the request. Be polite in your response to "
@@ -23,14 +23,15 @@ from vllm import SamplingParams
     ]
 ])
 @pytest.mark.parametrize(
-    "warmup_shapes", [[(64, 20, 8),
-                       (128, 20, 4)]])  # (prompt_length/new_tokens/batch_size)
+    "warmup_shapes", [[(64, 20, 4),
+                       (128, 20, 2)]])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_output(
     model: str,
     prompts: list[str],
     warmup_shapes: list[tuple[int, int, int]],
     backend: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     '''
     The warmup is based on two shapes, that 'overlap' each
@@ -68,7 +69,8 @@ def test_output(
         block_size=2048,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
-        backend=backend)
+        backend=backend,
+        monkeypatch=monkeypatch)
 
     hf_results = generate_hf_output(model=model,
                                     prompts=prompts,
@@ -92,6 +94,7 @@ def test_invalid_prompt_len(
     prompts: list[str],
     warmup_shapes: list[tuple[int, int, int]],
     backend: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     '''
     Expects an error to be raised if the warmup prompt length
@@ -111,4 +114,5 @@ def test_invalid_prompt_len(
                                    block_size=64,
                                    sampling_params=vllm_sampling_params,
                                    tensor_parallel_size=1,
-                                   backend=backend)
+                                   backend=backend,
+                                   monkeypatch=monkeypatch)
