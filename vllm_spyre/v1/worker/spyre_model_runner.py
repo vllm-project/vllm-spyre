@@ -848,6 +848,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         current_tkv_mask = torch.tensor([self.tkv] * len(input_tokens),
                                         dtype=torch.int64)
 
+        # set number of right pads the decode to 0
+        self.model.n_pads_right = 0
+
         model_inputs = ModelForwardInputs(
             input_tokens=input_tokens,
             input_positions=position_ids,
