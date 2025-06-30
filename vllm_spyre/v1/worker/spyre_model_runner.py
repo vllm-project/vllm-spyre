@@ -848,6 +848,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         current_tkv_mask = torch.tensor([self.tkv] * len(input_tokens),
                                         dtype=torch.int64)
 
+        # set number of right pads the decode to 0
+        self.model.n_pads_right = 0
+
         model_inputs = ModelForwardInputs(
             input_tokens=input_tokens,
             input_positions=position_ids,
@@ -902,6 +905,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # right padding to align with the next block boundary
         left_pad_len = input_tokens_left.shape[1]
         n_pads_right = min_pad_length - left_pad_len
+
+        # set number of right pads for the next model forward pass:
+        # need to be excluded before sampling tokens
+        self.model.n_pads_right = n_pads_right
 
         if n_pads_right > 0:
             # apply right padding to input_tokens, position_ids and mask

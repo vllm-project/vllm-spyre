@@ -60,6 +60,9 @@ class SpyreCausalLM(nn.Module):
         # False for finished or padded sequences
         self.indices = None
 
+        # number of right pads (relevant for continuous batching only)
+        self.n_pads_right = 0
+
         # FMS Model
         if envs_spyre.VLLM_SPYRE_USE_CB:
             self.model = ContinuousBatchingFmsModel(model_config,
@@ -97,7 +100,7 @@ class SpyreCausalLM(nn.Module):
             position_ids=positions,
             mask=masks,
             use_cache=True,
-            only_last_token=True,
+            index=-self.n_pads_right - 1,
             **extra_kwargs,
         )
 
@@ -341,7 +344,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         position_ids: torch.Tensor,
         mask: torch.Tensor,
         use_cache: bool,
-        only_last_token: bool,
+        index: int,
         **extra_kwargs,
     ) -> torch.Tensor:
 
@@ -361,7 +364,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             mask=mask,
             past_key_value_states=self.past_key_value_states,
             use_cache=use_cache,
-            only_last_token=only_last_token,
+            index=index,
             current_tkv_mask=attn_metadata.current_tkv_mask,
             left_padded_prompt_mask=attn_metadata.left_padded_prompt_mask,
             block_table=attn_metadata.block_table,
@@ -399,7 +402,7 @@ class StaticBatchingFmsModel(FmsModelBase):
         position_ids: torch.Tensor,
         mask: torch.Tensor,
         use_cache: bool,
-        only_last_token: bool,
+        index: int,
         **extra_kwargs,
     ) -> torch.Tensor:
 
@@ -412,7 +415,7 @@ class StaticBatchingFmsModel(FmsModelBase):
             mask=mask,
             past_key_value_states=self.past_key_value_states,
             use_cache=use_cache,
-            only_last_token=only_last_token,
+            index=index,
             **extra_kwargs,
         )
 
