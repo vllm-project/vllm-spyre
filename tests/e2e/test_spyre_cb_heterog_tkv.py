@@ -35,6 +35,7 @@ def test_cb_output(
     """Test that the spyre worker correctly outputs
     continuous batches of requests by comparing to HF"""
 
+    monkeypatch.setenv("VLLM_SPYRE_HETEROGEN_TKV", "1")
     if max_num_seqs > 2 and backend == "sendnn":
         runtime_xfail("CB failures expected for batch size > 2")
 
@@ -83,6 +84,7 @@ def test_cb_max_tokens(
     """Test that continuous batches of requests that
     are longer than the max_model_len are correctly rejected"""
 
+    monkeypatch.setenv("VLLM_SPYRE_HETEROGEN_TKV", "1")
     max_model_len = 256
     max_tokens = 20
 
@@ -659,6 +661,7 @@ def test_scheduler_cb_steps_tkv(
     monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
     monkeypatch.setenv("VLLM_USE_V1", "1")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+    monkeypatch.setenv("VLLM_SPYRE_HETEROGEN_TKV", "1")
 
     # To get deterministic execution in V1
     # and to enable InprocClient

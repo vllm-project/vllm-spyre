@@ -686,12 +686,19 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         output = super().execute_model(scheduler_output, **kwargs)
 
-        tkv = self.tkv if scheduler_output.total_num_scheduled_tokens > 0 else 0
+        if scheduler_output.total_num_scheduled_tokens > 0:
+            is_prompt = len(scheduler_output.scheduled_new_reqs) > 0
+            scheduled_req = (scheduler_output.scheduled_new_reqs if is_prompt
+                             else scheduler_output.scheduled_cached_reqs)
+            req_ids = [req.req_id for req in scheduled_req]
+            tkvs = [
+                self.req_ids2tkv[r]
+                if envs_spyre.VLLM_SPYRE_HETEROGEN_TKV else self.tkv
+                for r in req_ids
+            ]
+        else:
+            tkvs = [0]
 
-        tkvs = [
-            self.req_ids2tkv[r] if envs_spyre.VLLM_SPYRE_HETEROGEN_TKV else tkv
-            for r in output.req_ids
-        ]
         return CBSpyreModelRunnerOutput(
             **asdict(output),
             tkvs=tuple(tkvs),  # only used for homogeneous tkv scheduling
