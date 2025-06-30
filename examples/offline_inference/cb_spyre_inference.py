@@ -22,8 +22,8 @@ parser.add_argument("--max_num_seqs", type=int, default=2)
 parser.add_argument("--tp", type=int, default=1)
 args = parser.parse_args()
 
-max_tokens1 = 65
-max_tokens2 = 67
+max_tokens1 = 3
+max_tokens2 = 6
 max_tokens3 = 7
 max_num_seqs = args.max_num_seqs  # defines the max batch size
 
@@ -50,6 +50,7 @@ instructions = [
     "Provide instructions for preparing chicken soup.",
     "Provide a list of instructions for preparing chicken soup for a family.",
 ]
+instructions[0] = instructions[0] * 2 # make prompt 1 span two blocks
 
 prompts = [template.format(instr) for instr in instructions]
 
