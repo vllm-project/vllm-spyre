@@ -50,7 +50,7 @@ instructions = [
     "Provide instructions for preparing chicken soup.",
     "Provide a list of instructions for preparing chicken soup for a family.",
 ]
-instructions[0] = instructions[0] * 2 # make prompt 1 span two blocks
+instructions[0] = instructions[0] * 2  # make prompt 1 span two blocks
 
 prompts = [template.format(instr) for instr in instructions]
 
