@@ -5,31 +5,18 @@ Run `python -m pytest tests/e2e/test_spyre_max_new_tokens.py`.
 
 import pytest
 from spyre_util import (compare_results, generate_hf_output,
-                        generate_spyre_vllm_output, get_spyre_backend_list,
-                        get_spyre_model_list)
+                        generate_spyre_vllm_output, get_chicken_soup_prompts,
+                        get_spyre_backend_list, get_spyre_model_list)
 from vllm import SamplingParams
-
-template = (
-    "Below is an instruction that describes a task. Write a response that "
-    "appropriately completes the request. Be polite in your response to the "
-    "user.\n\n### Instruction:\n{}\n\n### Response:")
-
-prompt1 = template.format(
-    "Provide a list of instructions for preparing chicken soup.")
-prompt2 = template.format("Explain to me why ignorance is bliss.")
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize("prompts", [[prompt1, prompt2, prompt2, prompt2],
-                                     [prompt2, prompt2, prompt2, prompt1],
-                                     [prompt2, prompt2, prompt2, prompt2]])
 @pytest.mark.parametrize("stop_last", [True, False])
 @pytest.mark.parametrize(
     "warmup_shape", [(64, 10, 4)])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_output(
     model: str,
-    prompts: list[str],
     stop_last: bool,
     warmup_shape: tuple[int, int, int],
     backend: str,
@@ -47,6 +34,8 @@ def test_output(
     test using 'pytest --capture=no tests/spyre/test_spyre_max_new_tokens.py'
     After debugging, DISABLE_ASSERTS should be reset to 'False'.
     '''
+
+    prompts = get_chicken_soup_prompts(4)
 
     max_new_tokens_warmup = warmup_shape[1]
     max_new_tokens_early_stop = 1

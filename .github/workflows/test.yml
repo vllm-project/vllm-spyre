@@ -17,7 +17,6 @@ env:
   VLLM_CPU_DISABLE_AVX512: "true"
   VLLM_TARGET_DEVICE: "empty"
   VLLM_PLUGINS: "spyre"
-  VLLM_SPYRE_TEST_MODEL_DIR: "${{ github.workspace }}/models"
   HF_HUB_CACHE: "${{ github.workspace }}/.cache/huggingface/hub"
 
 concurrency:
@@ -117,27 +116,26 @@ jobs:
       - name: "Download HF models"
         if: steps.changed-src-files.outputs.any_changed == 'true'
         run: |
-          mkdir -p "${VLLM_SPYRE_TEST_MODEL_DIR}"
-
           # We are caching HF models (HF_HUB_CACHE) for reliability rather than speed, since HF downloads are flaky for concurrent jobs.
           # Be careful when adding models to the cache here, as the GHA cache is limited to 10 GB.
           # If a new model is added here, hashFiles('cached_models.txt') should create a new hash key. The previous cache blob can then
           # be removed by an admin or can be left to expire after 7 days.
           
-          download_jackfram_llama() {
-            python -c "from transformers import pipeline; pipeline('text-generation', model='JackFram/llama-160m')"
-            VARIANT=$(ls "${HF_HUB_CACHE}/models--JackFram--llama-160m/snapshots/")
-            ln -s "${HF_HUB_CACHE}/models--JackFram--llama-160m/snapshots/${VARIANT}" "${VLLM_SPYRE_TEST_MODEL_DIR}/llama-194m"
+          download_tinygranite() {
+            python -c "from transformers import pipeline; pipeline('text-generation', model='ibm-ai-platform/micro-g3.3-8b-instruct-1b')"
           }
           download_roberta_large() {
             python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-roberta-large-v1')"
-            VARIANT=$(ls "${HF_HUB_CACHE}/models--sentence-transformers--all-roberta-large-v1/snapshots/")
-            ln -s "${HF_HUB_CACHE}/models--sentence-transformers--all-roberta-large-v1/snapshots/${VARIANT}" "${VLLM_SPYRE_TEST_MODEL_DIR}/all-roberta-large-v1"
           }
-          download_jackfram_llama &
+          # tinyllama used for static batching tests because static batching is _too slow_
+          download_tinyllama() {
+            python -c "from transformers import pipeline; pipeline('text-generation', model='JackFram/llama-160m')"
+          }
+          download_tinygranite &
           download_roberta_large &
+          download_tinyllama &
           wait
-          ls "${VLLM_SPYRE_TEST_MODEL_DIR}" > cached_models.txt
+          ls "${HF_HUB_CACHE}" > cached_models.txt
 
       - name: "Save HF models cache"
         if: ( steps.changed-src-files.outputs.any_changed == 'true' && github.event_name != 'pull_request' && strategy.job-index == 0 )
@@ -152,6 +150,7 @@ jobs:
           MASTER_PORT: 12355
           MASTER_ADDR: localhost
           DISTRIBUTED_STRATEGY_IGNORE_MODULES: WordEmbedding
+          VLLM_SPYRE_TEST_MODEL_LIST: "${{ matrix.test_suite.name == 'static batching' && 'JackFram/llama-160m' || '' }}"
         run: |
           # Delete the source code so we can ensure we're testing the installed
           # wheel
@@ -160,6 +159,6 @@ jobs:
           # `uv run`, to avoid having `uv run` re-sync any dependencies or 
           # re-install the vllm_sypre package from source
           source .venv/bin/activate
-          # commands to run if condition is true
+
           python3 -m pytest ${{ matrix.test_suite.flags }} \
             tests -v -m "${{ matrix.test_suite.markers }}"

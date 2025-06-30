@@ -46,8 +46,8 @@ sampling_params = SamplingParams(max_tokens=max_tokens,
                                  ignore_eos=True)
 # Create an LLM.
 llm = LLM(
-    model="/models/llama-194m",
-    tokenizer="/models/llama-194m",
+    model="ibm-ai-platform/micro-g3.3-8b-instruct-1b",
+    tokenizer="ibm-ai-platform/micro-g3.3-8b-instruct-1b",
     max_model_len=2048,
     block_size=2048,
     tensor_parallel_size=2,
