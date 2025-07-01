@@ -344,7 +344,7 @@ class SpyreWorker(WorkerBaseV1):
         for i, req in enumerate(dummy_requests):
             scheduler_output = SchedulerOutput(
                 scheduled_new_reqs=[req],
-                scheduled_cached_reqs=[],
+                scheduled_cached_reqs=CachedRequestData.make_empty(),
                 num_scheduled_tokens={req.req_id: prompt_len},
                 total_num_scheduled_tokens=prompt_len,
                 scheduled_spec_decode_tokens={},
@@ -359,22 +359,38 @@ class SpyreWorker(WorkerBaseV1):
             self.execute_model(scheduler_output)
 
         # one decode iteration across both sequences
-        cached_requests = [
-            CachedRequestData(
-                req_ids=[req.req_id],
-                resumed_from_preemption=False,
-                new_token_ids=[
-                    valid_token_ids_tensor[torch.randint(
-                        0, len(valid_token_ids_tensor), (1, )).item()]
-                ],  # placeholder token
-                new_block_ids=req.block_ids,
-                num_computed_tokens=prompt_len,
-            ) for req in dummy_requests
-        ]
+        # cached_requests = [
+        #     CachedRequestData(
+        #         req_ids=[req.req_id],
+        #         resumed_from_preemption=False,
+        #         new_token_ids=[
+        #             valid_token_ids_tensor[torch.randint(
+        #                 0, len(valid_token_ids_tensor), (1, )).item()]
+        #         ],  # placeholder token
+        #         new_block_ids=req.block_ids,
+        #         num_computed_tokens=prompt_len,
+        #     ) for req in dummy_requests
+        # ]
+        req_ids = []
+        new_token_ids = []
+        new_block_ids = []
+        for req in dummy_requests:
+            req_ids.append(req.req_id)
+            new_token_ids.append(valid_token_ids_tensor[torch.randint(
+                0, len(valid_token_ids_tensor),
+                (1, )).item()]),  # placeholder token
+            new_block_ids.append(req.block_ids),
+        cached_request_data = CachedRequestData(
+            req_ids=req_ids,
+            resumed_from_preemption=False,
+            new_token_ids=new_token_ids,
+            new_block_ids=new_block_ids,
+            num_computed_tokens=[prompt_len],
+        )
 
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=[],
-            scheduled_cached_reqs=cached_requests,
+            scheduled_cached_reqs=cached_request_data,
             num_scheduled_tokens={f"warmup-{i}": 1
                                   for i in range(batch_size)},
             total_num_scheduled_tokens=batch_size,
@@ -393,7 +409,7 @@ class SpyreWorker(WorkerBaseV1):
         # Needed to clean up the data of model runner
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=[],
-            scheduled_cached_reqs=[],
+            scheduled_cached_reqs=CachedRequestData.make_empty(),
             num_scheduled_tokens={},
             # NOTE: this means no work to do
             total_num_scheduled_tokens=0,
@@ -530,7 +546,7 @@ class SpyreWorker(WorkerBaseV1):
         # Set up scheduler_output for execute_model
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=dummy_requests,
-            scheduled_cached_reqs=[],
+            scheduled_cached_reqs=CachedRequestData.make_empty(),
             num_scheduled_tokens={i: prompt_len
                                   for i in range(batch_size)},
             total_num_scheduled_tokens=sum(prompt_len

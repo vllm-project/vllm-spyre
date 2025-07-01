@@ -241,32 +241,35 @@ class SpyreModelRunner:
         #
         # NOTE: req_state.output_token_ids is being mutated.
 
-        for req_data in scheduler_output.scheduled_cached_reqs:
-            req_id = req_data.req_id
+        req_data = scheduler_output.scheduled_cached_reqs
+        for i, req_id in enumerate(req_data.req_ids):
             req_state = self.requests[req_id]
 
+            # for req_data in scheduler_output.scheduled_cached_reqs:
+            # req_id = req_data.req_ids[0]
+            # req_state = self.requests[req_id]
+
             # Update the cached states.
-            num_computed_tokens = req_data.num_computed_tokens
+            num_computed_tokens = req_data.num_computed_tokens[i]
+            new_token_ids = req_data.new_token_ids[i]
             # Add the sampled token(s) from the previous step (if any).
             # This doesn't include "unverified" tokens like spec decode tokens.
-            num_new_tokens = (num_computed_tokens +
-                              len(req_data.new_token_ids) -
+            num_new_tokens = (num_computed_tokens + len(new_token_ids) -
                               req_state.num_tokens)
             if num_new_tokens == 1:
                 # Avoid slicing list in most common case.
-                req_state.output_token_ids.append(req_data.new_token_ids[-1])
+                req_state.output_token_ids.append(new_token_ids[-1])
             elif num_new_tokens > 0:
                 req_state.output_token_ids.extend(
-                    req_data.new_token_ids[-num_new_tokens:])
+                    new_token_ids[-num_new_tokens:])
 
             req_index = self.input_batch.get_req_index(req_id)
             # Add new_token_ids to token_ids_cpu.
             # TODO: Update for spec decoding in the future
             start_token_index = num_computed_tokens
-            end_token_index = num_computed_tokens + len(req_data.new_token_ids)
+            end_token_index = num_computed_tokens + len(new_token_ids)
             self.input_batch.token_ids_cpu[
-                req_index,
-                start_token_index:end_token_index] = req_data.new_token_ids
+                req_index, start_token_index:end_token_index] = new_token_ids
 
         if scheduler_output.finished_req_ids:
             for req_id in scheduler_output.finished_req_ids:
@@ -277,8 +280,7 @@ class SpyreModelRunner:
     def _prepare_prompt(self, _: list[NewRequestData]) -> ModelForwardInputs:
         raise NotImplementedError
 
-    def _prepare_decode(self,
-                        _: list[CachedRequestData]) -> ModelForwardInputs:
+    def _prepare_decode(self, _: CachedRequestData) -> ModelForwardInputs:
         raise NotImplementedError
 
     def prepare_model_input(
@@ -291,7 +293,7 @@ class SpyreModelRunner:
         # Prepare input tensors.
         if is_prompt:
             # Assert no running requests
-            assert len(scheduler_output.scheduled_cached_reqs) == 0
+            assert len(scheduler_output.scheduled_cached_reqs.req_ids) == 0
 
             return self._prepare_prompt(scheduler_output.scheduled_new_reqs)
         else:
