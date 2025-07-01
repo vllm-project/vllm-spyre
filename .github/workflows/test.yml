@@ -18,7 +18,7 @@ env:
   VLLM_TARGET_DEVICE: "empty"
   VLLM_PLUGINS: "spyre"
   HF_HUB_CACHE: "${{ github.workspace }}/.cache/huggingface/hub"
-  OMP_NUM_THREADS: "1"
+  VLLM_WORKER_MULTIPROC_METHOD: "spawn"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
