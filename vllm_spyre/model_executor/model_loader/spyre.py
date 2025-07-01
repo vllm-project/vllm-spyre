@@ -37,7 +37,6 @@ class SpyreAttentionMetadata:
     current_tkv_mask: torch.Tensor = None
     left_padded_prompt_mask: torch.Tensor = None
     block_table: torch.Tensor = None
-    only_last_token: bool = False
 
 
 class SpyreCausalLM(nn.Module):
@@ -365,15 +364,13 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         # specify attention type for continuous batching
         extra_kwargs['attn_name'] = "spyre_paged_attn"
 
-        print("(cb) only_last_token", attn_metadata.only_last_token)
-
         output = self.model(
             input_ids,
             position_ids=position_ids,
             mask=mask,
             past_key_value_states=self.past_key_value_states,
             use_cache=use_cache,
-            only_last_token=attn_metadata.only_last_token,
+            only_last_token=False,
             current_tkv_mask=attn_metadata.current_tkv_mask,
             left_padded_prompt_mask=attn_metadata.left_padded_prompt_mask,
             block_table=attn_metadata.block_table,
@@ -413,14 +410,16 @@ class StaticBatchingFmsModel(FmsModelBase):
         use_cache: bool,
         **extra_kwargs,
     ) -> torch.Tensor:
-
-        forward_context = get_forward_context()
-
-        attn_metadata = cast(SpyreAttentionMetadata,
-                             forward_context.attn_metadata)
         # specify attention type for static batching
         extra_kwargs['attn_name'] = "sdpa_bidirectional"
-        print("(sb) only_last_token", attn_metadata.only_last_token)
+
+        if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
+            # In order to calculate prompt logprobs, we have to return the
+            # hidden states from the whole prompt. The static graphs need to be
+            # compiled with this set one way or the other.
+            only_last_token = False
+        else:
+            only_last_token = True
 
         output = self.model(
             input_ids,
@@ -428,7 +427,7 @@ class StaticBatchingFmsModel(FmsModelBase):
             mask=mask,
             past_key_value_states=self.past_key_value_states,
             use_cache=use_cache,
-            only_last_token=attn_metadata.only_last_token,
+            only_last_token=only_last_token,
             **extra_kwargs,
         )
 
