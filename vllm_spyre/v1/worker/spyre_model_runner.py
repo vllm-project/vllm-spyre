@@ -818,7 +818,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         current_tkv_mask = torch.tensor([self.tkv] * len(input_tokens),
                                         dtype=torch.int64)
 
-        # add padding for minimum batch size of 2
+        # add pads for min decode batch size of 2 (Spyre compiler constraint)
         if len(cached_requests) == 1:
             padd_seq_indices = torch.zeros(1, dtype=torch.bool, device="cpu")
             self.model.indices = torch.cat(
@@ -831,6 +831,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             left_padded_prompt_mask = torch.cat(2 * [left_padded_prompt_mask])
             block_table = torch.cat(2 * [block_table])
             slot_mapping = torch.cat(2 * [slot_mapping])
+
+        # assert min batch size 2 for decodes (Spyre compiler constraint)
+        assert len(input_tokens) >= 2
 
         model_inputs = ModelForwardInputs(
             input_tokens=input_tokens,
