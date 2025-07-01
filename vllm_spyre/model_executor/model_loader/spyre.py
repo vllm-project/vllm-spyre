@@ -147,7 +147,7 @@ class FmsModelBase(nn.Module):
         super().__init__()
 
         self.config: PretrainedConfig = model_config.hf_config
-        self.dtype = torch.float16
+        self.dtype = torch.bfloat16
 
         # Actual FMS model
         self.model: nn.Module
