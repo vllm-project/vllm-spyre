@@ -615,7 +615,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                       vllm_config.model_config.max_model_len //
                       self.block_size)
         self._set_free_blocks(num_blocks=num_blocks)
-        self.dummy_req_ids2blocks: list[int] = []
 
         # TODO: Remove this once we can prefill and decode in the same step
         self.prefill_batch = InputBatch(
@@ -643,14 +642,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                 for block_id in blocks_to_free:
                     logger.debug("Freeing block with id: %s", block_id)
                     self.free_blocks.append(block_id)
-
-        # free the blocks used for padding to minimum decode batch size of 2
-        if self.dummy_req_ids2blocks and \
-                (not scheduler_output.total_num_scheduled_tokens \
-                or len(scheduler_output.scheduled_new_reqs) > 0):
-            for freed_block in self.dummy_req_ids2blocks:
-                self.free_blocks.append(freed_block)
-            self.dummy_req_ids2blocks = []
 
     def _prepare_prompt(
         self,
@@ -805,27 +796,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             req_state = self.requests[cached_request.req_id]
             left_padded_prompt_mask.append(req_state.left_padding)
 
-        # add padding for minimum batch size of 2
-        if len(input_tokens) == 1:
-            dummy_req_indices = torch.zeros(1, dtype=torch.bool, device="cpu")
-            self.model.indices = torch.cat(
-                (self.model.indices, dummy_req_indices), -1)
-            assert self.model.indices.size(dim=0) == 2
-
-            n = self.tkv + 1
-            d = self.block_size
-            num_blocks = (n + d - 1) // d
-            for _ in range(num_blocks - len(self.dummy_req_ids2blocks)):
-                self.dummy_req_ids2blocks.append(self.free_blocks.popleft())
-            block_table.append(deque(self.dummy_req_ids2blocks))
-            start_slot = block_table[-1][-1] * self.block_size
-            offset = self.tkv % self.block_size
-            slot = [start_slot + offset]
-            slot_mapping.append(slot)
-            input_tokens.append([0])
-            input_positions.append([self.tkv])
-            left_padded_prompt_mask.append(0)
-
         input_tokens = torch.tensor(input_tokens,
                                     dtype=torch.long,
                                     device=self.device)
@@ -847,6 +817,23 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         current_tkv_mask = torch.tensor([self.tkv] * len(input_tokens),
                                         dtype=torch.int64)
+
+        # add pads for min decode batch size of 2 (Spyre compiler constraint)
+        if len(cached_requests) == 1:
+            padd_seq_indices = torch.zeros(1, dtype=torch.bool, device="cpu")
+            self.model.indices = torch.cat(
+                (self.model.indices, padd_seq_indices), -1)
+            assert self.model.indices.size(dim=0) == 2
+
+            input_tokens = torch.cat(2 * [input_tokens])
+            position_ids = torch.cat(2 * [position_ids])
+            current_tkv_mask = torch.cat(2 * [current_tkv_mask])
+            left_padded_prompt_mask = torch.cat(2 * [left_padded_prompt_mask])
+            block_table = torch.cat(2 * [block_table])
+            slot_mapping = torch.cat(2 * [slot_mapping])
+
+        # assert min batch size 2 for decodes (Spyre compiler constraint)
+        assert len(input_tokens) >= 2
 
         model_inputs = ModelForwardInputs(
             input_tokens=input_tokens,
