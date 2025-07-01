@@ -361,7 +361,7 @@ class SpyreWorker(WorkerBaseV1):
         # one decode iteration across both sequences
         cached_requests = [
             CachedRequestData(
-                req_id=req.req_id,
+                req_ids=[req.req_id],
                 resumed_from_preemption=False,
                 new_token_ids=[
                     valid_token_ids_tensor[torch.randint(
