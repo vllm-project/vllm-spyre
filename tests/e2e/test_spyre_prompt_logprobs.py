@@ -16,6 +16,7 @@ from vllm_spyre.platform import SpyrePlatform
 
 
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
+@pytest.mark.decoder
 def test_prompt_logprobs(
     backend: str,
     monkeypatch: pytest.MonkeyPatch,
@@ -52,6 +53,7 @@ def test_prompt_logprobs(
 
 
 @pytest.mark.cpu
+@pytest.mark.decoder
 def test_prompt_logprobs_must_be_enabled(monkeypatch: pytest.MonkeyPatch):
     # If prompt logprobs is disabled, requests are rejected
     monkeypatch.setenv("VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS", 0)
@@ -62,6 +64,7 @@ def test_prompt_logprobs_must_be_enabled(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.mark.cpu
+@pytest.mark.decoder
 def test_prompt_logprobs_not_supported_with_cb(
         monkeypatch: pytest.MonkeyPatch):
     # Server shouldn't boot with both prompt logprobs and continuous batching
@@ -74,6 +77,7 @@ def test_prompt_logprobs_not_supported_with_cb(
 
 
 @pytest.mark.cpu
+@pytest.mark.decoder
 def test_prompt_logprobs_on_single_requests_only(
         monkeypatch: pytest.MonkeyPatch):
     # Only bs=1 is supported for prompt logprobs
