@@ -10,9 +10,6 @@ import time
 
 from vllm import LLM, SamplingParams
 
-# Continuous batching currently requires installing the branch
-# https://github.com/foundation-model-stack/foundation-model-stack/tree/paged_attn_mock
-
 parser = argparse.ArgumentParser()
 parser.add_argument("--model",
                     type=str,
