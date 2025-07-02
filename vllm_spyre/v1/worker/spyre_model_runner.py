@@ -757,49 +757,59 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
     def _prepare_decode(
         self,
-        cached_requests: CachedRequestData,
+        cached_request_data: CachedRequestData,
     ) -> ModelForwardInputs:
-        assert len(cached_requests.req_ids) > 0
+        assert len(cached_request_data.req_ids) > 0
 
         input_tokens = []
         input_positions = []
         block_table = []
         slot_mapping = []
         left_padded_prompt_mask = []
-        self.model.indices = torch.ones(len(cached_requests.req_ids),
+        self.model.indices = torch.ones(len(cached_request_data.req_ids),
                                         dtype=torch.bool,
                                         device="cpu")
 
         assert len(self.input_batch.req_id_to_index) == len(
-            cached_requests.req_ids)
+            cached_request_data.req_ids)
         # TODO(wallas): I think we can do better here, without sorting or
         # creating an intermediary dictionary
-        cached_reqs_map = {c.req_id: c for c in cached_requests}
+        # for req in cached_request_data:
+        #     cached_reqs_map = {c.req_id: c for c in cached_requests}
+
+        cached_reqs_map = {
+            req_id: i
+            for i, req_id in enumerate(cached_request_data.req_ids)
+        }
+
         req_ids = self.input_batch.sorted_requests_ids
 
+        # for _, req_id in enumerate(cached_request_data.req_ids):
         for req_id in req_ids:
+
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
-            cached_request = cached_reqs_map[req_id]
+            # cached_request = cached_reqs_map[req_id]
 
             # adding new blocks if needed
             if self.tkv // self.block_size + 1 > len(
-                    self.req_ids2blocks[cached_request.req_id]):
-                self.req_ids2blocks[cached_request.req_id].append(
-                    self.free_blocks.popleft())
-            block_table.append(self.req_ids2blocks[cached_request.req_id])
+                    self.req_ids2blocks[req_id]):
+                self.req_ids2blocks[req_id].append(self.free_blocks.popleft())
+            block_table.append(self.req_ids2blocks[req_id])
             # slot_mapping for all blocks of sequence
             start_slot = block_table[-1][-1] * self.block_size
             offset = self.tkv % self.block_size
             slot = [start_slot + offset]
             slot_mapping.append(slot)
-
-            generation_token = cached_request.new_token_ids[-1]
+            new_token_ids = cached_request_data.new_token_ids[
+                cached_reqs_map[req_id]]
+            generation_token = new_token_ids[-1]
             input_tokens.append([generation_token])
-            seq_len = cached_request.num_computed_tokens
+            seq_len = cached_request_data.num_computed_tokens[
+                cached_reqs_map[req_id]]
             input_positions.append([seq_len])
 
-            req_state = self.requests[cached_request.req_id]
+            req_state = self.requests[req_id]
             left_padded_prompt_mask.append(req_state.left_padding)
 
         input_tokens = torch.tensor(input_tokens,
@@ -825,7 +835,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                                         dtype=torch.int64)
 
         # add pads for min decode batch size of 2 (Spyre compiler constraint)
-        if len(cached_requests) == 1:
+        if len(cached_request_data.req_ids) == 1:
             padd_seq_indices = torch.zeros(1, dtype=torch.bool, device="cpu")
             self.model.indices = torch.cat(
                 (self.model.indices, padd_seq_indices), -1)

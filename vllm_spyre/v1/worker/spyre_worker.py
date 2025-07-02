@@ -374,6 +374,7 @@ class SpyreWorker(WorkerBaseV1):
         req_ids = []
         new_token_ids: list[list[int]] = []
         new_block_ids: list[tuple[list[int], ...]] = []
+        num_computed_tokens = []
         for req in dummy_requests:
             req_ids.append(req.req_id)
             new_token_ids.append([
@@ -381,12 +382,13 @@ class SpyreWorker(WorkerBaseV1):
                     0, len(valid_token_ids_tensor), (1, )).item()]
             ]),  # placeholder token
             new_block_ids.append([req.block_ids]),
+            num_computed_tokens.append(prompt_len),
         cached_request_data = CachedRequestData(
             req_ids=req_ids,
             resumed_from_preemption=False,
             new_token_ids=new_token_ids,
             new_block_ids=new_block_ids,
-            num_computed_tokens=[prompt_len],
+            num_computed_tokens=num_computed_tokens,
         )
 
         scheduler_output = SchedulerOutput(
