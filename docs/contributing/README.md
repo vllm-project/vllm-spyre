@@ -57,15 +57,6 @@ For additional features and advanced configurations, refer to the official [MkDo
 
 ### Testing Locally on CPU (No Spyre card)
 
-!!! tip
-    `xgrammar` is automatically installed on `x86_64` systems.
-
-Install `xgrammar` (only for `arm64` systems):
-
-```sh
-uv pip install xgrammar==0.1.19
-``` 
-
 Optionally, download the `ibm-ai-platform/micro-g3.3-8b-instruct-1b` model:
 
 ```sh
