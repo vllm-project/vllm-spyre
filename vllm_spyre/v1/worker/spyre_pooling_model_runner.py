@@ -14,8 +14,11 @@ from vllm.utils import is_pin_memory_available
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 
 from vllm_spyre.platform import SpyrePlatform
+# yapf conflicts with ruff for this block
+# yapf: disable
 from vllm_spyre.v1.worker.spyre_pooling_input_batch import (
     PoolingInputBatch, PoolingRequestState)
+# yapf: enable
 
 if TYPE_CHECKING:
     from vllm.v1.core.sched.output import (CachedRequestData, NewRequestData,

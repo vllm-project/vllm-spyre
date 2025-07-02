@@ -3,7 +3,7 @@
 
 # Based on vllm/vllm/v1/worker/gpu_input_batch.py
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, cast
 
 import torch
@@ -22,7 +22,7 @@ class SamplingRequestState(BaseRequestState):
     sampling_params: SamplingParams = SamplingParams()
     generator: Optional[torch.Generator] = None
 
-    output_token_ids: list[int] = []
+    output_token_ids: list[int] = field(default_factory=list)
 
     @property
     def num_tokens(self) -> int:
