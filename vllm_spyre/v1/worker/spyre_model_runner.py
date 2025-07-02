@@ -747,7 +747,6 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(
     def __init__(self, *args, **kwargs) -> None:
         # Initialize ContinuousBatchingSpyreModelRunner
         super().__init__(*args, **kwargs)
-        self.dummy_req_ids2blocks: list[int] = []
 
     def _prepare_prompt(
         self,
@@ -902,27 +901,6 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(
             req_state = self.requests[cached_request.req_id]
             left_padded_prompt_mask.append(req_state.left_padding)
 
-        # add padding for minimum batch size of 2
-        if len(input_tokens) == 1:
-            dummy_req_indices = torch.zeros(1, dtype=torch.bool, device="cpu")
-            self.model.indices = torch.cat(
-                (self.model.indices, dummy_req_indices), -1)
-            assert self.model.indices.size(dim=0) == 2
-
-            n = self.tkv + 1
-            d = self.block_size
-            num_blocks = (n + d - 1) // d
-            for _ in range(num_blocks - len(self.dummy_req_ids2blocks)):
-                self.dummy_req_ids2blocks.append(self.free_blocks.popleft())
-            block_table.append(deque(self.dummy_req_ids2blocks))
-            start_slot = block_table[-1][-1] * self.block_size
-            offset = self.tkv % self.block_size
-            slot = [start_slot + offset]
-            slot_mapping.append(slot)
-            input_tokens.append([0])
-            input_positions.append([self.tkv])
-            left_padded_prompt_mask.append(0)
-
         input_tokens = torch.tensor(input_tokens,
                                     dtype=torch.long,
                                     device=self.device)
@@ -944,6 +922,23 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(
 
         current_tkv_mask = torch.tensor([self.tkv] * len(input_tokens),
                                         dtype=torch.int64)
+
+        # add pads for min decode batch size of 2 (Spyre compiler constraint)
+        if len(cached_requests) == 1:
+            padd_seq_indices = torch.zeros(1, dtype=torch.bool, device="cpu")
+            self.model.indices = torch.cat(
+                (self.model.indices, padd_seq_indices), -1)
+            assert self.model.indices.size(dim=0) == 2
+
+            input_tokens = torch.cat(2 * [input_tokens])
+            position_ids = torch.cat(2 * [position_ids])
+            current_tkv_mask = torch.cat(2 * [current_tkv_mask])
+            left_padded_prompt_mask = torch.cat(2 * [left_padded_prompt_mask])
+            block_table = torch.cat(2 * [block_table])
+            slot_mapping = torch.cat(2 * [slot_mapping])
+
+        # assert min batch size 2 for decodes (Spyre compiler constraint)
+        assert len(input_tokens) >= 2
 
         model_inputs = ModelForwardInputs(
             input_tokens=input_tokens,
@@ -1045,18 +1040,6 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(
             mask = mask_left
 
         return input_tokens, position_ids, mask
-
-    def update_states(self, scheduler_output):
-
-        super().update_states(scheduler_output)
-
-        # free the blocks used for padding to minimum decode batch size of 2
-        if self.dummy_req_ids2blocks and \
-                (not scheduler_output.total_num_scheduled_tokens \
-                or len(scheduler_output.scheduled_new_reqs) > 0):
-            for freed_block in self.dummy_req_ids2blocks:
-                self.free_blocks.append(freed_block)
-            self.dummy_req_ids2blocks = []
 
     def prepare_model_input(
             self, scheduler_output: SchedulerOutput) -> ModelForwardInputs:
@@ -1230,25 +1213,6 @@ class ContinuousBatchingHeterogenTkvSpyreModelRunner(
             self.req_ids2tkv[req_id] = self.req_ids2tkv[req_id] + 1
             current_tkv_mask.append(self.req_ids2tkv[req_id])
 
-        # add padding for minimum batch size of 2
-        if len(input_tokens) == 1:
-            # there is only one cached request
-            req_id = cached_requests[0].req_id
-            dummy_req_indices = torch.zeros(1, dtype=torch.bool, device="cpu")
-            self.model.indices = torch.cat(
-                (self.model.indices, dummy_req_indices), -1)
-            assert self.model.indices.size(dim=0) == 2
-            block_table.append(deque([0 for i in range(len(block_table[0]))]))
-            start_slot = block_table[-1][-1] * self.block_size
-            offset = self.req_ids2tkv[req_id] % self.block_size
-            slot = [start_slot + offset]
-            slot_mapping.append(slot)
-            # take values from the only other sequence in the batch
-            input_tokens.append([input_tokens[-1][-1]])
-            input_positions.append([input_positions[-1][-1]])
-            left_padded_prompt_mask.append(left_padded_prompt_mask[-1])
-            current_tkv_mask.append(current_tkv_mask[-1])
-
         # padding block table with 0 to make it rectangular
 
         # Find the maximum number of blocks required by any sequence
@@ -1276,6 +1240,23 @@ class ContinuousBatchingHeterogenTkvSpyreModelRunner(
 
         # not needed for decode
         mask = None
+
+        # add pads for min decode batch size of 2 (Spyre compiler constraint)
+        if len(cached_requests) == 1:
+            padd_seq_indices = torch.zeros(1, dtype=torch.bool, device="cpu")
+            self.model.indices = torch.cat(
+                (self.model.indices, padd_seq_indices), -1)
+            assert self.model.indices.size(dim=0) == 2
+
+            input_tokens = torch.cat(2 * [input_tokens])
+            position_ids = torch.cat(2 * [position_ids])
+            current_tkv_mask = torch.cat(2 * [current_tkv_mask])
+            left_padded_prompt_mask = torch.cat(2 * [left_padded_prompt_mask])
+            block_table = torch.cat(2 * [block_table])
+            slot_mapping = torch.cat(2 * [slot_mapping])
+
+        # assert min batch size 2 for decodes (Spyre compiler constraint)
+        assert len(input_tokens) >= 2
 
         model_inputs = ModelForwardInputs(
             input_tokens=input_tokens,

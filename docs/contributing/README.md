@@ -103,16 +103,7 @@ Here is a list of `pytest` markers you can use to filter them:
 
 ### Testing Continuous Batching
 
-!!! attention
-    Continuous batching currently requires the custom installation described below until the FMS custom branch is merged to main.
-
-After completing the setup steps above, install custom FMS branch to enable support for continuous batching:
-
-```sh
-uv pip install git+https://github.com/foundation-model-stack/foundation-model-stack.git@paged_attn_mock --force-reinstall
-```
-
-Then, run the continuous batching tests:
+Run the continuous batching tests:
 
 ```sh
 python -m pytest -v -x tests/e2e -m cb
