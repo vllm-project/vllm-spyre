@@ -372,14 +372,15 @@ class SpyreWorker(WorkerBaseV1):
         #     ) for req in dummy_requests
         # ]
         req_ids = []
-        new_token_ids = []
-        new_block_ids = []
+        new_token_ids: list[list[int]] = []
+        new_block_ids: list[tuple[list[int], ...]] = []
         for req in dummy_requests:
             req_ids.append(req.req_id)
-            new_token_ids.append(valid_token_ids_tensor[torch.randint(
-                0, len(valid_token_ids_tensor),
-                (1, )).item()]),  # placeholder token
-            new_block_ids.append(req.block_ids),
+            new_token_ids.append([
+                valid_token_ids_tensor[torch.randint(
+                    0, len(valid_token_ids_tensor), (1, )).item()]
+            ]),  # placeholder token
+            new_block_ids.append([req.block_ids]),
         cached_request_data = CachedRequestData(
             req_ids=req_ids,
             resumed_from_preemption=False,
@@ -530,23 +531,43 @@ class SpyreWorker(WorkerBaseV1):
         ]
 
         # Set up dummy cached_requests for decode steps
-        cached_requests = [
-            CachedRequestData(
-                req_ids=[req.req_id],
-                resumed_from_preemption=False,
-                new_token_ids=[
-                    valid_token_ids_tensor[torch.randint(
-                        0, len(valid_token_ids_tensor), (1, )).item()]
-                ],  # placeholder token
-                new_block_ids=req.block_ids,
-                num_computed_tokens=req.num_computed_tokens,
-            ) for req in dummy_requests
-        ]
+        # cached_requests = [
+        #     CachedRequestData(
+        #         req_ids=[req.req_id],
+        #         resumed_from_preemption=False,
+        #         new_token_ids=[
+        #             valid_token_ids_tensor[torch.randint(
+        #                 0, len(valid_token_ids_tensor), (1, )).item()]
+        #         ],  # placeholder token
+        #         new_block_ids=req.block_ids,
+        #         num_computed_tokens=req.num_computed_tokens,
+        #     ) for req in dummy_requests
+        # ]
+        req_ids = []
+        new_token_ids: list[list[int]] = []
+        new_block_ids: list[tuple[list[int], ...]] = []
+        num_computed_tokens = []
+        for req in dummy_requests:
+            req_ids.append(req.req_id)
+            new_token_ids.append([
+                valid_token_ids_tensor[torch.randint(
+                    0, len(valid_token_ids_tensor), (1, )).item()]
+            ]),  # placeholder token
+            new_block_ids.append([req.block_ids]),
+            num_computed_tokens.append(req.num_computed_tokens)
+
+        cached_request_data = CachedRequestData(
+            req_ids=req_ids,
+            resumed_from_preemption=False,
+            new_token_ids=new_token_ids,
+            new_block_ids=new_block_ids,
+            num_computed_tokens=num_computed_tokens,
+        )
 
         # Set up scheduler_output for execute_model
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=dummy_requests,
-            scheduled_cached_reqs=CachedRequestData.make_empty(),
+            scheduled_cached_reqs=cached_request_data,
             num_scheduled_tokens={i: prompt_len
                                   for i in range(batch_size)},
             total_num_scheduled_tokens=sum(prompt_len
@@ -565,7 +586,8 @@ class SpyreWorker(WorkerBaseV1):
         # The fixed size warmup needs to happen only in here
         with _maybe_warmup_context():
             self._warmup_model_forward_pass(scheduler_output, dummy_requests,
-                                            cached_requests, num_decode_tokens)
+                                            cached_request_data,
+                                            num_decode_tokens)
         self.perf_metrics.log("warmup 1 time",
                               time.time() - warmup_start_t,
                               batch_size=batch_size,
@@ -576,7 +598,7 @@ class SpyreWorker(WorkerBaseV1):
         logger.info("Warmup forward pass 2/2...")
         warmup2_start_t = time.time()
         self._warmup_model_forward_pass(scheduler_output, dummy_requests,
-                                        cached_requests, num_decode_tokens)
+                                        cached_request_data, num_decode_tokens)
 
         warmup_end_t = time.time()
         warmup_total_t = warmup_end_t - warmup_start_t
@@ -595,12 +617,12 @@ class SpyreWorker(WorkerBaseV1):
         self,
         scheduler_output: SchedulerOutput,
         requests: list[NewRequestData],
-        cached_requests: list[CachedRequestData],
+        cached_requests: CachedRequestData,
         num_decode_tokens,
     ):
         """Handle a complete forward pass"""
         scheduler_output.scheduled_new_reqs = requests
-        scheduler_output.scheduled_cached_reqs = []
+        scheduler_output.scheduled_cached_reqs = CachedRequestData.make_empty()
         self.execute_model(scheduler_output)  # Prefill
 
         # Switch to cached requests to trigger decoding steps
