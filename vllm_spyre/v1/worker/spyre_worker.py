@@ -395,10 +395,8 @@ class SpyreWorker(WorkerBaseV1):
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=[],
             scheduled_cached_reqs=cached_request_data,
-            num_scheduled_tokens={
-                f"warmup-{i}": 1
-                for i in range(batch_size)
-            },
+            num_scheduled_tokens={f"warmup-{i}": 1
+                                  for i in range(batch_size)},
             total_num_scheduled_tokens=batch_size,
             scheduled_spec_decode_tokens={},
             scheduled_encoder_inputs={},
@@ -449,7 +447,7 @@ class SpyreWorker(WorkerBaseV1):
         # Needed to clean up the data of model runner
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=[],
-            scheduled_cached_reqs=[],
+            scheduled_cached_reqs=CachedRequestData.make_empty(),
             num_scheduled_tokens={},
             # NOTE: this means no work to do
             total_num_scheduled_tokens=0,
