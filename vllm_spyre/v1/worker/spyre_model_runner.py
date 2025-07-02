@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Optional, cast
 
 import torch
 from torch import nn
+from vllm.attention import AttentionType
 from vllm.config import DeviceConfig, VllmConfig
 from vllm.forward_context import set_forward_context
 from vllm.logger import init_logger
@@ -17,8 +18,8 @@ from vllm.v1.outputs import SamplerOutput
 from vllm_spyre.model_executor.model_loader.spyre import (
     SpyreAttentionMetadata, SpyreCausalLM)
 from vllm_spyre.platform import SpyrePlatform
-from vllm_spyre.v1.worker.spyre_input_batch import (CachedRequestState,
-                                                    InputBatch)
+from vllm_spyre.v1.worker.spyre_input_batch import (SamplingInputBatch,
+                                                    SamplingRequestState)
 
 if TYPE_CHECKING:
     from vllm.v1.core.sched.output import (CachedRequestData, NewRequestData,
@@ -97,7 +98,7 @@ class SpyreModelRunner:
         self.warmup_mode = True
 
         # Batch state
-        self.input_batch = InputBatch(
+        self.input_batch = SamplingInputBatch(
             max_num_reqs=vllm_config.scheduler_config.max_num_seqs,
             max_model_len=vllm_config.model_config.max_model_len,
             device=self.device,
@@ -106,7 +107,7 @@ class SpyreModelRunner:
         )
 
         # Requests
-        self.requests: dict[str, CachedRequestState] = {}
+        self.requests: dict[str, SamplingRequestState] = {}
 
     def get_model(self) -> nn.Module:
         return self.model
@@ -206,13 +207,12 @@ class SpyreModelRunner:
         # We do at least use the real size from the cache config.
         block_size = self.vllm_config.cache_config.block_size
 
-        attn_spec = FullAttentionSpec(
-            block_size=block_size,
-            num_kv_heads=1,
-            head_size=1,
-            dtype=torch.float16,
-            use_mla=False,
-        )
+        attn_spec = FullAttentionSpec(block_size=block_size,
+                                      num_kv_heads=1,
+                                      head_size=1,
+                                      dtype=torch.float16,
+                                      use_mla=False,
+                                      attn_type=AttentionType.DECODER)
         return {"foo": attn_spec}
 
     def complete_warmup(self):
@@ -272,7 +272,7 @@ class SpyreModelRunner:
             for req_id in scheduler_output.finished_req_ids:
                 self.input_batch.remove_request(req_id)
                 self.requests.pop(req_id, None)
-            self.input_batch.refresh_sampling_metadata()
+            self.input_batch.refresh()
 
     def _prepare_prompt(self, _: list[NewRequestData]) -> ModelForwardInputs:
         raise NotImplementedError
@@ -415,7 +415,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
             else:
                 generator = None
 
-            req_state = CachedRequestState(
+            req_state = SamplingRequestState(
                 req_id=req_id,
                 prompt_token_ids=request_data.prompt_token_ids,
                 sampling_params=sampling_params,
@@ -428,7 +428,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         self.input_batch.padded_batch_size = padded_batch_size
 
         # Refresh sampling metadata after all request are added to the batch
-        self.input_batch.refresh_sampling_metadata()
+        self.input_batch.refresh()
 
         # padding to compiled batch size
         while len(input_token_list) < padded_batch_size:
@@ -617,7 +617,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self._set_free_blocks(num_blocks=num_blocks)
 
         # TODO: Remove this once we can prefill and decode in the same step
-        self.prefill_batch = InputBatch(
+        self.prefill_batch = SamplingInputBatch(
             # TODO: review this, currently we only support prefill for
             # `batch_size=1`
             max_num_reqs=1,
@@ -697,7 +697,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             else:
                 generator = None
 
-            req_state = CachedRequestState(
+            req_state = SamplingRequestState(
                 req_id=req_id,
                 prompt_token_ids=request_data.prompt_token_ids,
                 sampling_params=sampling_params,
@@ -709,8 +709,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             self.prefill_batch.add_request(req_state)
 
         # Refresh sampling metadata after all request are added to the batch
-        self.input_batch.refresh_sampling_metadata()
-        self.prefill_batch.refresh_sampling_metadata()
+        self.input_batch.refresh()
+        self.prefill_batch.refresh()
 
         # TODO: Review this in the future
         # prefills are always of batch size 1 for this milestone

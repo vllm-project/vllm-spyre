@@ -16,6 +16,7 @@ from vllm.distributed import (ensure_model_parallel_initialized,
                               init_distributed_environment)
 from vllm.logger import init_logger
 from vllm.model_executor import set_random_seed
+from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import SamplingParams
 from vllm.v1.core.sched.output import (CachedRequestData, NewRequestData,
                                        SchedulerOutput)
@@ -30,6 +31,8 @@ from vllm_spyre.model_executor.model_loader import spyre_setup
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import (
     ContinuousBatchingSpyreModelRunner, StaticBatchingSpyreModelRunner)
+from vllm_spyre.v1.worker.spyre_pooling_model_runner import (
+    SpyrePoolingModelRunner)
 
 logger = init_logger(__name__)
 
@@ -160,9 +163,12 @@ class SpyreWorker(WorkerBaseV1):
             init_cached_hf_modules()
         self.model_runner: \
             Union[StaticBatchingSpyreModelRunner,
-                  ContinuousBatchingSpyreModelRunner]
+                  ContinuousBatchingSpyreModelRunner, SpyrePoolingModelRunner]
         if self.model_config.task == "embed":
-            raise NotImplementedError
+            self.model_runner = SpyrePoolingModelRunner(
+                self.vllm_config, self.is_driver_worker)
+            self.spyre_warmup_shapes = SpyrePlatform.get_warmup_shapes(
+                self.vllm_config.scheduler_config)
         else:
             if envs_spyre.VLLM_SPYRE_USE_CB:
                 self.model_runner = ContinuousBatchingSpyreModelRunner(
@@ -330,10 +336,12 @@ class SpyreWorker(WorkerBaseV1):
             NewRequestData(
                 req_id="warmup-%d" % (i),
                 prompt_token_ids=warmup_tokens_tensor[i].tolist(),
+                token_type_ids=None,
                 mm_inputs=[],
                 mm_hashes=[],
                 mm_positions=[],
                 sampling_params=SamplingParams(max_tokens=num_decode_tokens),
+                pooling_params=None,
                 block_ids=[0],  # not actually used
                 num_computed_tokens=0,
                 lora_request=None,
@@ -523,19 +531,26 @@ class SpyreWorker(WorkerBaseV1):
         if "pooling_params" in NewRequestData.__dataclass_fields__:
             extra_kwargs["pooling_params"] = None
 
+        sampling_params, pooling_params = None, None
+        if self.model_config.task != "embed":
+            sampling_params = SamplingParams(max_tokens=num_decode_tokens)
+        else:
+            pooling_params = PoolingParams()
+
         # Set up dummy requests for prefill steps
         dummy_requests = [
-            NewRequestData(
-                req_id="warmup",
-                prompt_token_ids=warmup_tokens_tensor[i].tolist(),
-                mm_inputs=[],
-                mm_hashes=[],
-                mm_positions=[],
-                sampling_params=SamplingParams(max_tokens=num_decode_tokens),
-                block_ids=[0],
-                num_computed_tokens=0,
-                lora_request=None,
-                **extra_kwargs) for i in range(batch_size)
+            NewRequestData(req_id="warmup",
+                           prompt_token_ids=warmup_tokens_tensor[i].tolist(),
+                           token_type_ids=None,
+                           mm_inputs=[],
+                           mm_hashes=[],
+                           mm_positions=[],
+                           sampling_params=sampling_params,
+                           pooling_params=pooling_params,
+                           block_ids=[0],
+                           num_computed_tokens=0,
+                           lora_request=None,
+                           **extra_kwargs) for i in range(batch_size)
         ]
 
         # Set up dummy cached_requests for decode steps
