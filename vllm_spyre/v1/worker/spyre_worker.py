@@ -458,8 +458,14 @@ class SpyreWorker(WorkerBaseV1):
         )
         self.execute_model(scheduler_output)
         # satisfy mypy
-        model_runner: ContinuousBatchingSpyreModelRunner = \
-            cast(ContinuousBatchingSpyreModelRunner, self.model_runner)
+        model_runner: Union[ContinuousBatchingHomogenTkvSpyreModelRunner,
+                            ContinuousBatchingHeterogenTkvSpyreModelRunner]
+        if not envs_spyre.VLLM_SPYRE_HETEROGEN_TKV:
+            model_runner = cast(ContinuousBatchingHomogenTkvSpyreModelRunner,
+                                self.model_runner)
+        else:
+            model_runner = cast(ContinuousBatchingHeterogenTkvSpyreModelRunner,
+                                self.model_runner)
         model_runner.tkv = 0
 
     def _get_num_blocks_available(self) -> int:
