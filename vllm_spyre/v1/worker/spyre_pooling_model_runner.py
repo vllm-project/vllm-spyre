@@ -18,6 +18,7 @@ from vllm_spyre.platform import SpyrePlatform
 # yapf: disable
 from vllm_spyre.v1.worker.spyre_pooling_input_batch import (
     PoolingInputBatch, PoolingRequestState)
+
 # yapf: enable
 
 if TYPE_CHECKING:
