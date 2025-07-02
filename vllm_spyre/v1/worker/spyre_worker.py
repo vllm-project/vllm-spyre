@@ -63,8 +63,7 @@ class SpyreWorker(WorkerBaseV1):
         """Prepare model for execution through compilation/warmup."""
 
         if envs_spyre.VLLM_SPYRE_USE_CB:
-            with _maybe_warmup_context():
-                self._warmup_spyre_dynamic_size(self.restricted_tokens)
+            self._warmup_spyre_dynamic_size(self.restricted_tokens)
             return
 
         num_shape_combinations = len(self.spyre_warmup_shapes)
@@ -320,7 +319,7 @@ class SpyreWorker(WorkerBaseV1):
 
         # Sample from the valid token ids
         warmup_tokens_tensor = valid_token_ids_tensor[torch.randint(
-            0, len(valid_token_ids_tensor), (batch_size, prompt_len))]
+            0, len(valid_token_ids_tensor), (batch_size + 1, prompt_len))]
 
         # TODO temporary until 'pooling_params' makes it to a release version
         # in vllm
@@ -338,15 +337,50 @@ class SpyreWorker(WorkerBaseV1):
                 block_ids=[0],  # not actually used
                 num_computed_tokens=0,
                 lora_request=None,
-                **extra_kwargs) for i in range(batch_size)
+                **extra_kwargs) for i in range(batch_size + 1)
         ]
+        add_dummy_request = dummy_requests.pop(-1)
 
-        for i, req in enumerate(dummy_requests):
+        with _maybe_warmup_context():
+            for i, req in enumerate(dummy_requests):
+                scheduler_output = SchedulerOutput(
+                    scheduled_new_reqs=[req],
+                    scheduled_cached_reqs=[],
+                    num_scheduled_tokens={req.req_id: prompt_len},
+                    total_num_scheduled_tokens=prompt_len,
+                    scheduled_spec_decode_tokens={},
+                    scheduled_encoder_inputs={},
+                    num_common_prefix_blocks=0,
+                    finished_req_ids=set(),
+                    free_encoder_input_ids=[],
+                    structured_output_request_ids={},
+                    grammar_bitmask=None,
+                )
+                logger.info("Warmup prefill %d/%d...", i + 1, batch_size)
+                self.execute_model(scheduler_output)
+
+            # one decode iteration across both sequences
+            cached_requests = [
+                CachedRequestData(
+                    req_id=req.req_id,
+                    resumed_from_preemption=False,
+                    new_token_ids=[
+                        valid_token_ids_tensor[torch.randint(
+                            0, len(valid_token_ids_tensor), (1, )).item()]
+                    ],  # placeholder token
+                    new_block_ids=req.block_ids,
+                    num_computed_tokens=prompt_len,
+                ) for req in dummy_requests
+            ]
+
             scheduler_output = SchedulerOutput(
-                scheduled_new_reqs=[req],
-                scheduled_cached_reqs=[],
-                num_scheduled_tokens={req.req_id: prompt_len},
-                total_num_scheduled_tokens=prompt_len,
+                scheduled_new_reqs=[],
+                scheduled_cached_reqs=cached_requests,
+                num_scheduled_tokens={
+                    f"warmup-{i}": 1
+                    for i in range(batch_size)
+                },
+                total_num_scheduled_tokens=batch_size,
                 scheduled_spec_decode_tokens={},
                 scheduled_encoder_inputs={},
                 num_common_prefix_blocks=0,
@@ -355,29 +389,17 @@ class SpyreWorker(WorkerBaseV1):
                 structured_output_request_ids={},
                 grammar_bitmask=None,
             )
-            logger.info("Warmup prefill %d/%d...", i + 1, batch_size)
+            logger.info("Warmup decode 1/1...")
             self.execute_model(scheduler_output)
+            self._cleanup_model_runner(request=dummy_requests)
 
-        # one decode iteration across both sequences
-        cached_requests = [
-            CachedRequestData(
-                req_id=req.req_id,
-                resumed_from_preemption=False,
-                new_token_ids=[
-                    valid_token_ids_tensor[torch.randint(
-                        0, len(valid_token_ids_tensor), (1, )).item()]
-                ],  # placeholder token
-                new_block_ids=req.block_ids,
-                num_computed_tokens=prompt_len,
-            ) for req in dummy_requests
-        ]
-
+        # doing one additional prefill outside the warmup_context seems to be
+        # necessary to have reasonable TTFT for the first prefill after warmup
         scheduler_output = SchedulerOutput(
-            scheduled_new_reqs=[],
-            scheduled_cached_reqs=cached_requests,
-            num_scheduled_tokens={f"warmup-{i}": 1
-                                  for i in range(batch_size)},
-            total_num_scheduled_tokens=batch_size,
+            scheduled_new_reqs=[add_dummy_request],
+            scheduled_cached_reqs=[],
+            num_scheduled_tokens={add_dummy_request.req_id: prompt_len},
+            total_num_scheduled_tokens=prompt_len,
             scheduled_spec_decode_tokens={},
             scheduled_encoder_inputs={},
             num_common_prefix_blocks=0,
@@ -386,29 +408,9 @@ class SpyreWorker(WorkerBaseV1):
             structured_output_request_ids={},
             grammar_bitmask=None,
         )
-        logger.info("Warmup decode 1/1...")
-
+        logger.info("Warmup additional prefill...")
         self.execute_model(scheduler_output)
-
-        # Needed to clean up the data of model runner
-        scheduler_output = SchedulerOutput(
-            scheduled_new_reqs=[],
-            scheduled_cached_reqs=[],
-            num_scheduled_tokens={},
-            # NOTE: this means no work to do
-            total_num_scheduled_tokens=0,
-            scheduled_spec_decode_tokens={},
-            scheduled_encoder_inputs={},
-            num_common_prefix_blocks=0,
-            # The requests to be removed
-            finished_req_ids=set([r.req_id for r in dummy_requests]),
-            free_encoder_input_ids=[],
-            structured_output_request_ids={},
-            grammar_bitmask=None,
-        )
-        self.execute_model(scheduler_output)
-
-        model_runner.tkv = 0
+        self._cleanup_model_runner(request=[add_dummy_request])
 
         # get the number or pages from the actual Spyre card after the warmup
         # and set it accordingly in the model runner and the kv cache size
@@ -423,6 +425,29 @@ class SpyreWorker(WorkerBaseV1):
         logger.info("Warmup took %.3fs", warmup_total_t)
 
         maybe_override_signals_handler()
+
+    def _cleanup_model_runner(self, request) -> None:
+        # Needed to clean up the data of model runner
+        scheduler_output = SchedulerOutput(
+            scheduled_new_reqs=[],
+            scheduled_cached_reqs=[],
+            num_scheduled_tokens={},
+            # NOTE: this means no work to do
+            total_num_scheduled_tokens=0,
+            scheduled_spec_decode_tokens={},
+            scheduled_encoder_inputs={},
+            num_common_prefix_blocks=0,
+            # The requests to be removed
+            finished_req_ids=set([r.req_id for r in request]),
+            free_encoder_input_ids=[],
+            structured_output_request_ids={},
+            grammar_bitmask=None,
+        )
+        self.execute_model(scheduler_output)
+        # satisfy mypy
+        model_runner: ContinuousBatchingSpyreModelRunner = \
+            cast(ContinuousBatchingSpyreModelRunner, self.model_runner)
+        model_runner.tkv = 0
 
     def _get_num_blocks_available(self) -> int:
         """Function returns the number of available blocks/pages.
