@@ -19,10 +19,10 @@ _SAMPLING_EPS = 1e-5
 @dataclass
 class SamplingRequestState(BaseRequestState):
 
-    sampling_params: SamplingParams
-    generator: Optional[torch.Generator]
+    sampling_params: SamplingParams = SamplingParams()
+    generator: Optional[torch.Generator] = None
 
-    output_token_ids: list[int]
+    output_token_ids: list[int] = []
 
     @property
     def num_tokens(self) -> int:
@@ -396,3 +396,12 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
     @property
     def no_allowed_token_ids(self) -> bool:
         return len(self.has_allowed_token_ids) == 0
+
+    @property
+    def requests_ids(self) -> list[str]:
+        return list(self.req_id_to_index.keys())
+
+    @property
+    def sorted_requests_ids(self) -> list[str]:
+        return sorted(self.req_id_to_index,
+                      key=self.req_id_to_index.get)  # type: ignore

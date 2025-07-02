@@ -1,6 +1,6 @@
 """Verification of handling prompt length exceeding warmup shapes
 
-Run `python -m pytest tests/test_spyre_max_prompt_length.py`.
+Run `python -m pytest tests/e2e/test_spyre_max_prompt_length.py`.
 """
 
 import pytest
@@ -15,14 +15,10 @@ from vllm import LLM, SamplingParams
     [[(64, 20, 4)], [(64, 20, 4),
                      (128, 20, 4)]])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("vllm_version",
-                         [pytest.param("V1", marks=pytest.mark.v1, id="v1")
-                          ])  # v0 doesn't support multiple shapes
 def test_max_prompt_len_and_new_tokens(model: str,
                                        warmup_shapes: list[tuple[int, int,
                                                                  int]],
-                                       backend: str, vllm_version: str,
-                                       monkeypatch) -> None:
+                                       backend: str, monkeypatch) -> None:
     '''
     Simple test that for static batching:
     - prompts cannot exceed the maximum prompt length of all warmup shapes
@@ -33,7 +29,7 @@ def test_max_prompt_len_and_new_tokens(model: str,
     '''
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     patch_warmup_shapes(warmup_shapes, monkeypatch)
-    monkeypatch.setenv("VLLM_USE_V1", "1" if vllm_version == "V1" else "0")
+    monkeypatch.setenv("VLLM_USE_V1", "1")
 
     max_prompt_length = max([t[0] for t in warmup_shapes])
     max_new_tokens = max([t[1] for t in warmup_shapes])

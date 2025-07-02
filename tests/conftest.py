@@ -15,7 +15,7 @@ if "VLLM_USE_V1" in os.environ:
 
 import pytest
 import torch
-from spyre_util import RemoteOpenAIServer
+from spyre_util import RemoteOpenAIServer, skip_unsupported_tp_size
 from vllm.connections import global_http_connection
 from vllm.distributed import cleanup_dist_env_and_memory
 
@@ -57,6 +57,20 @@ def dynamo_reset():
     torch._dynamo.reset()
 
 
+# See https://github.com/okken/pytest-runtime-xfail/blob/master/pytest_runtime_xfail.py
+# This allows us to conditionally set expected failures at test runtime
+@pytest.fixture()
+def runtime_xfail(request):
+    """
+    Call runtime_xfail() to mark running test as xfail.
+    """
+
+    def _xfail(reason=''):
+        request.node.add_marker(pytest.mark.xfail(reason=reason))
+
+    return _xfail
+
+
 @pytest.fixture(scope="function")
 def remote_openai_server(request):
     """ Fixture to set up a test server."""
@@ -68,7 +82,6 @@ def remote_openai_server(request):
         model = params['model']
         warmup_shape = params['warmup_shape']
         backend = params['backend']
-        vllm_version = params['vllm_version']
     except KeyError as e:
         raise pytest.UsageError(
             "Error setting up remote_openai_server params") from e
@@ -79,20 +92,20 @@ def remote_openai_server(request):
     warmup_prompt_length = [t[0] for t in warmup_shape]
     warmup_new_tokens = [t[1] for t in warmup_shape]
     warmup_batch_size = [t[2] for t in warmup_shape]
-    v1_flag = "1" if vllm_version == "V1" else "0"
     env_dict = {
         "VLLM_SPYRE_WARMUP_PROMPT_LENS":
         ','.join(map(str, warmup_prompt_length)),
         "VLLM_SPYRE_WARMUP_NEW_TOKENS": ','.join(map(str, warmup_new_tokens)),
         "VLLM_SPYRE_WARMUP_BATCH_SIZES": ','.join(map(str, warmup_batch_size)),
         "VLLM_SPYRE_DYNAMO_BACKEND": backend,
-        "VLLM_USE_V1": v1_flag
+        "VLLM_USE_V1": "1"
     }
 
     # Add extra server args if present in test
     server_args = ["--quantization", quantization] if quantization else []
     if 'tensor_parallel_size' in params:
         tp_size = params['tensor_parallel_size']
+        skip_unsupported_tp_size(int(tp_size))
         server_args.extend(["--tensor-parallel-size", str(tp_size)])
 
     try:

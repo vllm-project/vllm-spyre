@@ -18,6 +18,7 @@ class BaseRequestState:
 
     req_id: str
     prompt_token_ids: list[int]
+    left_padding: int = 0  # Defaults to 0, i. e. not padding
 
     @property
     @abstractmethod

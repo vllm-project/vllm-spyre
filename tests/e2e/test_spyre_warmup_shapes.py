@@ -1,9 +1,7 @@
 """Verification of Spyre warmup shapes
 
-Run `python -m pytest tests/test_spyre_warmup_shapes.py`.
+Run `python -m pytest tests/e2e/test_spyre_warmup_shapes.py`.
 """
-
-import os
 
 import pytest
 from spyre_util import (compare_results, generate_hf_output,
@@ -12,13 +10,9 @@ from spyre_util import (compare_results, generate_hf_output,
 from vllm import SamplingParams
 
 
-# temporary for filtering until bug with caching gets fixed
-@pytest.mark.skipif(
-    os.environ.get("TORCH_SENDNN_CACHE_ENABLE") == "1",
-    reason="torch_sendnn caching is currently broken with this configuration")
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("prompts", [
-    7 * [
+    4 * [
         "Hello",
         "Below is an instruction that describes a task. Write a response that "
         "appropriately completes the request. Be polite in your response to "
@@ -29,17 +23,15 @@ from vllm import SamplingParams
     ]
 ])
 @pytest.mark.parametrize(
-    "warmup_shapes", [[(64, 20, 8),
-                       (128, 20, 4)]])  # (prompt_length/new_tokens/batch_size)
+    "warmup_shapes", [[(64, 20, 4),
+                       (128, 20, 2)]])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("vllm_version",
-                         [pytest.param("V1", marks=pytest.mark.v1, id="v1")])
 def test_output(
     model: str,
     prompts: list[str],
     warmup_shapes: list[tuple[int, int, int]],
     backend: str,
-    vllm_version: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     '''
     The warmup is based on two shapes, that 'overlap' each
@@ -78,7 +70,7 @@ def test_output(
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
         backend=backend,
-        vllm_version=vllm_version)
+        monkeypatch=monkeypatch)
 
     hf_results = generate_hf_output(model=model,
                                     prompts=prompts,
@@ -97,14 +89,12 @@ def test_output(
 @pytest.mark.parametrize("prompts", [["Hello"]])
 @pytest.mark.parametrize("warmup_shapes", [[(65, 1, 1)]])
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("vllm_version",
-                         [pytest.param("V1", marks=pytest.mark.v1, id="v1")])
 def test_invalid_prompt_len(
     model: str,
     prompts: list[str],
     warmup_shapes: list[tuple[int, int, int]],
     backend: str,
-    vllm_version: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     '''
     Expects an error to be raised if the warmup prompt length
@@ -125,4 +115,4 @@ def test_invalid_prompt_len(
                                    sampling_params=vllm_sampling_params,
                                    tensor_parallel_size=1,
                                    backend=backend,
-                                   vllm_version=vllm_version)
+                                   monkeypatch=monkeypatch)

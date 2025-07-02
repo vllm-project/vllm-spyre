@@ -10,8 +10,14 @@ on:
   pull_request:
     branches:
       - "main"
-    paths-ignore:
-      - "**.md"
+    paths:
+      - ".github/workflows/build_docker.yml"
+      - "docker/**"
+      - "vllm_spyre/**/*.py"
+      - "pyproject.toml"
+      - "uv.lock"
+  release:
+    types: [published]
 
 defaults:
   run:
@@ -31,6 +37,11 @@ jobs:
     steps:
     - name: "Checkout"
       uses: actions/checkout@v4
+      # We need to fetch history and tags so that we can correctly version the
+      # vllm_spyre package, since it uses setuptools_scm to version based on
+      # git tags.
+      with:
+        fetch-depth: 0
 
     - name: "Set up QEMU"
       uses: docker/setup-qemu-action@v3

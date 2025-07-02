@@ -1,43 +1,52 @@
 name: Type Check
 
 on:
-  # Trigger the workflow on push or pull request, but only for the main branch.
-  # Don't use pull_request.paths filter since this workflow is required for
-  # all pull requests on main irrespective of file type or location.
+  # Don't use `paths` or `paths-ignore` filter since this workflow is required
+  # for all pull requests on main irrespective of file type or location
+  # Use `changed-src-files` step to determine if source code was changed
   pull_request:
     branches:
       - main
   push:
     branches:
       - main
-    paths:
-      - '**/*.py'
-      - '.github/workflows/type_check.yaml'
-      - 'tools/type_check.sh'
-      - 'pyproject.toml'
 
 jobs:
   type-check:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12"]
     steps:
-    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+    - name: "Checkout"
+      uses: actions/checkout@v4
+
+    - name: "Get changed source files"
+      id: changed-src-files
+      uses: tj-actions/changed-files@v46
+      with: # Avoid using single or double quotes for multiline patterns
+        files: |
+          .github/workflows/type_check.yaml
+          tools/type_check.sh
+          pyproject.toml
+          **.py
+
+    - name: "Set up Python ${{ matrix.python-version }}"
+      if: steps.changed-src-files.outputs.any_changed == 'true'
+      uses: astral-sh/setup-uv@v5
       with:
         python-version: ${{ matrix.python-version }}
-    - name: Install dependencies
-      run: |
-        # TODO: use `uv`
-        python -m pip install --upgrade pip
-        pip install mypy==1.11.1
-        pip install types-setuptools
-        pip install types-PyYAML
-        pip install types-requests
-        pip install types-setuptools
-    - name: Mypy
+        enable-cache: true
+        ignore-nothing-to-cache: true
+        cache-dependency-glob: |
+          pyproject.toml
+
+    - name: "Install dependencies"
+      if: steps.changed-src-files.outputs.any_changed == 'true'
+      run: uv sync --frozen --only-group lint
+
+    - name: "Run mypy"
+      if: steps.changed-src-files.outputs.any_changed == 'true'
       run: |
         echo "::add-matcher::.github/workflows/matchers/mypy.json"
         tools/type_check.sh 1 ${{ matrix.python-version }}

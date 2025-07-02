@@ -12,8 +12,8 @@ readme = "README.md"
 license = {text = "Apache 2"}
 dependencies = [
     "fms-model-optimizer>=0.2.0",
-    "ibm-fms==1.0.0",
-    "vllm>=0.8.5",
+    "ibm-fms==1.1.0",
+    "vllm>=0.9.0,!=0.9.1",
 ]
 requires-python = ">=3.9"
 dynamic = ["version"]
@@ -116,13 +116,12 @@ skip_gitignore = true
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+asyncio_default_fixture_loop_scope = "function"
 
-# begin-test-markers-definition
+# --8<-- [start:test-markers-definition]
 markers = [
     "skip_global_cleanup",
     "e2e: Tests using end-to-end engine spin-up",
-    "v0: Tests using vLLM v0 engine",
-    "v1: Tests using vLLM v1 engine",
     "cb: Continuous batching tests",
     "cpu: Tests using CPU (i.e. eager) backend",
     "spyre: Tests using Spyre hardware backend",
@@ -133,17 +132,20 @@ markers = [
     "utils: Tests for utility functions",
     "worker: Tests for worker logic",
 ]
-# end-test-markers-definition
+# --8<-- [end:test-markers-definition]
 
 [tool.pymarkdown]
 plugins.md013.enabled = false # line-length
 plugins.md041.enabled = false # first-line-h1
 plugins.md033.enabled = false # inline-html
 plugins.md024.allow_different_nesting = true # no-duplicate-headers
+plugins.md007.enabled = true
+plugins.md007.indent = 4
 
 [dependency-groups]
 dev = [
     "pytest==8.3.4",
+    "pytest-asyncio>=1.0.0",
     "pytest-forked==1.6.0",
     "pytest-timeout==2.3.1",
     "requests==2.32.3",

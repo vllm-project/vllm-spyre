@@ -1,21 +1,15 @@
 name: Test
 
 on:
-  # Don't use pull_request.paths filter since this workflow is required for
-  # all pull requests on main irrespective of file type or location
+  # Don't use `paths` or `paths-ignore` filter since this workflow is required
+  # for all pull requests on main irrespective of file type or location
+  # Use `changed-src-files` step to determine if source code was changed
   pull_request:
     branches:
       - main
-    paths-ignore:
-      - 'docs/**'
   push:
     branches:
       - main
-    paths:
-      - "tests/**/*.py"
-      - "vllm_spyre/**/*.py"
-      - pyproject.toml
-      - .github/workflows/test.yml
   workflow_dispatch:
 
 env:
@@ -23,7 +17,6 @@ env:
   VLLM_CPU_DISABLE_AVX512: "true"
   VLLM_TARGET_DEVICE: "empty"
   VLLM_PLUGINS: "spyre"
-  VLLM_SPYRE_TEST_MODEL_DIR: "${{ github.workspace }}/models"
   HF_HUB_CACHE: "${{ github.workspace }}/.cache/huggingface/hub"
 
 concurrency:
@@ -45,21 +38,18 @@ jobs:
           - name: "vLLM:main"
             repo: "git+https://github.com/vllm-project/vllm --branch main"
         test_suite:
-          - name: "V0-e2e"
-            markers: "v0 and cpu and e2e"
-            flags: "--timeout=300"
-          - name: "V1-e2e"
-            markers: "v1 and cpu and e2e"
+          - name: "static batching"
+            markers: "cpu and decoder and not cb"
             flags: "--timeout=300 --forked"
-          - name: "V1-worker"
-            markers: "v1 and not e2e"
-            flags: "--timeout=300"
-          - name: "utils"
-            markers: "utils"
-            flags: "--timeout=300"
-          - name: "cb"
-            markers: "cb"
+          - name: "embedding"
+            markers: "cpu and embedding"
             flags: "--timeout=300 --forked"
+          - name: "continuous batching"
+            markers: "cpu and cb"
+            flags: "--timeout=300 --forked"
+          - name: "worker and utils"
+            markers: "not e2e"
+            flags: "--timeout=300"
 
     name: "${{ matrix.test_suite.name }} (${{ matrix.vllm_version.name }})"
 
@@ -69,11 +59,24 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: "Get changed source files"
+        id: changed-src-files
+        uses: tj-actions/changed-files@v46
+        with: # Avoid using single or double quotes for multiline patterns
+          files: |
+            .github/workflows/test.yml
+            pyproject.toml
+            uv.lock
+            tests/**/*.py
+            vllm_spyre/**/*.py
+
       - name: "Install PyTorch"
+        if: steps.changed-src-files.outputs.any_changed == 'true'
         run: |
           pip install torch=="2.5.1+cpu" --index-url https://download.pytorch.org/whl/cpu
 
       - name: "Install uv"
+        if: steps.changed-src-files.outputs.any_changed == 'true'
         uses: astral-sh/setup-uv@v5
         with:
           version: "latest"
@@ -84,11 +87,12 @@ jobs:
             pyproject.toml
 
       - name: "Set vLLM version"
-        if: matrix.vllm_version.repo
+        if: (steps.changed-src-files.outputs.any_changed == 'true' && matrix.vllm_version.repo)
         run: |
           uv add ${{ matrix.vllm_version.repo }}
 
       - name: "Install vLLM with Spyre plugin"
+        if: steps.changed-src-files.outputs.any_changed == 'true'
         run: |
           uv venv .venv --system-site-packages
           source .venv/bin/activate
@@ -101,6 +105,7 @@ jobs:
           uv pip install -v .
 
       - name: "Restore HF models cache"
+        if: steps.changed-src-files.outputs.any_changed == 'true'
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.HF_HUB_CACHE }}
@@ -109,41 +114,43 @@ jobs:
             ${{ runner.os }}-hub-cache
 
       - name: "Download HF models"
+        if: steps.changed-src-files.outputs.any_changed == 'true'
         run: |
-          mkdir -p "${VLLM_SPYRE_TEST_MODEL_DIR}"
-
           # We are caching HF models (HF_HUB_CACHE) for reliability rather than speed, since HF downloads are flaky for concurrent jobs.
           # Be careful when adding models to the cache here, as the GHA cache is limited to 10 GB.
           # If a new model is added here, hashFiles('cached_models.txt') should create a new hash key. The previous cache blob can then
           # be removed by an admin or can be left to expire after 7 days.
           
-          download_jackfram_llama() {
-            python -c "from transformers import pipeline; pipeline('text-generation', model='JackFram/llama-160m')"
-            VARIANT=$(ls "${HF_HUB_CACHE}/models--JackFram--llama-160m/snapshots/")
-            ln -s "${HF_HUB_CACHE}/models--JackFram--llama-160m/snapshots/${VARIANT}" "${VLLM_SPYRE_TEST_MODEL_DIR}/llama-194m"
+          download_tinygranite() {
+            python -c "from transformers import pipeline; pipeline('text-generation', model='ibm-ai-platform/micro-g3.3-8b-instruct-1b')"
           }
           download_roberta_large() {
             python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-roberta-large-v1')"
-            VARIANT=$(ls "${HF_HUB_CACHE}/models--sentence-transformers--all-roberta-large-v1/snapshots/")
-            ln -s "${HF_HUB_CACHE}/models--sentence-transformers--all-roberta-large-v1/snapshots/${VARIANT}" "${VLLM_SPYRE_TEST_MODEL_DIR}/all-roberta-large-v1"
           }
-          download_jackfram_llama &
+          # tinyllama used for static batching tests because static batching is _too slow_
+          download_tinyllama() {
+            python -c "from transformers import pipeline; pipeline('text-generation', model='JackFram/llama-160m')"
+          }
+          download_tinygranite &
           download_roberta_large &
+          download_tinyllama &
           wait
-          ls "${VLLM_SPYRE_TEST_MODEL_DIR}" > cached_models.txt
+          ls "${HF_HUB_CACHE}" > cached_models.txt
 
       - name: "Save HF models cache"
-        if: ( github.event_name != 'pull_request' && strategy.job-index == 0 )
+        if: ( steps.changed-src-files.outputs.any_changed == 'true' && github.event_name != 'pull_request' && strategy.job-index == 0 )
         uses: actions/cache/save@v4
         with:
           path: ${{ env.HF_HUB_CACHE }}
           key: ${{ runner.os }}-hub-cache-${{ hashFiles('cached_models.txt') }}
 
       - name: "Run tests"
+        if: steps.changed-src-files.outputs.any_changed == 'true'
         env:
           MASTER_PORT: 12355
           MASTER_ADDR: localhost
           DISTRIBUTED_STRATEGY_IGNORE_MODULES: WordEmbedding
+          VLLM_SPYRE_TEST_MODEL_LIST: "${{ matrix.test_suite.name == 'static batching' && 'JackFram/llama-160m' || '' }}"
         run: |
           # Delete the source code so we can ensure we're testing the installed
           # wheel
@@ -152,10 +159,6 @@ jobs:
           # `uv run`, to avoid having `uv run` re-sync any dependencies or 
           # re-install the vllm_sypre package from source
           source .venv/bin/activate
-          if [ ${{ matrix.test_suite.markers }} == "cb" ]; then
-          # install custom fms branch
-              uv pip install git+https://github.com/foundation-model-stack/foundation-model-stack@paged_attn_mock --force-reinstall
-          fi
-          # commands to run if condition is true
+
           python3 -m pytest ${{ matrix.test_suite.flags }} \
             tests -v -m "${{ matrix.test_suite.markers }}"

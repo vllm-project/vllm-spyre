@@ -1,12 +1,12 @@
 """Verification of vLLM output by comparing with HF
 
-Run `python -m pytest tests/test_spyre_tensor_parallel.py`.
+Run `python -m pytest tests/e2e/test_spyre_tensor_parallel.py`.
 """
 
 import pytest
-from spyre_util import (VLLM_VERSIONS, compare_results, generate_hf_output,
+from spyre_util import (compare_results, generate_hf_output,
                         generate_spyre_vllm_output, get_spyre_backend_list,
-                        get_spyre_model_list)
+                        get_spyre_model_list, skip_unsupported_tp_size)
 from vllm import SamplingParams
 
 
@@ -21,17 +21,16 @@ from vllm import SamplingParams
     "warmup_shapes",
     [[(64, 20, 4)]])  #,[(64,20,8)],[(128,20,4)],[(128,20,8)]])
 # (prompt_length/new_tokens/batch_size)
-@pytest.mark.parametrize("tp_size", [2])
+@pytest.mark.parametrize("tp_size", [2, 4, 8])
 @pytest.mark.parametrize(
     "backend", [b for b in get_spyre_backend_list() if "eager" not in str(b)])
-@pytest.mark.parametrize("vllm_version", VLLM_VERSIONS)
 def test_output(
     model: str,
     prompts: list[str],
     warmup_shapes: list[tuple[int, int, int]],
     tp_size: int,
     backend: str,
-    vllm_version: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     '''
     The warmup is based on one or multiple shapes. After the warmup,
@@ -46,6 +45,7 @@ def test_output(
     test using 'pytest --capture=no tests/spyre/test_spyre_tensore_parallel.py'
     After debugging, DISABLE_ASSERTS should be reset to 'False'.
     '''
+    skip_unsupported_tp_size(tp_size)
 
     max_new_tokens = max([t[1] for t in warmup_shapes])
 
@@ -64,7 +64,7 @@ def test_output(
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=tp_size,
         backend=backend,
-        vllm_version=vllm_version)
+        monkeypatch=monkeypatch)
 
     hf_results = generate_hf_output(model=model,
                                     prompts=prompts,

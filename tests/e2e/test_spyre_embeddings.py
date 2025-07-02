@@ -1,6 +1,6 @@
 """Verification of vLLM output by comparing with HF
 
-Run `python -m pytest tests/test_spyre_embeddings.py`.
+Run `python -m pytest tests/e2e/test_spyre_embeddings.py`.
 """
 
 import pytest
@@ -18,12 +18,10 @@ from spyre_util import (compare_embedding_results, get_spyre_backend_list,
 ]])
 @pytest.mark.parametrize("warmup_shape",
                          [(64, 4), (64, 8), (128, 4),
-                          (128, 8)])  # (prompt_length/new_tokens/batch_size)
+                          (128, 8)])  # (prompt_length/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize(
-    "vllm_version",
-    [pytest.param("V0", marks=pytest.mark.v0, id="v0")
-     ])  # TODO: Replace with VLLM_VERSIONS when v1 is supported.
+# TODO: Add it when v1 is supported.
+@pytest.mark.parametrize("vllm_version", ["V0"])
 def test_output(
     model: str,
     prompts: list[str],
