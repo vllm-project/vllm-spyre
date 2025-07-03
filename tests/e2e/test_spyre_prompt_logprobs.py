@@ -8,7 +8,7 @@ import pytest
 import torch
 import torch.nn.functional
 from spyre_util import (get_chicken_soup_prompts, get_spyre_backend_list,
-                        get_spyre_model_list)
+                        get_spyre_model_list, skip_unsupported_tp_size)
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, RequestOutput, SamplingParams
 from vllm.config import ModelConfig, VllmConfig
@@ -18,15 +18,22 @@ from vllm_spyre.platform import SpyrePlatform
 
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.parametrize("tp_size", [
+    pytest.param(1, id="tp_size"),
+    pytest.param(2, marks=pytest.mark.multi, id="tp_size"),
+    pytest.param(4, marks=pytest.mark.multi, id="tp_size")
+])
 def test_prompt_logprobs(
     backend: str,
     model: str,
+    tp_size: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     '''
     This test checks the prompt_logprobs output from vllm against a reference
     implementation using huggingface.
     '''
+    skip_unsupported_tp_size(tp_size)
     num_prompt_logprobs = 5
 
     prompts = get_chicken_soup_prompts(4)
@@ -34,7 +41,7 @@ def test_prompt_logprobs(
     monkeypatch.setenv("VLLM_USE_V1", 1)
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS", 1)
-    llm = LLM(model)
+    llm = LLM(model, tensor_parallel_size=tp_size, tokenizer=model)
 
     responses: list[RequestOutput] = llm.generate(
         prompts,
