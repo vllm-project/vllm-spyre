@@ -404,7 +404,8 @@ class SpyreWorker(WorkerBaseV1):
             )
             logger.info("Warmup decode 1/1...")
             self.execute_model(scheduler_output)
-            self._cleanup_model_runner(request=dummy_requests)
+            self._cleanup_model_runner(request=dummy_requests,
+                                       model_runner=model_runner)
 
         # doing one additional prefill outside the warmup_context seems to be
         # necessary to have reasonable TTFT for the first prefill after warmup
@@ -423,7 +424,8 @@ class SpyreWorker(WorkerBaseV1):
         )
         logger.info("Warmup additional prefill...")
         self.execute_model(scheduler_output)
-        self._cleanup_model_runner(request=[add_dummy_request])
+        self._cleanup_model_runner(request=[add_dummy_request],
+                                   model_runner=model_runner)
 
         # get the number or pages from the actual Spyre card after the warmup
         # and set it accordingly in the model runner and the kv cache size
@@ -439,7 +441,7 @@ class SpyreWorker(WorkerBaseV1):
 
         maybe_override_signals_handler()
 
-    def _cleanup_model_runner(self, request) -> None:
+    def _cleanup_model_runner(self, request, model_runner) -> None:
         # Needed to clean up the data of model runner
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=[],
@@ -457,15 +459,6 @@ class SpyreWorker(WorkerBaseV1):
             grammar_bitmask=None,
         )
         self.execute_model(scheduler_output)
-        # satisfy mypy
-        model_runner: Union[ContinuousBatchingHomogenTkvSpyreModelRunner,
-                            ContinuousBatchingHeterogenTkvSpyreModelRunner]
-        if not envs_spyre.VLLM_SPYRE_HETEROGEN_TKV:
-            model_runner = cast(ContinuousBatchingHomogenTkvSpyreModelRunner,
-                                self.model_runner)
-        else:
-            model_runner = cast(ContinuousBatchingHeterogenTkvSpyreModelRunner,
-                                self.model_runner)
         model_runner.tkv = 0
 
     def _get_num_blocks_available(self) -> int:
