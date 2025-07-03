@@ -46,7 +46,10 @@ def test_prompt_logprobs(
     for prompt, response in zip(prompts, responses):
         actual_logprobs = response.prompt_logprobs
         expected_logprobs = expected_prompt_logprobs[prompt]
-        _compare_prompt_logprobs(expected_logprobs, actual_logprobs)
+        _compare_prompt_logprobs(expected_logprobs,
+                                 actual_logprobs,
+                                 max_different_tokens=1,
+                                 relative_tolerance=0.15)
 
 
 @pytest.mark.cpu
@@ -105,8 +108,9 @@ def _compare_prompt_logprobs(expected: list, actual: list,
         expected_token_set = set(expected_dict.keys())
         actual_token_set = set(actual_dict.keys())
 
-        # At most one token difference between expected / actual
-        assert len(expected_token_set - actual_token_set) <= 1
+        # Check that (most of) the top n tokens are the same
+        assert len(expected_token_set -
+                   actual_token_set) <= max_different_tokens
 
         for token, actual_logprob in actual_dict.items():
             # skip tokens not in the expected set
@@ -118,7 +122,7 @@ def _compare_prompt_logprobs(expected: list, actual: list,
             # 60% tolerance- pretty big difference in results atm
             assert math.isclose(expected_logprob["logprob"],
                                 actual_logprob.logprob,
-                                rel_tol=0.15)
+                                rel_tol=relative_tolerance)
 
 
 def _get_hf_prompt_logprobs(model_name, prompts, n) -> dict[str, list]:
