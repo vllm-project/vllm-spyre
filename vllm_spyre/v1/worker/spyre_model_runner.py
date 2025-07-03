@@ -284,7 +284,7 @@ class SpyreModelRunner:
 
     def _get_prompt_logprobs_dict(
         self,
-        hidden_states: torch.Tensor,
+        logits: torch.Tensor,
         model_inputs: ModelForwardInputs,
     ) -> dict[str, Optional[LogprobsTensors]]:
         """Calculate prompt logprobs from hidden states.
@@ -320,15 +320,13 @@ class SpyreModelRunner:
 
             # Get the logits corresponding to this req's prompt tokens.
             req_idx = self.get_req_id_to_index(model_inputs.is_prompt)[req_id]
-            hidden_states = hidden_states[req_idx]
+            logits = logits[req_idx]
             # The offset needs to account for the left padding that static
             # batching applies.
             # TODO: To support continuous batching the offset needs to be
             # calculated differently.
-            offset = hidden_states.shape[0] - num_prompt_tokens
-
-            prompt_hidden_states = hidden_states[offset:offset + num_logits]
-            logits = self.model.compute_logits(prompt_hidden_states, None)
+            offset = logits.shape[0] - num_prompt_tokens
+            logits = logits[offset:offset + num_logits]
 
             # Get the "target" tokens for each index. For prompt at index i,
             # the token at prompt index i+1 is the "sampled" token we want
@@ -423,7 +421,7 @@ class SpyreModelRunner:
             extra_kwargs["pooler_output"] = None
 
         prompt_logprobs_dicts = self._get_prompt_logprobs_dict(
-            hidden_states=hidden_states, model_inputs=model_input)
+            logits=logits, model_inputs=model_input)
 
         model_output = ModelRunnerOutput(
             req_ids=list(req_id_to_index.keys()),
