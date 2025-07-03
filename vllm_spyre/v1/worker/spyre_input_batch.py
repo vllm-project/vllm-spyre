@@ -9,6 +9,7 @@ from typing import Optional, cast
 import numpy as np
 import torch
 from vllm.sampling_params import SamplingParams, SamplingType
+
 from vllm_spyre.v1.sample.metadata import SamplingMetadata
 
 _SAMPLING_EPS = 1e-5

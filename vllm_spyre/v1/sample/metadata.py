@@ -14,6 +14,7 @@ import torch
 # MinPLogitsProcessor have a device tensor and a CPU tensor,
 # which we don't need
 
+
 @dataclass
 class SamplingMetadata:
 
