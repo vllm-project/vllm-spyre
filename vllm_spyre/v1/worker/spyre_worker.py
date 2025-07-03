@@ -642,7 +642,7 @@ class SpyreWorker(WorkerBaseV1):
         self,
         scheduler_output: SchedulerOutput,
         requests: list[NewRequestData],
-        cached_requests: CachedRequestData,
+        cached_request_data: CachedRequestData,
         num_decode_tokens,
     ):
         """Handle a complete forward pass"""
@@ -652,7 +652,7 @@ class SpyreWorker(WorkerBaseV1):
 
         # Switch to cached requests to trigger decoding steps
         scheduler_output.scheduled_new_reqs = []
-        scheduler_output.scheduled_cached_reqs = cached_requests
+        scheduler_output.scheduled_cached_reqs = cached_request_data
         for _ in range(num_decode_tokens - 1):
             self.execute_model(scheduler_output)
 

@@ -457,18 +457,18 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
 
     def _prepare_decode(
         self,
-        cached_requests: CachedRequestData,
+        cached_request_data: CachedRequestData,
     ) -> ModelForwardInputs:
-        assert len(cached_requests.req_ids) > 0
+        assert len(cached_request_data.req_ids) > 0
         input_tokens: list[list[int]] = [
             [0] for _ in range(self._position_ids.shape[0])
         ]
 
-        for i, req_id in enumerate(cached_requests.req_ids):
-            # for cached_request in cached_requests:
+        for i, req_id in enumerate(cached_request_data.req_ids):
+            # for cached_request in cached_request_data:
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
-            new_token_ids = cached_requests.new_token_ids[i]
+            new_token_ids = cached_request_data.new_token_ids[i]
             generation_token = new_token_ids[-1]
             input_tokens[self.input_batch.req_id_to_index[req_id]] = [
                 generation_token
