@@ -241,32 +241,31 @@ class SpyreModelRunner:
         #
         # NOTE: req_state.output_token_ids is being mutated.
 
-        for req_data in scheduler_output.scheduled_cached_reqs:
-            req_id = req_data.req_id
+        req_data = scheduler_output.scheduled_cached_reqs
+        for i, req_id in enumerate(req_data.req_ids):
             req_state = self.requests[req_id]
 
             # Update the cached states.
-            num_computed_tokens = req_data.num_computed_tokens
+            num_computed_tokens = req_data.num_computed_tokens[i]
+            new_token_ids = req_data.new_token_ids[i]
             # Add the sampled token(s) from the previous step (if any).
             # This doesn't include "unverified" tokens like spec decode tokens.
-            num_new_tokens = (num_computed_tokens +
-                              len(req_data.new_token_ids) -
+            num_new_tokens = (num_computed_tokens + len(new_token_ids) -
                               req_state.num_tokens)
             if num_new_tokens == 1:
                 # Avoid slicing list in most common case.
-                req_state.output_token_ids.append(req_data.new_token_ids[-1])
+                req_state.output_token_ids.append(new_token_ids[-1])
             elif num_new_tokens > 0:
                 req_state.output_token_ids.extend(
-                    req_data.new_token_ids[-num_new_tokens:])
+                    new_token_ids[-num_new_tokens:])
 
             req_index = self.input_batch.get_req_index(req_id)
             # Add new_token_ids to token_ids_cpu.
             # TODO: Update for spec decoding in the future
             start_token_index = num_computed_tokens
-            end_token_index = num_computed_tokens + len(req_data.new_token_ids)
+            end_token_index = num_computed_tokens + len(new_token_ids)
             self.input_batch.token_ids_cpu[
-                req_index,
-                start_token_index:end_token_index] = req_data.new_token_ids
+                req_index, start_token_index:end_token_index] = new_token_ids
 
         if scheduler_output.finished_req_ids:
             for req_id in scheduler_output.finished_req_ids:
@@ -277,8 +276,7 @@ class SpyreModelRunner:
     def _prepare_prompt(self, _: list[NewRequestData]) -> ModelForwardInputs:
         raise NotImplementedError
 
-    def _prepare_decode(self,
-                        _: list[CachedRequestData]) -> ModelForwardInputs:
+    def _prepare_decode(self, _: CachedRequestData) -> ModelForwardInputs:
         raise NotImplementedError
 
     def prepare_model_input(
@@ -291,7 +289,7 @@ class SpyreModelRunner:
         # Prepare input tensors.
         if is_prompt:
             # Assert no running requests
-            assert len(scheduler_output.scheduled_cached_reqs) == 0
+            assert len(scheduler_output.scheduled_cached_reqs.req_ids) == 0
 
             return self._prepare_prompt(scheduler_output.scheduled_new_reqs)
         else:
@@ -455,19 +453,21 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
 
     def _prepare_decode(
         self,
-        cached_requests: list[CachedRequestData],
+        cached_request_data: CachedRequestData,
     ) -> ModelForwardInputs:
-        assert len(cached_requests) > 0
+        assert len(cached_request_data.req_ids) > 0
         input_tokens: list[list[int]] = [
             [0] for _ in range(self._position_ids.shape[0])
         ]
 
-        for cached_request in cached_requests:
+        for i, req_id in enumerate(cached_request_data.req_ids):
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
-            generation_token = cached_request.new_token_ids[-1]
-            input_tokens[self.input_batch.req_id_to_index[
-                cached_request.req_id]] = [generation_token]
+            new_token_ids = cached_request_data.new_token_ids[i]
+            generation_token = new_token_ids[-1]
+            input_tokens[self.input_batch.req_id_to_index[req_id]] = [
+                generation_token
+            ]
 
         # update position ids and attention mask
         self._update_position_ids()
@@ -752,48 +752,52 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
     def _prepare_decode(
         self,
-        cached_requests: list[CachedRequestData],
+        cached_request_data: CachedRequestData,
     ) -> ModelForwardInputs:
-        assert len(cached_requests) > 0
+        assert len(cached_request_data.req_ids) > 0
 
         input_tokens = []
         input_positions = []
         block_table = []
         slot_mapping = []
         left_padded_prompt_mask = []
-        self.model.indices = torch.ones(len(cached_requests),
+        self.model.indices = torch.ones(len(cached_request_data.req_ids),
                                         dtype=torch.bool,
                                         device="cpu")
 
-        assert len(self.input_batch.req_id_to_index) == len(cached_requests)
+        assert len(self.input_batch.req_id_to_index) == len(
+            cached_request_data.req_ids)
         # TODO(wallas): I think we can do better here, without sorting or
         # creating an intermediary dictionary
-        cached_reqs_map = {c.req_id: c for c in cached_requests}
+        cached_reqs_map = {
+            req_id: i
+            for i, req_id in enumerate(cached_request_data.req_ids)
+        }
         req_ids = self.input_batch.sorted_requests_ids
 
         for req_id in req_ids:
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
-            cached_request = cached_reqs_map[req_id]
 
             # adding new blocks if needed
             if self.tkv // self.block_size + 1 > len(
-                    self.req_ids2blocks[cached_request.req_id]):
-                self.req_ids2blocks[cached_request.req_id].append(
-                    self.free_blocks.popleft())
-            block_table.append(self.req_ids2blocks[cached_request.req_id])
+                    self.req_ids2blocks[req_id]):
+                self.req_ids2blocks[req_id].append(self.free_blocks.popleft())
+            block_table.append(self.req_ids2blocks[req_id])
             # slot_mapping for all blocks of sequence
             start_slot = block_table[-1][-1] * self.block_size
             offset = self.tkv % self.block_size
             slot = [start_slot + offset]
             slot_mapping.append(slot)
-
-            generation_token = cached_request.new_token_ids[-1]
+            new_token_ids = cached_request_data.new_token_ids[
+                cached_reqs_map[req_id]]
+            generation_token = new_token_ids[-1]
             input_tokens.append([generation_token])
-            seq_len = cached_request.num_computed_tokens
+            seq_len = cached_request_data.num_computed_tokens[
+                cached_reqs_map[req_id]]
             input_positions.append([seq_len])
 
-            req_state = self.requests[cached_request.req_id]
+            req_state = self.requests[req_id]
             left_padded_prompt_mask.append(req_state.left_padding)
 
         input_tokens = torch.tensor(input_tokens,
@@ -819,7 +823,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                                         dtype=torch.int64)
 
         # add pads for min decode batch size of 2 (Spyre compiler constraint)
-        if len(cached_requests) == 1:
+        if len(cached_request_data.req_ids) == 1:
             padd_seq_indices = torch.zeros(1, dtype=torch.bool, device="cpu")
             self.model.indices = torch.cat(
                 (self.model.indices, padd_seq_indices), -1)

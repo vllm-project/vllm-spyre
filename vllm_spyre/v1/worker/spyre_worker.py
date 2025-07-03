@@ -345,7 +345,7 @@ class SpyreWorker(WorkerBaseV1):
             for i, req in enumerate(dummy_requests):
                 scheduler_output = SchedulerOutput(
                     scheduled_new_reqs=[req],
-                    scheduled_cached_reqs=[],
+                    scheduled_cached_reqs=CachedRequestData.make_empty(),
                     num_scheduled_tokens={req.req_id: prompt_len},
                     total_num_scheduled_tokens=prompt_len,
                     scheduled_spec_decode_tokens={},
@@ -359,45 +359,50 @@ class SpyreWorker(WorkerBaseV1):
                 logger.info("Warmup prefill %d/%d...", i + 1, batch_size)
                 self.execute_model(scheduler_output)
 
-            # one decode iteration across both sequences
-            cached_requests = [
-                CachedRequestData(
-                    req_id=req.req_id,
-                    resumed_from_preemption=False,
-                    new_token_ids=[
-                        valid_token_ids_tensor[torch.randint(
-                            0, len(valid_token_ids_tensor), (1, )).item()]
-                    ],  # placeholder token
-                    new_block_ids=req.block_ids,
-                    num_computed_tokens=prompt_len,
-                ) for req in dummy_requests
-            ]
+        # one decode iteration across both sequences
+        req_ids = []
+        new_token_ids = []
+        new_block_ids = []
+        num_computed_tokens = []
+        for req in dummy_requests:
+            req_ids.append(req.req_id)
+            new_token_ids.append([
+                valid_token_ids_tensor[torch.randint(
+                    0, len(valid_token_ids_tensor), (1, )).item()]
+            ])  # placeholder token
+            new_block_ids.append([req.block_ids])
+            num_computed_tokens.append(prompt_len)
+        cached_request_data = CachedRequestData(
+            req_ids=req_ids,
+            resumed_from_preemption=False,
+            new_token_ids=new_token_ids,
+            new_block_ids=new_block_ids,
+            num_computed_tokens=num_computed_tokens,
+        )
 
-            scheduler_output = SchedulerOutput(
-                scheduled_new_reqs=[],
-                scheduled_cached_reqs=cached_requests,
-                num_scheduled_tokens={
-                    f"warmup-{i}": 1
-                    for i in range(batch_size)
-                },
-                total_num_scheduled_tokens=batch_size,
-                scheduled_spec_decode_tokens={},
-                scheduled_encoder_inputs={},
-                num_common_prefix_blocks=0,
-                finished_req_ids=set(),
-                free_encoder_input_ids=[],
-                structured_output_request_ids={},
-                grammar_bitmask=None,
-            )
-            logger.info("Warmup decode 1/1...")
-            self.execute_model(scheduler_output)
-            self._cleanup_model_runner(request=dummy_requests)
+        scheduler_output = SchedulerOutput(
+            scheduled_new_reqs=[],
+            scheduled_cached_reqs=cached_request_data,
+            num_scheduled_tokens={f"warmup-{i}": 1
+                                  for i in range(batch_size)},
+            total_num_scheduled_tokens=batch_size,
+            scheduled_spec_decode_tokens={},
+            scheduled_encoder_inputs={},
+            num_common_prefix_blocks=0,
+            finished_req_ids=set(),
+            free_encoder_input_ids=[],
+            structured_output_request_ids={},
+            grammar_bitmask=None,
+        )
+        logger.info("Warmup decode 1/1...")
+        self.execute_model(scheduler_output)
+        self._cleanup_model_runner(request=dummy_requests)
 
         # doing one additional prefill outside the warmup_context seems to be
         # necessary to have reasonable TTFT for the first prefill after warmup
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=[add_dummy_request],
-            scheduled_cached_reqs=[],
+            scheduled_cached_reqs=CachedRequestData.make_empty(),
             num_scheduled_tokens={add_dummy_request.req_id: prompt_len},
             total_num_scheduled_tokens=prompt_len,
             scheduled_spec_decode_tokens={},
@@ -430,7 +435,7 @@ class SpyreWorker(WorkerBaseV1):
         # Needed to clean up the data of model runner
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=[],
-            scheduled_cached_reqs=[],
+            scheduled_cached_reqs=CachedRequestData.make_empty(),
             num_scheduled_tokens={},
             # NOTE: this means no work to do
             total_num_scheduled_tokens=0,
@@ -539,23 +544,31 @@ class SpyreWorker(WorkerBaseV1):
         ]
 
         # Set up dummy cached_requests for decode steps
-        cached_requests = [
-            CachedRequestData(
-                req_id=req.req_id,
-                resumed_from_preemption=False,
-                new_token_ids=[
-                    valid_token_ids_tensor[torch.randint(
-                        0, len(valid_token_ids_tensor), (1, )).item()]
-                ],  # placeholder token
-                new_block_ids=req.block_ids,
-                num_computed_tokens=req.num_computed_tokens,
-            ) for req in dummy_requests
-        ]
+        req_ids = []
+        new_token_ids = []
+        new_block_ids = []
+        num_computed_tokens = []
+        for req in dummy_requests:
+            req_ids.append(req.req_id)
+            new_token_ids.append([
+                valid_token_ids_tensor[torch.randint(
+                    0, len(valid_token_ids_tensor), (1, )).item()]
+            ])  # placeholder token
+            new_block_ids.append([req.block_ids])
+            num_computed_tokens.append(req.num_computed_tokens)
+
+        cached_request_data = CachedRequestData(
+            req_ids=req_ids,
+            resumed_from_preemption=False,
+            new_token_ids=new_token_ids,
+            new_block_ids=new_block_ids,
+            num_computed_tokens=num_computed_tokens,
+        )
 
         # Set up scheduler_output for execute_model
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=dummy_requests,
-            scheduled_cached_reqs=[],
+            scheduled_cached_reqs=cached_request_data,
             num_scheduled_tokens={i: prompt_len
                                   for i in range(batch_size)},
             total_num_scheduled_tokens=sum(prompt_len
@@ -574,7 +587,8 @@ class SpyreWorker(WorkerBaseV1):
         # The fixed size warmup needs to happen only in here
         with _maybe_warmup_context():
             self._warmup_model_forward_pass(scheduler_output, dummy_requests,
-                                            cached_requests, num_decode_tokens)
+                                            cached_request_data,
+                                            num_decode_tokens)
         self.perf_metrics.log("warmup 1 time",
                               time.time() - warmup_start_t,
                               batch_size=batch_size,
@@ -585,7 +599,7 @@ class SpyreWorker(WorkerBaseV1):
         logger.info("Warmup forward pass 2/2...")
         warmup2_start_t = time.time()
         self._warmup_model_forward_pass(scheduler_output, dummy_requests,
-                                        cached_requests, num_decode_tokens)
+                                        cached_request_data, num_decode_tokens)
 
         warmup_end_t = time.time()
         warmup_total_t = warmup_end_t - warmup_start_t
@@ -604,17 +618,17 @@ class SpyreWorker(WorkerBaseV1):
         self,
         scheduler_output: SchedulerOutput,
         requests: list[NewRequestData],
-        cached_requests: list[CachedRequestData],
+        cached_request_data: CachedRequestData,
         num_decode_tokens,
     ):
         """Handle a complete forward pass"""
         scheduler_output.scheduled_new_reqs = requests
-        scheduler_output.scheduled_cached_reqs = []
+        scheduler_output.scheduled_cached_reqs = CachedRequestData.make_empty()
         self.execute_model(scheduler_output)  # Prefill
 
         # Switch to cached requests to trigger decoding steps
         scheduler_output.scheduled_new_reqs = []
-        scheduler_output.scheduled_cached_reqs = cached_requests
+        scheduler_output.scheduled_cached_reqs = cached_request_data
         for _ in range(num_decode_tokens - 1):
             self.execute_model(scheduler_output)
 
