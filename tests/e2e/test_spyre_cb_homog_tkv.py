@@ -1,6 +1,6 @@
 """Verification of continuous batching
 
-Run `python -m pytest tests/e2e/test_spyre_cb.py`.
+Run `python -m pytest tests/e2e/test_spyre_cb_homog_tkv.py`.
 """
 
 import copy
@@ -726,7 +726,8 @@ def test_scheduler_cb_steps_tkv(
                 r.request_id for r in request_outputs if r.finished
             ]
 
-            assert scheduler.tkv == step_ref["tkv"], f"Step {step}, tkv"
+            assert len(set(scheduler.tkvs)) == 1  # assert homogeneous tkv
+            assert scheduler.tkvs[0] == step_ref["tkv"], f"Step {step}, tkv"
             assert waiting == step_ref["waiting"], f"Step {step}, num waiting"
             assert running == step_ref["running"], f"Step {step}, num running"
             assert out_reqs_ids == step_ref["request_outputs"], \

@@ -29,7 +29,9 @@ import vllm_spyre.perf_metrics as perf_metrics
 from vllm_spyre.model_executor.model_loader import spyre_setup
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import (
-    ContinuousBatchingSpyreModelRunner, StaticBatchingSpyreModelRunner)
+    ContinuousBatchingHeterogenTkvSpyreModelRunner,
+    ContinuousBatchingHomogenTkvSpyreModelRunner,
+    StaticBatchingSpyreModelRunner)
 
 logger = init_logger(__name__)
 
@@ -160,12 +162,17 @@ class SpyreWorker(WorkerBaseV1):
             init_cached_hf_modules()
         self.model_runner: \
             Union[StaticBatchingSpyreModelRunner,
-                  ContinuousBatchingSpyreModelRunner]
+                  ContinuousBatchingHomogenTkvSpyreModelRunner,
+                  ContinuousBatchingHeterogenTkvSpyreModelRunner]
         if self.model_config.task == "embed":
             raise NotImplementedError
         else:
             if envs_spyre.VLLM_SPYRE_USE_CB:
-                self.model_runner = ContinuousBatchingSpyreModelRunner(
+                self.model_runner = \
+                    ContinuousBatchingHomogenTkvSpyreModelRunner(
+                    self.vllm_config, self.is_driver_worker) \
+                        if not envs_spyre.VLLM_SPYRE_HETEROGEN_TKV else \
+                    ContinuousBatchingHeterogenTkvSpyreModelRunner(
                     self.vllm_config, self.is_driver_worker)
             else:
                 self.model_runner = StaticBatchingSpyreModelRunner(
@@ -300,8 +307,14 @@ class SpyreWorker(WorkerBaseV1):
         warmup_start_t = time.time()
 
         # satisfy mypy
-        model_runner: ContinuousBatchingSpyreModelRunner = \
-            cast(ContinuousBatchingSpyreModelRunner, self.model_runner)
+        model_runner: Union[ContinuousBatchingHomogenTkvSpyreModelRunner,
+                            ContinuousBatchingHeterogenTkvSpyreModelRunner]
+        if not envs_spyre.VLLM_SPYRE_HETEROGEN_TKV:
+            model_runner = cast(ContinuousBatchingHomogenTkvSpyreModelRunner,
+                                self.model_runner)
+        else:
+            model_runner = cast(ContinuousBatchingHeterogenTkvSpyreModelRunner,
+                                self.model_runner)
 
         vocab_size = model_runner.vocab_size
 
@@ -391,7 +404,8 @@ class SpyreWorker(WorkerBaseV1):
             )
             logger.info("Warmup decode 1/1...")
             self.execute_model(scheduler_output)
-            self._cleanup_model_runner(request=dummy_requests)
+            self._cleanup_model_runner(request=dummy_requests,
+                                       model_runner=model_runner)
 
         # doing one additional prefill outside the warmup_context seems to be
         # necessary to have reasonable TTFT for the first prefill after warmup
@@ -410,7 +424,8 @@ class SpyreWorker(WorkerBaseV1):
         )
         logger.info("Warmup additional prefill...")
         self.execute_model(scheduler_output)
-        self._cleanup_model_runner(request=[add_dummy_request])
+        self._cleanup_model_runner(request=[add_dummy_request],
+                                   model_runner=model_runner)
 
         # get the number or pages from the actual Spyre card after the warmup
         # and set it accordingly in the model runner and the kv cache size
@@ -426,7 +441,7 @@ class SpyreWorker(WorkerBaseV1):
 
         maybe_override_signals_handler()
 
-    def _cleanup_model_runner(self, request) -> None:
+    def _cleanup_model_runner(self, request, model_runner) -> None:
         # Needed to clean up the data of model runner
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=[],
@@ -444,9 +459,6 @@ class SpyreWorker(WorkerBaseV1):
             grammar_bitmask=None,
         )
         self.execute_model(scheduler_output)
-        # satisfy mypy
-        model_runner: ContinuousBatchingSpyreModelRunner = \
-            cast(ContinuousBatchingSpyreModelRunner, self.model_runner)
         model_runner.tkv = 0
 
     def _get_num_blocks_available(self) -> int:
@@ -462,7 +474,7 @@ class SpyreWorker(WorkerBaseV1):
 
         min_req_num_blocks = max_model_len // block_size
         # min_req_num_blocks is not enough blocks for the following test:
-        # tests/e2e/test_spyre_cb.py::test_scheduler_cb_steps_tkv
+        # tests/e2e/test_spyre_cb_homog_tkv.py::test_scheduler_cb_steps_tkv
         # [seqs_max_tokens4-prompts_lengths4-steps_add_reqs4-
         # checked_steps4-256-False-2-eager-llama-194m]
 
