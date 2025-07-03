@@ -245,10 +245,6 @@ class SpyreModelRunner:
         for i, req_id in enumerate(req_data.req_ids):
             req_state = self.requests[req_id]
 
-            # for req_data in scheduler_output.scheduled_cached_reqs:
-            # req_id = req_data.req_ids[0]
-            # req_state = self.requests[req_id]
-
             # Update the cached states.
             num_computed_tokens = req_data.num_computed_tokens[i]
             new_token_ids = req_data.new_token_ids[i]
@@ -465,7 +461,6 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         ]
 
         for i, req_id in enumerate(cached_request_data.req_ids):
-            # for cached_request in cached_request_data:
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
             new_token_ids = cached_request_data.new_token_ids[i]
@@ -774,22 +769,15 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             cached_request_data.req_ids)
         # TODO(wallas): I think we can do better here, without sorting or
         # creating an intermediary dictionary
-        # for req in cached_request_data:
-        #     cached_reqs_map = {c.req_id: c for c in cached_requests}
-
         cached_reqs_map = {
             req_id: i
             for i, req_id in enumerate(cached_request_data.req_ids)
         }
-
         req_ids = self.input_batch.sorted_requests_ids
 
-        # for _, req_id in enumerate(cached_request_data.req_ids):
         for req_id in req_ids:
-
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
-            # cached_request = cached_reqs_map[req_id]
 
             # adding new blocks if needed
             if self.tkv // self.block_size + 1 > len(
