@@ -21,6 +21,12 @@ parser.add_argument("--max_model_len",
 parser.add_argument("--max_num_seqs", "--max-num-seqs", type=int, default=2)
 parser.add_argument("--tp", type=int, default=1)
 parser.add_argument("--num-prompts", "-n", type=int, default=128)
+parser.add_argument(
+    "--max-tokens",
+    type=str,
+    default="20,65",
+    help="Comma separated list of max tokens to use for each prompt. "
+    "This list is repeated until prompts are exhausted.")
 parser.add_argument("--compare-with-cpu",
                     action=argparse.BooleanOptionalAction)
 args = parser.parse_args()
@@ -66,7 +72,8 @@ prompts = prompts[0:args.num_prompts]
 
 # Set differring max_tokens so that the requests drop out of the batch at
 # different times
-max_tokens = [20, 65] * (args.num_prompts // 2 + 1)
+max_tokens = [int(v) for v in args.max_tokens.split(",")]
+max_tokens = max_tokens * (args.num_prompts // len(max_tokens) + 1)
 max_tokens = max_tokens[0:args.num_prompts]
 
 sampling_params = [
