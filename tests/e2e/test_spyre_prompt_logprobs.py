@@ -2,13 +2,14 @@
 
 Run `python -m pytest tests/e2e/test_spyre_basic.py`.
 """
-
-import json
 import math
-from pathlib import Path
 
 import pytest
-from spyre_util import get_spyre_backend_list
+import torch
+import torch.nn.functional
+from spyre_util import (get_chicken_soup_prompts, get_spyre_backend_list,
+                        get_spyre_model_list)
+from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, RequestOutput, SamplingParams
 from vllm.config import ModelConfig, VllmConfig
 
@@ -16,35 +17,31 @@ from vllm_spyre.platform import SpyrePlatform
 
 
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.decoder
+@pytest.mark.parametrize("model", get_spyre_model_list())
 def test_prompt_logprobs(
     backend: str,
+    model: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     '''
-    This test uses expected prompt_logprob values recorded from running vllm
-    v0.9.0 on an A100 GPU.
-    These are valid for the model "ibm-ai-platform/micro-g3.3-8b-instruct-1b"
-    only.
+    This test checks the prompt_logprobs output from vllm against a reference
+    implementation using huggingface.
     '''
-    model = "ibm-ai-platform/micro-g3.3-8b-instruct-1b"
     num_prompt_logprobs = 5
 
-    json_path = Path(__file__).parent.parent / "expected_prompt_logprobs.json"
-    with open(json_path) as f:
-        expected_prompt_logprobs: dict[str, list] = json.load(f)
+    prompts = get_chicken_soup_prompts(4)
 
     monkeypatch.setenv("VLLM_USE_V1", 1)
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS", 1)
     llm = LLM(model)
 
-    # dict is prompt -> prompt_logprob list
-    prompts = list(expected_prompt_logprobs.keys())
-
     responses: list[RequestOutput] = llm.generate(
         prompts,
         sampling_params=SamplingParams(prompt_logprobs=num_prompt_logprobs))
+
+    expected_prompt_logprobs: dict[str, list] = _get_hf_prompt_logprobs(
+        model_name=model, prompts=prompts, n=num_prompt_logprobs)
 
     for prompt, response in zip(prompts, responses):
         actual_logprobs = response.prompt_logprobs
@@ -88,8 +85,14 @@ def test_prompt_logprobs_on_single_requests_only(
         VllmConfig(model_config=ModelConfig(task="generate"))
 
 
-def _compare_prompt_logprobs(expected: list, actual: list):
-    # Super rough comparison of prompt logprob outputs
+def _compare_prompt_logprobs(expected: list, actual: list,
+                             max_different_tokens: int,
+                             relative_tolerance: float):
+    # Fuzzy comparison of prompt logprob outputs
+    # max_different_tokens is the number of candidate tokens that are allowed to
+    # differ at each token in the prompt.
+    # relative_tolerance is the tolerance between the expected and actual
+    # logprob for each token
     assert len(expected) == len(actual)
 
     for i in range(len(actual)):
@@ -99,21 +102,89 @@ def _compare_prompt_logprobs(expected: list, actual: list):
         if expected_dict is None and actual_dict is None:
             continue
 
-        expected_token_set = set(int(k) for k in expected_dict)
+        expected_token_set = set(expected_dict.keys())
         actual_token_set = set(actual_dict.keys())
 
-        # Very lenient- we want at least the first rank token and the actual
-        # prompt token to match.
-        assert len(actual_token_set.intersection(expected_token_set)) >= 2
+        # At most one token difference between expected / actual
+        assert len(expected_token_set - actual_token_set) <= 1
 
         for token, actual_logprob in actual_dict.items():
             # skip tokens not in the expected set
-            if str(token) not in expected_dict:
+            if token not in expected_dict:
                 continue
 
-            expected_logprob = expected_dict[str(token)]
+            expected_logprob = expected_dict[token]
 
             # 60% tolerance- pretty big difference in results atm
             assert math.isclose(expected_logprob["logprob"],
                                 actual_logprob.logprob,
-                                rel_tol=0.6)
+                                rel_tol=0.15)
+
+
+def _get_hf_prompt_logprobs(model_name, prompts, n) -> dict[str, list]:
+    """Get prompt logprobs from HF model directly, including top n candidates 
+    for each token"""
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForCausalLM.from_pretrained(model_name)
+
+    prompt_logprobs = {}
+    for prompt in prompts:
+
+        inputs = tokenizer(prompt, return_tensors="pt")
+        input_ids = inputs["input_ids"]
+
+        # Get logits (model output before softmax)
+        with torch.no_grad():
+            outputs = model(**inputs)
+            logits = outputs.logits
+
+        # Shift logits and labels so that tokens align with their predicted
+        # logprobs
+        shifted_logits = logits[:, :-1, :]  # Remove last logit
+        shifted_input_ids = input_ids[:, 1:]  # Remove first token (BOS)
+
+        # Get log-softmax over vocabulary
+        log_probs = torch.nn.functional.log_softmax(shifted_logits, dim=-1)
+
+        # Get top n logprobs:
+        topk_logprobs, topk_indices = torch.topk(log_probs, dim=2, k=n)
+
+        # Gather log-probabilities of the actual prompt logprobs
+        token_logprobs = log_probs.gather(
+            2, shifted_input_ids.unsqueeze(-1)).squeeze(-1)
+
+        # Squeeze out batch dimension 1
+        token_logprobs = token_logprobs.squeeze()
+        topk_logprobs = topk_logprobs.squeeze()
+        topk_indices = topk_indices.squeeze()
+
+        # No prompt logprobs for first token
+        output_prompt_logprobs = [None]
+        for idx in range(len(token_logprobs)):
+            logprobs_dict = {}
+            # Loop over each token and:
+            # Get the set of top N tokens + the actual prompt token
+            # (The prompt token may or may not be in the top N)
+            # Detokenize and store the token w/ its logprob
+            for i, token in enumerate(topk_indices[idx]):
+                logprob = topk_logprobs[idx][i]
+                text = tokenizer.convert_ids_to_tokens(token.item())
+                logprobs_dict[token.item()] = {
+                    "decoded_token": text,
+                    "logprob": logprob.item(),
+                }
+
+            prompt_token = input_ids[0][idx + 1]
+            prompt_logprob = token_logprobs[idx]
+            decoded_prompt_token = tokenizer.convert_ids_to_tokens(
+                prompt_token.item())
+            logprobs_dict[prompt_token.item()] = {
+                "decoded_token": decoded_prompt_token,
+                "logprob": prompt_logprob.item(),
+            }
+
+            output_prompt_logprobs.append(logprobs_dict)
+
+        prompt_logprobs[prompt] = output_prompt_logprobs
+
+    return prompt_logprobs
