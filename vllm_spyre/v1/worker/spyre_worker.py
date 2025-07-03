@@ -369,9 +369,9 @@ class SpyreWorker(WorkerBaseV1):
             new_token_ids.append([
                 valid_token_ids_tensor[torch.randint(
                     0, len(valid_token_ids_tensor), (1, )).item()]
-            ]),  # placeholder token
-            new_block_ids.append([req.block_ids]),
-            num_computed_tokens.append(prompt_len),
+            ])  # placeholder token
+            new_block_ids.append([req.block_ids])
+            num_computed_tokens.append(prompt_len)
         cached_request_data = CachedRequestData(
             req_ids=req_ids,
             resumed_from_preemption=False,
@@ -553,8 +553,8 @@ class SpyreWorker(WorkerBaseV1):
             new_token_ids.append([
                 valid_token_ids_tensor[torch.randint(
                     0, len(valid_token_ids_tensor), (1, )).item()]
-            ]),  # placeholder token
-            new_block_ids.append([req.block_ids]),
+            ])  # placeholder token
+            new_block_ids.append([req.block_ids])
             num_computed_tokens.append(req.num_computed_tokens)
 
         cached_request_data = CachedRequestData(
