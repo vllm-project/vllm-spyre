@@ -235,7 +235,7 @@ class SpyreModelRunner:
     def no_prompt_logprob(self, _: bool) -> bool:
         return self.input_batch.no_prompt_logprob
 
-    def get_num_prompt_logprobs(self, _: bool) -> dict[str, int]:
+    def get_num_prompt_logprobs(self) -> dict[str, int]:
         return self.input_batch.num_prompt_logprobs
 
     def update_states(self, scheduler_output: SchedulerOutput):
@@ -295,8 +295,7 @@ class SpyreModelRunner:
         if self.no_prompt_logprob(model_inputs.is_prompt):
             return {}
 
-        num_prompt_logprobs_dict = self.get_num_prompt_logprobs(
-            model_inputs.is_prompt)
+        num_prompt_logprobs_dict = self.get_num_prompt_logprobs()
 
         # TODO: For chunked prefill, this will need to be updated to hold state
         # for prompt logprobs across multiple model iterations.
@@ -1053,9 +1052,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # If we're not running a prefill then this is a decode-only batch
         return True
 
-    def get_num_prompt_logprobs(self, is_prefill: bool) -> dict[str, int]:
-        return (self.prefill_batch.num_prompt_logprobs
-                if is_prefill else self.input_batch.num_prompt_logprobs)
+    def get_num_prompt_logprobs(self) -> dict[str, int]:
+        # Prompt logprobs will always be set on the prefill batch
+        return self.prefill_batch.num_prompt_logprobs
 
     def prepare_model_input(
             self, scheduler_output: SchedulerOutput) -> ModelForwardInputs:
