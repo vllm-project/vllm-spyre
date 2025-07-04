@@ -226,10 +226,12 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         # check that the number of requested tokens can be served
         cond4 = request.max_tokens <= (max_context_len - self.tkv)
         # check that there are enough free blocks/pages remaining
-        n = self.tkv + request.max_tokens
+        # Note: we only have to do check in case of a running batches
+        # (not start_new_batch), because the minimal number of blocks covers
+        # the context length for a single sequence, so tkv < block size is ok
+        n = self.tkv + request.max_tokens - 1
         d = self.block_size
-        num_blocks = (n + d - 1) // d
-        # TODO ysc: also consider "reserved" blocks for current requests
-        cond5 = num_blocks <= self.n_free_blocks
+        num_blocks_required = (n + d - 1) // d
+        cond5 = num_blocks_required <= self.n_free_blocks
         return start_new_batch or (cond1 and cond2 and cond3 and cond4
                                    and cond5)

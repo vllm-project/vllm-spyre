@@ -418,7 +418,7 @@ class SpyreWorker(WorkerBaseV1):
         # overwrite n_blocks_avail for testing scheduler constraints
         if envs_spyre.VLLM_SPYRE_N_BLOCKS > 0:
             n_blocks_avail = envs_spyre.VLLM_SPYRE_N_BLOCKS
-        model_runner._set_free_blocks(num_blocks=n_blocks_avail)
+        model_runner._set_blocks(num_blocks=n_blocks_avail)
         model_runner.model.model._set_past_key_value_states(
             num_blocks=n_blocks_avail)
 
