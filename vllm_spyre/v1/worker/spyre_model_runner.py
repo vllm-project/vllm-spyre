@@ -342,8 +342,14 @@ class SpyreModelRunner:
         req_id_to_index = self.get_req_id_to_index(is_prefill)
         reqs = scheduler_output.scheduled_new_reqs \
             if is_prefill else scheduler_output.scheduled_cached_reqs.req_ids
+        req_ids = (
+            self.input_batch.sorted_requests_ids
+            if not is_prefill
+            else scheduler_output.scheduled_new_reqs
+        )
         sampled_ids = output.sampled_token_ids.tolist()
-        for i, req in enumerate(reqs):
+        for i, req in enumerate(req_ids):
+            # for i, req in enumerate(reqs):
             req_state = self.requests[req.req_id] \
                 if not isinstance(
                 req, str) else self.requests[req]
@@ -814,10 +820,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             offset = self.tkv % self.block_size
             slot = [start_slot + offset]
             slot_mapping.append(slot)
-            print(f"{req_id}:{req_cache.output_token_ids}")
             new_token_ids = req_cache.output_token_ids
             # print(new_token_ids)
             generation_token = new_token_ids[-1]
+            print(f"{req_id}:{generation_token}")
             # generation_token = (
             #     new_token_ids[-1] if not isinstance(new_token_ids, int) else new_token_ids
             # )
