@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
+import math
 from collections import deque
 from typing import TYPE_CHECKING
 
@@ -10,7 +11,6 @@ from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request
 
 from vllm_spyre.platform import SpyrePlatform
-import math
 from vllm_spyre.v1.worker.spyre_model_runner import CBSpyreModelRunnerOutput
 
 if TYPE_CHECKING:

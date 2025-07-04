@@ -10,9 +10,9 @@ if sys.platform.startswith("darwin"):
     if sys.modules.get('triton'):
         del sys.modules['triton']
 
+import math
 import operator
 import os
-import math
 from typing import TYPE_CHECKING, Optional, Union
 
 import torch
