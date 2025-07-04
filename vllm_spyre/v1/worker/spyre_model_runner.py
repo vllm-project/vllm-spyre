@@ -1,3 +1,4 @@
+import math
 import time
 from collections import deque
 from collections.abc import Iterable
@@ -14,6 +15,7 @@ from vllm.utils import is_pin_memory_available
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.outputs import SamplerOutput
 
+import vllm_spyre.envs as envs_spyre
 from vllm_spyre.model_executor.model_loader.spyre import (
     SpyreAttentionMetadata, SpyreCausalLM)
 from vllm_spyre.platform import SpyrePlatform
@@ -52,8 +54,9 @@ class ModelForwardInputs:
 
 @dataclass
 class CBSpyreModelRunnerOutput(ModelRunnerOutput):
-    # Add the current tkv to the output
+    # Add the current tkv and the number of free blocks to the output
     tkv: int = 0
+    n_free_blocks: int = 0
 
 
 class SpyreModelRunner:
@@ -600,21 +603,26 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         assert vllm_config.scheduler_config.max_num_seqs >= 2, "Currently, " \
             "continuous batching needs config to set batch_size >= 2"
 
-        self.block_size = 64
+        self.block_size = SpyrePlatform.get_block_size()
 
         # TODO: move to a KV cache manager
         self.req_ids2blocks: dict[str, deque[int]] = {}
+        # max number of blocks needed (reserved) per request id
+        self.reserved_blocks: dict[str, int] = {}
 
         self.tkv: int = 0
-        # set self.free_blocks to the minimal value of 4 required for warmup
+        # set self.block_pool to the minimal value of 4 required for warmup
         # is reset to the value returned by the Spyre compiler after warmup
-        # self._set_free_blocks(num_blocks=4)
+        # self._set_blocks(num_blocks=4)
         # for the time being we set this to num_blocks consistent with the
         # cache dimension of ContinuousBatchingFmsModel.past_key_value_states
         num_blocks = (vllm_config.scheduler_config.max_num_seqs *
                       vllm_config.model_config.max_model_len //
                       self.block_size)
-        self._set_free_blocks(num_blocks=num_blocks)
+        # overwrite n_blocks_avail for testing scheduler constraints
+        if envs_spyre.VLLM_SPYRE_N_BLOCKS > 0:
+            num_blocks = envs_spyre.VLLM_SPYRE_N_BLOCKS
+        self._set_blocks(num_blocks=num_blocks)
 
         # TODO: Remove this once we can prefill and decode in the same step
         self.prefill_batch = InputBatch(
@@ -627,8 +635,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             vocab_size=vllm_config.model_config.get_vocab_size(),
         )
 
-    def _set_free_blocks(self, num_blocks: int) -> None:
-        self.free_blocks = deque([i for i in range(num_blocks)])
+    def _set_blocks(self, num_blocks: int) -> None:
+        self.n_blocks = num_blocks
+        self.block_pool = deque([i for i in range(self.n_blocks)])
 
     def update_states(self, scheduler_output):
 
@@ -639,9 +648,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         for req_id in scheduler_output.finished_req_ids:
             if blocks_to_free := self.req_ids2blocks.pop(req_id, None):
                 logger.debug("Freeing request id: %s", req_id)
+                self.reserved_blocks.pop(req_id)
                 for block_id in blocks_to_free:
                     logger.debug("Freeing block with id: %s", block_id)
-                    self.free_blocks.append(block_id)
+                    self.block_pool.append(block_id)
 
     def _prepare_prompt(
         self,
@@ -655,9 +665,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         max_prompt_len = max([len(r.prompt_token_ids) for r in new_requests])
         if not new_batch:
             assert max_prompt_len <= self.tkv
-        d = self.block_size
         n = max_prompt_len if new_batch else self.tkv
-        block_padding = ((n + d - 1) // d) * d
+        block_padding = math.ceil(n / self.block_size) * self.block_size
         if new_batch:
             self.tkv = block_padding
 
@@ -667,6 +676,13 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.prefill_batch.clear_requests()
 
         for request_data in new_requests:
+            # Reserve the max blocks used to serve current sequence
+            new_tokens = (request_data.sampling_params.max_tokens
+                          if request_data.sampling_params is not None else 0)
+            n = self.tkv + new_tokens - 1
+            n_reserved_blocks = math.ceil(n / self.block_size)
+            self.reserved_blocks[request_data.req_id] = n_reserved_blocks
+
             # retrieve initial (unpadded) tokens
             prompt_tokens = request_data.prompt_token_ids
             left_padding = self.tkv - len(prompt_tokens)
@@ -680,7 +696,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             slot_mapping_i = []
             for pos_i in range(block_padding):
                 if pos_i % self.block_size == 0:
-                    block_number = self.free_blocks.popleft()
+                    block_number = self.block_pool.popleft()
                     block_table_i.append(block_number)
                 block_offset = pos_i % self.block_size
                 slot = block_number * self.block_size + block_offset
@@ -780,7 +796,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             if self.tkv // self.block_size + 1 > len(
                     self.req_ids2blocks[cached_request.req_id]):
                 self.req_ids2blocks[cached_request.req_id].append(
-                    self.free_blocks.popleft())
+                    self.block_pool.popleft())
             block_table.append(self.req_ids2blocks[cached_request.req_id])
             # slot_mapping for all blocks of sequence
             start_slot = block_table[-1][-1] * self.block_size
@@ -871,7 +887,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                 for _ in range(n_padded_blocks):
                     freed_block_id = self.req_ids2blocks[req.req_id].popleft()
                     logger.debug("Freeing block with id: %s", freed_block_id)
-                    self.free_blocks.append(freed_block_id)
+                    self.block_pool.append(freed_block_id)
+                    self.reserved_blocks[req.req_id] -= 1
 
         # update tkv
         self.tkv -= offset
@@ -957,6 +974,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         return req_id_to_index
 
+    def get_n_free_blocks(self) -> int:
+        return self.n_blocks - sum(self.reserved_blocks.values())
+
     def prepare_model_input(
             self, scheduler_output: SchedulerOutput) -> ModelForwardInputs:
 
@@ -978,6 +998,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             **asdict(output),
             tkv=self.tkv
             if scheduler_output.total_num_scheduled_tokens > 0 else 0,
+            n_free_blocks=self.get_n_free_blocks(),
         )
 
 

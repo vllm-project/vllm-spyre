@@ -19,6 +19,7 @@ from vllm.model_executor.model_loader.weight_utils import (
 from vllm.model_executor.sampling_metadata import SamplingMetadata
 
 import vllm_spyre.envs as envs_spyre
+from vllm_spyre.platform import SpyrePlatform
 
 try:
     import backends.dynamo_tracer  # noqa: F401
@@ -282,7 +283,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         scheduler_config: SchedulerConfig,
     ) -> None:
 
-        BLOCK_SIZE = 64  # hardcoded Spyre constraint for now
+        BLOCK_SIZE = SpyrePlatform.get_block_size()
         max_model_len = scheduler_config.max_model_len
 
         # edge case: prompt fills model length: can produce 1 token with prefill
@@ -320,6 +321,9 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         # is reset to the value returned by the Spyre compiler after warmup
         # self._set_past_key_value_states(num_blocks=4)
         num_blocks = scheduler_config.max_num_seqs * max_model_len // BLOCK_SIZE
+        # overwrite n_blocks_avail for testing scheduler constraints
+        if envs_spyre.VLLM_SPYRE_N_BLOCKS > 0:
+            num_blocks = envs_spyre.VLLM_SPYRE_N_BLOCKS
         self._set_past_key_value_states(num_blocks=num_blocks)
 
         # mark the num_blocks dimension dynamic for Spyre compiler for warmup
