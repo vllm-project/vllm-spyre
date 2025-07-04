@@ -835,6 +835,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # assert min batch size 2 for decodes (Spyre compiler constraint)
         assert len(input_tokens) >= 2
 
+        # set number of right pads the decode to 0
+        self.model.n_pads_right = 0
+
         model_inputs = ModelForwardInputs(
             input_tokens=input_tokens,
             input_positions=position_ids,
