@@ -247,7 +247,8 @@ class SpyreModelRunner:
 
             # Update the cached states.
             num_computed_tokens = req_data.num_computed_tokens[i]
-            new_token_ids = req_data.new_token_ids[i]
+            new_token_ids = req_data.new_token_ids[i] if len(
+                req_data.new_token_ids) > 0 else []
             # Add the sampled token(s) from the previous step (if any).
             # This doesn't include "unverified" tokens like spec decode tokens.
             num_new_tokens = (num_computed_tokens + len(new_token_ids) -
@@ -339,6 +340,29 @@ class SpyreModelRunner:
 
         # Get mapping between requests ids to the index within the batch
         req_id_to_index = self.get_req_id_to_index(is_prefill)
+        reqs = scheduler_output.scheduled_new_reqs \
+            if is_prefill else scheduler_output.scheduled_cached_reqs.req_ids
+        sampled_ids = output.sampled_token_ids.tolist()
+        for i, req in enumerate(reqs):
+            req_state = self.requests[req.req_id] \
+                if not isinstance(
+                req, str) else self.requests[req]
+            # for sampled_ids in output.sampled_token_ids.tolist():
+            # if is_prefill:
+            # req_id = self.input_batch.req_ids[next(iter(req_id_to_index.values()))]
+            # req_state = self.requests[
+            #     req_id_to_index(scheduler_output.scheduled_new_reqs[0].req_id)
+            # ]
+            # req_state = self.requests[scheduler_output.scheduled_new_reqs[0].req_id]
+            # else:
+
+            # num_new_tokens = (num_computed_tokens + len(new_token_ids) -
+            #                 req_state.num_tokens)
+            # if num_new_tokens == 1:
+            #     # Avoid slicing list in most common case.
+            #     req_state.output_token_ids.append(new_token_ids[-1])
+            # elif num_new_tokens > 0:
+            req_state.output_token_ids.extend(sampled_ids[i])
 
         extra_kwargs: dict[str, Any] = {}
         if "pooler_output" in ModelRunnerOutput.__dataclass_fields__:
@@ -775,10 +799,11 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         }
         req_ids = self.input_batch.sorted_requests_ids
 
-        for req_id in req_ids:
+        for i, req_id in enumerate(req_ids):
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
 
+            req_cache = self.requests[req_id]
             # adding new blocks if needed
             if self.tkv // self.block_size + 1 > len(
                     self.req_ids2blocks[req_id]):
@@ -789,9 +814,13 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             offset = self.tkv % self.block_size
             slot = [start_slot + offset]
             slot_mapping.append(slot)
-            new_token_ids = cached_request_data.new_token_ids[
-                cached_reqs_map[req_id]]
+            print(f"{req_id}:{req_cache.output_token_ids}")
+            new_token_ids = req_cache.output_token_ids
+            # print(new_token_ids)
             generation_token = new_token_ids[-1]
+            # generation_token = (
+            #     new_token_ids[-1] if not isinstance(new_token_ids, int) else new_token_ids
+            # )
             input_tokens.append([generation_token])
             seq_len = cached_request_data.num_computed_tokens[
                 cached_reqs_map[req_id]]
