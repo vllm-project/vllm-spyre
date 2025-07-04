@@ -36,7 +36,7 @@ jobs:
           - name: "default"
             repo: ""
           - name: "vLLM:main"
-            repo: "git+https://github.com/vllm-project/vllm@02cabff207ca68094a73ba21296c82cdbcb1d1a5"
+            repo: "git+https://github.com/vllm-project/vllm@c1909e7e8ccd2037e76536a8e726120c85d3754e"
         test_suite:
           - name: "static batching"
             markers: "cpu and decoder and not cb"
