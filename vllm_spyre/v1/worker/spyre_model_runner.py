@@ -493,7 +493,9 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         for i, req_id in enumerate(cached_request_data.req_ids):
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
-            new_token_ids = cached_request_data.new_token_ids[i]
+            req_cache = self.requests[req_id]
+            # new_token_ids = cached_request_data.new_token_ids[i]
+            new_token_ids = req_cache.output_token_ids
             generation_token = new_token_ids[-1]
             input_tokens[self.input_batch.req_id_to_index[req_id]] = [
                 generation_token
