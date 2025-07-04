@@ -12,6 +12,7 @@ if sys.platform.startswith("darwin"):
 
 import operator
 import os
+import math
 from typing import TYPE_CHECKING, Optional, Union
 
 import torch
@@ -265,9 +266,8 @@ class SpyrePlatform(Platform):
             # into account.
 
             # ceil division to pad to next block boundary
-            n = prompt_len
-            d = cls._block_size
-            prompt_padding_len = ((n + d - 1) // d) * d
+            prompt_padding_len = math.ceil(
+                prompt_len / cls._block_size) * cls._block_size
             if (prompt_padding_len + max_tokens
                     > cls._config.scheduler_config.max_model_len):
                 raise ValueError(

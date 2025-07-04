@@ -13,6 +13,7 @@ from vllm.sampling_params import SamplingType
 from vllm.utils import is_pin_memory_available
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.outputs import SamplerOutput
+import math
 
 import vllm_spyre.envs as envs_spyre
 from vllm_spyre.model_executor.model_loader.spyre import (
@@ -664,9 +665,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         max_prompt_len = max([len(r.prompt_token_ids) for r in new_requests])
         if not new_batch:
             assert max_prompt_len <= self.tkv
-        d = self.block_size
         n = max_prompt_len if new_batch else self.tkv
-        block_padding = ((n + d - 1) // d) * d
+        block_padding = math.ceil(n / self.block_size) * self.block_size
         if new_batch:
             self.tkv = block_padding
 
@@ -680,7 +680,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             new_tokens = (request_data.sampling_params.max_tokens
                           if request_data.sampling_params is not None else 0)
             n = self.tkv + new_tokens - 1
-            n_reserved_blocks = (n + d - 1) // d
+            n_reserved_blocks = math.ceil(n / self.block_size)
             self.reserved_blocks[request_data.req_id] = n_reserved_blocks
 
             # retrieve initial (unpadded) tokens

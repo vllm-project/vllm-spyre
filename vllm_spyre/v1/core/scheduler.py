@@ -10,6 +10,7 @@ from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request
 
 from vllm_spyre.platform import SpyrePlatform
+import math
 from vllm_spyre.v1.worker.spyre_model_runner import CBSpyreModelRunnerOutput
 
 if TYPE_CHECKING:
@@ -229,9 +230,8 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         # Note: we only have to do check in case of a running batches
         # (not start_new_batch), because the minimal number of blocks covers
         # the context length for a single sequence, so tkv < block size is ok
-        n = self.tkv + request.max_tokens - 1
-        d = self.block_size
-        num_blocks_required = (n + d - 1) // d
+        num_blocks_required = math.ceil(
+            (self.tkv + request.max_tokens - 1) / self.block_size)
         cond5 = num_blocks_required <= self.n_free_blocks
         return start_new_batch or (cond1 and cond2 and cond3 and cond4
                                    and cond5)
