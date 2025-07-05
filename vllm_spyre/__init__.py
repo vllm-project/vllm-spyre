@@ -3,8 +3,8 @@ import json
 from logging.config import dictConfig
 from typing import Any
 
-from vllm.logger import DEFAULT_LOGGING_CONFIG
 from vllm.envs import VLLM_CONFIGURE_LOGGING, VLLM_LOGGING_CONFIG_PATH
+from vllm.logger import DEFAULT_LOGGING_CONFIG
 
 __version__ = importlib.metadata.version("vllm_spyre")
 
@@ -34,7 +34,7 @@ def _init_logging():
                     "vllm"]
             else:
                 config["formatters"]["vllm_spyre"] = DEFAULT_LOGGING_CONFIG[
-                    "formatters"][ "vllm"]
+                    "formatters"]["vllm"]
 
         if "vllm_spyre" not in config["handlers"]:
             if "vllm" in config["handlers"]:
