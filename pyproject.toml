@@ -150,6 +150,7 @@ dev = [
     "pytest-timeout==2.3.1",
     "requests==2.32.3",
     "sentence-transformers==3.4.1",
+    "aiu_fms_testing_utils@git+https://github.com/foundation-model-stack/aiu-fms-testing-utils.git#1a77f630104a5661fff554164c1e536ea08393e3"
 ]
 lint = [
     "clang-format==18.1.5",
