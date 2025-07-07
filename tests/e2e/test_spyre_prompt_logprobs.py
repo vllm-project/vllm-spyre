@@ -1,4 +1,4 @@
-"""Verification of vLLM output by comparing with HF
+"""Tests validating the correctness and configuration of prompt_logprobs.
 
 Run `python -m pytest tests/e2e/test_spyre_prompt_logprobs.py`.
 """

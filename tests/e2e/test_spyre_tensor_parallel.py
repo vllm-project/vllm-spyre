@@ -1,4 +1,4 @@
-"""Tests validating the correctness and configuration of prompt_logprobs.
+"""Verification of vLLM output by comparing with HF
 
 Run `python -m pytest tests/e2e/test_spyre_tensor_parallel.py`.
 """
