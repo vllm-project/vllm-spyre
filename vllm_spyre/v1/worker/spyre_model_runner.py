@@ -243,6 +243,9 @@ class SpyreModelRunner:
         # Update input_batch's `token_ids_cpu`,
         # `num_tokens`. For continuous batching it cleans
         # finished requests from the batch
+        #
+        # NOTE: req_state.output_token_ids will be mutated when
+        # using PP
         req_data = scheduler_output.scheduled_cached_reqs
         for i, req_id in enumerate(req_data.req_ids):
             req_state: CachedRequestState = self.requests[req_id]
