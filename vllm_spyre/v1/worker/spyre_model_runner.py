@@ -858,7 +858,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         }
         req_ids = self.input_batch.sorted_requests_ids
 
-        for i, req_id in enumerate(req_ids):
+        for req_id in req_ids:
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
 
