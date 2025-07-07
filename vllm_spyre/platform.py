@@ -86,6 +86,9 @@ class SpyrePlatform(Platform):
         if envs_spyre.VLLM_SPYRE_USE_CB and is_decoder:
             scheduler_config.scheduler_cls = "vllm_spyre.v1.core."\
                 "scheduler.ContinuousBatchingSpyreScheduler"
+            if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
+                raise ValueError("Prompt logprobs not supported with " \
+                "continuous batching")
         else:
             # Static batching or embedding model.
             # Override --max-num-seqs to the biggest warmup batch size
@@ -100,6 +103,11 @@ class SpyrePlatform(Platform):
                 max_batch_size = max(max_batch_size, shape["batch_size"])
                 max_seq_len = max(max_seq_len,
                                   shape["prompt_length"] + shape["new_tokens"])
+
+            if (envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS
+                    and max_batch_size > 1):
+                raise ValueError(
+                    "Prompt logprobs only supported with batch size 1")
 
             model_config.max_model_len = max_seq_len
             scheduler_config.max_num_seqs = max_batch_size
@@ -239,6 +247,11 @@ class SpyrePlatform(Platform):
         if isinstance(params, PoolingParams):
             # Only validating generation requests for now
             return None
+
+        if (params.prompt_logprobs is not None
+                and not envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS):
+            raise ValueError("Prompt logprobs must be enabled with "
+                             "`VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS=1`")
 
         if isinstance(prompt, dict) and "prompt_token_ids" in prompt:
             prompt_len = len(prompt["prompt_token_ids"])
