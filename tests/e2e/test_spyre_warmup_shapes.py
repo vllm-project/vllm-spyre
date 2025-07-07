@@ -5,8 +5,8 @@ Run `python -m pytest tests/e2e/test_spyre_warmup_shapes.py`.
 
 import pytest
 from spyre_util import (compare_results, generate_hf_output,
-                        generate_spyre_vllm_output, get_spyre_backend_list,
-                        get_spyre_model_list, get_chicken_soup_prompts)
+                        generate_spyre_vllm_output, get_chicken_soup_prompts,
+                        get_spyre_backend_list, get_spyre_model_list)
 from vllm import SamplingParams
 
 

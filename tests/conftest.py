@@ -103,8 +103,8 @@ def remote_openai_server(request):
 
     # Add extra server args if present in test
     server_args = ["--quantization", quantization] if quantization else []
-    if 'tensor_parallel_size' in params:
-        tp_size = params['tensor_parallel_size']
+    if 'tp_size' in params:
+        tp_size = params['tp_size']
         skip_unsupported_tp_size(int(tp_size))
         server_args.extend(["--tensor-parallel-size", str(tp_size)])
 

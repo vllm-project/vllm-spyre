@@ -4,9 +4,9 @@ Run `python -m pytest tests/e2e/test_spyre_embeddings.py`.
 """
 
 import pytest
-from spyre_util import (compare_embedding_results, get_spyre_backend_list,
-                        get_spyre_model_list, spyre_vllm_embeddings,
-                        st_embeddings, get_chicken_soup_prompts)
+from spyre_util import (compare_embedding_results, get_chicken_soup_prompts,
+                        get_spyre_backend_list, get_spyre_model_list,
+                        spyre_vllm_embeddings, st_embeddings)
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list(isEmbeddings=True))
