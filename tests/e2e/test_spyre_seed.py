@@ -35,7 +35,7 @@ def test_seed(
 
     max_new_tokens = warmup_shape[1]
 
-    prompts = [get_chicken_soup_prompts(1)] * 16
+    prompts = get_chicken_soup_prompts(1) * 16
 
     vllm_sampling_params = SamplingParams(
         max_tokens=max_new_tokens,

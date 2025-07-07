@@ -105,7 +105,7 @@ async def test_abort(
 
         # Create concurrent requests
         tasks: list[asyncio.Task] = []
-        prompt = get_chicken_soup_prompts(1)
+        prompt = get_chicken_soup_prompts(1)[0]
         for idx, request_id in enumerate(request_ids):
             max_tokens = NUM_EXPECTED_TOKENS
             n = 3 if idx in PARALLEL_SAMPLE_REQ_IDS else 1

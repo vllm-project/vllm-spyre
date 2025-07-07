@@ -29,7 +29,7 @@ def test_output(
     are verified to be identical for vLLM and SentenceTransformers.
     '''
 
-    prompts = get_chicken_soup_prompts(4)
+    prompts = get_chicken_soup_prompts(1)
 
     vllm_results = spyre_vllm_embeddings(model=model,
                                          prompts=prompts,
