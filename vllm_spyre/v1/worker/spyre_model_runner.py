@@ -415,8 +415,8 @@ class SpyreModelRunner:
         req_id_to_index = self.get_req_id_to_index(is_prefill)
 
         # Add the sampled token(s) to the request cache
-        req_ids = (self.input_batch.sorted_requests_ids
-                   if not is_prefill else scheduler_output.scheduled_new_reqs)
+        req_ids = (scheduler_output.scheduled_new_reqs
+                   if is_prefill else self.input_batch.sorted_requests_ids)
         sampled_ids = output.sampled_token_ids.tolist()
         for i, req in enumerate(req_ids):
             req_state = self.requests[req.req_id] \
