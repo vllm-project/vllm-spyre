@@ -7,15 +7,11 @@ import math
 
 import pytest
 from spyre_util import (generate_spyre_vllm_output, get_spyre_backend_list,
-                        get_spyre_model_list)
+                        get_spyre_model_list, get_chicken_soup_prompts)
 from vllm import SamplingParams
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize("prompt", [
-    "Provide a list of instructions for preparing"
-    " chicken soup for a family of four."
-])
 @pytest.mark.parametrize("temperature", [0.1, 1.0])
 @pytest.mark.parametrize("seed", [42])
 @pytest.mark.parametrize(
@@ -23,7 +19,6 @@ from vllm import SamplingParams
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_seed(
     model: str,
-    prompt: str,
     temperature: float,
     seed: int,
     warmup_shape: tuple[int, int, int],
@@ -40,7 +35,7 @@ def test_seed(
 
     max_new_tokens = warmup_shape[1]
 
-    prompts = [prompt] * 16
+    prompts = [get_chicken_soup_prompts(1)] * 16
 
     vllm_sampling_params = SamplingParams(
         max_tokens=max_new_tokens,

@@ -2,7 +2,7 @@ import asyncio
 from contextlib import ExitStack
 
 import pytest
-from spyre_util import get_spyre_backend_list, get_spyre_model_list
+from spyre_util import get_spyre_backend_list, get_spyre_model_list, get_chicken_soup_prompts
 from vllm import PromptType, SamplingParams
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
@@ -104,7 +104,7 @@ async def test_abort(
 
         # Create concurrent requests
         tasks: list[asyncio.Task] = []
-        prompt = "Provide a list of instructions for preparing chicken soup."
+        prompt = get_chicken_soup_prompts(1)
         for idx, request_id in enumerate(request_ids):
             max_tokens = NUM_EXPECTED_TOKENS
             n = 3 if idx in PARALLEL_SAMPLE_REQ_IDS else 1
