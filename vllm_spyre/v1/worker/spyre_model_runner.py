@@ -249,6 +249,8 @@ class SpyreModelRunner:
 
             # Update the cached states.
             num_computed_tokens = req_data.num_computed_tokens[i]
+            # In the future, when using PP, the scheduler will send the sampled
+            # tokens back
             new_token_ids = req_data.new_token_ids[i] if len(
                 req_data.new_token_ids) > 0 else []
             # Add the sampled token(s) from the previous step (if any).
@@ -542,7 +544,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
             [0] for _ in range(self._position_ids.shape[0])
         ]
 
-        for i, req_id in enumerate(cached_request_data.req_ids):
+        for req_id in cached_request_data.req_ids:
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
             req_state: CachedRequestState = self.requests[req_id]
