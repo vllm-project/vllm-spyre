@@ -70,14 +70,13 @@ def test_output(
         hf_max_new_tokens = [max_new_tokens_early_stop] + hf_max_new_tokens
 
     kwargs = (
-        {"max_num_seqs": 2, "use_cb": True}
+        {"max_num_seqs": 2, "use_cb": True, "max_model_len": 128}
         if cb == 1
-        else {"warmup_shapes": (warmup_shape,)}
+        else {"warmup_shapes": (warmup_shape,), "max_model_len": 2048}
     )
     vllm_results = generate_spyre_vllm_output(
         model=model,
         prompts=prompts,
-        max_model_len=2048,
         block_size=2048,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
