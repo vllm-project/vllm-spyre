@@ -669,11 +669,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         super().__init__(vllm_config=vllm_config,
                          is_driver_worker=is_driver_worker)
 
-        # TODO: remove this limitation once we update the warm-up logic to
-        # support batch_size=1
-        assert vllm_config.scheduler_config.max_num_seqs >= 2, "Currently, " \
-            "continuous batching needs config to set batch_size >= 2"
-
         self.block_size = 64
 
         # TODO: move to a KV cache manager
