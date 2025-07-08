@@ -68,7 +68,7 @@ class SpyreWorker(WorkerBaseV1):
 
         num_shape_combinations = len(self.spyre_warmup_shapes)
         logger.info(
-            "[WARMUP] Starting warmup for %d "
+            "[WARMUP] Starting for %d "
             "prompt/decode/batchsize-shape combinations...",
             len(self.spyre_warmup_shapes))
         all_warmup_start_t = time.time()
@@ -594,7 +594,7 @@ class SpyreWorker(WorkerBaseV1):
                               max_tokens=num_decode_tokens,
                               prompt_len=prompt_len)
         logger.info(
-            "[WARMUP] Warmup for prompt length %d and max output tokens %d "
+            "[WARMUP] Prompt length %d and max output tokens %d "
             "finished in %.3fs", warmup_total_t, prompt_len, num_decode_tokens)
         maybe_override_signals_handler()
 
