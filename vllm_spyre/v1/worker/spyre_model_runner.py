@@ -245,15 +245,15 @@ class SpyreModelRunner:
         # finished requests from the batch
         #
         # NOTE: req_state.output_token_ids will be mutated when
-        # using PP
+        # PP will be enabled in the future
         req_data = scheduler_output.scheduled_cached_reqs
         for i, req_id in enumerate(req_data.req_ids):
             req_state: CachedRequestState = self.requests[req_id]
 
             # Update the cached states.
             num_computed_tokens = req_data.num_computed_tokens[i]
-            # In the future, when using PP, the scheduler will send the sampled
-            # tokens back
+            # The scheduler will send the sampled tokens back
+            # when PP will be enabled in the future
             new_token_ids = req_data.new_token_ids[i] if len(
                 req_data.new_token_ids) > 0 else []
             # Add the sampled token(s) from the previous step (if any).
