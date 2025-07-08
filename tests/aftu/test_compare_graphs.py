@@ -9,7 +9,8 @@ import tempfile
 
 import pytest
 from graph_compare_utils import (collect_graph_files, compare_graphs,
-                                 get_aftu_graphs, get_model_path)
+                                 get_model_path,
+                                 run_inference_py_and_get_graphs)
 from spyre_util import (generate_spyre_vllm_output, get_chicken_soup_prompts,
                         get_spyre_model_list)
 from vllm import SamplingParams
@@ -51,7 +52,7 @@ def test_compare_graphs_cb(
         "VLLM_DT_MAX_CONTEXT_LEN": str(max_model_len),
         "VLLM_DT_MAX_BATCH_SIZE": str(max_num_seqs)
     }
-    aftu_graphs = get_aftu_graphs(inference_py_args, extra_env)
+    aftu_graphs = run_inference_py_and_get_graphs(inference_py_args, extra_env)
 
     ## VLLM
     prompts = get_chicken_soup_prompts(4)
@@ -135,7 +136,7 @@ def test_compare_graphs_static_batching(
         str(warmup_shape[2]),
     ]
 
-    aftu_graphs = get_aftu_graphs(inference_py_args)
+    aftu_graphs = run_inference_py_and_get_graphs(inference_py_args)
 
     ## VLLM
     prompts = get_chicken_soup_prompts(4)

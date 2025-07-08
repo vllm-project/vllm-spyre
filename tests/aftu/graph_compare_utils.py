@@ -26,12 +26,35 @@ def load_graph_to_compare(file_path):
     # Replace value
     content = re.sub(r'values: ([0-9a-fA-F]{2}\s*)+', 'values: $$', content)
 
+    # Silly regext to find all s#.
+    # We are only considered those that starts with space or maybe
+    # terminated with comma
+    # examples:
+    # ' s1 '
+    # ' s1,'
+    # ' s1 s2 '
+    matched_symbols = re.findall(r'\s*(s\d+)[\s|,]', content)
+
+    symbols_set = set([m for m in matched_symbols])
+
+    # reindex symbols, considering the sorted indices
+
+    sorted_symbols = sorted(list(symbols_set))
+    symbol_map = {i: s for i, s in enumerate(sorted_symbols)}
+
+    for i, s in symbol_map.items():
+        content = content.replace(s, f'S#{i}')
+
     return content
 
 
-def collect_graph_files(input_dir) -> dict[str, tuple[str, str]]:
+def collect_graph_files(input_dir: str) -> dict[str, tuple[str, str]]:
+    # Get G1 graphs, it assumes the input_dir has the folder export_dtcompiler
+    # where are the files
+
     filepaths = iglob(path.join(input_dir, "export_dtcompiler", "*/*.ops"))
 
+    # Filter out G2 files
     filepaths = [f for f in filepaths if not f.endswith(".g2.ops")]
 
     # NOTE: f.split("dump")[-1], split the filename by using dump,
@@ -50,16 +73,18 @@ def diff_graph(a_filepath, a_file, b_filepath, b_file) -> Iterator[str]:
 
 
 def get_aftu_script_dir() -> str:
-    # TODO: while AFTU is not a lib yet, this function does the best
+    # TODO: since AFTU is not a lib yet, this function does the best
     # effort to get the scripts dir with inference.py to run the tests
-    # for graph comparison
+    # for graph comparison. The env variable below is a way to set it
+    # explicitly which is less error-prone.
 
     script_dir = os.environ.get("VLLM_SPYRE_TEST_AFTU_SCRIPTS_DIR", "")
 
     if script_dir:
         return script_dir
 
-    # Let's look for it... assuming it is installed as local install
+    # Let's look for it... assuming it is installed as local,
+    # i.e. git clone ... && uv pip install -e . [--no-deps]
     import aiu_fms_testing_utils
     module_dir = path.dirname(aiu_fms_testing_utils.__file__)
     repo_dir = path.dirname(module_dir)
@@ -70,7 +95,9 @@ def get_aftu_script_dir() -> str:
     return os.path.join(repo_dir, "scripts")
 
 
-def compare_graphs(a_map: dict[str, str], b_map: dict[str, str]) -> bool:
+def compare_graphs(a_map: dict[str, tuple[str, str]],
+                   b_map: dict[str, tuple[str, str]]) -> bool:
+
     are_graphs_similar = True
     for k, a_graph in a_map.items():
         a_filename, a_filedata = a_graph
@@ -90,9 +117,10 @@ def compare_graphs(a_map: dict[str, str], b_map: dict[str, str]) -> bool:
     return are_graphs_similar
 
 
-def get_aftu_graphs(
+def run_inference_py_and_get_graphs(
         inference_py_args: list[str],
-        extra_env: Optional[dict[str, str]] = None) -> dict[str, str]:
+        extra_env: Optional[dict[str,
+                                 str]] = None) -> dict[str, tuple[str, str]]:
     with tempfile.TemporaryDirectory() as tmpdir:
 
         env = os.environ.copy()
