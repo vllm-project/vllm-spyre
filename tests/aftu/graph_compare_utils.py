@@ -26,9 +26,9 @@ def load_graph_to_compare(file_path):
     # Replace value
     content = re.sub(r'values: ([0-9a-fA-F]{2}\s*)+', 'values: $$', content)
 
-    # Silly regext to find all s#.
-    # We are only considered those that starts with space or maybe
-    # terminated with comma
+    # Silly regex to find all s#.
+    # We are only considered those that surrounds by space (whole word)
+    # or started with space and terminated with comma
     # examples:
     # ' s1 '
     # ' s1,'
