@@ -402,7 +402,7 @@ class StaticBatchingFmsModel(FmsModelBase):
         position_ids: torch.Tensor,
         mask: torch.Tensor,
         use_cache: bool,
-        index: int,
+        index: int,  # currently unused, but will replace only_last_token soon
         **extra_kwargs,
     ) -> torch.Tensor:
         # specify attention type for static batching
@@ -422,7 +422,7 @@ class StaticBatchingFmsModel(FmsModelBase):
             mask=mask,
             past_key_value_states=self.past_key_value_states,
             use_cache=use_cache,
-            index=index,
+            only_last_token=only_last_token,
             **extra_kwargs,
         )
 
