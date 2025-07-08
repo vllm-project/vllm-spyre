@@ -100,12 +100,16 @@ def remote_openai_server(request):
         env_dict = {
             "VLLM_SPYRE_WARMUP_PROMPT_LENS":
             ','.join(map(str, warmup_prompt_length)),
-            "VLLM_SPYRE_WARMUP_NEW_TOKENS": ','.join(map(str, warmup_new_tokens)),
-            "VLLM_SPYRE_WARMUP_BATCH_SIZES": ','.join(map(str, warmup_batch_size)),
-            "VLLM_SPYRE_DYNAMO_BACKEND": backend,
-            "VLLM_USE_V1": "1"
+            "VLLM_SPYRE_WARMUP_NEW_TOKENS":
+            ','.join(map(str, warmup_new_tokens)),
+            "VLLM_SPYRE_WARMUP_BATCH_SIZES":
+            ','.join(map(str, warmup_batch_size)),
+            "VLLM_SPYRE_DYNAMO_BACKEND":
+            backend,
+            "VLLM_USE_V1":
+            "1"
         }
-        
+
         # Default to None if not present
         quantization = params.get('quantization', None)
 

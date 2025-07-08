@@ -82,10 +82,11 @@ def test_openai_serving_gptq(remote_openai_server, model, backend,
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize("cb", [pytest.param(1, marks=pytest.mark.cb, id="cb")])
+@pytest.mark.parametrize("cb",
+                         [pytest.param(1, marks=pytest.mark.cb, id="cb")])
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_openai_serving_cb(remote_openai_server, model, backend, cb):
-    """Test online serving with continuous batching using the `vllm serve` CLI"""
+    """Test online serving with CB using the `vllm serve` CLI"""
 
     client = remote_openai_server.get_client()
     completion = client.completions.create(model=model,
