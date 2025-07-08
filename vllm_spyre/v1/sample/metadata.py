@@ -7,8 +7,6 @@ from typing import Optional
 
 import torch
 
-# This is a copy of the vLLM vllm file prior to PR
-# https://github.com/vllm-project/vllm/pull/16728
 # TODO: Figure out if we want to apply the LogitsProcessor
 # approach here and whether we want to reuse the code. That
 # would require some refactoring since processors like the
