@@ -77,15 +77,16 @@ def test_output(
             "warmup_shapes": (warmup_shape, ),
             "max_model_len": 2048
         })
-        vllm_results = generate_spyre_vllm_output(
-            model=model,
-            prompts=prompts,
-            block_size=2048,
-            sampling_params=vllm_sampling_params,
-            tensor_parallel_size=1,
-            backend=backend,
-            monkeypatch=monkeypatch,
-            **kwargs)
+
+    vllm_results = generate_spyre_vllm_output(
+        model=model,
+        prompts=prompts,
+        block_size=2048,
+        sampling_params=vllm_sampling_params,
+        tensor_parallel_size=1,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        **kwargs)
 
     hf_results = generate_hf_output(model=model,
                                     prompts=prompts,
