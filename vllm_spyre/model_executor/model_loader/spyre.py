@@ -405,9 +405,16 @@ class StaticBatchingFmsModel(FmsModelBase):
         index: int,
         **extra_kwargs,
     ) -> torch.Tensor:
-
         # specify attention type for static batching
         extra_kwargs['attn_name'] = "sdpa_bidirectional"
+
+        if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
+            # In order to calculate prompt logprobs, we have to return the
+            # hidden states from the whole prompt. The static graphs need to be
+            # compiled with this set one way or the other.
+            only_last_token = False
+        else:
+            only_last_token = True
 
         output = self.model(
             input_ids,
