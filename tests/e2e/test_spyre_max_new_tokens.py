@@ -10,6 +10,8 @@ from spyre_util import (compare_results, generate_hf_output,
 from vllm import SamplingParams
 
 
+@pytest.mark.parametrize("cb",
+                         [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("stop_last", [True, False])
 @pytest.mark.parametrize(
@@ -20,6 +22,7 @@ def test_output(
     stop_last: bool,
     warmup_shape: tuple[int, int, int],
     backend: str,
+    cb: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     '''
@@ -66,16 +69,24 @@ def test_output(
                                 ] + vllm_sampling_params
         hf_max_new_tokens = [max_new_tokens_early_stop] + hf_max_new_tokens
 
+    kwargs = ({
+        "max_num_seqs": 2,
+        "use_cb": True,
+        "max_model_len": 256
+    } if cb == 1 else {
+        "warmup_shapes": (warmup_shape, ),
+        "max_model_len": 2048
+    })
+
     vllm_results = generate_spyre_vllm_output(
         model=model,
         prompts=prompts,
-        warmup_shapes=[warmup_shape],
-        max_model_len=2048,
         block_size=2048,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
         backend=backend,
-        monkeypatch=monkeypatch)
+        monkeypatch=monkeypatch,
+        **kwargs)
 
     hf_results = generate_hf_output(model=model,
                                     prompts=prompts,
