@@ -90,8 +90,9 @@ def compare_graphs(a_map: dict[str, str], b_map: dict[str, str]) -> bool:
     return are_graphs_similar
 
 
-def get_aftu_graphs(inference_py_args: list[str],
-                    extra_env: Optional[dict[str, str]]) -> dict[str, str]:
+def get_aftu_graphs(
+        inference_py_args: list[str],
+        extra_env: Optional[dict[str, str]] = None) -> dict[str, str]:
     with tempfile.TemporaryDirectory() as tmpdir:
 
         env = os.environ.copy()
