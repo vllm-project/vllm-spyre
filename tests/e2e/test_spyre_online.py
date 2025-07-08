@@ -79,3 +79,26 @@ def test_openai_serving_gptq(remote_openai_server, model, backend,
                                            n=2)
     assert len(completion.choices) == 2
     assert len(completion.choices[0].text) > 0
+
+
+@pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.parametrize("cb", [pytest.param(1, marks=pytest.mark.cb, id="cb")])
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+def test_openai_serving_cb(remote_openai_server, model, backend, cb):
+    """Test online serving with continuous batching using the `vllm serve` CLI"""
+
+    client = remote_openai_server.get_client()
+    completion = client.completions.create(model=model,
+                                           prompt="Hello World!",
+                                           max_tokens=5,
+                                           temperature=0.0)
+    assert len(completion.choices) == 1
+    assert len(completion.choices[0].text) > 0
+
+    completion = client.completions.create(model=model,
+                                           prompt="Hello World!",
+                                           max_tokens=5,
+                                           temperature=1.0,
+                                           n=2)
+    assert len(completion.choices) == 2
+    assert len(completion.choices[0].text) > 0

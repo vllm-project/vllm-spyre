@@ -78,34 +78,43 @@ def remote_openai_server(request):
     params = request.node.callspec.params
 
     try:
-        # Extract parameters from the test function for the server
         model = params['model']
-        warmup_shape = params['warmup_shape']
         backend = params['backend']
     except KeyError as e:
         raise pytest.UsageError(
             "Error setting up remote_openai_server params") from e
 
-    # Default to None if not present
-    quantization = params.get('quantization', None)
+    if 'cb' in params:
+        env_dict = {
+            "VLLM_SPYRE_USE_CB": "1",
+            "VLLM_SPYRE_DYNAMO_BACKEND": backend,
+            "VLLM_USE_V1": "1"
+        }
+        server_args = []
 
-    warmup_prompt_length = [t[0] for t in warmup_shape]
-    warmup_new_tokens = [t[1] for t in warmup_shape]
-    warmup_batch_size = [t[2] for t in warmup_shape]
-    env_dict = {
-        "VLLM_SPYRE_WARMUP_PROMPT_LENS":
-        ','.join(map(str, warmup_prompt_length)),
-        "VLLM_SPYRE_WARMUP_NEW_TOKENS": ','.join(map(str, warmup_new_tokens)),
-        "VLLM_SPYRE_WARMUP_BATCH_SIZES": ','.join(map(str, warmup_batch_size)),
-        "VLLM_SPYRE_DYNAMO_BACKEND": backend,
-        "VLLM_USE_V1": "1"
-    }
+    else:
+        warmup_shape = params['warmup_shape']
+        warmup_prompt_length = [t[0] for t in warmup_shape]
+        warmup_new_tokens = [t[1] for t in warmup_shape]
+        warmup_batch_size = [t[2] for t in warmup_shape]
+        env_dict = {
+            "VLLM_SPYRE_WARMUP_PROMPT_LENS":
+            ','.join(map(str, warmup_prompt_length)),
+            "VLLM_SPYRE_WARMUP_NEW_TOKENS": ','.join(map(str, warmup_new_tokens)),
+            "VLLM_SPYRE_WARMUP_BATCH_SIZES": ','.join(map(str, warmup_batch_size)),
+            "VLLM_SPYRE_DYNAMO_BACKEND": backend,
+            "VLLM_USE_V1": "1"
+        }
+        
+        # Default to None if not present
+        quantization = params.get('quantization', None)
 
-    # Add extra server args if present in test
-    server_args = ["--quantization", quantization] if quantization else []
-    if 'tp_size' in params:
-        tp_size = params['tp_size']
-        skip_unsupported_tp_size(int(tp_size))
+        # Add extra server args if present in test
+        server_args = ["--quantization", quantization] if quantization else []
+
+        if 'tp_size' in params:
+            tp_size = params['tp_size']
+            skip_unsupported_tp_size(int(tp_size))
         server_args.extend(["--tensor-parallel-size", str(tp_size)])
 
     try:
