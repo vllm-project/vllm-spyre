@@ -72,7 +72,7 @@ def test_output(
         kwargs = ({
             "max_num_seqs": 2,
             "use_cb": True,
-            "max_model_len": 128
+            "max_model_len": 256
         } if cb == 1 else {
             "warmup_shapes": (warmup_shape, ),
             "max_model_len": 2048
