@@ -131,6 +131,7 @@ markers = [
     "multi: Tests that require >1 cards",
     "utils: Tests for utility functions",
     "worker: Tests for worker logic",
+    "aftu: Tests to compare graphs from aiu-fms-testing-utils",
 ]
 # --8<-- [end:test-markers-definition]
 

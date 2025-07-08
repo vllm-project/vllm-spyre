@@ -16,7 +16,7 @@ from spyre_util import (generate_spyre_vllm_output, get_chicken_soup_prompts,
 from vllm import SamplingParams
 
 
-@pytest.mark.cb
+@pytest.mark.aftu
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", ["sendnn"])
 @pytest.mark.parametrize("max_num_seqs", [2, 4],
@@ -93,6 +93,7 @@ def test_compare_graphs_cb(
     assert compare_graphs(vllm_graphs, aftu_graphs)
 
 
+@pytest.mark.aftu
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("warmup_shape",
                          [(64, 5, 1), (64, 5, 2),
