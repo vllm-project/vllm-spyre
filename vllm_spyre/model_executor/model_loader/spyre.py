@@ -101,7 +101,6 @@ class SpyreCausalLM(nn.Module):
             position_ids=positions,
             mask=masks,
             use_cache=True,
-            only_last_token=not envs_spyre.VLLM_SPYRE_USE_CB,
             **extra_kwargs,
         )
 
@@ -356,7 +355,6 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         position_ids: torch.Tensor,
         mask: torch.Tensor,
         use_cache: bool,
-        only_last_token: bool,
         **extra_kwargs,
     ) -> torch.Tensor:
 
@@ -376,7 +374,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             mask=mask,
             past_key_value_states=self.past_key_value_states,
             use_cache=use_cache,
-            only_last_token=only_last_token,
+            only_last_token=False,
             current_tkv_mask=attn_metadata.current_tkv_mask,
             left_padded_prompt_mask=attn_metadata.left_padded_prompt_mask,
             block_table=attn_metadata.block_table,
@@ -414,12 +412,18 @@ class StaticBatchingFmsModel(FmsModelBase):
         position_ids: torch.Tensor,
         mask: torch.Tensor,
         use_cache: bool,
-        only_last_token: bool,
         **extra_kwargs,
     ) -> torch.Tensor:
-
         # specify attention type for static batching
         extra_kwargs['attn_name'] = "sdpa_bidirectional"
+
+        if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
+            # In order to calculate prompt logprobs, we have to return the
+            # hidden states from the whole prompt. The static graphs need to be
+            # compiled with this set one way or the other.
+            only_last_token = False
+        else:
+            only_last_token = True
 
         output = self.model(
             input_ids,
