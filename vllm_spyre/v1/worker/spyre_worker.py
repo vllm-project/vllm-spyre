@@ -28,9 +28,9 @@ import vllm_spyre.envs as envs_spyre
 import vllm_spyre.perf_metrics as perf_metrics
 from vllm_spyre.model_executor.model_loader import spyre_setup
 from vllm_spyre.platform import SpyrePlatform
+from vllm_spyre.v1.worker.spyre_input_batch import InputBatch
 from vllm_spyre.v1.worker.spyre_model_runner import (
     ContinuousBatchingSpyreModelRunner, StaticBatchingSpyreModelRunner)
-from vllm_spyre.v1.worker.spyre_input_batch import InputBatch
 
 logger = init_logger(__name__)
 
