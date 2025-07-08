@@ -314,7 +314,8 @@ class SpyreWorker(WorkerBaseV1):
                                               dtype=torch.long,
                                               device=torch.device("cpu"))
         batch_size = 2
-        prompt_len = 42
+        # ensuring the prompt spans 2 blocks -> dimension becomes a symbol
+        prompt_len = 70
         num_decode_tokens = 2
 
         # Sample from the valid token ids

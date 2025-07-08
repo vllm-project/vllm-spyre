@@ -680,9 +680,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.req_ids2blocks: dict[str, deque[int]] = {}
 
         self.tkv: int = 0
-        # set self.free_blocks to the minimal value of 4 required for warmup
+        # set self.free_blocks to the minimal value of 6 required for warmup
         # is reset to the value returned by the Spyre compiler after warmup
-        # self._set_free_blocks(num_blocks=4)
+        # self._set_free_blocks(num_blocks=6)
         # for the time being we set this to num_blocks consistent with the
         # cache dimension of ContinuousBatchingFmsModel.past_key_value_states
         num_blocks = (vllm_config.scheduler_config.max_num_seqs *

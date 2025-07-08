@@ -315,9 +315,9 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                 f"[SpyreCausalLM] model type {self.config.model_type} "
                 f"not supported in ContinuousBatchingFmsModel")
 
-        # set num_blocks to the minimal value of 4 required for warmup
+        # set num_blocks to the minimal value of 6 required for warmup
         # is reset to the value returned by the Spyre compiler after warmup
-        # self._set_past_key_value_states(num_blocks=4)
+        # self._set_past_key_value_states(num_blocks=6)
         num_blocks = scheduler_config.max_num_seqs * max_model_len // BLOCK_SIZE
         self._set_past_key_value_states(num_blocks=num_blocks)
 
