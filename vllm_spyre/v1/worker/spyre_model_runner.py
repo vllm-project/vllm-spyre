@@ -786,9 +786,13 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         if scheduler_output.total_num_scheduled_tokens > 0:
             is_prompt = len(scheduler_output.scheduled_new_reqs) > 0
-            scheduled_req = (scheduler_output.scheduled_new_reqs if is_prompt
-                             else scheduler_output.scheduled_cached_reqs)
-            req_ids = [req.req_id for req in scheduled_req]
+            if is_prompt:
+                req_ids = [
+                    req.req_id for req in scheduler_output.scheduled_new_reqs
+                ]
+            else:
+                req_ids = scheduler_output.scheduled_cached_reqs.req_ids
+
             tkvs = [
                 self.req_ids2tkv[r]
                 if envs_spyre.VLLM_SPYRE_HETEROGEN_TKV else self.tkv
