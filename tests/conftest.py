@@ -85,12 +85,13 @@ def remote_openai_server(request):
             "Error setting up remote_openai_server params") from e
 
     if 'cb' in params:
+        max_num_seqs = params['max_num_seqs']
         env_dict = {
             "VLLM_SPYRE_USE_CB": "1",
             "VLLM_SPYRE_DYNAMO_BACKEND": backend,
             "VLLM_USE_V1": "1"
         }
-        server_args = []
+        server_args = ["--max_num_seqs", str(max_num_seqs)]
 
     else:
         warmup_shape = params['warmup_shape']

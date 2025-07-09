@@ -84,8 +84,11 @@ def test_openai_serving_gptq(remote_openai_server, model, backend,
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("cb",
                          [pytest.param(1, marks=pytest.mark.cb, id="cb")])
+@pytest.mark.parametrize("max_num_seqs", [2],
+                         ids=lambda val: f"max_num_seqs({val})")
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def test_openai_serving_cb(remote_openai_server, model, backend, cb):
+def test_openai_serving_cb(remote_openai_server, model, backend, cb,
+                           max_num_seqs):
     """Test online serving with CB using the `vllm serve` CLI"""
 
     client = remote_openai_server.get_client()
