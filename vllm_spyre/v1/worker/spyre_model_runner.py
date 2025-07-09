@@ -727,6 +727,49 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.n_blocks = num_blocks
         self.block_pool = deque([i for i in range(self.n_blocks)])
 
+    def _get_num_blocks_available(self) -> int:
+        """Function returns the number of available blocks/pages.
+        Will eventually contain a function in torch_sendnn which reads 
+        the actual value provided by the compiler for backend sendnn"""
+
+        max_batch_size = self.vllm_config.scheduler_config.max_num_seqs
+        max_model_len = self.vllm_config.scheduler_config.max_model_len
+
+        min_req_num_blocks = max_model_len // self.block_size
+        # min_req_num_blocks is not enough blocks for the following test:
+        # tests/e2e/test_spyre_cb.py::test_scheduler_cb_steps_tkv
+        # [seqs_max_tokens4-prompts_lengths4-steps_add_reqs4-
+        # checked_steps4-256-False-2-eager-llama-194m]
+
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == 'sendnn':
+            # TODO: replace num_blocks_spyre by calling a function in
+            # torch_sendnn which returns the value set by the Spyre compiler
+            num_blocks_spyre = max_batch_size * min_req_num_blocks
+            assert num_blocks_spyre >= min_req_num_blocks, (
+                "Number of pages available on Spyre (%d) is not enough to "
+                "serve the current model (need at least %d pages)." %
+                (num_blocks_spyre, min_req_num_blocks))
+            max_concurrency_spyre = num_blocks_spyre * self.block_size \
+                / max_model_len
+            logger.info("Spyre KV cache size: %s tokens",
+                        num_blocks_spyre * self.block_size)
+            logger.info("Maximum concurrency for %s tokens per request: %.2fx",
+                        str(max_model_len), max_concurrency_spyre)
+            return num_blocks_spyre
+        else:  # dynamo backend 'eager'
+            num_blocks_cpu = max_batch_size * min_req_num_blocks
+            assert num_blocks_cpu >= min_req_num_blocks, (
+                "Number of pages available on CPU (%d) is not enough to "
+                "serve the current model (need at least %d pages)." %
+                (num_blocks_cpu, min_req_num_blocks))
+            max_concurrency_cpu = num_blocks_cpu * self.block_size \
+                / max_model_len
+            logger.info("CPU KV cache size: %s tokens",
+                        num_blocks_cpu * self.block_size)
+            logger.info("Maximum concurrency for %s tokens per request: %.2fx",
+                        str(max_model_len), max_concurrency_cpu)
+            return num_blocks_cpu
+
     def update_states(self, scheduler_output):
 
         super().update_states(scheduler_output)
