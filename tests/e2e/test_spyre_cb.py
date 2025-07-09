@@ -1188,8 +1188,9 @@ def test_scheduler_cb_steps_tkv(
             n_reserved_blocks = n_blocks - scheduler.n_free_blocks
             req_ids2blocks = (engine_core.model_executor.driver_worker.worker.
                               model_runner.req_ids2blocks)
-            req_ids2reserved_blocks = (engine_core.model_executor.driver_worker
-                                       .worker.model_runner.reserved_blocks)
+            req_ids2reserved_blocks = (
+                engine_core.model_executor.driver_worker.worker.model_runner.
+                req_ids2reserved_blocks)
             n_used_blocks = sum(
                 [len(blocks) for blocks in req_ids2blocks.values()])
 
