@@ -75,8 +75,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "VLLM_SPYRE_USE_CB":
     lambda: bool(int(os.getenv("VLLM_SPYRE_USE_CB", "0"))),
 
-    # If set, use the V1 continuous batching implementation. Otherwise, static
-    # batching mode will be enabled.
+    # Overriding the number of KV cache blocks available on Spyre (and CPU)
     "VLLM_SPYRE_N_BLOCKS":
     lambda: int(os.getenv("VLLM_SPYRE_N_BLOCKS", 0)),
 
