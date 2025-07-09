@@ -62,11 +62,6 @@ class BaseInputBatch(Generic[RequestState]):
         )
         self.token_ids_cpu = self.token_ids_cpu_tensor.numpy()
         self.num_prompt_tokens = np.zeros(max_num_reqs, dtype=np.int32)
-        # Request indices to mask request, and to be padded afterwards
-        # This is mapped to model.indices
-        self.req_indices_mask = torch.zeros(self.max_num_reqs,
-                                            dtype=torch.bool,
-                                            device=device)
 
         # Initialize with max number of requests
         self.padded_batch_size = self.max_num_reqs
@@ -80,61 +75,8 @@ class BaseInputBatch(Generic[RequestState]):
         # while performing state updates to the batch.
         return cast(list[str], self._req_ids)
 
-    def req_id_to_dense_index(self, req_id) -> int:
-        '''
-        This data structure has 3 types of references for data:
-        
-        - [request id | req_id] : str -> An id of the request, is passed as 
-        input in `add_request`.
-        - [request index | req_index | req_idx] : int -> The index of the data
-        in this batch. This index is aligned with `req_indices_mask` which can
-        deactivate indices in the batch. In static batching, the finished 
-        requests are only deactivated and the data is not reorganized until
-        the batch is fully processed. On the other hand, in continuous 
-        batching, finished request will have their slots free that can receive 
-        new requests, that is, the batch is continuously being updated.
-        - dense_index : int -> The contiguous index of data. This is the index
-        of the data of the batch when the padding/slots are removed. For 
-        instance, the sampling parameters are generated dense and are aligned
-        to this index.
-        
-        Example:
-        
-        Given the table below, where `_` is an empty slot
-        
-        request index     |  0  |  1  |  2  |  3  |  4  |  6  |
-        request id        | "A" | "B" | "F" |  _  |  _  | "X" |
-        req_indices_mask  |  T  |  T  |  T  |  F  |  F  |  F  |
-        dense index       |  0  |  1  |  2  |  _  |  _  |  3  |
-        
-        If we remove request "B" at request index 1 we will have:
-        
-        request index     |  0  |  1  |  2  |  3  |  4  |  6  |
-        request id        | "A" |  _  | "F" |  _  |  _  | "X" |
-        req_indices_mask  |  T  |  F  |  T  |  F  |  F  |  F  |
-        dense index       |  0  |  _  |  1  |  _  |  _  |  2  |
-        
-        Note how the dense indices were affected by the removal.
-    
-        '''
-
-        req_index = self.req_id_to_index[req_id]
-        return self.req_idx_to_dense_index(req_index)
-
-    def req_idx_to_dense_index(self, req_index) -> int:
-        '''
-        Convert a request index to a dense index. See `req_id_to_dense_index`
-        for more.
-        '''
-        return self.req_indices_mask[:req_index].sum().item()
-
     def get_available_index(self) -> int:
-        '''
-        Find a free slot in the batching, used primarily in continuous batching
-        '''
-        available_indices = self.req_indices_mask.logical_not().nonzero()
-        available_indices_list = available_indices.squeeze(dim=-1).tolist()
-        return available_indices_list[0] if available_indices_list else None
+        raise NotImplementedError
 
     def add_request(
         self,
@@ -153,8 +95,6 @@ class BaseInputBatch(Generic[RequestState]):
         assert req_index is not None
         assert req_index < self.max_num_reqs
 
-        assert self.req_indices_mask[req_index].item() is False
-        self.req_indices_mask[req_index] = True
         req_id = request.req_id
         self._req_ids[req_index] = req_id
 
@@ -176,7 +116,6 @@ class BaseInputBatch(Generic[RequestState]):
         Clear the batch, mostly used by static batching
         '''
         self.req_id_to_index = {}
-        self.req_indices_mask.fill_(False)
 
         self._req_ids = [None] * self.max_num_reqs
 
@@ -204,22 +143,24 @@ class BaseInputBatch(Generic[RequestState]):
         if req_index is None:
             return None
 
-        # Mask out the request
-        self.req_indices_mask[req_index] = False
-
         # Remove the references
 
         self._req_ids[req_index] = None
         self._num_requests -= 1
         return req_index
 
-    def refresh(self):
+    def refresh_metadata(self):
         pass
+
+    def _get_num_prompt_tokens(self) -> np.ndarray:
+        return self.num_prompt_tokens
+
+    def _get_token_ids(self) -> np.ndarray:
+        return self.token_ids_cpu
 
     def _make_prompt_token_ids_tensor(self) -> torch.Tensor:
 
-        req_indices_mask_cpu = self.req_indices_mask.numpy()
-        num_prompt_tokens = self.num_prompt_tokens[req_indices_mask_cpu]
+        num_prompt_tokens = self._get_num_prompt_tokens()
         max_prompt_len = num_prompt_tokens.max()
         prompt_token_ids_tensor = torch.empty(
             (self._num_requests, max_prompt_len),
@@ -227,33 +168,13 @@ class BaseInputBatch(Generic[RequestState]):
             dtype=torch.int64,
         )
         prompt_token_ids = prompt_token_ids_tensor.numpy()
-        prompt_token_ids[:] = self.token_ids_cpu[
-            req_indices_mask_cpu, :max_prompt_len]
+        prompt_token_ids[:] = self._get_token_ids()[:, :max_prompt_len]
         # Use the value of vocab_size as a pad since we don't have a
         # token_id of this value.
 
         for i in range(self._num_requests):
             prompt_token_ids[i, num_prompt_tokens[i]:] = self.vocab_size
         return prompt_token_ids_tensor
-
-    def get_unpadded_output_indices(self) -> dict[str, int]:
-        """The inputs to the model are all padded to a constant batch size, and
-        self.req_id_to_index is the map of request id -> padded index.
-        However, finished requests and padded requests are stripped from the
-        output, so the mapping of request id -> unpadded output index needs to
-        be created to be returned in `ModelRunnerOutput`.
-
-        For example if:
-        - self.req_indices_mask = [F, T, T, F]
-        - self.req_id_to_index = {"A": 0, "B": 1, "C": 2, "D": 3}
-        This will output: {"B": 0, "C": 1}
-        """
-
-        indices = self.req_indices_mask.nonzero().squeeze(dim=-1).tolist()
-        return {self._req_ids[idx]: i for i, idx in enumerate(indices)}
-
-    def get_model_indices(self):
-        return self.req_indices_mask[:self.padded_batch_size]
 
     def get_req_index(self, req_id):
         return self.req_id_to_index.get(req_id)
@@ -265,3 +186,8 @@ class BaseInputBatch(Generic[RequestState]):
     @property
     def requests_ids(self) -> list[str]:
         return list(self.req_id_to_index.keys())
+
+    @property
+    def sorted_requests_ids(self) -> list[str]:
+        return sorted(self.req_id_to_index,
+                      key=self.req_id_to_index.get)  # type: ignore

@@ -7,6 +7,8 @@ import pytest
 import torch
 from vllm.sampling_params import SamplingParams
 from vllm.utils import is_pin_memory_available, make_tensor_with_pad
+from vllm.v1.sample.logits_processor import (BatchUpdateBuilder,
+                                             init_builtin_logitsprocs)
 from vllm.v1.sample.metadata import SamplingMetadata
 
 from vllm_spyre.v1.worker.spyre_input_batch import (SamplingInputBatch,
@@ -56,20 +58,27 @@ def _construct_expected_sampling_metadata(
     repetition_penalties = [1.0 for _ in range(num_reqs)]
     top_k = [0 for _ in range(num_reqs)]
     top_p = [0.0 for _ in range(num_reqs)]
-    min_p = [0.0 for _ in range(num_reqs)]
     temperature = [0.0 for _ in range(num_reqs)]
-    min_tokens = {}
-    logit_bias = [None] * num_reqs
     allowed_token_ids_mask = torch.zeros(num_reqs,
                                          VOCAB_SIZE,
                                          dtype=torch.bool,
                                          device=device)
+
+    batch_update_builder = BatchUpdateBuilder()
+    logitsprocs = init_builtin_logitsprocs(pin_memory_available=False,
+                                           max_num_reqs=len(reqs) + 1,
+                                           device=device)
 
     bad_words_token_ids = {}
     for req in reqs:
         if req.req_id not in req_ids_retained:
             continue
         index_in_input_batch = input_batch.req_id_to_dense_index(req.req_id)
+
+        params = req.sampling_params
+        batch_update_builder.added.append(
+            (index_in_input_batch, params, req.output_token_ids))
+
         output_token_ids[index_in_input_batch] = req.output_token_ids
         prompt_token_ids[index_in_input_batch] = req.prompt_token_ids
         presence_penalties[
@@ -80,18 +89,17 @@ def _construct_expected_sampling_metadata(
             req.sampling_params.repetition_penalty)
         top_k[index_in_input_batch] = req.sampling_params.top_k
         top_p[index_in_input_batch] = req.sampling_params.top_p
-        min_p[index_in_input_batch] = req.sampling_params.min_p
         temperature[index_in_input_batch] = req.sampling_params.temperature
-        min_tokens[index_in_input_batch] = (
-            req.sampling_params.min_tokens,
-            req.sampling_params.all_stop_token_ids)
-        logit_bias[index_in_input_batch] = req.sampling_params.logit_bias
         if req.sampling_params.allowed_token_ids:
             allowed_token_ids_mask[index_in_input_batch][
                 req.sampling_params.allowed_token_ids] = True
         if req.sampling_params.bad_words_token_ids:
             bad_words_token_ids[
                 index_in_input_batch] = req.sampling_params.bad_words_token_ids
+
+    batch_update = batch_update_builder.get_and_reset(num_reqs)
+    for logit_proc in logitsprocs.all:
+        logit_proc.update_state(batch_update)
 
     return SamplingMetadata(
         temperature=torch.tensor(temperature, dtype=torch.float,
@@ -102,8 +110,6 @@ def _construct_expected_sampling_metadata(
             top_p, dtype=torch.float, device=device),
         top_k=None if all(x == 0 for x in top_k) else torch.tensor(
             top_k, dtype=torch.int, device=device),
-        min_p=None if all(x == 0.0 for x in min_p) else torch.tensor(
-            min_p, dtype=torch.float, device=device),
         generators={},
         max_num_logprobs=0,
         prompt_token_ids=make_tensor_with_pad(
@@ -122,13 +128,12 @@ def _construct_expected_sampling_metadata(
                                           dtype=torch.float,
                                           device=device),
         output_token_ids=output_token_ids,
-        min_tokens=min_tokens,
         no_penalties=(all(x == 0 for x in presence_penalties)
                       and all(x == 0 for x in frequency_penalties)
                       and all(x == 1 for x in repetition_penalties)),
-        logit_bias=logit_bias,
         allowed_token_ids_mask=allowed_token_ids_mask,
         bad_words_token_ids=bad_words_token_ids,
+        logitsprocs=logitsprocs,
     )
 
 
@@ -196,10 +201,8 @@ def compare_results(sampling_metadata, expected_sampling_metadata):
                           sampling_metadata.prompt_token_ids)
     assert (expected_sampling_metadata.output_token_ids ==
             sampling_metadata.output_token_ids)
-    assert expected_sampling_metadata.min_tokens == sampling_metadata.min_tokens
     assert expected_sampling_metadata.no_penalties == \
            sampling_metadata.no_penalties
-    assert expected_sampling_metadata.logit_bias == sampling_metadata.logit_bias
     if sampling_metadata.allowed_token_ids_mask:
         assert torch.allclose(
             expected_sampling_metadata.allowed_token_ids_mask,

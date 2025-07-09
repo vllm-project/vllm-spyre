@@ -330,7 +330,7 @@ class SpyrePoolingModelRunner(SpyreModelRunner):
         self.input_batch.padded_batch_size = padded_batch_size
 
         # Refresh sampling metadata after all request are added to the batch
-        self.input_batch.refresh()
+        self.input_batch.refresh_metadata()
 
         if token_type_list:
             assert len(input_token_list) == len(token_type_list)
@@ -443,7 +443,7 @@ class SpyrePoolingModelRunner(SpyreModelRunner):
 
         model_output = ModelRunnerOutput(
             req_ids=self.input_batch.requests_ids,
-            req_id_to_index=self.input_batch.get_unpadded_output_indices(),
+            req_id_to_index=self.input_batch.req_id_to_index,
             sampled_token_ids=[],
             spec_token_ids=None,
             logprobs=None,

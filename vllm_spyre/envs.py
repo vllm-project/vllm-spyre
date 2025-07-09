@@ -12,6 +12,12 @@ if TYPE_CHECKING:
     VLLM_SPYRE_PERF_METRIC_LOGGING_ENABLED: int = 0
     VLLM_SPYRE_PERF_METRIC_LOGGING_DIR: str = "/tmp"
     VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER: bool = False
+    # Prompt logprobs are behind a flag because they're only supported for
+    # static batching and require passing back the hidden states for the full
+    # prefill on every request. This could incur a heavy performance penalty in
+    # many cases, so it should only be enabled when prompt_logprobs are required
+    # for experimentation purposes.
+    VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS: bool = False
 
 logger = init_logger(__name__)
 
@@ -83,6 +89,11 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # shutdown the engine.
     "VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER":
     lambda: bool(int(os.getenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1"))),
+
+    # If set, enables the `prompt_logprobs` sampling parameter.
+    # By default, prompt_logprobs aren't supported
+    "VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS":
+    lambda: bool(int(os.getenv("VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS", "0"))),
 }
 # --8<-- [end:env-vars-definition]
 

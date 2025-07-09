@@ -66,6 +66,9 @@ class PoolingInputBatch(BaseInputBatch[PoolingRequestState]):
     def has_token_types(self) -> bool:
         return self._token_type_ids_cpu is not None
 
+    def get_available_index(self) -> int:
+        return self._num_requests
+
     def add_request(
         self,
         request: "PoolingRequestState",

@@ -13,7 +13,7 @@ from vllm.logger import init_logger
 from vllm.sampling_params import SamplingType
 from vllm.utils import is_pin_memory_available
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
-from vllm.v1.outputs import SamplerOutput
+from vllm.v1.outputs import LogprobsTensors, SamplerOutput
 
 from vllm_spyre.model_executor.model_loader.spyre import (
     SpyreAttentionMetadata, SpyreCausalLM)
@@ -221,7 +221,6 @@ class SpyreModelRunner:
 
     def build_attn_metadata(self,
                             _: ModelForwardInputs) -> SpyreAttentionMetadata:
-
         # TODO: probably sooner we will need a more sophisticated way to switch
         # build attention metadata based on model/attention. But for now, a
         # simple method override is good enough.
@@ -233,52 +232,128 @@ class SpyreModelRunner:
     def get_req_id_to_index(self, _: bool) -> dict[str, int]:
         return self.input_batch.get_unpadded_output_indices()
 
+    def no_prompt_logprob(self, _: bool) -> bool:
+        return self.input_batch.no_prompt_logprob
+
+    def get_num_prompt_logprobs(self) -> dict[str, int]:
+        return self.input_batch.num_prompt_logprobs
+
     def update_states(self, scheduler_output: SchedulerOutput):
         # Update the states of the running/resumed requests.
         # Update input_batch's `token_ids_cpu`,
         # `num_tokens`. For continuous batching it cleans
         # finished requests from the batch
         #
-        # NOTE: req_state.output_token_ids is being mutated.
-
-        for req_data in scheduler_output.scheduled_cached_reqs:
-            req_id = req_data.req_id
-            req_state = self.requests[req_id]
+        # NOTE: req_state.output_token_ids will be mutated when
+        # PP will be enabled in the future
+        req_data = scheduler_output.scheduled_cached_reqs
+        for i, req_id in enumerate(req_data.req_ids):
+            req_state: SamplingRequestState = self.requests[req_id]
 
             # Update the cached states.
-            num_computed_tokens = req_data.num_computed_tokens
+            num_computed_tokens = req_data.num_computed_tokens[i]
+            # The scheduler will send the sampled tokens back
+            # when PP will be enabled in the future
+            new_token_ids = req_data.new_token_ids[i] if len(
+                req_data.new_token_ids) > 0 else []
             # Add the sampled token(s) from the previous step (if any).
             # This doesn't include "unverified" tokens like spec decode tokens.
-            num_new_tokens = (num_computed_tokens +
-                              len(req_data.new_token_ids) -
+            num_new_tokens = (num_computed_tokens + len(new_token_ids) -
                               req_state.num_tokens)
             if num_new_tokens == 1:
                 # Avoid slicing list in most common case.
-                req_state.output_token_ids.append(req_data.new_token_ids[-1])
+                req_state.output_token_ids.append(new_token_ids[-1])
             elif num_new_tokens > 0:
                 req_state.output_token_ids.extend(
-                    req_data.new_token_ids[-num_new_tokens:])
+                    new_token_ids[-num_new_tokens:])
 
             req_index = self.input_batch.get_req_index(req_id)
             # Add new_token_ids to token_ids_cpu.
             # TODO: Update for spec decoding in the future
             start_token_index = num_computed_tokens
-            end_token_index = num_computed_tokens + len(req_data.new_token_ids)
+            end_token_index = num_computed_tokens + len(new_token_ids)
             self.input_batch.token_ids_cpu[
-                req_index,
-                start_token_index:end_token_index] = req_data.new_token_ids
+                req_index, start_token_index:end_token_index] = new_token_ids
+            # Remove the entry for prompt_logprobs for this request,
+            # if it exists
+            self.input_batch.num_prompt_logprobs.pop(req_id, None)
 
         if scheduler_output.finished_req_ids:
             for req_id in scheduler_output.finished_req_ids:
                 self.input_batch.remove_request(req_id)
                 self.requests.pop(req_id, None)
-            self.input_batch.refresh()
+            self.input_batch.refresh_metadata()
+
+    def _get_prompt_logprobs_dict(
+        self,
+        logits: torch.Tensor,
+        model_inputs: ModelForwardInputs,
+    ) -> dict[str, Optional[LogprobsTensors]]:
+        """Calculate prompt logprobs from hidden states.
+        
+        This currently only supports static batching, batch size 1
+        """
+        assert model_inputs.is_prompt is not None
+        if self.no_prompt_logprob(model_inputs.is_prompt):
+            return {}
+
+        num_prompt_logprobs_dict = self.get_num_prompt_logprobs()
+
+        # TODO: For chunked prefill, this will need to be updated to hold state
+        # for prompt logprobs across multiple model iterations.
+        # This assumes no chunked prefill for now
+        prompt_logprobs_dict: dict[str, Optional[LogprobsTensors]] = {}
+
+        # Since prompt logprobs are a rare feature, prioritize simple,
+        # maintainable loop over optimal performance.
+        for req_id, num_prompt_logprobs in num_prompt_logprobs_dict.items():
+            logger.debug("Calculating prompt_logprobs for request %s", req_id)
+
+            # Get metadata for this request.
+            request = self.requests[req_id]
+            num_prompt_tokens = len(request.prompt_token_ids)
+            prompt_token_ids = torch.tensor(request.prompt_token_ids).to(
+                self.device, non_blocking=True)
+
+            # No chunked prefill, so we always start at index 0, token 1.
+            # (First token has no logprobs because there's no context)
+            start_tok = 1
+            num_logits = num_prompt_tokens - start_tok
+
+            # Get the logits corresponding to this req's prompt tokens.
+            req_idx = self.get_req_id_to_index(model_inputs.is_prompt)[req_id]
+            logits = logits[req_idx]
+            # The offset needs to account for the left padding that static
+            # batching applies.
+            # TODO: To support continuous batching the offset needs to be
+            # calculated differently.
+            offset = logits.shape[0] - num_prompt_tokens
+            logits = logits[offset:offset + num_logits]
+
+            # Get the "target" tokens for each index. For prompt at index i,
+            # the token at prompt index i+1 is the "sampled" token we want
+            # to gather the logprob for.
+            tgt_token_ids = prompt_token_ids[start_tok:start_tok + num_logits]
+
+            # Compute prompt logprobs.
+            logprobs = self.model.sampler.compute_logprobs(logits)
+            token_ids, logprobs, ranks = self.model.sampler.gather_logprobs(
+                logprobs, num_prompt_logprobs, tgt_token_ids)
+
+            # To support chunked prefill, we will need to copy the chunks into
+            # saved state at each iteration.
+            # For now, we can just return the full tensors.
+            logprobs_tensors = LogprobsTensors(logprob_token_ids=token_ids,
+                                               logprobs=logprobs,
+                                               selected_token_ranks=ranks)
+            prompt_logprobs_dict[req_id] = logprobs_tensors
+
+        return prompt_logprobs_dict
 
     def _prepare_prompt(self, _: list[NewRequestData]) -> ModelForwardInputs:
         raise NotImplementedError
 
-    def _prepare_decode(self,
-                        _: list[CachedRequestData]) -> ModelForwardInputs:
+    def _prepare_decode(self, _: CachedRequestData) -> ModelForwardInputs:
         raise NotImplementedError
 
     def prepare_model_input(
@@ -291,7 +366,7 @@ class SpyreModelRunner:
         # Prepare input tensors.
         if is_prompt:
             # Assert no running requests
-            assert len(scheduler_output.scheduled_cached_reqs) == 0
+            assert len(scheduler_output.scheduled_cached_reqs.req_ids) == 0
 
             return self._prepare_prompt(scheduler_output.scheduled_new_reqs)
         else:
@@ -342,9 +417,22 @@ class SpyreModelRunner:
         # Get mapping between requests ids to the index within the batch
         req_id_to_index = self.get_req_id_to_index(is_prefill)
 
+        # Add the sampled token(s) to the request cache
+        req_ids = (scheduler_output.scheduled_new_reqs
+                   if is_prefill else self.input_batch.sorted_requests_ids)
+        sampled_ids = output.sampled_token_ids.tolist()
+        for i, req in enumerate(req_ids):
+            req_state = self.requests[req.req_id] \
+                if not isinstance(
+                req, str) else self.requests[req]
+            req_state.output_token_ids.extend(sampled_ids[i])
+
         extra_kwargs: dict[str, Any] = {}
         if "pooler_output" in ModelRunnerOutput.__dataclass_fields__:
             extra_kwargs["pooler_output"] = None
+
+        prompt_logprobs_dicts = self._get_prompt_logprobs_dict(
+            logits=logits, model_inputs=model_input)
 
         model_output = ModelRunnerOutput(
             req_ids=list(req_id_to_index.keys()),
@@ -353,10 +441,7 @@ class SpyreModelRunner:
             spec_token_ids=None,
             logprobs=(output.logprobs_tensors.tolists()
                       if output.logprobs_tensors else None),
-            prompt_logprobs_dict={
-                req_id: None
-                for req_id in self.input_batch.req_id_to_index
-            },  # TODO: take a decision regarding prompt logprobs
+            prompt_logprobs_dict=prompt_logprobs_dicts,
             **extra_kwargs,
         )
 
@@ -428,7 +513,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         self.input_batch.padded_batch_size = padded_batch_size
 
         # Refresh sampling metadata after all request are added to the batch
-        self.input_batch.refresh()
+        self.input_batch.refresh_metadata()
 
         # padding to compiled batch size
         while len(input_token_list) < padded_batch_size:
@@ -455,19 +540,22 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
 
     def _prepare_decode(
         self,
-        cached_requests: list[CachedRequestData],
+        cached_request_data: CachedRequestData,
     ) -> ModelForwardInputs:
-        assert len(cached_requests) > 0
+        assert len(cached_request_data.req_ids) > 0
         input_tokens: list[list[int]] = [
             [0] for _ in range(self._position_ids.shape[0])
         ]
 
-        for cached_request in cached_requests:
+        for req_id in cached_request_data.req_ids:
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
-            generation_token = cached_request.new_token_ids[-1]
-            input_tokens[self.input_batch.req_id_to_index[
-                cached_request.req_id]] = [generation_token]
+            req_state: SamplingRequestState = self.requests[req_id]
+            output_token_ids = req_state.output_token_ids
+            generation_token = output_token_ids[-1]
+            input_tokens[self.input_batch.req_id_to_index[req_id]] = [
+                generation_token
+            ]
 
         # update position ids and attention mask
         self._update_position_ids()
@@ -709,8 +797,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             self.prefill_batch.add_request(req_state)
 
         # Refresh sampling metadata after all request are added to the batch
-        self.input_batch.refresh()
-        self.prefill_batch.refresh()
+        self.input_batch.refresh_metadata()
+        self.prefill_batch.refresh_metadata()
 
         # TODO: Review this in the future
         # prefills are always of batch size 1 for this milestone
@@ -752,48 +840,51 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
     def _prepare_decode(
         self,
-        cached_requests: list[CachedRequestData],
+        cached_request_data: CachedRequestData,
     ) -> ModelForwardInputs:
-        assert len(cached_requests) > 0
+        assert len(cached_request_data.req_ids) > 0
 
         input_tokens = []
         input_positions = []
         block_table = []
         slot_mapping = []
         left_padded_prompt_mask = []
-        self.model.indices = torch.ones(len(cached_requests),
+        self.model.indices = torch.ones(len(cached_request_data.req_ids),
                                         dtype=torch.bool,
                                         device="cpu")
 
-        assert len(self.input_batch.req_id_to_index) == len(cached_requests)
+        assert len(self.input_batch.req_id_to_index) == len(
+            cached_request_data.req_ids)
         # TODO(wallas): I think we can do better here, without sorting or
         # creating an intermediary dictionary
-        cached_reqs_map = {c.req_id: c for c in cached_requests}
+        cached_reqs_map = {
+            req_id: i
+            for i, req_id in enumerate(cached_request_data.req_ids)
+        }
         req_ids = self.input_batch.sorted_requests_ids
 
         for req_id in req_ids:
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
-            cached_request = cached_reqs_map[req_id]
 
+            req_state: SamplingRequestState = self.requests[req_id]
             # adding new blocks if needed
             if self.tkv // self.block_size + 1 > len(
-                    self.req_ids2blocks[cached_request.req_id]):
-                self.req_ids2blocks[cached_request.req_id].append(
-                    self.free_blocks.popleft())
-            block_table.append(self.req_ids2blocks[cached_request.req_id])
+                    self.req_ids2blocks[req_id]):
+                self.req_ids2blocks[req_id].append(self.free_blocks.popleft())
+            block_table.append(self.req_ids2blocks[req_id])
             # slot_mapping for all blocks of sequence
             start_slot = block_table[-1][-1] * self.block_size
             offset = self.tkv % self.block_size
             slot = [start_slot + offset]
             slot_mapping.append(slot)
-
-            generation_token = cached_request.new_token_ids[-1]
+            output_token_ids = req_state.output_token_ids
+            generation_token = output_token_ids[-1]
             input_tokens.append([generation_token])
-            seq_len = cached_request.num_computed_tokens
+            seq_len = cached_request_data.num_computed_tokens[
+                cached_reqs_map[req_id]]
             input_positions.append([seq_len])
 
-            req_state = self.requests[cached_request.req_id]
             left_padded_prompt_mask.append(req_state.left_padding)
 
         input_tokens = torch.tensor(input_tokens,
@@ -819,7 +910,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                                         dtype=torch.int64)
 
         # add pads for min decode batch size of 2 (Spyre compiler constraint)
-        if len(cached_requests) == 1:
+        if len(cached_request_data.req_ids) == 1:
             padd_seq_indices = torch.zeros(1, dtype=torch.bool, device="cpu")
             self.model.indices = torch.cat(
                 (self.model.indices, padd_seq_indices), -1)
@@ -956,6 +1047,16 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             if is_prefill else self.input_batch.get_unpadded_output_indices()
 
         return req_id_to_index
+
+    def no_prompt_logprob(self, is_prefill: bool) -> bool:
+        if is_prefill:
+            return self.prefill_batch.no_prompt_logprob
+        # If we're not running a prefill then this is a decode-only batch
+        return True
+
+    def get_num_prompt_logprobs(self) -> dict[str, int]:
+        # Prompt logprobs will always be set on the prefill batch
+        return self.prefill_batch.num_prompt_logprobs
 
     def prepare_model_input(
             self, scheduler_output: SchedulerOutput) -> ModelForwardInputs:
