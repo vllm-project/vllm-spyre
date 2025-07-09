@@ -33,15 +33,21 @@ from vllm_spyre.v1.worker.spyre_model_runner import (
 
 logger = init_logger(__name__)
 
+# var to make sure we always warmup with the right context
+_inside_warmup_mode = False
+
 
 @contextlib.contextmanager
 def _maybe_warmup_context():
+    global _inside_warmup_mode
     warmup_context = contextlib.nullcontext
     if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
         from torch_sendnn import warmup_mode
         warmup_context = warmup_mode
     with warmup_context():
+        _inside_warmup_mode = True
         yield
+        _inside_warmup_mode = False
 
 
 class SpyreWorker(WorkerBaseV1):
@@ -351,6 +357,8 @@ class SpyreWorker(WorkerBaseV1):
                     grammar_bitmask=None,
                 )
                 logger.info("[WARMUP] Prefill %d/%d...", i + 1, batch_size)
+                assert _inside_warmup_mode, \
+                "it looks like you are outside the warmup context for prefill"
                 self.execute_model(scheduler_output)
 
             # one decode iteration across all sequences
@@ -391,6 +399,8 @@ class SpyreWorker(WorkerBaseV1):
                 grammar_bitmask=None,
             )
             logger.info("[WARMUP] Decode...")
+            assert _inside_warmup_mode, \
+                "it looks like you are outside the warmup context for decode"
             self.execute_model(scheduler_output)
             self._cleanup_model_runner(request=dummy_requests)
 
