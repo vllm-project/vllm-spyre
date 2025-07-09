@@ -7,13 +7,14 @@ import torch
 import torch._inductor.config
 import torch.distributed as dist
 import torch.nn as nn
+import vllm.envs as envs
 from fms.models import get_model
 from transformers import PretrainedConfig
 from vllm.config import ModelConfig, ParallelConfig, SchedulerConfig
 from vllm.forward_context import get_forward_context
 from vllm.logger import init_logger
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
-from vllm.model_executor.layers.sampler import SamplerOutput, get_sampler
+from vllm.model_executor.layers.sampler import Sampler, SamplerOutput
 from vllm.model_executor.model_loader.weight_utils import (
     download_weights_from_hf)
 from vllm.model_executor.sampling_metadata import SamplingMetadata
@@ -30,6 +31,14 @@ except ImportError:
 BACKEND_LIST = ['sendnn', 'inductor']
 
 logger = init_logger(__name__)
+
+
+def get_sampler() -> torch.nn.Module:
+    if envs.VLLM_USE_V1:
+        # Lazy import: the v1 package isn't distributed
+        from vllm_spyre.v1.sample.sampler import Sampler as V1Sampler
+        return V1Sampler()
+    return Sampler()
 
 
 @dataclass
