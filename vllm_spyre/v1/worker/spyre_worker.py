@@ -359,7 +359,7 @@ class SpyreWorker(WorkerBaseV1):
 
             # one decode iteration across all sequences
             req_ids = []
-            new_block_ids = []
+            new_block_ids = []  # type: ignore[var-annotated]
             num_computed_tokens = []
             for req in dummy_requests:
                 req_ids.append(req.req_id)
