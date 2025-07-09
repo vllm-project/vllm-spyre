@@ -696,7 +696,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # TODO: move to a KV cache manager
         self.req_ids2blocks: dict[str, deque[int]] = {}
         # max number of blocks needed (reserved) per request id
-        self.reserved_blocks: dict[str, int] = {}
+        self.req_ids2reserved_blocks: dict[str, int] = {}
 
         self.tkv: int = 0
         # set self.block_pool to the minimal value of 4 required for warmup
@@ -736,7 +736,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         for req_id in scheduler_output.finished_req_ids:
             if blocks_to_free := self.req_ids2blocks.pop(req_id, None):
                 logger.debug("Freeing request id: %s", req_id)
-                self.reserved_blocks.pop(req_id)
+                self.req_ids2reserved_blocks.pop(req_id)
                 for block_id in blocks_to_free:
                     logger.debug("Freeing block with id: %s", block_id)
                     self.block_pool.append(block_id)
@@ -769,7 +769,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                           if request_data.sampling_params is not None else 0)
             n = self.tkv + new_tokens - 1
             n_reserved_blocks = math.ceil(n / self.block_size)
-            self.reserved_blocks[request_data.req_id] = n_reserved_blocks
+            self.req_ids2reserved_blocks[
+                request_data.req_id] = n_reserved_blocks
 
             # retrieve initial (unpadded) tokens
             prompt_tokens = request_data.prompt_token_ids
@@ -980,7 +981,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                     freed_block_id = self.req_ids2blocks[req.req_id].popleft()
                     logger.debug("Freeing block with id: %s", freed_block_id)
                     self.block_pool.append(freed_block_id)
-                    self.reserved_blocks[req.req_id] -= 1
+                    self.req_ids2reserved_blocks[req.req_id] -= 1
 
         # update tkv
         self.tkv -= offset
@@ -1067,7 +1068,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         return req_id_to_index
 
     def get_n_free_blocks(self) -> int:
-        return self.n_blocks - sum(self.reserved_blocks.values())
+        return self.n_blocks - sum(self.req_ids2reserved_blocks.values())
 
     def no_prompt_logprob(self, is_prefill: bool) -> bool:
         if is_prefill:

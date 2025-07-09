@@ -1155,7 +1155,7 @@ def test_scheduler_cb_steps_tkv(
 
     # Run steps, until last step from 'checked_steps' is reached
     request_outputs = []
-    max_requested_blocks, max_reserved_blocks = {}, {}
+    requested_blocks, reserved_blocks = {}, {}
     for step in range(checked_steps[-1]['step'] + 1):
         # Add requests for this step
         while requests and requests[0][0] == step:
@@ -1188,8 +1188,8 @@ def test_scheduler_cb_steps_tkv(
             n_reserved_blocks = n_blocks - scheduler.n_free_blocks
             req_ids2blocks = (engine_core.model_executor.driver_worker.worker.
                               model_runner.req_ids2blocks)
-            reserved_blocks = (engine_core.model_executor.driver_worker.worker.
-                               model_runner.reserved_blocks)
+            req_ids2reserved_blocks = (engine_core.model_executor.driver_worker
+                                       .worker.model_runner.reserved_blocks)
             n_used_blocks = sum(
                 [len(blocks) for blocks in req_ids2blocks.values()])
 
@@ -1199,21 +1199,21 @@ def test_scheduler_cb_steps_tkv(
                 assert n_used_blocks == step_ref[
                     "n_used_blocks"], f"Step {step}, n_used_blocks"
 
-            assert len(req_ids2blocks) == len(reserved_blocks)
+            assert len(req_ids2blocks) == len(req_ids2reserved_blocks)
             for req_id in req_ids2blocks:
                 # current number of used blocks should be less than reserved
-                assert len(req_ids2blocks[req_id]) <= reserved_blocks[req_id]
-                # update max requested/reserved blocks to check in last step
+                assert len(
+                    req_ids2blocks[req_id]) <= req_ids2reserved_blocks[req_id]
+                # update requested/reserved blocks to check in last step
                 # Note: overwrite and not max because of reduce_left_padding()
-                max_requested_blocks[req_id] = len(req_ids2blocks[req_id])
-                max_reserved_blocks[req_id] = reserved_blocks[req_id]
+                requested_blocks[req_id] = len(req_ids2blocks[req_id])
+                reserved_blocks[req_id] = req_ids2reserved_blocks[req_id]
 
         # last step: check that sequences used all their reserved blocks
         # Note: no early stopping, all sequences produce max_num_tokens
         if len(checked_steps) == 0:
-            for req_id in max_requested_blocks:
-                assert max_requested_blocks[req_id] == max_reserved_blocks[
-                    req_id]
+            for req_id in requested_blocks:
+                assert requested_blocks[req_id] == reserved_blocks[req_id]
 
         # Perform next step
         step_output = engine_core.step()
