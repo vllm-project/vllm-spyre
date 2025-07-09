@@ -424,6 +424,9 @@ class SpyreWorker(WorkerBaseV1):
         n_blocks_avail = model_runner._get_num_blocks_available()
         # overwrite n_blocks_avail for testing scheduler constraints
         if envs_spyre.VLLM_SPYRE_N_BLOCKS > 0:
+            logger.info(
+                "[WARMUP] Overriding number of KV cache blocks on "
+                "Spyre/CPU to %d.", envs_spyre.VLLM_SPYRE_N_BLOCKS)
             n_blocks_avail = envs_spyre.VLLM_SPYRE_N_BLOCKS
         model_runner._set_blocks(num_blocks=n_blocks_avail)
         model_runner.model.model._set_past_key_value_states(
