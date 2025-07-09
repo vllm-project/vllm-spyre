@@ -228,7 +228,7 @@ def test_full_batch_scheduling(model: str, backend: str, monkeypatch):
     engine_args = EngineArgs(model=model,
                              tokenizer=model,
                              max_num_batched_tokens=max_batched_tokens,
-                             max_num_seqs=4)
+                             max_num_seqs=batch_size)
     vllm_config = engine_args.create_engine_config()
     executor_class = Executor.get_class(vllm_config)
     engine_core = EngineCore(vllm_config=vllm_config,

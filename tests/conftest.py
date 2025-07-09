@@ -19,6 +19,12 @@ from spyre_util import RemoteOpenAIServer, skip_unsupported_tp_size
 from vllm.connections import global_http_connection
 from vllm.distributed import cleanup_dist_env_and_memory
 
+# Running with "fork" can lead to hangs/crashes
+# Specifically, our use of transformers to compare results causes an OMP thread
+# pool to be created, which is then lost when the next test launches vLLM and
+# forks a worker.
+os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
+
 
 def pytest_collection_modifyitems(config, items):
     """ Mark all tests in e2e directory"""
