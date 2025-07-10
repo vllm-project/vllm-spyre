@@ -33,7 +33,7 @@ def test_prompt_logprobs(
     This test checks the prompt_logprobs output from vllm against a reference
     implementation using huggingface.
     '''
-    skip_unsupported_tp_size(tp_size)
+    skip_unsupported_tp_size(tp_size, backend)
     num_prompt_logprobs = 5
 
     prompts = get_chicken_soup_prompts(4)

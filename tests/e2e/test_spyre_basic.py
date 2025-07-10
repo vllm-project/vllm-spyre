@@ -45,7 +45,7 @@ def test_output(
     After debugging, DISABLE_ASSERTS should be reset to 'False'.
     '''
 
-    skip_unsupported_tp_size(tp_size)
+    skip_unsupported_tp_size(tp_size, backend)
 
     prompts = get_chicken_soup_prompts(4)
 
