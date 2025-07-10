@@ -11,10 +11,10 @@ Date: 10th July 2025
 
 ### Description
 * Runs inference on a set of prompts with continuous batching enabled (number of prompts is parametrizable)
-* Prints the generated text for each sequence. 
+* Prints the generated text for each sequence.
 * All the requested sequences are defined in the beginning, there is no requests joining the waiting queue while the decoding of some other request has already started.
 * The exact sequence of prefill and decode steps depends on the parameter values `max_num_seqs`, `num-prompts`, `max-tokens`.
-* If `--compare-with-CPU` is set, then the output text is compared to the one of hugging face, running on CPU. Note that here the logprobs are not compared, only tokens. 
+* If `--compare-with-CPU` is set, then the output text is compared to the one of hugging face, running on CPU. Note that here the logprobs are not compared, only tokens.
 
 ### Parametrization
 * `--model`: the model
@@ -27,7 +27,7 @@ Date: 10th July 2025
 
 ## CB tests through unit tests
 
-* **File path (tests targetting CB specifically):** `vllm-spyre/tests/e2e/test_spyre_cb.py`
+* **File path (tests targeting CB specifically):** `vllm-spyre/tests/e2e/test_spyre_cb.py`
 * **Purpose:** Automated execution to verify that a specific behaviour acts as expected (passing/failing)
 * **Usage (when running locally):** `python -m pytest -sv -m "spyre and cb" --forked tests`
     * `-s` option: show all the print statements in the code
@@ -37,12 +37,12 @@ Date: 10th July 2025
 
 ### Description
 
-Unit tests are designed for automated and systematic execution to verify that CB behaves as expected for different scenarios. For each scenario (i.e. configuration of parameters), the test either passes or fails. When a test suite fails, identifying which specific test case failed is often more informative than the failure message itself. Below is a brief description of the different unit tests targetting CB. The description can also be found in the docstring of the different test functions:
+Unit tests are designed for automated and systematic execution to verify that CB behaves as expected for different scenarios. For each scenario (i.e. configuration of parameters), the test either passes or fails. When a test suite fails, identifying which specific test case failed is often more informative than the failure message itself. Below is a brief description of the different unit tests targeting CB. The description can also be found in the docstring of the different test functions:
 
 > All the applicable unit tests in vLLM will eventually also execute with CB enabled in addition to SB, but two test functions specifically target continuous batching correctness: `test_cb_output` and `test_scheduler_cb_steps_tkv`. The other functions found in that files are mostly helper methods, or functions that test CB in aspects more specific to vLLM (such as scheduling constraints). Still it can be interesting to have a look in the code, but their description is skipped here.
 
 #### `test_cb_output`
-`test_cb_output` checks the correctness of the output of CB on a set of prompts (4 hardcoded prompts for that test). The output from vllm is compared to this of Hugging Face on CPU. 
+`test_cb_output` checks the correctness of the output of CB on a set of prompts (4 hardcoded prompts for that test). The output from vllm is compared to this of Hugging Face on CPU.
 
 * **The test passes if:** the logprobs of HF on CPU and vLLM (on Spyre or CPU depending on the backend) are compared, and the test passes only if the pairwise relative differences of the values are all below a threshold: `math.isclose(hf_logprob, vllm_logprob, rel_tol=0.35)`. Otherwise it fails.
 > The above applies for sendnn backend, on CPU the tokens need to additionally be exactly the same for the test to pass
@@ -79,4 +79,3 @@ Checking the final output correctness alone is not enough to ensure that CB is c
     * `get_params_test_blocks_borders_aligned_prompts`: parametrization for the situation where the prompts are by chance already aligned with the blocks boundaries (no **right** padding required)
     * `get_params_test_blocks_borders_misaligned_prompts`: parametrization for the situation where the prompts are misaligned with the block boundaries, and thus **right** padding is required
     * ... additional special cases
-
