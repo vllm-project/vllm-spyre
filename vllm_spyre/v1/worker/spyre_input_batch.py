@@ -230,7 +230,7 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
         self.req_output_token_ids.insert(dense_index, request.output_token_ids)
 
         params = request.sampling_params  # TODO add pooling params
-        tmp_dense = self.num_reqs
+        tmp_dense = self.num_reqs - 1
         self.batch_update_builder.added.append(
             (tmp_dense, params, request.output_token_ids))
 
@@ -351,7 +351,7 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
         tmp_dense = dense_index
         self.batch_update_builder.removed_append(tmp_dense)
 
-        while tmp_dense < self._num_requests:
+        while tmp_dense < self._num_requests + 1:
             self.batch_update_builder.moved.append(
                 (tmp_dense, tmp_dense + 1, MoveDirectionality.SWAP))
             tmp_dense = tmp_dense + 1
