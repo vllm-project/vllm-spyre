@@ -1,4 +1,4 @@
-# Continuous Batching tests / inference in vLLM
+# Continuous Batching tests / inference in vLLM Spyre
 
 Brief overview of what has been implemented so far in VLLM to test / debug continuous batching
 
