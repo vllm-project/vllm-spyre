@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any, Optional
 import torch
 from torch import nn
 from transformers import AutoModel
-from vllm.attention import AttentionType
 from vllm.config import DeviceConfig, VllmConfig
 from vllm.logger import init_logger
 from vllm.model_executor.layers.pooler import Pooler, PoolingType
@@ -211,8 +210,7 @@ class SpyreModelRunner:
                                       num_kv_heads=1,
                                       head_size=1,
                                       dtype=torch.float16,
-                                      use_mla=False,
-                                      attn_type=AttentionType.DECODER)
+                                      use_mla=False)
         return {"foo": attn_spec}
 
     def complete_warmup(self):
