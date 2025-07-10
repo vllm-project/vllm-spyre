@@ -28,12 +28,17 @@ Date: 10th July 2025
 
 * **File path (tests targetting CB specifically):** `vllm-spyre/tests/e2e/test_spyre_cb.py`
 * **Purpose:** Automated execution to verify that a specific behaviour acts as expected (passing/failing)
+* **Usage (when running locally):** `python -m pytest -sv -m "spyre and cb" --forked tests`
+    * `-s` option: show all the print statements in the code
+    * `-v` option: verbose mode, make the test output more detailed: show name of each test function and whether it passed, failed or was skipped
+    * `--forked` option: isolates the tests and avoid having one test crashing impacting the other tests
+    * `-m "spyre and cb"`: runs the tests with configurations marked as "spyre" and "cb" only
 
 ### Description
 
 Unit tests are designed for automated and systematic execution to verify that the behaviour of CB functions as expected for diffent scenario cases. For each scenario (ie. configuration of parameters), the test either passes or fails. When a test suite fails, identifying which specific test case failed is actually more informative than the failure message itself. Below is a brief description of the different unit tests targetting CB. The description can also be found in the docstring of the different test functions:
 
-> There are mainly two test functions of interests for CB: `test_cb_output` and `test_scheduler_cb_steps_tkv`. All the other functions found in that files are either helper methods or testing other aspects such as scheduling constraints.
+> Note: All the applicable unit tests in vLLM will eventually also execute with CB enabled in addition to SB, but two test functions specifically target continuous batching correctness and are described here: `test_cb_output` and `test_scheduler_cb_steps_tkv`. The other functions found in `test_spyre_cb.py` file are either helper methods or testing other aspects such as scheduling constraints. 
 
 #### `test_cb_output`
 `test_cb_output` checks the correctness of the output of CB on a set of prompts (4 hardcoded prompts for that test). The output from vllm is compared to this of Hugging Face on CPU. 
