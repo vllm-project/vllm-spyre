@@ -3,6 +3,7 @@ This example shows how to run offline inference using static batching.
 """
 
 import argparse
+import gc
 import os
 import platform
 import time
@@ -49,6 +50,13 @@ os.environ["VLLM_SPYRE_WARMUP_NEW_TOKENS"] = str(args.max_tokens)
 os.environ['VLLM_SPYRE_WARMUP_BATCH_SIZES'] = str(args.batch_size)
 os.environ['VLLM_SPYRE_DYNAMO_BACKEND'] = args.backend
 
+if args.tp > 1:
+    # Multi-spyre related variables
+    os.environ["TORCHINDUCTOR_COMPILE_THREADS"] = "1"
+    os.environ["DISTRIBUTED_STRATEGY_IGNORE_MODULES"] = "WordEmbedding"
+    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_PORT"] = "12355"
+
 template = (
     "Below is an instruction that describes a task. Write a response that "
     "appropriately completes the request. Be polite in your response to the "
@@ -91,6 +99,11 @@ for output in outputs:
     prompt = output.prompt
     generated_text = output.outputs[0].text
     print(f"Prompt: {prompt!r}, Generated text: {generated_text!r}")
+
+if args.tp > 1:
+    # needed to prevent ugly stackdump caused by sigterm
+    del llm
+    gc.collect()
 
 if args.compare_with_cpu:
     print("Comparing results with HF on cpu")
