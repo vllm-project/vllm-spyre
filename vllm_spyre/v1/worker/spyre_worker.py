@@ -329,7 +329,7 @@ class SpyreWorker(WorkerBaseV1):
             NewRequestData(
                 req_id="warmup-%d" % (i),
                 prompt_token_ids=warmup_tokens_tensor[i].tolist(),
-                token_type_ids=None,
+                # token_type_ids=None, TODO: wait for upstream
                 mm_inputs=[],
                 mm_hashes=[],
                 mm_positions=[],
@@ -535,7 +535,7 @@ class SpyreWorker(WorkerBaseV1):
         dummy_requests = [
             NewRequestData(req_id="warmup",
                            prompt_token_ids=warmup_tokens_tensor[i].tolist(),
-                           token_type_ids=None,
+                           # token_type_ids=None, TODO: wait for upstream
                            mm_inputs=[],
                            mm_hashes=[],
                            mm_positions=[],
