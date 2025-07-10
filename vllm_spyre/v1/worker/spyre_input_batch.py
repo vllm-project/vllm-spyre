@@ -224,6 +224,8 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
         # is not synced with self._req_ids, it should use
         # self.req_indices_mask to resolve its index considering masked
         # out requests.
+        assert self.req_indices_mask[req_index].item() is False
+        self.req_indices_mask[req_index] = True
         dense_index = self.req_idx_to_dense_index(req_index)
         self.req_output_token_ids.insert(dense_index, request.output_token_ids)
 
