@@ -13,6 +13,7 @@ Date: 10th July 2025
 * Runs inference on a set of prompts with continuous batching enabled (number of prompts is parametrizable)
 * Prints the generated text for each sequence. 
 * All the requested sequences are defined in the beginning, there is no requests joining the waiting queue while the decoding of some other request has already started.
+* The exact sequence of prefill and decode steps depends on the parameter values `max_num_seqs`, `num-prompts`, `max-tokens`.
 * If `--compare-with-CPU` is set, then the output text is compared to the one of hugging face, running on CPU. Note that here the logprobs are not compared, only tokens. 
 
 ### Parametrization
