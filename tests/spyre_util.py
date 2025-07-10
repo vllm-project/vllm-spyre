@@ -532,8 +532,6 @@ def create_random_request(
     extra_kwargs: dict[str, Any] = {}
     if "data_parallel_rank" in EngineCoreRequest.__annotations__:
         extra_kwargs["data_parallel_rank"] = None
-    if "pooling_params" in EngineCoreRequest.__annotations__:
-        extra_kwargs["pooling_params"] = None
 
     return EngineCoreRequest(request_id=str(request_id),
                              prompt_token_ids=[request_id] * num_tokens,
@@ -541,6 +539,7 @@ def create_random_request(
                              mm_hashes=None,
                              mm_placeholders=None,
                              sampling_params=sampling_params,
+                             pooling_params=None,
                              eos_token_id=None,
                              arrival_time=0,
                              lora_request=None,

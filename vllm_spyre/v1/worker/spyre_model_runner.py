@@ -2,7 +2,7 @@ import time
 from collections import deque
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import TYPE_CHECKING, Optional, cast
 
 import torch
 from torch import nn
@@ -425,10 +425,6 @@ class SpyreModelRunner:
                 req, str) else self.requests[req]
             req_state.output_token_ids.extend(sampled_ids[i])
 
-        extra_kwargs: dict[str, Any] = {}
-        if "pooler_output" in ModelRunnerOutput.__dataclass_fields__:
-            extra_kwargs["pooler_output"] = None
-
         prompt_logprobs_dicts = self._get_prompt_logprobs_dict(
             logits=logits, model_inputs=model_input)
 
@@ -440,7 +436,6 @@ class SpyreModelRunner:
             logprobs=(output.logprobs_tensors.tolists()
                       if output.logprobs_tensors else None),
             prompt_logprobs_dict=prompt_logprobs_dicts,
-            **extra_kwargs,
         )
 
         return model_output
