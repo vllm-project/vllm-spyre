@@ -86,6 +86,10 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
                 dynamic=False,
                 backend=envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND)
 
+    @property
+    def vocab_size(self) -> int:
+        return self.model.config.vocab_size
+
     def pad_input_ids(
         self,
         input_ids_list: list[torch.Tensor],
@@ -93,8 +97,8 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
         min_pad_length: int = 0,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
 
-        padded_input_ids_list, padded_token_type_list, \
-            mask_list, position_ids_list = (
+        padded_input_ids_list, mask_list, \
+            position_ids_list, padded_token_type_list = (
             self._prepare_pad_input_ids(input_ids_list, min_pad_length,
                                         token_type_list))
 
@@ -134,11 +138,11 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
                              dtype=torch.long,
                              device=torch.device("cpu")))
 
-            if request_data.token_type_ids is not None:
-                token_type_list.append(
-                    torch.tensor(request_data.token_type_ids,
-                                 dtype=torch.long,
-                                 device=torch.device("cpu")))
+            #if request_data.token_type_ids is not None:
+            #    token_type_list.append(
+            #        torch.tensor(request_data.token_type_ids,
+            #                     dtype=torch.long,
+            #                     device=torch.device("cpu")))
 
             # Add new requests to the cached states.
             req_id = request_data.req_id
@@ -148,7 +152,7 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
             req_state = PoolingRequestState(
                 req_id=req_id,
                 prompt_token_ids=request_data.prompt_token_ids,
-                token_type_ids=request_data.token_type_ids,
+                #token_type_ids=request_data.token_type_ids,
                 pooling_params=pooling_params,
             )
             self.requests[req_id] = req_state
@@ -203,7 +207,7 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
         # Prepare input tensors.
         assert is_prompt
         # Assert no running requests
-        assert len(scheduler_output.scheduled_cached_reqs) == 0
+        assert len(scheduler_output.scheduled_cached_reqs.req_ids) == 0
         return self._prepare_prompt(scheduler_output.scheduled_new_reqs)
 
     def _mark_input_tensors(self, model_input: PoolingForwardInputs) -> None:

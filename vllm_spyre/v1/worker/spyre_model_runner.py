@@ -128,10 +128,6 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT,
                    num_decode_tokens: Iterable[int]) -> None:
         raise NotImplementedError
 
-    @property
-    def vocab_size(self) -> int:
-        return self.model.model.model.config.src_vocab_size
-
     def _prepare_pad_input_ids(
         self,
         input_ids_list: list[torch.Tensor],
