@@ -650,10 +650,6 @@ def test_scheduler_cb_steps_tkv(
     monkeypatch.setenv("VLLM_USE_V1", "1")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
 
-    # To get deterministic execution in V1
-    # and to enable InprocClient
-    monkeypatch.setenv("VLLM_ENABLE_V1_MULTIPROCESSING", "0")
-
     max_model_len = 256
 
     # Input parameters sanity check, not actual testing
