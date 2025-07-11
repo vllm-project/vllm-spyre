@@ -22,7 +22,8 @@ from vllm_spyre.platform import SpyrePlatform
     pytest.param(1, id="tp_size"),
     pytest.param(2, marks=pytest.mark.multi, id="tp_size"),
     pytest.param(4, marks=pytest.mark.multi, id="tp_size")
-])
+],
+                         ids=lambda val: f"TP({val})")
 def test_prompt_logprobs(
     backend: str,
     model: str,

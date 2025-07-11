@@ -23,7 +23,8 @@ from vllm_spyre.v1.core.scheduler import StaticBatchingSpyreScheduler
     pytest.param(2, marks=pytest.mark.multi),
     pytest.param(4, marks=pytest.mark.multi),
     pytest.param(8, marks=pytest.mark.multi),
-])
+],
+                         ids=lambda val: f"TP({val})")
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_output(
     model: str,
