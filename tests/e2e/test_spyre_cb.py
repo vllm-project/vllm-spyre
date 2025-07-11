@@ -45,9 +45,9 @@ def test_cb_output(
 ):
     """Test that the spyre worker correctly outputs
     continuous batches of requests by comparing to HF"""
-    
+
     skip_unsupported_tp_size(tp_size, backend)
-    
+
     if max_num_seqs > 2 and backend == "sendnn":
         runtime_xfail("CB failures expected for batch size > 2")
 
