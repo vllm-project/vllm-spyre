@@ -66,16 +66,12 @@ class SpyrePlatform(Platform):
             raise NotImplementedError
 
         is_decoder = model_config.task == "generate"
-        is_embedding = model_config.task == "embed"
+        is_pooling = model_config.runner_type == "pooling"
 
-        # v0 is only supported for embedding models, and embedding models must
-        # be run on v0
-        if is_embedding and envs.VLLM_USE_V1:
-            raise ValueError("Embedding models are only supported on v0")
-        elif is_decoder and not envs.VLLM_USE_V1:
+        if is_decoder and not envs.VLLM_USE_V1:
             raise ValueError("Decoder models are only supported on v1")
-        elif not is_decoder and not is_embedding:
-            raise ValueError("Only the 'generate' and 'embed' tasks are "
+        elif not is_decoder and not is_pooling:
+            raise ValueError("Only the 'generate' and pooling tasks are "
                              "supported")
 
         if parallel_config.worker_cls == "auto":
@@ -116,9 +112,14 @@ class SpyrePlatform(Platform):
                 scheduler_config.scheduler_cls = (
                     "vllm_spyre.v1.core.scheduler."\
                         "StaticBatchingSpyreScheduler")
-            elif is_embedding:
-                scheduler_config.scheduler_cls = (
-                    "vllm_spyre.core.scheduler.SpyreScheduler")
+            elif is_pooling:
+                if not envs.VLLM_USE_V1:
+                    scheduler_config.scheduler_cls = (
+                        "vllm_spyre.core.scheduler.SpyreScheduler")
+                else:
+                    scheduler_config.scheduler_cls = (
+                        "vllm_spyre.v1.core.scheduler."\
+                            "StaticBatchingSpyreScheduler")
 
         # To disable any paged attention ops in the base scheduler, we:
         # - Set the block size (in tokens) to the maximum sequence length
@@ -234,7 +235,7 @@ class SpyrePlatform(Platform):
         model configuration.
         """
         # We don't have an embedding runner for v1 yet
-        return model_config.task != "embed"
+        return True
 
     @classmethod
     def validate_request(
