@@ -23,7 +23,8 @@ from vllm_spyre.v1.core.scheduler import StaticBatchingSpyreScheduler
     pytest.param(2, marks=pytest.mark.multi),
     pytest.param(4, marks=pytest.mark.multi),
     pytest.param(8, marks=pytest.mark.multi),
-])
+],
+                         ids=lambda val: f"TP({val})")
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_output(
     model: str,
@@ -45,7 +46,7 @@ def test_output(
     After debugging, DISABLE_ASSERTS should be reset to 'False'.
     '''
 
-    skip_unsupported_tp_size(tp_size)
+    skip_unsupported_tp_size(tp_size, backend)
 
     prompts = get_chicken_soup_prompts(4)
 

@@ -19,10 +19,11 @@ from vllm_spyre.platform import SpyrePlatform
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("tp_size", [
-    pytest.param(1, id="tp_size"),
-    pytest.param(2, marks=pytest.mark.multi, id="tp_size"),
-    pytest.param(4, marks=pytest.mark.multi, id="tp_size")
-])
+    pytest.param(1),
+    pytest.param(2, marks=pytest.mark.multi),
+    pytest.param(4, marks=pytest.mark.multi)
+],
+                         ids=lambda val: f"TP({val})")
 def test_prompt_logprobs(
     backend: str,
     model: str,
@@ -33,7 +34,7 @@ def test_prompt_logprobs(
     This test checks the prompt_logprobs output from vllm against a reference
     implementation using huggingface.
     '''
-    skip_unsupported_tp_size(tp_size)
+    skip_unsupported_tp_size(tp_size, backend)
     num_prompt_logprobs = 5
 
     prompts = get_chicken_soup_prompts(4)

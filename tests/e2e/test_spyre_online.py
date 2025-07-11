@@ -9,7 +9,8 @@ from spyre_util import get_spyre_backend_list, get_spyre_model_list
     pytest.param(2, marks=pytest.mark.multi),
     pytest.param(4, marks=pytest.mark.multi),
     pytest.param(8, marks=pytest.mark.multi),
-])
+],
+                         ids=lambda val: f"TP({val})")
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("warmup_shape", [[
     (64, 20, 1),
