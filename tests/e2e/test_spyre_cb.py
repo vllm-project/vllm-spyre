@@ -11,7 +11,7 @@ import pytest
 from spyre_util import (compare_results, create_random_request,
                         generate_hf_output, generate_spyre_vllm_output,
                         get_chicken_soup_prompts, get_spyre_backend_list,
-                        get_spyre_model_list)
+                        get_spyre_model_list, skip_unsupported_tp_size)
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
@@ -25,15 +25,28 @@ from vllm_spyre.v1.core.scheduler import ContinuousBatchingSpyreScheduler
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("max_num_seqs", [2, 4],
                          ids=lambda val: f"max_num_seqs({val})")
+@pytest.mark.parametrize(
+    "tp_size",
+    [
+        pytest.param(1),
+        pytest.param(2, marks=pytest.mark.multi),
+        pytest.param(4, marks=pytest.mark.multi),
+        pytest.param(8, marks=pytest.mark.multi),
+    ],
+    ids=lambda val: f"TP({val})",
+)
 def test_cb_output(
     model: str,
     backend: str,
     max_num_seqs: int,
+    tp_size: int,
     monkeypatch: pytest.MonkeyPatch,
     runtime_xfail,
 ):
     """Test that the spyre worker correctly outputs
     continuous batches of requests by comparing to HF"""
+
+    skip_unsupported_tp_size(tp_size, backend)
 
     if max_num_seqs > 2 and backend == "sendnn":
         runtime_xfail("CB failures expected for batch size > 2")
@@ -52,7 +65,7 @@ def test_cb_output(
         max_model_len=256,
         block_size=256,
         sampling_params=vllm_sampling_params,
-        tensor_parallel_size=1,
+        tensor_parallel_size=tp_size,
         backend=backend,
         max_num_seqs=max_num_seqs,
         use_cb=True,
