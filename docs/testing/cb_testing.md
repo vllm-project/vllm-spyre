@@ -39,13 +39,16 @@ Date: 10th July 2025
 
 Unit tests are designed for automated and systematic execution to verify that CB behaves as expected for different scenarios. For each scenario (i.e. configuration of parameters), the test either passes or fails. When a test suite fails, identifying which specific test case failed is often more informative than the failure message itself. Below is a brief description of the different unit tests targeting CB. The description can also be found in the docstring of the different test functions:
 
-> All the applicable unit tests in vLLM will eventually also execute with CB enabled in addition to SB, but two test functions specifically target continuous batching correctness: `test_cb_output` and `test_scheduler_cb_steps_tkv`. The other functions found in that files are mostly helper methods, or functions that test CB in aspects more specific to vLLM (such as scheduling constraints). Still it can be interesting to have a look in the code, but their description is skipped here.
+!!! note
+    All the applicable unit tests in vLLM will eventually also execute with CB enabled in addition to SB, but two test functions specifically target continuous batching correctness: `test_cb_output` and `test_scheduler_cb_steps_tkv`. The other functions found in that files are mostly helper methods, or functions that test CB in aspects more specific to vLLM (such as scheduling constraints). Still it can be interesting to have a look in the code, but their description is skipped here.
 
 #### `test_cb_output`
 `test_cb_output` checks the correctness of the output of CB on a set of prompts (4 hardcoded prompts for that test). The output from vllm is compared to this of Hugging Face on CPU.
 
 * **The test passes if:** the logprobs of HF on CPU and vLLM (on Spyre or CPU depending on the backend) are compared, and the test passes only if the pairwise relative differences of the values are all below a threshold: `math.isclose(hf_logprob, vllm_logprob, rel_tol=0.35)`. Otherwise it fails.
-> The above applies for sendnn backend, on CPU the tokens need to additionally be exactly the same for the test to pass
+
+!!! attention
+    The above applies for sendnn backend, on CPU the tokens need to additionally be exactly the same for the test to pass
 
 * **parametrization:**
     * `model`: the model
@@ -56,9 +59,11 @@ Unit tests are designed for automated and systematic execution to verify that CB
 
 #### `test_scheduler_cb_steps_tkv` (For this test the final output is not checked)
 
-> **Note 1: since we are now testing more than only the tkv value at each step, I plan to rename that test, because the name is now a bit misleading**
+!!! note
+    Since we are now testing more than only the tkv value at each step, I plan to rename that test, because the name is now a bit misleading.
 
-> **Note 2: the final output is not checked because for a lot of parametrized scenarios they are only relevant for testing scheduling implementation, this saves some computation time.**
+!!! note
+    The final output is not checked because for a lot of parametrized scenarios they are only relevant for testing scheduling implementation, this saves some computation time.
 
 Checking the final output correctness alone is not enough to ensure that CB is correctly implemented (otherwise how can we differentiate with static batching for example). So `test_scheduler_cb_steps_tkv` is meant to check the correctness of the step-by-step execution of continuous batching. It does so by comparing, at every engine step (i.e. prefill or decode iteration), a bunch of attributes. This is allows a finer testing of the padding and scheduling implementation.
 
