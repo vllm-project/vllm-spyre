@@ -209,7 +209,6 @@ def test_batch_handling(model: str, backend: str, cb: int,
     compare_results(
         model=model,
         prompts=prompts,
-        warmup_shapes=[],
         tensor_parallel_size=1,
         backend=backend,
         vllm_results=vllm_results,
