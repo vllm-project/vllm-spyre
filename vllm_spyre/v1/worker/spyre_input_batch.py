@@ -9,8 +9,10 @@ from typing import Optional, cast
 import numpy as np
 import torch
 from vllm.sampling_params import SamplingParams, SamplingType
-
-from vllm_spyre.v1.sample.metadata import SamplingMetadata
+from vllm.v1.sample.logits_processor import (BatchUpdateBuilder,
+                                             MoveDirectionality,
+                                             init_builtin_logitsprocs)
+from vllm.v1.sample.metadata import SamplingMetadata
 
 _SAMPLING_EPS = 1e-5
 
@@ -106,12 +108,6 @@ class InputBatch:
         self.top_k_cpu = self.top_k.numpy()
         self.top_k_reqs: set[str] = set()
 
-        self.min_p = torch.empty((max_num_reqs, ),
-                                 dtype=torch.float32,
-                                 device=device)
-        self.min_p_cpu = self.min_p.numpy()
-        self.min_p_reqs: set[str] = set()
-
         # Frequency penalty related data structures
         self.frequency_penalties = torch.empty((max_num_reqs, ),
                                                dtype=torch.float,
@@ -135,9 +131,6 @@ class InputBatch:
             self.repetition_penalties.numpy()
         self.repetition_penalties_reqs: set[str] = set()
 
-        # req_index -> (min_tokens, stop_token_ids)
-        self.min_tokens: dict[int, tuple[int, set[int]]] = {}
-
         # req_index -> generator
         # NOTE(woosuk): The indices of the requests that do not have their own
         # generator should not be included in the dictionary.
@@ -148,8 +141,19 @@ class InputBatch:
         # that are currently in the prefill phase.
         self.num_prompt_logprobs: dict[str, int] = {}
 
-        self.logit_bias: list[Optional[dict[int,
-                                            float]]] = [None] * max_num_reqs
+        # Internal representation of per-step batch state changes, used for
+        # reordering persistent batch and generating logitsprocs batch state
+        # updates. Should reset each step.
+        self.batch_update_builder = BatchUpdateBuilder()
+
+        # Define logits processors.
+        # TODO(andy): logits processor list should be extensible via engine
+        # constructor argument; for now the list is fixed.
+        self.logitsprocs = init_builtin_logitsprocs(pin_memory_available=False,
+                                                    max_num_reqs=max_num_reqs +
+                                                    1,
+                                                    device=device)
+
         self.has_allowed_token_ids: set[str] = set()
         self.allowed_token_ids_mask: Optional[torch.Tensor] = None
 
@@ -257,6 +261,16 @@ class InputBatch:
         dense_index = self.req_idx_to_dense_index(req_index)
         self.req_output_token_ids.insert(dense_index, request.output_token_ids)
 
+        params = request.sampling_params  # TODO add pooling params
+        tmp_dense = self.num_reqs
+        self.batch_update_builder.added.append(
+            (tmp_dense, params, request.output_token_ids))
+
+        while tmp_dense > dense_index:
+            self.batch_update_builder.moved.append(
+                (tmp_dense, tmp_dense - 1, MoveDirectionality.SWAP))
+            tmp_dense = tmp_dense - 1
+
         self.req_id_to_index[req_id] = req_index
 
         # Copy the prompt token ids and output token ids.
@@ -285,11 +299,8 @@ class InputBatch:
         self.top_k_cpu[req_index] = sampling_params.top_k
         if sampling_params.top_k > 0:
             self.top_k_reqs.add(req_id)
-        self.min_p_cpu[req_index] = sampling_params.min_p
         self.frequency_penalties_cpu[
             req_index] = sampling_params.frequency_penalty
-        if sampling_params.min_p > _SAMPLING_EPS:
-            self.min_p_reqs.add(req_id)
         if sampling_params.frequency_penalty != 0.0:
             self.frequency_penalties_reqs.add(req_id)
         self.presence_penalties_cpu[
@@ -300,9 +311,6 @@ class InputBatch:
             req_index] = sampling_params.repetition_penalty
         if sampling_params.repetition_penalty != 1.0:
             self.repetition_penalties_reqs.add(req_id)
-        if sampling_params.min_tokens:
-            self.min_tokens[req_index] = (sampling_params.min_tokens,
-                                          sampling_params.all_stop_token_ids)
 
         # NOTE(woosuk): self.generators should not include the requests that
         # do not have their own generator.
@@ -313,8 +321,6 @@ class InputBatch:
             self.num_logprobs[req_id] = sampling_params.logprobs
         if sampling_params.prompt_logprobs is not None:
             self.num_prompt_logprobs[req_id] = sampling_params.prompt_logprobs
-        if sampling_params.logit_bias is not None:
-            self.logit_bias[req_index] = sampling_params.logit_bias
 
         if sampling_params.allowed_token_ids:
             self.has_allowed_token_ids.add(req_id)
@@ -347,8 +353,6 @@ class InputBatch:
         self.random_reqs = set()
         self.top_p_reqs = set()
         self.top_k_reqs = set()
-        self.min_p_reqs = set()
-        self.min_tokens = {}
         self.frequency_penalties_reqs = set()
         self.presence_penalties_reqs = set()
         self.repetition_penalties_reqs = set()
@@ -356,12 +360,12 @@ class InputBatch:
         self.num_logprobs = {}
         self.num_prompt_logprobs = {}
 
-        self.logit_bias = [None] * self.max_num_reqs
         self.has_allowed_token_ids = set()
         if self.allowed_token_ids_mask is not None:
             self.allowed_token_ids_mask.fill_(False)
 
         self._num_requests = 0
+        self.batch_update_builder.get_and_reset(0)
 
     def remove_request(self, req_id: str):
         '''
@@ -379,17 +383,26 @@ class InputBatch:
         '''
 
         req_index = self.req_id_to_index.pop(req_id, None)
-
         if req_index is None:
             return
-
-        # Mask out the request
-        self.req_indices_mask[req_index] = False
 
         # Remove the references
 
         # Index corrected based on the padded/deactivated requests
         dense_index = self.req_idx_to_dense_index(req_index)
+        # Mask out the request
+        self.req_indices_mask[req_index] = False
+
+        # Remove and move up
+        tmp_dense = dense_index
+        self.batch_update_builder.removed_append(tmp_dense)
+
+        while tmp_dense < self._num_requests:
+            self.batch_update_builder.moved.append(
+                (tmp_dense, tmp_dense + 1, MoveDirectionality.SWAP))
+            tmp_dense = tmp_dense + 1
+
+        # Remove the references
         self.req_output_token_ids.pop(dense_index)
         self._req_ids[req_index] = None
 
@@ -397,7 +410,6 @@ class InputBatch:
         self.random_reqs.discard(req_id)
         self.top_p_reqs.discard(req_id)
         self.top_k_reqs.discard(req_id)
-        self.min_p_reqs.discard(req_id)
 
         self.frequency_penalties_reqs.discard(req_id)
         self.presence_penalties_reqs.discard(req_id)
@@ -406,20 +418,26 @@ class InputBatch:
         self.num_logprobs.pop(req_id, None)
         self.num_prompt_logprobs.pop(req_id, None)
 
-        self.logit_bias[req_index] = None
         self.has_allowed_token_ids.discard(req_id)
 
         if self.allowed_token_ids_mask is not None:
             self.allowed_token_ids_mask[req_index].fill_(False)
 
-        self.min_tokens.pop(req_index, None)
-
         self._num_requests -= 1
 
         self.bad_words_token_ids.pop(req_index, None)
 
-    def refresh_sampling_metadata(self):
-        self.sampling_metadata = self._make_sampling_metadata()
+    def refresh_metadata(self):
+        """Apply batch updates, reset input batch at end of step
+        
+        * Apply batch add/remove/permute to logits procs' states
+        * If batch state is modified, update sampling metadata
+        """
+        batch_update = self.batch_update_builder.get_and_reset(self.num_reqs)
+        for logit_proc in self.logitsprocs.all:
+            logit_proc.update_state(batch_update)
+        if batch_update:
+            self.sampling_metadata = self._make_sampling_metadata()
 
     def _make_sampling_metadata(self) -> SamplingMetadata:
 
@@ -446,15 +464,10 @@ class InputBatch:
             allowed_token_ids_mask = self.allowed_token_ids_mask[indices_mask]
 
         indices = indices_mask.nonzero().squeeze(dim=-1).tolist()
-        logit_bias = [self.logit_bias[i] for i in indices]
 
         generators = { i: self.generators[idx] \
             for i, idx in enumerate(indices) \
                 if self.generators.get(idx) is not None}
-
-        min_tokens = { i: self.min_tokens[idx] \
-            for i, idx in enumerate(indices) \
-                if self.min_tokens.get(idx) is not None}
 
         return SamplingMetadata(
             temperature=temperature,
@@ -462,7 +475,6 @@ class InputBatch:
             all_random=self.all_random,
             top_p=None if self.no_top_p else self.top_p[indices_mask],
             top_k=None if self.no_top_k else self.top_k[indices_mask],
-            min_p=None if self.no_min_p else self.min_p[indices_mask],
             generators=generators,
             max_num_logprobs=self.max_num_logprobs,
             prompt_token_ids=prompt_token_ids,
@@ -473,11 +485,10 @@ class InputBatch:
             # and may be updated from other contexts. For instance,
             # spyre_model_runner updates this data at _update_states.
             output_token_ids=cast(list[list[int]], self.req_output_token_ids),
-            min_tokens=min_tokens,
             no_penalties=self.no_penalties,
-            logit_bias=logit_bias,
             allowed_token_ids_mask=allowed_token_ids_mask,
             bad_words_token_ids=self.bad_words_token_ids,
+            logitsprocs=self.logitsprocs,
         )
 
     def _make_prompt_token_ids_tensor(self) -> torch.Tensor:
@@ -541,10 +552,6 @@ class InputBatch:
     @property
     def no_top_k(self) -> bool:
         return len(self.top_k_reqs) == 0
-
-    @property
-    def no_min_p(self) -> bool:
-        return len(self.min_p_reqs) == 0
 
     @property
     def no_penalties(self) -> bool:
