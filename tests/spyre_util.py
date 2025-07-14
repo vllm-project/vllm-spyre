@@ -547,7 +547,13 @@ def create_random_request(
                              **extra_kwargs)
 
 
-def skip_unsupported_tp_size(size: int):
+def skip_unsupported_tp_size(size: int, backend: str):
+    if backend in ["eager", "inductor"]:
+        # Spyre cards aren't required for running TP on CPU backends
+        # But it's really slow to run tp > 2
+        if size > 2:
+            pytest.skip("Skipping TP test on CPU with TP size > 2")
+        return
     cards = int(os.getenv("AIU_WORLD_SIZE", "0"))
     if cards < size:
         pytest.skip(f"Cannot run TP size {size}: "

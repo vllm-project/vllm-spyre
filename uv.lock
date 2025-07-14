@@ -4849,7 +4849,7 @@ requires-dist = [
 dev = [
     { name = "pytest", specifier = "==8.3.4" },
     { name = "pytest-asyncio", specifier = ">=1.0.0" },
-    { name = "pytest-forked", specifier = "==1.6.0" },
+    { name = "pytest-forked", specifier = ">=1.6.0" },
     { name = "pytest-timeout", specifier = "==2.3.1" },
     { name = "requests", specifier = "==2.32.3" },
     { name = "sentence-transformers", specifier = "==3.4.1" },

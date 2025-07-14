@@ -321,6 +321,8 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
         if self.allowed_token_ids_mask is not None:
             self.allowed_token_ids_mask.fill_(False)
 
+        self.batch_update_builder.get_and_reset(0)
+
     def remove_request(self, req_id: str):
         '''
         Free a slot of a request from the batch

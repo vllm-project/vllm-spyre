@@ -478,10 +478,6 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
                                        masks=model_input.input_masks,
                                        is_prompt=model_input.is_prompt)
 
-        # Only perform sampling in the driver worker.
-        if not self.is_driver_worker:
-            return EMPTY_MODEL_RUNNER_OUTPUT
-
         # Compute the logits.
         logits = self.model.compute_logits(hidden_states, None)
 
@@ -510,6 +506,10 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
 
         prompt_logprobs_dicts = self._get_prompt_logprobs_dict(
             logits=logits, model_inputs=model_input)
+
+        # Only return outputs from the driver worker
+        if not self.is_driver_worker:
+            return EMPTY_MODEL_RUNNER_OUTPUT
 
         model_output = ModelRunnerOutput(
             req_ids=list(req_id_to_index.keys()),
