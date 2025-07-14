@@ -31,3 +31,5 @@ nav:
     - Supported Models: user_guide/supported_models.md
   - Developer Guide:
     - Contributing: contributing/README.md
+    - Testing:
+      - Continuous Batching: testing/cb_testing.md
