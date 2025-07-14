@@ -228,9 +228,6 @@ def test_full_batch_scheduling(model: str, backend: str, monkeypatch):
                        f"{max_batched_tokens}")
     monkeypatch.setenv("VLLM_SPYRE_WARMUP_NEW_TOKENS", "20")
 
-    # So we can access the engine and scheduler in this process
-    monkeypatch.setenv("VLLM_ENABLE_V1_MULTIPROCESSING", "0")
-
     monkeypatch.setenv("VLLM_USE_V1", "1")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
 
