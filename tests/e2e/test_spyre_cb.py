@@ -8,16 +8,15 @@ from collections import deque
 from typing import Any
 
 import pytest
-from spyre_util import (compare_results, create_random_request,
-                        generate_hf_output, generate_spyre_vllm_output,
-                        get_chicken_soup_prompts, get_spyre_backend_list,
-                        get_spyre_model_list, skip_unsupported_tp_size)
+from spyre_util import (create_random_request, generate_spyre_vllm_output,
+                        get_spyre_backend_list, get_spyre_model_list)
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor
 
 from vllm_spyre.v1.core.scheduler import ContinuousBatchingSpyreScheduler
+
 
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
