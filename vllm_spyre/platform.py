@@ -67,6 +67,9 @@ class SpyrePlatform(Platform):
 
         is_decoder = model_config.task == "generate"
         is_embedding = model_config.task == "embed"
+        if model_config.task == "auto":
+            is_embedding = "embed" in model_config.supported_tasks
+            is_decoder = "generate" in model_config.supported_tasks
 
         # v0 is only supported for embedding models, and embedding models must
         # be run on v0
