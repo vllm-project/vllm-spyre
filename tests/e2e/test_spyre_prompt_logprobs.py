@@ -59,6 +59,8 @@ def test_prompt_logprobs(
                                  max_different_tokens=1,
                                  relative_tolerance=0.15)
 
+    llm.llm_engine.engine_core.shutdown()
+
 
 @pytest.mark.cpu
 @pytest.mark.decoder

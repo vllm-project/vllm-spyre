@@ -56,3 +56,5 @@ def test_max_prompt_len_and_new_tokens(model: str,
         results = llm.generate(prompts=[prompt],
                                sampling_params=sampling_params)
         assert results[0].outputs[0].text == ""
+
+    llm.llm_engine.engine_core.shutdown()

@@ -217,6 +217,8 @@ def generate_spyre_vllm_output(
         ])
         results.append(result)
 
+    vllm_model.llm_engine.engine_core.shutdown()
+
     return results
 
 
@@ -391,6 +393,8 @@ def spyre_vllm_embeddings(model: str, prompts: list[str],
         result = {}
         result["embeddings"] = req_output.outputs.embedding
         results.append(result)
+
+    vllm_model.llm_engine.engine_core.shutdown()
 
     return results
 
