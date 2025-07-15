@@ -105,7 +105,7 @@ class PoolingInputBatch(BaseInputBatch[PoolingRequestState]):
 
         # Note, for now this assumes that all request in the batch
         # are either sampling or pooling requests
-        assert len(self.req_ids) == len(self.pooling_params)
+        assert len(self.requests_ids) == len(self.pooling_params)
         pooling_params = [
             self.pooling_params[req_id] for req_id in self.req_ids
         ]
