@@ -23,6 +23,23 @@ ISCLOSE_REL_TOL_CPU = 0.2
 ISCLOSE_REL_TOL_SPYRE = 0.35
 
 
+def force_engine_shutdown(llm: LLM):
+    """
+    🌶️🌶️🌶️
+    This hack is here because of an issue in vllm 0.9.2+ where a circular
+    reference occurs in vllm.executor.ray_utils if ray is not installed. This
+    circular reference holds a copy of the vllm config which contains a
+    reference to the LLM, which means it can never be garbage collected.
+    Since vllm.LLM relies on garbage collection to shut down its engine, the
+    engine never shuts down. When running tensor parallel workloads, if the
+    engine is never shut down then the TP worker processes are never killed.
+    When the TP worker processes are held open, all future attempts to create a
+    new engine will fail with an EADDRINUSE error.
+    🌶️🌶️🌶️
+    """
+    llm.llm_engine.engine_core.shutdown()
+
+
 class RemoteOpenAIServer:
     """Subprocess wrapper that boots a vllm server with `vllm serve` for testing
     against"""
@@ -217,8 +234,7 @@ def generate_spyre_vllm_output(
         ])
         results.append(result)
 
-    vllm_model.llm_engine.engine_core.shutdown()
-
+    force_engine_shutdown(vllm_model)
     return results
 
 
@@ -393,8 +409,6 @@ def spyre_vllm_embeddings(model: str, prompts: list[str],
         result = {}
         result["embeddings"] = req_output.outputs.embedding
         results.append(result)
-
-    vllm_model.llm_engine.engine_core.shutdown()
 
     return results
 

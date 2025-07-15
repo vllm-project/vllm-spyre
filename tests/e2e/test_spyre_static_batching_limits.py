@@ -4,8 +4,9 @@ Run `python -m pytest tests/e2e/test_spyre_max_prompt_length.py`.
 """
 
 import pytest
-from spyre_util import (create_text_prompt, get_spyre_backend_list,
-                        get_spyre_model_list, patch_warmup_shapes)
+from spyre_util import (create_text_prompt, force_engine_shutdown,
+                        get_spyre_backend_list, get_spyre_model_list,
+                        patch_warmup_shapes)
 from vllm import LLM, SamplingParams
 
 
@@ -57,4 +58,4 @@ def test_max_prompt_len_and_new_tokens(model: str,
                                sampling_params=sampling_params)
         assert results[0].outputs[0].text == ""
 
-    llm.llm_engine.engine_core.shutdown()
+    force_engine_shutdown(llm)
