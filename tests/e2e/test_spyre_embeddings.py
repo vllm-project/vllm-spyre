@@ -133,7 +133,7 @@ def test_scheduling_invariance(
     results = vllm_model.embed(prompts)
     vllm_outputs = []
     for req_output in results:
-        result1 = {'embeddings': req_output.outputs.embedding}
+        result = {'embeddings': req_output.outputs.embedding}
         vllm_outputs.append(result)
 
     compare_embedding_results(model=model,
