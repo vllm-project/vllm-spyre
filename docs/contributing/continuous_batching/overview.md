@@ -2,7 +2,8 @@
 
 Brief overview of what has been implemented so far in VLLM to test / debug continuous batching
 
-Date: 10th July 2025
+!!! info
+    Valid as of Date: 15th July 2025
 
 ## Inference script
 
