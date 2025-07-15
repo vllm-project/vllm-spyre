@@ -419,18 +419,7 @@ class SpyreWorker(WorkerBaseV1):
         self.execute_model(scheduler_output)
         self._cleanup_model_runner(request=[add_dummy_request])
 
-        # get the number or pages from the actual Spyre card after the warmup
-        # and set it accordingly in the model runner and the kv cache size
-        n_blocks_avail = model_runner._get_num_blocks_available()
-        # overwrite n_blocks_avail for testing scheduler constraints
-        if envs_spyre.VLLM_SPYRE_N_BLOCKS > 0:
-            logger.info(
-                "[WARMUP] Overriding number of KV cache blocks on "
-                "Spyre/CPU to %d.", envs_spyre.VLLM_SPYRE_N_BLOCKS)
-            n_blocks_avail = envs_spyre.VLLM_SPYRE_N_BLOCKS
-        model_runner._set_blocks(num_blocks=n_blocks_avail)
-        model_runner.model.model._set_past_key_value_states(
-            num_blocks=n_blocks_avail)
+        model_runner.finish_warmup()
 
         warmup_end_t = time.time()
         warmup_total_t = warmup_end_t - warmup_start_t

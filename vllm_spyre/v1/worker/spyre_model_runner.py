@@ -707,9 +707,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         num_blocks = (vllm_config.scheduler_config.max_num_seqs *
                       vllm_config.model_config.max_model_len //
                       self.block_size)
-        # overwrite n_blocks_avail for testing scheduler constraints
-        if envs_spyre.VLLM_SPYRE_N_BLOCKS > 0:
-            num_blocks = envs_spyre.VLLM_SPYRE_N_BLOCKS
         self._set_blocks(num_blocks=num_blocks)
 
         # TODO: Remove this once we can prefill and decode in the same step
@@ -723,7 +720,22 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             vocab_size=vllm_config.model_config.get_vocab_size(),
         )
 
+    def finish_warmup(self) -> None:
+        # get the number or pages from the actual Spyre card after the warmup
+        # and set it accordingly in the model runner and the kv cache size
+        n_blocks_avail = self._get_num_blocks_available()
+        self._set_blocks(num_blocks=n_blocks_avail)
+        self.model.model._set_past_key_value_states(num_blocks=n_blocks_avail)
+
     def _set_blocks(self, num_blocks: int) -> None:
+        # overwrite num_blocks for testing scheduler constraints
+        if envs_spyre.VLLM_SPYRE_N_BLOCKS > 0:
+            logger.info(
+                "[WARMUP] Overriding number of KV cache blocks on "
+                "Spyre/CPU to %d.", envs_spyre.VLLM_SPYRE_N_BLOCKS)
+            num_blocks = envs_spyre.VLLM_SPYRE_N_BLOCKS
+
+        # set number of available blocks and populate block_pool
         self.n_blocks = num_blocks
         self.block_pool = deque([i for i in range(self.n_blocks)])
 
