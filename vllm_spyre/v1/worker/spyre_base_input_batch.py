@@ -156,7 +156,7 @@ class BaseInputBatch(Generic[RequestState]):
         return self.num_prompt_tokens
 
     def _get_token_ids(self) -> np.ndarray:
-        return self.token_ids_cpu
+        return self.token_ids_cpu[:self._num_requests]
 
     def _make_prompt_token_ids_tensor(self) -> torch.Tensor:
 
