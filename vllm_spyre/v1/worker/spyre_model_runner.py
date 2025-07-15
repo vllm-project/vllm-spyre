@@ -282,7 +282,7 @@ class SpyreModelRunner:
             for req_id in scheduler_output.finished_req_ids:
                 self.input_batch.remove_request(req_id)
                 self.requests.pop(req_id, None)
-            self.input_batch.refresh_sampling_metadata()
+            self.input_batch.refresh_metadata()
 
     def _get_prompt_logprobs_dict(
         self,
@@ -397,10 +397,6 @@ class SpyreModelRunner:
                                        masks=model_input.input_masks,
                                        is_prompt=model_input.is_prompt)
 
-        # Only perform sampling in the driver worker.
-        if not self.is_driver_worker:
-            return EMPTY_MODEL_RUNNER_OUTPUT
-
         # Compute the logits.
         logits = self.model.compute_logits(hidden_states, None)
 
@@ -433,6 +429,10 @@ class SpyreModelRunner:
 
         prompt_logprobs_dicts = self._get_prompt_logprobs_dict(
             logits=logits, model_inputs=model_input)
+
+        # Only return outputs from the driver worker
+        if not self.is_driver_worker:
+            return EMPTY_MODEL_RUNNER_OUTPUT
 
         model_output = ModelRunnerOutput(
             req_ids=list(req_id_to_index.keys()),
@@ -513,7 +513,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         self.input_batch.padded_batch_size = padded_batch_size
 
         # Refresh sampling metadata after all request are added to the batch
-        self.input_batch.refresh_sampling_metadata()
+        self.input_batch.refresh_metadata()
 
         # padding to compiled batch size
         while len(input_token_list) < padded_batch_size:
@@ -797,8 +797,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             self.prefill_batch.add_request(req_state)
 
         # Refresh sampling metadata after all request are added to the batch
-        self.input_batch.refresh_sampling_metadata()
-        self.prefill_batch.refresh_sampling_metadata()
+        self.input_batch.refresh_metadata()
+        self.prefill_batch.refresh_metadata()
 
         # TODO: Review this in the future
         # prefills are always of batch size 1 for this milestone

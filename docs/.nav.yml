@@ -17,6 +17,10 @@ nav:
       - Supported Models: user_guide/supported_models.md
     - Developer Guide:
       - Contributing: contributing/README.md
+      - Continuous Batching:
+        - Testing:
+          - Overview: contributing/continuous_batching/overview.md
+          - Tests: contributing/continuous_batching/tests.md
 
   - Getting Started:
     - Installation: getting_started/installation.md
@@ -31,5 +35,7 @@ nav:
     - Supported Models: user_guide/supported_models.md
   - Developer Guide:
     - Contributing: contributing/README.md
-    - Testing:
-      - Continuous Batching: testing/cb_testing.md
+    - Continuous Batching:
+      - Testing:
+        - Overview: contributing/continuous_batching/overview.md
+        - Tests: contributing/continuous_batching/tests.md
