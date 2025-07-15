@@ -17,6 +17,7 @@ nav:
       - Supported Models: user_guide/supported_models.md
     - Developer Guide:
       - Contributing: contributing/README.md
+      - Continuous Batching API: developer_guide/continuous_batching_api.md
 
   - Getting Started:
     - Installation: getting_started/installation.md
