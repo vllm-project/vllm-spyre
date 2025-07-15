@@ -611,7 +611,7 @@ class SpyreWorker(WorkerBaseV1):
                               prompt_len=prompt_len)
         logger.info(
             "[WARMUP] Prompt length %d and max output tokens %d "
-            "finished in %.3fs", warmup_total_t, prompt_len, num_decode_tokens)
+            "finished in %.3fs", prompt_len, num_decode_tokens, warmup_total_t)
         maybe_override_signals_handler()
 
     def _warmup_model_forward_pass(
