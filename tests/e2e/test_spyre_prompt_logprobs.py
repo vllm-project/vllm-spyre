@@ -7,8 +7,9 @@ import math
 import pytest
 import torch
 import torch.nn.functional
-from spyre_util import (get_chicken_soup_prompts, get_spyre_backend_list,
-                        get_spyre_model_list, skip_unsupported_tp_size)
+from spyre_util import (force_engine_shutdown, get_chicken_soup_prompts,
+                        get_spyre_backend_list, get_spyre_model_list,
+                        skip_unsupported_tp_size)
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, RequestOutput, SamplingParams
 from vllm.config import ModelConfig, VllmConfig
@@ -58,6 +59,7 @@ def test_prompt_logprobs(
                                  actual_logprobs,
                                  max_different_tokens=1,
                                  relative_tolerance=0.15)
+    force_engine_shutdown(llm)
 
 
 @pytest.mark.cpu
