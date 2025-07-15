@@ -1095,10 +1095,6 @@ def test_scheduler_cb_steps_tkv(
     if available_blocks > 0:
         monkeypatch.setenv("VLLM_SPYRE_N_BLOCKS", str(available_blocks))
 
-    # To get deterministic execution in V1
-    # and to enable InprocClient
-    monkeypatch.setenv("VLLM_ENABLE_V1_MULTIPROCESSING", "0")
-
     max_model_len = 256
 
     # Input parameters sanity check, not actual testing
