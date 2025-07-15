@@ -19,10 +19,11 @@ from vllm_spyre.platform import SpyrePlatform
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("tp_size", [
-    pytest.param(1, id="tp_size"),
-    pytest.param(2, marks=pytest.mark.multi, id="tp_size"),
-    pytest.param(4, marks=pytest.mark.multi, id="tp_size")
-])
+    pytest.param(1),
+    pytest.param(2, marks=pytest.mark.multi),
+    pytest.param(4, marks=pytest.mark.multi)
+],
+                         ids=lambda val: f"TP({val})")
 def test_prompt_logprobs(
     backend: str,
     model: str,
@@ -33,14 +34,14 @@ def test_prompt_logprobs(
     This test checks the prompt_logprobs output from vllm against a reference
     implementation using huggingface.
     '''
-    skip_unsupported_tp_size(tp_size)
+    skip_unsupported_tp_size(tp_size, backend)
     num_prompt_logprobs = 5
 
     prompts = get_chicken_soup_prompts(4)
 
-    monkeypatch.setenv("VLLM_USE_V1", 1)
+    monkeypatch.setenv("VLLM_USE_V1", "1")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
-    monkeypatch.setenv("VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS", 1)
+    monkeypatch.setenv("VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS", "1")
     llm = LLM(model, tensor_parallel_size=tp_size, tokenizer=model)
 
     responses: list[RequestOutput] = llm.generate(
@@ -63,7 +64,7 @@ def test_prompt_logprobs(
 @pytest.mark.decoder
 def test_prompt_logprobs_must_be_enabled(monkeypatch: pytest.MonkeyPatch):
     # If prompt logprobs is disabled, requests are rejected
-    monkeypatch.setenv("VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS", 0)
+    monkeypatch.setenv("VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS", "0")
     params = SamplingParams(prompt_logprobs=5)
 
     with pytest.raises(ValueError, match="VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS"):
@@ -76,8 +77,8 @@ def test_prompt_logprobs_not_supported_with_cb(
         monkeypatch: pytest.MonkeyPatch):
     # Server shouldn't boot with both prompt logprobs and continuous batching
     # enabled
-    monkeypatch.setenv("VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS", 1)
-    monkeypatch.setenv("VLLM_SPYRE_USE_CB", 1)
+    monkeypatch.setenv("VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS", "1")
+    monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
 
     with pytest.raises(ValueError, match="continuous batching"):
         VllmConfig(model_config=ModelConfig(task="generate"))
@@ -88,8 +89,8 @@ def test_prompt_logprobs_not_supported_with_cb(
 def test_prompt_logprobs_on_single_requests_only(
         monkeypatch: pytest.MonkeyPatch):
     # Only bs=1 is supported for prompt logprobs
-    monkeypatch.setenv("VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS", 1)
-    monkeypatch.setenv("VLLM_SPYRE_WARMUP_BATCH_SIZES", 2)
+    monkeypatch.setenv("VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS", "1")
+    monkeypatch.setenv("VLLM_SPYRE_WARMUP_BATCH_SIZES", "2")
 
     with pytest.raises(ValueError, match="batch size 1"):
         VllmConfig(model_config=ModelConfig(task="generate"))
