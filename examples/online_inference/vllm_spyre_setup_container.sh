@@ -39,7 +39,7 @@ if [[ "${TORCH_SENDNN_CACHE_ENABLE:-0}" = "1" ]]; then
 
     perms=$(stat -c "%a" "${TORCH_SENDNN_CACHE_DIR}")
     if [[ "${perms}" != "777" ]]; then
-        echo "Error: Cache directory ${TORCH_SENDNN_CACHE_DIR} does not have 777 permissions. Current: ${PERMS}"
+        echo "Error: Cache directory ${TORCH_SENDNN_CACHE_DIR} does not have 777 permissions. Current: ${perms}"
         exit 1
     fi
 fi
@@ -51,7 +51,7 @@ fi
 
 # Create a senlib_config.json to use only specified AIU id's.
 tmpfile=$(mktemp -t senlib_config_XXXXXXX.json)
-cat <<EOF | jq --argjson newValues "$(for i in ${VLLM_AIU_PCIE_IDS}; do echo $i; done | jq -R . | jq -s .)" '.GENERAL.sen_bus_id = $newValues' > $tmpfile
+cat <<EOF | jq --argjson newValues "$(for i in ${VLLM_AIU_PCIE_IDS}; do echo "$i"; done | jq -R . | jq -s .)" '.GENERAL.sen_bus_id = $newValues' > "$tmpfile"
 {
   "GENERAL": {
     "target": "SOC",
@@ -65,7 +65,7 @@ cat <<EOF | jq --argjson newValues "$(for i in ${VLLM_AIU_PCIE_IDS}; do echo $i;
   }
 }
 EOF
-sudo mv $tmpfile /etc/aiu/senlib_config.json
+sudo mv "$tmpfile" /etc/aiu/senlib_config.json
 
 # --- Reconfigure AIUs and environment ---
 . /etc/bashrc-sentient-env.sh
