@@ -153,7 +153,7 @@ class BaseInputBatch(Generic[RequestState]):
         pass
 
     def _get_num_prompt_tokens(self) -> np.ndarray:
-        return self.num_prompt_tokens
+        return self.num_prompt_tokens[:self._num_requests]
 
     def _get_token_ids(self) -> np.ndarray:
         return self.token_ids_cpu[:self._num_requests]

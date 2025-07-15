@@ -107,12 +107,12 @@ class PoolingInputBatch(BaseInputBatch[PoolingRequestState]):
         # are either sampling or pooling requests
         assert len(self.requests_ids) == len(self.pooling_params)
         pooling_params = [
-            self.pooling_params[req_id] for req_id in self.req_ids
+            self.pooling_params[req_id] for req_id in self.requests_ids
         ]
 
         return PoolingMetadata(
-            prompt_lens=torch.from_numpy(
-                self.num_prompt_tokens[:self.num_reqs]).to(self.device),
+            prompt_lens=torch.from_numpy(self._get_num_prompt_tokens()).to(
+                self.device),
             prompt_token_ids=prompt_token_ids,
             pooling_params=pooling_params,
         )
