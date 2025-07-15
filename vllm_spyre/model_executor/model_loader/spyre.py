@@ -19,6 +19,7 @@ from vllm.model_executor.model_loader.weight_utils import (
 from vllm.model_executor.sampling_metadata import SamplingMetadata
 
 import vllm_spyre.envs as envs_spyre
+from vllm_spyre.platform import SpyrePlatform
 
 try:
     import backends.dynamo_tracer  # noqa: F401
@@ -281,7 +282,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         scheduler_config: SchedulerConfig,
     ) -> None:
 
-        BLOCK_SIZE = 64  # hardcoded Spyre constraint for now
+        BLOCK_SIZE = SpyrePlatform.get_block_size()
         max_model_len = scheduler_config.max_model_len
 
         # edge case: prompt fills model length: can produce 1 token with prefill
@@ -329,6 +330,10 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         #         torch._dynamo.mark_dynamic(tensor, 0)
 
     def _set_past_key_value_states(self, num_blocks) -> None:
+        # overwrite num_blocks for testing scheduler constraints
+        if envs_spyre.VLLM_SPYRE_N_BLOCKS > 0:
+            num_blocks = envs_spyre.VLLM_SPYRE_N_BLOCKS
+
         # List[layers] of Tuple[k,v] of
         # Tensor[num_blocks, block_size, num_kv_heads, head_dim]
         self.past_key_value_states = [
@@ -411,7 +416,7 @@ class StaticBatchingFmsModel(FmsModelBase):
         **extra_kwargs,
     ) -> torch.Tensor:
         # specify attention type for static batching
-        extra_kwargs['attn_name'] = "sdpa_bidirectional"
+        extra_kwargs['attn_name'] = "sdpa_causal"
 
         if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
             # In order to calculate prompt logprobs, we have to return the

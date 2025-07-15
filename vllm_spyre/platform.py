@@ -10,6 +10,7 @@ if sys.platform.startswith("darwin"):
     if sys.modules.get('triton'):
         del sys.modules['triton']
 
+import math
 import operator
 import os
 from typing import TYPE_CHECKING, Optional, Union
@@ -60,6 +61,7 @@ class SpyrePlatform(Platform):
     _device_type: str = "cpu"
     supported_quantization: list[str] = ["gptq"]
     _warmup_shapes: Optional[tuple[dict[str, int], ...]] = None
+    _block_size: int = 64  # hardcoded Spyre constraint for now
     _config: VllmConfig = None
 
     @classproperty
@@ -260,6 +262,10 @@ class SpyrePlatform(Platform):
         return cls._warmup_shapes
 
     @classmethod
+    def get_block_size(cls) -> int:
+        return cls._block_size
+
+    @classmethod
     def supports_v1(cls, model_config: ModelConfig) -> bool:
         """Returns whether the current platform can support v1 for the supplied
         model configuration.
@@ -304,9 +310,8 @@ class SpyrePlatform(Platform):
             # into account.
 
             # ceil division to pad to next block boundary
-            n = prompt_len
-            d = 64  # hardcoded AIU Spyre block size
-            prompt_padding_len = ((n + d - 1) // d) * d
+            prompt_padding_len = math.ceil(
+                prompt_len / cls._block_size) * cls._block_size
             if (prompt_padding_len + max_tokens
                     > cls._config.scheduler_config.max_model_len):
                 raise ValueError(

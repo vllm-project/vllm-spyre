@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
+import math
 from collections import deque
 from typing import TYPE_CHECKING
 
@@ -146,6 +147,8 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         # Initialize SpyreScheduler
         super().__init__(*args, **kwargs)
         self.tkv = 0
+        self.n_free_blocks = 0
+        self.block_size = SpyrePlatform.get_block_size()
 
     def update_from_output(
         self,
@@ -158,6 +161,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         ), "Expecting an instance of CBSpyreModelRunnerOutput"
         "when doing continuous batching."
         self.tkv = model_runner_output.tkv
+        self.n_free_blocks = model_runner_output.n_free_blocks
         return super(SpyreScheduler,
                      self).update_from_output(scheduler_output,
                                               model_runner_output)
@@ -222,4 +226,12 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         cond3 = request.num_prompt_tokens <= self.tkv
         # check that the number of requested tokens can be served
         cond4 = request.max_tokens <= (max_context_len - self.tkv)
-        return start_new_batch or (cond1 and cond2 and cond3 and cond4)
+        # check that there are enough free blocks/pages remaining
+        # Note: we only have to do check in case of a running batches
+        # (not start_new_batch), because the minimal number of blocks covers
+        # the context length for a single sequence, so tkv < block size is ok
+        num_blocks_required = math.ceil(
+            (self.tkv + request.max_tokens - 1) / self.block_size)
+        cond5 = num_blocks_required <= self.n_free_blocks
+        return start_new_batch or (cond1 and cond2 and cond3 and cond4
+                                   and cond5)
