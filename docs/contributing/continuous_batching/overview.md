@@ -7,7 +7,9 @@ Brief overview of what has been implemented so far in VLLM to test / debug conti
 
 ## Inference script
 
-* **File path:** `examples/offline_inference/cb_spyre_inference.py`
+* **File paths:** 
+    * `examples/offline_inference/cb_spyre_inference.py`
+    * `examples/offline_inference/long_context.py`
 * **Purpose:** Debugging (ie. using manual execution)
 
 ### Description
@@ -18,6 +20,8 @@ Brief overview of what has been implemented so far in VLLM to test / debug conti
 * If `--compare-with-CPU` is set, then the output text is compared to the one of hugging face, running on CPU. Note that here the logprobs are not compared, only tokens.
 
 ### Parametrization
+For `cb_spyre_inference.py`
+
 * `--model`: the model
 * `--max_model_len`: maximum length of a sequence (padded prompt plus decoded tokens) (cannot exceed model size)
 * `--max_num_seqs`: Max number of sequences processed in a single iteration (decode batch size)
@@ -25,6 +29,10 @@ Brief overview of what has been implemented so far in VLLM to test / debug conti
 * `--num-prompts`: Total number of requested prompts
 * `--max-tokens`: Number of tokens generated for each requested sequence
 * `--compare-with-CPU`: If set, compare the text output with CPU version running with Hugging Face instead of vLLM
+
+For `long_context.py`: the same parameters, but with few differences:
+* `--max_prompt_len`: max lengths of prompts (prompts will have length up to `max_prompt_len`)
+* doesn't allow to specify `--max-tokens`: number of tokens set automatically given `max_model_len` and prompts lengths
 
 ## CB tests through unit tests
 
@@ -85,3 +93,31 @@ Checking the final output correctness alone is not enough to ensure that CB is c
     * `get_params_test_blocks_borders_aligned_prompts`: parametrization for the situation where the prompts are by chance already aligned with the blocks boundaries (no **right** padding required)
     * `get_params_test_blocks_borders_misaligned_prompts`: parametrization for the situation where the prompts are misaligned with the block boundaries, and thus **right** padding is required
     * ... additional special cases
+
+
+## Summary Table
+
+Summary Table Listing all the tests/scripts that can run with CB enabled
+
+<style>
+    .summary tr:nth-child(9) { background: grey; }
+    .summary tr:nth-child(3) tr:nth-child(2) { background: blue; }
+</style>
+
+<div class="summary">
+
+| Script / Test                                 | Output Checked | model                     | Context Length | TP      | max_num_seqs | num_prompts | prompts_length       | Max tokens            |
+| :-------------------------------------------- | :------------: | :-----------------------: | :------------: | :---:   | :----------: | :---------: | :------------------: | :-------------------: |
+| offline_inference/cb_spyre_inference.py       |   ✅           | Any                       | Any            | Any     | Any          | Any        | Chicken soups (tbd)   | Any                   |
+| offline_inference/long_context.py             |   ✅           | Any                       | Any            | Any     | Any          | Any        | Any                   | Auto (max possible)   |
+| test_spyre_cb.test_scheduler_cb_steps_tkv()   |   ❌           | micro-g3.3-8b-instruct-1b | 256            | 1       | 2, 4         | 2, 4       | Various, parametrized | Various, parametrized |
+| test_spyre_cb.test_cb_output()                |   ✅           | micro-g3.3-8b-instruct-1b | 256            | 1       | 2, 4         | 4          | Chicken soups (tbd)   | 20                    |
+| test_spyre_basic.test_batch_handling()        |   ✅           | micro-g3.3-8b-instruct-1b | 256            | 1       | 2            | 4          | Chicken soups (tbd)   | [5, 20, 10, 5]        |
+| test_spyre_max_new_tokens.test_output()       |   ✅           | micro-g3.3-8b-instruct-1b | 256            | 1       | 2            | 4          | Chicken soups (tbd)   | [20, 20, 20, 1]       |
+| test_spyre_async_llm.test_abort()             |   ❌           | micro-g3.3-8b-instruct-1b | 128            | 1       | 2            | 1          | Chicken soups (tbd)   | 20                    |
+| test_spyre_online.test_openai_serving_cb()    |   ❌           | micro-g3.3-8b-instruct-1b | TODO           | TODO    | TODO         | TODO       | TODO                  | TODO                  |
+| test_spyre_cb.test_cb_max_tokens()            |   ❌           | micro-g3.3-8b-instruct-1b | 256            | 1       | 2            | 1          | 256                   | 20                    |
+
+</div>
+
+<span style="color:grey">**test_spyre_cb.test_cb_max_tokens(): Test runs on CPU only**</span>
