@@ -441,6 +441,7 @@ class SpyreModelRunner:
             logprobs=(output.logprobs_tensors.tolists()
                       if output.logprobs_tensors else None),
             prompt_logprobs_dict=prompt_logprobs_dicts,
+            pooler_output=None,
         )
 
         return model_output

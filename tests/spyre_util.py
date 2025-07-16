@@ -555,6 +555,8 @@ def create_random_request(
                              eos_token_id=None,
                              arrival_time=0,
                              lora_request=None,
+                             data_parallel_rank=None,
+                             pooling_params=None,
                              cache_salt=None)
 
 

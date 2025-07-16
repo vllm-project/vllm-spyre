@@ -329,7 +329,9 @@ class SpyreWorker(WorkerBaseV1):
                 sampling_params=SamplingParams(max_tokens=num_decode_tokens),
                 block_ids=[0],  # not actually used
                 num_computed_tokens=0,
-                lora_request=None) for i in range(batch_size + 1)
+                lora_request=None,
+                pooling_params=None,
+            ) for i in range(batch_size + 1)
         ]
         add_dummy_request = dummy_requests.pop(-1)
 
@@ -478,7 +480,8 @@ class SpyreWorker(WorkerBaseV1):
                 sampling_params=SamplingParams(max_tokens=num_decode_tokens),
                 block_ids=[0],
                 num_computed_tokens=0,
-                lora_request=None) for i in range(batch_size)
+                lora_request=None,
+                pooling_params=None) for i in range(batch_size)
         ]
 
         # Set up dummy cached_requests for decode steps
