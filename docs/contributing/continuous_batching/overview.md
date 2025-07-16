@@ -47,7 +47,7 @@ For `long_context.py`: the same parameters, but with few differences:
     * specific test function with specific parameters: `python -m pytest -svx -m "spyre and cb" --forked tests/e2e/test_spyre_cb.py::test_cb_output[max_num_seqs(2)-eager-ibm-ai-platform/micro-g3.3-8b-instruct-1b]`
 
 !!! tip
-To run a test with a different model than the default `ibm-ai-platform/micro-g3.3-8b-instruct-1b`, you can run the test with `VLLM_SPYRE_TEST_MODEL_LIST` environment variable set to the targer model, for example: `VLLM_SPYRE_TEST_MODEL_LIST='tiny-granite-3.2-8b' python -m pytest -svx -m "spyre and cb" --forked tests/e2e/test_spyre_cb.py`
+    To run a test with a different model than the default `ibm-ai-platform/micro-g3.3-8b-instruct-1b`, you can run the test with `VLLM_SPYRE_TEST_MODEL_LIST` environment variable set to the targer model, for example: `VLLM_SPYRE_TEST_MODEL_LIST='tiny-granite-3.2-8b' python -m pytest -svx -m "spyre and cb" --forked tests/e2e/test_spyre_cb.py`
 
 * Parameters description:
     * `-x` option: stops the execution as soon as a test fails
