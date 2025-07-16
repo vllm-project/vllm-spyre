@@ -29,11 +29,14 @@ from vllm_spyre.v1.core.scheduler import StaticBatchingSpyreScheduler
     ids=lambda val: f"TP({val})",
 )
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
+@pytest.mark.parametrize("max_num_seqs", [4],
+                         ids=lambda val: f"max_num_seqs({val})")
 def test_output(
     model: str,
     tp_size: int,
     backend: str,
     cb: int,
+    max_num_seqs: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     '''
@@ -55,10 +58,10 @@ def test_output(
     warmup_shape = (64, 20, 4)
 
     kwargs = ({
-        "max_num_seqs": 2,
+        "max_num_seqs": max_num_seqs,
         "use_cb": True,
         "max_model_len": 256,
-        "block_size": 256
+        "block_size": 256,
     } if cb == 1 else {
         "warmup_shapes": (warmup_shape, ),
         "max_model_len": 2048,
