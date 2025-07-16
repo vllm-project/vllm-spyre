@@ -38,7 +38,19 @@ For `long_context.py`: the same parameters, but with few differences:
 
 * **File path (tests targeting CB specifically):** `vllm-spyre/tests/e2e/test_spyre_cb.py`
 * **Purpose:** Automated execution to verify that a specific behaviour acts as expected (passing/failing)
-* **Usage (when running locally):** `python -m pytest -sv -m "spyre and cb" --forked tests`
+
+### Usage (when running locally)
+* Commands:  
+    * general: `python -m pytest -svx -m "spyre and cb" --forked tests`
+    * specific test file: `python -m pytest -svx -m "spyre and cb" --forked tests/e2e/test_spyre_cb.py`
+    * specific test function: `python -m pytest -svx -m "spyre and cb" --forked tests/e2e/test_spyre_cb.py::test_cb_output`
+    * specific test function with specific parameters: `python -m pytest -svx -m "spyre and cb" --forked tests/e2e/test_spyre_cb.py::test_cb_output[max_num_seqs(2)-eager-ibm-ai-platform/micro-g3.3-8b-instruct-1b]`
+
+!!! tip
+To run a test with a different model than the default `ibm-ai-platform/micro-g3.3-8b-instruct-1b`, you can run the test with `VLLM_SPYRE_TEST_MODEL_LIST` environment variable set to the targer model, for example: `VLLM_SPYRE_TEST_MODEL_LIST='tiny-granite-3.2-8b' python -m pytest -svx -m "spyre and cb" --forked tests/e2e/test_spyre_cb.py`
+
+* Parameters description:
+    * `-x` option: stops the execution as soon as a test fails
     * `-s` option: show all the print statements in the code
     * `-v` option: verbose mode, make the test output more detailed: show name of each test function and whether it passed, failed or was skipped
     * `--forked` option: isolates the tests and avoid having one test crashing impacting the other tests
