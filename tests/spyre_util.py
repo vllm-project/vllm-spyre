@@ -23,6 +23,23 @@ ISCLOSE_REL_TOL_CPU = 0.2
 ISCLOSE_REL_TOL_SPYRE = 0.35
 
 
+def force_engine_shutdown(llm: LLM):
+    """
+    🌶️🌶️🌶️
+    This hack is here because of an issue in vllm 0.9.2+ where a circular
+    reference occurs in vllm.executor.ray_utils if ray is not installed. This
+    circular reference holds a copy of the vllm config which contains a
+    reference to the LLM, which means it can never be garbage collected.
+    Since vllm.LLM relies on garbage collection to shut down its engine, the
+    engine never shuts down. When running tensor parallel workloads, if the
+    engine is never shut down then the TP worker processes are never killed.
+    When the TP worker processes are held open, all future attempts to create a
+    new engine will fail with an EADDRINUSE error.
+    🌶️🌶️🌶️
+    """
+    llm.llm_engine.engine_core.shutdown()
+
+
 class RemoteOpenAIServer:
     """Subprocess wrapper that boots a vllm server with `vllm serve` for testing
     against"""
@@ -217,6 +234,7 @@ def generate_spyre_vllm_output(
         ])
         results.append(result)
 
+    force_engine_shutdown(vllm_model)
     return results
 
 
@@ -548,7 +566,13 @@ def create_random_request(
                              **extra_kwargs)
 
 
-def skip_unsupported_tp_size(size: int):
+def skip_unsupported_tp_size(size: int, backend: str):
+    if backend in ["eager", "inductor"]:
+        # Spyre cards aren't required for running TP on CPU backends
+        # But it's really slow to run tp > 2
+        if size > 2:
+            pytest.skip("Skipping TP test on CPU with TP size > 2")
+        return
     cards = int(os.getenv("AIU_WORLD_SIZE", "0"))
     if cards < size:
         pytest.skip(f"Cannot run TP size {size}: "

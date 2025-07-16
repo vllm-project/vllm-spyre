@@ -7,7 +7,7 @@ import pytest
 from spyre_util import (compare_results, create_random_request,
                         generate_hf_output, generate_spyre_vllm_output,
                         get_chicken_soup_prompts, get_spyre_backend_list,
-                        get_spyre_model_list)
+                        get_spyre_model_list, skip_unsupported_tp_size)
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor
@@ -18,10 +18,18 @@ from vllm_spyre.v1.core.scheduler import StaticBatchingSpyreScheduler
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
     "warmup_shape", [(64, 20, 4)])  # (prompt_length/new_tokens/batch_size)
+@pytest.mark.parametrize("tp_size", [
+    pytest.param(1),
+    pytest.param(2, marks=pytest.mark.multi),
+    pytest.param(4, marks=pytest.mark.multi),
+    pytest.param(8, marks=pytest.mark.multi),
+],
+                         ids=lambda val: f"TP({val})")
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_output(
     model: str,
     warmup_shape: tuple[int, int, int],
+    tp_size: int,
     backend: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -37,6 +45,9 @@ def test_output(
     test using 'pytest --capture=no tests/spyre/test_spyre_basic.py'
     After debugging, DISABLE_ASSERTS should be reset to 'False'.
     '''
+
+    skip_unsupported_tp_size(tp_size, backend)
+
     prompts = get_chicken_soup_prompts(4)
 
     max_new_tokens = warmup_shape[1]
@@ -54,7 +65,7 @@ def test_output(
         max_model_len=2048,
         block_size=2048,
         sampling_params=vllm_sampling_params,
-        tensor_parallel_size=1,
+        tensor_parallel_size=tp_size,
         backend=backend,
         monkeypatch=monkeypatch)
 
@@ -65,7 +76,7 @@ def test_output(
     compare_results(model=model,
                     prompts=prompts,
                     warmup_shapes=[warmup_shape],
-                    tensor_parallel_size=1,
+                    tensor_parallel_size=tp_size,
                     backend=backend,
                     vllm_results=vllm_results,
                     hf_results=hf_results)
@@ -217,9 +228,6 @@ def test_full_batch_scheduling(model: str, backend: str, monkeypatch):
     monkeypatch.setenv("VLLM_SPYRE_WARMUP_PROMPT_LENS",
                        f"{max_batched_tokens}")
     monkeypatch.setenv("VLLM_SPYRE_WARMUP_NEW_TOKENS", "20")
-
-    # So we can access the engine and scheduler in this process
-    monkeypatch.setenv("VLLM_ENABLE_V1_MULTIPROCESSING", "0")
 
     monkeypatch.setenv("VLLM_USE_V1", "1")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
