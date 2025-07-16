@@ -286,14 +286,11 @@ def generate_hf_output(
 
 
 # compare results
-def compare_results(model: str, prompts: list[str],
-                    warmup_shapes: list[tuple[int, int,
-                                              int]], tensor_parallel_size: int,
+def compare_results(model: str, prompts: list[str], tensor_parallel_size: int,
                     backend: str, vllm_results: list[dict[str, Any]],
                     hf_results: list[dict[str, Any]]):
 
     print(f"\nmodel:         {model:s}")
-    print(f"warmup shapes: {warmup_shapes}")
     print(f"tp size:       {tensor_parallel_size}")
     print(f"backend:       {backend:s}")
     print(f"\n#prompts:      {len(prompts):d}")
