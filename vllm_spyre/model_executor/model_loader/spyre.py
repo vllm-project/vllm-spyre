@@ -9,13 +9,14 @@ import torch.distributed as dist
 import torch.nn as nn
 from fms.models import get_model
 from transformers import PretrainedConfig
-from vllm.config import ModelConfig, ParallelConfig, SchedulerConfig
+from vllm.config import ModelConfig, ParallelConfig, SchedulerConfig, VllmConfig
 from vllm.forward_context import get_forward_context
 from vllm.logger import init_logger
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
 from vllm.model_executor.layers.sampler import SamplerOutput, get_sampler
 from vllm.model_executor.model_loader.weight_utils import (
     download_weights_from_hf)
+from vllm.model_executor.model_loader import get_model as vllm_get_model
 from vllm.model_executor.sampling_metadata import SamplingMetadata
 
 import vllm_spyre.envs as envs_spyre
@@ -68,6 +69,12 @@ class SpyreCausalLM(nn.Module):
             self.model = ContinuousBatchingFmsModel(model_config,
                                                     parallel_config,
                                                     scheduler_config)
+        elif envs_spyre.VLLM_SPYRE_VLLM_MODEL:
+            self.model= StaticBatchingVllmModel(
+                    vllm_config,
+                    max_prompt_length,
+                    max_decode_length,
+            )
         else:
             self.model = StaticBatchingFmsModel(
                 model_config,
@@ -121,6 +128,9 @@ class SpyreCausalLM(nn.Module):
         hidden_states: torch.Tensor,
         sampling_metadata: SamplingMetadata,
     ) -> torch.Tensor:
+        if envs_spyre.VLLM_SPYRE_VLLM_MODEL:
+            logits = self.model.compute_logits(hidden_states, sampling_metadata)
+            return logits
         logits = self.logits_processor(None, hidden_states, sampling_metadata)
         return logits
 
@@ -434,3 +444,166 @@ class StaticBatchingFmsModel(FmsModelBase):
         logits, self.past_key_value_states = output
 
         return logits
+
+class VllmModelBase(nn.Module):
+
+    def __init__(
+        self,
+        vllm_config: VllmConfig,
+        max_prompt_length: int,
+        max_decode_length: int,
+        sendnn_dynamic: bool,
+    ) -> None:
+        super().__init__()
+
+        self.vllm_config = vllm_config
+        self.config: PretrainedConfig = vllm_config.model_config.hf_config
+        self.dtype = torch.float16 if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == \
+            'sendnn' else torch.float32
+
+        # Actual vllm model
+        self.model: nn.Module
+
+        # Load the weights from the cached or downloaded files.
+        self.load_weights(model_config=model_config,
+                          max_prompt_length=max_prompt_length,
+                          max_decode_length=max_decode_length,
+                          distributed_strategy="tp"
+                          if parallel_config.world_size > 1 else None,
+                          sendnn_dynamic=sendnn_dynamic)
+
+    def load_weights(
+        self,
+        model_config: ModelConfig,
+        max_prompt_length: int,
+        max_decode_length: int,
+        distributed_strategy: Optional[str],
+        sendnn_dynamic: bool,
+        **kwargs,
+    ) -> None:
+
+        if model_config.quantization == "gptq":
+            if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
+                from fms_mo.aiu_addons.gptq import (  # noqa: F401
+                    gptq_aiu_adapter, gptq_aiu_linear)
+                linear_type = "gptq_aiu"
+                logger.info("Loaded `aiu_addons` functionalities")
+            else:
+                linear_type = "gptq_cpu"
+                logger.warning("GPTQ is not expected to work on CPU.")
+
+            quant_cfg = model_config._parse_quant_hf_config()
+
+            linear_config = {
+                "linear_type": linear_type,
+                "group_size": quant_cfg['group_size'],
+                "desc_act": quant_cfg['desc_act'],
+            }
+            self.dtype = None
+            model_source = "hf_gptq_aiu"
+        else:
+            linear_config = {"linear_type": "torch_linear"}
+            model_source = "hf"
+
+        if self.dtype is not model_config.dtype:
+            logger.info(
+                "Ignoring user-provided dtype=%s and using dtype=%s instead.",
+                model_config.dtype, self.dtype)
+
+        is_local = os.path.isdir(model_config.model)
+        model_path = model_config.model
+        # Get location of model from HF cache.
+        if not is_local:
+            model_path = download_weights_from_hf(
+                model_name_or_path=model_path,
+                cache_dir=None,
+                allow_patterns=["*.safetensors", "*.bin", "*.pt"],
+                revision=model_config.revision)
+
+        # we can use fused weights unless running on Spyre
+        fused_weights = envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn"
+
+        self.model = vllm_get_model(vllm_config=self.vllm_config)
+
+        self.model.eval()
+        torch.set_grad_enabled(False)
+
+        _target_cache_size = max(int(max_decode_length * 2),
+                                 int(max_prompt_length * 2.5))
+        if hasattr(torch._dynamo.config, "accumulated_cache_size_limit") and \
+            _target_cache_size > torch._dynamo.config.\
+            accumulated_cache_size_limit:
+            _prev = torch._dynamo.config.accumulated_cache_size_limit
+            torch._dynamo.config.accumulated_cache_size_limit = \
+                _target_cache_size
+            logger.info(
+                "NOTICE: Adjusting "
+                "torch._dynamo.config.accumulated_cache_size_limit "
+                "from %s to %s "
+                "to accommodate prompt size of %d "
+                "and decode tokens of %d", _prev,
+                torch._dynamo.config.accumulated_cache_size_limit,
+                max_prompt_length, max_decode_length)
+
+        if _target_cache_size > torch._dynamo.config.cache_size_limit:
+            _prev = torch._dynamo.config.cache_size_limit
+            torch._dynamo.config.cache_size_limit = _target_cache_size
+            logger.info(
+                "NOTICE: Adjusting torch._dynamo.config.cache_size_limit "
+                "from %s to %s "
+                "to accommodate prompt size of %d "
+                "and decode tokens of %d", _prev,
+                torch._dynamo.config.accumulated_cache_size_limit,
+                max_prompt_length, max_decode_length)
+
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in BACKEND_LIST:
+
+            options = {"sendnn.dynamic": True} if sendnn_dynamic else {}
+
+            # Lazy import to avoid load torch_sendnn runtime before it is really
+            # necessary. This solve issues of running forked tests that share
+            # some resources from parent to children which can have problems
+            # of caching even though the test run in isolated subprocesses.
+            try:
+                from torch_sendnn import torch_sendnn  # noqa: F401
+            except ImportError:
+                print("WARNING: Disabled: torch_sendnn")
+
+            self.model = torch.compile(
+                self.model,
+                backend=envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND,
+                options=options,
+            )
+
+class StaticBatchingVllmModel(VllmModelBase):
+
+    def __init__(
+        self,
+        vllm_config: VllmConfig,
+        max_prompt_length: int,
+        max_decode_length: int,
+    ) -> None:
+        super().__init__(vllm_config,
+                    max_prompt_length,
+                    max_decode_length,
+                    sendnn_dynamic=False)
+
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        positions: torch.Tensor,
+        **extra_kwargs,
+    ) -> torch.Tensor:
+
+        output = self.model(
+            input_ids,
+            positions=positions,
+        )
+
+        return output
+
+    def compute_logits(self,
+            hidden_states: torch.Tensor,
+            sampling_metadata: SamplingMetadata) -> Optional[torch.Tensor]:
+        return self.model.compute_logits(hidden_states,
+                sampling_metadata)

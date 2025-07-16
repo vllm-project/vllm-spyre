@@ -6,12 +6,12 @@ from typing import TYPE_CHECKING, Any, Optional, cast
 
 import torch
 from torch import nn
-from vllm.config import DeviceConfig, VllmConfig
+from vllm.config import DeviceConfig, VllmConfig, get_layers_from_vllm_config
 from vllm.forward_context import set_forward_context
 from vllm.logger import init_logger
 from vllm.sampling_params import SamplingType
 from vllm.utils import is_pin_memory_available
-from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
+from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec, KVCacheConfig
 from vllm.v1.outputs import LogprobsTensors, SamplerOutput
 
 from vllm_spyre.model_executor.model_loader.spyre import (
@@ -19,6 +19,7 @@ from vllm_spyre.model_executor.model_loader.spyre import (
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_input_batch import (CachedRequestState,
                                                     InputBatch)
+from vllm_spyre.v1.attention.backends.spyre import SpyreSDPAMetadata, SpyreSDPABackend
 
 if TYPE_CHECKING:
     from vllm.v1.core.sched.output import (CachedRequestData, NewRequestData,
@@ -108,6 +109,14 @@ class SpyreModelRunner:
         # Requests
         self.requests: dict[str, CachedRequestState] = {}
 
+        if envs_spyre.VLLM_SPYRE_USE_VLLM:
+            self.vllm_model_impl=True
+            self.attn_backend = SpyreSDPABackend
+            self.attn_metadata_builder = SpyreSDPABackend.get_builder_cls()()
+            self.attn_metadata: Optional[SpyreSDPAMetadata] = None
+        else:
+            self.attn_metadata_builder = build_attn_metadata
+
     def get_model(self) -> nn.Module:
         return self.model
 
@@ -125,7 +134,10 @@ class SpyreModelRunner:
 
     @property
     def vocab_size(self) -> int:
-        return self.model.model.model.config.src_vocab_size
+        if self.vllm_model_impl:
+            return self.model.model.model.config.vocab_size
+        else:
+            return self.model.model.model.config.src_vocab_size
 
     def _prepare_pad_input_ids(
         self,
@@ -186,7 +198,7 @@ class SpyreModelRunner:
 
         return input_ids, position_ids, mask
 
-    def get_kv_cache_spec(self) -> KVCacheSpec:
+    def get_kv_cache_spec(self) -> dict[str, KVCacheSpec]:
         """
         This method should generate the KVCache spec by parsing the kv cache
         format from each Attention module in the static forward context.
@@ -206,14 +218,27 @@ class SpyreModelRunner:
         # We do at least use the real size from the cache config.
         block_size = self.vllm_config.cache_config.block_size
 
-        attn_spec = FullAttentionSpec(
-            block_size=block_size,
-            num_kv_heads=1,
-            head_size=1,
-            dtype=torch.float16,
-            use_mla=False,
-        )
-        return {"foo": attn_spec}
+        if not self.vllm_model_impl:
+            attn_spec = FullAttentionSpec(
+                block_size=block_size,
+                num_kv_heads=1,
+                head_size=1,
+                dtype=torch.float16,
+                use_mla=False,
+            )
+            return {"foo": attn_spec}
+
+        kv_cache_spec: dict[str, KVCacheSpec] = {}
+        attn_layers = get_layers_from_vllm_config(self.vllm_config, Attention)
+        for layer_name, attn_module in attn_layers.items():
+            kv_cache_spec[layer_name] = FullAttentionSpec(
+                block_size=block_size,
+                num_kv_heads=attn_module.num_kv_heads,
+                head_size=attn_module.head_size,
+                dtype=torch.float16,
+                use_mla=False,
+            )
+        return kv_cache_spec
 
     def complete_warmup(self):
         """Turn off warmup mode once the warmup is complete"""
@@ -401,6 +426,8 @@ class SpyreModelRunner:
             return EMPTY_MODEL_RUNNER_OUTPUT
 
         # Compute the logits.
+        if self.vllm_model_impl:
+            hidden_states =  hidden_states[:, -1, :] # Get last token of every batch
         logits = self.model.compute_logits(hidden_states, None)
 
         is_prefill = cast(bool, model_input.is_prompt)
@@ -454,6 +481,36 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
 
         self.spyre_warmup_shapes = SpyrePlatform.get_warmup_shapes(
             self.scheduler_config)
+
+    def initialize_kv_cache(self, kv_cache_config: KVCacheConfig) -> None:
+        """
+        Initialize KV cache based on `kv_cache_config`.
+        Args:
+            kv_cache_config: Configuration for the KV cache, including the KV
+            cache size of each layer
+        """
+        if not self.vllm_model_impl:
+            return
+        self.kv_cache_config = kv_cache_config
+        kv_caches: dict[str, torch.Tensor] = {}
+        num_blocks = 10
+
+        for i , kv_cache_group_spec in enumerate(kv_cache_config.kv_cache_groups):
+            kv_cache_spec = kv_cache_group_spec.kv_cache_spec
+            print(f"Block size: {kv_cache_spec.block_size}")
+            for layer_name in kv_cache_group_spec.layer_names:
+                kv_cache_shape = self.attn_backend.get_kv_cache_shape(
+                        num_blocks,
+                        kv_cache_spec.block_size,
+                        kv_cache_spec.num_kv_heads,
+                        kv_cache_spec.head_size)
+                spyre_kv_cache = torch.zeros(kv_cache_shape, dtype=torch.float16)
+                #spyre_kv_cache = None
+                kv_caches[layer_name] = spyre_kv_cache
+
+        forward_context = self.vllm_config.compilation_config.static_forward_context
+        for layer_name, kv_cache in kv_caches.items():
+            forward_context[layer_name].kv_cache = [kv_cache]
 
     def _prepare_prompt(
         self,

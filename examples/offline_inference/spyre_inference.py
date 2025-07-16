@@ -35,9 +35,10 @@ prompts = [
 sampling_params = SamplingParams(max_tokens=max_tokens,
                                  temperature=0.0,
                                  ignore_eos=True)
+model = "/models/llama-7b-chat"
 # Create an LLM.
-llm = LLM(model="/models/llama-7b-chat",
-          tokenizer="/models/llama-7b-chat",
+llm = LLM(model=model,
+          tokenizer=model,
           max_model_len=2048,
           block_size=2048)
 

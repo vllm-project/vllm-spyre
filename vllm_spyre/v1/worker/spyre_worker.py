@@ -135,7 +135,7 @@ class SpyreWorker(WorkerBaseV1):
                                kv_cache_configs: list[KVCacheConfig]) -> None:
         """Construct the KV cache from the provided configs.
         Currently, we do not support paged attention or kv caching"""
-        pass
+        self.model_runner.initialize_kv_cache(kv_cache_configs)
 
     def __init__(
         self,
