@@ -268,3 +268,40 @@ def test_full_batch_scheduling(model: str, backend: str, monkeypatch):
     schedule = scheduler.schedule()
 
     assert len(schedule.scheduled_new_reqs) == batch_size
+
+
+@pytest.mark.quantized
+@pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.parametrize("backend", ["sendnn"])
+@pytest.mark.parametrize("quantization", ["gptq"])
+def test_output_quantized(
+    model: str,
+    backend: str,
+    quantization: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+
+    prompts = get_chicken_soup_prompts(4)
+    warmup_shape = (64, 20, 4)
+
+    kwargs = ({
+        "quantization": quantization,
+    })
+
+    max_new_tokens = warmup_shape[1]
+
+    vllm_sampling_params = SamplingParams(
+        max_tokens=max_new_tokens,
+        temperature=0,
+        logprobs=0,  # return logprobs of generated tokens only
+        ignore_eos=True)
+
+    vllm_results = generate_spyre_vllm_output(
+        model=model,
+        prompts=prompts,
+        sampling_params=vllm_sampling_params,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        **kwargs)
+
+    assert (vllm_results)

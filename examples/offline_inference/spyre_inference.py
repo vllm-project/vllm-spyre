@@ -36,6 +36,10 @@ parser.add_argument("--backend",
                     choices=['eager', 'sendnn'])
 parser.add_argument("--compare-with-cpu",
                     action=argparse.BooleanOptionalAction)
+parser.add_argument("--quantization",
+                    type=str,
+                    default='none',
+                    choices=['fp8', 'gptq', 'none'])
 args = parser.parse_args()
 
 if platform.machine() == "arm64":
@@ -82,11 +86,13 @@ sampling_params = SamplingParams(max_tokens=args.max_tokens,
                                  temperature=0.0,
                                  ignore_eos=True)
 # Create an LLM.
-llm = LLM(model=args.model,
-          tokenizer=args.model,
-          max_model_len=args.max_model_len,
-          block_size=2048,
-          tensor_parallel_size=args.tp)
+llm = LLM(
+    model=args.model,
+    tokenizer=args.model,
+    max_model_len=args.max_model_len,
+    block_size=2048,
+    tensor_parallel_size=args.tp,
+    quantization=args.quantization if args.quantization != "none" else None)
 
 # Generate texts from the prompts. The output is a list of RequestOutput objects
 # that contain the prompt, generated text, and other information.
