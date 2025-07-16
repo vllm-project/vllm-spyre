@@ -23,7 +23,7 @@ from vllm_spyre.v1.core.scheduler import ContinuousBatchingSpyreScheduler
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("max_num_seqs", [2, 4],
+@pytest.mark.parametrize("max_num_seqs", [1, 2, 4],
                          ids=lambda val: f"max_num_seqs({val})")
 def test_cb_output(
     model: str,
