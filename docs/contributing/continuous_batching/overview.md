@@ -7,7 +7,7 @@ Brief overview of what has been implemented so far in VLLM to test / debug conti
 
 ## Inference script
 
-* **File paths:** 
+* **File paths:**
     * `examples/offline_inference/cb_spyre_inference.py`
     * `examples/offline_inference/long_context.py`
 * **Purpose:** Debugging (ie. using manual execution)
@@ -103,17 +103,9 @@ Checking the final output correctness alone is not enough to ensure that CB is c
     * `get_params_test_blocks_borders_misaligned_prompts`: parametrization for the situation where the prompts are misaligned with the block boundaries, and thus **right** padding is required
     * ... additional special cases
 
-
 ## Summary Table
 
 Summary Table Listing all the tests/scripts that can run with CB enabled
-
-<style>
-    .summary tr:nth-child(9) { background: grey; }
-    .summary tr:nth-child(3) tr:nth-child(2) { background: blue; }
-</style>
-
-<div class="summary">
 
 | Script / Test                                 | Output Checked | model                     | Context Length | TP      | max_num_seqs | num_prompts | prompts_length       | Max tokens            |
 | :-------------------------------------------- | :------------: | :-----------------------: | :------------: | :---:   | :----------: | :---------: | :------------------: | :-------------------: |
@@ -126,7 +118,5 @@ Summary Table Listing all the tests/scripts that can run with CB enabled
 | test_spyre_async_llm.test_abort()             |   ❌           | micro-g3.3-8b-instruct-1b | 128            | 1       | 2            | 1          | Chicken soups (tbd)   | 20                    |
 | test_spyre_online.test_openai_serving_cb()    |   ❌           | micro-g3.3-8b-instruct-1b | TODO           | TODO    | TODO         | TODO       | TODO                  | TODO                  |
 | test_spyre_cb.test_cb_max_tokens()            |   ❌           | micro-g3.3-8b-instruct-1b | 256            | 1       | 2            | 1          | 256                   | 20                    |
-
-</div>
 
 <span style="color:grey">**test_spyre_cb.test_cb_max_tokens(): Test runs on CPU only**</span>
