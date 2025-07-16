@@ -686,11 +686,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         super().__init__(vllm_config=vllm_config,
                          is_driver_worker=is_driver_worker)
 
-        # TODO: remove this limitation once we update the warm-up logic to
-        # support batch_size=1
-        assert vllm_config.scheduler_config.max_num_seqs >= 2, "Currently, " \
-            "continuous batching needs config to set batch_size >= 2"
-
         self.block_size = SpyrePlatform.get_block_size()
 
         # TODO: move to a KV cache manager
@@ -981,23 +976,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         current_tkv_mask = torch.tensor([self.tkv] * len(input_tokens),
                                         dtype=torch.int64)
-
-        # add pads for min decode batch size of 2 (Spyre compiler constraint)
-        if len(cached_request_data.req_ids) == 1:
-            padd_seq_indices = torch.zeros(1, dtype=torch.bool, device="cpu")
-            self.model.indices = torch.cat(
-                (self.model.indices, padd_seq_indices), -1)
-            assert self.model.indices.size(dim=0) == 2
-
-            input_tokens = torch.cat(2 * [input_tokens])
-            position_ids = torch.cat(2 * [position_ids])
-            current_tkv_mask = torch.cat(2 * [current_tkv_mask])
-            left_padded_prompt_mask = torch.cat(2 * [left_padded_prompt_mask])
-            block_table = torch.cat(2 * [block_table])
-            slot_mapping = torch.cat(2 * [slot_mapping])
-
-        # assert min batch size 2 for decodes (Spyre compiler constraint)
-        assert len(input_tokens) >= 2
 
         model_inputs = ModelForwardInputs(
             input_tokens=input_tokens,
