@@ -4,18 +4,12 @@ Run `python -m pytest tests/e2e/test_spyre_embeddings.py`.
 """
 
 import pytest
-from spyre_util import (compare_embedding_results, get_spyre_backend_list,
-                        get_spyre_model_list, spyre_vllm_embeddings,
-                        st_embeddings)
+from spyre_util import (compare_embedding_results, get_chicken_soup_prompts,
+                        get_spyre_backend_list, get_spyre_model_list,
+                        spyre_vllm_embeddings, st_embeddings)
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list(isEmbeddings=True))
-@pytest.mark.parametrize("prompts", [[
-    "The capital of France is Paris."
-    "Provide a list of instructions for preparing"
-    " chicken soup for a family of four.", "Hello",
-    "What is the weather today like?", "Who are you?"
-]])
 @pytest.mark.parametrize("warmup_shape",
                          [(64, 4), (64, 8), (128, 4),
                           (128, 8)])  # (prompt_length/batch_size)
@@ -24,7 +18,6 @@ from spyre_util import (compare_embedding_results, get_spyre_backend_list,
 @pytest.mark.parametrize("vllm_version", ["V0"])
 def test_output(
     model: str,
-    prompts: list[str],
     warmup_shape: tuple[int, int],
     backend: str,
     vllm_version: str,
@@ -35,6 +28,8 @@ def test_output(
     The same prompts are also input to HF. The generated embeddings
     are verified to be identical for vLLM and SentenceTransformers.
     '''
+
+    prompts = get_chicken_soup_prompts(1)
 
     vllm_results = spyre_vllm_embeddings(model=model,
                                          prompts=prompts,
