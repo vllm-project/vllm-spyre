@@ -546,13 +546,6 @@ def create_random_request(
         request_id: int, num_tokens: int,
         sampling_params: SamplingParams) -> EngineCoreRequest:
 
-    # Temporary until these parameters make it to a release version in vllm
-    extra_kwargs: dict[str, Any] = {}
-    if "data_parallel_rank" in EngineCoreRequest.__annotations__:
-        extra_kwargs["data_parallel_rank"] = None
-    if "pooling_params" in EngineCoreRequest.__annotations__:
-        extra_kwargs["pooling_params"] = None
-
     return EngineCoreRequest(request_id=str(request_id),
                              prompt_token_ids=[request_id] * num_tokens,
                              mm_inputs=None,
@@ -562,8 +555,7 @@ def create_random_request(
                              eos_token_id=None,
                              arrival_time=0,
                              lora_request=None,
-                             cache_salt=None,
-                             **extra_kwargs)
+                             cache_salt=None)
 
 
 def skip_unsupported_tp_size(size: int, backend: str):
