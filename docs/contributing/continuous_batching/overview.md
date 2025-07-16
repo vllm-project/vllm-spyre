@@ -119,4 +119,17 @@ Summary Table Listing all the tests/scripts that can run with CB enabled
 | test_spyre_online.test_openai_serving_cb()    |   ❌           | micro-g3.3-8b-instruct-1b | TODO           | TODO    | TODO         | TODO       | TODO                  | TODO                  |
 | test_spyre_cb.test_cb_max_tokens()            |   ❌           | micro-g3.3-8b-instruct-1b | 256            | 1       | 2            | 1          | 256                   | 20                    |
 
-<span style="color:grey">**test_spyre_cb.test_cb_max_tokens(): Test runs on CPU only**</span>
+!!! Note
+    `test_spyre_cb.test_cb_max_tokens():` Test set to run with cpu backend
+
+### Short descriptions
+
+* `offline_inference/cb_spyre_inference.py`: see [Inference script](## Inference script). Script to run inference with CB.
+* `offline_inference/long_context.py`: see [Inference script](## Inference script). Script to run inference with CB.
+* `test_spyre_cb.test_scheduler_cb_steps_tkv()`: (vLLM level test) see [description](#### `test_scheduler_cb_steps_tkv` (For this test the final output is not checked)). Test step-by-step correctness (scheduler level).
+* `test_spyre_cb.test_cb_output()`: see [description](#### `test_cb_output`). Test correctness of output when running with CB.
+* `test_spyre_basic.test_batch_handling()`: (originally an SB test) Test correctness when handling continuous batches of requests that finish after different number of forward passes
+* `test_spyre_max_new_tokens.test_output()`: (originally an SB test) Test one short request output (shorter than what it has been warmuped for)
+* `test_spyre_async_llm.test_abort()`: (vLLM level test) Test handling of cancelled requests
+* `test_spyre_online.test_openai_serving_cb()`: Test online serving correctness
+* `test_spyre_cb.test_cb_max_tokens()`: (vLLM level test) Test that requests that are longer than the max_model_len are correctly rejected
