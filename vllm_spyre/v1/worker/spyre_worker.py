@@ -513,7 +513,12 @@ class SpyreWorker(WorkerBaseV1):
         prompt_len: int,
         batch_size: int,
         valid_token_ids_tensor: torch.Tensor,
-    ):
+    ) -> None:
+
+        assert (
+            _inside_warmup_mode
+        ), "it looks like you are outside the warmup context for warmup"
+
         for i, req in enumerate(dummy_requests):
             scheduler_output = SchedulerOutput(
                 scheduled_new_reqs=[req],
@@ -529,8 +534,7 @@ class SpyreWorker(WorkerBaseV1):
                 grammar_bitmask=None,
             )
             logger.info("[WARMUP] Prefill %d/%d...", i + 1, batch_size)
-            assert _inside_warmup_mode, \
-                "it looks like you are outside the warmup context for prefill"
+
             self.execute_model(scheduler_output)
 
         # one decode iteration across all sequences
@@ -569,8 +573,6 @@ class SpyreWorker(WorkerBaseV1):
             grammar_bitmask=None,
         )
         logger.info("[WARMUP] Decode...")
-        assert _inside_warmup_mode, \
-            "it looks like you are outside the warmup context for decode"
         self.execute_model(scheduler_output)
         self._cleanup_model_runner(request=dummy_requests)
 
