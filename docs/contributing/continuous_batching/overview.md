@@ -48,6 +48,15 @@ For `long_context.py`: the same parameters, but with few differences:
 
 Unit tests are designed for automated and systematic execution to verify that CB behaves as expected for different scenarios. For each scenario (i.e. configuration of parameters), the test either passes or fails. When a test suite fails, identifying which specific test case failed is often more informative than the failure message itself. Below is a brief description of the different unit tests targeting CB. The description can also be found in the docstring of the different test functions:
 
+!!! caution
+    When adding new parametrization to a test, the parameters are typically combinatorial and number of executed tests can increase really fast. For example the following test function will run 2 x 2 = 4 different scenarios in total:
+    ```python
+    @pytest.mark.parametrize("model", ["micro-g3.3-8b-instruct-1b", "granite-3.3-8b-instruct"])
+    @pytest.mark.parametrize("max_tokens", [[10, 20], [60, 78]])
+    def test_function(model: str, max_tokens: list[int]):
+       ...
+    ```
+
 !!! note
     All the applicable unit tests in vLLM will eventually also execute with CB enabled in addition to SB, but two test functions specifically target continuous batching correctness: `test_cb_output` and `test_scheduler_cb_steps_tkv`. The other functions found in that files are mostly helper methods, or functions that test CB in aspects more specific to vLLM (such as scheduling constraints). Still it can be interesting to have a look in the code, but their description is skipped here.
 
