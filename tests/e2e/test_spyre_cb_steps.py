@@ -1,5 +1,5 @@
 import pytest
-from scheduling_utils import test_scheduler_cb_steps_tkv
+from scheduling_utils import check_scheduler_inference_steps
 from spyre_util import get_spyre_backend_list, get_spyre_model_list
 
 
@@ -145,17 +145,16 @@ def get_params_test_blocks_borders_aligned_prompts(
         },
     ]
 
-    test_scheduler_cb_steps_tkv(
-        model=model,
-        backend=backend,
-        monkeypatch=monkeypatch,
-        seqs_max_tokens=seqs_max_tokens,
-        prompts_lengths=prompts_lengths,
-        steps_add_reqs=steps_add_reqs,
-        checked_steps=checked_steps,
-        max_num_seqs=max_num_seqs,
-        available_blocks=available_blocks,
-    )
+    check_scheduler_inference_steps(model=model,
+                                    backend=backend,
+                                    monkeypatch=monkeypatch,
+                                    seqs_max_tokens=seqs_max_tokens,
+                                    prompts_lengths=prompts_lengths,
+                                    steps_add_reqs=steps_add_reqs,
+                                    checked_steps=checked_steps,
+                                    max_num_seqs=max_num_seqs,
+                                    available_blocks=available_blocks,
+                                    use_cb=True)
 
 
 @pytest.mark.cb
@@ -298,7 +297,7 @@ def get_params_test_blocks_borders_misaligned_prompts(
         },
     ]
 
-    test_scheduler_cb_steps_tkv(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -308,6 +307,7 @@ def get_params_test_blocks_borders_misaligned_prompts(
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
         available_blocks=available_blocks,
+        use_cb=True,
     )
 
 
@@ -427,7 +427,7 @@ def get_params_test_special_finish(model: str, backend: str,
         },
     ]
 
-    test_scheduler_cb_steps_tkv(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -437,6 +437,7 @@ def get_params_test_special_finish(model: str, backend: str,
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
         available_blocks=available_blocks,
+        use_cb=True,
     )
 
 
@@ -566,7 +567,7 @@ def get_params_test_scheduler_constraints_tkv(model: str, backend: str,
         },
     ]
 
-    test_scheduler_cb_steps_tkv(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -576,6 +577,7 @@ def get_params_test_scheduler_constraints_tkv(model: str, backend: str,
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
         available_blocks=available_blocks,
+        use_cb=True,
     )
 
 
@@ -742,7 +744,7 @@ def get_params_test_scheduler_constraints_max_prompt_len(
         },
     ]
 
-    test_scheduler_cb_steps_tkv(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -752,6 +754,7 @@ def get_params_test_scheduler_constraints_max_prompt_len(
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
         available_blocks=available_blocks,
+        use_cb=True,
     )
 
 
@@ -862,7 +865,7 @@ def get_params_test_scheduler_constraints_max_available_blocks(
         },
     ]
 
-    test_scheduler_cb_steps_tkv(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -872,6 +875,7 @@ def get_params_test_scheduler_constraints_max_available_blocks(
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
         available_blocks=available_blocks,
+        use_cb=True,
     )
 
 
@@ -1008,7 +1012,7 @@ def get_params_test_scheduler_constraints_more_than_available_blocks(
         },
     ]
 
-    test_scheduler_cb_steps_tkv(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -1018,4 +1022,5 @@ def get_params_test_scheduler_constraints_more_than_available_blocks(
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
         available_blocks=available_blocks,
+        use_cb=True,
     )

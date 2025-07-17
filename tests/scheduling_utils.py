@@ -32,7 +32,7 @@ def augment_checked_steps(
     return all_checked_steps
 
 
-def test_scheduler_cb_steps_tkv(
+def check_scheduler_inference_steps(
     model: str,
     backend: str,
     monkeypatch: pytest.MonkeyPatch,
@@ -42,6 +42,7 @@ def test_scheduler_cb_steps_tkv(
     checked_steps: list[dict[str, Any]],
     max_num_seqs: int,
     available_blocks: int,
+    use_cb: bool = True,
 ):
     """
     Test the scheduler execution by comparing the scheduler attributes at each 
@@ -54,11 +55,12 @@ def test_scheduler_cb_steps_tkv(
     """
 
     # set env vars
-    monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
     monkeypatch.setenv("VLLM_USE_V1", "1")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     if available_blocks > 0:
         monkeypatch.setenv("VLLM_SPYRE_N_BLOCKS", str(available_blocks))
+    if use_cb:
+        monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
 
     max_model_len = 256
 
