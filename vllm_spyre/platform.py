@@ -284,7 +284,8 @@ class SpyrePlatform(Platform):
             # ceil division to pad to next block boundary
             prompt_padding_len = math.ceil(
                 prompt_len / cls._block_size) * cls._block_size
-            if (prompt_padding_len + max_tokens
+            # we have to account for the token generated during prefill (-1)
+            if (prompt_padding_len + max_tokens - 1
                     > cls._config.scheduler_config.max_model_len):
                 raise ValueError(
                     "Could not add request: prompt length is "
