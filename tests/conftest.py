@@ -126,7 +126,7 @@ def remote_openai_server(request):
         if 'tp_size' in params:
             tp_size = params['tp_size']
             skip_unsupported_tp_size(int(tp_size), backend)
-        server_args.extend(["--tensor-parallel-size", str(tp_size)])
+            server_args.extend(["--tensor-parallel-size", str(tp_size)])
 
     try:
         with RemoteOpenAIServer(model, server_args,
