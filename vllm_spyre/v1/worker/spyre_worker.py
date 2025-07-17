@@ -419,7 +419,10 @@ class SpyreWorker(WorkerBaseV1):
 
         warmup_end_t = time.time()
         warmup_total_t = warmup_end_t - warmup_start_t
-        logger.info("[WARMUP] Finished in %.3fs", warmup_total_t)
+        compile_cache_str = 'enabled' if int(
+            os.getenv("TORCH_SENDNN_CACHE_ENABLE", "0")) else 'disabled'
+        logger.info("[WARMUP] Finished in %.3fs (compilation cache %s)",
+                    warmup_total_t, compile_cache_str)
 
         maybe_override_signals_handler()
 
