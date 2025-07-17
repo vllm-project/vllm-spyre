@@ -14,8 +14,8 @@ from spyre_util import get_spyre_backend_list, get_spyre_model_list
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def prompts_aligned_with_tkv_boundaries(model: str, backend: str,
-                                        monkeypatch: pytest.MonkeyPatch):
+def test_prompts_aligned_with_tkv_boundaries(model: str, backend: str,
+                                             monkeypatch: pytest.MonkeyPatch):
     """ Scenario where it happens that all the sequences get scheduled in a 
     fashion where they are aligned with the block boundaries (i.e. tkv multiple 
     of 64 at the time of prefilling).
@@ -176,8 +176,8 @@ def prompts_aligned_with_tkv_boundaries(model: str, backend: str,
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def prompts_misaligned_with_tkv_boundaries(model: str, backend: str,
-                                           monkeypatch: pytest.MonkeyPatch):
+def test_prompts_misaligned_with_tkv_boundaries(
+        model: str, backend: str, monkeypatch: pytest.MonkeyPatch):
     """ Scenario where it happens that some sequence gets scheduled in a way 
     that it is misaligned with the block boundary (i.e. tkv is not a multiple 
     of 64 at the time of prefilling).
@@ -338,7 +338,7 @@ def prompts_misaligned_with_tkv_boundaries(model: str, backend: str,
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def two_sequences_finish_same_time_as_new_arrive(
+def test_two_sequences_finish_same_time_as_new_arrive(
         model: str, backend: str, monkeypatch: pytest.MonkeyPatch):
     """ 2-cases-in-1: (1) Two sequences finish at the same time and (2) a new
     request arrives when another finishes.
@@ -476,8 +476,8 @@ def two_sequences_finish_same_time_as_new_arrive(
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def prompt_too_long_for_current_tkv(model: str, backend: str,
-                                    monkeypatch: pytest.MonkeyPatch):
+def test_prompt_too_long_for_current_tkv(model: str, backend: str,
+                                         monkeypatch: pytest.MonkeyPatch):
     """ Scenario where the requested prompt is too long for current tkv value
 
     Configuration:
@@ -623,7 +623,7 @@ def prompt_too_long_for_current_tkv(model: str, backend: str,
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def requested_tokens_not_fitting_remaining_space(
+def test_requested_tokens_not_fitting_remaining_space(
         model: str, backend: str, monkeypatch: pytest.MonkeyPatch):
     """ Scenario where the request goes beyond max_model_len 
 
@@ -808,8 +808,8 @@ def requested_tokens_not_fitting_remaining_space(
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def requests_use_all_available_blocks(model: str, backend: str,
-                                      monkeypatch: pytest.MonkeyPatch):
+def test_requests_use_all_available_blocks(model: str, backend: str,
+                                           monkeypatch: pytest.MonkeyPatch):
     """ Scenario where the requests use all of the available blocks 
     
     Configuration:
@@ -939,8 +939,8 @@ def requests_use_all_available_blocks(model: str, backend: str,
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def requests_use_more_than_available_blocks(model: str, backend: str,
-                                            monkeypatch: pytest.MonkeyPatch):
+def test_requests_use_more_than_available_blocks(
+        model: str, backend: str, monkeypatch: pytest.MonkeyPatch):
     """ Scenario where some request need to wait because of the number of 
     available blocks. 
     
