@@ -53,7 +53,11 @@ def test_cb_max_tokens(
                                    monkeypatch=monkeypatch)
 
 
-def get_params_test_blocks_borders_aligned_prompts():
+@pytest.mark.cb
+@pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+def get_params_test_blocks_borders_aligned_prompts(
+        model: str, backend: str, monkeypatch: pytest.MonkeyPatch):
     """ Scenario where it happens that all the sequences get scheduled in a 
     fashion where they are aligned with the block boundaries (i.e. tkv multiple 
     of 64 at the time of prefilling)."""
@@ -191,11 +195,23 @@ def get_params_test_blocks_borders_aligned_prompts():
         },
     ]
 
-    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            max_num_seqs, available_blocks)
+    test_scheduler_cb_steps_tkv(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        seqs_max_tokens=seqs_max_tokens,
+        prompts_lengths=prompts_lengths,
+        steps_add_reqs=steps_add_reqs,
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        available_blocks=available_blocks,
+    )
 
 
-def get_params_test_blocks_borders_misaligned_prompts():
+@pytest.mark.cb
+@pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+def get_params_test_blocks_borders_misaligned_prompts(model: str, backend: str, monkeypatch: pytest.MonkeyPatch):
     """ Scenario where it happens that some sequence gets scheduled in a way 
     that it is misaligned with the block boundary (i.e. tkv is not a multiple 
     of 64 at the time of prefilling). """
@@ -331,11 +347,23 @@ def get_params_test_blocks_borders_misaligned_prompts():
         },
     ]
 
-    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            max_num_seqs, available_blocks)
+    test_scheduler_cb_steps_tkv(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        seqs_max_tokens=seqs_max_tokens,
+        prompts_lengths=prompts_lengths,
+        steps_add_reqs=steps_add_reqs,
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        available_blocks=available_blocks,
+    )
 
 
-def get_params_test_special_finish():
+@pytest.mark.cb
+@pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+def get_params_test_special_finish(model: str, backend: str, monkeypatch: pytest.MonkeyPatch):
     """ 2-cases-in-1: (1) Two sequences finish at the same time and (2) a new
     request arrives when another finishes. """
 
@@ -447,11 +475,22 @@ def get_params_test_special_finish():
         },
     ]
 
-    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            max_num_seqs, available_blocks)
+    test_scheduler_cb_steps_tkv(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        seqs_max_tokens=seqs_max_tokens,
+        prompts_lengths=prompts_lengths,
+        steps_add_reqs=steps_add_reqs,
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        available_blocks=available_blocks,
+    )
 
-
-def get_params_test_scheduler_constraints_tkv():
+@pytest.mark.cb
+@pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+def get_params_test_scheduler_constraints_tkv(model: str, backend: str, monkeypatch: pytest.MonkeyPatch):
     """ Scenario where the requested prompt is too long for current tkv value"""
 
     seqs_max_tokens = [57, 67]
@@ -572,12 +611,24 @@ def get_params_test_scheduler_constraints_tkv():
             "n_used_blocks": 0
         },
     ]
+    
+    test_scheduler_cb_steps_tkv(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        seqs_max_tokens=seqs_max_tokens,
+        prompts_lengths=prompts_lengths,
+        steps_add_reqs=steps_add_reqs,
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        available_blocks=available_blocks,
+    )
 
-    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            max_num_seqs, available_blocks)
 
-
-def get_params_test_scheduler_constraints_max_prompt_len():
+@pytest.mark.cb
+@pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+def get_params_test_scheduler_constraints_max_prompt_len(model: str, backend: str, monkeypatch: pytest.MonkeyPatch):
     """ Scenario where the request goes beyond max_model_len """
 
     seqs_max_tokens = [67, 57, 80]
@@ -736,11 +787,22 @@ def get_params_test_scheduler_constraints_max_prompt_len():
         },
     ]
 
-    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            max_num_seqs, available_blocks)
+    test_scheduler_cb_steps_tkv(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        seqs_max_tokens=seqs_max_tokens,
+        prompts_lengths=prompts_lengths,
+        steps_add_reqs=steps_add_reqs,
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        available_blocks=available_blocks,
+    )
 
-
-def get_params_test_scheduler_constraints_max_available_blocks():
+@pytest.mark.cb
+@pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+def get_params_test_scheduler_constraints_max_available_blocks(model: str, backend: str, monkeypatch: pytest.MonkeyPatch):
     """ Scenario where the requests use all of the available blocks """
 
     seqs_max_tokens = [3, 3, 3, 3]  # 2 decodes into a new block per sequence
@@ -843,11 +905,23 @@ def get_params_test_scheduler_constraints_max_available_blocks():
         },
     ]
 
-    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            max_num_seqs, available_blocks)
+    test_scheduler_cb_steps_tkv(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        seqs_max_tokens=seqs_max_tokens,
+        prompts_lengths=prompts_lengths,
+        steps_add_reqs=steps_add_reqs,
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        available_blocks=available_blocks,
+    )
 
 
-def get_params_test_scheduler_constraints_more_than_available_blocks():
+@pytest.mark.cb
+@pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+def get_params_test_scheduler_constraints_more_than_available_blocks(model: str, backend: str, monkeypatch: pytest.MonkeyPatch):
     """ Scenario where some request need to wait because of the number of 
     available blocks. """
 
@@ -976,9 +1050,17 @@ def get_params_test_scheduler_constraints_more_than_available_blocks():
         },
     ]
 
-    return (seqs_max_tokens, prompts_lengths, steps_add_reqs, checked_steps,
-            max_num_seqs, available_blocks)
-
+    test_scheduler_cb_steps_tkv(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        seqs_max_tokens=seqs_max_tokens,
+        prompts_lengths=prompts_lengths,
+        steps_add_reqs=steps_add_reqs,
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        available_blocks=available_blocks,
+    )
 
 def augment_checked_steps(
         checked_steps: list[dict[str, Any]]) -> deque[dict[str, Any]]:
@@ -1000,20 +1082,6 @@ def augment_checked_steps(
     return all_checked_steps
 
 
-@pytest.mark.cb
-@pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize(
-    "seqs_max_tokens,prompts_lengths,steps_add_reqs,checked_steps,"
-    "max_num_seqs,available_blocks", [
-        get_params_test_blocks_borders_aligned_prompts(),
-        get_params_test_blocks_borders_misaligned_prompts(),
-        get_params_test_special_finish(),
-        get_params_test_scheduler_constraints_tkv(),
-        get_params_test_scheduler_constraints_max_prompt_len(),
-        get_params_test_scheduler_constraints_max_available_blocks(),
-        get_params_test_scheduler_constraints_more_than_available_blocks(),
-    ])
 def test_scheduler_cb_steps_tkv(
     model: str,
     backend: str,
