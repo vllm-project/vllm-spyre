@@ -1,4 +1,7 @@
-"""Verification of the correctness of the step-by-step execution of continuous batching. It does so by comparing, at every engine step (i.e. prefill or decode iteration), a bunch of attributes. This allows a finer testing of the padding and scheduling implementation.
+"""Verification of the correctness of the step-by-step execution of continuous 
+batching. It does so by comparing, at every engine step (i.e. prefill or decode 
+iteration), a bunch of attributes. This allows a finer testing of the padding 
+and scheduling implementation.
 
 Run `python -m pytest tests/e2e/test_spyre_cb_inference_steps.py`.
 """
@@ -347,7 +350,7 @@ def two_sequences_finish_same_time_as_new_arrive(
             * 2: len = 30, max tokens = 30, step joining = 0
             * 3: len = 20, max tokens = 10, step joining = 31
     """
-    
+
     seqs_max_tokens = [30, 30, 10]
     prompts_lengths = [49, 30, 20]
     steps_add_reqs = [0, 0, 31]
@@ -483,7 +486,7 @@ def prompt_too_long_for_current_tkv(model: str, backend: str,
             * 1: len = 49, max tokens = 57, step joining = 0
             * 2: len = 70, max tokens = 67, step joining = 0
     """
-    
+
     seqs_max_tokens = [57, 67]
     prompts_lengths = [49, 70]
     steps_add_reqs = [0, 0]
