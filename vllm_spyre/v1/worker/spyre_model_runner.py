@@ -824,7 +824,11 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             new_tokens = (request_data.sampling_params.max_tokens
                           if request_data.sampling_params is not None else 0)
             n = self.tkv + new_tokens - 1
-            n_reserved_blocks = math.ceil(n / self.block_size)
+            n_fully_padded_blocks = math.floor(
+                (self.tkv - len(request_data.prompt_token_ids)) /
+                self.block_size)
+            n_reserved_blocks = math.ceil(
+                n / self.block_size) - n_fully_padded_blocks
             self.req_ids2reserved_blocks[
                 request_data.req_id] = n_reserved_blocks
 
@@ -950,10 +954,11 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             req_state: CachedRequestState = self.requests[req_id]
 
             # filling block table with padding blocks (reusing id 0)
+            blocks = self.req_ids2blocks[req_id].copy()
             for i in range(n_blocks - len(self.req_ids2blocks[req_id])):
-                self.req_ids2blocks[req_id].appendleft(0)
+                blocks.appendleft(0)
 
-            block_table.append(self.req_ids2blocks[req_id])
+            block_table.append(blocks)
 
             # slot_mapping for all blocks of sequence
             start_slot = block_table[-1][-1] * self.block_size
@@ -1039,13 +1044,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
             for req in requests:
                 req.left_padding -= offset
-
-                # free blocks
-                for _ in range(n_padded_blocks):
-                    freed_block_id = self.req_ids2blocks[req.req_id].popleft()
-                    logger.debug("Freeing block with id: %s", freed_block_id)
-                    self.block_pool.append(freed_block_id)
-                    self.req_ids2reserved_blocks[req.req_id] -= 1
 
         # update tkv
         self.tkv -= offset

@@ -122,26 +122,26 @@ def get_params_test_blocks_borders_aligned_prompts():
         },
         {
             # Prefill sequence 2
-            # total blocks in use: 4 - 2 + 2 = 4
+            # total blocks in use: 4 - 2 + 1 = 3
             "step": 67,
             "tkv": 128,  # Tkv doesn't increase because it is a prefill
             "waiting": [],
             "running": ["2", "1"],
             "request_outputs": ["2"],
-            # 5 - 2 (seq 0) + 3 (prefill (2 blocks) + decodes (1 block))
-            "n_reserved_blocks": 6,
-            "n_used_blocks": 4
+            # 5 - 2 (seq 0) + 2 (prefill (1 block) + decodes (1 block))
+            "n_reserved_blocks": 5,
+            "n_used_blocks": 3
         },
         {
             # Decode sequences 1 and 2
-            # total blocks in use: 4 + 2 = 6
+            # total blocks in use: 3 + 2 = 5
             "step": 68,
             "tkv": 129,
             "waiting": [],
             "running": ["2", "1"],
             "request_outputs": ["2", "1"],
-            "n_reserved_blocks": 6,
-            "n_used_blocks": 6
+            "n_reserved_blocks": 5,
+            "n_used_blocks": 5
         },
         {
             # Sequence 1 finishes at step 69
@@ -152,18 +152,18 @@ def get_params_test_blocks_borders_aligned_prompts():
             "running": ["2"],
             "request_outputs": ["2", "1"],
             "finished_requests": ["1"],
-            "n_reserved_blocks": 6,
-            "n_used_blocks": 6
+            "n_reserved_blocks": 5,
+            "n_used_blocks": 5
         },
         {
             # Decode sequence 2
-            # total blocks in use: 6 - 3 - 1 (remove padded block) = 2
+            # total blocks in use: 5 - 3  = 2
             "step": 70,
             "tkv": 67,  # tkv is reset by 64 due to removing the padded block
             "waiting": [],
             "running": ["2"],
             "request_outputs": ["2"],
-            # 6 - 3 (seq 1 left) - 1 (removing the padded block)
+            # 5 - 3 (seq 1 left)
             "n_reserved_blocks": 2,
             "n_used_blocks": 2
         },
@@ -264,15 +264,15 @@ def get_params_test_blocks_borders_misaligned_prompts():
         },
         {
             # Prefill sequence 2
-            # total blocks in use: 4 - 2 + 2 = 4
+            # total blocks in use: 4 - 2 + 1 = 3
             "step": 59,
             "tkv": 120,  # Tkv doesn't increase because it is a prefill
             "waiting": [],
             "running": ["2", "1"],
             "request_outputs": ["2"],
-            # 5 - 2 (seq 0) + 2 (prefill (2 block) + 8 decodes in 2nd block)
-            "n_reserved_blocks": 5,
-            "n_used_blocks": 4
+            # 5 - 2 (seq 0) + 1 (prefill (1 block) + 8 decodes in 1st block)
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 3
         },
         {
             # Decode sequences 1 and 2
@@ -281,8 +281,8 @@ def get_params_test_blocks_borders_misaligned_prompts():
             "waiting": [],
             "running": ["2", "1"],
             "request_outputs": ["2", "1"],
-            "n_reserved_blocks": 5,
-            "n_used_blocks": 4
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 3
         },
         {
             # Sequence 2 finishes at step 68
@@ -293,18 +293,18 @@ def get_params_test_blocks_borders_misaligned_prompts():
             "running": ["1"],
             "request_outputs": ["2", "1"],
             "finished_requests": ["2"],
-            "n_reserved_blocks": 5,
-            "n_used_blocks": 4
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 3
         },
         {
             # Decode sequences 1
-            # total blocks in use: 4 - 2 + 1 = 3
+            # total blocks in use: 3 - 1 + 1 = 3
             "step": 68,
             "tkv": 129,
             "waiting": [],
             "running": ["1"],
             "request_outputs": ["1"],
-            "n_reserved_blocks": 3,  # 5 - 2 (seq 2)
+            "n_reserved_blocks": 3,  # 4 - 1 (seq 2)
             "n_used_blocks": 3
         },
         {
@@ -610,26 +610,26 @@ def get_params_test_scheduler_constraints_max_prompt_len():
         },
         {
             # Prefill sequence 1
-            # total blocks in use: 2 + 2
+            # total blocks in use: 2 + 1
             "step": 2,
             "tkv": 128,
             "waiting": ["2"],
             "running": ["1", "0"],
             "request_outputs": ["1"],
-            # prefill (2 blocks) + 56 decodes (1 block)
-            "n_reserved_blocks": 7,
-            "n_used_blocks": 4
+            # prefill (1 block) + 56 decodes (1 block)
+            "n_reserved_blocks": 6,
+            "n_used_blocks": 3
         },
         {
             # Decode sequences 0 and 1
-            # total blocks in use: 4 + 2 (decodes)
+            # total blocks in use: 3 + 2 (decodes)
             "step": 3,
             "tkv": 129,
             "waiting": ["2"],
             "running": ["1", "0"],
             "request_outputs": ["1", "0"],
-            "n_reserved_blocks": 7,
-            "n_used_blocks": 6
+            "n_reserved_blocks": 6,
+            "n_used_blocks": 5
         },
         {
             # Sequence 1 finishes at step 58
@@ -640,19 +640,19 @@ def get_params_test_scheduler_constraints_max_prompt_len():
             "running": ["0"],
             "request_outputs": ["1", "0"],
             "finished_requests": ["1"],
-            "n_reserved_blocks": 7,
-            "n_used_blocks": 6
+            "n_reserved_blocks": 6,
+            "n_used_blocks": 5
         },
         {
             # Decode sequence 0
             # Cannot prefill sequence 2: 185 + 80 = 265 > 256
-            # total blocks in use: 6 - 3 = 3
+            # total blocks in use: 5 - 2 = 3
             "step": 59,
             "tkv": 185,
             "waiting": ["2"],
             "running": ["0"],
             "request_outputs": ["0"],
-            "n_reserved_blocks": 4,  # 7 - 3 (seq 1)
+            "n_reserved_blocks": 4,  # 6 - 2 (seq 1)
             "n_used_blocks": 3
         },
         {
