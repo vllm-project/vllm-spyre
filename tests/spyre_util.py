@@ -530,7 +530,7 @@ def create_text_prompt(model: str, min_tokens: int, max_tokens: int) -> str:
     prompt = pepper * (min_tokens // pepper_tokens + 1)
 
     # And add more until we're over the minimum token length
-    while len(tokenizer.encode(prompt)) < min_tokens:
+    while len(tokenizer.encode(prompt)) <= min_tokens:
         prompt += pepper
 
     # Make sure this prompt is within the specified range
