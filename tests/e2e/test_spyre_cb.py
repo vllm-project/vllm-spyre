@@ -18,7 +18,7 @@ def test_cb_max_tokens(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Test that continuous batches of requests that
-    are longer than the max_model_len are correctly rejected"""
+    are longer than the `max_model_len` are correctly rejected"""
 
     max_model_len = 256
     max_tokens = 20
