@@ -18,7 +18,10 @@ nav:
     - Developer Guide:
       - Contributing: contributing/README.md
       - Continuous Batching:
-        - Testing: contributing/continuous_batching/tests.md
+        - Tests:
+          - End-to-End: contributing/continuous_batching/tests/e2e_testing.md
+          - Step-by-Step: contributing/continuous_batching/tests/scheduling_inference_steps.md
+          - Other Tests: contributing/continuous_batching/tests/other_tests.md
 
   - Getting Started:
     - Installation: getting_started/installation.md
@@ -34,4 +37,7 @@ nav:
   - Developer Guide:
     - Contributing: contributing/README.md
     - Continuous Batching:
-      - Testing: contributing/continuous_batching/tests.md
+      - Tests:
+        - End-to-End: contributing/continuous_batching/tests/e2e_testing.md
+        - Step-by-Step: contributing/continuous_batching/tests/scheduling_inference_steps.md
+        - Other Tests: contributing/continuous_batching/tests/other_tests.md
