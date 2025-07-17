@@ -337,7 +337,8 @@ class SpyreWorker(WorkerBaseV1):
                 pooling_params=None,
                 block_ids=[0],  # not actually used
                 num_computed_tokens=0,
-                lora_request=None) for i in range(batch_size + 1)
+                lora_request=None,
+            ) for i in range(batch_size + 1)
         ]
         add_dummy_request = dummy_requests.pop(-1)
 

@@ -350,9 +350,10 @@ class SpyrePlatform(Platform):
     def get_max_output_tokens(self, prompt_len: int) -> int:
         """Return the size of biggest ```new_tokens``` of the \
             warmup shapes that fits the prompt length"""
-        max_new_tokens = 1
         if self._warmup_shapes is None:
-            return max_new_tokens
+            return sys.maxsize
+
+        max_new_tokens = 1
         for shape in self._warmup_shapes:
             if prompt_len <= shape['prompt_length']:
                 max_new_tokens = max(max_new_tokens, shape['new_tokens'])

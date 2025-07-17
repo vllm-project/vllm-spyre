@@ -356,7 +356,6 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
             end_token_index = num_computed_tokens + len(new_token_ids)
             self.input_batch.token_ids_cpu[
                 req_index, start_token_index:end_token_index] = new_token_ids
-
             # Remove the entry for prompt_logprobs for this request,
             # if it exists
             self.input_batch.num_prompt_logprobs.pop(req_id, None)
@@ -731,6 +730,7 @@ class StaticBatchingSpyreModelRunner(WarmupShapesMixin, SpyreModelRunner):
     def _mark_input_tensors(self, model_input: SamplingForwardInputs) -> None:
         super()._mark_input_tensors(model_input=model_input)
         if not self.warmup_mode:
+            # Only mark tensors when we're warming up and compiling the graphs
             return
 
         if not model_input.is_prompt:

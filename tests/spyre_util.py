@@ -23,6 +23,23 @@ ISCLOSE_REL_TOL_CPU = 0.2
 ISCLOSE_REL_TOL_SPYRE = 0.35
 
 
+def force_engine_shutdown(llm: LLM):
+    """
+    �️�️�️
+    This hack is here because of an issue in vllm 0.9.2+ where a circular
+    reference occurs in vllm.executor.ray_utils if ray is not installed. This
+    circular reference holds a copy of the vllm config which contains a
+    reference to the LLM, which means it can never be garbage collected.
+    Since vllm.LLM relies on garbage collection to shut down its engine, the
+    engine never shuts down. When running tensor parallel workloads, if the
+    engine is never shut down then the TP worker processes are never killed.
+    When the TP worker processes are held open, all future attempts to create a
+    new engine will fail with an EADDRINUSE error.
+    �️�️�️
+    """
+    llm.llm_engine.engine_core.shutdown()
+
+
 class RemoteOpenAIServer:
     """Subprocess wrapper that boots a vllm server with `vllm serve` for testing
     against"""
@@ -217,6 +234,7 @@ def generate_spyre_vllm_output(
         ])
         results.append(result)
 
+    force_engine_shutdown(vllm_model)
     return results
 
 
@@ -268,14 +286,11 @@ def generate_hf_output(
 
 
 # compare results
-def compare_results(model: str, prompts: list[str],
-                    warmup_shapes: list[tuple[int, int,
-                                              int]], tensor_parallel_size: int,
+def compare_results(model: str, prompts: list[str], tensor_parallel_size: int,
                     backend: str, vllm_results: list[dict[str, Any]],
                     hf_results: list[dict[str, Any]]):
 
     print(f"\nmodel:         {model:s}")
-    print(f"warmup shapes: {warmup_shapes}")
     print(f"tp size:       {tensor_parallel_size}")
     print(f"backend:       {backend:s}")
     print(f"\n#prompts:      {len(prompts):d}")
@@ -508,7 +523,7 @@ def create_text_prompt(model: str, min_tokens: int, max_tokens: int) -> str:
     """Create a text prompt for the specified model that will tokenize to within
     the specified token length range."""
     tokenizer = AutoTokenizer.from_pretrained(model)
-    pepper = "🌶️"
+    pepper = "�️"
     pepper_tokens = len(tokenizer.encode(pepper, add_special_tokens=False))
 
     # Find a good starting number of peppers
@@ -528,11 +543,6 @@ def create_random_request(
         request_id: int, num_tokens: int,
         sampling_params: SamplingParams) -> EngineCoreRequest:
 
-    # Temporary until these parameters make it to a release version in vllm
-    extra_kwargs: dict[str, Any] = {}
-    if "data_parallel_rank" in EngineCoreRequest.__annotations__:
-        extra_kwargs["data_parallel_rank"] = None
-
     return EngineCoreRequest(request_id=str(request_id),
                              prompt_token_ids=[request_id] * num_tokens,
                              mm_inputs=None,
@@ -543,8 +553,8 @@ def create_random_request(
                              eos_token_id=None,
                              arrival_time=0,
                              lora_request=None,
-                             cache_salt=None,
-                             **extra_kwargs)
+                             data_parallel_rank=None,
+                             cache_salt=None)
 
 
 def skip_unsupported_tp_size(size: int, backend: str):
