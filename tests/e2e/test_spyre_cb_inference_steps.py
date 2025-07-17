@@ -1,3 +1,8 @@
+"""Verification of the correctness of the step-by-step execution of continuous batching. It does so by comparing, at every engine step (i.e. prefill or decode iteration), a bunch of attributes. This allows a finer testing of the padding and scheduling implementation.
+
+Run `python -m pytest tests/e2e/test_spyre_cb_inference_steps.py`.
+"""
+
 import pytest
 from scheduling_utils import check_scheduler_inference_steps
 from spyre_util import get_spyre_backend_list, get_spyre_model_list
@@ -10,7 +15,15 @@ def prompts_aligned_with_tkv_boundaries(model: str, backend: str,
                                         monkeypatch: pytest.MonkeyPatch):
     """ Scenario where it happens that all the sequences get scheduled in a 
     fashion where they are aligned with the block boundaries (i.e. tkv multiple 
-    of 64 at the time of prefilling)."""
+    of 64 at the time of prefilling).
+    
+    Configuration:
+        * max_num_seqs: 2
+        * number of prompts: 3
+            * 1: len = 49, max tokens = 65, step joining = 0
+            * 2: len = 41, max tokens = 67, step joining = 0
+            * 3: len = 47, max tokens = 7, step joining = 0
+    """
 
     seqs_max_tokens = [65, 67, 7]
     prompts_lengths = [49, 41, 47]
@@ -164,7 +177,15 @@ def prompts_misaligned_with_tkv_boundaries(model: str, backend: str,
                                            monkeypatch: pytest.MonkeyPatch):
     """ Scenario where it happens that some sequence gets scheduled in a way 
     that it is misaligned with the block boundary (i.e. tkv is not a multiple 
-    of 64 at the time of prefilling). """
+    of 64 at the time of prefilling).
+    
+    Configuration:
+        * max_num_seqs: 2
+        * number of prompts: 3
+            * 1: len = 49, max tokens = 57, step joining = 0
+            * 2: len = 41, max tokens = 67, step joining = 0
+            * 3: len = 47, max tokens = 9, step joining = 0
+    """
 
     seqs_max_tokens = [57, 67, 9]
     prompts_lengths = [49, 41, 47]
@@ -317,8 +338,16 @@ def prompts_misaligned_with_tkv_boundaries(model: str, backend: str,
 def two_sequences_finish_same_time_as_new_arrive(
         model: str, backend: str, monkeypatch: pytest.MonkeyPatch):
     """ 2-cases-in-1: (1) Two sequences finish at the same time and (2) a new
-    request arrives when another finishes. """
+    request arrives when another finishes.
 
+    Configuration:
+        * max_num_seqs: 2
+        * number of prompts: 3
+            * 1: len = 49, max tokens = 30, step joining = 0
+            * 2: len = 30, max tokens = 30, step joining = 0
+            * 3: len = 20, max tokens = 10, step joining = 31
+    """
+    
     seqs_max_tokens = [30, 30, 10]
     prompts_lengths = [49, 30, 20]
     steps_add_reqs = [0, 0, 31]
@@ -446,8 +475,15 @@ def two_sequences_finish_same_time_as_new_arrive(
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 def prompt_too_long_for_current_tkv(model: str, backend: str,
                                     monkeypatch: pytest.MonkeyPatch):
-    """ Scenario where the requested prompt is too long for current tkv value"""
+    """ Scenario where the requested prompt is too long for current tkv value
 
+    Configuration:
+        * max_num_seqs: 2
+        * number of prompts: 2
+            * 1: len = 49, max tokens = 57, step joining = 0
+            * 2: len = 70, max tokens = 67, step joining = 0
+    """
+    
     seqs_max_tokens = [57, 67]
     prompts_lengths = [49, 70]
     steps_add_reqs = [0, 0]
@@ -586,7 +622,15 @@ def prompt_too_long_for_current_tkv(model: str, backend: str,
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 def requested_tokens_not_fitting_remaining_space(
         model: str, backend: str, monkeypatch: pytest.MonkeyPatch):
-    """ Scenario where the request goes beyond max_model_len """
+    """ Scenario where the request goes beyond max_model_len 
+
+    Configuration:
+        * max_num_seqs: 2
+        * number of prompts: 3
+            * 1: len = 70, max tokens = 67, step joining = 0
+            * 2: len = 49, max tokens = 57, step joining = 0
+            * 3: len = 41, max tokens = 80, step joining = 0
+    """
 
     seqs_max_tokens = [67, 57, 80]
     prompts_lengths = [70, 49, 41]
@@ -763,7 +807,17 @@ def requested_tokens_not_fitting_remaining_space(
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 def requests_use_all_available_blocks(model: str, backend: str,
                                       monkeypatch: pytest.MonkeyPatch):
-    """ Scenario where the requests use all of the available blocks """
+    """ Scenario where the requests use all of the available blocks 
+    
+    Configuration:
+        * max_num_seqs: 4
+        * number of prompts: 4
+            * 1: len = 10, max tokens = 3, step joining = 0
+            * 2: len = 10, max tokens = 3, step joining = 0
+            * 3: len = 10, max tokens = 3, step joining = 0
+            * 4: len = 10, max tokens = 3, step joining = 0
+        * available_blocks: 8
+    """
 
     seqs_max_tokens = [3, 3, 3, 3]  # 2 decodes into a new block per sequence
     prompts_lengths = [10, 10, 10, 10]  # 1 block for prefil per sequence
@@ -885,7 +939,17 @@ def requests_use_all_available_blocks(model: str, backend: str,
 def requests_use_more_than_available_blocks(model: str, backend: str,
                                             monkeypatch: pytest.MonkeyPatch):
     """ Scenario where some request need to wait because of the number of 
-    available blocks. """
+    available blocks. 
+    
+    Configuration:
+        * max_num_seqs: 4
+        * number of prompts: 4
+            * 1: len = 10, max tokens = 3, step joining = 0
+            * 2: len = 10, max tokens = 3, step joining = 0
+            * 3: len = 10, max tokens = 3, step joining = 0
+            * 4: len = 10, max tokens = 3, step joining = 0
+        * available_blocks: 8
+    """
 
     seqs_max_tokens = [3, 3, 3, 3]  # 2 decodes into a new block per sequence
     prompts_lengths = [10, 10, 10, 10]  # 1 block for prefil per sequence
