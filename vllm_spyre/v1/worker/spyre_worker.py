@@ -419,7 +419,10 @@ class SpyreWorker(WorkerBaseV1):
 
         warmup_end_t = time.time()
         warmup_total_t = warmup_end_t - warmup_start_t
-        logger.info("[WARMUP] Finished in %.3fs", warmup_total_t)
+        compile_cache_str = 'enabled' if int(
+            os.getenv("TORCH_SENDNN_CACHE_ENABLE", "0")) else 'disabled'
+        logger.info("[WARMUP] Finished in %.3fs (compilation cache %s)",
+                    warmup_total_t, compile_cache_str)
 
         maybe_override_signals_handler()
 
@@ -549,9 +552,12 @@ class SpyreWorker(WorkerBaseV1):
                               batch_size=batch_size,
                               max_tokens=num_decode_tokens,
                               prompt_len=prompt_len)
+        compile_cache_str = 'enabled' if int(
+            os.getenv("TORCH_SENDNN_CACHE_ENABLE", "0")) else 'disabled'
         logger.info(
             "[WARMUP] Prompt length %d and max output tokens %d "
-            "finished in %.3fs", prompt_len, num_decode_tokens, warmup_total_t)
+            "finished in %.3fs (compilation cache %s)", prompt_len,
+            num_decode_tokens, warmup_total_t, compile_cache_str)
         maybe_override_signals_handler()
 
     def _warmup_model_forward_pass(
