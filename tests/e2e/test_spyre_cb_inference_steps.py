@@ -6,7 +6,7 @@ from spyre_util import get_spyre_backend_list, get_spyre_model_list
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def get_params_test_blocks_borders_aligned_prompts(
+def prompts_aligned_with_tkv_boundaries(
         model: str, backend: str, monkeypatch: pytest.MonkeyPatch):
     """ Scenario where it happens that all the sequences get scheduled in a 
     fashion where they are aligned with the block boundaries (i.e. tkv multiple 
@@ -160,7 +160,7 @@ def get_params_test_blocks_borders_aligned_prompts(
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def get_params_test_blocks_borders_misaligned_prompts(
+def prompts_misaligned_with_tkv_boundaries(
         model: str, backend: str, monkeypatch: pytest.MonkeyPatch):
     """ Scenario where it happens that some sequence gets scheduled in a way 
     that it is misaligned with the block boundary (i.e. tkv is not a multiple 
@@ -314,7 +314,7 @@ def get_params_test_blocks_borders_misaligned_prompts(
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def get_params_test_special_finish(model: str, backend: str,
+def two_sequences_finish_same_time_as_new_arrive(model: str, backend: str,
                                    monkeypatch: pytest.MonkeyPatch):
     """ 2-cases-in-1: (1) Two sequences finish at the same time and (2) a new
     request arrives when another finishes. """
@@ -444,7 +444,7 @@ def get_params_test_special_finish(model: str, backend: str,
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def get_params_test_scheduler_constraints_tkv(model: str, backend: str,
+def prompt_too_long_for_current_tkv(model: str, backend: str,
                                               monkeypatch: pytest.MonkeyPatch):
     """ Scenario where the requested prompt is too long for current tkv value"""
 
@@ -584,7 +584,7 @@ def get_params_test_scheduler_constraints_tkv(model: str, backend: str,
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def get_params_test_scheduler_constraints_max_prompt_len(
+def requested_tokens_not_fitting_remaining_space(
         model: str, backend: str, monkeypatch: pytest.MonkeyPatch):
     """ Scenario where the request goes beyond max_model_len """
 
@@ -761,7 +761,7 @@ def get_params_test_scheduler_constraints_max_prompt_len(
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def get_params_test_scheduler_constraints_max_available_blocks(
+def requests_use_all_available_blocks(
         model: str, backend: str, monkeypatch: pytest.MonkeyPatch):
     """ Scenario where the requests use all of the available blocks """
 
@@ -882,7 +882,7 @@ def get_params_test_scheduler_constraints_max_available_blocks(
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def get_params_test_scheduler_constraints_more_than_available_blocks(
+def requests_use_more_than_available_blocks(
         model: str, backend: str, monkeypatch: pytest.MonkeyPatch):
     """ Scenario where some request need to wait because of the number of 
     available blocks. """
