@@ -117,34 +117,3 @@ Checking the final output correctness alone is not enough to ensure that CB is c
 See [Other Tests](tests/other_tests.md)
 
 Most of the other tests primarily verify the correctness of various vLLM Spyre's plugin behaviors, such as launching the online server or enforcing scheduler constraints. While they don't always directly target the correctness of continuous batching, they ensure that the system functions as expected when continuous batching is enabled.
-
-## Summary Table
-
-Summary Table Listing all the tests/scripts that can run with CB enabled
-
-| Script / Test                                 | Output Checked | model                     | Context Length | TP      | max_num_seqs | num_prompts | prompts_length       | Max tokens            |
-| :-------------------------------------------- | :------------: | :-----------------------: | :------------: | :---:   | :----------: | :---------: | :------------------: | :-------------------: |
-| offline_inference/cb_spyre_inference.py       |   ✅           | Any                       | Any            | Any     | Any          | Any        | Chicken soups (tbd)   | Any                   |
-| offline_inference/long_context.py             |   ✅           | Any                       | Any            | Any     | Any          | Any        | Any                   | Auto (max possible)   |
-| test_spyre_cb.test_scheduler_cb_steps_tkv()   |   ❌           | micro-g3.3-8b-instruct-1b | 256            | 1       | 2, 4         | 2, 4       | Various, parametrized | Various, parametrized |
-| test_spyre_cb.test_cb_output()                |   ✅           | micro-g3.3-8b-instruct-1b | 256            | 1       | 2, 4         | 4          | Chicken soups (tbd)   | 20                    |
-| test_spyre_basic.test_batch_handling()        |   ✅           | micro-g3.3-8b-instruct-1b | 256            | 1       | 2            | 4          | Chicken soups (tbd)   | [5, 20, 10, 5]        |
-| test_spyre_max_new_tokens.test_output()       |   ✅           | micro-g3.3-8b-instruct-1b | 256            | 1       | 2            | 4          | Chicken soups (tbd)   | [20, 20, 20, 1]       |
-| test_spyre_async_llm.test_abort()             |   ❌           | micro-g3.3-8b-instruct-1b | 128            | 1       | 2            | 1          | Chicken soups (tbd)   | 20                    |
-| test_spyre_online.test_openai_serving_cb()    |   ❌           | micro-g3.3-8b-instruct-1b | TODO           | TODO    | TODO         | TODO       | TODO                  | TODO                  |
-| test_spyre_cb.test_cb_max_tokens()            |   ❌           | micro-g3.3-8b-instruct-1b | 256            | 1       | 2            | 1          | 256                   | 20                    |
-
-!!! Note
-    `test_spyre_cb.test_cb_max_tokens():` Test set to run with cpu backend
-
-### Short descriptions
-
-* `offline_inference/cb_spyre_inference.py`: Script to run inference with CB.
-* `offline_inference/long_context.py`: Script to run inference with CB.
-* `test_spyre_cb.test_scheduler_cb_steps_tkv()`: (vLLM level test) Test step-by-step correctness (scheduler level).
-* `test_spyre_cb.test_cb_output()`: Test correctness of output when running with CB.
-* `test_spyre_basic.test_batch_handling()`: (originally an SB test) Test correctness when handling continuous batches of requests that finish after different number of forward passes
-* `test_spyre_max_new_tokens.test_output()`: (originally an SB test) Test one short request output (shorter than what it has been warmuped for)
-* `test_spyre_async_llm.test_abort()`: (vLLM level test) Test handling of cancelled requests
-* `test_spyre_online.test_openai_serving_cb()`: Test online serving correctness
-* `test_spyre_cb.test_cb_max_tokens()`: (vLLM level test) Test that requests that are longer than the max_model_len are correctly rejected
