@@ -809,6 +809,11 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         if new_batch:
             self.tkv = block_padding
 
+        # optimization: cut out fully padded blocks
+        n_pad_blocks = (self.tkv - max_prompt_len) // self.block_size
+        block_padding -= n_pad_blocks * self.block_size
+        left_padding = self.tkv - n_pad_blocks * self.block_size
+
         # Internal state is managed here.
         slot_mapping = []
 
@@ -819,13 +824,16 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             new_tokens = (request_data.sampling_params.max_tokens
                           if request_data.sampling_params is not None else 0)
             n = self.tkv + new_tokens - 1
-            n_reserved_blocks = math.ceil(n / self.block_size)
+            n_fully_padded_blocks = math.floor(
+                (self.tkv - len(request_data.prompt_token_ids)) /
+                self.block_size)
+            n_reserved_blocks = math.ceil(
+                n / self.block_size) - n_fully_padded_blocks
             self.req_ids2reserved_blocks[
                 request_data.req_id] = n_reserved_blocks
 
             # retrieve initial (unpadded) tokens
             prompt_tokens = request_data.prompt_token_ids
-            left_padding = self.tkv - len(prompt_tokens)
             input_token_list.append(
                 torch.tensor(prompt_tokens,
                              dtype=torch.long,
@@ -859,7 +867,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                 sampling_params=sampling_params,
                 generator=generator,
                 output_token_ids=[],
-                left_padding=left_padding)
+                left_padding=self.tkv - max_prompt_len)
             self.requests[req_id] = req_state
             self.input_batch.add_request(req_state)
             self.prefill_batch.add_request(req_state)
@@ -884,8 +892,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # applies left padding to align with tkv of current decode batch
         # and right padding to align with the next block boundary
         input_tokens, position_ids, mask =\
-            self.pad_input_ids(input_token_list, min_pad_length=block_padding)
-        mask = mask.unsqueeze(1)
+            self.pad_input_ids(input_token_list,
+                               min_pad_left=left_padding,
+                               min_pad_right=block_padding)
+        mask = mask.unsqueeze(1).contiguous()
 
         # not needed for prefill
         current_tkv_mask = None
@@ -931,16 +941,24 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         }
         req_ids = self.input_batch.sorted_requests_ids
 
+        n_blocks = 0
+        for req_id in req_ids:
+            # adding new blocks if needed
+            if self.tkv % self.block_size == 0:
+                self.req_ids2blocks[req_id].append(self.block_pool.popleft())
+            n_blocks = max(n_blocks, len(self.req_ids2blocks[req_id]))
+
         for req_id in req_ids:
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
-
             req_state: CachedRequestState = self.requests[req_id]
-            # adding new blocks if needed
-            if self.tkv // self.block_size + 1 > len(
-                    self.req_ids2blocks[req_id]):
-                self.req_ids2blocks[req_id].append(self.block_pool.popleft())
-            block_table.append(self.req_ids2blocks[req_id])
+
+            # filling block table with padding blocks (reusing id 0)
+            blocks = self.req_ids2blocks[req_id].copy()
+            for i in range(n_blocks - len(self.req_ids2blocks[req_id])):
+                blocks.appendleft(0)
+
+            block_table.append(blocks)
 
             # slot_mapping for all blocks of sequence
             start_slot = block_table[-1][-1] * self.block_size
@@ -1027,29 +1045,23 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             for req in requests:
                 req.left_padding -= offset
 
-                # free blocks
-                for _ in range(n_padded_blocks):
-                    freed_block_id = self.req_ids2blocks[req.req_id].popleft()
-                    logger.debug("Freeing block with id: %s", freed_block_id)
-                    self.block_pool.append(freed_block_id)
-                    self.req_ids2reserved_blocks[req.req_id] -= 1
-
         # update tkv
         self.tkv -= offset
 
     def pad_input_ids(
         self,
         input_ids_list: list[torch.Tensor],
-        min_pad_length: int = 0,
+        min_pad_left: int = 0,
+        min_pad_right: int = 0,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
 
         # left padding to align with tkv of current decode batch
         input_tokens_left, position_ids_left, mask_left =\
-            super().pad_input_ids(input_ids_list, min_pad_length=self.tkv)
+            super().pad_input_ids(input_ids_list, min_pad_length=min_pad_left)
 
         # right padding to align with the next block boundary
         left_pad_len = input_tokens_left.shape[1]
-        n_pads_right = min_pad_length - left_pad_len
+        n_pads_right = min_pad_right - left_pad_len
 
         # set number of right pads for the next model forward pass:
         # need to be excluded before sampling tokens
@@ -1059,7 +1071,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             # apply right padding to input_tokens, position_ids and mask
             logger.info(
                 "Right padding request of length %d tokens to %d tokens.",
-                left_pad_len, min_pad_length)
+                left_pad_len, min_pad_right)
 
             input_tokens_right = torch.tensor(
                 [[self.pad_token_id for i in range(n_pads_right)]],
