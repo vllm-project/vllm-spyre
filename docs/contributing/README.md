@@ -55,6 +55,9 @@ For additional features and advanced configurations, refer to the official [MkDo
 
 ## Testing
 
+!!! tip
+    When running tests, if errors occur, these can be analyzed/debugged by setting `DISABLE_ASSERTS = True` in spyre_util.py and by rerunning the test using `pytest --capture=no tests/spyre/test_spyre_basic.py`. After debugging, `DISABLE_ASSERTS` should be reset to `False`.
+
 ### Testing Locally on CPU (No Spyre card)
 
 Optionally, download the `ibm-ai-platform/micro-g3.3-8b-instruct-1b` model:
