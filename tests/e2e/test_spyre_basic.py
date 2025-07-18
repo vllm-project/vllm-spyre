@@ -15,22 +15,28 @@ from vllm.v1.executor.abstract import Executor
 from vllm_spyre.v1.core.scheduler import StaticBatchingSpyreScheduler
 
 
+@pytest.mark.parametrize("cb",
+                         [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
-    "warmup_shape", [(64, 20, 4)])  # (prompt_length/new_tokens/batch_size)
-@pytest.mark.parametrize("tp_size", [
-    pytest.param(1),
-    pytest.param(2, marks=pytest.mark.multi),
-    pytest.param(4, marks=pytest.mark.multi),
-    pytest.param(8, marks=pytest.mark.multi),
-],
-                         ids=lambda val: f"TP({val})")
+    "tp_size",
+    [
+        pytest.param(1),
+        pytest.param(2, marks=pytest.mark.multi),
+        pytest.param(4, marks=pytest.mark.multi),
+        pytest.param(8, marks=pytest.mark.multi),
+    ],
+    ids=lambda val: f"TP({val})",
+)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
+@pytest.mark.parametrize("max_num_seqs", [4],
+                         ids=lambda val: f"max_num_seqs({val})")
 def test_output(
     model: str,
-    warmup_shape: tuple[int, int, int],
     tp_size: int,
     backend: str,
+    cb: int,
+    max_num_seqs: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     '''
@@ -39,16 +45,29 @@ def test_output(
     The same prompts are also input to HF. The generated output
     including text, token ids, and logprobs, is verified to be
     identical for vLLM and HF.
-
-    If errors occur, these can be analyzed/debugged by setting
-    'DISABLE_ASSERTS = True' in spyre_util.py and by rerunning the
-    test using 'pytest --capture=no tests/spyre/test_spyre_basic.py'
-    After debugging, DISABLE_ASSERTS should be reset to 'False'.
+    
+    Configuration for CB - parameters are combinatorial:
+        * max_num_seqs: 4
+        * tensor parallelism: 1, 2, 4, 8
+        * number of prompts: 4 (Chicken soup prompts)
+        * max tokens: 20 (same for all the prompts)
     '''
 
     skip_unsupported_tp_size(tp_size, backend)
 
     prompts = get_chicken_soup_prompts(4)
+    warmup_shape = (64, 20, 4)
+
+    kwargs = ({
+        "max_num_seqs": max_num_seqs,
+        "use_cb": True,
+        "max_model_len": 256,
+        "block_size": 256,
+    } if cb == 1 else {
+        "warmup_shapes": (warmup_shape, ),
+        "max_model_len": 2048,
+        "block_size": 2048,
+    })
 
     max_new_tokens = warmup_shape[1]
 
@@ -61,13 +80,11 @@ def test_output(
     vllm_results = generate_spyre_vllm_output(
         model=model,
         prompts=prompts,
-        warmup_shapes=[warmup_shape],
-        max_model_len=2048,
-        block_size=2048,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=tp_size,
         backend=backend,
-        monkeypatch=monkeypatch)
+        monkeypatch=monkeypatch,
+        **kwargs)
 
     hf_results = generate_hf_output(model=model,
                                     prompts=prompts,
@@ -75,7 +92,6 @@ def test_output(
 
     compare_results(model=model,
                     prompts=prompts,
-                    warmup_shapes=[warmup_shape],
                     tensor_parallel_size=tp_size,
                     backend=backend,
                     vllm_results=vllm_results,
@@ -127,7 +143,6 @@ def test_output_sendnn_decoder(
 
     compare_results(model=model,
                     prompts=prompts,
-                    warmup_shapes=[warmup_shape],
                     tensor_parallel_size=1,
                     backend=backend,
                     vllm_results=vllm_results,
@@ -142,7 +157,13 @@ def test_batch_handling(model: str, backend: str, cb: int,
                         monkeypatch: pytest.MonkeyPatch):
     """Test that the spyre worker correctly handles
     continuous batches of requests that
-    finish after different numbers of forward passes"""
+    finish after different numbers of forward passes
+
+    Configuration for CB - parameters are combinatorial:
+        * max_num_seqs: 2
+        * number of prompts: 4 (Chicken soup prompts)
+        * max tokens: [5, 20, 10, 5]
+    """
 
     prompts = get_chicken_soup_prompts(4)
 
@@ -198,7 +219,6 @@ def test_batch_handling(model: str, backend: str, cb: int,
     compare_results(
         model=model,
         prompts=prompts,
-        warmup_shapes=[],
         tensor_parallel_size=1,
         backend=backend,
         vllm_results=vllm_results,
