@@ -26,6 +26,8 @@ def test_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     '''
+    Checks that `max_tokens` parameter of `SamplingParams` works correctly
+    
     The warmup is based on a single shape. After the warmup,
     one request with the provided prompts is input to vLLM.
     The same prompts are also input to HF. The generated output
