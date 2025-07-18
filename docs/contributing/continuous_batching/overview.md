@@ -39,7 +39,7 @@ For `long_context.py`: the same parameters, but with some differences:
 
     * [Output Tests](tests/output_tests.md): Check the correctness of end output logits/tokens of sequences ran with continuous batching enabled
     * [Scheduler Steps Tests](tests/scheduler_steps_tests.md): Check the correctness of the step-by-step execution of continuous batching for different scenarios of prompt lengths and requested tokens
-    * [Other Tests](tests/other_tests.md): Other tests verifing the various behaviours of vLLM, when running with continuous batching enabled
+    * [Other Tests](tests/other_tests.md): Other tests verifying the various behaviours of vLLM, when running with continuous batching enabled
 
 * **Purpose:** Automated execution to verify that a specific behaviour acts as expected (passing/failing)
 
@@ -48,18 +48,21 @@ For `long_context.py`: the same parameters, but with some differences:
     * Scheduler Steps Tests: `vllm-spyre/tests/e2e/test_spyre_cb_scheduler_steps.py`
     * Other Tests: various files including `vllm-spyre/tests/e2e/test_spyre_cb.py`
 
+<!-- markdownlint-disable MD031 MD046 -->
 ### Usage (when running locally)
+
 #### Commands
-```bash
-# Runs all the tests
-python -m pytest -svx -m "spyre and cb" --forked tests
 
-# Runs specific test file
-python -m pytest -svx -m "spyre and cb" --forked tests/e2e/test_spyre_cb_scheduler_steps.py
+    # Runs all the tests
+    python -m pytest -svx -m "spyre and cb" --forked tests
+    
+    # Runs specific test file
+    python -m pytest -svx -m "spyre and cb" --forked tests/e2e/test_spyre_cb_scheduler_steps.py
+    
+    # Runs specific test function
+    python -m pytest -svx -m "spyre and cb" --forked tests/e2e/test_spyre_basic.py::test_output
 
-# Runs specific test function
-python -m pytest -svx -m "spyre and cb" --forked tests/e2e/test_spyre_basic.py::test_output
-```
+<!-- markdownlint-enable MD031 MD046 -->
 
 #### Parameters description
 * `-x` option: stops the execution as soon as a test fails
@@ -69,7 +72,7 @@ python -m pytest -svx -m "spyre and cb" --forked tests/e2e/test_spyre_basic.py::
 * `-m "spyre and cb"`: runs the tests with configurations marked as "spyre" and "cb" only
 
 !!! tip
-    To run a test with a different model than the default `ibm-ai-platform/micro-g3.3-8b-instruct-1b`, you can run the test with `VLLM_SPYRE_TEST_MODEL_LIST` environment variable set to the targer model, for example: 
+    To run a test with a different model than the default `ibm-ai-platform/micro-g3.3-8b-instruct-1b`, you can run the test with `VLLM_SPYRE_TEST_MODEL_LIST` environment variable set to the target model, for example:
     ```bash
     VLLM_SPYRE_TEST_MODEL_LIST='tiny-granite-3.2-8b' python -m pytest -svx -m "spyre and cb" --forked tests/e2e/test_spyre_cb.py
     ```
@@ -96,7 +99,6 @@ Output tests checks the correctness of the output of CB on a set of prompts. For
 !!! note inline end
     This applies for sendnn backend, on CPU the tokens need to additionally be exactly the same for the test to pass
 * The test passes if: the logprobs of HF on CPU and vLLM (on Spyre or CPU depending on the backend) are compared, and the test passes only if the pairwise relative differences of the values are all below a threshold: `math.isclose(hf_logprob, vllm_logprob, rel_tol=0.35)`. Otherwise it fails. There is no logic that takes into account the fact that the tokens might becomes different at some point, making the logits diverging.
-
 
 #### Scheduler Steps Tests
 
