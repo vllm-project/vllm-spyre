@@ -2,9 +2,6 @@
 
 Brief overview of what has been implemented so far in VLLM to test / debug continuous batching
 
-!!! info
-    Valid as of Date: 15th July 2025
-
 ## Inference script
 
 * **File paths:**
@@ -30,31 +27,52 @@ For `cb_spyre_inference.py`
 * `--max-tokens`: Number of tokens generated for each requested sequence
 * `--compare-with-CPU`: If set, compare the text output with CPU version running with Hugging Face instead of vLLM
 
-For `long_context.py`: the same parameters, but with few differences:
+For `long_context.py`: the same parameters, but with some differences:
+
 * `--max_prompt_len`: max lengths of prompts (prompts will have length up to `max_prompt_len`)
 * doesn't allow to specify `--max-tokens`: number of tokens set automatically given `max_model_len` and prompts lengths
 
 ## CB tests through unit tests
 
-* **File path (tests targeting CB specifically):** `vllm-spyre/tests/e2e/test_spyre_cb.py`
+!!! abstract "In Short"
+    See the detailed description of the individual unit tests for continuous batching in their respective files directly.
+
+    * [Output Tests](tests/output_tests.md): Check the correctness of end output logits/tokens of sequences ran with continuous batching enabled
+    * [Scheduler Steps Tests](tests/scheduler_steps_tests.md): Check the correctness of the step-by-step execution of continuous batching for different scenarios of prompt lengths and requested tokens
+    * [Other Tests](tests/other_tests.md): Other tests verifing the various behaviours of vLLM, when running with continuous batching enabled
+
 * **Purpose:** Automated execution to verify that a specific behaviour acts as expected (passing/failing)
 
+* **Files paths:**
+    * Output Tests: `vllm-spyre/tests/e2e/test_spyre_basic.py`
+    * Scheduler Steps Tests: `vllm-spyre/tests/e2e/test_spyre_cb_scheduler_steps.py`
+    * Other Tests: various files including `vllm-spyre/tests/e2e/test_spyre_cb.py`
+
 ### Usage (when running locally)
-* Commands:  
-    * general: `python -m pytest -svx -m "spyre and cb" --forked tests`
-    * specific test file: `python -m pytest -svx -m "spyre and cb" --forked tests/e2e/test_spyre_cb.py`
-    * specific test function: `python -m pytest -svx -m "spyre and cb" --forked tests/e2e/test_spyre_cb.py::test_cb_output`
-    * specific test function with specific parameters: `python -m pytest -svx -m "spyre and cb" --forked tests/e2e/test_spyre_cb.py::test_cb_output[max_num_seqs(2)-eager-ibm-ai-platform/micro-g3.3-8b-instruct-1b]`
+#### Commands
+```bash
+# Runs all the tests
+python -m pytest -svx -m "spyre and cb" --forked tests
+
+# Runs specific test file
+python -m pytest -svx -m "spyre and cb" --forked tests/e2e/test_spyre_cb_scheduler_steps.py
+
+# Runs specific test function
+python -m pytest -svx -m "spyre and cb" --forked tests/e2e/test_spyre_basic.py::test_output
+```
+
+#### Parameters description
+* `-x` option: stops the execution as soon as a test fails
+* `-s` option: show all the print statements in the code
+* `-v` option: verbose mode, make the test output more detailed: show name of each test function and whether it passed, failed or was skipped
+* `--forked` option: isolates the tests and avoid having one test crashing impacting the other tests
+* `-m "spyre and cb"`: runs the tests with configurations marked as "spyre" and "cb" only
 
 !!! tip
-    To run a test with a different model than the default `ibm-ai-platform/micro-g3.3-8b-instruct-1b`, you can run the test with `VLLM_SPYRE_TEST_MODEL_LIST` environment variable set to the targer model, for example: `VLLM_SPYRE_TEST_MODEL_LIST='tiny-granite-3.2-8b' python -m pytest -svx -m "spyre and cb" --forked tests/e2e/test_spyre_cb.py`
-
-* Parameters description:
-    * `-x` option: stops the execution as soon as a test fails
-    * `-s` option: show all the print statements in the code
-    * `-v` option: verbose mode, make the test output more detailed: show name of each test function and whether it passed, failed or was skipped
-    * `--forked` option: isolates the tests and avoid having one test crashing impacting the other tests
-    * `-m "spyre and cb"`: runs the tests with configurations marked as "spyre" and "cb" only
+    To run a test with a different model than the default `ibm-ai-platform/micro-g3.3-8b-instruct-1b`, you can run the test with `VLLM_SPYRE_TEST_MODEL_LIST` environment variable set to the targer model, for example: 
+    ```bash
+    VLLM_SPYRE_TEST_MODEL_LIST='tiny-granite-3.2-8b' python -m pytest -svx -m "spyre and cb" --forked tests/e2e/test_spyre_cb.py
+    ```
 
 ### Description
 
@@ -69,51 +87,36 @@ Unit tests are designed for automated and systematic execution to verify that CB
        ...
     ```
 
-!!! note
-    All the applicable unit tests in vLLM will eventually also execute with CB enabled in addition to SB, but two test functions specifically target continuous batching correctness: `test_cb_output` and `test_scheduler_cb_steps_tkv`. The other functions found in that files are mostly helper methods, or functions that test CB in aspects more specific to vLLM (such as scheduling constraints). Still it can be interesting to have a look in the code, but their description is skipped here.
+#### Output Tests
 
-#### `test_cb_output`
-`test_cb_output` checks the correctness of the output of CB on a set of prompts (4 hardcoded prompts for that test). The output from vllm is compared to this of Hugging Face on CPU.
+See [Output Tests](tests/output_tests.md)
 
-* **The test passes if:** the logprobs of HF on CPU and vLLM (on Spyre or CPU depending on the backend) are compared, and the test passes only if the pairwise relative differences of the values are all below a threshold: `math.isclose(hf_logprob, vllm_logprob, rel_tol=0.35)`. Otherwise it fails.
+Output tests checks the correctness of the output of CB on a set of prompts. For now, the number of prompts and the prompts themself are hardcoded, as well as the max requested tokens per prompt (constant and set to 20). The output from vllm is compared to this of Hugging Face on CPU.
 
-!!! attention
-    The above applies for sendnn backend, on CPU the tokens need to additionally be exactly the same for the test to pass
+!!! note inline end
+    This applies for sendnn backend, on CPU the tokens need to additionally be exactly the same for the test to pass
+* The test passes if: the logprobs of HF on CPU and vLLM (on Spyre or CPU depending on the backend) are compared, and the test passes only if the pairwise relative differences of the values are all below a threshold: `math.isclose(hf_logprob, vllm_logprob, rel_tol=0.35)`. Otherwise it fails. There is no logic that takes into account the fact that the tokens might becomes different at some point, making the logits diverging.
 
-* **parametrization:**
-    * `model`: the model
-    * `backend`: if the test is running with `eager` backend for CPU or `sendnn` for Spyre
-    * `max_num_seqs`: Max number of sequences processed in a single iteration (decode batch size)
 
-* **Note on parametrization of prompts and max_tokens**: so far both the prompts and max tokens are hardcoded in that test. There are 4 prompts about chicken soup, and the `max_tokens` is set to 20 for all the prompts. It could be a good idea to add a `max-tokens` and `num-prompts` parametrization to create prompts in the same way as it is done in the inference script. Or we could even create prompts of specified length by parametrizing the number of tokens in the prompt, as it is done in the `test_scheduler_cb_steps_tkv` where artificial prompts are created by setting the parameter `prompts_lengths`. To be discussed.
+#### Scheduler Steps Tests
 
-#### `test_scheduler_cb_steps_tkv` (For this test the final output is not checked)
+See [Scheduler Steps Tests](tests/scheduler_steps_tests.md)
 
-!!! note
-    Since we are now testing more than only the tkv value at each step, I plan to rename that test, because the name is now a bit misleading.
+!!! Question
+    For these tests, the final output is not checked, only the step-by-step execution correctness. Would it make sense to have output validation though?
 
-!!! note
-    The final output is not checked because for a lot of parametrized scenarios they are only relevant for testing scheduling implementation, this saves some computation time.
-
-Checking the final output correctness alone is not enough to ensure that CB is correctly implemented (otherwise how can we differentiate with static batching for example). So `test_scheduler_cb_steps_tkv` is meant to check the correctness of the step-by-step execution of continuous batching. It does so by comparing, at every engine step (i.e. prefill or decode iteration), a bunch of attributes. This is allows a finer testing of the padding and scheduling implementation.
+Checking the final output correctness alone is not enough to ensure that CB is correctly implemented (otherwise how can we differentiate with static batching for example). So the scheduler steps tests are meant to check the correctness of the step-by-step execution of continuous batching. It does so by comparing, at every engine step (i.e. prefill or decode iteration), a bunch of attributes. This is allows a finer testing of the padding and scheduling implementation.
 
 * **Checked attributes at each step:**
     * `tkv`: after each step, the tkv is compared against the expected tkv value for that step
     * `waiting`, `running`, `request_outputs`, `finished_requests` not really relevant in a compiler point of view, but after each iteration, we check that the list of running and waiting requests and those that have finished are correct. this tests the scheduler correctness.
     * (waiting to be merged, PR #261): `n_reserved_blocks` and `n_used_blocks`
 
-* **Parametrization:**
-    * `model`: the model
-    * `backend`: if the test is running with `eager` backend for CPU or `sendnn` for Spyre
-    * `seqs_max_tokens`: Number of tokens generated for each requested sequence prompt
-    * `prompts_lengths`: Number of tokens for each prompt. Prompts are artificially generated given that parameter
-    * `steps_add_reqs`: Steps where the requests prompts are joining, this helps simulating a online setup where server receives requests from users at different times
-    * `checked_steps`: a list of reference values containing the reference values for the attributes described above at each step
+#### Other Tests
 
-* **Parametrization functions:** Because there are a lot of different scenarios and edge cases that we want to test through `test_scheduler_cb_steps_tkv`, the set of parameters described in the previous point are provided through different functions. Each function provide a different set of parameters and expected values at each step for the case that it is testing. This improves readability because the function names gives a brief idea of the tested scenario. For example:
-    * `get_params_test_blocks_borders_aligned_prompts`: parametrization for the situation where the prompts are by chance already aligned with the blocks boundaries (no **right** padding required)
-    * `get_params_test_blocks_borders_misaligned_prompts`: parametrization for the situation where the prompts are misaligned with the block boundaries, and thus **right** padding is required
-    * ... additional special cases
+See [Other Tests](tests/other_tests.md)
+
+Most of the other tests primarily verify the correctness of various vLLM Spyre's plugin behaviors, such as launching the online server or enforcing scheduler constraints. While they don't always directly target the correctness of continuous batching, they ensure that the system functions as expected when continuous batching is enabled.
 
 ## Summary Table
 
