@@ -57,6 +57,7 @@ def test_openai_serving(remote_openai_server, model, warmup_shape, backend,
         assert "warmup" in str(e)
 
 
+@pytest.mark.quantized
 @pytest.mark.parametrize("model", get_spyre_model_list(quantization="gptq"))
 @pytest.mark.parametrize("backend", ["sendnn"])
 @pytest.mark.parametrize("quantization", ["gptq"])
