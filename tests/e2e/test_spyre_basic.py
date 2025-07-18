@@ -1,10 +1,5 @@
 """Verification of vLLM output by comparing with HF
 
-If errors occur, these can be analyzed/debugged by setting
-`DISABLE_ASSERTS = True` in spyre_util.py and by rerunning the
-test using `pytest --capture=no tests/spyre/test_spyre_basic.py`
-After debugging, `DISABLE_ASSERTS` should be reset to `False`.
-
 Run `python -m pytest tests/e2e/test_spyre_basic.py`.
 """
 

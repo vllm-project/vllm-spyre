@@ -31,11 +31,6 @@ def test_output(
     The same prompts are also input to HF. The generated output
     including text, token ids, and logprobs, is verified to be
     identical for vLLM and HF.
-
-    If errors occur, these can be analyzed/debugged by setting
-    'DISABLE_ASSERTS = True' in spyre_util.py and by rerunning the
-    test using 'pytest --capture=no tests/spyre/test_spyre_max_new_tokens.py'
-    After debugging, DISABLE_ASSERTS should be reset to 'False'.
     '''
 
     prompts = get_chicken_soup_prompts(4)
