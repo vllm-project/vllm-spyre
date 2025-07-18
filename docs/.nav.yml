@@ -19,7 +19,7 @@ nav:
       - Contributing: contributing/README.md
       - Continuous Batching:
         - Tests:
-          - End-to-End: contributing/continuous_batching/tests/e2e_testing.md
+          - Output Tests: contributing/continuous_batching/tests/output_tests.md
           - Step-by-Step: contributing/continuous_batching/tests/scheduling_inference_steps.md
           - Other Tests: contributing/continuous_batching/tests/other_tests.md
 
@@ -38,6 +38,6 @@ nav:
     - Contributing: contributing/README.md
     - Continuous Batching:
       - Tests:
-        - End-to-End: contributing/continuous_batching/tests/e2e_testing.md
+        - Output Tests: contributing/continuous_batching/tests/output_tests.md
         - Step-by-Step: contributing/continuous_batching/tests/scheduling_inference_steps.md
         - Other Tests: contributing/continuous_batching/tests/other_tests.md
