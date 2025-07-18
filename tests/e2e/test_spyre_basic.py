@@ -29,7 +29,7 @@ from vllm_spyre.v1.core.scheduler import StaticBatchingSpyreScheduler
     ids=lambda val: f"TP({val})",
 )
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("max_num_seqs", [4],
+@pytest.mark.parametrize("max_num_seqs", [1, 4],
                          ids=lambda val: f"max_num_seqs({val})")
 def test_output(
     model: str,
