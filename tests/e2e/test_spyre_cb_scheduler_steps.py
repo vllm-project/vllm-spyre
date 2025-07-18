@@ -161,16 +161,18 @@ def test_prompts_aligned_with_tkv_boundaries(model: str, backend: str,
         },
     ]
 
-    check_scheduler_inference_steps(model=model,
-                                    backend=backend,
-                                    monkeypatch=monkeypatch,
-                                    seqs_max_tokens=seqs_max_tokens,
-                                    prompts_lengths=prompts_lengths,
-                                    steps_add_reqs=steps_add_reqs,
-                                    checked_steps=checked_steps,
-                                    max_num_seqs=max_num_seqs,
-                                    available_blocks=available_blocks,
-                                    use_cb=True)
+    check_scheduler_inference_steps(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        seqs_max_tokens=seqs_max_tokens,
+        prompts_lengths=prompts_lengths,
+        steps_add_reqs=steps_add_reqs,
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        available_blocks=available_blocks,
+        use_cb=True,
+    )
 
 
 @pytest.mark.cb
