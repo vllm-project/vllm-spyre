@@ -11,8 +11,8 @@ from vllm.v1.sample.logits_processor import (BatchUpdateBuilder,
                                              init_builtin_logitsprocs)
 from vllm.v1.sample.metadata import SamplingMetadata
 
-from vllm_spyre.v1.worker.spyre_input_batch import (CachedRequestState,
-                                                    InputBatch)
+from vllm_spyre.v1.worker.spyre_input_batch import (SamplingInputBatch,
+                                                    SamplingRequestState)
 
 VOCAB_SIZE = 1024
 NUM_OUTPUT_TOKENS = 20
@@ -20,8 +20,8 @@ MAX_PROMPT_SIZE = 100
 MAX_NUM_PROMPT_TOKENS = 64
 
 
-def _remove_requests(input_batch: InputBatch, batch_size: int,
-                     reqs: list[CachedRequestState]) -> set[str]:
+def _remove_requests(input_batch: SamplingInputBatch, batch_size: int,
+                     reqs: list[SamplingRequestState]) -> set[str]:
     """
     Remove some requests randomly from the batch and returns a set of 
     request ids removed 
@@ -41,9 +41,9 @@ def _remove_requests(input_batch: InputBatch, batch_size: int,
 
 
 def _construct_expected_sampling_metadata(
-    reqs: list[CachedRequestState],
+    reqs: list[SamplingRequestState],
     req_ids_retained: set[int],
-    input_batch: InputBatch,
+    input_batch: SamplingInputBatch,
     device: torch.device,
 ) -> SamplingMetadata:
     """
@@ -162,7 +162,7 @@ def _construct_cached_request_state(req_id_suffix: int):
         np.random.randint(0, VOCAB_SIZE)
         for _ in range(np.random.randint(0, NUM_OUTPUT_TOKENS))
     ]
-    return CachedRequestState(
+    return SamplingRequestState(
         req_id=f"req_id_{req_id_suffix}",
         prompt_token_ids=prompt_token_ids,
         sampling_params=_create_sampling_params(),
@@ -226,18 +226,18 @@ def test_sampling_metadata_in_input_batch(batch_size: int):
     """
 
     device = torch.device('cpu')
-    input_batch: InputBatch = InputBatch(
+    input_batch: SamplingInputBatch = SamplingInputBatch(
         max_num_reqs=batch_size,
         max_model_len=1024,
         device=device,
         pin_memory=is_pin_memory_available(),
         vocab_size=1024,
     )
-    reqs: list[CachedRequestState] = []
+    reqs: list[SamplingRequestState] = []
     req_id_reqs = {}
     # Add requests
     for req_index in range(batch_size):
-        req: CachedRequestState = _construct_cached_request_state(req_index)
+        req: SamplingRequestState = _construct_cached_request_state(req_index)
         input_batch.add_request(req, req_index)
         reqs.append(req)
         req_id_reqs[req.req_id] = req
@@ -260,8 +260,8 @@ def test_sampling_metadata_in_input_batch(batch_size: int):
 
     # Add more requests
     for req_index in range(len(req_ids_to_remove)):
-        req: CachedRequestState = _construct_cached_request_state(req_index +
-                                                                  batch_size)
+        req: SamplingRequestState = _construct_cached_request_state(req_index +
+                                                                    batch_size)
         input_batch.add_request(req)
         reqs.append(req)
         req_ids_retained.add(req.req_id)
