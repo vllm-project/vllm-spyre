@@ -1,4 +1,3 @@
-
 """Verification of continuous batching
 Run `python -m pytest tests/e2e/test_spyre_cb.py`.
 """
