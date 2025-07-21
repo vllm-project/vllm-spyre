@@ -7,9 +7,10 @@ Brief overview of what has been implemented so far in VLLM to test / debug conti
 * **File paths:**
     * `examples/offline_inference/cb_spyre_inference.py`
     * `examples/offline_inference/long_context.py`
-* **Purpose:** Debugging (ie. using manual execution)
+* **Purpose:** Debugging (i.e. using manual execution)
 
 ### Description
+
 * Runs inference on a set of prompts with continuous batching enabled (number of prompts is parametrizable)
 * Prints the generated text for each sequence.
 * All the requested sequences are defined in the beginning, there is no requests joining the waiting queue while the decoding of some other request has already started.
@@ -17,6 +18,7 @@ Brief overview of what has been implemented so far in VLLM to test / debug conti
 * If `--compare-with-CPU` is set, then the output text is compared to the one of hugging face, running on CPU. Note that here the logprobs are not compared, only tokens.
 
 ### Parametrization
+
 For `cb_spyre_inference.py`
 
 * `--model`: the model
