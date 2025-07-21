@@ -32,13 +32,13 @@ or you can install from source by cloning the [vllm-Spyre](https://github.com/vl
     Note, to avoid any dependency resolution errors, we will install PyTorch
     separately and tell `uv` to ignore any of it's dependencies while installing
     the `vllm-spyre` plugin.
-
+    
     ```sh
     echo "torch; sys_platform == 'never'
     torchaudio; sys_platform == 'never'
     torchvision; sys_platform == 'never'
     triton; sys_platform == 'never'" > overrides.txt
-
+    
     uv pip install vllm-spyre --overrides overrides.txt
     ```
 
@@ -82,7 +82,7 @@ pip install torch==2.7.0
 If you happen to have followed the pre-`uv` installation instructions, you might
 encounter an error like this:
 
-```
+```sh
 LookupError: setuptools-scm was unable to detect version for /home/senuser/multi-aiu-dev/_dev/sentient-ci-cd/_dev/sen_latest/vllm-spyre.
       
     Make sure you're either building from a fully intact git repository or PyPI tarballs. Most other sources (such as GitHub's tarballs, a git checkout without the .git folder) don't contain the necessary metadata and will not work.
@@ -97,19 +97,18 @@ Make sure the follow the latest installation steps outlined above.
 If you encounter any of the following errors, it's likely you forgot to activate
 the (correct) Python Virtual Environment:
 
-```
+```sh
   File "/home/senuser/.local/lib/python3.12/site-packages/vllm/config.py", line 2260, in __post_init__
     self.device = torch.device(self.device_type)
                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 RuntimeError: Device string must not be empty
 ```
 
-```
+```sh
   File "/home/senuser/multi-aiu-dev/_dev/sentient-ci-cd/_dev/sen_latest/vllm-spyre/.venv/lib64/python3.12/site-packages/vllm/env_override.py", line 4, in <module>
     import torch
 ModuleNotFoundError: No module named 'torch'
 ```
-
 
 ### No module named 'torch'
 
