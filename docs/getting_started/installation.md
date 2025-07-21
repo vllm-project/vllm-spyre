@@ -68,7 +68,7 @@ or you can install from source by cloning the [vllm-Spyre](https://github.com/vl
 
 ## Install PyTorch
 
-Finally, the `torch` is needed to run examples and tests. If it is not already installed, install it using `pip`:
+Finally, `torch` is needed to run examples and tests. If it is not already installed, install it using `pip`:
 
 ```sh
 pip install torch==2.7.0
