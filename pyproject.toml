@@ -136,8 +136,8 @@ markers = [
 
 [tool.pymarkdown]
 plugins.md013.enabled = false # line-length
-plugins.md033.enabled = false # inline-html
 plugins.md041.enabled = false # first-line-h1
+plugins.md033.enabled = false # inline-html
 plugins.md024.allow_different_nesting = true # no-duplicate-headers
 plugins.md007.enabled = true
 plugins.md007.indent = 4
