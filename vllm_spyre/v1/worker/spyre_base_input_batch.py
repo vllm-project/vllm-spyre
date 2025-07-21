@@ -58,7 +58,8 @@ class BaseInputBatch(Generic[RequestState]):
             pin_memory=False,
         )
         self.token_ids_cpu = self.token_ids_cpu_tensor.numpy()
-        self.num_prompt_tokens = np.zeros(max_num_reqs, dtype=np.int32)
+        self.num_prompt_tokens: np.ndarray = np.zeros(max_num_reqs,
+                                                      dtype=np.int32)
 
         # Initialize with max number of requests
         self.padded_batch_size = self.max_num_reqs
@@ -72,7 +73,7 @@ class BaseInputBatch(Generic[RequestState]):
         # while performing state updates to the batch.
         return cast(list[str], self._req_ids)
 
-    def get_available_index(self) -> int:
+    def get_available_index(self) -> Optional[int]:
         raise NotImplementedError
 
     def add_request(

@@ -203,7 +203,7 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
         '''
         return self.req_indices_mask[:req_index].sum().item()
 
-    def get_available_index(self) -> int:
+    def get_available_index(self) -> Optional[int]:
         '''
         Find a free slot in the batching, used primarily in continuous batching
         '''
