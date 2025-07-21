@@ -1,8 +1,9 @@
+import math
 import time
 from collections import deque
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import TYPE_CHECKING, Optional, cast
 
 import torch
 from torch import nn
@@ -13,8 +14,8 @@ from vllm.sampling_params import SamplingType
 from vllm.utils import is_pin_memory_available
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.outputs import LogprobsTensors, SamplerOutput
-
 import vllm_spyre.envs as envs_spyre
+
 from vllm_spyre.model_executor.model_loader.spyre import (
     SpyreAttentionMetadata, SpyreCausalLM)
 from vllm_spyre.platform import SpyrePlatform
@@ -53,8 +54,9 @@ class ModelForwardInputs:
 
 @dataclass
 class CBSpyreModelRunnerOutput(ModelRunnerOutput):
-    # Add the current tkv to the output
+    # Add the current tkv and the number of free blocks to the output
     tkvs: tuple[int, ...] = (0, )
+    n_free_blocks: int = 0
 
 
 class SpyreModelRunner:
@@ -283,7 +285,7 @@ class SpyreModelRunner:
             for req_id in scheduler_output.finished_req_ids:
                 self.input_batch.remove_request(req_id)
                 self.requests.pop(req_id, None)
-            self.input_batch.refresh_sampling_metadata()
+            self.input_batch.refresh_metadata()
 
     def _get_prompt_logprobs_dict(
         self,
@@ -398,10 +400,6 @@ class SpyreModelRunner:
                                        masks=model_input.input_masks,
                                        is_prompt=model_input.is_prompt)
 
-        # Only perform sampling in the driver worker.
-        if not self.is_driver_worker:
-            return EMPTY_MODEL_RUNNER_OUTPUT
-
         # Compute the logits.
         logits = self.model.compute_logits(hidden_states, None)
 
@@ -428,12 +426,12 @@ class SpyreModelRunner:
                 req, str) else self.requests[req]
             req_state.output_token_ids.extend(sampled_ids[i])
 
-        extra_kwargs: dict[str, Any] = {}
-        if "pooler_output" in ModelRunnerOutput.__dataclass_fields__:
-            extra_kwargs["pooler_output"] = None
-
         prompt_logprobs_dicts = self._get_prompt_logprobs_dict(
             logits=logits, model_inputs=model_input)
+
+        # Only return outputs from the driver worker
+        if not self.is_driver_worker:
+            return EMPTY_MODEL_RUNNER_OUTPUT
 
         model_output = ModelRunnerOutput(
             req_ids=list(req_id_to_index.keys()),
@@ -443,7 +441,7 @@ class SpyreModelRunner:
             logprobs=(output.logprobs_tensors.tolists()
                       if output.logprobs_tensors else None),
             prompt_logprobs_dict=prompt_logprobs_dicts,
-            **extra_kwargs,
+            pooler_output=None,
         )
 
         return model_output
@@ -514,7 +512,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         self.input_batch.padded_batch_size = padded_batch_size
 
         # Refresh sampling metadata after all request are added to the batch
-        self.input_batch.refresh_sampling_metadata()
+        self.input_batch.refresh_metadata()
 
         # padding to compiled batch size
         while len(input_token_list) < padded_batch_size:
@@ -689,24 +687,26 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         assert vllm_config.scheduler_config.max_num_seqs >= 2, "Currently, " \
             "continuous batching needs config to set batch_size >= 2"
 
-        self.block_size = 64
+        self.block_size = SpyrePlatform.get_block_size()
 
         # TODO: move to a KV cache manager
         self.req_ids2blocks: dict[str, deque[int]] = {}
+        # max number of blocks needed (reserved) per request id
+        self.req_ids2reserved_blocks: dict[str, int] = {}
         # only for homogeneous tkv
         self.tkv: int = 0
         # only for heterogeneous tkv
         self.req_ids2tkv: dict[str, int] = {}
 
-        # set self.free_blocks to the minimal value of 4 required for warmup
+        # set self.block_pool to the minimal value of 4 required for warmup
         # is reset to the value returned by the Spyre compiler after warmup
-        # self._set_free_blocks(num_blocks=4)
+        # self._set_blocks(num_blocks=4)
         # for the time being we set this to num_blocks consistent with the
         # cache dimension of ContinuousBatchingFmsModel.past_key_value_states
         num_blocks = (vllm_config.scheduler_config.max_num_seqs *
                       vllm_config.model_config.max_model_len //
                       self.block_size)
-        self._set_free_blocks(num_blocks=num_blocks)
+        self._set_blocks(num_blocks=num_blocks)
 
         # TODO: Remove this once we can prefill and decode in the same step
         self.prefill_batch = InputBatch(
@@ -719,11 +719,67 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             vocab_size=vllm_config.model_config.get_vocab_size(),
         )
 
-    def _set_free_blocks(self, num_blocks: int) -> None:
-        # block id 0 is used for padding block_table (make it rectangular),
-        # but the id can be reused to store actual token cache since block pads
-        # will be skipped due according to the attention mask
-        self.free_blocks = deque([i for i in range(num_blocks)])
+    def finish_warmup(self) -> None:
+        # get the number or pages from the actual Spyre card after the warmup
+        # and set it accordingly in the model runner and the kv cache size
+        n_blocks_avail = self._get_num_blocks_available()
+        self._set_blocks(num_blocks=n_blocks_avail)
+        self.model.model._set_past_key_value_states(num_blocks=n_blocks_avail)
+
+    def _set_blocks(self, num_blocks: int) -> None:
+        # overwrite num_blocks for testing scheduler constraints
+        if envs_spyre.VLLM_SPYRE_N_BLOCKS > 0:
+            logger.info(
+                "[WARMUP] Overriding number of KV cache blocks on "
+                "Spyre/CPU to %d.", envs_spyre.VLLM_SPYRE_N_BLOCKS)
+            num_blocks = envs_spyre.VLLM_SPYRE_N_BLOCKS
+
+        # set number of available blocks and populate block_pool
+        self.n_blocks = num_blocks
+        self.block_pool = deque([i for i in range(self.n_blocks)])
+
+    def _get_num_blocks_available(self) -> int:
+        """Function returns the number of available blocks/pages.
+        Will eventually contain a function in torch_sendnn which reads 
+        the actual value provided by the compiler for backend sendnn"""
+
+        max_batch_size = self.vllm_config.scheduler_config.max_num_seqs
+        max_model_len = self.vllm_config.scheduler_config.max_model_len
+
+        min_req_num_blocks = max_model_len // self.block_size
+        # min_req_num_blocks is not enough blocks for the following test:
+        # tests/e2e/test_spyre_cb.py::test_scheduler_cb_steps_tkv
+        # [seqs_max_tokens4-prompts_lengths4-steps_add_reqs4-
+        # checked_steps4-256-False-2-eager-llama-194m]
+
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == 'sendnn':
+            # TODO: replace num_blocks_spyre by calling a function in
+            # torch_sendnn which returns the value set by the Spyre compiler
+            num_blocks_spyre = max_batch_size * min_req_num_blocks
+            assert num_blocks_spyre >= min_req_num_blocks, (
+                "Number of pages available on Spyre (%d) is not enough to "
+                "serve the current model (need at least %d pages)." %
+                (num_blocks_spyre, min_req_num_blocks))
+            max_concurrency_spyre = num_blocks_spyre * self.block_size \
+                / max_model_len
+            logger.info("Spyre KV cache size: %s tokens",
+                        num_blocks_spyre * self.block_size)
+            logger.info("Maximum concurrency for %s tokens per request: %.2fx",
+                        str(max_model_len), max_concurrency_spyre)
+            return num_blocks_spyre
+        else:  # dynamo backend 'eager'
+            num_blocks_cpu = max_batch_size * min_req_num_blocks
+            assert num_blocks_cpu >= min_req_num_blocks, (
+                "Number of pages available on CPU (%d) is not enough to "
+                "serve the current model (need at least %d pages)." %
+                (num_blocks_cpu, min_req_num_blocks))
+            max_concurrency_cpu = num_blocks_cpu * self.block_size \
+                / max_model_len
+            logger.info("CPU KV cache size: %s tokens",
+                        num_blocks_cpu * self.block_size)
+            logger.info("Maximum concurrency for %s tokens per request: %.2fx",
+                        str(max_model_len), max_concurrency_cpu)
+            return num_blocks_cpu
 
     def _prepare_prompt(self, _):
         raise NotImplementedError("Subclasses must implement _prepare_prompt")
@@ -740,9 +796,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         for req_id in scheduler_output.finished_req_ids:
             if blocks_to_free := self.req_ids2blocks.pop(req_id, None):
                 logger.debug("Freeing request id: %s", req_id)
+                self.req_ids2reserved_blocks.pop(req_id)
                 for block_id in blocks_to_free:
                     logger.debug("Freeing block with id: %s", block_id)
-                    self.free_blocks.append(block_id)
+                    self.block_pool.append(block_id)
 
     def build_attn_metadata(
             self, model_input: ModelForwardInputs) -> SpyreAttentionMetadata:
@@ -764,6 +821,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             if is_prefill else self.input_batch.get_unpadded_output_indices()
 
         return req_id_to_index
+
+    def get_n_free_blocks(self) -> int:
+        return self.n_blocks - sum(self.req_ids2reserved_blocks.values())
 
     def no_prompt_logprob(self, is_prefill: bool) -> bool:
         if is_prefill:
@@ -804,43 +864,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         return CBSpyreModelRunnerOutput(
             **asdict(output),
             tkvs=tuple(tkvs),  # only used for homogeneous tkv scheduling
+            n_free_blocks=self.get_n_free_blocks(),
         )
-
-
-def _mark_input_tensors(model_input: ModelForwardInputs) -> None:
-    # Marking dimensions static/dynamic
-    if model_input.is_prompt:
-
-        # batch static (batch size 1)
-        torch._dynamo.mark_static(model_input.input_tokens, 0)
-        torch._dynamo.mark_static(model_input.slot_mapping, 0)
-        torch._dynamo.mark_static(model_input.input_positions, 0)
-        torch._dynamo.mark_static(model_input.input_masks, 0)
-
-        # sequence dynamic
-        torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
-        torch._dynamo.mark_dynamic(model_input.slot_mapping, 1)
-        torch._dynamo.mark_dynamic(model_input.input_positions, 1)
-        torch._dynamo.mark_dynamic(model_input.input_masks, 2)
-        torch._dynamo.mark_dynamic(model_input.input_masks, 3)
-
-    # decode
-    else:
-        # mask is no longer used here
-
-        # batch dynamic
-        torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
-        torch._dynamo.mark_dynamic(model_input.block_table, 0)
-        torch._dynamo.mark_dynamic(model_input.slot_mapping, 0)
-        torch._dynamo.mark_dynamic(model_input.input_positions, 0)
-        torch._dynamo.mark_dynamic(model_input.current_tkv_mask, 0)
-        torch._dynamo.mark_dynamic(model_input.left_padded_prompt_mask, 0)
-
-        # sequence
-        torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
-        torch._dynamo.mark_dynamic(model_input.block_table, 1)
-        torch._dynamo.mark_static(model_input.slot_mapping, 1)  # always 1
-        torch._dynamo.mark_static(model_input.input_positions, 1)  # always 1
 
 
 class ContinuousBatchingHomogenTkvSpyreModelRunner(
@@ -862,9 +887,8 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(
         max_prompt_len = max([len(r.prompt_token_ids) for r in new_requests])
         if not new_batch:
             assert max_prompt_len <= self.tkv
-        d = self.block_size
         n = max_prompt_len if new_batch else self.tkv
-        block_padding = ((n + d - 1) // d) * d
+        block_padding = math.ceil(n / self.block_size) * self.block_size
         if new_batch:
             self.tkv = block_padding
 
@@ -874,6 +898,14 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(
         self.prefill_batch.clear_requests()
 
         for request_data in new_requests:
+            # Reserve the max blocks used to serve current sequence
+            new_tokens = (request_data.sampling_params.max_tokens
+                          if request_data.sampling_params is not None else 0)
+            n = self.tkv + new_tokens - 1
+            n_reserved_blocks = math.ceil(n / self.block_size)
+            self.req_ids2reserved_blocks[
+                request_data.req_id] = n_reserved_blocks
+
             # retrieve initial (unpadded) tokens
             prompt_tokens = request_data.prompt_token_ids
             left_padding = self.tkv - len(prompt_tokens)
@@ -887,7 +919,7 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(
             slot_mapping_i = []
             for pos_i in range(block_padding):
                 if pos_i % self.block_size == 0:
-                    block_number = self.free_blocks.popleft()
+                    block_number = self.block_pool.popleft()
                     block_table_i.append(block_number)
                 block_offset = pos_i % self.block_size
                 slot = block_number * self.block_size + block_offset
@@ -916,8 +948,8 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(
             self.prefill_batch.add_request(req_state)
 
         # Refresh sampling metadata after all request are added to the batch
-        self.input_batch.refresh_sampling_metadata()
-        self.prefill_batch.refresh_sampling_metadata()
+        self.input_batch.refresh_metadata()
+        self.prefill_batch.refresh_metadata()
 
         # TODO: Review this in the future
         # prefills are always of batch size 1 for this milestone
@@ -990,8 +1022,9 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(
             # adding new blocks if needed
             if self.tkv // self.block_size + 1 > len(
                     self.req_ids2blocks[req_id]):
-                self.req_ids2blocks[req_id].append(self.free_blocks.popleft())
+                self.req_ids2blocks[req_id].append(self.block_pool.popleft())
             block_table.append(self.req_ids2blocks[req_id])
+
             # slot_mapping for all blocks of sequence
             start_slot = block_table[-1][-1] * self.block_size
             offset = self.tkv % self.block_size
@@ -1081,7 +1114,8 @@ class ContinuousBatchingHomogenTkvSpyreModelRunner(
                 for _ in range(n_padded_blocks):
                     freed_block_id = self.req_ids2blocks[req.req_id].popleft()
                     logger.debug("Freeing block with id: %s", freed_block_id)
-                    self.free_blocks.append(freed_block_id)
+                    self.block_pool.append(freed_block_id)
+                    self.req_ids2reserved_blocks[req.req_id] -= 1
 
         # update tkv
         self.tkv -= offset
@@ -1178,12 +1212,19 @@ class ContinuousBatchingHeterogenTkvSpyreModelRunner(
         for request_data in new_requests:
             req_id = request_data.req_id
             # ceil division to pad to next block boundary
-            d = self.block_size
             n = len(request_data.prompt_token_ids)
-            block_padding = ((n + d - 1) // d) * d
+            block_padding = math.ceil(n / self.block_size) * self.block_size
 
             curr_tkv = n
             self.req_ids2tkv[req_id] = curr_tkv
+
+            # Reserve the max blocks used to serve current sequence
+            new_tokens = (request_data.sampling_params.max_tokens
+                          if request_data.sampling_params is not None else 0)
+            n = curr_tkv + new_tokens - 1
+            n_reserved_blocks = math.ceil(n / self.block_size)
+            self.req_ids2reserved_blocks[
+                request_data.req_id] = n_reserved_blocks
 
             # retrieve initial (unpadded) tokens
             prompt_tokens = request_data.prompt_token_ids
@@ -1197,7 +1238,7 @@ class ContinuousBatchingHeterogenTkvSpyreModelRunner(
             slot_mapping_i = []
             for pos_i in range(block_padding):
                 if pos_i % self.block_size == 0:
-                    block_number = self.free_blocks.popleft()
+                    block_number = self.block_pool.popleft()
                     block_table_i.append(block_number)
                 block_offset = pos_i % self.block_size
                 slot = block_number * self.block_size + block_offset
@@ -1225,8 +1266,8 @@ class ContinuousBatchingHeterogenTkvSpyreModelRunner(
             self.prefill_batch.add_request(req_state)
 
         # Refresh sampling metadata after all request are added to the batch
-        self.input_batch.refresh_sampling_metadata()
-        self.prefill_batch.refresh_sampling_metadata()
+        self.input_batch.refresh_metadata()
+        self.prefill_batch.refresh_metadata()
 
         # TODO: Review this in the future
         # prefills are always of batch size 1 for this milestone
@@ -1299,7 +1340,7 @@ class ContinuousBatchingHeterogenTkvSpyreModelRunner(
             # adding new blocks if needed
             if self.req_ids2tkv[req_id] // self.block_size + 1 > len(
                     self.req_ids2blocks[req_id]):
-                self.req_ids2blocks[req_id].append(self.free_blocks.popleft())
+                self.req_ids2blocks[req_id].append(self.block_pool.popleft())
             block_table.append(self.req_ids2blocks[req_id].copy())
 
             # slot_mapping for all blocks of sequence
@@ -1441,3 +1482,39 @@ class ContinuousBatchingHeterogenTkvSpyreModelRunner(
         assert right_pad_len == min_pad_length
 
         return input_tokens, position_ids, mask
+
+
+def _mark_input_tensors(model_input: ModelForwardInputs) -> None:
+    # Marking dimensions static/dynamic
+    if model_input.is_prompt:
+
+        # batch static (batch size 1)
+        torch._dynamo.mark_static(model_input.input_tokens, 0)
+        torch._dynamo.mark_static(model_input.slot_mapping, 0)
+        torch._dynamo.mark_static(model_input.input_positions, 0)
+        torch._dynamo.mark_static(model_input.input_masks, 0)
+
+        # sequence dynamic
+        torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
+        torch._dynamo.mark_dynamic(model_input.slot_mapping, 1)
+        torch._dynamo.mark_dynamic(model_input.input_positions, 1)
+        torch._dynamo.mark_dynamic(model_input.input_masks, 2)
+        torch._dynamo.mark_dynamic(model_input.input_masks, 3)
+
+    # decode
+    else:
+        # mask is no longer used here
+
+        # batch dynamic
+        torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
+        torch._dynamo.mark_dynamic(model_input.block_table, 0)
+        torch._dynamo.mark_dynamic(model_input.slot_mapping, 0)
+        torch._dynamo.mark_dynamic(model_input.input_positions, 0)
+        torch._dynamo.mark_dynamic(model_input.current_tkv_mask, 0)
+        torch._dynamo.mark_dynamic(model_input.left_padded_prompt_mask, 0)
+
+        # sequence
+        torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
+        torch._dynamo.mark_dynamic(model_input.block_table, 1)
+        torch._dynamo.mark_static(model_input.slot_mapping, 1)  # always 1
+        torch._dynamo.mark_static(model_input.input_positions, 1)  # always 1

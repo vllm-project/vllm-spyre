@@ -5,7 +5,7 @@ import os
 import platform
 import signal
 import time
-from typing import Any, Optional, Union, cast
+from typing import Optional, Union, cast
 
 import torch
 import torch.distributed as dist
@@ -35,15 +35,21 @@ from vllm_spyre.v1.worker.spyre_model_runner import (
 
 logger = init_logger(__name__)
 
+# var to make sure we always warmup with the right context
+_inside_warmup_mode = False
+
 
 @contextlib.contextmanager
 def _maybe_warmup_context():
+    global _inside_warmup_mode
     warmup_context = contextlib.nullcontext
     if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
         from torch_sendnn import warmup_mode
         warmup_context = warmup_mode
     with warmup_context():
+        _inside_warmup_mode = True
         yield
+        _inside_warmup_mode = False
 
 
 class SpyreWorker(WorkerBaseV1):
@@ -81,9 +87,9 @@ class SpyreWorker(WorkerBaseV1):
             if self.model_config.task != "embed":
                 # TODO: remove if spyre supports
                 # lower number of output tokens
-                assert num_decode_tokens >= 3, (
+                assert num_decode_tokens >= 2, (
                     "VLLM_SPYRE_WARMUP_NEW_TOKENS must be "
-                    "at least 3 (spyre requirement).")
+                    "at least 2 (spyre requirement).")
             # warmup individual combination
             logger.info(
                 "[WARMUP] (%d/%d) for prompt length %d, decoding %d tokens "
@@ -332,12 +338,7 @@ class SpyreWorker(WorkerBaseV1):
         warmup_tokens_tensor = valid_token_ids_tensor[torch.randint(
             0, len(valid_token_ids_tensor), (batch_size + 1, prompt_len))]
 
-        # TODO temporary until 'pooling_params' makes it to a release version
-        # in vllm
-        extra_kwargs: dict[str, Any] = {}
-        if "pooling_params" in NewRequestData.__dataclass_fields__:
-            extra_kwargs["pooling_params"] = None
-        dummy_requests = [
+        dummy_requests: list[NewRequestData] = [
             NewRequestData(
                 req_id="warmup-%d" % (i),
                 prompt_token_ids=warmup_tokens_tensor[i].tolist(),
@@ -348,69 +349,16 @@ class SpyreWorker(WorkerBaseV1):
                 block_ids=[0],  # not actually used
                 num_computed_tokens=0,
                 lora_request=None,
-                **extra_kwargs) for i in range(batch_size + 1)
+                pooling_params=None,
+            ) for i in range(batch_size + 1)
         ]
         add_dummy_request = dummy_requests.pop(-1)
 
         with _maybe_warmup_context():
-            for i, req in enumerate(dummy_requests):
-                scheduler_output = SchedulerOutput(
-                    scheduled_new_reqs=[req],
-                    scheduled_cached_reqs=CachedRequestData.make_empty(),
-                    num_scheduled_tokens={req.req_id: prompt_len},
-                    total_num_scheduled_tokens=prompt_len,
-                    scheduled_spec_decode_tokens={},
-                    scheduled_encoder_inputs={},
-                    num_common_prefix_blocks=0,
-                    finished_req_ids=set(),
-                    free_encoder_input_ids=[],
-                    structured_output_request_ids={},
-                    grammar_bitmask=None,
-                )
-                logger.info("[WARMUP] Prefill %d/%d...", i + 1, batch_size)
-                self.execute_model(scheduler_output)
-
-            # one decode iteration across all sequences
-            req_ids = []
-            new_token_ids = []
-            new_block_ids = []
-            num_computed_tokens = []
-            for req in dummy_requests:
-                req_ids.append(req.req_id)
-                new_token_ids.append([
-                    valid_token_ids_tensor[torch.randint(
-                        0, len(valid_token_ids_tensor), (1, )).item()]
-                ])  # placeholder token
-                new_block_ids.append([req.block_ids])
-                num_computed_tokens.append(prompt_len)
-            cached_request_data = CachedRequestData(
-                req_ids=req_ids,
-                resumed_from_preemption=False,
-                new_token_ids=new_token_ids,
-                new_block_ids=new_block_ids,
-                num_computed_tokens=num_computed_tokens,
-            )
-
-            scheduler_output = SchedulerOutput(
-                scheduled_new_reqs=[],
-                scheduled_cached_reqs=cached_request_data,
-                num_scheduled_tokens={
-                    f"warmup-{i}": 1
-                    for i in range(batch_size)
-                },
-                total_num_scheduled_tokens=batch_size,
-                scheduled_spec_decode_tokens={},
-                scheduled_encoder_inputs={},
-                num_common_prefix_blocks=0,
-                finished_req_ids=set(),
-                free_encoder_input_ids=[],
-                structured_output_request_ids={},
-                grammar_bitmask=None,
-            )
-            logger.info("[WARMUP] Decode...")
-            self.execute_model(scheduler_output)
-            self._cleanup_model_runner(request=dummy_requests,
-                                       model_runner=model_runner)
+            self._dynamic_warmup(dummy_requests=dummy_requests,
+                                 prompt_len=prompt_len,
+                                 batch_size=batch_size,
+                                 valid_token_ids_tensor=valid_token_ids_tensor)
 
         # warmup_mode completes the graph compilation, but we need to do
         # one additional prefill to deploy the compiled program to the device,
@@ -431,23 +379,20 @@ class SpyreWorker(WorkerBaseV1):
         )
         logger.info("[WARMUP] Deploying to device...")
         self.execute_model(scheduler_output)
-        self._cleanup_model_runner(request=[add_dummy_request],
-                                   model_runner=model_runner)
+        self._cleanup_model_runner(request=[add_dummy_request])
 
-        # get the number or pages from the actual Spyre card after the warmup
-        # and set it accordingly in the model runner and the kv cache size
-        n_blocks_avail = self._get_num_blocks_available()
-        model_runner._set_free_blocks(num_blocks=n_blocks_avail)
-        model_runner.model.model._set_past_key_value_states(
-            num_blocks=n_blocks_avail)
+        model_runner.finish_warmup()
 
         warmup_end_t = time.time()
         warmup_total_t = warmup_end_t - warmup_start_t
-        logger.info("[WARMUP] Finished in %.3fs", warmup_total_t)
+        compile_cache_str = 'enabled' if int(
+            os.getenv("TORCH_SENDNN_CACHE_ENABLE", "0")) else 'disabled'
+        logger.info("[WARMUP] Finished in %.3fs (compilation cache %s)",
+                    warmup_total_t, compile_cache_str)
 
         maybe_override_signals_handler()
 
-    def _cleanup_model_runner(self, request, model_runner) -> None:
+    def _cleanup_model_runner(self, request) -> None:
         # Needed to clean up the data of model runner
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=[],
@@ -465,52 +410,16 @@ class SpyreWorker(WorkerBaseV1):
             grammar_bitmask=None,
         )
         self.execute_model(scheduler_output)
+        # satisfy mypy
+        model_runner: Union[ContinuousBatchingHomogenTkvSpyreModelRunner,
+                            ContinuousBatchingHeterogenTkvSpyreModelRunner]
+        if not envs_spyre.VLLM_SPYRE_HETEROGEN_TKV:
+            model_runner = cast(ContinuousBatchingHomogenTkvSpyreModelRunner,
+                                self.model_runner)
+        else:
+            model_runner = cast(ContinuousBatchingHeterogenTkvSpyreModelRunner,
+                                self.model_runner)
         model_runner.tkv = 0
-
-    def _get_num_blocks_available(self) -> int:
-        """Function returns the number of available blocks/pages.
-        Will eventually contain a function in torch_sendnn which reads 
-        the actual value provided by the compiler for backend sendnn"""
-
-        max_batch_size = \
-            self.model_runner.vllm_config.scheduler_config.max_num_seqs
-        max_model_len = \
-            self.model_runner.vllm_config.scheduler_config.max_model_len
-        block_size = self.model_runner.block_size  # type: ignore[union-attr]
-
-        min_req_num_blocks = max_model_len // block_size
-        # min_req_num_blocks is not enough blocks for the following test:
-        # tests/e2e/test_spyre_cb_homog_tkv.py::test_scheduler_cb_steps_tkv
-        # [seqs_max_tokens4-prompts_lengths4-steps_add_reqs4-
-        # checked_steps4-256-False-2-eager-llama-194m]
-
-        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == 'sendnn':
-            # TODO: replace num_blocks_spyre by calling a function in
-            # torch_sendnn which returns the value set by the Spyre compiler
-            num_blocks_spyre = max_batch_size * min_req_num_blocks
-            assert num_blocks_spyre >= min_req_num_blocks, (
-                "Number of pages available on Spyre (%d) is not enough to "
-                "serve the current model (need at least %d pages)." %
-                (num_blocks_spyre, min_req_num_blocks))
-            max_concurrency_spyre = num_blocks_spyre * block_size \
-                / max_model_len
-            logger.info("Spyre KV cache size: %s tokens",
-                        num_blocks_spyre * block_size)
-            logger.info("Maximum concurrency for %s tokens per request: %.2fx",
-                        str(max_model_len), max_concurrency_spyre)
-            return num_blocks_spyre
-        else:  # dynamo backend 'eager'
-            num_blocks_cpu = max_batch_size * min_req_num_blocks
-            assert num_blocks_cpu >= min_req_num_blocks, (
-                "Number of pages available on CPU (%d) is not enough to "
-                "serve the current model (need at least %d pages)." %
-                (num_blocks_cpu, min_req_num_blocks))
-            max_concurrency_cpu = num_blocks_cpu * block_size / max_model_len
-            logger.info("CPU KV cache size: %s tokens",
-                        num_blocks_cpu * block_size)
-            logger.info("Maximum concurrency for %s tokens per request: %.2fx",
-                        str(max_model_len), max_concurrency_cpu)
-            return num_blocks_cpu
 
     def _warmup_spyre_fixed_size(self, prompt_len, num_decode_tokens,
                                  special_token_ids, batch_size):
@@ -535,12 +444,6 @@ class SpyreWorker(WorkerBaseV1):
         warmup_tokens_tensor = valid_token_ids_tensor[torch.randint(
             0, len(valid_token_ids_tensor), (batch_size, prompt_len))]
 
-        # TODO temporary until 'pooling_params' makes it to a release version
-        # in vllm
-        extra_kwargs: dict[str, Any] = {}
-        if "pooling_params" in NewRequestData.__dataclass_fields__:
-            extra_kwargs["pooling_params"] = None
-
         # Set up dummy requests for prefill steps
         dummy_requests = [
             NewRequestData(
@@ -553,7 +456,7 @@ class SpyreWorker(WorkerBaseV1):
                 block_ids=[0],
                 num_computed_tokens=0,
                 lora_request=None,
-                **extra_kwargs) for i in range(batch_size)
+                pooling_params=None) for i in range(batch_size)
         ]
 
         # Set up dummy cached_requests for decode steps
@@ -621,10 +524,82 @@ class SpyreWorker(WorkerBaseV1):
                               batch_size=batch_size,
                               max_tokens=num_decode_tokens,
                               prompt_len=prompt_len)
+        compile_cache_str = 'enabled' if int(
+            os.getenv("TORCH_SENDNN_CACHE_ENABLE", "0")) else 'disabled'
         logger.info(
             "[WARMUP] Prompt length %d and max output tokens %d "
-            "finished in %.3fs", warmup_total_t, prompt_len, num_decode_tokens)
+            "finished in %.3fs (compilation cache %s)", prompt_len,
+            num_decode_tokens, warmup_total_t, compile_cache_str)
         maybe_override_signals_handler()
+
+    def _dynamic_warmup(
+        self,
+        dummy_requests: list[NewRequestData],
+        prompt_len: int,
+        batch_size: int,
+        valid_token_ids_tensor: torch.Tensor,
+    ) -> None:
+
+        assert (
+            _inside_warmup_mode
+        ), "it looks like you are outside the warmup context for warmup"
+
+        for i, req in enumerate(dummy_requests):
+            scheduler_output = SchedulerOutput(
+                scheduled_new_reqs=[req],
+                scheduled_cached_reqs=CachedRequestData.make_empty(),
+                num_scheduled_tokens={req.req_id: prompt_len},
+                total_num_scheduled_tokens=prompt_len,
+                scheduled_spec_decode_tokens={},
+                scheduled_encoder_inputs={},
+                num_common_prefix_blocks=0,
+                finished_req_ids=set(),
+                free_encoder_input_ids=[],
+                structured_output_request_ids={},
+                grammar_bitmask=None,
+            )
+            logger.info("[WARMUP] Prefill %d/%d...", i + 1, batch_size)
+
+            self.execute_model(scheduler_output)
+
+        # one decode iteration across all sequences
+        req_ids = []
+        new_token_ids = []
+        new_block_ids = []
+        num_computed_tokens = []
+        for req in dummy_requests:
+            req_ids.append(req.req_id)
+            new_token_ids.append([
+                valid_token_ids_tensor[torch.randint(
+                    0, len(valid_token_ids_tensor), (1, )).item()]
+            ])  # placeholder token
+            new_block_ids.append([req.block_ids])
+            num_computed_tokens.append(prompt_len)
+        cached_request_data = CachedRequestData(
+            req_ids=req_ids,
+            resumed_from_preemption=False,
+            new_token_ids=new_token_ids,
+            new_block_ids=new_block_ids,
+            num_computed_tokens=num_computed_tokens,
+        )
+
+        scheduler_output = SchedulerOutput(
+            scheduled_new_reqs=[],
+            scheduled_cached_reqs=cached_request_data,
+            num_scheduled_tokens={f"warmup-{i}": 1
+                                  for i in range(batch_size)},
+            total_num_scheduled_tokens=batch_size,
+            scheduled_spec_decode_tokens={},
+            scheduled_encoder_inputs={},
+            num_common_prefix_blocks=0,
+            finished_req_ids=set(),
+            free_encoder_input_ids=[],
+            structured_output_request_ids={},
+            grammar_bitmask=None,
+        )
+        logger.info("[WARMUP] Decode...")
+        self.execute_model(scheduler_output)
+        self._cleanup_model_runner(request=dummy_requests)
 
     def _warmup_model_forward_pass(
         self,

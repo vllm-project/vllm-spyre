@@ -23,6 +23,23 @@ ISCLOSE_REL_TOL_CPU = 0.2
 ISCLOSE_REL_TOL_SPYRE = 0.35
 
 
+def force_engine_shutdown(llm: LLM):
+    """
+    🌶️🌶️🌶️
+    This hack is here because of an issue in vllm 0.9.2+ where a circular
+    reference occurs in vllm.executor.ray_utils if ray is not installed. This
+    circular reference holds a copy of the vllm config which contains a
+    reference to the LLM, which means it can never be garbage collected.
+    Since vllm.LLM relies on garbage collection to shut down its engine, the
+    engine never shuts down. When running tensor parallel workloads, if the
+    engine is never shut down then the TP worker processes are never killed.
+    When the TP worker processes are held open, all future attempts to create a
+    new engine will fail with an EADDRINUSE error.
+    🌶️🌶️🌶️
+    """
+    llm.llm_engine.engine_core.shutdown()
+
+
 class RemoteOpenAIServer:
     """Subprocess wrapper that boots a vllm server with `vllm serve` for testing
     against"""
@@ -217,6 +234,7 @@ def generate_spyre_vllm_output(
         ])
         results.append(result)
 
+    force_engine_shutdown(vllm_model)
     return results
 
 
@@ -268,14 +286,11 @@ def generate_hf_output(
 
 
 # compare results
-def compare_results(model: str, prompts: list[str],
-                    warmup_shapes: list[tuple[int, int,
-                                              int]], tensor_parallel_size: int,
+def compare_results(model: str, prompts: list[str], tensor_parallel_size: int,
                     backend: str, vllm_results: list[dict[str, Any]],
                     hf_results: list[dict[str, Any]]):
 
     print(f"\nmodel:         {model:s}")
-    print(f"warmup shapes: {warmup_shapes}")
     print(f"tp size:       {tensor_parallel_size}")
     print(f"backend:       {backend:s}")
     print(f"\n#prompts:      {len(prompts):d}")
@@ -515,7 +530,7 @@ def create_text_prompt(model: str, min_tokens: int, max_tokens: int) -> str:
     prompt = pepper * (min_tokens // pepper_tokens + 1)
 
     # And add more until we're over the minimum token length
-    while len(tokenizer.encode(prompt)) < min_tokens:
+    while len(tokenizer.encode(prompt)) <= min_tokens:
         prompt += pepper
 
     # Make sure this prompt is within the specified range
@@ -528,13 +543,6 @@ def create_random_request(
         request_id: int, num_tokens: int,
         sampling_params: SamplingParams) -> EngineCoreRequest:
 
-    # Temporary until these parameters make it to a release version in vllm
-    extra_kwargs: dict[str, Any] = {}
-    if "data_parallel_rank" in EngineCoreRequest.__annotations__:
-        extra_kwargs["data_parallel_rank"] = None
-    if "pooling_params" in EngineCoreRequest.__annotations__:
-        extra_kwargs["pooling_params"] = None
-
     return EngineCoreRequest(request_id=str(request_id),
                              prompt_token_ids=[request_id] * num_tokens,
                              mm_inputs=None,
@@ -544,11 +552,18 @@ def create_random_request(
                              eos_token_id=None,
                              arrival_time=0,
                              lora_request=None,
-                             cache_salt=None,
-                             **extra_kwargs)
+                             data_parallel_rank=None,
+                             pooling_params=None,
+                             cache_salt=None)
 
 
-def skip_unsupported_tp_size(size: int):
+def skip_unsupported_tp_size(size: int, backend: str):
+    if backend in ["eager", "inductor"]:
+        # Spyre cards aren't required for running TP on CPU backends
+        # But it's really slow to run tp > 2
+        if size > 2:
+            pytest.skip("Skipping TP test on CPU with TP size > 2")
+        return
     cards = int(os.getenv("AIU_WORLD_SIZE", "0"))
     if cards < size:
         pytest.skip(f"Cannot run TP size {size}: "

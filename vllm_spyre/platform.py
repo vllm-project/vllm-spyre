@@ -10,6 +10,7 @@ if sys.platform.startswith("darwin"):
     if sys.modules.get('triton'):
         del sys.modules['triton']
 
+import math
 import operator
 import os
 from typing import TYPE_CHECKING, Optional, Union
@@ -41,6 +42,7 @@ class SpyrePlatform(Platform):
     device_type: str = "cpu"
     supported_quantization: list[str] = ["gptq"]
     _warmup_shapes: Optional[tuple[dict[str, int], ...]] = None
+    _block_size: int = 64  # hardcoded Spyre constraint for now
     _config: VllmConfig = None
 
     @classmethod
@@ -67,6 +69,9 @@ class SpyrePlatform(Platform):
 
         is_decoder = model_config.task == "generate"
         is_embedding = model_config.task == "embed"
+        if model_config.task == "auto":
+            is_embedding = "embed" in model_config.supported_tasks
+            is_decoder = "generate" in model_config.supported_tasks
 
         # v0 is only supported for embedding models, and embedding models must
         # be run on v0
@@ -229,6 +234,10 @@ class SpyrePlatform(Platform):
         return cls._warmup_shapes
 
     @classmethod
+    def get_block_size(cls) -> int:
+        return cls._block_size
+
+    @classmethod
     def supports_v1(cls, model_config: ModelConfig) -> bool:
         """Returns whether the current platform can support v1 for the supplied
         model configuration.
@@ -273,10 +282,10 @@ class SpyrePlatform(Platform):
             # into account.
 
             # ceil division to pad to next block boundary
-            n = prompt_len
-            d = 64  # hardcoded AIU Spyre block size
-            prompt_padding_len = ((n + d - 1) // d) * d
-            if (prompt_padding_len + max_tokens
+            prompt_padding_len = math.ceil(
+                prompt_len / cls._block_size) * cls._block_size
+            # we have to account for the token generated during prefill (-1)
+            if (prompt_padding_len + max_tokens - 1
                     > cls._config.scheduler_config.max_model_len):
                 raise ValueError(
                     "Could not add request: prompt length is "
@@ -309,3 +318,17 @@ class SpyrePlatform(Platform):
             if prompt_len <= shape['prompt_length']
             and max_tokens <= shape['new_tokens']
         ]
+
+    @classmethod
+    def get_max_output_tokens(self, prompt_len: int) -> int:
+        """Return the size of biggest ```new_tokens``` of the \
+            warmup shapes that fits the prompt length"""
+        if self._warmup_shapes is None:
+            return sys.maxsize
+
+        max_new_tokens = 1
+        for shape in self._warmup_shapes:
+            if prompt_len <= shape['prompt_length']:
+                max_new_tokens = max(max_new_tokens, shape['new_tokens'])
+
+        return max_new_tokens

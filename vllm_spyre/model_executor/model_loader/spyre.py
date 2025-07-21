@@ -7,19 +7,19 @@ import torch
 import torch._inductor.config
 import torch.distributed as dist
 import torch.nn as nn
-import vllm.envs as envs
 from fms.models import get_model
 from transformers import PretrainedConfig
 from vllm.config import ModelConfig, ParallelConfig, SchedulerConfig
 from vllm.forward_context import get_forward_context
 from vllm.logger import init_logger
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
-from vllm.model_executor.layers.sampler import Sampler, SamplerOutput
+from vllm.model_executor.layers.sampler import SamplerOutput, get_sampler
 from vllm.model_executor.model_loader.weight_utils import (
     download_weights_from_hf)
 from vllm.model_executor.sampling_metadata import SamplingMetadata
 
 import vllm_spyre.envs as envs_spyre
+from vllm_spyre.platform import SpyrePlatform
 
 try:
     import backends.dynamo_tracer  # noqa: F401
@@ -30,14 +30,6 @@ except ImportError:
 BACKEND_LIST = ['sendnn', 'inductor']
 
 logger = init_logger(__name__)
-
-
-def get_sampler() -> torch.nn.Module:
-    if envs.VLLM_USE_V1:
-        # Lazy import: the v1 package isn't distributed
-        from vllm_spyre.v1.sample.sampler import Sampler as V1Sampler
-        return V1Sampler()
-    return Sampler()
 
 
 @dataclass
@@ -290,7 +282,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         scheduler_config: SchedulerConfig,
     ) -> None:
 
-        BLOCK_SIZE = 64  # hardcoded Spyre constraint for now
+        BLOCK_SIZE = SpyrePlatform.get_block_size()
         max_model_len = scheduler_config.max_model_len
 
         # edge case: prompt fills model length: can produce 1 token with prefill
@@ -338,6 +330,10 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         #         torch._dynamo.mark_dynamic(tensor, 0)
 
     def _set_past_key_value_states(self, num_blocks) -> None:
+        # overwrite num_blocks for testing scheduler constraints
+        if envs_spyre.VLLM_SPYRE_N_BLOCKS > 0:
+            num_blocks = envs_spyre.VLLM_SPYRE_N_BLOCKS
+
         # List[layers] of Tuple[k,v] of
         # Tensor[num_blocks, block_size, num_kv_heads, head_dim]
         self.past_key_value_states = [
@@ -420,7 +416,7 @@ class StaticBatchingFmsModel(FmsModelBase):
         **extra_kwargs,
     ) -> torch.Tensor:
         # specify attention type for static batching
-        extra_kwargs['attn_name'] = "sdpa_bidirectional"
+        extra_kwargs['attn_name'] = "sdpa_causal"
 
         if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
             # In order to calculate prompt logprobs, we have to return the

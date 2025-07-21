@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
+import math
 from collections import deque
 from typing import TYPE_CHECKING
 
@@ -150,6 +151,8 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         # used for homogeneous tkv scheduling and for step level testing
         # in the heterogeneous case
         self.tkvs: tuple[int, ...] = (0, )
+        self.n_free_blocks = 0
+        self.block_size = SpyrePlatform.get_block_size()
 
     def update_from_output(
         self,
@@ -162,6 +165,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         ), "Expecting an instance of CBSpyreModelRunnerOutput"
         "when doing continuous batching."
         self.tkvs = model_runner_output.tkvs
+        self.n_free_blocks = model_runner_output.n_free_blocks
         return super(SpyreScheduler,
                      self).update_from_output(scheduler_output,
                                               model_runner_output)
@@ -228,12 +232,22 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         cond3 = request.num_prompt_tokens <= self.tkvs[0]
         # check that the number of requested tokens can be served
         cond4 = request.max_tokens <= (max_context_len - self.tkvs[0])
-
+        # check that there are enough free blocks/pages remaining
+        # Note: we only have to do check in case of a running batches
+        # (not start_new_batch), because the minimal number of blocks covers
+        # the context length for a single sequence, so tkv < block size is ok
         if envs_spyre.VLLM_SPYRE_HETEROGEN_TKV:
+            # TODO: num_blocks_required
+            num_blocks_required = math.ceil(
+                (request.num_prompt_tokens + request.max_tokens - 1) /
+                self.block_size)
+            cond5 = num_blocks_required <= self.n_free_blocks
             # heterogeneous tkv scheduling conditions
-            conds = [cond1, cond2]
+            conds = [cond1, cond2, cond5]
         else:
+            num_blocks_required = math.ceil(
+                (self.tkvs[0] + request.max_tokens - 1) / self.block_size)
+            cond5 = num_blocks_required <= self.n_free_blocks
             # homogeneous tkv scheduling conditions
-            conds = [cond1, cond2, cond3, cond4]
-
+            conds = [cond1, cond2, cond3, cond4, cond5]
         return start_new_batch or all(conds)

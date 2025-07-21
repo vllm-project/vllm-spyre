@@ -1,6 +1,5 @@
 """
-This example shows how to run offline inference using continuous batching 
-on CPU.
+This example shows how to run offline inference using continuous batching.
 """
 
 import argparse

@@ -5,30 +5,18 @@ Run `python -m pytest tests/e2e/test_spyre_warmup_shapes.py`.
 
 import pytest
 from spyre_util import (compare_results, generate_hf_output,
-                        generate_spyre_vllm_output, get_spyre_backend_list,
-                        get_spyre_model_list)
+                        generate_spyre_vllm_output, get_chicken_soup_prompts,
+                        get_spyre_backend_list, get_spyre_model_list)
 from vllm import SamplingParams
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize("prompts", [
-    4 * [
-        "Hello",
-        "Below is an instruction that describes a task. Write a response that "
-        "appropriately completes the request. Be polite in your response to "
-        "the user. Provide a list of instructions for preparing chicken soup"
-        " for a family of four. Indicate if the weather forecast looks good "
-        "for today. Explain in a brief summary comprised of at most 50 words"
-        " what you are."
-    ]
-])
 @pytest.mark.parametrize(
     "warmup_shapes", [[(64, 20, 4),
                        (128, 20, 2)]])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_output(
     model: str,
-    prompts: list[str],
     warmup_shapes: list[tuple[int, int, int]],
     backend: str,
     monkeypatch: pytest.MonkeyPatch,
@@ -46,12 +34,9 @@ def test_output(
     The same prompts are also input to HF. The generated
     output including text, token ids, and logprobs, is
     verified to be identical for vLLM and HF.
-
-    If errors occur, these can be analyzed/debugged by setting
-    'DISABLE_ASSERTS = True' in spyre_util.py and by rerunning the
-    test using 'pytest --capture=no tests/spyre/test_spyre_warmup_shapes.py'
-    After debugging, DISABLE_ASSERTS should be reset to 'False'.
     '''
+
+    prompts = get_chicken_soup_prompts(4)
 
     max_new_tokens = max([t[1] for t in warmup_shapes])
 
@@ -78,7 +63,6 @@ def test_output(
 
     compare_results(model=model,
                     prompts=prompts,
-                    warmup_shapes=warmup_shapes,
                     tensor_parallel_size=1,
                     backend=backend,
                     vllm_results=vllm_results,
