@@ -25,7 +25,7 @@ ISCLOSE_REL_TOL_SPYRE = 0.35
 
 def force_engine_shutdown(llm: LLM):
     """
-    �️�️�️
+    🌶️🌶️🌶️
     This hack is here because of an issue in vllm 0.9.2+ where a circular
     reference occurs in vllm.executor.ray_utils if ray is not installed. This
     circular reference holds a copy of the vllm config which contains a
@@ -35,7 +35,7 @@ def force_engine_shutdown(llm: LLM):
     engine is never shut down then the TP worker processes are never killed.
     When the TP worker processes are held open, all future attempts to create a
     new engine will fail with an EADDRINUSE error.
-    �️�️�️
+    🌶️🌶️🌶️
     """
     llm.llm_engine.engine_core.shutdown()
 
@@ -523,7 +523,7 @@ def create_text_prompt(model: str, min_tokens: int, max_tokens: int) -> str:
     """Create a text prompt for the specified model that will tokenize to within
     the specified token length range."""
     tokenizer = AutoTokenizer.from_pretrained(model)
-    pepper = "�️"
+    pepper = "🌶️"
     pepper_tokens = len(tokenizer.encode(pepper, add_special_tokens=False))
 
     # Find a good starting number of peppers
@@ -549,11 +549,11 @@ def create_random_request(
                              mm_hashes=None,
                              mm_placeholders=None,
                              sampling_params=sampling_params,
-                             pooling_params=None,
                              eos_token_id=None,
                              arrival_time=0,
                              lora_request=None,
                              data_parallel_rank=None,
+                             pooling_params=None,
                              cache_salt=None)
 
 
