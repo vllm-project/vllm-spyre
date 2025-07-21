@@ -69,7 +69,7 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
                 softmax=False)
         else:
             self.pooler = Pooler.for_embed(
-                pooler_config=vllm_config.model_config.pooler_config,
+                pooler_config=pooler_config,
                 default_pooling_type=PoolingType.CLS,
                 default_normalize=True,
                 default_softmax=False)
