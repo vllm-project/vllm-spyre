@@ -80,6 +80,15 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
         self.model.eval()
         torch.set_grad_enabled(False)
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in BACKEND_LIST:
+            # Lazy import to avoid load torch_sendnn runtime before it is really
+            # necessary. This solve issues of running forked tests that share
+            # some resources from parent to children which can have problems
+            # of caching even though the test run in isolated subprocesses.
+            try:
+                from torch_sendnn import torch_sendnn  # noqa: F401
+            except ImportError:
+                print("WARNING: Disabled: torch_sendnn")
+
             self.model = torch.compile(
                 self.model,
                 mode="default",
