@@ -10,15 +10,12 @@ from typing import Generic, Optional, TypeVar, cast
 import numpy as np
 import torch
 
-_SAMPLING_EPS = 1e-5
-
 
 @dataclass
 class BaseRequestState:
 
     req_id: str
     prompt_token_ids: list[int]
-    left_padding: int = 0  # Defaults to 0, i. e. not padding
 
     @property
     @abstractmethod
@@ -80,14 +77,7 @@ class BaseInputBatch(Generic[RequestState]):
 
     def add_request(
         self,
-        request: "RequestState",
-        req_index: Optional[int] = None,
-    ) -> None:
-        raise NotImplementedError
-
-    def _add_request(
-        self,
-        request: "RequestState",
+        request: RequestState,
         req_index: Optional[int] = None,
     ) -> int:
         if req_index is None:
@@ -121,10 +111,7 @@ class BaseInputBatch(Generic[RequestState]):
 
         self._num_requests = 0
 
-    def remove_request(self, req_id: str):
-        raise NotImplementedError
-
-    def _remove_request(self, req_id: str) -> Optional[int]:
+    def remove_request(self, req_id: str) -> Optional[int]:
         '''
         Free a slot of a request from the batch
         
@@ -148,9 +135,6 @@ class BaseInputBatch(Generic[RequestState]):
         self._req_ids[req_index] = None
         self._num_requests -= 1
         return req_index
-
-    def refresh_metadata(self):
-        pass
 
     def _get_num_prompt_tokens(self) -> np.ndarray:
         return self.num_prompt_tokens[:self._num_requests]

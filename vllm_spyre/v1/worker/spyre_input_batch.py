@@ -17,11 +17,11 @@ from vllm.v1.sample.metadata import SamplingMetadata
 from vllm_spyre.v1.worker.spyre_base_input_batch import (BaseInputBatch,
                                                          BaseRequestState)
 
-_SAMPLING_EPS = 1e-5
-
 
 @dataclass
 class SamplingRequestState(BaseRequestState):
+
+    left_padding: int = 0  # Defaults to 0, i. e. not padding
 
     sampling_params: SamplingParams = SamplingParams()
     generator: Optional[torch.Generator] = None
@@ -215,9 +215,9 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
         self,
         request: "SamplingRequestState",
         req_index: Optional[int] = None,
-    ) -> None:
+    ) -> int:
 
-        req_index = super()._add_request(request, req_index)
+        req_index = super().add_request(request, req_index)
         req_id = request.req_id
 
         # NOTE: differently from gpu input batch, self.req_output_token_ids
@@ -297,6 +297,7 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
         if sampling_params.bad_words_token_ids:
             self.bad_words_token_ids[
                 req_index] = sampling_params.bad_words_token_ids
+        return req_index
 
     def clear_requests(self):
         '''
@@ -338,7 +339,7 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
         overwritten by new requests
         '''
 
-        req_index = super()._remove_request(req_id)
+        req_index = super().remove_request(req_id)
         if req_index is None:
             return
 

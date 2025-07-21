@@ -270,7 +270,6 @@ class SpyrePlatform(Platform):
         """Returns whether the current platform can support v1 for the supplied
         model configuration.
         """
-        # We don't have an embedding runner for v1 yet
         return True
 
     @classmethod

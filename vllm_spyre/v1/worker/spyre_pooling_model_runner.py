@@ -38,7 +38,7 @@ BACKEND_LIST = ['sendnn', 'inductor']
 
 @dataclass(frozen=True)
 class PoolingForwardInputs(ModelForwardInputs):
-
+    """ Used by the SpyrePoolingModelRunner. """
     token_type_ids: Optional[torch.Tensor] = None
 
 
@@ -112,6 +112,14 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
 
         return input_ids, token_type_ids, position_ids, mask
 
+    def update_states(self, scheduler_output: SchedulerOutput):
+        assert len(scheduler_output.scheduled_cached_reqs.req_ids) == 0
+
+        if scheduler_output.finished_req_ids:
+            for req_id in scheduler_output.finished_req_ids:
+                self.input_batch.remove_request(req_id)
+                self.requests.pop(req_id, None)
+
     def _prepare_prompt(
         self,
         new_requests: list[NewRequestData],
@@ -159,9 +167,6 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
             self.input_batch.add_request(req_state)
 
         self.input_batch.padded_batch_size = padded_batch_size
-
-        # Refresh sampling metadata after all request are added to the batch
-        self.input_batch.refresh_metadata()
 
         if token_type_list:
             assert len(input_token_list) == len(token_type_list)
@@ -220,15 +225,6 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
         if model_input.token_type_ids is not None:
             torch._dynamo.mark_static(model_input.token_type_ids, 0)
             torch._dynamo.mark_static(model_input.token_type_ids, 1)
-
-    def update_states(self, scheduler_output: SchedulerOutput):
-        assert len(scheduler_output.scheduled_cached_reqs.req_ids) == 0
-
-        if scheduler_output.finished_req_ids:
-            for req_id in scheduler_output.finished_req_ids:
-                self.input_batch.remove_request(req_id)
-                self.requests.pop(req_id, None)
-            self.input_batch.refresh_metadata()
 
     @SpyrePlatform.inference_mode()
     def execute_model(

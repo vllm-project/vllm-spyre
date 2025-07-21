@@ -4,6 +4,7 @@ Run `python -m pytest tests/e2e/test_spyre_embeddings.py`.
 """
 
 import os
+from functools import partial
 
 import pytest
 from spyre_util import (compare_embedding_results, get_chicken_soup_prompts,
@@ -54,14 +55,6 @@ def test_output(
                               hf_results=hf_results)
 
 
-@pytest.fixture
-def example_prompts():
-    return [
-        "The capital of France is Paris.", "Hello",
-        "What is the weather today like?", "Who are you?"
-    ]
-
-
 @pytest.mark.parametrize("warmup_shapes", [
     (64, 1),
     (64, 2),
@@ -71,7 +64,6 @@ def example_prompts():
 @pytest.mark.parametrize("model", get_spyre_model_list(isEmbeddings=True))
 @pytest.mark.parametrize("vllm_version", ["V0", "V1"])
 def test_scheduling_invariance(
-    example_prompts,
     model,
     backend,
     warmup_shapes,
@@ -81,8 +73,8 @@ def test_scheduling_invariance(
     os.environ["VLLM_SPYRE_DYNAMO_BACKEND"] = backend
     os.environ['VLLM_USE_V1'] = "1" if vllm_version == "V1" else "0"
 
-    prompts = [str(s).strip() for s in example_prompts]
-    reference_embeds = st_embeddings(model, example_prompts)
+    prompts = get_chicken_soup_prompts(4)
+    reference_embeds = st_embeddings(model, prompts)
 
     vllm_model = LLM(model=model,
                      task="embed",
@@ -91,55 +83,29 @@ def test_scheduling_invariance(
                      block_size=256,
                      tensor_parallel_size=1)
 
+    def chunk_embeds(step):
+        vllm_outputs = []
+        for i in range(0, len(prompts), step):
+            emb_outputs = [
+                req.outputs for req in vllm_model.embed(prompts[i:i + step])
+            ]
+            for emb_output in emb_outputs:
+                vllm_outputs.append({'embeddings': emb_output})
+        return vllm_outputs
+
+    verify_vllm_results = partial(compare_embedding_results,
+                                  model=model,
+                                  prompts=prompts,
+                                  warmup_shapes=[warmup_shapes],
+                                  tensor_parallel_size=1,
+                                  backend=backend,
+                                  hf_results=reference_embeds)
+
     # Four requests with one prompt each
-    results = []
-    for i in range(4):
-        results.append(vllm_model.embed(prompts[i]))
-
-    vllm_outputs = []
-    for req_output in results:
-        result = {'embeddings': req_output[0].outputs.embedding}
-        vllm_outputs.append(result)
-
-    compare_embedding_results(model=model,
-                              prompts=example_prompts,
-                              warmup_shapes=[warmup_shapes],
-                              tensor_parallel_size=1,
-                              backend=backend,
-                              vllm_results=vllm_outputs,
-                              hf_results=reference_embeds)
+    verify_vllm_results(vllm_results=chunk_embeds(1))
 
     # Two requests with two prompt each
-    results = []
-    for i in range(2):
-        results.append(vllm_model.embed([prompts[i * 2], prompts[i * 2 + 1]]))
-
-    vllm_outputs = []
-    for req_output in results:
-        result1 = {'embeddings': req_output[0].outputs.embedding}
-        result2 = {'embeddings': req_output[1].outputs.embedding}
-
-        vllm_outputs.extend([result1, result2])
-
-    compare_embedding_results(model=model,
-                              prompts=example_prompts,
-                              warmup_shapes=[warmup_shapes],
-                              tensor_parallel_size=1,
-                              backend=backend,
-                              vllm_results=vllm_outputs,
-                              hf_results=reference_embeds)
+    verify_vllm_results(vllm_results=chunk_embeds(2))
 
     # One requests with four prompts
-    results = vllm_model.embed(prompts)
-    vllm_outputs = []
-    for req_output in results:
-        result = {'embeddings': req_output.outputs.embedding}
-        vllm_outputs.append(result)
-
-    compare_embedding_results(model=model,
-                              prompts=example_prompts,
-                              warmup_shapes=[warmup_shapes],
-                              tensor_parallel_size=1,
-                              backend=backend,
-                              vllm_results=vllm_outputs,
-                              hf_results=reference_embeds)
+    verify_vllm_results(vllm_results=chunk_embeds(4))

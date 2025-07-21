@@ -73,9 +73,9 @@ class PoolingInputBatch(BaseInputBatch[PoolingRequestState]):
         self,
         request: "PoolingRequestState",
         req_index: Optional[int] = None,
-    ) -> None:
+    ) -> int:
 
-        req_index = super()._add_request(request, req_index)
+        req_index = super().add_request(request, req_index)
 
         num_prompt_tokens = len(request.prompt_token_ids)
         if request.token_type_ids is not None:
@@ -84,6 +84,7 @@ class PoolingInputBatch(BaseInputBatch[PoolingRequestState]):
 
         assert request.pooling_params is not None
         self.pooling_params[request.req_id] = request.pooling_params
+        return req_index
 
     def clear_requests(self):
         '''
@@ -94,7 +95,7 @@ class PoolingInputBatch(BaseInputBatch[PoolingRequestState]):
 
     def remove_request(self, req_id: str):
 
-        req_index = super()._remove_request(req_id)
+        req_index = super().remove_request(req_id)
         if req_index is None:
             return
 
