@@ -56,7 +56,7 @@ args = parser.parse_args()
 trunc = args.trunc_print_len
 
 max_num_seqs = args.max_num_seqs  # defines the max batch size
-assert args.max_prompt_len < args.max_model_len
+assert args.max_prompt_len <= args.max_model_len
 
 if platform.machine() == "arm64":
     print("Detected arm64 running environment. "
@@ -122,7 +122,7 @@ def round_up(t):
 
 
 tokens_to_generate = [
-    args.max_model_len - round_up(plen) for plen in prompt_lens
+    args.max_model_len + 1 - round_up(prompt_len) for prompt_len in prompt_lens
 ]
 
 sampling_params = [
