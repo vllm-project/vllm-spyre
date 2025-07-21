@@ -59,11 +59,20 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
         self._position_ids: torch.Tensor = None
 
         pooler_config = vllm_config.model_config.pooler_config
-        self.pooler = Pooler.from_config_with_defaults(
-            pooler_config,
-            pooling_type=PoolingType.CLS,
-            normalize=True,
-            softmax=False)
+        if hasattr(Pooler, "from_config_with_defaults"):
+            # TODO: remove this when we no longer support
+            # vllm version v0.9.2
+            self.pooler = Pooler.from_config_with_defaults(
+                pooler_config,
+                pooling_type=PoolingType.CLS,
+                normalize=True,
+                softmax=False)
+        else:
+            self.pooler = Pooler.for_embed(
+                pooler_config=vllm_config.model_config.pooler_config,
+                default_pooling_type=PoolingType.CLS,
+                default_normalize=True,
+                default_softmax=False)
 
     def build_input_batch(self) -> PoolingInputBatch:
         return PoolingInputBatch(
