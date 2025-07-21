@@ -475,6 +475,155 @@ def test_two_sequences_finish_same_time_as_new_arrive(
     )
 
 
+@pytest.mark.a
+@pytest.mark.cb
+@pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+def test_new_sequence_joins_during_decode(
+        model: str, backend: str, monkeypatch: pytest.MonkeyPatch):
+    """ Scenario where a new sequence joins while decoding other sequences
+
+    Configuration:
+        * max_num_seqs: 4
+        * number of prompts: 4
+            * 1: len = 49, max tokens = 36, step joining = 0
+            * 2: len = 14, max tokens = 52, step joining = 0
+            * 3: len = 89, max tokens = 101, step joining = 15
+            * 4: len = 20, max tokens = 10, step joining = 31  TODO
+    """
+
+    seqs_max_tokens = [36, 52, 101]
+    prompts_lengths = [49, 14, 89]
+    steps_add_reqs = [0, 0, 15]
+    available_blocks = -1  # no restriction
+    max_num_seqs = 4
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0", "1"],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+        {
+            # Prefill sequence 0
+            # total blocks in use: 1
+            "step": 1,
+            "tkv": 64,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 2,  # prefill (1 block) + 35 decodes (1 block)
+            "n_used_blocks": 1
+        },
+        {
+            # Prefill sequence 1
+            # total blocks in use: 1 + 1 = 2
+            "step": 2,
+            "tkv": 64,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 4,  # prefill (1 block) + 51 decodes (1 block)
+            "n_used_blocks": 2
+        },
+        {
+            # Decode sequences 0 and 1
+            # total blocks in use: 2 + 2 = 4
+            "step": 3,
+            "tkv": 65,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 4
+        },
+        {
+            # Prefill sequence 2
+            # total blocks in use: 4 - 4 + 1
+            "step": 15,
+            "tkv": 77,
+            "waiting": [],
+            "running": ["2", "1", "0"],
+            "request_outputs": ["2"],
+            "n_reserved_blocks": 8,
+            "n_used_blocks": 4
+        },
+        # {
+        #     # Sequences 0 and 1 finish at step 31
+        #     # (start step + 2 prefills + 29 decodes - 1) = 1 + 2 + 29 - 1 = 31
+        #     "step": 31,
+        #     "tkv": 93,
+        #     "waiting": ["2"],
+        #     "running": [],
+        #     "request_outputs": ["1", "0"],
+        #     "finished_requests": ["1", "0"],
+        #     "n_reserved_blocks": 4,
+        #     "n_used_blocks": 4
+        # },
+        # {
+        #     # Prefill sequence 2
+        #     # total blocks in use: 4 - 4 + 1
+        #     "step": 32,
+        #     "tkv": 64,
+        #     "waiting": [],
+        #     "running": ["2"],
+        #     "request_outputs": ["2"],
+        #     # 4 - 4 + 2 (prefill (1 block) + 9 decodes (1 block))
+        #     "n_reserved_blocks": 2,
+        #     "n_used_blocks": 1
+        # },
+        # {
+        #     # Decode sequence 2
+        #     # total blocks in use: 1 + 1
+        #     "step": 33,
+        #     "tkv": 65,
+        #     "waiting": [],
+        #     "running": ["2"],
+        #     "request_outputs": ["2"],
+        #     "n_reserved_blocks": 2,
+        #     "n_used_blocks": 2
+        # },
+        # {
+        #     # Sequences 2 finishes at step 41
+        #     # (start step + 1 prefill + 29 decodes - 1) = 32 + 1 + 9 - 1 = 41
+        #     "step": 41,
+        #     "tkv": 73,
+        #     "waiting": [],
+        #     "running": [],
+        #     "request_outputs": ["2"],
+        #     "finished_requests": ["2"],
+        #     "n_reserved_blocks": 2,
+        #     "n_used_blocks": 2
+        # },
+        # {
+        #     # Tkv should be cleared one step later
+        #     "step": 42,
+        #     "tkv": 0,
+        #     "waiting": [],
+        #     "running": [],
+        #     "request_outputs": [],
+        #     "n_reserved_blocks": 0,
+        #     "n_used_blocks": 0
+        # },
+    ]
+
+    check_scheduler_inference_steps(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        seqs_max_tokens=seqs_max_tokens,
+        prompts_lengths=prompts_lengths,
+        steps_add_reqs=steps_add_reqs,
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        available_blocks=available_blocks,
+        use_cb=True,
+    )
+
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
