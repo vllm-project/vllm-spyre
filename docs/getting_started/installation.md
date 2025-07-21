@@ -8,7 +8,7 @@ dependency resolution which is required to properly install dependencies like
 ## Install `uv` (Pre-requisite)
 
 You can [install `uv`](https://docs.astral.sh/uv/guides/install-python/) using `pip`:
-  
+
 ```sh
 pip install uv
 ```
@@ -16,7 +16,7 @@ pip install uv
 ## Create a Python Virtual Environment
 
 Now create and activate a new Python (3.12) [virtual environment](https://docs.astral.sh/uv/pip/environments/):
-  
+
 ```sh
 uv venv --python 3.12 --seed .venv
 source .venv/bin/activate
@@ -65,7 +65,6 @@ or you can install from source by cloning the [vllm-Spyre](https://github.com/vl
     
     !!! tip
         The `dev` group (i.e. `--group dev`) is enabled by default.
-
 
 ## Install PyTorch
 
