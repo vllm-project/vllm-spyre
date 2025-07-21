@@ -9,7 +9,8 @@ from functools import partial
 import pytest
 from spyre_util import (compare_embedding_results, get_chicken_soup_prompts,
                         get_spyre_backend_list, get_spyre_model_list,
-                        spyre_vllm_embeddings, st_embeddings)
+                        patch_warmup_shapes, spyre_vllm_embeddings,
+                        st_embeddings)
 from vllm import LLM
 
 
@@ -18,13 +19,13 @@ from vllm import LLM
                          [(64, 4), (64, 8), (128, 4),
                           (128, 8)])  # (prompt_length/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-# TODO: Add it when v1 is supported.
 @pytest.mark.parametrize("vllm_version", ["V0", "V1"])
 def test_output(
     model: str,
     warmup_shape: tuple[int, int],
     backend: str,
     vllm_version: str,
+    monkeypatch,
 ) -> None:
     '''
     The warmup is based on a single shape. After the warmup,
@@ -34,10 +35,10 @@ def test_output(
     '''
 
     prompts = get_chicken_soup_prompts(1)
+    patch_warmup_shapes([warmup_shape], monkeypatch)
 
     vllm_results = spyre_vllm_embeddings(model=model,
                                          prompts=prompts,
-                                         warmup_shapes=[warmup_shape],
                                          max_model_len=256,
                                          block_size=256,
                                          tensor_parallel_size=1,
@@ -55,10 +56,10 @@ def test_output(
                               hf_results=hf_results)
 
 
-@pytest.mark.parametrize("warmup_shapes", [
-    (64, 1),
-    (64, 2),
-    (64, 4),
+@pytest.mark.parametrize("warmup_shape", [
+    (128, 1),
+    (128, 2),
+    (128, 4),
 ])  # (prompt_length/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("model", get_spyre_model_list(isEmbeddings=True))
@@ -66,12 +67,21 @@ def test_output(
 def test_scheduling_invariance(
     model,
     backend,
-    warmup_shapes,
+    warmup_shape: tuple[int, int],
     vllm_version,
+    monkeypatch,
 ) -> None:
-
+    '''
+    This test is meant to verify that the embedding result are neither
+    dependent on the batch size nor the position within the batch.
+    We should always get results that are consistent with the reference
+    implementation (sentence-transformers).
+    To verify this we take a batch of 4 prompts and run it 1) as 4 batches
+    of 1; 2) as 2 batches of 2; 3) as 1 batch of 4.
+    '''
     os.environ["VLLM_SPYRE_DYNAMO_BACKEND"] = backend
     os.environ['VLLM_USE_V1'] = "1" if vllm_version == "V1" else "0"
+    patch_warmup_shapes([warmup_shape], monkeypatch)
 
     prompts = get_chicken_soup_prompts(4)
     reference_embeds = st_embeddings(model, prompts)
@@ -83,29 +93,29 @@ def test_scheduling_invariance(
                      block_size=256,
                      tensor_parallel_size=1)
 
-    def chunk_embeds(step):
+    def batch_embeds(step):
         vllm_outputs = []
         for i in range(0, len(prompts), step):
             emb_outputs = [
                 req.outputs for req in vllm_model.embed(prompts[i:i + step])
             ]
             for emb_output in emb_outputs:
-                vllm_outputs.append({'embeddings': emb_output})
+                vllm_outputs.append({'embeddings': emb_output.embedding})
         return vllm_outputs
 
     verify_vllm_results = partial(compare_embedding_results,
                                   model=model,
                                   prompts=prompts,
-                                  warmup_shapes=[warmup_shapes],
+                                  warmup_shapes=[warmup_shape],
                                   tensor_parallel_size=1,
                                   backend=backend,
                                   hf_results=reference_embeds)
 
     # Four requests with one prompt each
-    verify_vllm_results(vllm_results=chunk_embeds(1))
+    verify_vllm_results(vllm_results=batch_embeds(1))
 
     # Two requests with two prompt each
-    verify_vllm_results(vllm_results=chunk_embeds(2))
+    verify_vllm_results(vllm_results=batch_embeds(2))
 
     # One requests with four prompts
-    verify_vllm_results(vllm_results=chunk_embeds(4))
+    verify_vllm_results(vllm_results=batch_embeds(4))
