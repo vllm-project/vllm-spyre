@@ -45,11 +45,12 @@ def test_output(
     The same prompts are also input to HF. The generated output
     including text, token ids, and logprobs, is verified to be
     identical for vLLM and HF.
-
-    If errors occur, these can be analyzed/debugged by setting
-    'DISABLE_ASSERTS = True' in spyre_util.py and by rerunning the
-    test using 'pytest --capture=no tests/spyre/test_spyre_basic.py'
-    After debugging, DISABLE_ASSERTS should be reset to 'False'.
+    
+    Configuration for CB - parameters are combinatorial:
+        * max_num_seqs: 4
+        * tensor parallelism: 1, 2, 4, 8
+        * number of prompts: 4 (Chicken soup prompts)
+        * max tokens: 20 (same for all the prompts)
     '''
 
     skip_unsupported_tp_size(tp_size, backend)
@@ -156,7 +157,13 @@ def test_batch_handling(model: str, backend: str, cb: int,
                         monkeypatch: pytest.MonkeyPatch):
     """Test that the spyre worker correctly handles
     continuous batches of requests that
-    finish after different numbers of forward passes"""
+    finish after different numbers of forward passes
+
+    Configuration for CB - parameters are combinatorial:
+        * max_num_seqs: 2
+        * number of prompts: 4 (Chicken soup prompts)
+        * max tokens: [5, 20, 10, 5]
+    """
 
     prompts = get_chicken_soup_prompts(4)
 
