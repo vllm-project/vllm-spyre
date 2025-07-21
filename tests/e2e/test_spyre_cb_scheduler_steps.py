@@ -486,15 +486,15 @@ def test_new_sequence_joins_during_decode(
     Configuration:
         * max_num_seqs: 4
         * number of prompts: 4
-            * 1: len = 49, max tokens = 36, step joining = 0
+            * 1: len = 49, max tokens = 119, step joining = 0
             * 2: len = 14, max tokens = 52, step joining = 0
-            * 3: len = 89, max tokens = 101, step joining = 15
-            * 4: len = 20, max tokens = 10, step joining = 31  TODO
+            * 3: len = 89, max tokens = 101, step joining = 32
+            * 4: len = 9, max tokens = 65, step joining = 131
     """
 
-    seqs_max_tokens = [36, 52, 101]
-    prompts_lengths = [49, 14, 89]
-    steps_add_reqs = [0, 0, 15]
+    seqs_max_tokens = [119, 52, 101, 65]
+    prompts_lengths = [49, 14, 89, 9]
+    steps_add_reqs = [0, 0, 32, 131]
     available_blocks = -1  # no restriction
     max_num_seqs = 4
 
@@ -516,7 +516,7 @@ def test_new_sequence_joins_during_decode(
             "waiting": ["1"],
             "running": ["0"],
             "request_outputs": ["0"],
-            "n_reserved_blocks": 2,  # prefill (1 block) + 35 decodes (1 block)
+            "n_reserved_blocks": 3,  # prefill (1 block) + 119 decode (2 block)
             "n_used_blocks": 1
         },
         {
@@ -527,7 +527,7 @@ def test_new_sequence_joins_during_decode(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": ["1"],
-            "n_reserved_blocks": 4,  # prefill (1 block) + 51 decodes (1 block)
+            "n_reserved_blocks": 5,  # prefill (1 block) + 51 decodes (1 block)
             "n_used_blocks": 2
         },
         {
@@ -538,77 +538,111 @@ def test_new_sequence_joins_during_decode(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": ["1", "0"],
-            "n_reserved_blocks": 4,
+            "n_reserved_blocks": 5,
+            "n_used_blocks": 4  # 2 blocks extended, one for each sequence
+        },
+        {
+            # Sequence 2 joins: one iteration in waiting queue
+            "step": 32,
+            "tkv": 94,
+            "waiting": ["2"],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"],
+            "n_reserved_blocks": 5,
             "n_used_blocks": 4
         },
         {
             # Prefill sequence 2
-            # total blocks in use: 4 - 4 + 1
-            "step": 15,
-            "tkv": 77,
+            # total blocks in use: 4 + 2 (long prefill) = 6
+            "step": 33,
+            "tkv": 94,
             "waiting": [],
             "running": ["2", "1", "0"],
             "request_outputs": ["2"],
-            "n_reserved_blocks": 8,
-            "n_used_blocks": 4
+            "n_reserved_blocks": 9,  # prefill (2 block) + 100 decode (2 block)
+            "n_used_blocks": 6
         },
-        # {
-        #     # Sequences 0 and 1 finish at step 31
-        #     # (start step + 2 prefills + 29 decodes - 1) = 1 + 2 + 29 - 1 = 31
-        #     "step": 31,
-        #     "tkv": 93,
-        #     "waiting": ["2"],
-        #     "running": [],
-        #     "request_outputs": ["1", "0"],
-        #     "finished_requests": ["1", "0"],
-        #     "n_reserved_blocks": 4,
-        #     "n_used_blocks": 4
-        # },
-        # {
-        #     # Prefill sequence 2
-        #     # total blocks in use: 4 - 4 + 1
-        #     "step": 32,
-        #     "tkv": 64,
-        #     "waiting": [],
-        #     "running": ["2"],
-        #     "request_outputs": ["2"],
-        #     # 4 - 4 + 2 (prefill (1 block) + 9 decodes (1 block))
-        #     "n_reserved_blocks": 2,
-        #     "n_used_blocks": 1
-        # },
-        # {
-        #     # Decode sequence 2
-        #     # total blocks in use: 1 + 1
-        #     "step": 33,
-        #     "tkv": 65,
-        #     "waiting": [],
-        #     "running": ["2"],
-        #     "request_outputs": ["2"],
-        #     "n_reserved_blocks": 2,
-        #     "n_used_blocks": 2
-        # },
-        # {
-        #     # Sequences 2 finishes at step 41
-        #     # (start step + 1 prefill + 29 decodes - 1) = 32 + 1 + 9 - 1 = 41
-        #     "step": 41,
-        #     "tkv": 73,
-        #     "waiting": [],
-        #     "running": [],
-        #     "request_outputs": ["2"],
-        #     "finished_requests": ["2"],
-        #     "n_reserved_blocks": 2,
-        #     "n_used_blocks": 2
-        # },
-        # {
-        #     # Tkv should be cleared one step later
-        #     "step": 42,
-        #     "tkv": 0,
-        #     "waiting": [],
-        #     "running": [],
-        #     "request_outputs": [],
-        #     "n_reserved_blocks": 0,
-        #     "n_used_blocks": 0
-        # },
+        {
+            # Decode sequences 0, 1, and 2
+            # total blocks in use: 6
+            "step": 34,
+            "tkv": 95,
+            "waiting": [],
+            "running": ["2", "1", "0"],
+            "request_outputs": ["2", "1", "0"],
+            "n_reserved_blocks": 9,
+            "n_used_blocks": 6
+        },
+        {
+            # Sequence 1 finishes at step 54
+            # (start step + 2 prefills + 51 decodes - 1) = 2 + 2 + 51 - 1 = 54
+            # total blocks in use: 6
+            "step": 54,
+            "tkv": 115,
+            "waiting": [],
+            "running": ["2", "0"],
+            "request_outputs": ["2", "1", "0"],
+            "finished_requests": ["1"],
+            "n_reserved_blocks": 9,
+            "n_used_blocks": 6
+        },
+        {
+            # Decode sequences 0 and 2
+            # total blocks in use: 4
+            "step": 55,
+            "tkv": 116,
+            "waiting": [],
+            "running": ["2", "0"],
+            "request_outputs": ["2", "0"],
+            "n_reserved_blocks": 7,  # two blocks released
+            "n_used_blocks": 4  # two blocks released
+        },
+        {
+            # Decode sequences 0 and 2, tkv arrives to new block
+            # total blocks in use: 6
+            "step": 68,
+            "tkv": 129,
+            "waiting": [],
+            "running": ["2", "0"],
+            "request_outputs": ["2", "0"],
+            "n_reserved_blocks": 7,
+            "n_used_blocks": 6  # 2 blocks extended, one for each sequence
+        },
+        {
+            # Sequence 0 finishes at step 121
+            # (start step + 3 prefills + 118 decode - 1) = 1 + 3 + 118 - 1 = 121
+            # total blocks in use: 6
+            "step": 121,
+            "tkv": 182,
+            "waiting": [],
+            "running": ["2"],
+            "request_outputs": ["2", "0"],
+            "finished_requests": ["0"],
+            "n_reserved_blocks": 7,
+            "n_used_blocks": 6
+        },
+        {
+            # Decode sequence 2
+            # total blocks in use: 3
+            "step": 122,
+            "tkv": 183,
+            "waiting": [],
+            "running": ["2"],
+            "request_outputs": ["2"],
+            "n_reserved_blocks": 4,  # 3 blocks released
+            "n_used_blocks": 3  # 3 blocks released
+        },
+        {
+            # Sequence 3 joins: one iteration in waiting queue
+            # total blocks in use: 3
+            "step": 131,
+            "tkv": 192,
+            "waiting": ["3"],
+            "running": ["2"],
+            "request_outputs": ["2"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 3
+        },
     ]
 
     check_scheduler_inference_steps(
