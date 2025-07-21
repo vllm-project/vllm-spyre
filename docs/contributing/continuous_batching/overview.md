@@ -7,7 +7,7 @@ Brief overview of what has been implemented so far in VLLM to test / debug conti
 * **File paths:**
     * `examples/offline_inference/cb_spyre_inference.py`
     * `examples/offline_inference/long_context.py`
-* **Purpose:** Debugging (i.e. using manual execution)
+* **Purpose:** Debugging (ie. using manual execution)
 
 ### Description
 
@@ -67,6 +67,7 @@ For `long_context.py`: the same parameters, but with some differences:
 <!-- markdownlint-enable MD031 MD046 -->
 
 #### Parameters description
+
 * `-x` option: stops the execution as soon as a test fails
 * `-s` option: show all the print statements in the code
 * `-v` option: verbose mode, make the test output more detailed: show name of each test function and whether it passed, failed or was skipped
