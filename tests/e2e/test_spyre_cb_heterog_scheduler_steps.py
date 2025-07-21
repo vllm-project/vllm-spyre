@@ -53,7 +53,7 @@ def test_prompts_aligned_with_tkv_boundaries(model: str, backend: str,
             "waiting": ["1", "2"],
             "running": ["0"],
             "request_outputs": ["0"],
-            "n_reserved_blocks": 2, # 49 + 65 - 1 = 113 (2 blocks)
+            "n_reserved_blocks": 2,  # 49 + 65 - 1 = 113 (2 blocks)
             "n_used_blocks": 1
         },
         {
@@ -64,7 +64,7 @@ def test_prompts_aligned_with_tkv_boundaries(model: str, backend: str,
             "waiting": ["2"],
             "running": ["1", "0"],
             "request_outputs": ["1"],
-            "n_reserved_blocks": 4, # 41 + 67 - 1 = 107 (2 blocks)
+            "n_reserved_blocks": 4,  # 41 + 67 - 1 = 107 (2 blocks)
             "n_used_blocks": 2
         },
         {
@@ -83,27 +83,25 @@ def test_prompts_aligned_with_tkv_boundaries(model: str, backend: str,
             # step 18 (64 - 49 + 3): seq 0 needs another block
             "step": 18,
             "tkv_0": 57,
-            "tkv_1": 65, # needs another block
+            "tkv_1": 65,  # needs another block
             "waiting": ["2"],
             "running": ["1", "0"],
             "request_outputs": ["1", "0"],
             "n_reserved_blocks": 4,
-            "n_used_blocks": 3 # 2 + 1 = 3
+            "n_used_blocks": 3  # 2 + 1 = 3
         },
-
         {
             # Decode sequences 0 and 1
             # step 26 (64 - 41 + 3): seq 0 needs another block
             "step": 26,
-            "tkv_0": 65, # needs another block
+            "tkv_0": 65,  # needs another block
             "tkv_1": 73,
             "waiting": ["2"],
             "running": ["1", "0"],
             "request_outputs": ["1", "0"],
             "n_reserved_blocks": 4,
-            "n_used_blocks": 4 # 3 + 1 = 4
+            "n_used_blocks": 4  # 3 + 1 = 4
         },
-        
         {
             # Sequence 0 finishes at step 66
             # (start step + 2 prefills + 64 decodes - 1) = 1 + 2 + 64 - 1 = 66
@@ -125,7 +123,7 @@ def test_prompts_aligned_with_tkv_boundaries(model: str, backend: str,
             "waiting": [],
             "running": ["2", "1"],
             "request_outputs": ["2"],
-            "n_reserved_blocks": 3, # 4 - 2 + 1 = 3
+            "n_reserved_blocks": 3,  # 4 - 2 + 1 = 3
             "n_used_blocks": 3
         },
         {
@@ -160,7 +158,7 @@ def test_prompts_aligned_with_tkv_boundaries(model: str, backend: str,
             "waiting": [],
             "running": ["2"],
             "request_outputs": ["2"],
-            "n_reserved_blocks": 1, # 3 - 2 (seq 1 left)
+            "n_reserved_blocks": 1,  # 3 - 2 (seq 1 left)
             "n_used_blocks": 1
         },
         {
@@ -244,7 +242,7 @@ def test_prompts_misaligned_with_tkv_boundaries(
             "waiting": ["1", "2"],
             "running": ["0"],
             "request_outputs": ["0"],
-            "n_reserved_blocks": 2, # 49 + 57 - 1 = 105 (2 blocks)
+            "n_reserved_blocks": 2,  # 49 + 57 - 1 = 105 (2 blocks)
             "n_used_blocks": 1
         },
         {
@@ -255,7 +253,7 @@ def test_prompts_misaligned_with_tkv_boundaries(
             "waiting": ["2"],
             "running": ["1", "0"],
             "request_outputs": ["1"],
-            "n_reserved_blocks": 4, # 41 + 67 - 1 = 107 (2 blocks)
+            "n_reserved_blocks": 4,  # 41 + 67 - 1 = 107 (2 blocks)
             "n_used_blocks": 2
         },
         {
@@ -274,26 +272,25 @@ def test_prompts_misaligned_with_tkv_boundaries(
             # step 18 (64 - 49 + 3): seq 0 needs another block
             "step": 18,
             "tkv_0": 57,
-            "tkv_1": 65, # needs another block
+            "tkv_1": 65,  # needs another block
             "waiting": ["2"],
             "running": ["1", "0"],
             "request_outputs": ["1", "0"],
             "n_reserved_blocks": 4,
-            "n_used_blocks": 3 # 2 + 1 = 3
+            "n_used_blocks": 3  # 2 + 1 = 3
         },
         {
             # Decode sequences 0 and 1
             # step 26 (64 - 41 + 3): seq 0 needs another block
             "step": 26,
-            "tkv_0": 65, # needs another block
+            "tkv_0": 65,  # needs another block
             "tkv_1": 73,
             "waiting": ["2"],
             "running": ["1", "0"],
             "request_outputs": ["1", "0"],
             "n_reserved_blocks": 4,
-            "n_used_blocks": 4 # 3 + 1 = 4
+            "n_used_blocks": 4  # 3 + 1 = 4
         },
-        
         {
             # Sequence 0 finishes at step 58
             # (start step + 2 prefills + 56 decodes - 1) = 1 + 2 + 56 - 1 = 58
@@ -464,12 +461,12 @@ def test_two_sequences_finish_same_time_as_new_arrive(
             # step 18 (64 - 49 + 3): seq 0 needs another block
             "step": 18,
             "tkv_0": 46,
-            "tkv_1": 65, # needs another block
+            "tkv_1": 65,  # needs another block
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": ["1", "0"],
             "n_reserved_blocks": 3,
-            "n_used_blocks": 3 # 2 + 1 = 3
+            "n_used_blocks": 3  # 2 + 1 = 3
         },
         {
             # Sequences 0 and 1 finish at step 31
@@ -596,8 +593,8 @@ def test_prompt_too_long_for_current_tkv(model: str, backend: str,
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": ["1"],
-            "n_reserved_blocks": 5, # 2 + 3
-            "n_used_blocks": 3 # 1 + 2 
+            "n_reserved_blocks": 5,  # 2 + 3
+            "n_used_blocks": 3  # 1 + 2 
         },
         {
             # Decode sequence 0 and 1
@@ -615,14 +612,13 @@ def test_prompt_too_long_for_current_tkv(model: str, backend: str,
             # step 18 (64 - 49 + 3): seq 0 needs another block
             "step": 18,
             "tkv_0": 86,
-            "tkv_1": 65, # needs another block
+            "tkv_1": 65,  # needs another block
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": ["1", "0"],
             "n_reserved_blocks": 5,
-            "n_used_blocks": 4 # 3 + 1 = 4
+            "n_used_blocks": 4  # 3 + 1 = 4
         },
-        
         {
             # Sequence 0 finishes at step 58
             # (start step + 2 prefills + 56 decodes - 1) = 1 + 2 + 56 - 1 = 58
@@ -767,7 +763,7 @@ def test_requested_tokens_not_fitting_remaining_space(
             # Decode sequences 0 and 1
             # total blocks in use: 3 + 1 = 4
             "step": 18,
-            "tkv_0": 65, # needs another block
+            "tkv_0": 65,  # needs another block
             "tkv_1": 86,
             "waiting": ["2"],
             "running": ["1", "0"],
@@ -797,8 +793,8 @@ def test_requested_tokens_not_fitting_remaining_space(
             "waiting": [],
             "running": ["2", "0"],
             "request_outputs": ["2"],
-            "n_reserved_blocks": 5, # 5 - 2 + 2
-            "n_used_blocks": 3 # 4 - 2 + 1
+            "n_reserved_blocks": 5,  # 5 - 2 + 2
+            "n_used_blocks": 3  # 4 - 2 + 1
         },
         {
             # Decode sequences 0 and 2
@@ -811,13 +807,12 @@ def test_requested_tokens_not_fitting_remaining_space(
             "n_reserved_blocks": 5,
             "n_used_blocks": 3
         },
-       
         {
             # Decode sequence 0 needs another block for decoding
             # total blocks in use: 3 + 1 = 4
             "step": 62,
             "tkv_0": 44,
-            "tkv_1": 129, # needs antother block
+            "tkv_1": 129,  # needs antother block
             "waiting": [],
             "running": ["2", "0"],
             "request_outputs": ["2", "0"],
@@ -837,7 +832,6 @@ def test_requested_tokens_not_fitting_remaining_space(
             "n_reserved_blocks": 5,
             "n_used_blocks": 4
         },
-        
         {
             # Decode sequence 2
             # total blocks in use: 1 + 1 = 2
