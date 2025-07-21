@@ -3,7 +3,6 @@
 Run `python -m pytest tests/e2e/test_spyre_embeddings.py`.
 """
 
-import os
 from functools import partial
 
 import pytest
@@ -34,8 +33,11 @@ def test_output(
     are verified to be identical for vLLM and SentenceTransformers.
     '''
 
-    prompts = get_chicken_soup_prompts(1)
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+    monkeypatch.setenv("VLLM_USE_V1", "1" if vllm_version == "V1" else "0")
     patch_warmup_shapes([warmup_shape], monkeypatch)
+
+    prompts = get_chicken_soup_prompts(1)
 
     vllm_results = spyre_vllm_embeddings(model=model,
                                          prompts=prompts,
@@ -79,8 +81,9 @@ def test_scheduling_invariance(
     To verify this we take a batch of 4 prompts and run it 1) as 4 batches
     of 1; 2) as 2 batches of 2; 3) as 1 batch of 4.
     '''
-    os.environ["VLLM_SPYRE_DYNAMO_BACKEND"] = backend
-    os.environ['VLLM_USE_V1'] = "1" if vllm_version == "V1" else "0"
+
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+    monkeypatch.setenv("VLLM_USE_V1", "1" if vllm_version == "V1" else "0")
     patch_warmup_shapes([warmup_shape], monkeypatch)
 
     prompts = get_chicken_soup_prompts(4)
