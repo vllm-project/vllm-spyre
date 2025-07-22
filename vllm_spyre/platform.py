@@ -40,7 +40,7 @@ class SpyrePlatform(Platform):
     # "spyre" device_name no longer worked due to https://github.com/vllm-project/vllm/pull/16464
     device_name: str = "cpu"
     device_type: str = "cpu"
-    supported_quantization: list[str] = ["gptq"]
+    supported_quantization: list[str] = ["gptq", "fp8"]
     _warmup_shapes: Optional[tuple[dict[str, int], ...]] = None
     _block_size: int = 64  # hardcoded Spyre constraint for now
     _config: VllmConfig = None
