@@ -25,7 +25,7 @@ source .venv/bin/activate
 Since the full `torch_sendnn` stack is only available pre-installed in a base
 environment, we need to add the `--system-site-packages` to the new virtual
 environment to fully support the Spyre hardware. Pulling in the system site
-packages is not required for GPU-only installations.
+packages is not required for CPU-only installations.
 
 ## Install vLLM with the vLLM-Spyre Plugin
 
@@ -75,11 +75,24 @@ cloning the [vllm-Spyre](https://github.com/vllm-project/vllm-spyre) repo from G
 ## Install PyTorch
 
 Finally, `torch` is needed to run examples and tests. If it is not already installed,
-install it using `pip`:
+install it using `pip`.
 
-```sh
-pip install torch==2.7.1
-```
+Note, on Linux the `+cpu` package should be installed, since we don't need any of
+the `cuda` dependencies that are included by default on linux installs. This requires
+`--index-url https://download.pytorch.org/whl/cpu` on linux. On Windows and macOS
+the cpu package is the default one.
+
+=== "Linux"
+
+    ```sh
+    pip install torch=="2.7.1+cpu" --index-url "https://download.pytorch.org/whl/cpu"
+    ```
+
+=== "Windows/macOS"
+
+    ```sh
+    pip install torch=="2.7.1"
+    ```
 
 ## Trouble-Shooting
 
