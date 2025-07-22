@@ -37,6 +37,8 @@ else:
 
 from vllm.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, ModelRunnerOutput
 
+# TODO: fix import when we upgrade to vLLM 0.9.3
+PoolingTask = None
 logger = init_logger(__name__)
 
 
@@ -241,6 +243,10 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT,
         else:
             # we always want the decode to be dynamic on sequence
             torch._dynamo.mark_dynamic(model_input.input_masks, 2)
+
+    def get_supported_pooling_tasks(
+            self) -> list["PoolingTask"]:  # type: ignore
+        return []
 
     @SpyrePlatform.inference_mode()
     @abstractmethod

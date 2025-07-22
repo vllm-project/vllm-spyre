@@ -31,6 +31,9 @@ from vllm.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, ModelRunnerOutput
 
 import vllm_spyre.envs as envs_spyre
 
+# TODO: fix import when we upgrade to vLLM 0.9.3
+PoolingTask = None
+
 logger = init_logger(__name__)
 
 BACKEND_LIST = ['sendnn', 'inductor']
@@ -243,6 +246,10 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
         if model_input.token_type_ids is not None:
             torch._dynamo.mark_static(model_input.token_type_ids, 0)
             torch._dynamo.mark_static(model_input.token_type_ids, 1)
+
+    def get_supported_pooling_tasks(
+            self) -> list["PoolingTask"]:  # type: ignore
+        return list(self.pooler.get_supported_tasks())
 
     @SpyrePlatform.inference_mode()
     def execute_model(
