@@ -41,6 +41,7 @@ def check_scheduler_inference_steps(
     steps_add_reqs: list[int],
     checked_steps: list[dict[str, Any]],
     max_num_seqs: int,
+    max_model_len: int,
     available_blocks: int,
     use_cb: bool = True,
 ):

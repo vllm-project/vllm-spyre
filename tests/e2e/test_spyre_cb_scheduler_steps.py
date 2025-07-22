@@ -33,6 +33,7 @@ def test_prompts_aligned_with_tkv_boundaries(model: str, backend: str,
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
     available_blocks = -1  # no restriction
     max_num_seqs = 2
+    max_model_len = 256
 
     checked_steps = [
         {
@@ -170,6 +171,7 @@ def test_prompts_aligned_with_tkv_boundaries(model: str, backend: str,
         steps_add_reqs=steps_add_reqs,
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
         available_blocks=available_blocks,
         use_cb=True,
     )
@@ -197,6 +199,7 @@ def test_prompts_misaligned_with_tkv_boundaries(
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
     available_blocks = -1  # no restriction
     max_num_seqs = 2
+    max_model_len = 256
 
     checked_steps = [
         {
@@ -332,6 +335,7 @@ def test_prompts_misaligned_with_tkv_boundaries(
         steps_add_reqs=steps_add_reqs,
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
         available_blocks=available_blocks,
         use_cb=True,
     )
@@ -358,6 +362,7 @@ def test_two_sequences_finish_same_time_as_new_arrive(
     steps_add_reqs = [0, 0, 31]
     available_blocks = -1  # no restriction
     max_num_seqs = 2
+    max_model_len = 256
 
     checked_steps = [
         {
@@ -470,6 +475,7 @@ def test_two_sequences_finish_same_time_as_new_arrive(
         steps_add_reqs=steps_add_reqs,
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
         available_blocks=available_blocks,
         use_cb=True,
     )
@@ -496,6 +502,7 @@ def test_new_sequence_joins_during_decode(model: str, backend: str,
     steps_add_reqs = [0, 0, 32, 131]
     available_blocks = -1  # no restriction
     max_num_seqs = 4
+    max_model_len = 256
 
     checked_steps = [
         {
@@ -707,6 +714,7 @@ def test_new_sequence_joins_during_decode(model: str, backend: str,
         steps_add_reqs=steps_add_reqs,
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
         available_blocks=available_blocks,
         use_cb=True,
     )
@@ -731,6 +739,7 @@ def test_prompt_too_long_for_current_tkv(model: str, backend: str,
     steps_add_reqs = [0, 0]
     available_blocks = -1  # no restriction
     max_num_seqs = 2
+    max_model_len = 256
 
     checked_steps = [
         {
@@ -854,6 +863,7 @@ def test_prompt_too_long_for_current_tkv(model: str, backend: str,
         steps_add_reqs=steps_add_reqs,
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
         available_blocks=available_blocks,
         use_cb=True,
     )
@@ -879,6 +889,7 @@ def test_requested_tokens_not_fitting_remaining_space(
     steps_add_reqs = [0, 0, 0]
     available_blocks = -1  # no restriction
     max_num_seqs = 2
+    max_model_len = 256
 
     checked_steps = [
         {
@@ -1039,6 +1050,7 @@ def test_requested_tokens_not_fitting_remaining_space(
         steps_add_reqs=steps_add_reqs,
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
         available_blocks=available_blocks,
         use_cb=True,
     )
@@ -1067,6 +1079,8 @@ def test_requests_use_all_available_blocks(model: str, backend: str,
     # total number of blocks needed if scheduled together : 4 * (1 + 1) = 8
     available_blocks = 8
     max_num_seqs = 4
+    max_model_len = 256
+
     checked_steps = [
         {
             "step": 0,
@@ -1170,6 +1184,7 @@ def test_requests_use_all_available_blocks(model: str, backend: str,
         steps_add_reqs=steps_add_reqs,
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
         available_blocks=available_blocks,
         use_cb=True,
     )
@@ -1199,6 +1214,8 @@ def test_requests_use_more_than_available_blocks(
     # total number of blocks needed if scheduled together : 4 * (1 + 1) = 8
     available_blocks = 4
     max_num_seqs = 4
+    max_model_len = 256
+
     checked_steps = [
         {
             "step": 0,
@@ -1327,6 +1344,7 @@ def test_requests_use_more_than_available_blocks(
         steps_add_reqs=steps_add_reqs,
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
         available_blocks=available_blocks,
         use_cb=True,
     )
