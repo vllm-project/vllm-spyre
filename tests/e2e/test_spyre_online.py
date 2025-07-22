@@ -88,7 +88,7 @@ def test_openai_serving_gptq(remote_openai_server, model, backend,
 @pytest.mark.parametrize("backend", ["sendnn"])
 @pytest.mark.parametrize("warmup_shape", [[(64, 20, 1)]])
 def test_openai_serving_fp8(remote_openai_server, model, backend,
-                             warmup_shape, quantization):
+                            warmup_shape):
     """Test online serving a GPTQ model with the sendnn backend only"""
 
     client = remote_openai_server.get_client()
