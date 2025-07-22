@@ -29,8 +29,9 @@ packages is not required for GPU-only installations.
 
 ## Install vLLM with the vLLM-Spyre Plugin
 
-You can either install a released version of the vllm-Spyre plugin directly from [PyPI](https://pypi.org/project/vllm-spyre/)
-or you can install from source by cloning the [vllm-Spyre](https://github.com/vllm-project/vllm-spyre) repo from GitHub.
+You can either install a released version of the vllm-Spyre plugin directly from
+[PyPI](https://pypi.org/project/vllm-spyre/) or you can install from source by
+cloning the [vllm-Spyre](https://github.com/vllm-project/vllm-spyre) repo from GitHub.
 
 === "Release (PyPI)"
 
@@ -73,10 +74,11 @@ or you can install from source by cloning the [vllm-Spyre](https://github.com/vl
 
 ## Install PyTorch
 
-Finally, `torch` is needed to run examples and tests. If it is not already installed, install it using `pip`:
+Finally, `torch` is needed to run examples and tests. If it is not already installed,
+install it using `pip`:
 
 ```sh
-pip install torch==2.7.0
+pip install torch==2.7.1
 ```
 
 ## Trouble-Shooting
@@ -113,7 +115,7 @@ the (correct) Python Virtual Environment:
 RuntimeError: Device string must not be empty
 ```
 
-### No module named 'torch'
+### No module named `torch`
 
 You may have installed PyTorch into the system-wide Python environment but may
 have missed to install it into the virtual environment for vLLM-Spyre:
