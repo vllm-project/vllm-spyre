@@ -170,6 +170,7 @@ class FmsModelBase(nn.Module):
         sendnn_dynamic: bool,
         **kwargs,
     ) -> None:
+
         if model_config.quantization == "gptq":
             if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
                 from fms_mo.aiu_addons.gptq import (  # noqa: F401
@@ -192,8 +193,8 @@ class FmsModelBase(nn.Module):
 
         elif model_config.quantization == "fp8":
             if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
-                from fms_mo.aiu_addons.fp8 import (  # noqa: F401
-                    fp8_adapter, fp8_linear)
+                from fms_mo.aiu_addons.fp8 import (fp8_adapter,  # noqa: F401
+                                                   fp8_linear)
                 linear_type = "fp8_aiu"
                 logger.info("Loaded `aiu_addons` functionalities")
             else:
