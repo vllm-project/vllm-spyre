@@ -18,9 +18,14 @@ pip install uv
 Now create and activate a new Python (3.12) [virtual environment](https://docs.astral.sh/uv/pip/environments/):
 
 ```sh
-uv venv --python 3.12 --seed .venv
+uv venv --python 3.12 --seed .venv --system-site-packages
 source .venv/bin/activate
 ```
+
+Since the full `torch_sendnn` stack is only available pre-installed in a base
+environment, we need to add the `--system-site-packages` to the new virtual
+environment to fully support the Spyre hardware. Pulling in the system site
+packages is not required for GPU-only installations.
 
 ## Install vLLM with the vLLM-Spyre Plugin
 
@@ -78,6 +83,11 @@ pip install torch==2.7.0
 
 ## Trouble-Shooting
 
+As the installation process is evolving over time, you may have arrived here after
+following outdated installation steps. If you encountered any of the errors below,
+it may be easiest to start over with a new Python virtual environment (`.venv`)
+as outlined above.
+
 ### Installation using `pip` (instead of `uv`)
 
 If you happen to have followed the pre-`uv` installation instructions, you might
@@ -105,16 +115,31 @@ the (correct) Python Virtual Environment:
 RuntimeError: Device string must not be empty
 ```
 
+### No module named 'torch'
+
+You may have installed PyTorch into the system-wide Python environment but may
+have missed to install it into the virtual environment for vLLM-Spyre:
+
 ```sh
   File "/home/senuser/multi-aiu-dev/_dev/sentient-ci-cd/_dev/sen_latest/vllm-spyre/.venv/lib64/python3.12/site-packages/vllm/env_override.py", line 4, in <module>
     import torch
 ModuleNotFoundError: No module named 'torch'
 ```
 
-### No module named 'torch'
+Make sure to activate the same virtual environment for installing `torch` that
+was used to install `vllm-spyre`. If you already have a system-wide `torch`
+installation and want to "re-use" that for your `vllm-spyre` environment, you can
+create a new virtual environment and add the `--system-site-packages` flag to
+pull in the `torch` dependencies from the base Python environment:
 
-If you forget to override the torch dependencies when installing from PyPI you
-will likely see a dependency resolution error like this:
+```sh
+rm -rf .venv
+uv venv --python 3.12 --seed .venv --system-site-packages
+source .venv/bin/activate
+```
+
+If you forget to override the torch dependencies when installing a released version
+from PyPI, you will likely see a dependency resolution error like this:
 
 ```sh
 $ uv pip install vllm-spyre
@@ -145,8 +170,8 @@ Resolved 155 packages in 45ms
   help: `xformers` (v0.0.28.post1) was included because `vllm-spyre` (v0.1.0) depends on `vllm` (v0.2.5) which depends on `xformers`
 ```
 
-To avoid this error, make sure to include the dependency overrides as described
-in the installation from source section above.
+To avoid this error, make sure to include the dependency `--overrides` as described
+in the installation from a release (PyPI) section above.
 
 ### No solution found when resolving dependencies
 
@@ -183,5 +208,5 @@ $ uv pip install vllm-spyre==0.4.1
       and you require vllm-spyre==0.4.1, we can conclude that your requirements are unsatisfiable.
 ```
 
-To avoid this error, make sure to include the dependency overrides as described
+To avoid this error, make sure to include the dependency `--overrides` as described
 in the installation from source section above.
