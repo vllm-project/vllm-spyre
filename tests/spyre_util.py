@@ -179,6 +179,7 @@ def generate_spyre_vllm_output(
     warmup_shapes: Optional[list[tuple[int, int, int]]] = None,
     max_num_seqs: Optional[int] = None,
     use_cb: bool = False,
+    quantization: Optional[str] = None,
 ) -> list[dict[str, Any]]:
 
     # ---- For static batching ----
@@ -205,14 +206,13 @@ def generate_spyre_vllm_output(
     # shutdown engine this context.
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
-    vllm_model = LLM(
-        model=model,
-        tokenizer=model,
-        max_model_len=max_model_len,
-        max_num_seqs=max_num_seqs,
-        block_size=block_size,
-        tensor_parallel_size=tensor_parallel_size,
-    )
+    vllm_model = LLM(model=model,
+                     tokenizer=model,
+                     max_model_len=max_model_len,
+                     max_num_seqs=max_num_seqs,
+                     block_size=block_size,
+                     tensor_parallel_size=tensor_parallel_size,
+                     quantization=quantization)
 
     vllm_outputs = vllm_model.generate(prompts, sampling_params)
     results = []
@@ -504,6 +504,11 @@ def get_spyre_model_list(isEmbeddings=False, quantization=None):
         # TODO: need a HF hub reference here as a default
         user_test_model_list = _get_or_default("VLLM_SPYRE_TEST_MODEL_LIST",
                                                "granite-3.0-8b-instruct-gptq")
+        marks = [pytest.mark.decoder, pytest.mark.quantized, pytest.mark.spyre]
+    elif quantization == "fp8":
+        # TODO: need a HF hub reference here as a default
+        user_test_model_list = _get_or_default("VLLM_SPYRE_TEST_MODEL_LIST",
+                                               "granite-3.3-8b-instruct-FP8")
         marks = [pytest.mark.decoder, pytest.mark.quantized, pytest.mark.spyre]
     else:
         user_test_model_list = _get_or_default(
