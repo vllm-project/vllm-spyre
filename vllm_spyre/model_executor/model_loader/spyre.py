@@ -171,43 +171,33 @@ class FmsModelBase(nn.Module):
         **kwargs,
     ) -> None:
 
-        if model_config.quantization == "gptq":
+        quant_type = model_config.quantization
+        if quant_type in ("gptq", "fp8"):
             if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
-                from fms_mo.aiu_addons.gptq import (  # noqa: F401
-                    gptq_aiu_adapter, gptq_aiu_linear)
-                linear_type = "gptq_aiu"
+                if quant_type == "gptq":
+                    from fms_mo.aiu_addons.gptq import (  # noqa: F401
+                        gptq_aiu_adapter, gptq_aiu_linear)
+                else:
+                    from fms_mo.aiu_addons.fp8 import (  # noqa: F401
+                        fp8_adapter, fp8_linear)
+                linear_type = f"{quant_type}_aiu"
                 logger.info("Loaded `aiu_addons` functionalities")
             else:
-                linear_type = "gptq_cpu"
-                logger.warning("GPTQ is not expected to work on CPU.")
+                linear_type = f"{quant_type}_cpu"
+                logger.warning("%s is not expected to work on CPU.",
+                               quant_type.upper())
 
             quant_cfg = model_config._parse_quant_hf_config()
 
-            linear_config = {
-                "linear_type": linear_type,
-                "group_size": quant_cfg['group_size'],
-                "desc_act": quant_cfg['desc_act'],
-            }
+            linear_config = {"linear_type": linear_type}
+            if quant_type == "gptq":
+                linear_config.update({
+                    "group_size": quant_cfg["group_size"],
+                    "desc_act": quant_cfg["desc_act"],
+                })
+
             self.dtype = None
-            model_source = "hf_gptq_aiu"
-
-        elif model_config.quantization == "fp8":
-            if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
-                from fms_mo.aiu_addons.fp8 import (fp8_adapter,  # noqa: F401
-                                                   fp8_linear)
-                linear_type = "fp8_aiu"
-                logger.info("Loaded `aiu_addons` functionalities")
-            else:
-                linear_type = "fp8_cpu"
-                logger.warning("FP8 is not expected to work on CPU.")
-
-            quant_cfg = model_config._parse_quant_hf_config()
-
-            linear_config = {
-                "linear_type": linear_type,
-            }
-            self.dtype = None
-            model_source = "hf_fp8_aiu"
+            model_source = f"hf_{quant_type}_aiu"
 
         else:
             linear_config = {"linear_type": "torch_linear"}
