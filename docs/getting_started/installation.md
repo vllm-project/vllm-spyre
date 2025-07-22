@@ -34,7 +34,6 @@ or you can install from source by cloning the [vllm-Spyre](https://github.com/vl
 
 === "Release (PyPI)"
 
-<!-- pyml disable-next-line code-block-style -->
     Note, to avoid any dependency resolution errors, we will install PyTorch
     separately and tell `uv` to ignore any of it's dependencies while installing
     the `vllm-spyre` plugin.
@@ -50,7 +49,6 @@ or you can install from source by cloning the [vllm-Spyre](https://github.com/vl
 
 === "Source (GitHub)"
 
-<!-- pyml disable-next-line code-block-style -->
     First, clone the `vllm-spyre` repo:
     
     ```sh
