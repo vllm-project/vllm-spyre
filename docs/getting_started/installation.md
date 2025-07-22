@@ -77,10 +77,10 @@ cloning the [vllm-Spyre](https://github.com/vllm-project/vllm-spyre) repo from G
 Finally, `torch` is needed to run examples and tests. If it is not already installed,
 install it using `pip`.
 
-Note, on Linux the `+cpu` package should be installed, since we don't need any of
-the `cuda` dependencies that are included by default on linux installs. This requires
-`--index-url https://download.pytorch.org/whl/cpu` on linux. On Windows and macOS
-the cpu package is the default one.
+Note that on Linux the `+cpu` package should be installed, since we don't need any of
+the `cuda` dependencies that are included by default for Linux installs. This requires
+`--index-url https://download.pytorch.org/whl/cpu` on Linux. On Windows and macOS
+the CPU package is the default one.
 
 === "Linux"
 
