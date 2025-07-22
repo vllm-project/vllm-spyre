@@ -128,7 +128,7 @@ ModuleNotFoundError: No module named 'torch'
 
 Make sure to activate the same virtual environment for installing `torch` that
 was used to install `vllm-spyre`. If you already have a system-wide `torch`
-installation and want to "re-use" that for your `vllm-spyre` environment, you can
+installation and want to reuse that for your `vllm-spyre` environment, you can
 create a new virtual environment and add the `--system-site-packages` flag to
 pull in the `torch` dependencies from the base Python environment:
 
