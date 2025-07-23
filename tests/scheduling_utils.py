@@ -188,7 +188,7 @@ def check_scheduler_inference_steps(
         step_output = engine_core.step()
         engine_core_output = step_output[0].get(0)
         request_outputs = (engine_core_output.outputs
-                            if engine_core_output is not None else [])
+                           if engine_core_output is not None else [])
 
         if collect_outputs:
             for output in request_outputs:
