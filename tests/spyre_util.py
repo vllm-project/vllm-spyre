@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import time
+import random
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -169,7 +170,7 @@ def patch_warmup_shapes(warmup_shapes: list[tuple[int, int, int]],
 # vLLM / Spyre
 def generate_spyre_vllm_output(
     model: str,
-    prompts: list[str],
+    prompts: Union[list[str], list[list[int]]],
     max_model_len: int,
     block_size: int,
     sampling_params: Union[SamplingParams, list[SamplingParams]],
@@ -539,12 +540,27 @@ def create_text_prompt(model: str, min_tokens: int, max_tokens: int) -> str:
     return prompt
 
 
-def create_random_request(
-        request_id: int, num_tokens: int,
-        sampling_params: SamplingParams) -> EngineCoreRequest:
+def create_random_request(request_id: int,
+                          num_tokens: int,
+                          sampling_params: SamplingParams,
+                          from_model_vocab: bool = False,
+                          model: Optional[str] = None) -> EngineCoreRequest:
+
+    if from_model_vocab:
+        assert model is not None, "Prompt requested to be generated from " \
+        "model's vocabulary: need to provide model."
+
+        tokenizer = AutoTokenizer.from_pretrained(model)
+        valid_token_ids = [
+            v for v in tokenizer.vocab.values()
+            if v not in tokenizer.all_special_ids
+        ]
+        prompt_token_ids = random.choices(valid_token_ids, k=num_tokens)
+    else:
+        prompt_token_ids = [request_id] * num_tokens
 
     return EngineCoreRequest(request_id=str(request_id),
-                             prompt_token_ids=[request_id] * num_tokens,
+                             prompt_token_ids=prompt_token_ids,
                              mm_inputs=None,
                              mm_hashes=None,
                              mm_placeholders=None,

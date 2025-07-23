@@ -88,6 +88,8 @@ def check_scheduler_inference_steps(
     # ------
 
     collected_outputs = defaultdict(lambda: {"tokens_ids": [], "logprobs": []})
+    generated_prompts = []
+    prompts_sampling_params = []
 
     # Setup the engine
     engine_args = EngineArgs(model=model,
@@ -115,8 +117,12 @@ def check_scheduler_inference_steps(
                                          ignore_eos=True)
         request = create_random_request(request_id=i,
                                         num_tokens=prompt_length,
-                                        sampling_params=sampling_params)
+                                        sampling_params=sampling_params,
+                                        from_model_vocab=True,
+                                        model=model)
         requests.append((add_step, request))
+        generated_prompts.append(request.prompt_token_ids)
+        prompts_sampling_params.append(sampling_params)
 
     # In-between steps are added as normal decode steps
     checked_steps = augment_checked_steps(checked_steps)
@@ -203,9 +209,9 @@ def check_scheduler_inference_steps(
 
     # Return collected outputs as list
     if not collected_outputs:
-        return []
+        return [], generated_prompts, prompts_sampling_params
     else:
         output_keys = sorted(int(k) for k in collected_outputs)
         assert output_keys[0] == 0 and output_keys[-1] == len(output_keys) - 1
         collected_outputs = [collected_outputs[str(k)] for k in output_keys]
-        return collected_outputs
+        return collected_outputs, generated_prompts, prompts_sampling_params
