@@ -577,7 +577,6 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         # update position ids and attention mask
         self._update_position_ids()
         self._update_mask()
-        #print("mask:", self._mask)
 
         input_tokens = torch.tensor(input_tokens,
                                     dtype=torch.long,
@@ -664,7 +663,6 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         """Yoinked from
         https://github.com/foundation-model-stack/aiu-fms-testing-utils/pull/13
         """
-        # print(model_input.input_masks.shape)
         if not self.warmup_mode:
             # Only mark tensors when we're warming up and compiling the graphs
             return
