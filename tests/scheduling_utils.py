@@ -87,9 +87,8 @@ def check_scheduler_inference_steps(
             "List of checked steps needs to be of increasing order of step")
     # ------
 
-    collected_outputs = defaultdict(lambda: {"tokens_ids": [], "logprobs": []})
+    collected_outputs = defaultdict(lambda: {"token_ids": [], "logprobs": []})
     generated_prompts = []
-    prompts_sampling_params = []
 
     # Setup the engine
     engine_args = EngineArgs(model=model,
@@ -122,7 +121,6 @@ def check_scheduler_inference_steps(
                                         model=model)
         requests.append((add_step, request))
         generated_prompts.append(request.prompt_token_ids)
-        prompts_sampling_params.append(sampling_params)
 
     # In-between steps are added as normal decode steps
     checked_steps = augment_checked_steps(checked_steps)
@@ -202,16 +200,25 @@ def check_scheduler_inference_steps(
                 new_logprobs = output.new_logprobs.logprobs
                 assert len(new_token_ids) == 1 and len(new_logprobs) == 1
 
-                collected_outputs[output.request_id]["tokens_ids"].append(
+                collected_outputs[output.request_id]["token_ids"].append(
                     new_token_ids[0])
                 collected_outputs[output.request_id]["logprobs"].append(
                     new_logprobs[0][0])
 
     # Return collected outputs as list
     if not collected_outputs:
-        return [], generated_prompts, prompts_sampling_params
+        return [], generated_prompts
     else:
         output_keys = sorted(int(k) for k in collected_outputs)
         assert output_keys[0] == 0 and output_keys[-1] == len(output_keys) - 1
-        collected_outputs = [collected_outputs[str(k)] for k in output_keys]
-        return collected_outputs, generated_prompts, prompts_sampling_params
+
+        # convert dict of dicts to ordered list and make values immutable
+        collected_outputs_new = []
+        for k in output_keys:
+            output = collected_outputs[str(k)]
+            for k, list_values in output.items():
+                if isinstance(list_values, list):
+                    output[k] = tuple(list_values)
+            collected_outputs_new.append(output)
+
+        return collected_outputs_new, generated_prompts
