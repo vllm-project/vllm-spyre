@@ -40,6 +40,8 @@ class SpyrePlatform(Platform):
     # "spyre" device_name no longer worked due to https://github.com/vllm-project/vllm/pull/16464
     device_name: str = "cpu"
     device_type: str = "cpu"
+    # compressed-tensors supported by
+    # https://github.com/foundation-model-stack/fms-model-optimizer/blob/main/fms_mo/aiu_addons/__init__.py
     supported_quantization: list[str] = ["gptq", "fp8", "compressed-tensors"]
     _warmup_shapes: Optional[tuple[dict[str, int], ...]] = None
     _block_size: int = 64  # hardcoded Spyre constraint for now

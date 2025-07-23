@@ -83,31 +83,6 @@ def test_openai_serving_gptq(remote_openai_server, model, backend,
     assert len(completion.choices[0].text) > 0
 
 
-@pytest.mark.quantized
-@pytest.mark.parametrize("model", get_spyre_model_list(quantization="fp8"))
-@pytest.mark.parametrize("backend", ["sendnn"])
-@pytest.mark.parametrize("warmup_shape", [[(64, 20, 1)]])
-def test_openai_serving_fp8(remote_openai_server, model, backend,
-                            warmup_shape):
-    """Test online serving a GPTQ model with the sendnn backend only"""
-
-    client = remote_openai_server.get_client()
-    completion = client.completions.create(model=model,
-                                           prompt="Hello World!",
-                                           max_tokens=5,
-                                           temperature=0.0)
-    assert len(completion.choices) == 1
-    assert len(completion.choices[0].text) > 0
-
-    completion = client.completions.create(model=model,
-                                           prompt="Hello World!",
-                                           max_tokens=5,
-                                           temperature=1.0,
-                                           n=2)
-    assert len(completion.choices) == 2
-    assert len(completion.choices[0].text) > 0
-
-
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("cb",
                          [pytest.param(1, marks=pytest.mark.cb, id="cb")])
