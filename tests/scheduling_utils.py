@@ -1,5 +1,5 @@
 import copy
-from collections import defaultdict, deque
+from collections import deque
 from typing import Any
 
 import pytest
@@ -44,7 +44,6 @@ def check_scheduler_inference_steps(
     max_model_len: int,
     available_blocks: int,
     use_cb: bool = True,
-    collect_outputs: bool = False,
 ):
     """
     Test the scheduler execution by comparing the scheduler attributes at each 
@@ -87,8 +86,6 @@ def check_scheduler_inference_steps(
             "List of checked steps needs to be of increasing order of step")
     # ------
 
-    collected_outputs = defaultdict(lambda: {"tokens_ids": [], "logprobs": []})
-
     # Setup the engine
     engine_args = EngineArgs(model=model,
                              tokenizer=model,
@@ -111,7 +108,6 @@ def check_scheduler_inference_steps(
         # after max_tokens exactly
         sampling_params = SamplingParams(max_tokens=max_tokens,
                                          temperature=0.0,
-                                         logprobs=0,
                                          ignore_eos=True)
         request = create_random_request(request_id=i,
                                         num_tokens=prompt_length,
@@ -186,26 +182,10 @@ def check_scheduler_inference_steps(
 
         # Perform next step
         step_output = engine_core.step()
-        engine_core_output = step_output[0].get(0)
-        request_outputs = (engine_core_output.outputs
-                            if engine_core_output is not None else [])
-
-        if collect_outputs:
-            for output in request_outputs:
-                new_token_ids = output.new_token_ids
-                new_logprobs = output.new_logprobs.logprobs
-                assert len(new_token_ids) == 1 and len(new_logprobs) == 1
-
-                collected_outputs[output.request_id]["tokens_ids"].append(
-                    new_token_ids[0])
-                collected_outputs[output.request_id]["logprobs"].append(
-                    new_logprobs[0][0])
-
-    # Return collected outputs as list
-    if not collected_outputs:
-        return []
-    else:
-        output_keys = sorted(int(k) for k in collected_outputs)
-        assert output_keys[0] == 0 and output_keys[-1] == len(output_keys) - 1
-        collected_outputs = [collected_outputs[str(k)] for k in output_keys]
-        return collected_outputs
+        # backward compatibility
+        if isinstance(step_output, tuple):
+            engine_core_output = step_output[0].get(0)
+            request_outputs = (engine_core_output.outputs
+                               if engine_core_output is not None else [])
+        else:
+            request_outputs = step_output.outputs
