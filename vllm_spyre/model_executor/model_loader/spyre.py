@@ -45,6 +45,7 @@ class SpyreCausalLM(nn.Module):
 
     def __init__(
         self,
+        vllm_config: VllmConfig,
         model_config: ModelConfig,
         parallel_config: ParallelConfig,
         scheduler_config: SchedulerConfig,
@@ -470,11 +471,11 @@ class VllmModelBase(nn.Module):
         self.model: nn.Module
 
         # Load the weights from the cached or downloaded files.
-        self.load_weights(model_config=model_config,
+        self.load_weights(model_config=self.vllm_config.model_config,
                           max_prompt_length=max_prompt_length,
                           max_decode_length=max_decode_length,
                           distributed_strategy="tp"
-                          if parallel_config.world_size > 1 else None,
+                          if self.vllm_config.parallel_config.world_size > 1 else None,
                           sendnn_dynamic=sendnn_dynamic)
 
     def load_weights(
@@ -596,13 +597,13 @@ class StaticBatchingVllmModel(VllmModelBase):
     def forward(
         self,
         input_ids: torch.Tensor,
-        positions: torch.Tensor,
+        position_ids: torch.Tensor,
         **extra_kwargs,
     ) -> torch.Tensor:
 
         output = self.model(
             input_ids,
-            positions=positions,
+            positions=position_ids,
         )
 
         return output

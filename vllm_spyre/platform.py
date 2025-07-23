@@ -69,7 +69,10 @@ class SpyrePlatform(Platform):
         cache_config = vllm_config.cache_config
         compilation_config = vllm_config.compilation_config
 
+        from vllm.config import CompilationLevel  # noqa: E402
         compilation_config.pass_config.enable_fusion = False
+        compilation_config.pass_config.enable_attn_fusion = False
+        compilation_config.level = CompilationLevel.NO_COMPILATION
 
         if scheduler_config.is_multi_step:
             raise NotImplementedError

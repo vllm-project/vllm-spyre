@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Optional, cast
 
 import torch
 from torch import nn
+from vllm.attention.layer import Attention
 from vllm.config import DeviceConfig, VllmConfig, get_layers_from_vllm_config
 from vllm.forward_context import set_forward_context
 from vllm.logger import init_logger
@@ -112,14 +113,6 @@ class SpyreModelRunner:
         # Requests
         self.requests: dict[str, CachedRequestState] = {}
 
-        if envs_spyre.VLLM_SPYRE_USE_VLLM:
-            self.vllm_model_impl=True
-            self.attn_backend = SpyreSDPABackend
-            self.attn_metadata_builder = SpyreSDPABackend.get_builder_cls()()
-            self.attn_metadata: Optional[SpyreSDPAMetadata] = None
-        else:
-            self.attn_metadata_builder = build_attn_metadata
-
     def get_model(self) -> nn.Module:
         return self.model
 
@@ -128,6 +121,7 @@ class SpyreModelRunner:
         max_pad_length = max(prompt_lens)
         max_decode_length = max(num_decode_tokens)
         self.model = SpyreCausalLM(
+            self.vllm_config,
             self.model_config,
             parallel_config=self.parallel_config,
             scheduler_config=self.scheduler_config,
@@ -137,10 +131,7 @@ class SpyreModelRunner:
 
     @property
     def vocab_size(self) -> int:
-        if self.vllm_model_impl:
-            return self.model.model.model.config.vocab_size
-        else:
-            return self.model.model.model.config.src_vocab_size
+        return self.model.model.model.config.src_vocab_size
 
     def _prepare_pad_input_ids(
         self,
@@ -221,27 +212,14 @@ class SpyreModelRunner:
         # We do at least use the real size from the cache config.
         block_size = self.vllm_config.cache_config.block_size
 
-        if not self.vllm_model_impl:
-            attn_spec = FullAttentionSpec(
-                block_size=block_size,
-                num_kv_heads=1,
-                head_size=1,
-                dtype=torch.float16,
-                use_mla=False,
-            )
-            return {"foo": attn_spec}
-
-        kv_cache_spec: dict[str, KVCacheSpec] = {}
-        attn_layers = get_layers_from_vllm_config(self.vllm_config, Attention)
-        for layer_name, attn_module in attn_layers.items():
-            kv_cache_spec[layer_name] = FullAttentionSpec(
-                block_size=block_size,
-                num_kv_heads=attn_module.num_kv_heads,
-                head_size=attn_module.head_size,
-                dtype=torch.float16,
-                use_mla=False,
-            )
-        return kv_cache_spec
+        attn_spec = FullAttentionSpec(
+            block_size=block_size,
+            num_kv_heads=1,
+            head_size=1,
+            dtype=torch.float16,
+            use_mla=False,
+        )
+        return {"foo": attn_spec}
 
     def complete_warmup(self):
         """Turn off warmup mode once the warmup is complete"""
@@ -418,16 +396,16 @@ class SpyreModelRunner:
         model_input = self.prepare_model_input(scheduler_output)
 
         # Execute the model
-        attn_metadata = self.build_attn_metadata(model_input)
-        with set_forward_context(attn_metadata, self.vllm_config):
+        self.attn_metadata = self.build_attn_metadata(model_input)
+        with set_forward_context(self.attn_metadata, self.vllm_config):
             hidden_states = self.model(input_ids=model_input.input_tokens,
                                        positions=model_input.input_positions,
                                        masks=model_input.input_masks,
                                        is_prompt=model_input.is_prompt)
 
         # Compute the logits.
-        if self.vllm_model_impl:
-            hidden_states =  hidden_states[:, -1, :] # Get last token of every batch
+        # if self.vllm_model_impl:
+        #     hidden_states =  hidden_states[:, -1, :] # Get last token of every batch
         logits = self.model.compute_logits(hidden_states, None)
 
         is_prefill = cast(bool, model_input.is_prompt)
@@ -503,28 +481,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
             kv_cache_config: Configuration for the KV cache, including the KV
             cache size of each layer
         """
-        if not self.vllm_model_impl:
-            return
-        self.kv_cache_config = kv_cache_config
-        kv_caches: dict[str, torch.Tensor] = {}
-        num_blocks = 10
-
-        for i , kv_cache_group_spec in enumerate(kv_cache_config.kv_cache_groups):
-            kv_cache_spec = kv_cache_group_spec.kv_cache_spec
-            print(f"Block size: {kv_cache_spec.block_size}")
-            for layer_name in kv_cache_group_spec.layer_names:
-                kv_cache_shape = self.attn_backend.get_kv_cache_shape(
-                        num_blocks,
-                        kv_cache_spec.block_size,
-                        kv_cache_spec.num_kv_heads,
-                        kv_cache_spec.head_size)
-                spyre_kv_cache = torch.zeros(kv_cache_shape, dtype=torch.float16)
-                #spyre_kv_cache = None
-                kv_caches[layer_name] = spyre_kv_cache
-
-        forward_context = self.vllm_config.compilation_config.static_forward_context
-        for layer_name, kv_cache in kv_caches.items():
-            forward_context[layer_name].kv_cache = [kv_cache]
+        pass
 
     def _prepare_prompt(
         self,
@@ -620,6 +577,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         # update position ids and attention mask
         self._update_position_ids()
         self._update_mask()
+        #print("mask:", self._mask)
 
         input_tokens = torch.tensor(input_tokens,
                                     dtype=torch.long,
@@ -706,6 +664,7 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
         """Yoinked from
         https://github.com/foundation-model-stack/aiu-fms-testing-utils/pull/13
         """
+        # print(model_input.input_masks.shape)
         if not self.warmup_mode:
             # Only mark tensors when we're warming up and compiling the graphs
             return
@@ -723,14 +682,16 @@ class StaticBatchingSpyreModelRunner(SpyreModelRunner):
             torch._dynamo.mark_static(model_input.input_positions, 1)
         else:
             # we always want the decode to be dynamic on sequence
-            torch._dynamo.mark_dynamic(model_input.input_masks, 2)
+            torch._dynamo.mark_dynamic(model_input.input_masks, 1)
+            # torch._dynamo.mark_dynamic(model_input.input_masks, 2)
 
             # here self.model.model is a StaticBatchingFmsModel
-            for layer in self.model.model.past_key_value_states:
-                for tensor in layer:
-                    torch._dynamo.mark_static(tensor, 0)
-                    # This used to be baked into the model's forward pass
-                    torch._dynamo.mark_dynamic(tensor, 2)
+            if self.model.model.past_key_value_states is not None:
+                for layer in self.model.model.past_key_value_states:
+                    for tensor in layer:
+                        torch._dynamo.mark_static(tensor, 0)
+                        # This used to be baked into the model's forward pass
+                        torch._dynamo.mark_dynamic(tensor, 2)
 
 
 class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
@@ -1251,3 +1212,83 @@ def _mark_input_tensors(model_input: ModelForwardInputs) -> None:
         torch._dynamo.mark_dynamic(model_input.block_table, 1)
         torch._dynamo.mark_static(model_input.slot_mapping, 1)  # always 1
         torch._dynamo.mark_static(model_input.input_positions, 1)  # always 1
+
+class VllmModelStaticSpyreModelRunner(StaticBatchingSpyreModelRunner):
+    def __init__(
+            self,
+            vllm_config: VllmConfig,
+            is_driver_worker: bool,
+            ):
+        super().__init__(vllm_config=vllm_config,
+                         is_driver_worker=is_driver_worker)
+        self.vllm_model_impl=True
+        self.attn_backend = SpyreSDPABackend
+        self.attn_metadata_builder = SpyreSDPABackend.get_builder_cls()()
+        self.attn_metadata: Optional[SpyreSDPAMetadata] = None
+
+    def initialize_kv_cache(self, kv_cache_config: KVCacheConfig) -> None:
+        """
+        Initialize KV cache based on `kv_cache_config`.
+        Args:
+            kv_cache_config: Configuration for the KV cache, including the KV
+            cache size of each layer
+        """
+        self.kv_cache_config = kv_cache_config
+        kv_caches: dict[str, torch.Tensor] = {}
+        num_blocks = 10
+
+        for i , kv_cache_group_spec in enumerate(kv_cache_config.kv_cache_groups):
+            kv_cache_spec = kv_cache_group_spec.kv_cache_spec
+            print(f"Block size: {kv_cache_spec.block_size}")
+            for layer_name in kv_cache_group_spec.layer_names:
+                kv_cache_shape = self.attn_backend.get_kv_cache_shape(
+                        num_blocks,
+                        kv_cache_spec.block_size,
+                        kv_cache_spec.num_kv_heads,
+                        kv_cache_spec.head_size)
+                spyre_kv_cache = torch.zeros(kv_cache_shape, dtype=torch.float16)
+                #spyre_kv_cache = None
+                kv_caches[layer_name] = spyre_kv_cache
+
+        forward_context = self.vllm_config.compilation_config.static_forward_context
+        for layer_name, kv_cache in kv_caches.items():
+            forward_context[layer_name].kv_cache = [kv_cache]
+
+    def build_attn_metadata(self, model_input: ModelForwardInputs) -> SpyreSDPAMetadata:
+        return self.attn_metadata_builder.build(model_input)
+
+    @property
+    def vocab_size(self) -> int:
+        return self.model.model.model.config.vocab_size
+
+    def get_kv_cache_spec(self) -> dict[str, KVCacheSpec]:
+        """
+        This method should generate the KVCache spec by parsing the kv cache
+        format from each Attention module in the static forward context.
+
+        In vLLM, this static forward context is populated by the base Attention
+        class in the modeling code. Every attention layer populates an entry
+        for itself in vllm_config.compilation_config.static_forward_context,
+        which is a dictionary of layer_name -> layer for every attention layer.
+        This allows the model runner to correctly create the kv cache spec for
+        each layer.
+
+        The spyre modeling code currently comes from `fms`, and does not
+        integrate with vLLM's modeling classes, so we don't have access to any
+        model-agnostic metadata about the attention layers. This just returns a
+        dummy value for now.
+        """
+        # We do at least use the real size from the cache config.
+        block_size = self.vllm_config.cache_config.block_size
+
+        kv_cache_spec: dict[str, KVCacheSpec] = {}
+        attn_layers = get_layers_from_vllm_config(self.vllm_config, Attention)
+        for layer_name, attn_module in attn_layers.items():
+            kv_cache_spec[layer_name] = FullAttentionSpec(
+                block_size=block_size,
+                num_kv_heads=attn_module.num_kv_heads,
+                head_size=attn_module.head_size,
+                dtype=torch.float16,
+                use_mla=False,
+            )
+        return kv_cache_spec
