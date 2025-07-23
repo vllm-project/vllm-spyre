@@ -81,6 +81,7 @@ prompts = prompts[0:args.batch_size]
 sampling_params = SamplingParams(max_tokens=args.max_tokens,
                                  temperature=0.0,
                                  ignore_eos=True)
+model = "/models/llama-7b-chat"
 # Create an LLM.
 llm = LLM(model=args.model,
           tokenizer=args.model,

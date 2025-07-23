@@ -9,13 +9,14 @@ import torch.distributed as dist
 import torch.nn as nn
 from fms.models import get_model
 from transformers import PretrainedConfig
-from vllm.config import ModelConfig, ParallelConfig, SchedulerConfig
+from vllm.config import ModelConfig, ParallelConfig, SchedulerConfig, VllmConfig
 from vllm.forward_context import get_forward_context
 from vllm.logger import init_logger
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
 from vllm.model_executor.layers.sampler import SamplerOutput, get_sampler
 from vllm.model_executor.model_loader.weight_utils import (
     download_weights_from_hf)
+from vllm.model_executor.model_loader import get_model as vllm_get_model
 from vllm.model_executor.sampling_metadata import SamplingMetadata
 
 import vllm_spyre.envs as envs_spyre
@@ -44,6 +45,7 @@ class SpyreCausalLM(nn.Module):
 
     def __init__(
         self,
+        vllm_config: VllmConfig,
         model_config: ModelConfig,
         parallel_config: ParallelConfig,
         scheduler_config: SchedulerConfig,
@@ -69,6 +71,12 @@ class SpyreCausalLM(nn.Module):
             self.model = ContinuousBatchingFmsModel(model_config,
                                                     parallel_config,
                                                     scheduler_config)
+        elif envs_spyre.VLLM_SPYRE_VLLM_MODEL:
+            self.model= StaticBatchingVllmModel(
+                    vllm_config,
+                    max_prompt_length,
+                    max_decode_length,
+            )
         else:
             self.model = StaticBatchingFmsModel(
                 model_config,
@@ -122,6 +130,9 @@ class SpyreCausalLM(nn.Module):
         hidden_states: torch.Tensor,
         sampling_metadata: SamplingMetadata,
     ) -> torch.Tensor:
+        if envs_spyre.VLLM_SPYRE_VLLM_MODEL:
+            logits = self.model.compute_logits(hidden_states, sampling_metadata)
+            return logits
         logits = self.logits_processor(None, hidden_states, sampling_metadata)
         return logits
 
@@ -138,6 +149,7 @@ class FmsModelBase(nn.Module):
 
     def __init__(
         self,
+        vllm_config: VllmConfig,
         model_config: ModelConfig,
         parallel_config: ParallelConfig,
         max_prompt_length: int,
@@ -146,6 +158,7 @@ class FmsModelBase(nn.Module):
     ) -> None:
         super().__init__()
 
+        self.vllm_config = vllm_config
         self.config: PretrainedConfig = model_config.hf_config
         self.dtype = torch.float16 if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == \
             'sendnn' else torch.float32
@@ -212,15 +225,18 @@ class FmsModelBase(nn.Module):
         # we can use fused weights unless running on Spyre
         fused_weights = envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn"
 
-        self.model = get_model(architecture="hf_configured",
-                               variant=model_config.model,
-                               model_path=model_path,
-                               source=model_source,
-                               data_type=self.dtype,
-                               distributed_strategy=distributed_strategy,
-                               group=dist.group.WORLD,
-                               fused_weights=fused_weights,
-                               linear_config=linear_config)
+        if envs_spyre.VLLM_SPYRE_VLLM_MODEL:
+            self.model = vllm_get_model(vllm_config=self.vllm_config)
+        else:
+            self.model = get_model(architecture="hf_configured",
+                                variant=model_config.model,
+                                model_path=model_path,
+                                source=model_source,
+                                data_type=self.dtype,
+                                distributed_strategy=distributed_strategy,
+                                group=dist.group.WORLD,
+                                fused_weights=fused_weights,
+                                linear_config=linear_config)
 
         self.model.eval()
         torch.set_grad_enabled(False)
@@ -439,3 +455,38 @@ class StaticBatchingFmsModel(FmsModelBase):
         logits, self.past_key_value_states = output
 
         return logits
+
+class StaticBatchingVllmModel(FmsModelBase):
+
+    def __init__(
+        self,
+        vllm_config: VllmConfig,
+        max_prompt_length: int,
+        max_decode_length: int,
+    ) -> None:
+        super().__init__(vllm_config,
+                    vllm_config.model_config,
+                    vllm_config.parallel_config,
+                    max_prompt_length,
+                    max_decode_length,
+                    sendnn_dynamic=False)
+
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        position_ids: torch.Tensor,
+        **extra_kwargs,
+    ) -> torch.Tensor:
+
+        output = self.model(
+            input_ids,
+            positions=position_ids,
+        )
+
+        return output
+
+    def compute_logits(self,
+            hidden_states: torch.Tensor,
+            sampling_metadata: SamplingMetadata) -> Optional[torch.Tensor]:
+        return self.model.compute_logits(hidden_states,
+                sampling_metadata)

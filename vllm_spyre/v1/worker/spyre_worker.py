@@ -29,7 +29,7 @@ import vllm_spyre.perf_metrics as perf_metrics
 from vllm_spyre.model_executor.model_loader import spyre_setup
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import (
-    ContinuousBatchingSpyreModelRunner, StaticBatchingSpyreModelRunner)
+    ContinuousBatchingSpyreModelRunner, StaticBatchingSpyreModelRunner, VllmModelStaticSpyreModelRunner)
 
 logger = init_logger(__name__)
 
@@ -139,7 +139,7 @@ class SpyreWorker(WorkerBaseV1):
                                kv_cache_configs: list[KVCacheConfig]) -> None:
         """Construct the KV cache from the provided configs.
         Currently, we do not support paged attention or kv caching"""
-        pass
+        self.model_runner.initialize_kv_cache(kv_cache_configs)
 
     def __init__(
         self,
@@ -164,7 +164,8 @@ class SpyreWorker(WorkerBaseV1):
             init_cached_hf_modules()
         self.model_runner: \
             Union[StaticBatchingSpyreModelRunner,
-                  ContinuousBatchingSpyreModelRunner]
+                  ContinuousBatchingSpyreModelRunner,
+                  VllmModelStaticSpyreModelRunner]
         if self.model_config.task == "embed":
             raise NotImplementedError
         else:
@@ -172,7 +173,11 @@ class SpyreWorker(WorkerBaseV1):
                 self.model_runner = ContinuousBatchingSpyreModelRunner(
                     self.vllm_config, self.is_driver_worker)
             else:
-                self.model_runner = StaticBatchingSpyreModelRunner(
+                if envs_spyre.VLLM_SPYRE_VLLM_MODEL:
+                    self.model_runner = VllmModelStaticSpyreModelRunner(
+                    self.vllm_config, self.is_driver_worker)
+                else:
+                    self.model_runner = StaticBatchingSpyreModelRunner(
                     self.vllm_config, self.is_driver_worker)
                 self.spyre_warmup_shapes = SpyrePlatform.get_warmup_shapes(
                     self.vllm_config.scheduler_config)
