@@ -10,6 +10,7 @@ Brief overview of what has been implemented so far in VLLM to test / debug conti
 * **Purpose:** Debugging (ie. using manual execution)
 
 ### Description
+
 * Runs inference on a set of prompts with continuous batching enabled (number of prompts is parametrizable)
 * Prints the generated text for each sequence.
 * All the requested sequences are defined in the beginning, there is no requests joining the waiting queue while the decoding of some other request has already started.
@@ -17,6 +18,7 @@ Brief overview of what has been implemented so far in VLLM to test / debug conti
 * If `--compare-with-CPU` is set, then the output text is compared to the one of hugging face, running on CPU. Note that here the logprobs are not compared, only tokens.
 
 ### Parametrization
+
 For `cb_spyre_inference.py`
 
 * `--model`: the model
@@ -49,6 +51,7 @@ For `long_context.py`: the same parameters, but with some differences:
     * Other Tests: various files including `vllm-spyre/tests/e2e/test_spyre_cb.py`
 
 <!-- markdownlint-disable MD031 MD046 -->
+
 ### Usage (when running locally)
 
 #### Commands
@@ -65,6 +68,7 @@ For `long_context.py`: the same parameters, but with some differences:
 <!-- markdownlint-enable MD031 MD046 -->
 
 #### Parameters description
+
 * `-x` option: stops the execution as soon as a test fails
 * `-s` option: show all the print statements in the code
 * `-v` option: verbose mode, make the test output more detailed: show name of each test function and whether it passed, failed or was skipped
