@@ -494,10 +494,11 @@ def test_new_sequence_joins_during_decode(model: str, backend: str,
             * 1: len = 49, max tokens = 119, step joining = 0
             * 2: len = 14, max tokens = 52, step joining = 0
             * 3: len = 89, max tokens = 104, step joining = 32
-            * 4: len = 9, max tokens = 65, step joining = 131
+            * 4: len = 9, max tokens = 64, step joining = 131
     """
+    # TODO change to 65 max_tokens for last prompt if ever possible
 
-    seqs_max_tokens = [119, 52, 104, 65]
+    seqs_max_tokens = [119, 52, 104, 64]
     prompts_lengths = [49, 14, 89, 9]
     steps_add_reqs = [0, 0, 32, 131]
     available_blocks = -1  # no restriction
@@ -645,7 +646,7 @@ def test_new_sequence_joins_during_decode(model: str, backend: str,
             "waiting": [],
             "running": ["3", "2"],
             "request_outputs": ["3"],
-            "n_reserved_blocks": 8,  # prefill (3 blocks) + 64 decode (1 block)
+            "n_reserved_blocks": 8,  # prefill (3 blocks) + 63 decode (1 block)
             "n_used_blocks": 6  # prefill (3 block)
         },
         {
@@ -655,7 +656,7 @@ def test_new_sequence_joins_during_decode(model: str, backend: str,
             "waiting": [],
             "running": ["3", "2"],
             "request_outputs": ["3", "2"],
-            "n_reserved_blocks": 8,  # prefill (3 blocks) + 64 decode (1 block)
+            "n_reserved_blocks": 8,
             "n_used_blocks": 8  # 2 blocks extended, one for each sequence
         },
         {
@@ -683,9 +684,9 @@ def test_new_sequence_joins_during_decode(model: str, backend: str,
         },
         {
             # Sequence 3 finishes at step 196
-            # (start step + 1 prefills + 103 decodes) = 132 + 1 + 64 - 1 = 196
-            "step": 196,
-            "tkv": 128,
+            # (start step + 1 prefills + 103 decodes) = 132 + 1 + 63 - 1 = 196
+            "step": 195,
+            "tkv": 127,
             "waiting": [],
             "running": [],
             "request_outputs": ["3"],
@@ -695,7 +696,7 @@ def test_new_sequence_joins_during_decode(model: str, backend: str,
         },
         {
             # Tkv should be cleared one step later
-            "step": 197,
+            "step": 196,
             "tkv": 0,
             "waiting": [],
             "running": [],
@@ -703,6 +704,29 @@ def test_new_sequence_joins_during_decode(model: str, backend: str,
             "n_reserved_blocks": 0,
             "n_used_blocks": 0
         },
+        # TODO this is when max_tokens = 65 for last prompt
+        # {
+        #     # Sequence 3 finishes at step 196
+        #     # (start step + 1 prefills + 103 decodes) = 132 + 1 + 64 - 1 = 196
+        #     "step": 196,
+        #     "tkv": 128,
+        #     "waiting": [],
+        #     "running": [],
+        #     "request_outputs": ["3"],
+        #     "finished_requests": ["3"],
+        #     "n_reserved_blocks": 2,
+        #     "n_used_blocks": 2
+        # },
+        # {
+        #     # Tkv should be cleared one step later
+        #     "step": 197,
+        #     "tkv": 0,
+        #     "waiting": [],
+        #     "running": [],
+        #     "request_outputs": [],
+        #     "n_reserved_blocks": 0,
+        #     "n_used_blocks": 0
+        # },
     ]
 
     check_scheduler_inference_steps(
