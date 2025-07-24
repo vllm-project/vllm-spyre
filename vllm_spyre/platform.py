@@ -43,6 +43,7 @@ class SpyrePlatform(Platform):
     supported_quantization: list[str] = ["gptq"]
     _warmup_shapes: Optional[tuple[dict[str, int], ...]] = None
     _block_size: int = 64  # hardcoded Spyre constraint for now
+    _num_spyre_blocks_override: int = -1  # override num of KV cache blocks
     _config: VllmConfig = None
 
     @classmethod
@@ -136,6 +137,10 @@ class SpyrePlatform(Platform):
         #       budget available to schedule a full batch
         if cache_config is not None:
             if envs.VLLM_USE_V1:
+                # overriding number of available Spyre blocks if not None
+                if cache_config.num_gpu_blocks_override:
+                    cls._num_spyre_blocks_override = \
+                        cache_config.num_gpu_blocks_override
                 # The V1 scheduler actually needs 2 blocks for each sequence...
                 cache_config.num_gpu_blocks_override = \
                     scheduler_config.max_num_seqs * 2
@@ -236,6 +241,10 @@ class SpyrePlatform(Platform):
     @classmethod
     def get_block_size(cls) -> int:
         return cls._block_size
+
+    @classmethod
+    def get_num_spyre_blocks_override(cls) -> int:
+        return cls._num_spyre_blocks_override
 
     @classmethod
     def supports_v1(cls, model_config: ModelConfig) -> bool:

@@ -725,11 +725,12 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
     def _set_blocks(self, num_blocks: int) -> None:
         # overwrite num_blocks for testing scheduler constraints
-        if envs_spyre.VLLM_SPYRE_N_BLOCKS > 0:
+        num_blocks_override = SpyrePlatform.get_num_spyre_blocks_override()
+        if num_blocks_override > 0:
             logger.info(
                 "[WARMUP] Overriding number of KV cache blocks on "
-                "Spyre/CPU to %d.", envs_spyre.VLLM_SPYRE_N_BLOCKS)
-            num_blocks = envs_spyre.VLLM_SPYRE_N_BLOCKS
+                "Spyre/CPU to %d.", num_blocks_override)
+            num_blocks = num_blocks_override
 
         # set number of available blocks and populate block_pool
         self.n_blocks = num_blocks
