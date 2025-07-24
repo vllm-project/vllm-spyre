@@ -45,11 +45,12 @@ def test_output(
     The same prompts are also input to HF. The generated output
     including text, token ids, and logprobs, is verified to be
     identical for vLLM and HF.
-
-    If errors occur, these can be analyzed/debugged by setting
-    'DISABLE_ASSERTS = True' in spyre_util.py and by rerunning the
-    test using 'pytest --capture=no tests/spyre/test_spyre_basic.py'
-    After debugging, DISABLE_ASSERTS should be reset to 'False'.
+    
+    Configuration for CB - parameters are combinatorial:
+        * max_num_seqs: 4
+        * tensor parallelism: 1, 2, 4, 8
+        * number of prompts: 4 (Chicken soup prompts)
+        * max tokens: 20 (same for all the prompts)
     '''
 
     skip_unsupported_tp_size(tp_size, backend)
@@ -156,36 +157,24 @@ def test_batch_handling(model: str, backend: str, cb: int,
                         monkeypatch: pytest.MonkeyPatch):
     """Test that the spyre worker correctly handles
     continuous batches of requests that
-    finish after different numbers of forward passes"""
+    finish after different numbers of forward passes
+
+    Configuration for CB - parameters are combinatorial:
+        * max_num_seqs: 2
+        * number of prompts: 4 (Chicken soup prompts)
+        * max tokens: [5, 20, 10, 5]
+    """
 
     prompts = get_chicken_soup_prompts(4)
 
-    sampling_params1 = SamplingParams(max_tokens=5,
-                                      min_tokens=5,
-                                      temperature=0,
-                                      ignore_eos=True,
-                                      logprobs=0)
-    sampling_params2 = SamplingParams(max_tokens=20,
-                                      min_tokens=20,
-                                      temperature=0,
-                                      ignore_eos=True,
-                                      logprobs=0)
-    sampling_params3 = SamplingParams(max_tokens=10,
-                                      min_tokens=10,
-                                      temperature=0,
-                                      ignore_eos=True,
-                                      logprobs=0)
-    sampling_params4 = SamplingParams(max_tokens=5,
-                                      min_tokens=5,
-                                      temperature=0,
-                                      ignore_eos=True,
-                                      logprobs=0)
+    max_new_tokens = [5, 20, 10, 5]
 
     vllm_sampling_params = [
-        sampling_params1,
-        sampling_params2,
-        sampling_params3,
-        sampling_params4,
+        SamplingParams(max_tokens=max_new_tokens[i],
+                       min_tokens=max_new_tokens[i],
+                       temperature=0,
+                       ignore_eos=True,
+                       logprobs=0) for i in range(len(max_new_tokens))
     ]
 
     kwargs = {
@@ -207,7 +196,7 @@ def test_batch_handling(model: str, backend: str, cb: int,
         **kwargs)
     hf_results = generate_hf_output(model=model,
                                     prompts=prompts,
-                                    max_new_tokens=[5, 20, 10, 5])
+                                    max_new_tokens=max_new_tokens)
 
     compare_results(
         model=model,

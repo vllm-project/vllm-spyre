@@ -29,4 +29,4 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --only-group lint
       - name: Lint docs
-        run: tools/lint_docs.sh
+        run: pymarkdownlnt scan docs -r

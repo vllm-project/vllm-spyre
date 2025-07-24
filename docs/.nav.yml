@@ -18,7 +18,11 @@ nav:
     - Developer Guide:
       - Contributing: contributing/README.md
       - Continuous Batching:
-        - Testing: contributing/continuous_batching/tests.md
+        - Overview: contributing/continuous_batching/overview.md
+        - Tests:
+          - Output Tests: contributing/continuous_batching/tests/output_tests.md
+          - Scheduler Steps Tests: contributing/continuous_batching/tests/scheduler_steps_tests.md
+          - Other Tests: contributing/continuous_batching/tests/other_tests.md
 
   - Getting Started:
     - Installation: getting_started/installation.md
@@ -34,4 +38,8 @@ nav:
   - Developer Guide:
     - Contributing: contributing/README.md
     - Continuous Batching:
-      - Testing: contributing/continuous_batching/tests.md
+      - Overview: contributing/continuous_batching/overview.md
+      - Tests:
+        - Output Tests: contributing/continuous_batching/tests/output_tests.md
+        - Scheduler Steps Tests: contributing/continuous_batching/tests/scheduler_steps_tests.md
+        - Other Tests: contributing/continuous_batching/tests/other_tests.md

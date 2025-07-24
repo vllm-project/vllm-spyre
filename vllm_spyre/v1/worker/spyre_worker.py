@@ -86,9 +86,9 @@ class SpyreWorker(WorkerBaseV1):
             if self.model_config.task != "embed":
                 # TODO: remove if spyre supports
                 # lower number of output tokens
-                assert num_decode_tokens >= 3, (
+                assert num_decode_tokens >= 2, (
                     "VLLM_SPYRE_WARMUP_NEW_TOKENS must be "
-                    "at least 3 (spyre requirement).")
+                    "at least 2 (spyre requirement).")
             # warmup individual combination
             logger.info(
                 "[WARMUP] (%d/%d) for prompt length %d, decoding %d tokens "
