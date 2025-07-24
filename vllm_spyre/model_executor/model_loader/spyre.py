@@ -331,8 +331,9 @@ class ContinuousBatchingFmsModel(FmsModelBase):
 
     def _set_past_key_value_states(self, num_blocks) -> None:
         # overwrite num_blocks for testing scheduler constraints
-        if envs_spyre.VLLM_SPYRE_N_BLOCKS > 0:
-            num_blocks = envs_spyre.VLLM_SPYRE_N_BLOCKS
+        num_blocks_override = SpyrePlatform.get_num_spyre_blocks_override()
+        if num_blocks_override > 0:
+            num_blocks = num_blocks_override
 
         # List[layers] of Tuple[k,v] of
         # Tensor[num_blocks, block_size, num_kv_heads, head_dim]
