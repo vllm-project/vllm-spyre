@@ -224,8 +224,9 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         cond2 = len(self.waiting) < max_prompt_batch_size
         # check that the prompt length does not exceed the current tkv
         cond3 = request.num_prompt_tokens <= self.tkv
-        # check that the number of requested tokens can be served
-        cond4 = request.max_tokens <= (max_context_len - self.tkv)
+        # check that the number of requested tokens can be served (-1 for free
+        # prefill token)
+        cond4 = request.max_tokens - 1 <= (max_context_len - self.tkv)
         # check that there are enough free blocks/pages remaining
         # Note: we only have to do check in case of a running batches
         # (not start_new_batch), because the minimal number of blocks covers
