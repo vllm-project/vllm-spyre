@@ -137,17 +137,18 @@ def check_scheduler_inference_steps(
             ]
 
             assert (scheduler.tkv == step_ref["tkv"]
-                    ), f"Step {step}, scheduler: {scheduler.tkv}"
+                    ), f"Step {step}, tkv: {scheduler.tkv}"
             assert waiting == step_ref[
                 "waiting"], f"Step {step}, waiting: {waiting}"
             assert running == step_ref[
                 "running"], f"Step {step}, running: {running}"
-            assert out_reqs_ids == step_ref["request_outputs"], \
-                f"Step {step}, request outputs"
+            assert (out_reqs_ids == step_ref["request_outputs"]
+                    ), f"Step {step}, request outputs: {out_reqs_ids}"
 
             ref_finished_reqs = step_ref.get("finished_requests", [])
-            assert out_reqs_finished == ref_finished_reqs, \
-                f"Step {step}, finished request output"
+            assert (
+                out_reqs_finished == ref_finished_reqs
+            ), f"Step {step}, finished request output: {out_reqs_finished}"
 
             # checking the scheduler handling of free and reserved blocks
             n_blocks = (engine_core.model_executor.driver_worker.worker.
