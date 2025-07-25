@@ -36,8 +36,7 @@ def test_prompts_aligned_with_tkv_boundaries(model: str, backend: str,
     available_blocks = -1  # no restriction
     max_num_seqs = 2
     max_model_len = 256
-    # check_output = backend == "sendnn"
-    check_output = True
+    check_output = backend == "sendnn"
 
     checked_steps = [
         {
@@ -218,8 +217,7 @@ def test_prompts_misaligned_with_tkv_boundaries(
     available_blocks = -1  # no restriction
     max_num_seqs = 2
     max_model_len = 256
-    # check_output = backend == "sendnn"
-    check_output = True
+    check_output = backend == "sendnn"
 
     checked_steps = [
         {
@@ -397,8 +395,7 @@ def test_two_sequences_finish_same_time_as_new_arrive(
     available_blocks = -1  # no restriction
     max_num_seqs = 2
     max_model_len = 256
-    # check_output = backend == "sendnn"
-    check_output = True
+    check_output = backend == "sendnn"
 
     checked_steps = [
         {
@@ -554,8 +551,7 @@ def test_new_sequence_joins_during_decode(model: str, backend: str,
     available_blocks = -1  # no restriction
     max_num_seqs = 4
     max_model_len = 256
-    # check_output = backend == "sendnn"
-    check_output = True
+    check_output = backend == "sendnn"
 
     checked_steps = [
         {
@@ -1202,8 +1198,7 @@ def test_requests_use_all_available_blocks(model: str, backend: str,
     available_blocks = 8
     max_num_seqs = 4
     max_model_len = 256
-    # check_output = backend == "sendnn"
-    check_output = True
+    check_output = backend == "sendnn"
 
     checked_steps = [
         {
@@ -1354,8 +1349,7 @@ def test_requests_use_more_than_available_blocks(
     available_blocks = 4
     max_num_seqs = 4
     max_model_len = 256
-    # check_output = backend == "sendnn"
-    check_output = True
+    check_output = backend == "sendnn"
 
     checked_steps = [
         {
