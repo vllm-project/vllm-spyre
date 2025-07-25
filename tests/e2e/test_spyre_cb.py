@@ -5,8 +5,8 @@ Run `python -m pytest tests/e2e/test_spyre_cb.py`.
 
 from openai import BadRequestError
 import pytest
-from spyre_util import (RemoteOpenAIServer, generate_spyre_vllm_output, get_chicken_soup_prompts,
-                        get_spyre_model_list)
+from spyre_util import (RemoteOpenAIServer, generate_spyre_vllm_output,
+                        get_chicken_soup_prompts,get_spyre_model_list)
 from vllm import SamplingParams
 
 
@@ -100,8 +100,7 @@ def test_api_cb_generates_correct_max_tokens(
                                          max_tokens=max_tokens,
                                          temperature=0)
 
-
-    assert response.usage.completion_tokens == max_tokens 
+    assert response.usage.completion_tokens == max_tokens
 
 
 @pytest.mark.cb
