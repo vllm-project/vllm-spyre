@@ -35,6 +35,7 @@ else:
 from vllm.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, ModelRunnerOutput
 
 #############################################################
+# from vllm.tasks import GenerationTask, PoolingTask, SupportedTask
 # TODO: remove when we have this in vllm/tasks.py
 #############################################################
 GenerationTask = Literal["generate", "transcription"]
