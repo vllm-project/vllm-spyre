@@ -1,5 +1,6 @@
 import math
 import os
+import random
 import subprocess
 import sys
 import time
@@ -10,6 +11,7 @@ import numpy as np
 import openai
 import pytest
 import requests
+import torch
 from sentence_transformers import SentenceTransformer, util
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, SamplingParams
@@ -169,7 +171,7 @@ def patch_warmup_shapes(warmup_shapes: list[tuple[int, int, int]],
 # vLLM / Spyre
 def generate_spyre_vllm_output(
     model: str,
-    prompts: list[str],
+    prompts: Union[list[str], list[list[int]]],
     max_model_len: int,
     block_size: int,
     sampling_params: Union[SamplingParams, list[SamplingParams]],
@@ -240,18 +242,25 @@ def generate_spyre_vllm_output(
 
 # Hugging Face
 def generate_hf_output(
-        model: str, prompts: list[str],
-        max_new_tokens: Union[int, list[int]]) -> list[dict[str, Any]]:
+    model: str,
+    prompts: Union[list[str], list[list[int]]],  # also accept token ids
+    max_new_tokens: Union[int, list[int]],
+    ignore_eos: bool = False,
+) -> list[dict[str, Any]]:
 
     if not isinstance(max_new_tokens, list):
         max_new_tokens = [max_new_tokens] * len(prompts)
 
     hf_model = AutoModelForCausalLM.from_pretrained(model)
     hf_tokenizer = AutoTokenizer.from_pretrained(model)
+    if ignore_eos:
+        hf_model.generation_config.eos_token_id = None
 
     results = []
     for prompt_index, prompt in enumerate(prompts):
-        hf_input_tokens = hf_tokenizer(prompt, return_tensors="pt").input_ids
+        hf_input_tokens = hf_tokenizer(prompt, return_tensors="pt").input_ids \
+                    if isinstance(prompt[0], str) \
+                    else torch.tensor([prompts[prompt_index]])
         hf_output = hf_model.generate(
             hf_input_tokens,
             do_sample=False,
@@ -286,9 +295,16 @@ def generate_hf_output(
 
 
 # compare results
-def compare_results(model: str, prompts: list[str], tensor_parallel_size: int,
-                    backend: str, vllm_results: list[dict[str, Any]],
-                    hf_results: list[dict[str, Any]]):
+def compare_results(
+    model: str,
+    tensor_parallel_size: int,
+    backend: str,
+    vllm_results: list[dict[str, Any]],
+    hf_results: list[dict[str, Any]],
+    prompts: Optional[list[str]] = None,
+):
+    if prompts is None:
+        prompts = [""] * len(vllm_results)
 
     print(f"\nmodel:         {model:s}")
     print(f"tp size:       {tensor_parallel_size}")
@@ -305,12 +321,14 @@ def compare_results(model: str, prompts: list[str], tensor_parallel_size: int,
 
     for prompt_index, (prompt, hf_result, vllm_result) in enumerate(
             zip(prompts, hf_results, vllm_results)):
-        err_msg = '' if hf_result['text'] == vllm_result['text'] else '  ERROR'
-        print(f"\nprompt {prompt_index:3d}:    {repr(prompt):s}")
-        print("generated:")
-        print(f"        HF:    {repr(hf_result['text']):s}")
-        print(f"        vLLM:  {repr(vllm_result['text']):s}{err_msg}")
-        print()
+        if "text" in vllm_result:
+            err_msg = '' if hf_result['text'] == vllm_result[
+                'text'] else '  ERROR'
+            print(f"\nprompt {prompt_index:3d}:    {repr(prompt):s}")
+            print("generated:")
+            print(f"        HF:    {repr(hf_result['text']):s}")
+            print(f"        vLLM:  {repr(vllm_result['text']):s}{err_msg}")
+            print()
 
         assert DISABLE_ASSERTS or backend == 'sendnn' or\
             hf_result['token_ids'] == vllm_result['token_ids']
@@ -322,20 +340,23 @@ def compare_results(model: str, prompts: list[str], tensor_parallel_size: int,
             logprob_abs_diff_list = []
             logprob_rel_diff_list = []
 
-            for hf_token, hf_token_id, hf_logprob, vllm_token,\
-                 vllm_token_id, vllm_logprob in zip(
-                    hf_result['tokens'], hf_result['token_ids'],
-                    hf_result['logprobs'], vllm_result['tokens'],
-                    vllm_result['token_ids'], vllm_result['logprobs']):
+            for i, (hf_token_id, hf_logprob, vllm_token_id,
+                    vllm_logprob) in enumerate(
+                        zip(hf_result['token_ids'], hf_result['logprobs'],
+                            vllm_result['token_ids'],
+                            vllm_result['logprobs'])):
                 logprob_abs_diff = math.fabs(hf_logprob - vllm_logprob)
                 logprob_abs_diff_list.append(logprob_abs_diff)
                 logprob_rel_diff = math.fabs(logprob_abs_diff / hf_logprob)
                 logprob_rel_diff_list.append(logprob_rel_diff)
 
+                hf_token = repr(
+                    hf_result['tokens'][i]) if 'tokens' in vllm_result else '-'
+                vllm_token = repr(vllm_result['tokens']
+                                  [i]) if 'tokens' in vllm_result else '-'
                 print(
-                    f"HF: {hf_token_id:8d} {repr(hf_token):14s} "
-                    f"{hf_logprob:14f}  "
-                    f"vLLM: {vllm_token_id:8d} {repr(vllm_token):14s} "
+                    f"HF: {hf_token_id:8d} {hf_token:14s} {hf_logprob:14f}  "
+                    f"vLLM: {vllm_token_id:8d} {vllm_token:14s} "
                     f"{vllm_logprob:14f}  ",
                     end='')
 
@@ -539,12 +560,27 @@ def create_text_prompt(model: str, min_tokens: int, max_tokens: int) -> str:
     return prompt
 
 
-def create_random_request(
-        request_id: int, num_tokens: int,
-        sampling_params: SamplingParams) -> EngineCoreRequest:
+def create_random_request(request_id: int,
+                          num_tokens: int,
+                          sampling_params: SamplingParams,
+                          from_model_vocab: bool = False,
+                          model: Optional[str] = None) -> EngineCoreRequest:
+
+    if from_model_vocab:
+        assert model is not None, "Prompt requested to be generated from " \
+        "model's vocabulary: need to provide model."
+
+        tokenizer = AutoTokenizer.from_pretrained(model)
+        valid_token_ids = sorted([
+            v for v in tokenizer.vocab.values()
+            if v not in tokenizer.all_special_ids
+        ])
+        prompt_token_ids = random.choices(valid_token_ids, k=num_tokens)
+    else:
+        prompt_token_ids = [request_id] * num_tokens
 
     return EngineCoreRequest(request_id=str(request_id),
-                             prompt_token_ids=[request_id] * num_tokens,
+                             prompt_token_ids=prompt_token_ids,
                              mm_inputs=None,
                              mm_hashes=None,
                              mm_placeholders=None,
