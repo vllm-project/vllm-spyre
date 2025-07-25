@@ -30,11 +30,6 @@ parser.add_argument("--compare-with-cpu",
                     action=argparse.BooleanOptionalAction)
 args = parser.parse_args()
 
-# previous scripts default parameter to trigger all functionality
-# max_tokens1 = 3
-# max_tokens2 = 6
-# max_tokens3 = 7
-
 max_num_seqs = args.max_num_seqs  # defines the max batch size
 
 if platform.machine() == "arm64":
@@ -68,7 +63,6 @@ instructions = [
     "and where can they be found?",
     "Compose a LinkedIn post about your company's latest product release."
 ]
-instructions[0] = instructions[0] * 2  # make prompt 1 span two blocks
 
 prompts = [template.format(instr) for instr in instructions]
 
