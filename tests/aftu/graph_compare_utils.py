@@ -45,7 +45,7 @@ def load_graph_to_compare(file_path):
 
 
 def collect_graph_files(input_dir: str) -> dict[str, tuple[str, str]]:
-    # Get G1 graphs. 
+    # Get G1 graphs.
     # Assumes the 'input_dir' contains 'export_dtcompiler' with the files.
 
     filepaths = iglob(path.join(input_dir, "export_dtcompiler", "*/*.ops"))

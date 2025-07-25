@@ -16,14 +16,13 @@ from spyre_util import (generate_spyre_vllm_output, get_chicken_soup_prompts,
 from vllm import SamplingParams
 
 
+@pytest.mark.spyre
 @pytest.mark.aftu
 @pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize("backend", ["sendnn"])
 @pytest.mark.parametrize("max_num_seqs", [2, 4],
                          ids=lambda val: f"max_num_seqs({val})")
 def test_compare_graphs_cb(
     model: str,
-    backend: str,
     max_num_seqs: int,
     monkeypatch: pytest.MonkeyPatch,
     runtime_xfail,
@@ -31,7 +30,7 @@ def test_compare_graphs_cb(
     """Test that the spyre worker correctly outputs
     continuous batches of requests by comparing to HF"""
 
-    if max_num_seqs > 2 and backend == "sendnn":
+    if max_num_seqs > 2:
         runtime_xfail("CB failures expected for batch size > 2")
 
     # AFTU
@@ -80,7 +79,7 @@ def test_compare_graphs_cb(
                                        block_size=256,
                                        sampling_params=vllm_sampling_params,
                                        tensor_parallel_size=1,
-                                       backend=backend,
+                                       backend='sendnn',
                                        max_num_seqs=max_num_seqs,
                                        use_cb=True,
                                        monkeypatch=monkeypatch)
@@ -93,16 +92,15 @@ def test_compare_graphs_cb(
     assert compare_graphs(vllm_graphs, aftu_graphs)
 
 
+@pytest.mark.spyre
 @pytest.mark.aftu
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("warmup_shape",
                          [(64, 5, 1), (64, 5, 2),
                           (64, 5, 4)])  # (prompt_length/new_tokens/batch_size)
-@pytest.mark.parametrize("backend", ["sendnn"])
 def test_compare_graphs_static_batching(
     model: str,
     warmup_shape: tuple[int, int, int],
-    backend: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
 
@@ -165,7 +163,7 @@ def test_compare_graphs_static_batching(
                                        block_size=2048,
                                        sampling_params=vllm_sampling_params,
                                        tensor_parallel_size=1,
-                                       backend=backend,
+                                       backend='sendnn',
                                        monkeypatch=monkeypatch)
 
             vllm_graphs = collect_graph_files(tmpdir)
