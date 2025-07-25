@@ -41,6 +41,7 @@ def check_scheduler_inference_steps(
     steps_add_reqs: list[int],
     checked_steps: list[dict[str, Any]],
     max_num_seqs: int,
+    max_model_len: int,
     available_blocks: int,
     use_cb: bool = True,
 ):
@@ -57,8 +58,6 @@ def check_scheduler_inference_steps(
     # set env vars
     monkeypatch.setenv("VLLM_USE_V1", "1")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
-    if available_blocks > 0:
-        monkeypatch.setenv("VLLM_SPYRE_N_BLOCKS", str(available_blocks))
     if use_cb:
         monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
 
@@ -90,7 +89,9 @@ def check_scheduler_inference_steps(
                              tokenizer=model,
                              max_model_len=max_model_len,
                              block_size=max_model_len,
-                             max_num_seqs=max_num_seqs)
+                             max_num_seqs=max_num_seqs,
+                             num_gpu_blocks_override=available_blocks
+                             if available_blocks > 0 else None)
     vllm_config = engine_args.create_engine_config()
     executor_class = Executor.get_class(vllm_config)
     engine_core = EngineCore(vllm_config=vllm_config,
@@ -135,15 +136,19 @@ def check_scheduler_inference_steps(
                 r.request_id for r in request_outputs if r.finished
             ]
 
-            assert scheduler.tkv == step_ref["tkv"], f"Step {step}, tkv"
-            assert waiting == step_ref["waiting"], f"Step {step}, num waiting"
-            assert running == step_ref["running"], f"Step {step}, num running"
-            assert out_reqs_ids == step_ref["request_outputs"], \
-                f"Step {step}, request outputs"
+            assert (scheduler.tkv == step_ref["tkv"]
+                    ), f"Step {step}, tkv: {scheduler.tkv}"
+            assert waiting == step_ref[
+                "waiting"], f"Step {step}, waiting: {waiting}"
+            assert running == step_ref[
+                "running"], f"Step {step}, running: {running}"
+            assert (out_reqs_ids == step_ref["request_outputs"]
+                    ), f"Step {step}, request outputs: {out_reqs_ids}"
 
             ref_finished_reqs = step_ref.get("finished_requests", [])
-            assert out_reqs_finished == ref_finished_reqs, \
-                f"Step {step}, finished request output"
+            assert (
+                out_reqs_finished == ref_finished_reqs
+            ), f"Step {step}, finished request output: {out_reqs_finished}"
 
             # checking the scheduler handling of free and reserved blocks
             n_blocks = (engine_core.model_executor.driver_worker.worker.
@@ -158,10 +163,11 @@ def check_scheduler_inference_steps(
                 [len(blocks) for blocks in req_ids2blocks.values()])
 
             if step > 0:
-                assert n_reserved_blocks == step_ref[
-                    "n_reserved_blocks"], f"Step {step}, n_reserved_blocks"
-                assert n_used_blocks == step_ref[
-                    "n_used_blocks"], f"Step {step}, n_used_blocks"
+                assert (
+                    n_reserved_blocks == step_ref["n_reserved_blocks"]
+                ), f"Step {step}, n_reserved_blocks: {n_reserved_blocks}"
+                assert (n_used_blocks == step_ref["n_used_blocks"]
+                        ), f"Step {step}, n_used_blocks: {n_used_blocks}"
 
             assert len(req_ids2blocks) == len(req_ids2reserved_blocks)
             for req_id in req_ids2blocks:
