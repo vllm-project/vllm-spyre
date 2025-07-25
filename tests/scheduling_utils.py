@@ -59,8 +59,6 @@ def check_scheduler_inference_steps(
     # set env vars
     monkeypatch.setenv("VLLM_USE_V1", "1")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
-    if available_blocks > 0:
-        monkeypatch.setenv("VLLM_SPYRE_N_BLOCKS", str(available_blocks))
     if use_cb:
         monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
 
@@ -95,7 +93,9 @@ def check_scheduler_inference_steps(
                              tokenizer=model,
                              max_model_len=max_model_len,
                              block_size=max_model_len,
-                             max_num_seqs=max_num_seqs)
+                             max_num_seqs=max_num_seqs,
+                             num_gpu_blocks_override=available_blocks
+                             if available_blocks > 0 else None)
     vllm_config = engine_args.create_engine_config()
     executor_class = Executor.get_class(vllm_config)
     engine_core = EngineCore(vllm_config=vllm_config,
