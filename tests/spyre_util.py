@@ -571,10 +571,10 @@ def create_random_request(request_id: int,
         "model's vocabulary: need to provide model."
 
         tokenizer = AutoTokenizer.from_pretrained(model)
-        valid_token_ids = [
+        valid_token_ids = sorted([
             v for v in tokenizer.vocab.values()
             if v not in tokenizer.all_special_ids
-        ]
+        ])
         prompt_token_ids = random.choices(valid_token_ids, k=num_tokens)
     else:
         prompt_token_ids = [request_id] * num_tokens

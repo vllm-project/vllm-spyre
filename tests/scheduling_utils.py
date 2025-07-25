@@ -88,22 +88,9 @@ def check_scheduler_inference_steps(
     collected_outputs = defaultdict(lambda: {"token_ids": [], "logprobs": []})
     generated_prompts = []
 
-    # Setup the engine
-    engine_args = EngineArgs(model=model,
-                             tokenizer=model,
-                             max_model_len=max_model_len,
-                             block_size=max_model_len,
-                             max_num_seqs=max_num_seqs,
-                             num_gpu_blocks_override=available_blocks
-                             if available_blocks > 0 else None)
-    vllm_config = engine_args.create_engine_config()
-    executor_class = Executor.get_class(vllm_config)
-    engine_core = EngineCore(vllm_config=vllm_config,
-                             executor_class=executor_class,
-                             log_stats=False)
-    scheduler: ContinuousBatchingSpyreScheduler = engine_core.scheduler
-
     # Create random requests of specified lengths and max_tokens
+    # Need to do before setting up the vLLM engine, otherwise test random seed
+    # will be overridden
     sorted_reqs_params = zip(steps_add_reqs, seqs_max_tokens, prompts_lengths)
     requests: deque[tuple[int, EngineCoreRequest]] = deque()
     for i, (add_step, max_tokens,
@@ -121,6 +108,21 @@ def check_scheduler_inference_steps(
                                         model=model)
         requests.append((add_step, request))
         generated_prompts.append(request.prompt_token_ids)
+
+    # Setup the engine
+    engine_args = EngineArgs(model=model,
+                             tokenizer=model,
+                             max_model_len=max_model_len,
+                             block_size=max_model_len,
+                             max_num_seqs=max_num_seqs,
+                             num_gpu_blocks_override=available_blocks
+                             if available_blocks > 0 else None)
+    vllm_config = engine_args.create_engine_config()
+    executor_class = Executor.get_class(vllm_config)
+    engine_core = EngineCore(vllm_config=vllm_config,
+                             executor_class=executor_class,
+                             log_stats=False)
+    scheduler: ContinuousBatchingSpyreScheduler = engine_core.scheduler
 
     # In-between steps are added as normal decode steps
     checked_steps = augment_checked_steps(checked_steps)
