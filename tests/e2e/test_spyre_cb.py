@@ -6,7 +6,7 @@ Run `python -m pytest tests/e2e/test_spyre_cb.py`.
 from openai import BadRequestError
 import pytest
 from spyre_util import (RemoteOpenAIServer, generate_spyre_vllm_output,
-                        get_chicken_soup_prompts,get_spyre_model_list)
+                        get_chicken_soup_prompts, get_spyre_model_list)
 from vllm import SamplingParams
 
 
@@ -66,8 +66,8 @@ def test__api_cb_rejects_oversized_request(
     overflow_prompt = " ".join(["hi"] * max_model_len)
     max_tokens = 10
 
-    with pytest.raises(BadRequestError, 
-                       match="This model's maximum context length is"):
+    with pytest.raises(BadRequestError,
+                        match="This model's maximum context length is"):
         client.completions.create(
             model=model,
             prompt=overflow_prompt,
