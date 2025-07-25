@@ -928,7 +928,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             # or jump decoding?
 
             req_state: CachedRequestState = self.requests[req_id]
-            # adding new blocks if needed
+            # adding new blocks for current sequence if needed
             if self.tkv // self.block_size + 1 > len(
                     self.req_ids2blocks[req_id]):
                 self.req_ids2blocks[req_id].append(self.block_pool.popleft())
@@ -939,13 +939,16 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             offset = self.tkv % self.block_size
             slot = [start_slot + offset]
             slot_mapping.append(slot)
-            output_token_ids = req_state.output_token_ids
-            generation_token = output_token_ids[-1]
+
+            # input token and position of the token generated in the last step
+            generation_token = req_state.output_token_ids[-1]
             input_tokens.append([generation_token])
             seq_len = cached_request_data.num_computed_tokens[
                 cached_reqs_map[req_id]]
             input_positions.append([seq_len])
 
+            # retrieve left padding information stored during prefill and
+            # updated when calling reduce_left_padding()
             left_padded_prompt_mask.append(req_state.left_padding)
 
         # update tkv
@@ -969,7 +972,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                                         dtype=torch.bool,
                                         device="cpu")
 
-        # not needed for mask during decode
+        # mask not needed during decode
         mask = None
 
         # add pads for min decode batch size of 2 (Spyre compiler constraint)
