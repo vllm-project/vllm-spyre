@@ -167,32 +167,14 @@ def test_batch_handling(model: str, backend: str, cb: int,
 
     prompts = get_chicken_soup_prompts(4)
 
-    sampling_params1 = SamplingParams(max_tokens=5,
-                                      min_tokens=5,
-                                      temperature=0,
-                                      ignore_eos=True,
-                                      logprobs=0)
-    sampling_params2 = SamplingParams(max_tokens=20,
-                                      min_tokens=20,
-                                      temperature=0,
-                                      ignore_eos=True,
-                                      logprobs=0)
-    sampling_params3 = SamplingParams(max_tokens=10,
-                                      min_tokens=10,
-                                      temperature=0,
-                                      ignore_eos=True,
-                                      logprobs=0)
-    sampling_params4 = SamplingParams(max_tokens=5,
-                                      min_tokens=5,
-                                      temperature=0,
-                                      ignore_eos=True,
-                                      logprobs=0)
+    max_new_tokens = [5, 20, 10, 5]
 
     vllm_sampling_params = [
-        sampling_params1,
-        sampling_params2,
-        sampling_params3,
-        sampling_params4,
+        SamplingParams(max_tokens=max_new_tokens[i],
+                       min_tokens=max_new_tokens[i],
+                       temperature=0,
+                       ignore_eos=True,
+                       logprobs=0) for i in range(len(max_new_tokens))
     ]
 
     kwargs = {
@@ -214,7 +196,7 @@ def test_batch_handling(model: str, backend: str, cb: int,
         **kwargs)
     hf_results = generate_hf_output(model=model,
                                     prompts=prompts,
-                                    max_new_tokens=[5, 20, 10, 5])
+                                    max_new_tokens=max_new_tokens)
 
     compare_results(
         model=model,
