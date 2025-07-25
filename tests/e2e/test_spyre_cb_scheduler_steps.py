@@ -646,8 +646,10 @@ def test_new_sequence_joins_during_decode(model: str, backend: str,
             "waiting": [],
             "running": ["3", "2"],
             "request_outputs": ["3"],
-            "n_reserved_blocks": 8,  # prefill (3 blocks) + 63 decode (1 block)
-            "n_used_blocks": 6  # prefill (3 block)
+            # Note: here is where the optimization happens: we do the prefill
+            # on a single block only instead of using 3 blocks
+            "n_reserved_blocks": 6,  # prefill (1 block) + 63 decode (1 block)
+            "n_used_blocks": 4  # prefill (1 block)
         },
         {
             # Decode sequences 2 and 3
@@ -656,8 +658,8 @@ def test_new_sequence_joins_during_decode(model: str, backend: str,
             "waiting": [],
             "running": ["3", "2"],
             "request_outputs": ["3", "2"],
-            "n_reserved_blocks": 8,
-            "n_used_blocks": 8  # 2 blocks extended, one for each sequence
+            "n_reserved_blocks": 6,
+            "n_used_blocks": 6  # 2 blocks extended, one for each sequence
         },
         {
             # Sequence 2 finishes at step 137
@@ -668,8 +670,8 @@ def test_new_sequence_joins_during_decode(model: str, backend: str,
             "running": ["3"],
             "request_outputs": ["3", "2"],
             "finished_requests": ["2"],
-            "n_reserved_blocks": 8,
-            "n_used_blocks": 8
+            "n_reserved_blocks": 6,
+            "n_used_blocks": 6
         },
         {
             # Decode sequence 3
@@ -678,7 +680,7 @@ def test_new_sequence_joins_during_decode(model: str, backend: str,
             "waiting": [],
             "running": ["3"],
             "request_outputs": ["3"],
-            # 6 blocks freed: finished sequence (4) + left padding stripping (2)
+            # 4 blocks freed due to finished sequence 2
             "n_reserved_blocks": 2,
             "n_used_blocks": 2
         },
