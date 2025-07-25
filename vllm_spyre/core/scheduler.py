@@ -1267,7 +1267,6 @@ class SpyreScheduler:
                     multi_modal_placeholders=(
                         seq_group.multi_modal_placeholders
                         if scheduler_outputs.num_prefill_groups > 0 else None),
-                    prompt_adapter_request=seq_group.prompt_adapter_request,
                 )
             else:
                 # When SPMD mode is enabled, we only send delta data except for

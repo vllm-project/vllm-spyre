@@ -29,7 +29,8 @@ import vllm_spyre.perf_metrics as perf_metrics
 from vllm_spyre.model_executor.model_loader import spyre_setup
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import (
-    ContinuousBatchingSpyreModelRunner, StaticBatchingSpyreModelRunner)
+    ContinuousBatchingSpyreModelRunner, StaticBatchingSpyreModelRunner,
+    SupportedTask)
 
 logger = init_logger(__name__)
 
@@ -615,6 +616,9 @@ class SpyreWorker(WorkerBaseV1):
     @property
     def kv_cache(self) -> Optional[list[list[torch.Tensor]]]:
         return None
+
+    def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
+        return self.model_runner.get_supported_tasks()
 
     @SpyrePlatform.inference_mode()
     def execute_model(

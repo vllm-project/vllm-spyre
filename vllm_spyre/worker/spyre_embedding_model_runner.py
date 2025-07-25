@@ -42,11 +42,20 @@ class SpyreEmbeddingModelRunner(SpyreModelRunner):
                          is_driver_worker=is_driver_worker)
 
         pooler_config = model_config.pooler_config
-        self.pooler = Pooler.from_config_with_defaults(
-            pooler_config,
-            pooling_type=PoolingType.CLS,
-            normalize=True,
-            softmax=False)
+        if hasattr(Pooler, "from_config_with_defaults"):
+            # TODO: remove this when we no longer support
+            # vllm version v0.9.2
+            self.pooler = Pooler.from_config_with_defaults(
+                pooler_config,
+                pooling_type=PoolingType.CLS,
+                normalize=True,
+                softmax=False)
+        else:
+            self.pooler = Pooler.for_embed(
+                pooler_config=pooler_config,
+                default_pooling_type=PoolingType.CLS,
+                default_normalize=True,
+                default_softmax=False)
 
     def load_model(self, prompt_lens: Iterable[int],
                    num_decode_tokens: Iterable[int]) -> None:
