@@ -912,9 +912,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         block_table = []
         slot_mapping = []
         left_padded_prompt_mask = []
-        self.model.indices = torch.ones(len(cached_request_data.req_ids),
-                                        dtype=torch.bool,
-                                        device="cpu")
 
         assert len(self.input_batch.req_id_to_index) == len(
             cached_request_data.req_ids)
@@ -951,27 +948,29 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
             left_padded_prompt_mask.append(req_state.left_padding)
 
+        # update tkv
+        self.tkv = self.tkv + 1
+
+        # construct tensors from lists
         input_tokens = torch.tensor(input_tokens,
                                     dtype=torch.long,
                                     device=self.device)
         position_ids = torch.tensor(input_positions,
                                     dtype=torch.long,
                                     device=self.device)
+        current_tkv_mask = torch.tensor([self.tkv] * len(input_tokens),
+                                        dtype=torch.int64)
         left_padded_prompt_mask = torch.tensor(left_padded_prompt_mask,
                                                dtype=torch.long,
                                                device=self.device)
-        # construct tensors from lists
-        slot_mapping = torch.tensor(slot_mapping, dtype=torch.int64)
         block_table = torch.tensor(block_table, dtype=torch.int64)
+        slot_mapping = torch.tensor(slot_mapping, dtype=torch.int64)
+        self.model.indices = torch.ones(len(cached_request_data.req_ids),
+                                        dtype=torch.bool,
+                                        device="cpu")
 
-        # not needed for decode
+        # not needed for mask during decode
         mask = None
-
-        # update tkv
-        self.tkv = self.tkv + 1
-
-        current_tkv_mask = torch.tensor([self.tkv] * len(input_tokens),
-                                        dtype=torch.int64)
 
         # add pads for min decode batch size of 2 (Spyre compiler constraint)
         if len(cached_request_data.req_ids) == 1:
