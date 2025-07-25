@@ -826,7 +826,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # current decode batch (Spyre constraint)
         left_padding = self.tkv - prompt_len
 
-        # Reserve the maximal number of blocks used to serve current sequence
+        # Reserve the number of blocks that this new sequence requires in the
+        # worst case (it might always stop early by producing the EOS token)
         new_tokens = (sampling_params.max_tokens
                       if sampling_params is not None else 0)
         n = self.tkv + new_tokens - 1
