@@ -10,7 +10,6 @@ from torch import nn
 from vllm.config import DeviceConfig, VllmConfig
 from vllm.forward_context import set_forward_context
 from vllm.logger import init_logger
-from vllm.model_executor.models.interfaces_base import is_text_generation_model
 from vllm.sampling_params import SamplingType
 from vllm.utils import is_pin_memory_available
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
@@ -387,20 +386,11 @@ class SpyreModelRunner:
         else:
             return self._prepare_decode(scheduler_output.scheduled_cached_reqs)
 
-    def get_supported_generation_tasks(self) -> list[GenerationTask]:
-        model = self.get_model()
-        supported_tasks = list[GenerationTask]()
-
-        if is_text_generation_model(model):
-            supported_tasks.append("generate")
-
-        return supported_tasks
-
     def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
         tasks = list[SupportedTask]()
 
-        if self.model_config.runner_type == "generate":
-            tasks.extend(self.get_supported_generation_tasks())
+        if "generate" in self.model_config.supported_tasks:
+            tasks.extend(["generate"])
 
         return tuple(tasks)
 
