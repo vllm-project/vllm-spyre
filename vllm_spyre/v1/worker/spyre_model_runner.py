@@ -3,13 +3,14 @@ import time
 from collections import deque
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
-from typing import TYPE_CHECKING, Optional, cast
+from typing import TYPE_CHECKING, Literal, Optional, cast, get_args
 
 import torch
 from torch import nn
 from vllm.config import DeviceConfig, VllmConfig
 from vllm.forward_context import set_forward_context
 from vllm.logger import init_logger
+from vllm.model_executor.models.interfaces_base import is_text_generation_model
 from vllm.sampling_params import SamplingType
 from vllm.utils import is_pin_memory_available
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
@@ -33,6 +34,18 @@ else:
     SamplingMetadata = None
 
 from vllm.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, ModelRunnerOutput
+
+#############################################################
+# TODO: remove when we have this in vllm/tasks.py
+#############################################################
+GenerationTask = Literal["generate", "transcription"]
+GENERATION_TASKS = get_args(GenerationTask)
+
+PoolingTask = Literal["encode", "embed", "classify", "score"]
+POOLING_TASKS = get_args(PoolingTask)
+
+SupportedTask = Literal[GenerationTask]
+#############################################################
 
 logger = init_logger(__name__)
 
@@ -373,6 +386,23 @@ class SpyreModelRunner:
             return self._prepare_prompt(scheduler_output.scheduled_new_reqs)
         else:
             return self._prepare_decode(scheduler_output.scheduled_cached_reqs)
+
+    def get_supported_generation_tasks(self) -> list[GenerationTask]:
+        model = self.get_model()
+        supported_tasks = list[GenerationTask]()
+
+        if is_text_generation_model(model):
+            supported_tasks.append("generate")
+
+        return supported_tasks
+
+    def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
+        tasks = list[SupportedTask]()
+
+        if self.model_config.runner_type == "generate":
+            tasks.extend(self.get_supported_generation_tasks())
+
+        return tuple(tasks)
 
     @SpyrePlatform.inference_mode()
     def execute_model(
