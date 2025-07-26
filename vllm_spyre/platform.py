@@ -34,12 +34,31 @@ import vllm_spyre.envs as envs_spyre
 logger = init_logger(__name__)
 
 
+class classproperty:
+
+    def __init__(self, func):
+        self.func = func
+
+    def __get__(self, instance, owner):
+        return self.func(owner)
+
+
+@property  # type: ignore
+def is_v1_compatible(self) -> bool:
+    architectures = getattr(self.hf_config, "architectures", [])
+    patterns = ["Bert", "Roberta"]
+    if any(pat in arch for arch in architectures for pat in patterns):
+        return True
+    import vllm.model_executor.models as me_models
+    return me_models.ModelRegistry.is_v1_compatible(architectures)
+
+
 class SpyrePlatform(Platform):
     _enum = PlatformEnum.OOT
 
     # "spyre" device_name no longer worked due to https://github.com/vllm-project/vllm/pull/16464
     device_name: str = "cpu"
-    device_type: str = "cpu"
+    _device_type: str = "cpu"
     # compressed-tensors supported by
     # https://github.com/foundation-model-stack/fms-model-optimizer/blob/main/fms_mo/aiu_addons/__init__.py
     supported_quantization: list[str] = ["gptq", "compressed-tensors"]
@@ -47,6 +66,14 @@ class SpyrePlatform(Platform):
     _block_size: int = 64  # hardcoded Spyre constraint for now
     _num_spyre_blocks_override: int = -1  # override num of KV cache blocks
     _config: VllmConfig = None
+
+    @classproperty
+    def device_type(cls):
+        # TODO: temporary hack while BertModels
+        # inherit SupportsV0Only in vllm upstream.
+        from vllm.config import ModelConfig
+        ModelConfig.is_v1_compatible = is_v1_compatible
+        return cls._device_type
 
     @classmethod
     def get_device_name(cls, device_id: int = 0) -> str:
@@ -71,18 +98,14 @@ class SpyrePlatform(Platform):
             raise NotImplementedError
 
         is_decoder = model_config.task == "generate"
-        is_embedding = model_config.task == "embed"
+        is_pooling = model_config.task == "embed"
         if model_config.task == "auto":
-            is_embedding = "embed" in model_config.supported_tasks
+            is_pooling = "embed" in model_config.supported_tasks
             is_decoder = "generate" in model_config.supported_tasks
 
-        # v0 is only supported for embedding models, and embedding models must
-        # be run on v0
-        if is_embedding and envs.VLLM_USE_V1:
-            raise ValueError("Embedding models are only supported on v0")
-        elif is_decoder and not envs.VLLM_USE_V1:
+        if is_decoder and not envs.VLLM_USE_V1:
             raise ValueError("Decoder models are only supported on v1")
-        elif not is_decoder and not is_embedding:
+        elif not is_decoder and not is_pooling:
             raise ValueError("Only the 'generate' and 'embed' tasks are "
                              "supported")
 
@@ -124,9 +147,14 @@ class SpyrePlatform(Platform):
                 scheduler_config.scheduler_cls = (
                     "vllm_spyre.v1.core.scheduler."\
                         "StaticBatchingSpyreScheduler")
-            elif is_embedding:
-                scheduler_config.scheduler_cls = (
-                    "vllm_spyre.core.scheduler.SpyreScheduler")
+            elif is_pooling:
+                if not envs.VLLM_USE_V1:
+                    scheduler_config.scheduler_cls = (
+                        "vllm_spyre.core.scheduler.SpyreScheduler")
+                else:
+                    scheduler_config.scheduler_cls = (
+                        "vllm_spyre.v1.core.scheduler."\
+                            "StaticBatchingSpyreScheduler")
 
         # To disable any paged attention ops in the base scheduler, we:
         # - Set the block size (in tokens) to the maximum sequence length
@@ -253,8 +281,7 @@ class SpyrePlatform(Platform):
         """Returns whether the current platform can support v1 for the supplied
         model configuration.
         """
-        # We don't have an embedding runner for v1 yet
-        return model_config.task != "embed"
+        return True
 
     @classmethod
     def validate_request(
