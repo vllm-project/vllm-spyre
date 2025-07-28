@@ -31,10 +31,7 @@ from vllm_spyre.model_executor.model_loader import spyre_setup
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import (
     ContinuousBatchingSpyreModelRunner, SpyrePoolingModelRunner,
-    StaticBatchingSpyreModelRunner)
-
-# TODO: fix import when we upgrade to vLLM 0.9.3
-PoolingTask = None
+    StaticBatchingSpyreModelRunner, SupportedTask)
 
 logger = init_logger(__name__)
 
@@ -629,9 +626,8 @@ class SpyreWorker(WorkerBaseV1):
     def kv_cache(self) -> Optional[list[list[torch.Tensor]]]:
         return None
 
-    def get_supported_pooling_tasks(
-            self) -> list["PoolingTask"]:  # type: ignore
-        return self.model_runner.get_supported_pooling_tasks()
+    def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
+        return self.model_runner.get_supported_tasks()
 
     @SpyrePlatform.inference_mode()
     def execute_model(

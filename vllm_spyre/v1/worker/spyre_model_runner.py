@@ -2,9 +2,10 @@ import math
 import time
 from abc import ABC, abstractmethod
 from collections import deque
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
-from typing import TYPE_CHECKING, Generic, Optional, TypeVar, cast
+from typing import (TYPE_CHECKING, Generic, Literal, Optional, TypeVar, cast,
+                    get_args)
 
 import torch
 from torch import nn
@@ -44,8 +45,19 @@ else:
 
 from vllm.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, ModelRunnerOutput
 
-# TODO: fix import when we upgrade to vLLM 0.10.0
-PoolingTask = None
+#############################################################
+# from vllm.tasks import GenerationTask, PoolingTask, SupportedTask
+# TODO: remove when we have this in vllm/tasks.py
+#############################################################
+GenerationTask = Literal["generate", "transcription"]
+GENERATION_TASKS = get_args(GenerationTask)
+
+PoolingTask = Literal["encode", "embed", "classify", "score"]
+POOLING_TASKS = get_args(PoolingTask)
+
+SupportedTask = Literal[GenerationTask]
+#############################################################
+
 logger = init_logger(__name__)
 
 
@@ -99,7 +111,6 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT,
         self.scheduler_config = vllm_config.scheduler_config
         self.device_config = vllm_config.device_config
         self.speculative_config = vllm_config.speculative_config
-        self.prompt_adapter_config = vllm_config.prompt_adapter_config
         self.observability_config = vllm_config.observability_config
 
         self.pad_token_id = 0
@@ -144,18 +155,15 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT,
         self,
         input_ids_list: list[torch.Tensor],
         min_pad_length: int = 0,
-        token_type_list: Sequence[torch.Tensor] = [],
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor,
-               Optional[torch.Tensor]]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """left side padding implemented as
         in fms.utils.generation.pad_input_id"""
         max_len = max([min_pad_length] +
                       [seq.size(0) for seq in input_ids_list])
         padded_input_ids_list = []
-        padded_token_type_list = []
         mask_list = []
         position_ids_list = []
-        for i, input_ids_i in enumerate(input_ids_list):
+        for input_ids_i in input_ids_list:
             seq_len = input_ids_i.size(0)
             if max_len > seq_len:
                 logger.info(
@@ -177,15 +185,11 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT,
             # Setting this to 0, however if 0 is the eos, we will end up
             # truncating the output if using truncate_after_eos once this
             # workflow works for nested tensor, this can probably be removed
-            if token_type_list:
-                padded_token_type_list.append(
-                    torch.cat((pads, token_type_list[i])))
             padded_input_ids_list.append(torch.cat((pads, input_ids_i)))
             mask_list.append(torch.cat((torch.zeros_like(pads), non_pads)))
             position_ids_list.append(torch.cat((pos_ids_pads, pos_ids_seq)))
 
-        return padded_input_ids_list, mask_list, \
-            position_ids_list, padded_token_type_list
+        return padded_input_ids_list, mask_list, position_ids_list
 
     def get_kv_cache_spec(self) -> KVCacheSpec:
         """
@@ -251,10 +255,6 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT,
             # we always want the decode to be dynamic on sequence
             torch._dynamo.mark_dynamic(model_input.input_masks, 2)
 
-    def get_supported_pooling_tasks(
-            self) -> list["PoolingTask"]:  # type: ignore
-        return []
-
     @SpyrePlatform.inference_mode()
     @abstractmethod
     def execute_model(
@@ -308,7 +308,7 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
         min_pad_length: int = 0,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
 
-        padded_input_ids_list, mask_list, position_ids_list, _ = (
+        padded_input_ids_list, mask_list, position_ids_list = (
             self._prepare_pad_input_ids(input_ids_list, min_pad_length))
 
         input_ids = torch.stack(padded_input_ids_list)
@@ -467,6 +467,14 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
             return self._prepare_prompt(scheduler_output.scheduled_new_reqs)
         else:
             return self._prepare_decode(scheduler_output.scheduled_cached_reqs)
+
+    def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
+        tasks = list[SupportedTask]()
+
+        if "generate" in self.model_config.supported_tasks:
+            tasks.extend(["generate"])
+
+        return tuple(tasks)
 
     @SpyrePlatform.inference_mode()
     def execute_model(
@@ -1344,14 +1352,11 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
     def pad_input_ids(
         self,
         input_ids_list: list[torch.Tensor],
-        token_type_list: list[torch.Tensor],
         min_pad_length: int = 0,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
 
-        padded_input_ids_list, mask_list, \
-            position_ids_list, padded_token_type_list = (
-            self._prepare_pad_input_ids(input_ids_list, min_pad_length,
-                                        token_type_list))
+        padded_input_ids_list, mask_list, position_ids_list = (
+            self._prepare_pad_input_ids(input_ids_list, min_pad_length))
 
         input_ids = torch.stack(padded_input_ids_list)
         mask = torch.stack(mask_list)
@@ -1373,7 +1378,6 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
     ) -> ModelForwardInputs:
         assert len(new_requests) > 0
         input_token_list: list[torch.Tensor] = []
-        token_type_list: list[torch.Tensor] = []
         padded_batch_size, min_pad_length_batch = self._get_padded_batch_size(
             new_requests)
 
@@ -1408,26 +1412,16 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
 
         self.input_batch.padded_batch_size = padded_batch_size
 
-        if token_type_list:
-            assert len(input_token_list) == len(token_type_list)
-
         # padding to compiled batch size
         while len(input_token_list) < padded_batch_size:
             input_token_list.append(
                 torch.zeros(min_pad_length_batch,
                             dtype=torch.long,
                             device=torch.device("cpu")))
-            if token_type_list:
-                token_type_list.append(
-                    torch.zeros(min_pad_length_batch,
-                                dtype=torch.long,
-                                device=torch.device("cpu")))
 
         # get position ids and attention mask
         input_tokens, position_ids, mask = self.pad_input_ids(
-            input_token_list,
-            token_type_list,
-            min_pad_length=min_pad_length_batch)
+            input_token_list, min_pad_length=min_pad_length_batch)
 
         model_input = ModelForwardInputs(
             input_tokens=input_tokens,
@@ -1461,9 +1455,8 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
             # Only mark tensors when we're warming up and compiling the graphs
             return
 
-    def get_supported_pooling_tasks(
-            self) -> list["PoolingTask"]:  # type: ignore
-        return list(self.pooler.get_supported_tasks())
+    def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
+        return tuple(self.pooler.get_supported_tasks())
 
     @SpyrePlatform.inference_mode()
     def execute_model(
