@@ -827,10 +827,13 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         is_new_batch = len(self.req_ids2blocks) == 0
         prompt_len = len(prompt_token_ids)
 
-        # make sure that the prompt length is at most the current tkv
-        # if it joins an existing decode batch
-        if not is_new_batch:
-            assert prompt_len <= self.tkv
+        # make sure that the current tkv of the decode batch is greater or
+        # equal to the prompt length of the new joining sequence
+        if not is_new_batch and prompt_len > self.tkv:
+            # increasing the current tkv by a multiple of the block size
+            tkv_offset = math.ceil(
+                (prompt_len - self.tkv) / self.block_size) * self.block_size
+            self.tkv += tkv_offset
 
         self.prefill_batch.clear_requests()
 
