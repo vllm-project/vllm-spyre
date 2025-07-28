@@ -14,7 +14,8 @@ def test_vllm_bert_support(monkeypatch):
 
     from vllm.model_executor.models.bert import BertEmbeddingModel
 
-    bert_supports_v0_only = getattr(BertEmbeddingModel, "supports_v0_only", False)
+    bert_supports_v0_only = getattr(BertEmbeddingModel, "supports_v0_only",
+                                    False)
 
     if VLLM_VERSION == "main":
         assert not bert_supports_v0_only

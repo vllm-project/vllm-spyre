@@ -93,7 +93,7 @@ jobs:
         if: (steps.changed-src-files.outputs.any_changed == 'true' && matrix.vllm_version.repo)
         run: |
           uv add ${{ matrix.vllm_version.repo }}
-          echo "TEST_VLLM_VERSION=main" >> $GITHUB_ENV
+          echo "TEST_VLLM_VERSION=main" >> "$GITHUB_ENV"
 
       - name: "Install vLLM with Spyre plugin"
         if: steps.changed-src-files.outputs.any_changed == 'true'
