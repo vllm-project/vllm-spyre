@@ -1,3 +1,4 @@
+import inspect
 import sys
 
 # When running this plugin on a Mac, we assume it's for local development
@@ -13,7 +14,7 @@ if sys.platform.startswith("darwin"):
 import math
 import operator
 import os
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import torch
 from vllm.inputs import ProcessorInputs, PromptType
@@ -59,7 +60,12 @@ def is_v1_compatible(self) -> bool:
     if any(pat in arch for arch in architectures for pat in patterns):
         return True
     import vllm.model_executor.models as me_models
-    return me_models.ModelRegistry.is_v1_compatible(architectures, self)
+    extra_kwargs: dict[str, Any] = {}
+    extra_kwargs["architectures"] = architectures
+    if "model_config" in inspect.signature(
+            me_models.ModelRegistry.is_v1_compatible).parameters:
+        extra_kwargs["model_config"] = self
+    return me_models.ModelRegistry.is_v1_compatible(**extra_kwargs)
 
 
 class SpyrePlatform(Platform):
