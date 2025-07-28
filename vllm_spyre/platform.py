@@ -1,4 +1,3 @@
-import math
 import sys
 
 # When running this plugin on a Mac, we assume it's for local development
@@ -11,6 +10,7 @@ if sys.platform.startswith("darwin"):
     if sys.modules.get('triton'):
         del sys.modules['triton']
 
+import math
 import operator
 import os
 from typing import TYPE_CHECKING, Optional, Union
@@ -43,15 +43,46 @@ THREADING_ENVS = [
 ]
 
 
+class classproperty:
+
+    def __init__(self, func):
+        self.func = func
+
+    def __get__(self, instance, owner):
+        return self.func(owner)
+
+
+@property  # type: ignore
+def is_v1_compatible(self) -> bool:
+    architectures = getattr(self.hf_config, "architectures", [])
+    patterns = ["Bert", "Roberta"]
+    if any(pat in arch for arch in architectures for pat in patterns):
+        return True
+    import vllm.model_executor.models as me_models
+    return me_models.ModelRegistry.is_v1_compatible(architectures)
+
+
 class SpyrePlatform(Platform):
     _enum = PlatformEnum.OOT
 
     # "spyre" device_name no longer worked due to https://github.com/vllm-project/vllm/pull/16464
     device_name: str = "cpu"
-    device_type: str = "cpu"
-    supported_quantization: list[str] = ["gptq"]
+    _device_type: str = "cpu"
+    # compressed-tensors supported by
+    # https://github.com/foundation-model-stack/fms-model-optimizer/blob/main/fms_mo/aiu_addons/__init__.py
+    supported_quantization: list[str] = ["gptq", "compressed-tensors"]
     _warmup_shapes: Optional[tuple[dict[str, int], ...]] = None
+    _block_size: int = 64  # hardcoded Spyre constraint for now
+    _num_spyre_blocks_override: int = -1  # override num of KV cache blocks
     _config: VllmConfig = None
+
+    @classproperty
+    def device_type(cls):
+        # TODO: temporary hack while BertModels
+        # inherit SupportsV0Only in vllm upstream.
+        from vllm.config import ModelConfig
+        ModelConfig.is_v1_compatible = is_v1_compatible
+        return cls._device_type
 
     @classmethod
     def get_device_name(cls, device_id: int = 0) -> str:
@@ -76,15 +107,14 @@ class SpyrePlatform(Platform):
             raise NotImplementedError
 
         is_decoder = model_config.task == "generate"
-        is_embedding = model_config.task == "embed"
+        is_pooling = model_config.task == "embed"
+        if model_config.task == "auto":
+            is_pooling = "embed" in model_config.supported_tasks
+            is_decoder = "generate" in model_config.supported_tasks
 
-        # v0 is only supported for embedding models, and embedding models must
-        # be run on v0
-        if is_embedding and envs.VLLM_USE_V1:
-            raise ValueError("Embedding models are only supported on v0")
-        elif is_decoder and not envs.VLLM_USE_V1:
+        if is_decoder and not envs.VLLM_USE_V1:
             raise ValueError("Decoder models are only supported on v1")
-        elif not is_decoder and not is_embedding:
+        elif not is_decoder and not is_pooling:
             raise ValueError("Only the 'generate' and 'embed' tasks are "
                              "supported")
 
@@ -128,9 +158,14 @@ class SpyrePlatform(Platform):
                 scheduler_config.scheduler_cls = (
                     "vllm_spyre.v1.core.scheduler."\
                         "StaticBatchingSpyreScheduler")
-            elif is_embedding:
-                scheduler_config.scheduler_cls = (
-                    "vllm_spyre.core.scheduler.SpyreScheduler")
+            elif is_pooling:
+                if not envs.VLLM_USE_V1:
+                    scheduler_config.scheduler_cls = (
+                        "vllm_spyre.core.scheduler.SpyreScheduler")
+                else:
+                    scheduler_config.scheduler_cls = (
+                        "vllm_spyre.v1.core.scheduler."\
+                            "StaticBatchingSpyreScheduler")
 
         # To disable any paged attention ops in the base scheduler, we:
         # - Set the block size (in tokens) to the maximum sequence length
@@ -143,6 +178,10 @@ class SpyrePlatform(Platform):
         #       budget available to schedule a full batch
         if cache_config is not None:
             if envs.VLLM_USE_V1:
+                # overriding number of available Spyre blocks if not None
+                if cache_config.num_gpu_blocks_override:
+                    cls._num_spyre_blocks_override = \
+                        cache_config.num_gpu_blocks_override
                 # The V1 scheduler actually needs 2 blocks for each sequence...
                 cache_config.num_gpu_blocks_override = \
                     scheduler_config.max_num_seqs * 2
@@ -241,12 +280,19 @@ class SpyrePlatform(Platform):
         return cls._warmup_shapes
 
     @classmethod
+    def get_block_size(cls) -> int:
+        return cls._block_size
+
+    @classmethod
+    def get_num_spyre_blocks_override(cls) -> int:
+        return cls._num_spyre_blocks_override
+
+    @classmethod
     def supports_v1(cls, model_config: ModelConfig) -> bool:
         """Returns whether the current platform can support v1 for the supplied
         model configuration.
         """
-        # We don't have an embedding runner for v1 yet
-        return model_config.task != "embed"
+        return True
 
     @classmethod
     def validate_request(
@@ -285,10 +331,10 @@ class SpyrePlatform(Platform):
             # into account.
 
             # ceil division to pad to next block boundary
-            n = prompt_len
-            d = 64  # hardcoded AIU Spyre block size
-            prompt_padding_len = ((n + d - 1) // d) * d
-            if (prompt_padding_len + max_tokens
+            prompt_padding_len = math.ceil(
+                prompt_len / cls._block_size) * cls._block_size
+            # we have to account for the token generated during prefill (-1)
+            if (prompt_padding_len + max_tokens - 1
                     > cls._config.scheduler_config.max_model_len):
                 raise ValueError(
                     "Could not add request: prompt length is "
@@ -426,3 +472,16 @@ class SpyrePlatform(Platform):
                 "configuration to %d. Set VLLM_SPYRE_UPDATE_THREAD_CONFIG=1 "
                 "to do this automatically.", thread_warning, detection_message,
                 worker_count, cpus_per_worker)
+
+    def get_max_output_tokens(self, prompt_len: int) -> int:
+        """Return the size of biggest ```new_tokens``` of the \
+            warmup shapes that fits the prompt length"""
+        if self._warmup_shapes is None:
+            return sys.maxsize
+
+        max_new_tokens = 1
+        for shape in self._warmup_shapes:
+            if prompt_len <= shape['prompt_length']:
+                max_new_tokens = max(max_new_tokens, shape['new_tokens'])
+
+        return max_new_tokens
