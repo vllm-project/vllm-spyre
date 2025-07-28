@@ -30,9 +30,8 @@ import vllm_spyre.perf_metrics as perf_metrics
 from vllm_spyre.model_executor.model_loader import spyre_setup
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import (
-    ContinuousBatchingSpyreModelRunner, StaticBatchingSpyreModelRunner)
-from vllm_spyre.v1.worker.spyre_pooling_model_runner import (
-    SpyrePoolingModelRunner)
+    ContinuousBatchingSpyreModelRunner, SpyrePoolingModelRunner,
+    StaticBatchingSpyreModelRunner)
 
 # TODO: fix import when we upgrade to vLLM 0.9.3
 PoolingTask = None
