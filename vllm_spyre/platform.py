@@ -9,7 +9,7 @@ import sys
 if sys.platform.startswith("darwin"):
     if sys.modules.get('triton'):
         del sys.modules['triton']
-
+import inspect
 import math
 import operator
 import os
@@ -72,7 +72,11 @@ class SpyrePlatform(Platform):
         # TODO: temporary hack while BertModels
         # inherit SupportsV0Only in vllm upstream.
         from vllm.config import ModelConfig
-        ModelConfig.is_v1_compatible = is_v1_compatible
+
+        # no need to patch after the model_config change
+        if not 'model_config' in \
+                inspect.getfullargspec(ModelConfig.is_v1_compatible).args:
+            ModelConfig.is_v1_compatible = is_v1_compatible
         return cls._device_type
 
     @classmethod
