@@ -10,13 +10,13 @@ from vllm.logger import init_logger
 from vllm.model_executor.layers.pooler import Pooler, PoolingType
 
 from vllm_spyre.platform import SpyrePlatform
+# yapf conflicts with ruff for this block
+# yapf: disable
+from vllm_spyre.v1.worker.spyre_input_batch import (PoolingInputBatch,
+                                                    PoolingRequestState)
 from vllm_spyre.v1.worker.spyre_model_runner import (BaseSpyreModelRunner,
                                                      ModelForwardInputs,
                                                      WarmupShapesMixin)
-# yapf conflicts with ruff for this block
-# yapf: disable
-from vllm_spyre.v1.worker.spyre_pooling_input_batch import (
-    PoolingInputBatch, PoolingRequestState)
 
 # yapf: enable
 

@@ -20,9 +20,9 @@ import vllm_spyre.envs as envs_spyre
 from vllm_spyre.model_executor.model_loader.spyre import (
     SpyreAttentionMetadata, SpyreCausalLM)
 from vllm_spyre.platform import SpyrePlatform
-from vllm_spyre.v1.worker.spyre_base_input_batch import (BaseInputBatch,
-                                                         BaseRequestState)
-from vllm_spyre.v1.worker.spyre_input_batch import (SamplingInputBatch,
+from vllm_spyre.v1.worker.spyre_input_batch import (BaseInputBatch,
+                                                    BaseRequestState,
+                                                    SamplingInputBatch,
                                                     SamplingRequestState)
 
 if TYPE_CHECKING:
