@@ -72,10 +72,11 @@ class SpyrePlatform(Platform):
         # TODO: temporary hack while BertModels
         # inherit SupportsV0Only in vllm upstream.
         from vllm.config import ModelConfig
+        import vllm.model_executor.models as me_models
 
         # no need to patch after the model_config change
         if 'model_config' not in \
-                inspect.getfullargspec(ModelConfig.is_v1_compatible).args:
+                inspect.getfullargspec(me_models.ModelRegistry.is_v1_compatible).args:
             ModelConfig.is_v1_compatible = is_v1_compatible
         return cls._device_type
 
