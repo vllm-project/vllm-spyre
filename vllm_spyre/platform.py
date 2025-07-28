@@ -33,6 +33,15 @@ import vllm_spyre.envs as envs_spyre
 
 logger = init_logger(__name__)
 
+THREADING_ENVS = [
+    "OMP_NUM_THREADS",
+    # "TORCHINDUCTOR_COMPILE_THREADS", # vLLM wants this set to 1
+    "DT_PARALLEL_THREADS",  # affects the compilation during warmup
+    # set these for good measure
+    "OPENBLAS_NUM_THREADS",
+    "MKL_NUM_THREADS",
+]
+
 
 class SpyrePlatform(Platform):
     _enum = PlatformEnum.OOT
@@ -333,16 +342,9 @@ class SpyrePlatform(Platform):
         #  - has configurations for OMP thread binding (https://github.com/vllm-project/vllm/blob/baba0389f7e810a361fff5229ce20c2d5a2b1fac/vllm/envs.py#L435-L438)
         #    - the bind attempts to detect NUMA nodes (https://github.com/vllm-project/vllm/blob/baba0389f7e810a361fff5229ce20c2d5a2b1fac/vllm/v1/worker/cpu_worker.py#L111)
 
+        assert worker_count > 0
         # Always print current env for awareness
-        threading_envs = [
-            "OMP_NUM_THREADS",
-            # "TORCHINDUCTOR_COMPILE_THREADS", # vLLM wants this set to 1
-            "DT_PARALLEL_THREADS",  # affects the compilation during warmup
-            # set these for good measure
-            "OPENBLAS_NUM_THREADS",
-            "MKL_NUM_THREADS",
-        ]
-        env_map = {env: os.getenv(env) for env in threading_envs}
+        env_map = {env: os.getenv(env) for env in THREADING_ENVS}
         logger.info(
             "Initial threading configurations: %s",
             ' '.join([f"{env}={value}" for env, value in env_map.items()]))
@@ -358,7 +360,7 @@ class SpyrePlatform(Platform):
             if quota_str != 'max':
                 quota = int(quota_str)
                 period = int(period_str)
-                cpu_count = float(quota) / period
+                cpu_count = quota / period
                 detection_message = f"Detected cgroup CPU limit of {cpu_count}"
 
         except FileNotFoundError:
@@ -378,6 +380,8 @@ class SpyrePlatform(Platform):
             detection_message = \
                 f"Detected {cpu_count} CPUs from `os.cpu_count()`"
 
+        # NOTE: math.ceil can output a number for each worker that sums
+        # to a total greater than cpu_count.
         cpus_per_worker = math.ceil(
             cpu_count / worker_count) if cpu_count is not None else None
 
@@ -394,7 +398,7 @@ class SpyrePlatform(Platform):
                     "VLLM_SPYRE_UPDATE_THREAD_CONFIG=0 and configure manually."
                 )
 
-            for env in threading_envs:
+            for env in THREADING_ENVS:
                 os.environ[env] = str(cpus_per_worker)
 
             logger.info(
