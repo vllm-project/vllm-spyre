@@ -50,6 +50,9 @@ jobs:
           - name: "worker and utils"
             markers: "not e2e"
             flags: "--timeout=300"
+          - name: "compatibility"
+            markers: "compat"
+            flags: "--timeout=300"
 
     name: "${{ matrix.test_suite.name }} (${{ matrix.vllm_version.name }})"
 
@@ -90,6 +93,7 @@ jobs:
         if: (steps.changed-src-files.outputs.any_changed == 'true' && matrix.vllm_version.repo)
         run: |
           uv add ${{ matrix.vllm_version.repo }}
+          echo "TEST_VLLM_VERSION=main" >> $GITHUB_ENV
 
       - name: "Install vLLM with Spyre plugin"
         if: steps.changed-src-files.outputs.any_changed == 'true'

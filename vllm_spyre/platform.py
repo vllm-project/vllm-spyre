@@ -74,7 +74,7 @@ class SpyrePlatform(Platform):
         from vllm.config import ModelConfig
 
         # no need to patch after the model_config change
-        if not 'model_config' in \
+        if 'model_config' not in \
                 inspect.getfullargspec(ModelConfig.is_v1_compatible).args:
             ModelConfig.is_v1_compatible = is_v1_compatible
         return cls._device_type
