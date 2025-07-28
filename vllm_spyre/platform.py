@@ -112,8 +112,13 @@ class SpyrePlatform(Platform):
         if scheduler_config.is_multi_step:
             raise NotImplementedError
 
-        is_pooling = "embed" in model_config.supported_tasks
-        is_decoder = "generate" in model_config.supported_tasks
+        is_decoder = model_config.task == "generate" \
+            if model_config.task \
+                else "generate" in model_config.supported_tasks
+
+        is_pooling = model_config.task == "embed" \
+            if model_config.task \
+        else "embed" in model_config.supported_tasks
 
         if is_decoder and not envs.VLLM_USE_V1:
             raise ValueError("Decoder models are only supported on v1")
