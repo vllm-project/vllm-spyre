@@ -817,18 +817,18 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # right padding to the next block boundary (ceil division)
         # -> prefills must to be multiples of the block size (Spyre constraint)
         n = prompt_len if is_new_batch else self.tkv
-        block_padding = math.ceil(n / self.block_size) * self.block_size
+        right_padding_tkv = math.ceil(n / self.block_size) * self.block_size
 
         # set the tkv to the block padding if starting a new decode batch
-        self.tkv = block_padding if is_new_batch else self.tkv
+        self.tkv = right_padding_tkv if is_new_batch else self.tkv
 
-        # left padding to align the prefill sequence with the tkv of the
+        # number of left pads to align the prefill sequence with the tkv of the
         # current decode batch (Spyre constraint)
         left_padding = self.tkv - prompt_len
 
         # optimization: cut out fully padded blocks on the left
         n_pad_blocks = (self.tkv - prompt_len) // self.block_size
-        block_padding -= n_pad_blocks * self.block_size
+        right_padding_tkv -= n_pad_blocks * self.block_size
         left_padding_tkv = self.tkv - n_pad_blocks * self.block_size
         if n_pad_blocks > 0:
             logger.debug("Prefill reduced by %d blocks due to optimization.",
@@ -849,7 +849,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # filling block table and slot mapping
         blocks = []
         slots = []
-        for pos_i in range(block_padding):
+        for pos_i in range(right_padding_tkv):
             if pos_i % self.block_size == 0:
                 block_number = self.block_pool.popleft()
                 blocks.append(block_number)
@@ -893,7 +893,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         input_tokens, position_ids, mask = self.pad_input_ids(
             [prompt_token_ids_tensor],
             min_pad_left=left_padding_tkv,
-            min_pad_right=block_padding)
+            min_pad_right=right_padding_tkv)
         mask = mask.unsqueeze(1).contiguous()
 
         # not needed for prefill
@@ -956,7 +956,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             # filling block table with padding blocks to make it rectangular
             # Note: the padding block id 0 here is chosen arbitrarily, it can
             # be any allocated block id on the Sypre card (has to be in range
-            # [0, self.n_blocks - 1]). Further it also be an block id that holds
+            # [0, self.n_blocks - 1]). Further, it also be a block id that holds
             # actual KV cache for another (or the same) sequence.
             blocks = self.req_ids2blocks[req_id].copy()
             for i in range(n_blocks - len(self.req_ids2blocks[req_id])):
