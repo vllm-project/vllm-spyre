@@ -253,7 +253,9 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         # check cond4 again with updated tkv for current sequence
         cond4_updated = request.max_tokens <= (max_context_len - tkv_updated)
 
-        # TODO (ysc)
         # check cond4 for all other sequences in the current decode batch
+        for req in self.running:
+            cond4_current = req.max_tokens <= (max_context_len - tkv_updated)
+            cond4_updated = cond4_updated and cond4_current
 
         return cond4_updated
