@@ -788,89 +788,79 @@ def test_prompt_too_long_for_current_tkv(model: str, backend: str,
             "n_reserved_blocks": 2,  # prefill (1 block) + 56 decodes (1 block)
             "n_used_blocks": 1
         },
+        # due to allowing sequences to join the current decode batch even if
+        # prompt length > tkv, prefill of sequence 1 happens immediately
         {
-            # Decode sequence 0
-            # total blocks in use: 1 + 1
-            # Cannot prefill sequence 1, because of tkv constraint
-            "step": 2,
-            "tkv": 65,
-            "waiting": ["1"],
-            "running": ["0"],
-            "request_outputs": ["0"],
-            "n_reserved_blocks": 2,
-            "n_used_blocks": 2
-        },
-        {
-            # Prefill sequence 1, tkv large enough
+            # Prefill sequence 1
             # total blocks in use: 2 + 2
-            "step": 8,
-            "tkv": 70,
+            "step": 2,
+            "tkv": 128,
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": ["1"],
-            # 2 + 3 (prefill (2 block) + 66 decodes (1 block))
-            "n_reserved_blocks": 5,
-            "n_used_blocks": 4
+            # 2 + 4 (prefill (2 block) + 66 decodes (2 blocks))
+            "n_reserved_blocks": 6,
+            "n_used_blocks": 3
         },
         {
             # Decode sequences 0 and 1
-            "step": 9,
-            "tkv": 71,
+            "step": 3,
+            "tkv": 129,
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": ["1", "0"],
-            "n_reserved_blocks": 5,
-            "n_used_blocks": 4  # seq 1 writes into the right pads
+            "n_reserved_blocks": 6,
+            "n_used_blocks": 5  # 3 + 2 = 5
         },
         {
             # Sequence 0 finishes at step 58
             # (start step + 2 prefills + 56 decodes - 1) = 1 + 2 + 56 - 1 = 58
             "step": 58,
-            "tkv": 120,
+            "tkv": 184,
             "waiting": [],
             "running": ["1"],
             "request_outputs": ["1", "0"],
             "finished_requests": ["0"],
-            "n_reserved_blocks": 5,
-            "n_used_blocks": 4
+            "n_reserved_blocks": 6,
+            "n_used_blocks": 5
         },
         {
             # Decode sequence 1
-            # total blocks in use: 4 - 2 = 2
+            # total blocks in use: 5 - 2 = 3
             "step": 59,
-            "tkv": 121,
+            "tkv": 185,
             "waiting": [],
             "running": ["1"],
             "request_outputs": ["1"],
-            "n_reserved_blocks": 3,  # 5 - 2 (seq 0)
-            "n_used_blocks": 2
-        },
-        {
-            # Decode sequence 1 needs another block
-            # total blocks in use: 2 + 1 = 3
-            "step": 67,
-            "tkv": 129,
-            "waiting": [],
-            "running": ["1"],
-            "request_outputs": ["1"],
-            "n_reserved_blocks": 3,
+            "n_reserved_blocks": 4,  # 6 - 2 (seq 0)
             "n_used_blocks": 3
         },
         {
+            # Decode sequence 1 needs another block
+            # total blocks in use: 3 + 1 = 4
+            "step": 67,
+            "tkv": 193,
+            "waiting": [],
+            "running": ["1"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 4
+        },
+        {
             # Sequence 1 finishes at step 74
-            # (start step + 1 prefill + 66 decodes - 1) = 8 + 1 + 66 - 1 = 74
-            "step": 74,
-            "tkv": 136,
+            # (start step + 1 prefill + 66 decodes - 1) = 2 + 1 + 66 - 1 = 68
+            "step": 68,
+            "tkv": 194,
             "waiting": [],
             "running": [],
             "request_outputs": ["1"],
             "finished_requests": ["1"],
-            "n_reserved_blocks": 3,
-            "n_used_blocks": 3
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 4
         },
         {
             # Tkv should be cleared one step later
-            "step": 75,
+            "step": 69,
             "tkv": 0,
             "waiting": [],
             "running": [],
