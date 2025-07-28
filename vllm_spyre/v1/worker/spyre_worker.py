@@ -463,8 +463,7 @@ class SpyreWorker(WorkerBaseV1):
             0, len(valid_token_ids_tensor), (batch_size, prompt_len))]
 
         sampling_params, pooling_params = None, None
-        if (self.model_config.task != "embed"
-                or not self.model_config.task
+        if (self.model_config.task != "embed" or not self.model_config.task
                 and "embed" not in self.model_config.supported_tasks):
             sampling_params = SamplingParams(max_tokens=num_decode_tokens)
         else:
