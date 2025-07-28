@@ -3,7 +3,7 @@ import time
 from collections import deque
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
-from typing import TYPE_CHECKING, Optional, cast
+from typing import TYPE_CHECKING, Literal, Optional, cast, get_args
 
 import torch
 from torch import nn
@@ -33,6 +33,19 @@ else:
     SamplingMetadata = None
 
 from vllm.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, ModelRunnerOutput
+
+#############################################################
+# from vllm.tasks import GenerationTask, PoolingTask, SupportedTask
+# TODO: remove when we have this in vllm/tasks.py
+#############################################################
+GenerationTask = Literal["generate", "transcription"]
+GENERATION_TASKS = get_args(GenerationTask)
+
+PoolingTask = Literal["encode", "embed", "classify", "score"]
+POOLING_TASKS = get_args(PoolingTask)
+
+SupportedTask = Literal[GenerationTask]
+#############################################################
 
 logger = init_logger(__name__)
 
@@ -76,7 +89,6 @@ class SpyreModelRunner:
         self.scheduler_config = vllm_config.scheduler_config
         self.device_config = vllm_config.device_config
         self.speculative_config = vllm_config.speculative_config
-        self.prompt_adapter_config = vllm_config.prompt_adapter_config
         self.observability_config = vllm_config.observability_config
 
         self.pad_token_id = 0
@@ -374,6 +386,14 @@ class SpyreModelRunner:
             return self._prepare_prompt(scheduler_output.scheduled_new_reqs)
         else:
             return self._prepare_decode(scheduler_output.scheduled_cached_reqs)
+
+    def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
+        tasks = list[SupportedTask]()
+
+        if "generate" in self.model_config.supported_tasks:
+            tasks.extend(["generate"])
+
+        return tuple(tasks)
 
     @SpyrePlatform.inference_mode()
     def execute_model(
