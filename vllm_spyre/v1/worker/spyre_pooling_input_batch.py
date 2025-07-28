@@ -4,9 +4,8 @@
 # Based on vllm/vllm/v1/worker/gpu_input_batch.py
 
 from dataclasses import dataclass
-from typing import Optional, cast
+from typing import Optional
 
-import numpy as np
 import torch
 from vllm.pooling_params import PoolingParams
 from vllm.v1.pool.metadata import PoolingMetadata
@@ -18,7 +17,6 @@ from vllm_spyre.v1.worker.spyre_base_input_batch import (BaseInputBatch,
 @dataclass
 class PoolingRequestState(BaseRequestState):
 
-    token_type_ids: Optional[list[int]] = None
     pooling_params: PoolingParams = PoolingParams()
 
     def __post_init__(self):
@@ -46,25 +44,7 @@ class PoolingInputBatch(BaseInputBatch[PoolingRequestState]):
             pin_memory,
             vocab_size,
         )
-        self.token_type_ids_cpu_tensor: Optional[torch.Tensor] = None
-        self._token_type_ids_cpu: Optional[np.ndarray] = None
         self.pooling_params: dict[str, PoolingParams] = {}
-
-    @property
-    def token_type_ids_cpu(self) -> np.ndarray:
-        if self._token_type_ids_cpu is None:
-            self.token_type_ids_cpu_tensor = torch.zeros(
-                self.token_ids_cpu_tensor.shape,
-                device="cpu",
-                dtype=torch.int8,
-                pin_memory=False,
-            )
-            self._token_type_ids_cpu = cast(
-                torch.Tensor, self.token_type_ids_cpu_tensor).numpy()
-        return self._token_type_ids_cpu
-
-    def has_token_types(self) -> bool:
-        return self._token_type_ids_cpu is not None
 
     def get_available_index(self) -> Optional[int]:
         return self._num_requests
@@ -76,11 +56,6 @@ class PoolingInputBatch(BaseInputBatch[PoolingRequestState]):
     ) -> int:
 
         req_index = super().add_request(request, req_index)
-
-        num_prompt_tokens = len(request.prompt_token_ids)
-        if request.token_type_ids is not None:
-            self.token_type_ids_cpu[
-                req_index, :num_prompt_tokens] = request.token_type_ids
 
         assert request.pooling_params is not None
         self.pooling_params[request.req_id] = request.pooling_params

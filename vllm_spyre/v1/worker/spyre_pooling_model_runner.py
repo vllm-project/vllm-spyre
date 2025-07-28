@@ -1,7 +1,6 @@
 import time
 from collections.abc import Iterable
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Optional
 
 import torch
 from transformers import AutoModel
@@ -39,16 +38,10 @@ logger = init_logger(__name__)
 BACKEND_LIST = ['sendnn', 'inductor']
 
 
-@dataclass(frozen=True)
-class PoolingForwardInputs(ModelForwardInputs):
-    """ Used by the SpyrePoolingModelRunner. """
-    token_type_ids: Optional[torch.Tensor] = None
-
-
 class SpyrePoolingModelRunner(WarmupShapesMixin,
                               BaseSpyreModelRunner[PoolingInputBatch,
                                                    PoolingRequestState,
-                                                   PoolingForwardInputs]):
+                                                   ModelForwardInputs]):
 
     def __init__(
         self,
@@ -116,7 +109,7 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
         input_ids_list: list[torch.Tensor],
         token_type_list: list[torch.Tensor],
         min_pad_length: int = 0,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
 
         padded_input_ids_list, mask_list, \
             position_ids_list, padded_token_type_list = (
@@ -124,14 +117,10 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
                                         token_type_list))
 
         input_ids = torch.stack(padded_input_ids_list)
-        if padded_token_type_list:
-            token_type_ids = torch.stack(padded_token_type_list)
-        else:
-            token_type_ids = None
         mask = torch.stack(mask_list)
         position_ids = torch.stack(position_ids_list)
 
-        return input_ids, token_type_ids, position_ids, mask
+        return input_ids, position_ids, mask
 
     def update_states(self, scheduler_output: SchedulerOutput):
         assert len(scheduler_output.scheduled_cached_reqs.req_ids) == 0
@@ -144,7 +133,7 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
     def _prepare_prompt(
         self,
         new_requests: list[NewRequestData],
-    ) -> PoolingForwardInputs:
+    ) -> ModelForwardInputs:
         assert len(new_requests) > 0
         input_token_list: list[torch.Tensor] = []
         token_type_list: list[torch.Tensor] = []
@@ -167,12 +156,6 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
                              dtype=torch.long,
                              device=torch.device("cpu")))
 
-            #if request_data.token_type_ids is not None:
-            #    token_type_list.append(
-            #        torch.tensor(request_data.token_type_ids,
-            #                     dtype=torch.long,
-            #                     device=torch.device("cpu")))
-
             # Add new requests to the cached states.
             req_id = request_data.req_id
             pooling_params = request_data.pooling_params
@@ -181,7 +164,6 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
             req_state = PoolingRequestState(
                 req_id=req_id,
                 prompt_token_ids=request_data.prompt_token_ids,
-                #token_type_ids=request_data.token_type_ids,
                 pooling_params=pooling_params,
             )
             self.requests[req_id] = req_state
@@ -205,14 +187,13 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
                                 device=torch.device("cpu")))
 
         # get position ids and attention mask
-        input_tokens, token_type_ids, position_ids, mask = self.pad_input_ids(
+        input_tokens, position_ids, mask = self.pad_input_ids(
             input_token_list,
             token_type_list,
             min_pad_length=min_pad_length_batch)
 
-        model_input = PoolingForwardInputs(
+        model_input = ModelForwardInputs(
             input_tokens=input_tokens,
-            token_type_ids=token_type_ids,
             input_positions=position_ids,
             input_masks=mask,
             is_prompt=True,
@@ -223,7 +204,7 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
         return model_input
 
     def prepare_model_input(
-            self, scheduler_output: SchedulerOutput) -> PoolingForwardInputs:
+            self, scheduler_output: SchedulerOutput) -> ModelForwardInputs:
 
         # NOTE: We assume that all sequences in the group are all prompts or
         # all decodes.
@@ -236,16 +217,12 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
         assert len(scheduler_output.scheduled_cached_reqs.req_ids) == 0
         return self._prepare_prompt(scheduler_output.scheduled_new_reqs)
 
-    def _mark_input_tensors(self, model_input: PoolingForwardInputs) -> None:
+    def _mark_input_tensors(self, model_input: ModelForwardInputs) -> None:
 
         super()._mark_input_tensors(model_input=model_input)
         if not self.warmup_mode:
             # Only mark tensors when we're warming up and compiling the graphs
             return
-
-        if model_input.token_type_ids is not None:
-            torch._dynamo.mark_static(model_input.token_type_ids, 0)
-            torch._dynamo.mark_static(model_input.token_type_ids, 1)
 
     def get_supported_pooling_tasks(
             self) -> list["PoolingTask"]:  # type: ignore
@@ -267,11 +244,6 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
             return EMPTY_MODEL_RUNNER_OUTPUT
 
         model_input = self.prepare_model_input(scheduler_output)
-
-        model_kwargs: dict[str, Any] = {}
-        if model_input.token_type_ids:
-            model_kwargs["token_type_ids"] =\
-                  model_input.token_type_ids
 
         # Execute the model
         attn_metadata = self.build_attn_metadata(model_input)

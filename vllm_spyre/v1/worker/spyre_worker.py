@@ -338,7 +338,6 @@ class SpyreWorker(WorkerBaseV1):
             NewRequestData(
                 req_id="warmup-%d" % (i),
                 prompt_token_ids=warmup_tokens_tensor[i].tolist(),
-                # token_type_ids=None, TODO: wait for upstream
                 mm_inputs=[],
                 mm_hashes=[],
                 mm_positions=[],
@@ -443,18 +442,16 @@ class SpyreWorker(WorkerBaseV1):
 
         # Set up dummy requests for prefill steps
         dummy_requests = [
-            NewRequestData(
-                req_id="warmup",
-                prompt_token_ids=warmup_tokens_tensor[i].tolist(),
-                # token_type_ids=None, TODO: wait for upstream
-                mm_inputs=[],
-                mm_hashes=[],
-                mm_positions=[],
-                sampling_params=sampling_params,
-                pooling_params=pooling_params,
-                block_ids=[0],
-                num_computed_tokens=0,
-                lora_request=None) for i in range(batch_size)
+            NewRequestData(req_id="warmup",
+                           prompt_token_ids=warmup_tokens_tensor[i].tolist(),
+                           mm_inputs=[],
+                           mm_hashes=[],
+                           mm_positions=[],
+                           sampling_params=sampling_params,
+                           pooling_params=pooling_params,
+                           block_ids=[0],
+                           num_computed_tokens=0,
+                           lora_request=None) for i in range(batch_size)
         ]
 
         # Set up dummy cached_requests for decode steps
