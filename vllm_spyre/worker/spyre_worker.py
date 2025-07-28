@@ -64,7 +64,7 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
             from vllm.utils import init_cached_hf_modules
             init_cached_hf_modules()
 
-        if self.model_config.task == "embed":
+        if "embed" in self.model_config.supported_tasks:
             self.model_runner: SpyreModelRunner = SpyreEmbeddingModelRunner(
                 self.model_config, self.parallel_config, self.scheduler_config,
                 self.device_config, self.is_driver_worker)
@@ -205,7 +205,7 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
             (s["prompt_length"], s["new_tokens"], s["batch_size"])
                 for s in self.spyre_warmup_shapes
         ]):
-            if self.model_config.task != "embed":
+            if "embed" not in self.model_config.supported_tasks:
                 # TODO: remove if spyre supports
                 # lower number of output tokens
                 assert num_decode_tokens >= 2, (
