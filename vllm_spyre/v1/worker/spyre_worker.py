@@ -85,6 +85,7 @@ class SpyreWorker(WorkerBaseV1):
             (s["prompt_length"], s["new_tokens"], s["batch_size"])
                 for s in self.spyre_warmup_shapes
         ]):
+            # Can be simplified after the model_config change from vllm:main
             if (self.model_config.task and self.model_config.task != "embed"
                     or not self.model_config.task
                     and "embed" not in self.model_config.supported_tasks):
@@ -170,8 +171,7 @@ class SpyreWorker(WorkerBaseV1):
         self.model_runner: \
             Union[StaticBatchingSpyreModelRunner,
                   ContinuousBatchingSpyreModelRunner, SpyrePoolingModelRunner]
-        # earlier versions had self.model_config.task==embed
-        # but also had embed in self.model_config.supported_tasks
+        # Can be simplified after the model_config change from vllm:main
         if (self.model_config.task and self.model_config.task == "embed"
                 or not self.model_config.task
                 and "embed" in self.model_config.supported_tasks):
@@ -463,6 +463,7 @@ class SpyreWorker(WorkerBaseV1):
             0, len(valid_token_ids_tensor), (batch_size, prompt_len))]
 
         sampling_params, pooling_params = None, None
+        # Can be simplified after the model_config change from vllm:main
         if (self.model_config.task and self.model_config.task != "embed"
                 or not self.model_config.task
                 and "embed" not in self.model_config.supported_tasks):

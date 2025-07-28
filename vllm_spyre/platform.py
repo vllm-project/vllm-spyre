@@ -60,6 +60,8 @@ def is_v1_compatible(self) -> bool:
     if any(pat in arch for arch in architectures for pat in patterns):
         return True
     import vllm.model_executor.models as me_models
+
+    # Can be simplified after the model_config change from vllm:main
     extra_kwargs: dict[str, Any] = {}
     extra_kwargs["architectures"] = architectures
     if "model_config" in inspect.signature(
@@ -112,6 +114,7 @@ class SpyrePlatform(Platform):
         if scheduler_config.is_multi_step:
             raise NotImplementedError
 
+        # Can be simplified after the model_config change from vllm:main
         is_decoder = model_config.task == "generate" \
             if model_config.task \
                 else "generate" in model_config.supported_tasks
