@@ -85,7 +85,8 @@ class SpyreWorker(WorkerBaseV1):
             (s["prompt_length"], s["new_tokens"], s["batch_size"])
                 for s in self.spyre_warmup_shapes
         ]):
-            if (self.model_config.task != "embed" or not self.model_config.task
+            if (self.model_config.task and self.model_config.task != "embed"
+                    or not self.model_config.task
                     and "embed" not in self.model_config.supported_tasks):
                 # TODO: remove if spyre supports
                 # lower number of output tokens
@@ -171,7 +172,8 @@ class SpyreWorker(WorkerBaseV1):
                   ContinuousBatchingSpyreModelRunner, SpyrePoolingModelRunner]
         # earlier versions had self.model_config.task==embed
         # but also had embed in self.model_config.supported_tasks
-        if (self.model_config.task == "embed" or not self.model_config.task
+        if (self.model_config.task and self.model_config.task == "embed"
+                or not self.model_config.task
                 and "embed" in self.model_config.supported_tasks):
             self.model_runner = SpyrePoolingModelRunner(
                 self.vllm_config, self.is_driver_worker)
@@ -461,7 +463,8 @@ class SpyreWorker(WorkerBaseV1):
             0, len(valid_token_ids_tensor), (batch_size, prompt_len))]
 
         sampling_params, pooling_params = None, None
-        if (self.model_config.task != "embed" or not self.model_config.task
+        if (self.model_config.task != "embed"
+                or not self.model_config.task
                 and "embed" not in self.model_config.supported_tasks):
             sampling_params = SamplingParams(max_tokens=num_decode_tokens)
         else:
