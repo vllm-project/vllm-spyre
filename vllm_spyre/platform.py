@@ -59,7 +59,7 @@ def is_v1_compatible(self) -> bool:
     if any(pat in arch for arch in architectures for pat in patterns):
         return True
     import vllm.model_executor.models as me_models
-    return me_models.ModelRegistry.is_v1_compatible(architectures)
+    return me_models.ModelRegistry.is_v1_compatible(architectures, self)
 
 
 class SpyrePlatform(Platform):
