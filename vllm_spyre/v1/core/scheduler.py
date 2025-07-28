@@ -237,5 +237,23 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             (self.tkv - request.num_prompt_tokens) / self.block_size)
         num_blocks_required -= num_fully_padded_blocks
         cond5 = num_blocks_required <= self.n_free_blocks
-        return start_new_batch or (cond1 and cond2 and cond3 and cond4
-                                   and cond5)
+        if start_new_batch or (cond1 and cond2 and cond3 and cond4 and cond5):
+            return True
+
+        # the following conditions must always be true, if not we can exit here
+        if not (cond1 and cond2 and cond4 and cond5):
+            return False
+
+        # cond3 is violated: request.num_prompt_tokens > self.tkv
+        # check whether the new sequence can join the decode batch by
+        # increasing the current tkv by a multiple of the block size
+        tkv_offset = math.ceil((request.num_prompt_tokens - self.tkv) /
+                               self.block_size) * self.block_size
+        tkv_updated = self.tkv + tkv_offset
+        # check cond4 again with updated tkv for current sequence
+        cond4_updated = request.max_tokens <= (max_context_len - tkv_updated)
+
+        # TODO (ysc)
+        # check cond4 for all other sequences in the current decode batch
+
+        return cond4_updated
