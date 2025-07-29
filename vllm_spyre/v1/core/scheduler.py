@@ -232,6 +232,10 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         # the context length for a single sequence, so tkv < block size is ok
         num_blocks_required = math.ceil(
             (self.tkv + request.max_tokens - 1) / self.block_size)
+        # optimization: subtract the padding blocks from the reserved blocks
+        num_fully_padded_blocks = math.floor(
+            (self.tkv - request.num_prompt_tokens) / self.block_size)
+        num_blocks_required -= num_fully_padded_blocks
         cond5 = num_blocks_required <= self.n_free_blocks
         return start_new_batch or (cond1 and cond2 and cond3 and cond4
                                    and cond5)
