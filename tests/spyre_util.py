@@ -639,6 +639,7 @@ def get_chicken_soup_prompts(num_prompts: int) -> list[str]:
 
     return prompts[:num_prompts]
 
+
 def get_longer_chicken_soup_prompts(num_prompts: int) -> list[str]:
     template = (
         "Below is an instruction that describes a task. Write a response that "
