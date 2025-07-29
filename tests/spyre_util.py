@@ -154,18 +154,21 @@ class RemoteOpenAIServer:
                                   **kwargs)
 
 
-def patch_warmup_shapes(warmup_shapes: list[tuple[int, int, int]],
+def patch_warmup_shapes(warmup_shapes: Union[list[tuple[int, int, int]],
+                                             list[tuple[int, int]]],
                         monkeypatch):
     warmup_prompt_length = [t[0] for t in warmup_shapes]
-    warmup_new_tokens = [t[1] for t in warmup_shapes]
-    warmup_batch_size = [t[2] for t in warmup_shapes]
+    warmup_batch_size = [t[-1] for t in warmup_shapes]
 
     monkeypatch.setenv('VLLM_SPYRE_WARMUP_PROMPT_LENS',
                        ','.join(str(val) for val in warmup_prompt_length))
-    monkeypatch.setenv('VLLM_SPYRE_WARMUP_NEW_TOKENS',
-                       ','.join(str(val) for val in warmup_new_tokens))
     monkeypatch.setenv('VLLM_SPYRE_WARMUP_BATCH_SIZES',
                        ','.join(str(val) for val in warmup_batch_size))
+
+    if all(len(s) == 3 for s in warmup_shapes):
+        warmup_new_tokens = [t[1] for t in warmup_shapes]
+        monkeypatch.setenv('VLLM_SPYRE_WARMUP_NEW_TOKENS',
+                           ','.join(str(val) for val in warmup_new_tokens))
 
 
 # vLLM / Spyre
@@ -395,24 +398,10 @@ def compare_results(
 
 
 # vLLM / Spyre
-def spyre_vllm_embeddings(model: str, prompts: list[str],
-                          warmup_shapes: list[tuple[int, int]],
-                          max_model_len: int, block_size: int,
-                          tensor_parallel_size: int, backend: str,
+def spyre_vllm_embeddings(model: str, prompts: list[str], max_model_len: int,
+                          block_size: int, tensor_parallel_size: int,
+                          backend: str,
                           vllm_version: str) -> list[dict[str, Any]]:
-
-    warmup_prompt_length = [t[0] for t in warmup_shapes]
-    warmup_new_tokens = [0] * len(warmup_shapes)
-    warmup_batch_size = [t[1] for t in warmup_shapes]
-
-    os.environ['VLLM_SPYRE_WARMUP_PROMPT_LENS'] = ','.join(
-        str(val) for val in warmup_prompt_length)
-    os.environ['VLLM_SPYRE_WARMUP_NEW_TOKENS'] = ','.join(
-        str(val) for val in warmup_new_tokens)
-    os.environ['VLLM_SPYRE_WARMUP_BATCH_SIZES'] = ','.join(
-        str(val) for val in warmup_batch_size)
-    os.environ['VLLM_SPYRE_DYNAMO_BACKEND'] = backend
-    os.environ['VLLM_USE_V1'] = "1" if vllm_version == "V1" else "0"
 
     vllm_model = LLM(model=model,
                      tokenizer=model,
