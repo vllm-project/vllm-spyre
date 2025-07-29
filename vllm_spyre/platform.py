@@ -204,8 +204,9 @@ class SpyrePlatform(Platform):
         # set env vars for torch_sendnn to consume
         os.environ["VLLM_DT_MAX_CONTEXT_LEN"] = str(
             vllm_config.model_config.max_model_len)
+        # min decode batch size is 2 due to symbolic shape constraint in torch
         os.environ["VLLM_DT_MAX_BATCH_SIZE"] = str(
-            vllm_config.scheduler_config.max_num_seqs)
+            max(vllm_config.scheduler_config.max_num_seqs, 2))
 
     @classmethod
     def use_all_gather(cls) -> bool:
