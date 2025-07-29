@@ -24,6 +24,7 @@ This table summarize the status of features on Spyre. By default, those features
 | Prefill Decode Disaggregation |   🗓️   |      |
 | Quantization                  |   ⚠️   |      |
 | Sleep Mode                    |   🗓️   |      |
+| Embedding models              |   ✅   |      |
 
 - ✅ Fully operational.
 - ⚠️ Experimental support.
