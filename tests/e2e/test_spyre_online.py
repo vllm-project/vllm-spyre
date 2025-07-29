@@ -2,6 +2,8 @@ import openai
 import pytest
 from spyre_util import get_spyre_backend_list, get_spyre_model_list
 
+pytestmark = pytest.mark.basic
+
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("tp_size", [

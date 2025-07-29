@@ -17,9 +17,9 @@ def test_vllm_bert_support(monkeypatch):
     bert_supports_v0_only = getattr(BertEmbeddingModel, "supports_v0_only",
                                     False)
 
-    if VLLM_VERSION == "main":
+    if VLLM_VERSION == "vLLM:main":
         assert not bert_supports_v0_only
-    else:
+    elif VLLM_VERSION == "vLLM:lowest":
         assert bert_supports_v0_only, (
-            "The currently supported vLLM version already"
+            "The lowest supported vLLM version already"
             "supports Bert in V1. Remove the compatibility workarounds.")

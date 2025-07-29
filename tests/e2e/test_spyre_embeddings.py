@@ -12,6 +12,8 @@ from spyre_util import (compare_embedding_results, get_chicken_soup_prompts,
                         st_embeddings)
 from vllm import LLM
 
+pytestmark = pytest.mark.basic
+
 
 @pytest.mark.parametrize("model", get_spyre_model_list(isEmbeddings=True))
 @pytest.mark.parametrize("warmup_shape",

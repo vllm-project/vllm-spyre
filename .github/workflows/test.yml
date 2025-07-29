@@ -53,6 +53,14 @@ jobs:
           - name: "compatibility"
             markers: "compat"
             flags: "--timeout=300"
+        include:
+          - vllm_version:
+              name: "vLLM:lowest"
+              repo: "git+https://github.com/vllm-project/vllm --tag v0.9.2"
+            test_suite:
+              name: "backward compat"
+              markers: "compat and basic"
+              flags: "--timeout=300"
 
     name: "${{ matrix.test_suite.name }} (${{ matrix.vllm_version.name }})"
 
@@ -93,7 +101,7 @@ jobs:
         if: (steps.changed-src-files.outputs.any_changed == 'true' && matrix.vllm_version.repo)
         run: |
           uv add ${{ matrix.vllm_version.repo }}
-          echo "TEST_VLLM_VERSION=main" >> "$GITHUB_ENV"
+          echo "TEST_VLLM_VERSION=${{ matrix.vllm_version.name }}" >> "$GITHUB_ENV"
 
       - name: "Install vLLM with Spyre plugin"
         if: steps.changed-src-files.outputs.any_changed == 'true'
