@@ -53,6 +53,7 @@ def test_compare_graphs_cb(
     aftu_graphs = run_inference_py_and_get_graphs(inference_py_args,
                                                   script_dir, extra_env)
 
+    assert len(aftu_graphs) > 0
     # VLLM
     prompts = get_chicken_soup_prompts(4)
 
@@ -139,7 +140,7 @@ def test_compare_graphs_static_batching(
 
     aftu_graphs = run_inference_py_and_get_graphs(inference_py_args,
                                                   script_dir)
-
+    assert len(aftu_graphs) > 0
     # VLLM
     prompts = get_chicken_soup_prompts(4)
 

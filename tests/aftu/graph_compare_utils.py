@@ -6,7 +6,7 @@ import tempfile
 from collections.abc import Iterator
 from glob import iglob
 from os import path
-from subprocess import PIPE, Popen
+from subprocess import PIPE, STDOUT, CalledProcessError, TimeoutExpired, run
 from typing import Optional
 
 from vllm.model_executor.model_loader.weight_utils import (
@@ -131,13 +131,26 @@ def run_inference_py_and_get_graphs(
         # Copy scripts
         shutil.copytree(script_dir, os.path.join(tmpdir, "scripts"))
 
-        process = Popen(inference_py_args,
-                        stdout=PIPE,
-                        stderr=PIPE,
-                        env=env,
-                        cwd=tmpdir)
+        try:
+            run(inference_py_args,
+                stdout=PIPE,
+                stderr=STDOUT,
+                text=True,
+                check=True,
+                env=env,
+                cwd=tmpdir,
+                timeout=600)
+        except TimeoutExpired as e:
+            print("`inference.py` process timeout!")
+            if e.stdout:
+                print(e.stdout)
+            raise e
 
-        process.communicate()
+        except CalledProcessError as e:
+            print(f"`inference.py` Process finished with code {e.returncode}")
+            if e.stdout:
+                print(e.stdout)
+            raise e
 
         aftu_graphs = collect_graph_files(tmpdir)
 
