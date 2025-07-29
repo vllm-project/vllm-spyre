@@ -56,7 +56,6 @@ def check_scheduler_inference_steps(
     """
 
     # set env vars
-    monkeypatch.setenv("VLLM_USE_V1", "1")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     if use_cb:
         monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")

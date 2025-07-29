@@ -40,7 +40,6 @@ def test_prompt_logprobs(
 
     prompts = get_chicken_soup_prompts(4)
 
-    monkeypatch.setenv("VLLM_USE_V1", "1")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS", "1")
     llm = LLM(model, tensor_parallel_size=tp_size, tokenizer=model)

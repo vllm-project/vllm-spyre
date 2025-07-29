@@ -32,7 +32,6 @@ def test_output(
     '''
 
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
-    monkeypatch.setenv("VLLM_USE_V1", "1")
     patch_warmup_shapes([warmup_shape], monkeypatch)
 
     prompts = get_chicken_soup_prompts(1)
@@ -78,7 +77,6 @@ def test_scheduling_invariance(
     '''
 
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
-    monkeypatch.setenv("VLLM_USE_V1", "1")
     patch_warmup_shapes([warmup_shape], monkeypatch)
 
     prompts = get_chicken_soup_prompts(4)

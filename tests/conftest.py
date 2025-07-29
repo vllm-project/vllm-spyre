@@ -95,8 +95,7 @@ def remote_openai_server(request):
         max_num_seqs = params["max_num_seqs"]
         env_dict = {
             "VLLM_SPYRE_USE_CB": "1",
-            "VLLM_SPYRE_DYNAMO_BACKEND": backend,
-            "VLLM_USE_V1": "1"
+            "VLLM_SPYRE_DYNAMO_BACKEND": backend
         }
         server_args = [
             "--max_num_seqs",
@@ -118,8 +117,6 @@ def remote_openai_server(request):
             ','.join(map(str, warmup_batch_size)),
             "VLLM_SPYRE_DYNAMO_BACKEND":
             backend,
-            "VLLM_USE_V1":
-            "1"
         }
 
         # Default to None if not present
