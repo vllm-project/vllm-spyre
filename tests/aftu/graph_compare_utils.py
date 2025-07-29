@@ -81,10 +81,12 @@ def get_aftu_script_dir() -> str:
         repo_dir = path.dirname(module_dir)
 
         # Make sure it is the repo dir name
-        assert path.basename(repo_dir) == "aiu-fms-testing-utils"
+        if path.basename(repo_dir) != "aiu-fms-testing-utils":
+            return None
 
         script_dir = os.path.join(repo_dir, "scripts")
         assert os.path.exists(script_dir)
+
         return script_dir
     except ImportError:
         return None
