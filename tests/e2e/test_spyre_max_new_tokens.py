@@ -4,9 +4,9 @@ Run `python -m pytest tests/e2e/test_spyre_max_new_tokens.py`.
 """
 
 import pytest
-from spyre_util import (compare_results, generate_hf_output,
-                        generate_spyre_vllm_output, get_chicken_soup_prompts,
-                        get_spyre_backend_list, get_spyre_model_list)
+from spyre_util import (check_output_against_hf, generate_spyre_vllm_output,
+                        get_chicken_soup_prompts, get_spyre_backend_list,
+                        get_spyre_model_list)
 from vllm import SamplingParams
 
 
@@ -85,13 +85,5 @@ def test_output(
         monkeypatch=monkeypatch,
         **kwargs)
 
-    hf_results = generate_hf_output(model=model,
-                                    prompts=prompts,
-                                    max_new_tokens=hf_max_new_tokens)
-
-    compare_results(model=model,
-                    prompts=prompts,
-                    tensor_parallel_size=1,
-                    backend=backend,
-                    vllm_results=vllm_results,
-                    hf_results=hf_results)
+    check_output_against_hf(model, backend, hf_max_new_tokens, vllm_results,
+                            prompts)

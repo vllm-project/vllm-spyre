@@ -397,6 +397,23 @@ def compare_results(
         print()
 
 
+def check_output_against_hf(model, backend, max_new_tokens, vllm_results,
+                            prompts) -> None:
+    hf_outputs = generate_hf_output(
+        model=model,
+        prompts=prompts,
+        max_new_tokens=max_new_tokens,
+        ignore_eos=True,
+    )
+    compare_results(
+        model=model,
+        tensor_parallel_size=1,
+        backend=backend,
+        vllm_results=vllm_results,
+        hf_results=hf_outputs,
+    )
+
+
 # vLLM / Spyre
 def spyre_vllm_embeddings(model: str, prompts: list[str], max_model_len: int,
                           block_size: int, tensor_parallel_size: int,

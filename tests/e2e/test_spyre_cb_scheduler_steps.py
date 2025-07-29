@@ -7,9 +7,9 @@ Run `python -m pytest tests/e2e/test_spyre_cb_inference_steps.py`.
 """
 
 import pytest
-from scheduling_utils import (check_output_against_hf,
-                              check_scheduler_inference_steps)
-from spyre_util import get_spyre_backend_list, get_spyre_model_list
+from scheduling_utils import check_scheduler_inference_steps
+from spyre_util import (check_output_against_hf, get_spyre_backend_list,
+                        get_spyre_model_list)
 
 
 @pytest.mark.cb
