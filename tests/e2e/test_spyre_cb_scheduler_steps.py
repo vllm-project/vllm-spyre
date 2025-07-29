@@ -7,9 +7,9 @@ Run `python -m pytest tests/e2e/test_spyre_cb_inference_steps.py`.
 """
 
 import pytest
-from scheduling_utils import check_scheduler_inference_steps
-from spyre_util import (compare_results, generate_hf_output,
-                        get_spyre_backend_list, get_spyre_model_list)
+from scheduling_utils import (check_output_against_hf,
+                              check_scheduler_inference_steps)
+from spyre_util import get_spyre_backend_list, get_spyre_model_list
 
 
 @pytest.mark.cb
@@ -181,17 +181,8 @@ def test_prompts_aligned_with_tkv_boundaries(model: str, backend: str,
     )
 
     if check_output:
-        hf_outputs = generate_hf_output(
-            model=model,
-            prompts=prompts,
-            max_new_tokens=seqs_max_tokens,
-            ignore_eos=True,
-        )
-        compare_results(model=model,
-                        tensor_parallel_size=1,
-                        backend=backend,
-                        vllm_results=cb_outputs,
-                        hf_results=hf_outputs)
+        check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                                prompts)
 
 
 @pytest.mark.cb
@@ -360,17 +351,8 @@ def test_prompts_misaligned_with_tkv_boundaries(
     )
 
     if check_output:
-        hf_outputs = generate_hf_output(
-            model=model,
-            prompts=prompts,
-            max_new_tokens=seqs_max_tokens,
-            ignore_eos=True,
-        )
-        compare_results(model=model,
-                        tensor_parallel_size=1,
-                        backend=backend,
-                        vllm_results=cb_outputs,
-                        hf_results=hf_outputs)
+        check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                                prompts)
 
 
 @pytest.mark.cb
@@ -514,17 +496,8 @@ def test_two_sequences_finish_same_time_as_new_arrive(
         collect_outputs=check_output)
 
     if check_output:
-        hf_outputs = generate_hf_output(
-            model=model,
-            prompts=prompts,
-            max_new_tokens=seqs_max_tokens,
-            ignore_eos=True,
-        )
-        compare_results(model=model,
-                        tensor_parallel_size=1,
-                        backend=backend,
-                        vllm_results=cb_outputs,
-                        hf_results=hf_outputs)
+        check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                                prompts)
 
 
 @pytest.mark.cb
@@ -793,17 +766,8 @@ def test_new_sequence_joins_during_decode(model: str, backend: str,
     )
 
     if check_output:
-        hf_outputs = generate_hf_output(
-            model=model,
-            prompts=prompts,
-            max_new_tokens=seqs_max_tokens,
-            ignore_eos=True,
-        )
-        compare_results(model=model,
-                        tensor_parallel_size=1,
-                        backend=backend,
-                        vllm_results=cb_outputs,
-                        hf_results=hf_outputs)
+        check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                                prompts)
 
 
 @pytest.mark.cb
@@ -958,17 +922,8 @@ def test_prompt_too_long_for_current_tkv(model: str, backend: str,
     )
 
     if check_output:
-        hf_outputs = generate_hf_output(
-            model=model,
-            prompts=prompts,
-            max_new_tokens=seqs_max_tokens,
-            ignore_eos=True,
-        )
-        compare_results(model=model,
-                        tensor_parallel_size=1,
-                        backend=backend,
-                        vllm_results=cb_outputs,
-                        hf_results=hf_outputs)
+        check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                                prompts)
 
 
 @pytest.mark.cb
@@ -1161,17 +1116,8 @@ def test_requested_tokens_not_fitting_remaining_space(
     )
 
     if check_output:
-        hf_outputs = generate_hf_output(
-            model=model,
-            prompts=prompts,
-            max_new_tokens=seqs_max_tokens,
-            ignore_eos=True,
-        )
-        compare_results(model=model,
-                        tensor_parallel_size=1,
-                        backend=backend,
-                        vllm_results=cb_outputs,
-                        hf_results=hf_outputs)
+        check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                                prompts)
 
 
 @pytest.mark.cb
@@ -1310,17 +1256,8 @@ def test_requests_use_all_available_blocks(model: str, backend: str,
     )
 
     if check_output:
-        hf_outputs = generate_hf_output(
-            model=model,
-            prompts=prompts,
-            max_new_tokens=seqs_max_tokens,
-            ignore_eos=True,
-        )
-        compare_results(model=model,
-                        tensor_parallel_size=1,
-                        backend=backend,
-                        vllm_results=cb_outputs,
-                        hf_results=hf_outputs)
+        check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                                prompts)
 
 
 @pytest.mark.cb
@@ -1486,14 +1423,5 @@ def test_requests_use_more_than_available_blocks(
     )
 
     if check_output:
-        hf_outputs = generate_hf_output(
-            model=model,
-            prompts=prompts,
-            max_new_tokens=seqs_max_tokens,
-            ignore_eos=True,
-        )
-        compare_results(model=model,
-                        tensor_parallel_size=1,
-                        backend=backend,
-                        vllm_results=cb_outputs,
-                        hf_results=hf_outputs)
+        check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                                prompts)

@@ -3,7 +3,8 @@ from collections import defaultdict, deque
 from typing import Any
 
 import pytest
-from spyre_util import create_random_request
+from spyre_util import (compare_results, create_random_request,
+                        generate_hf_output)
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
@@ -224,3 +225,20 @@ def check_scheduler_inference_steps(
             collected_outputs_new.append(output)
 
         return collected_outputs_new, generated_prompts
+
+
+def check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                            prompts) -> None:
+    hf_outputs = generate_hf_output(
+        model=model,
+        prompts=prompts,
+        max_new_tokens=seqs_max_tokens,
+        ignore_eos=True,
+    )
+    compare_results(
+        model=model,
+        tensor_parallel_size=1,
+        backend=backend,
+        vllm_results=cb_outputs,
+        hf_results=hf_outputs,
+    )
