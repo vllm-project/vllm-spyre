@@ -72,17 +72,22 @@ def get_aftu_script_dir() -> str:
     # TODO: since AFTU is not a lib yet, this function does the best
     # effort to get the scripts dir with inference.py to run the tests
     # for graph comparison.
+    try:
 
-    # Let's look for it... assuming it is installed as local,
-    # i.e. git clone ... && uv pip install -e . [--no-deps]
-    import aiu_fms_testing_utils
-    module_dir = path.dirname(aiu_fms_testing_utils.__file__)
-    repo_dir = path.dirname(module_dir)
+        # Let's look for it... assuming it is installed as local,
+        # i.e. git clone ... && uv pip install -e . [--no-deps]
+        import aiu_fms_testing_utils
+        module_dir = path.dirname(aiu_fms_testing_utils.__file__)
+        repo_dir = path.dirname(module_dir)
 
-    # Make sure it is the repo dir name
-    assert path.basename(repo_dir) == "aiu-fms-testing-utils"
+        # Make sure it is the repo dir name
+        assert path.basename(repo_dir) == "aiu-fms-testing-utils"
 
-    return os.path.join(repo_dir, "scripts")
+        script_dir = os.path.join(repo_dir, "scripts")
+        assert os.path.exists(script_dir)
+        return script_dir
+    except ImportError:
+        return None
 
 
 def compare_graphs(a_map: dict[str, tuple[str, str]],
@@ -109,6 +114,7 @@ def compare_graphs(a_map: dict[str, tuple[str, str]],
 
 def run_inference_py_and_get_graphs(
         inference_py_args: list[str],
+        script_dir: str,
         extra_env: Optional[dict[str,
                                  str]] = None) -> dict[str, tuple[str, str]]:
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -121,7 +127,6 @@ def run_inference_py_and_get_graphs(
         if extra_env:
             env.update(extra_env)
         # Copy scripts
-        script_dir = get_aftu_script_dir()
         shutil.copytree(script_dir, os.path.join(tmpdir, "scripts"))
 
         process = Popen(inference_py_args,
