@@ -14,7 +14,7 @@ if sys.platform.startswith("darwin"):
 import math
 import operator
 import os
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Optional, Union
 
 import torch
 from vllm.inputs import ProcessorInputs, PromptType
@@ -60,14 +60,7 @@ def is_v1_compatible(self) -> bool:
     if any(pat in arch for arch in architectures for pat in patterns):
         return True
     import vllm.model_executor.models as me_models
-
-    # Can be simplified after the model_config change from vllm:main
-    extra_kwargs: dict[str, Any] = {}
-    extra_kwargs["architectures"] = architectures
-    if "model_config" in inspect.signature(
-            me_models.ModelRegistry.is_v1_compatible).parameters:
-        extra_kwargs["model_config"] = self
-    return me_models.ModelRegistry.is_v1_compatible(**extra_kwargs)
+    return me_models.ModelRegistry.is_v1_compatible(architectures)
 
 
 class SpyrePlatform(Platform):
@@ -89,7 +82,11 @@ class SpyrePlatform(Platform):
         # TODO: temporary hack while BertModels
         # inherit SupportsV0Only in vllm upstream.
         from vllm.config import ModelConfig
-        ModelConfig.is_v1_compatible = is_v1_compatible
+
+        # no need to patch after the model_config change
+        if 'model_config' not in \
+                inspect.getfullargspec(ModelConfig.is_v1_compatible).args:
+            ModelConfig.is_v1_compatible = is_v1_compatible
         return cls._device_type
 
     @classmethod
