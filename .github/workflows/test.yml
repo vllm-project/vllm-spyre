@@ -59,7 +59,7 @@ jobs:
               repo: "git+https://github.com/vllm-project/vllm --tag v0.9.2"
             test_suite:
               name: "backward compat"
-              markers: "compat and basic"
+              markers: "compat or basic"
               flags: "--timeout=300"
             os: "ubuntu-latest"
             python_version: "3.12"
