@@ -33,17 +33,56 @@ import vllm_spyre.envs as envs_spyre
 
 logger = init_logger(__name__)
 
+THREADING_ENVS = [
+    "OMP_NUM_THREADS",
+    # "TORCHINDUCTOR_COMPILE_THREADS", # vLLM wants this set to 1
+    "DT_PARALLEL_THREADS",  # affects the compilation during warmup
+    # set these for good measure
+    "OPENBLAS_NUM_THREADS",
+    "MKL_NUM_THREADS",
+]
+
+
+class classproperty:
+
+    def __init__(self, func):
+        self.func = func
+
+    def __get__(self, instance, owner):
+        return self.func(owner)
+
+
+@property  # type: ignore
+def is_v1_compatible(self) -> bool:
+    architectures = getattr(self.hf_config, "architectures", [])
+    patterns = ["Bert", "Roberta"]
+    if any(pat in arch for arch in architectures for pat in patterns):
+        return True
+    import vllm.model_executor.models as me_models
+    return me_models.ModelRegistry.is_v1_compatible(architectures)
+
 
 class SpyrePlatform(Platform):
     _enum = PlatformEnum.OOT
 
     # "spyre" device_name no longer worked due to https://github.com/vllm-project/vllm/pull/16464
     device_name: str = "cpu"
-    device_type: str = "cpu"
-    supported_quantization: list[str] = ["gptq"]
+    _device_type: str = "cpu"
+    # compressed-tensors supported by
+    # https://github.com/foundation-model-stack/fms-model-optimizer/blob/main/fms_mo/aiu_addons/__init__.py
+    supported_quantization: list[str] = ["gptq", "compressed-tensors"]
     _warmup_shapes: Optional[tuple[dict[str, int], ...]] = None
     _block_size: int = 64  # hardcoded Spyre constraint for now
+    _num_spyre_blocks_override: int = -1  # override num of KV cache blocks
     _config: VllmConfig = None
+
+    @classproperty
+    def device_type(cls):
+        # TODO: temporary hack while BertModels
+        # inherit SupportsV0Only in vllm upstream.
+        from vllm.config import ModelConfig
+        ModelConfig.is_v1_compatible = is_v1_compatible
+        return cls._device_type
 
     @classmethod
     def get_device_name(cls, device_id: int = 0) -> str:
@@ -68,18 +107,14 @@ class SpyrePlatform(Platform):
             raise NotImplementedError
 
         is_decoder = model_config.task == "generate"
-        is_embedding = model_config.task == "embed"
+        is_pooling = model_config.task == "embed"
         if model_config.task == "auto":
-            is_embedding = "embed" in model_config.supported_tasks
+            is_pooling = "embed" in model_config.supported_tasks
             is_decoder = "generate" in model_config.supported_tasks
 
-        # v0 is only supported for embedding models, and embedding models must
-        # be run on v0
-        if is_embedding and envs.VLLM_USE_V1:
-            raise ValueError("Embedding models are only supported on v0")
-        elif is_decoder and not envs.VLLM_USE_V1:
+        if is_decoder and not envs.VLLM_USE_V1:
             raise ValueError("Decoder models are only supported on v1")
-        elif not is_decoder and not is_embedding:
+        elif not is_decoder and not is_pooling:
             raise ValueError("Only the 'generate' and 'embed' tasks are "
                              "supported")
 
@@ -87,6 +122,8 @@ class SpyrePlatform(Platform):
             parallel_config.worker_cls = (
                 f'vllm_spyre{".v1" if envs.VLLM_USE_V1 else ""}'\
                     '.worker.spyre_worker.SpyreWorker')
+
+        cls._check_threading_config(parallel_config.world_size)
 
         if envs_spyre.VLLM_SPYRE_USE_CB and is_decoder:
             scheduler_config.scheduler_cls = "vllm_spyre.v1.core."\
@@ -121,9 +158,14 @@ class SpyrePlatform(Platform):
                 scheduler_config.scheduler_cls = (
                     "vllm_spyre.v1.core.scheduler."\
                         "StaticBatchingSpyreScheduler")
-            elif is_embedding:
-                scheduler_config.scheduler_cls = (
-                    "vllm_spyre.core.scheduler.SpyreScheduler")
+            elif is_pooling:
+                if not envs.VLLM_USE_V1:
+                    scheduler_config.scheduler_cls = (
+                        "vllm_spyre.core.scheduler.SpyreScheduler")
+                else:
+                    scheduler_config.scheduler_cls = (
+                        "vllm_spyre.v1.core.scheduler."\
+                            "StaticBatchingSpyreScheduler")
 
         # To disable any paged attention ops in the base scheduler, we:
         # - Set the block size (in tokens) to the maximum sequence length
@@ -136,6 +178,10 @@ class SpyrePlatform(Platform):
         #       budget available to schedule a full batch
         if cache_config is not None:
             if envs.VLLM_USE_V1:
+                # overriding number of available Spyre blocks if not None
+                if cache_config.num_gpu_blocks_override:
+                    cls._num_spyre_blocks_override = \
+                        cache_config.num_gpu_blocks_override
                 # The V1 scheduler actually needs 2 blocks for each sequence...
                 cache_config.num_gpu_blocks_override = \
                     scheduler_config.max_num_seqs * 2
@@ -238,12 +284,15 @@ class SpyrePlatform(Platform):
         return cls._block_size
 
     @classmethod
+    def get_num_spyre_blocks_override(cls) -> int:
+        return cls._num_spyre_blocks_override
+
+    @classmethod
     def supports_v1(cls, model_config: ModelConfig) -> bool:
         """Returns whether the current platform can support v1 for the supplied
         model configuration.
         """
-        # We don't have an embedding runner for v1 yet
-        return model_config.task != "embed"
+        return True
 
     @classmethod
     def validate_request(
@@ -320,6 +369,110 @@ class SpyrePlatform(Platform):
         ]
 
     @classmethod
+    def _check_threading_config(cls, worker_count: int):
+        """
+        Check parallelism configuration to avoid CPU contention
+
+        Libraries that support multi-threading (eg. OpenMP) default to
+        parallelism based on the number of CPUs on the host. This can lead to
+        CPU contention in containerized deployments especially when process
+        forking is involved. This function provides better default behavior.
+        """
+
+        # The quay.io/ibm-aiu/spyre-base image includes shell scripts that
+        # automatically set OMP_NUM_THREADS to the result of `nproc --all`.
+        #
+        # vLLM also already has logic around threading to be aware of,
+        #  - sets TORCHINDUCTOR_COMPILE_THREADS=1 (https://github.com/vllm-project/vllm/blob/baba0389f7e810a361fff5229ce20c2d5a2b1fac/vllm/env_override.py#L38-L39)
+        #  - it will set OMP_NUM_THREADS=1 when using multiple workers (https://github.com/vllm-project/vllm/blob/baba0389f7e810a361fff5229ce20c2d5a2b1fac/vllm/executor/multiproc_worker_utils.py#L304)
+        #  - has configurations for OMP thread binding (https://github.com/vllm-project/vllm/blob/baba0389f7e810a361fff5229ce20c2d5a2b1fac/vllm/envs.py#L435-L438)
+        #    - the bind attempts to detect NUMA nodes (https://github.com/vllm-project/vllm/blob/baba0389f7e810a361fff5229ce20c2d5a2b1fac/vllm/v1/worker/cpu_worker.py#L111)
+
+        assert worker_count > 0
+        # Always print current env for awareness
+        env_map = {env: os.getenv(env) for env in THREADING_ENVS}
+        logger.info(
+            "Initial threading configurations: %s",
+            ' '.join([f"{env}={value}" for env, value in env_map.items()]))
+
+        # Try to determine the CPU time/cores that we are allocated
+        cpu_count: Optional[float] = None
+        detection_message = ""
+        try:
+            # try to query cgroup CPU limits
+            with open('/sys/fs/cgroup/cpu.max') as f:
+                quota_str, period_str = f.read().strip().split()
+
+            if quota_str != 'max':
+                quota = int(quota_str)
+                period = int(period_str)
+                cpu_count = quota / period
+                detection_message = f"Detected cgroup CPU limit of {cpu_count}"
+
+        except FileNotFoundError:
+            # file may not exist if not running under cgroups v2
+            pass
+        except Exception as e:
+            logger.debug(
+                "Error parsing /sys/fs/cgroup/cpu.max to get CPU info",
+                exc_info=e)
+
+        # could try `nproc` here, but it is affected by
+        # OMP_NUM_THREADS itself
+
+        # try os.cpu_count() to get node CPU count
+        if cpu_count is None and (cpu_count_res := os.cpu_count()) is not None:
+            cpu_count = float(cpu_count_res)
+            detection_message = \
+                f"Detected {cpu_count} CPUs from `os.cpu_count()`"
+
+        # NOTE: math.ceil can output a number for each worker that sums
+        # to a total greater than cpu_count.
+        cpus_per_worker = math.ceil(
+            cpu_count / worker_count) if cpu_count is not None else None
+
+        thread_warning = "Excessive threads may result in CPU contention. " \
+             + "Note that each worker processes has its own thread pools." \
+                if worker_count > 1 else ""
+        failed_detection_message = "Unable to detect available CPUs to " \
+            "validate threading configuration."
+
+        if envs_spyre.VLLM_SPYRE_UPDATE_THREAD_CONFIG:
+            if cpus_per_worker is None:
+                raise RuntimeError(
+                    f"{failed_detection_message} Use "
+                    "VLLM_SPYRE_UPDATE_THREAD_CONFIG=0 and configure manually."
+                )
+
+            for env in THREADING_ENVS:
+                os.environ[env] = str(cpus_per_worker)
+
+            logger.info(
+                "%s for %d workers. Since VLLM_SPYRE_UPDATE_THREAD_CONFIG is "
+                "enabled, setting threading configurations to %d",
+                detection_message, worker_count, cpus_per_worker)
+            return
+
+        # In the case that VLLM_SPYRE_UPDATE_THREAD_CONFIG is not enabled,
+        # check configs and maybe log a warning
+        if cpus_per_worker is None:
+            logger.info("%s %s", failed_detection_message, thread_warning)
+            return
+
+        def _float_or_0(s: str) -> float:
+            try:
+                return float(s)
+            except ValueError:
+                return 0.0
+
+        if any((value is None or _float_or_0(value) > 1.2 * cpus_per_worker)
+               for value in env_map.values()):
+            logger.warning(
+                "%s %s for %d workers. Recommend setting each threading "
+                "configuration to %d. Set VLLM_SPYRE_UPDATE_THREAD_CONFIG=1 "
+                "to do this automatically.", thread_warning, detection_message,
+                worker_count, cpus_per_worker)
+
     def get_max_output_tokens(self, prompt_len: int) -> int:
         """Return the size of biggest ```new_tokens``` of the \
             warmup shapes that fits the prompt length"""
