@@ -1138,8 +1138,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         offset = n_padded_blocks * self.block_size
 
         if offset > 0:
-            logger.debug("Number of removed blocks due to left padding: %d",
-                         n_padded_blocks)
+            logger.debug("Reducing left padding by %d blocks", n_padded_blocks)
 
             for req in requests:
                 req.left_padding -= offset
