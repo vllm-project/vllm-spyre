@@ -90,7 +90,7 @@ def test_compare_graphs_cb(
 @pytest.mark.spyre
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("warmup_shape",
-                         [(64, 5, 4)])  # (prompt_length/new_tokens/batch_size)
+                         [(64, 4, 4)])  # (prompt_length/new_tokens/batch_size)
 def test_compare_graphs_static_batching(
     model: str,
     warmup_shape: tuple[int, int, int],

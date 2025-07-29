@@ -71,13 +71,7 @@ def diff_graph(a_filepath, a_file, b_filepath, b_file) -> Iterator[str]:
 def get_aftu_script_dir() -> str:
     # TODO: since AFTU is not a lib yet, this function does the best
     # effort to get the scripts dir with inference.py to run the tests
-    # for graph comparison. The env variable below is a way to set it
-    # explicitly which is less error-prone.
-
-    script_dir = os.environ.get("VLLM_SPYRE_TEST_AFTU_SCRIPTS_DIR", "")
-
-    if script_dir:
-        return script_dir
+    # for graph comparison.
 
     # Let's look for it... assuming it is installed as local,
     # i.e. git clone ... && uv pip install -e . [--no-deps]
