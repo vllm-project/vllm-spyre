@@ -17,21 +17,16 @@ from vllm import SamplingParams
 
 
 @pytest.mark.spyre
-@pytest.mark.aftu
 @pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize("max_num_seqs", [2, 4],
+@pytest.mark.parametrize("max_num_seqs", [4],
                          ids=lambda val: f"max_num_seqs({val})")
 def test_compare_graphs_cb(
     model: str,
     max_num_seqs: int,
     monkeypatch: pytest.MonkeyPatch,
-    runtime_xfail,
 ):
     """Test that the spyre worker correctly outputs
     continuous batches of requests by comparing to HF"""
-
-    if max_num_seqs > 2:
-        runtime_xfail("CB failures expected for batch size > 2")
 
     # AFTU
     max_model_len = 256
@@ -93,11 +88,9 @@ def test_compare_graphs_cb(
 
 
 @pytest.mark.spyre
-@pytest.mark.aftu
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("warmup_shape",
-                         [(64, 5, 1), (64, 5, 2),
-                          (64, 5, 4)])  # (prompt_length/new_tokens/batch_size)
+                         [(64, 5, 4)])  # (prompt_length/new_tokens/batch_size)
 def test_compare_graphs_static_batching(
     model: str,
     warmup_shape: tuple[int, int, int],

@@ -48,7 +48,7 @@ jobs:
             markers: "cpu and cb"
             flags: "--timeout=300"
           - name: "worker and utils"
-            markers: "not e2e and not aftu"
+            markers: "not e2e"
             flags: "--timeout=300"
 
     name: "${{ matrix.test_suite.name }} (${{ matrix.vllm_version.name }})"
