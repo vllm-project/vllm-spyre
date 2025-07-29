@@ -211,7 +211,7 @@ def check_scheduler_inference_steps(
     # Return collected outputs as list
     if not collected_outputs:
         return [], generated_prompts
-    
+
     output_keys = sorted(int(k) for k in collected_outputs)
     assert output_keys[0] == 0 and output_keys[-1] == len(output_keys) - 1
 
