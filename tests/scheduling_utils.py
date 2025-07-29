@@ -211,20 +211,20 @@ def check_scheduler_inference_steps(
     # Return collected outputs as list
     if not collected_outputs:
         return [], generated_prompts
-    else:
-        output_keys = sorted(int(k) for k in collected_outputs)
-        assert output_keys[0] == 0 and output_keys[-1] == len(output_keys) - 1
+    
+    output_keys = sorted(int(k) for k in collected_outputs)
+    assert output_keys[0] == 0 and output_keys[-1] == len(output_keys) - 1
 
-        # convert dict of dicts to ordered list and make values immutable
-        collected_outputs_new = []
-        for k in output_keys:
-            output = collected_outputs[str(k)]
-            for k, list_values in output.items():
-                if isinstance(list_values, list):
-                    output[k] = tuple(list_values)
-            collected_outputs_new.append(output)
+    # convert dict of dicts to ordered list and make values immutable
+    collected_outputs_new = []
+    for k in output_keys:
+        output = collected_outputs[str(k)]
+        for k, list_values in output.items():
+            if isinstance(list_values, list):
+                output[k] = tuple(list_values)
+        collected_outputs_new.append(output)
 
-        return collected_outputs_new, generated_prompts
+    return collected_outputs_new, generated_prompts
 
 
 def check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
