@@ -45,7 +45,6 @@ def check_scheduler_inference_steps(
     max_model_len: int,
     available_blocks: int,
     use_cb: bool = True,
-    collect_outputs: bool = False,
 ):
     """
     Test the scheduler execution by comparing the scheduler attributes at each 
@@ -202,20 +201,15 @@ def check_scheduler_inference_steps(
         request_outputs = (engine_core_output.outputs
                            if engine_core_output is not None else [])
 
-        if collect_outputs:
-            for output in request_outputs:
-                new_token_ids = output.new_token_ids
-                new_logprobs = output.new_logprobs.logprobs
-                assert len(new_token_ids) == 1 and len(new_logprobs) == 1
+        for output in request_outputs:
+            new_token_ids = output.new_token_ids
+            new_logprobs = output.new_logprobs.logprobs
+            assert len(new_token_ids) == 1 and len(new_logprobs) == 1
 
-                collected_outputs[output.request_id]["token_ids"].append(
-                    new_token_ids[0])
-                collected_outputs[output.request_id]["logprobs"].append(
-                    new_logprobs[0][0])
-
-    # Return collected outputs as list
-    if not collected_outputs:
-        return [], generated_prompts
+            collected_outputs[output.request_id]["token_ids"].append(
+                new_token_ids[0])
+            collected_outputs[output.request_id]["logprobs"].append(
+                new_logprobs[0][0])
 
     output_keys = sorted(int(k) for k in collected_outputs)
     assert output_keys[0] == 0 and output_keys[-1] == len(output_keys) - 1

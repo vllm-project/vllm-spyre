@@ -36,7 +36,6 @@ def test_prompts_aligned_with_tkv_boundaries(model: str, backend: str,
     available_blocks = -1  # no restriction
     max_num_seqs = 2
     max_model_len = 256
-    check_output = True
 
     checked_steps = [
         {
@@ -177,12 +176,10 @@ def test_prompts_aligned_with_tkv_boundaries(model: str, backend: str,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
         use_cb=True,
-        collect_outputs=check_output,
     )
 
-    if check_output:
-        check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-                                prompts)
+    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                            prompts)
 
 
 @pytest.mark.cb
@@ -208,7 +205,6 @@ def test_prompts_misaligned_with_tkv_boundaries(
     available_blocks = -1  # no restriction
     max_num_seqs = 2
     max_model_len = 256
-    check_output = True
 
     checked_steps = [
         {
@@ -347,12 +343,10 @@ def test_prompts_misaligned_with_tkv_boundaries(
         max_model_len=max_model_len,
         available_blocks=available_blocks,
         use_cb=True,
-        collect_outputs=check_output,
     )
 
-    if check_output:
-        check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-                                prompts)
+    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                            prompts)
 
 
 @pytest.mark.cb
@@ -377,7 +371,6 @@ def test_two_sequences_finish_same_time_as_new_arrive(
     available_blocks = -1  # no restriction
     max_num_seqs = 2
     max_model_len = 256
-    check_output = True
 
     checked_steps = [
         {
@@ -493,11 +486,10 @@ def test_two_sequences_finish_same_time_as_new_arrive(
         max_model_len=max_model_len,
         available_blocks=available_blocks,
         use_cb=True,
-        collect_outputs=check_output)
+    )
 
-    if check_output:
-        check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-                                prompts)
+    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                            prompts)
 
 
 @pytest.mark.cb
@@ -524,7 +516,6 @@ def test_new_sequence_joins_during_decode(model: str, backend: str,
     available_blocks = -1  # no restriction
     max_num_seqs = 4
     max_model_len = 256
-    check_output = True
 
     checked_steps = [
         {
@@ -764,12 +755,10 @@ def test_new_sequence_joins_during_decode(model: str, backend: str,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
         use_cb=True,
-        collect_outputs=check_output,
     )
 
-    if check_output:
-        check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-                                prompts)
+    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                            prompts)
 
 
 @pytest.mark.cb
@@ -793,7 +782,6 @@ def test_prompt_too_long_for_current_tkv(model: str, backend: str,
     available_blocks = -1  # no restriction
     max_num_seqs = 2
     max_model_len = 256
-    check_output = False
 
     checked_steps = [
         {
@@ -920,12 +908,10 @@ def test_prompt_too_long_for_current_tkv(model: str, backend: str,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
         use_cb=True,
-        collect_outputs=check_output,
     )
 
-    if check_output:
-        check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-                                prompts)
+    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                            prompts)
 
 
 @pytest.mark.cb
@@ -950,7 +936,6 @@ def test_requested_tokens_not_fitting_remaining_space(
     available_blocks = -1  # no restriction
     max_num_seqs = 2
     max_model_len = 256
-    check_output = False
 
     checked_steps = [
         {
@@ -1114,12 +1099,10 @@ def test_requested_tokens_not_fitting_remaining_space(
         max_model_len=max_model_len,
         available_blocks=available_blocks,
         use_cb=True,
-        collect_outputs=check_output,
     )
 
-    if check_output:
-        check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-                                prompts)
+    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                            prompts)
 
 
 @pytest.mark.cb
@@ -1146,7 +1129,6 @@ def test_requests_use_all_available_blocks(model: str, backend: str,
     available_blocks = 8
     max_num_seqs = 4
     max_model_len = 256
-    check_output = True
 
     checked_steps = [
         {
@@ -1254,12 +1236,10 @@ def test_requests_use_all_available_blocks(model: str, backend: str,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
         use_cb=True,
-        collect_outputs=check_output,
     )
 
-    if check_output:
-        check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-                                prompts)
+    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                            prompts)
 
 
 @pytest.mark.cb
@@ -1288,7 +1268,6 @@ def test_requests_use_more_than_available_blocks(
     available_blocks = 4
     max_num_seqs = 4
     max_model_len = 256
-    check_output = True
 
     checked_steps = [
         {
@@ -1421,9 +1400,7 @@ def test_requests_use_more_than_available_blocks(
         max_model_len=max_model_len,
         available_blocks=available_blocks,
         use_cb=True,
-        collect_outputs=check_output,
     )
 
-    if check_output:
-        check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-                                prompts)
+    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                            prompts)
