@@ -225,9 +225,12 @@ def test_full_batch_scheduling(model: str, backend: str, monkeypatch):
                                           logprobs=0)
     for i in range(batch_size):
         engine_core.add_request(
-            create_random_request(request_id=i,
-                                  num_tokens=max_batched_tokens,
-                                  sampling_params=vllm_sampling_params))
+            create_random_request(
+                request_id=i,
+                num_tokens=max_batched_tokens,
+                sampling_params=vllm_sampling_params,
+                model=model,
+            ))
     schedule = scheduler.schedule()
 
     assert len(schedule.scheduled_new_reqs) == batch_size
