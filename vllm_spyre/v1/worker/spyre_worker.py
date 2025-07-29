@@ -646,7 +646,7 @@ class SpyreWorker(WorkerBaseV1):
 # handler from vLLM when it starts a process for the engine code. Therefore,
 # the engine does not have a chance to gracefully shutdown.
 def maybe_override_signals_handler():
-    if not (envs.VLLM_USE_V1 and envs.VLLM_ENABLE_V1_MULTIPROCESSING
+    if not (envs.VLLM_ENABLE_V1_MULTIPROCESSING
             and envs_spyre.VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER):
         return
 

@@ -18,12 +18,10 @@ from vllm import LLM
                          [(64, 4), (64, 8), (128, 4),
                           (128, 8)])  # (prompt_length/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("vllm_version", ["V0", "V1"])
 def test_output(
     model: str,
     warmup_shape: tuple[int, int],
     backend: str,
-    vllm_version: str,
     monkeypatch,
 ) -> None:
     '''
@@ -34,7 +32,7 @@ def test_output(
     '''
 
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
-    monkeypatch.setenv("VLLM_USE_V1", "1" if vllm_version == "V1" else "0")
+    monkeypatch.setenv("VLLM_USE_V1", "1")
     patch_warmup_shapes([warmup_shape], monkeypatch)
 
     prompts = get_chicken_soup_prompts(1)
@@ -44,8 +42,7 @@ def test_output(
                                          max_model_len=256,
                                          block_size=256,
                                          tensor_parallel_size=1,
-                                         backend=backend,
-                                         vllm_version=vllm_version)
+                                         backend=backend)
 
     hf_results = st_embeddings(model=model, prompts=prompts)
 
@@ -65,12 +62,10 @@ def test_output(
 ])  # (prompt_length/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("model", get_spyre_model_list(isEmbeddings=True))
-@pytest.mark.parametrize("vllm_version", ["V0", "V1"])
 def test_scheduling_invariance(
     model,
     backend,
     warmup_shape: tuple[int, int],
-    vllm_version,
     monkeypatch,
 ) -> None:
     '''
@@ -83,7 +78,7 @@ def test_scheduling_invariance(
     '''
 
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
-    monkeypatch.setenv("VLLM_USE_V1", "1" if vllm_version == "V1" else "0")
+    monkeypatch.setenv("VLLM_USE_V1", "1")
     patch_warmup_shapes([warmup_shape], monkeypatch)
 
     prompts = get_chicken_soup_prompts(4)

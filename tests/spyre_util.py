@@ -379,8 +379,7 @@ def compare_results(model: str, prompts: list[str], tensor_parallel_size: int,
 # vLLM / Spyre
 def spyre_vllm_embeddings(model: str, prompts: list[str], max_model_len: int,
                           block_size: int, tensor_parallel_size: int,
-                          backend: str,
-                          vllm_version: str) -> list[dict[str, Any]]:
+                          backend: str) -> list[dict[str, Any]]:
 
     vllm_model = LLM(model=model,
                      tokenizer=model,
