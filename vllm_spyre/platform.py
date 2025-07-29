@@ -113,7 +113,8 @@ class SpyrePlatform(Platform):
             is_decoder = "generate" in model_config.supported_tasks
 
         if not envs.VLLM_USE_V1:
-            raise ValueError("vllm-spyre is only supported with vLLM v1")
+            raise ValueError("vllm-spyre is only supported with vLLM v1. "
+                             "Please set VLLM_USE_V1=1")
         elif not is_decoder and not is_pooling:
             raise ValueError("Only the 'generate' and 'embed' tasks are "
                              "supported")
