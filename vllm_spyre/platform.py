@@ -1,3 +1,4 @@
+import inspect
 import sys
 
 # When running this plugin on a Mac, we assume it's for local development
@@ -80,8 +81,13 @@ class SpyrePlatform(Platform):
     def device_type(cls):
         # TODO: temporary hack while BertModels
         # inherit SupportsV0Only in vllm upstream.
+        import vllm.model_executor.models as me_models
         from vllm.config import ModelConfig
-        ModelConfig.is_v1_compatible = is_v1_compatible
+
+        # no need to patch after the model_config change
+        if 'model_config' not in \
+                inspect.getfullargspec(me_models.ModelRegistry.is_v1_compatible).args:
+            ModelConfig.is_v1_compatible = is_v1_compatible
         return cls._device_type
 
     @classmethod
@@ -106,11 +112,14 @@ class SpyrePlatform(Platform):
         if scheduler_config.is_multi_step:
             raise NotImplementedError
 
-        is_decoder = model_config.task == "generate"
-        is_pooling = model_config.task == "embed"
-        if model_config.task == "auto":
-            is_pooling = "embed" in model_config.supported_tasks
-            is_decoder = "generate" in model_config.supported_tasks
+        # Can be simplified after the model_config change from vllm:main
+        is_decoder = model_config.task == "generate" \
+            if model_config.task \
+                else "generate" in model_config.supported_tasks
+
+        is_pooling = model_config.task == "embed" \
+            if model_config.task \
+        else "embed" in model_config.supported_tasks
 
         if not envs.VLLM_USE_V1:
             raise ValueError("vllm-spyre is only supported with vLLM v1. "
