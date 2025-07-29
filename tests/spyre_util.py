@@ -572,31 +572,36 @@ def create_random_request(request_id: int,
                           from_model_vocab: bool = False,
                           model: Optional[str] = None) -> EngineCoreRequest:
 
+    tokenizer = AutoTokenizer.from_pretrained(model)
     if from_model_vocab:
         assert model is not None, "Prompt requested to be generated from " \
         "model's vocabulary: need to provide model."
 
-        tokenizer = AutoTokenizer.from_pretrained(model)
         valid_token_ids = sorted([
             v for v in tokenizer.vocab.values()
             if v not in tokenizer.all_special_ids
         ])
         prompt_token_ids = random.choices(valid_token_ids, k=num_tokens)
     else:
-        prompt_token_ids = [request_id] * num_tokens
+        # start with existing prompts and tokenize them
+        prompts = get_longer_chicken_soup_prompts(4)
+        tokenized_prompts = tokenizer(prompts)["input_ids"]
+        prompt_token_ids = [p[:num_tokens] for p in tokenized_prompts][0]
 
-    return EngineCoreRequest(request_id=str(request_id),
-                             prompt_token_ids=prompt_token_ids,
-                             mm_inputs=None,
-                             mm_hashes=None,
-                             mm_placeholders=None,
-                             sampling_params=sampling_params,
-                             eos_token_id=None,
-                             arrival_time=0,
-                             lora_request=None,
-                             data_parallel_rank=None,
-                             pooling_params=None,
-                             cache_salt=None)
+    return EngineCoreRequest(
+        request_id=str(request_id),
+        prompt_token_ids=prompt_token_ids,
+        mm_inputs=None,
+        mm_hashes=None,
+        mm_placeholders=None,
+        sampling_params=sampling_params,
+        eos_token_id=None,
+        arrival_time=0,
+        lora_request=None,
+        data_parallel_rank=None,
+        pooling_params=None,
+        cache_salt=None,
+    )
 
 
 def skip_unsupported_tp_size(size: int, backend: str):
@@ -627,6 +632,48 @@ def get_chicken_soup_prompts(num_prompts: int) -> list[str]:
             "how do I add multiple new columns in m for power query or \
                 power bi?"),
         template.format("Convert char to string in Java."),
+    ]
+
+    if num_prompts > 4:
+        prompts = prompts * (math.ceil(num_prompts / 4))
+
+    return prompts[:num_prompts]
+
+def get_longer_chicken_soup_prompts(num_prompts: int) -> list[str]:
+    template = (
+        "Below is an instruction that describes a task. Write a response that "
+        "appropriately completes the request. Be polite in your response to the"
+        " user.\n\n### Instruction:\n{}\n\n### Response:")
+
+    prompts = [
+        template.format(
+            "Provide a list of instructions "
+            "for preparing chicken soup along with "
+            "rice curry to go with it so that"
+            "the flavor is amazing and make sure to follow the" \
+            "recipe that my mum used to make during my " \
+            "childhood so that I can relive my good" \
+            "memories thanks"
+        ),
+        template.format(
+            "Provide me a list of things that I can do with my "
+            "new found wealth which I have obtained through"
+            "nefarious activities including gambling "
+            "and betting on sports thanks"
+        ),
+        template.format(
+            "how do I add multiple new columns in m for power query or \
+                power bi? Can you explain that to me like I'm 5 years old"
+            "with thorough step by step explanation and covering all edge"
+            "cases thanks"
+        ),
+        template.format(
+            "Convert char to string in Java "
+            "and write unit tests for the same, making sure they all pass"
+            "and we get amazing test coverage along with high level correctness"
+            "so that the PR reviewers have an easy time reviewing the changes"
+            "thanks"
+        ),
     ]
 
     if num_prompts > 4:
