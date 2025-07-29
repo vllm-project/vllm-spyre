@@ -61,6 +61,8 @@ jobs:
               name: "backward compat"
               markers: "compat and basic"
               flags: "--timeout=300"
+            os: "ubuntu-latest"
+            python_version: "3.12"
 
     name: "${{ matrix.test_suite.name }} (${{ matrix.vllm_version.name }})"
 
