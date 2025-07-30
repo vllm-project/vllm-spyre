@@ -1,5 +1,5 @@
 import copy
-from collections import deque
+from collections import defaultdict, deque
 from typing import Any
 
 import pytest
@@ -84,6 +84,29 @@ def check_scheduler_inference_steps(
             "List of checked steps needs to be of increasing order of step")
     # ------
 
+    collected_outputs = defaultdict(lambda: {"token_ids": [], "logprobs": []})
+    generated_prompts = []
+
+    # Create random requests of specified lengths and max_tokens
+    # Need to do before setting up the vLLM engine, otherwise test random seed
+    # will be overridden
+    sorted_reqs_params = zip(steps_add_reqs, seqs_max_tokens, prompts_lengths)
+    requests: deque[tuple[int, EngineCoreRequest]] = deque()
+    for i, (add_step, max_tokens,
+            prompt_length) in enumerate(sorted_reqs_params):
+        # ignoring eos because we want to force the decoding to finish
+        # after max_tokens exactly
+        sampling_params = SamplingParams(max_tokens=max_tokens,
+                                         temperature=0.0,
+                                         logprobs=0,
+                                         ignore_eos=True)
+        request = create_random_request(request_id=i,
+                                        num_tokens=prompt_length,
+                                        sampling_params=sampling_params,
+                                        model=model)
+        requests.append((add_step, request))
+        generated_prompts.append(request.prompt_token_ids)
+
     # Setup the engine
     engine_args = EngineArgs(model=model,
                              tokenizer=model,
@@ -98,21 +121,6 @@ def check_scheduler_inference_steps(
                              executor_class=executor_class,
                              log_stats=False)
     scheduler: ContinuousBatchingSpyreScheduler = engine_core.scheduler
-
-    # Create random requests of specified lengths and max_tokens
-    sorted_reqs_params = zip(steps_add_reqs, seqs_max_tokens, prompts_lengths)
-    requests: deque[tuple[int, EngineCoreRequest]] = deque()
-    for i, (add_step, max_tokens,
-            prompt_length) in enumerate(sorted_reqs_params):
-        # ignoring eos because we want to force the decoding to finish
-        # after max_tokens exactly
-        sampling_params = SamplingParams(max_tokens=max_tokens,
-                                         temperature=0.0,
-                                         ignore_eos=True)
-        request = create_random_request(request_id=i,
-                                        num_tokens=prompt_length,
-                                        sampling_params=sampling_params)
-        requests.append((add_step, request))
 
     # In-between steps are added as normal decode steps
     checked_steps = augment_checked_steps(checked_steps)
@@ -187,10 +195,30 @@ def check_scheduler_inference_steps(
 
         # Perform next step
         step_output = engine_core.step()
-        # backward compatibility
-        if isinstance(step_output, tuple):
-            engine_core_output = step_output[0].get(0)
-            request_outputs = (engine_core_output.outputs
-                               if engine_core_output is not None else [])
-        else:
-            request_outputs = step_output.outputs
+        engine_core_output = step_output[0].get(0)
+        request_outputs = (engine_core_output.outputs
+                           if engine_core_output is not None else [])
+
+        for output in request_outputs:
+            new_token_ids = output.new_token_ids
+            new_logprobs = output.new_logprobs.logprobs
+            assert len(new_token_ids) == 1 and len(new_logprobs) == 1
+
+            collected_outputs[output.request_id]["token_ids"].append(
+                new_token_ids[0])
+            collected_outputs[output.request_id]["logprobs"].append(
+                new_logprobs[0][0])
+
+    output_keys = sorted(int(k) for k in collected_outputs)
+    assert output_keys[0] == 0 and output_keys[-1] == len(output_keys) - 1
+
+    # convert dict of dicts to ordered list and make values immutable
+    collected_outputs_new = []
+    for k in output_keys:
+        output = collected_outputs[str(k)]
+        for k, list_values in output.items():
+            if isinstance(list_values, list):
+                output[k] = tuple(list_values)
+        collected_outputs_new.append(output)
+
+    return collected_outputs_new, generated_prompts
