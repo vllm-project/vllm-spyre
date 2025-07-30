@@ -122,7 +122,7 @@ jobs:
           # be removed by an admin or can be left to expire after 7 days.
           
           download_tinygranite() {
-            python -c "from transformers import pipeline, AutoTokenizer; pipeline('text-generation', model='ibm-ai-platform/micro-g3.3-8b-instruct-1b'; tokenizer=AutoTokenizer.from_pretrained('ibm-ai-platform/micro-g3.3-8b-instruct-1b')"
+            python -c "from transformers import pipeline, AutoTokenizer; pipeline('text-generation', model='ibm-ai-platform/micro-g3.3-8b-instruct-1b'); tokenizer=AutoTokenizer.from_pretrained('ibm-ai-platform/micro-g3.3-8b-instruct-1b')"
           }
           download_roberta_large() {
             python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-roberta-large-v1')"
