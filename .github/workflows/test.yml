@@ -151,6 +151,7 @@ jobs:
           MASTER_ADDR: localhost
           DISTRIBUTED_STRATEGY_IGNORE_MODULES: WordEmbedding
           VLLM_SPYRE_TEST_MODEL_LIST: "${{ matrix.test_suite.name == 'static batching' && 'JackFram/llama-160m' || '' }}"
+          HF_HUB_OFFLINE: 1
         run: |
           # Delete the source code so we can ensure we're testing the installed
           # wheel
@@ -160,5 +161,5 @@ jobs:
           # re-install the vllm_sypre package from source
           source .venv/bin/activate
 
-          export HF_HUB_OFFLINE=1 python3 -m pytest ${{ matrix.test_suite.flags }} \
+          python3 -m pytest ${{ matrix.test_suite.flags }} \
             tests -v -m "${{ matrix.test_suite.markers }}"
