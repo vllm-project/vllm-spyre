@@ -475,6 +475,7 @@ class SpyreWorker(WorkerBaseV1):
         cached_request_data = CachedRequestData(
             req_ids=req_ids,
             resumed_from_preemption=False,
+            new_token_ids=[[] for _ in range(len(dummy_requests))],
             new_block_ids=new_block_ids,
             num_computed_tokens=num_computed_tokens,
         )
@@ -570,6 +571,7 @@ class SpyreWorker(WorkerBaseV1):
         cached_request_data = CachedRequestData(
             req_ids=req_ids,
             resumed_from_preemption=False,
+            new_token_ids=[[] for _ in range(len(dummy_requests))],
             new_block_ids=new_block_ids,
             num_computed_tokens=num_computed_tokens,
         )
