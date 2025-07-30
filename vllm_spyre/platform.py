@@ -27,7 +27,6 @@ if TYPE_CHECKING:
 else:
     ModelConfig = None
     VllmConfig = None
-import vllm.envs as envs
 from vllm.platforms import Platform, PlatformEnum
 
 import vllm_spyre.envs as envs_spyre
@@ -121,7 +120,7 @@ class SpyrePlatform(Platform):
             if model_config.task \
         else "embed" in model_config.supported_tasks
 
-        if not envs.VLLM_USE_V1:
+        if not bool(int(os.getenv("VLLM_USE_V1", "1"))):
             raise ValueError("vllm-spyre is only supported with vLLM v1. "
                              "Please set VLLM_USE_V1=1")
         elif not is_decoder and not is_pooling:

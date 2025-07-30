@@ -1,17 +1,4 @@
-# 🌶️🌶️🌶️ Hack to allow testing of both engines
 import os
-
-# If `VLLM_USE_V1=1` is set upon first vLLM import, then there is a side effect
-# that will cause the V1 engine to always be selected. This is intentionally
-# done for backwards-compatibility of code that was using the AsyncLLMEngine
-# constructor directly, instead of using the `.from_engine_args` construction
-# methods that will select the appropriate v0 or v1 engine. See:
-# https://github.com/vllm-project/vllm/blob/v0.8.4/vllm/engine/llm_engine.py#L2169-L2171
-# Deleting VLLM_USE_V1 here before importing vLLM allows us to continue testing
-# both engines.
-if "VLLM_USE_V1" in os.environ:
-    del os.environ["VLLM_USE_V1"]
-# 🌶️🌶️🌶️ end hack
 
 import pytest
 import torch
