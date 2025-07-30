@@ -7,6 +7,7 @@ pytestmark = pytest.mark.compat
 VLLM_VERSION = os.getenv("TEST_VLLM_VERSION", "default")
 
 
+@pytest.mark.cpu
 def test_vllm_bert_support(monkeypatch):
     '''
     Test if the vllm version under test already has Bert support for V1

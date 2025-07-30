@@ -10,6 +10,7 @@ import sys
 if sys.platform.startswith("darwin"):
     if sys.modules.get('triton'):
         del sys.modules['triton']
+
 import math
 import operator
 import os

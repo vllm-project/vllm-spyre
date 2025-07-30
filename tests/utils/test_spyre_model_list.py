@@ -3,6 +3,7 @@ from spyre_util import get_spyre_model_list
 
 
 @pytest.mark.utils
+@pytest.mark.cpu
 def test_get_spyre_model_list(monkeypatch):
     '''
     Tests returning the expected models

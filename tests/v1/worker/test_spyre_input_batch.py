@@ -211,6 +211,7 @@ def compare_results(sampling_metadata, expected_sampling_metadata):
         sampling_metadata.bad_words_token_ids
 
 
+@pytest.mark.cpu
 @pytest.mark.v1
 @pytest.mark.worker
 @pytest.mark.parametrize("batch_size", [1, 2, 32, 64])

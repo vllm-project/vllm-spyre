@@ -3,6 +3,7 @@ from spyre_util import get_spyre_backend_list
 
 
 @pytest.mark.utils
+@pytest.mark.cpu
 def test_get_spyre_backend_list(monkeypatch):
     '''
     Ensure we return the backend list correctly
