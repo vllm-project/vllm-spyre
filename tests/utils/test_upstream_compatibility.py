@@ -24,3 +24,60 @@ def test_vllm_bert_support(monkeypatch):
         assert bert_supports_v0_only, (
             "The lowest supported vLLM version already"
             "supports Bert in V1. Remove the compatibility workarounds.")
+        # The compat code introduced in the PR below can now be removed:
+        # https://github.com/vllm-project/vllm-spyre/pull/277
+
+
+@pytest.mark.cpu
+def test_model_config_task(monkeypatch):
+
+    from vllm.engine.arg_utils import EngineArgs
+
+    vllm_config = EngineArgs().create_engine_config()
+    model_config = vllm_config.model_config
+
+    task = getattr(model_config, "task", None)
+
+    if VLLM_VERSION == "vLLM:main":
+        assert task is None
+    elif VLLM_VERSION == "vLLM:lowest":
+        assert task is not None, (
+            "The lowest supported vLLM version already"
+            "switched to the new definition of runners and task.")
+        # The compat code introduced in the PR below can now be removed:
+        # https://github.com/vllm-project/vllm-spyre/pull/341
+
+
+@pytest.mark.cpu
+def test_has_tasks(monkeypatch):
+
+    try:
+        from vllm import tasks  # noqa
+        has_tasks = True
+    except Exception:
+        has_tasks = False
+
+    if VLLM_VERSION == "vLLM:main":
+        assert has_tasks
+    elif VLLM_VERSION == "vLLM:lowest":
+        assert not has_tasks, (
+            "The lowest supported vLLM version already"
+            "switched to the new definition of runners and task.")
+        # The compat code introduced in the PR below can now be removed:
+        # https://github.com/vllm-project/vllm-spyre/pull/338
+
+
+@pytest.mark.cpu
+def test_pooler_from_config(monkeypatch):
+
+    from vllm.model_executor.layers.pooler import Pooler
+    has_from_config = hasattr(Pooler, "from_config_with_defaults")
+
+    if VLLM_VERSION == "vLLM:main":
+        assert not has_from_config
+    elif VLLM_VERSION == "vLLM:lowest":
+        assert has_from_config, (
+            "The lowest supported vLLM version already"
+            "switched to the new definition of runners and task.")
+        # The compat code introduced in the PR below can now be removed:
+        # https://github.com/vllm-project/vllm-spyre/pull/338
