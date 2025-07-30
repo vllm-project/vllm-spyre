@@ -592,7 +592,6 @@ def create_random_request(request_id: int,
         assert (len(prompt_token_ids) == num_tokens
                 ), f"need {num_tokens} but got {len(prompt_token_ids)}"
 
-
     return EngineCoreRequest(
         request_id=str(request_id),
         prompt_token_ids=prompt_token_ids,
