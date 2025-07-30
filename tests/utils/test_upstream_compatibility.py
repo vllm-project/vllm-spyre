@@ -8,7 +8,7 @@ VLLM_VERSION = os.getenv("TEST_VLLM_VERSION", "default")
 
 
 @pytest.mark.cpu
-def test_vllm_bert_support(monkeypatch):
+def test_vllm_bert_support():
     '''
     Test if the vllm version under test already has Bert support for V1
     '''
@@ -29,7 +29,7 @@ def test_vllm_bert_support(monkeypatch):
 
 
 @pytest.mark.cpu
-def test_model_config_task(monkeypatch):
+def test_model_config_task():
 
     from vllm.engine.arg_utils import EngineArgs
 
@@ -49,7 +49,7 @@ def test_model_config_task(monkeypatch):
 
 
 @pytest.mark.cpu
-def test_has_tasks(monkeypatch):
+def test_has_tasks():
 
     try:
         from vllm import tasks  # noqa
@@ -68,7 +68,7 @@ def test_has_tasks(monkeypatch):
 
 
 @pytest.mark.cpu
-def test_pooler_from_config(monkeypatch):
+def test_pooler_from_config():
 
     from vllm.model_executor.layers.pooler import Pooler
     has_from_config = hasattr(Pooler, "from_config_with_defaults")
