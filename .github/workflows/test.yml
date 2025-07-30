@@ -48,7 +48,7 @@ jobs:
             markers: "cpu and cb"
             flags: "--timeout=300"
           - name: "worker and utils"
-            markers: "not e2e"
+            markers: "cpu and not e2e"
             flags: "--timeout=300"
           - name: "compatibility"
             markers: "compat"
