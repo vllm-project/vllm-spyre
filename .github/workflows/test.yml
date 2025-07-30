@@ -160,5 +160,5 @@ jobs:
           # re-install the vllm_sypre package from source
           source .venv/bin/activate
 
-          python3 -m pytest ${{ matrix.test_suite.flags }} \
+          export HF_HUB_OFFLINE=1 python3 -m pytest ${{ matrix.test_suite.flags }} \
             tests -v -m "${{ matrix.test_suite.markers }}"
