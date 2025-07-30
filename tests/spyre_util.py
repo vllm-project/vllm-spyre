@@ -584,9 +584,15 @@ def create_random_request(request_id: int,
         prompt_token_ids = random.choices(valid_token_ids, k=num_tokens)
     else:
         # start with existing prompts and tokenize them
-        prompts = get_longer_chicken_soup_prompts(4)
+        prompts = get_longer_chicken_soup_prompts(1)
         tokenized_prompts = tokenizer(prompts)["input_ids"]
         prompt_token_ids = [p[:num_tokens] for p in tokenized_prompts][0]
+
+        # make sure we get enough tokens from the prompts
+        assert (len(prompt_token_ids) == num_tokens
+                ), f"need {num_tokens} but got {len(prompt_token_ids)}"
+
+        assert 0
 
     return EngineCoreRequest(
         request_id=str(request_id),
@@ -647,34 +653,28 @@ def get_longer_chicken_soup_prompts(num_prompts: int) -> list[str]:
         " user.\n\n### Instruction:\n{}\n\n### Response:")
 
     prompts = [
-        template.format(
-            "Provide a list of instructions "
-            "for preparing chicken soup along with "
-            "rice curry to go with it so that"
-            "the flavor is amazing and make sure to follow the" \
-            "recipe that my mum used to make during my " \
-            "childhood so that I can relive my good" \
-            "memories thanks"
-        ),
-        template.format(
-            "Provide me a list of things that I can do with my "
-            "new found wealth which I have obtained through"
-            "nefarious activities including gambling "
-            "and betting on sports thanks"
-        ),
+        template.format("Provide a list of instructions "
+                        "for preparing chicken soup along with "
+                        "rice curry to go with it so that "
+                        "the flavor is amazing and make sure to follow the "
+                        "recipe that my mum used to make during my "
+                        "childhood so that I can relive my good "
+                        "memories thanks"),
+        template.format("Provide me a list of things that I can do with my "
+                        "new found wealth which I have obtained through "
+                        "nefarious activities including gambling "
+                        "and betting on sports thanks"),
         template.format(
             "how do I add multiple new columns in m for power query or \
-                power bi? Can you explain that to me like I'm 5 years old"
-            "with thorough step by step explanation and covering all edge"
-            "cases thanks"
-        ),
+                power bi? Can you explain that to me like I'm 5 years old "
+            "with thorough step by step explanation and covering all edge "
+            "cases thanks"),
         template.format(
             "Convert char to string in Java "
-            "and write unit tests for the same, making sure they all pass"
-            "and we get amazing test coverage along with high level correctness"
-            "so that the PR reviewers have an easy time reviewing the changes"
-            "thanks"
-        ),
+            "and write unit tests for the same, making sure they all pass "
+            "and we get amazing test coverage along with high level "
+            "correctness so that the PR reviewers have an easy time "
+            "reviewing the changes thanks"),
     ]
 
     if num_prompts > 4:
