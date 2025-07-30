@@ -3,55 +3,37 @@
 
 # Based on vllm/vllm/v1/worker/gpu_input_batch.py
 
-from dataclasses import dataclass
-from typing import Optional, cast
+from abc import abstractmethod
+from dataclasses import dataclass, field
+from typing import Generic, Optional, TypeVar, cast
 
 import numpy as np
 import torch
+from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import SamplingParams, SamplingType
-
-from vllm_spyre.v1.sample.metadata import SamplingMetadata
-
-_SAMPLING_EPS = 1e-5
+from vllm.v1.pool.metadata import PoolingMetadata
+from vllm.v1.sample.logits_processor import (BatchUpdateBuilder,
+                                             MoveDirectionality,
+                                             init_builtin_logitsprocs)
+from vllm.v1.sample.metadata import SamplingMetadata
 
 
 @dataclass
-class CachedRequestState:
+class BaseRequestState:
 
     req_id: str
     prompt_token_ids: list[int]
-    sampling_params: SamplingParams
-    generator: Optional[torch.Generator]
-
-    output_token_ids: list[int]
-    left_padding: int = 0  # Defaults to 0, i. e. not padding
 
     @property
+    @abstractmethod
     def num_tokens(self) -> int:
-        return len(self.prompt_token_ids) + len(self.output_token_ids)
+        raise NotImplementedError
 
 
-class InputBatch:
-    '''
-    This class was based on the InputBatch for GPU of vLLM V1.
-    
-    The implementation of vLLM was designed to track the request parameters
-    and does some optimizations to keep the data organized tight. It also
-    build the sampling parameters and do lazy allocations when possible.
-    
-    For the Spyre, we do something similar, however we do not worry (for now)
-    the transfer data from CPU -> GPU as vLLM does. One key difference between 
-    those implementations is that we have a mask for active request based on 
-    the indices stored in `req_indices_mask`. Sometimes we need to check it
-    to get the correct index of a request see `get_unpadded_output_indices`. 
-    
-    For static batching, the correct usage of this class consists in add 
-    requests and clear the whole batch before process more requests. 
-    
-    For continuous batching, when a request is removed, it frees a slot where 
-    a new request can be inserted. Then, the request index mask is used to 
-    condense the sampling parameters.
-    '''
+RequestState = TypeVar("RequestState", bound=BaseRequestState)
+
+
+class BaseInputBatch(Generic[RequestState]):
 
     def __init__(
         self,
@@ -83,7 +65,178 @@ class InputBatch:
             pin_memory=False,
         )
         self.token_ids_cpu = self.token_ids_cpu_tensor.numpy()
-        self.num_prompt_tokens = np.zeros(max_num_reqs, dtype=np.int32)
+        self.num_prompt_tokens: np.ndarray = np.zeros(max_num_reqs,
+                                                      dtype=np.int32)
+
+        # Initialize with max number of requests
+        self.padded_batch_size = self.max_num_reqs
+
+        # Keep tracking of number of requests
+        self._num_requests = 0
+
+    @property
+    def req_ids(self) -> list[str]:
+        # None elements should only be present transiently
+        # while performing state updates to the batch.
+        return cast(list[str], self._req_ids)
+
+    def get_available_index(self) -> Optional[int]:
+        raise NotImplementedError
+
+    def add_request(
+        self,
+        request: RequestState,
+        req_index: Optional[int] = None,
+    ) -> int:
+        if req_index is None:
+            req_index = self.get_available_index()
+        assert req_index is not None
+        assert req_index < self.max_num_reqs
+
+        req_id = request.req_id
+        self._req_ids[req_index] = req_id
+
+        self.req_id_to_index[req_id] = req_index
+
+        # Copy the prompt token ids.
+        num_prompt_tokens = len(request.prompt_token_ids)
+        self.num_prompt_tokens[req_index] = num_prompt_tokens
+
+        self.token_ids_cpu[
+            req_index, :num_prompt_tokens] = request.prompt_token_ids
+
+        self._num_requests += 1
+        assert self._num_requests <= self.max_num_reqs
+        return req_index
+
+    def clear_requests(self):
+        '''
+        Clear the batch, mostly used by static batching
+        '''
+        self.req_id_to_index = {}
+
+        self._req_ids = [None] * self.max_num_reqs
+
+        self._num_requests = 0
+
+    def remove_request(self, req_id: str) -> Optional[int]:
+        '''
+        Free a slot of a request from the batch
+        
+        It does the following:
+        - mask out the removed request.
+        - Remove reference from the sets that track the type of parameter 
+          e.g. greeedy_reqs 
+        - Update some containers by reference to update the sampling parameters
+          e.g. req_output_token_ids
+        
+        For the continuous batching, the removed request indices can be 
+        overwritten by new requests
+        '''
+        req_index = self.req_id_to_index.pop(req_id, None)
+
+        if req_index is None:
+            return None
+
+        # Remove the references
+
+        self._req_ids[req_index] = None
+        self._num_requests -= 1
+        return req_index
+
+    def _get_num_prompt_tokens(self) -> np.ndarray:
+        return self.num_prompt_tokens[:self._num_requests]
+
+    def _get_token_ids(self) -> np.ndarray:
+        return self.token_ids_cpu[:self._num_requests]
+
+    def _make_prompt_token_ids_tensor(self) -> torch.Tensor:
+
+        num_prompt_tokens = self._get_num_prompt_tokens()
+        max_prompt_len = num_prompt_tokens.max()
+        prompt_token_ids_tensor = torch.empty(
+            (self._num_requests, max_prompt_len),
+            device=self.device,
+            dtype=torch.int64,
+        )
+        prompt_token_ids = prompt_token_ids_tensor.numpy()
+        prompt_token_ids[:] = self._get_token_ids()[:, :max_prompt_len]
+        # Use the value of vocab_size as a pad since we don't have a
+        # token_id of this value.
+
+        for i in range(self._num_requests):
+            prompt_token_ids[i, num_prompt_tokens[i]:] = self.vocab_size
+        return prompt_token_ids_tensor
+
+    def get_req_index(self, req_id):
+        return self.req_id_to_index.get(req_id)
+
+    @property
+    def num_reqs(self) -> int:
+        return self._num_requests
+
+    @property
+    def requests_ids(self) -> list[str]:
+        return list(self.req_id_to_index.keys())
+
+    @property
+    def sorted_requests_ids(self) -> list[str]:
+        return sorted(self.req_id_to_index,
+                      key=self.req_id_to_index.get)  # type: ignore
+
+
+@dataclass
+class SamplingRequestState(BaseRequestState):
+
+    left_padding: int = 0  # Defaults to 0, i. e. not padding
+
+    sampling_params: SamplingParams = SamplingParams()
+    generator: Optional[torch.Generator] = None
+
+    output_token_ids: list[int] = field(default_factory=list)
+
+    @property
+    def num_tokens(self) -> int:
+        return len(self.prompt_token_ids) + len(self.output_token_ids)
+
+
+class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
+    '''
+    This class was based on the InputBatch for GPU of vLLM V1.
+    
+    The implementation of vLLM was designed to track the request parameters
+    and does some optimizations to keep the data organized tight. It also
+    build the sampling parameters and do lazy allocations when possible.
+    
+    For the Spyre, we do something similar, however we do not worry (for now)
+    the transfer data from CPU -> GPU as vLLM does. One key difference between 
+    those implementations is that we have a mask for active request based on 
+    the indices stored in `req_indices_mask`. Sometimes we need to check it
+    to get the correct index of a request see `get_unpadded_output_indices`. 
+    
+    For static batching, the correct usage of this class consists in add 
+    requests and clear the whole batch before process more requests. 
+    
+    For continuous batching, when a request is removed, it frees a slot where 
+    a new request can be inserted. Then, the request index mask is used to 
+    condense the sampling parameters.
+    '''
+
+    def __init__(
+        self,
+        max_num_reqs: int,
+        max_model_len: int,
+        device: torch.device,
+        pin_memory: bool,
+        vocab_size: int,
+    ):
+        super().__init__(
+            max_num_reqs,
+            max_model_len,
+            device,
+            pin_memory,
+            vocab_size,
+        )
 
         # Sampling-related.
         self.temperature = torch.empty((max_num_reqs, ),
@@ -105,12 +258,6 @@ class InputBatch:
                                  device=device)
         self.top_k_cpu = self.top_k.numpy()
         self.top_k_reqs: set[str] = set()
-
-        self.min_p = torch.empty((max_num_reqs, ),
-                                 dtype=torch.float32,
-                                 device=device)
-        self.min_p_cpu = self.min_p.numpy()
-        self.min_p_reqs: set[str] = set()
 
         # Frequency penalty related data structures
         self.frequency_penalties = torch.empty((max_num_reqs, ),
@@ -135,9 +282,6 @@ class InputBatch:
             self.repetition_penalties.numpy()
         self.repetition_penalties_reqs: set[str] = set()
 
-        # req_index -> (min_tokens, stop_token_ids)
-        self.min_tokens: dict[int, tuple[int, set[int]]] = {}
-
         # req_index -> generator
         # NOTE(woosuk): The indices of the requests that do not have their own
         # generator should not be included in the dictionary.
@@ -148,8 +292,19 @@ class InputBatch:
         # that are currently in the prefill phase.
         self.num_prompt_logprobs: dict[str, int] = {}
 
-        self.logit_bias: list[Optional[dict[int,
-                                            float]]] = [None] * max_num_reqs
+        # Internal representation of per-step batch state changes, used for
+        # reordering persistent batch and generating logitsprocs batch state
+        # updates. Should reset each step.
+        self.batch_update_builder = BatchUpdateBuilder()
+
+        # Define logits processors.
+        # TODO(andy): logits processor list should be extensible via engine
+        # constructor argument; for now the list is fixed.
+        self.logitsprocs = init_builtin_logitsprocs(pin_memory_available=False,
+                                                    max_num_reqs=max_num_reqs +
+                                                    1,
+                                                    device=device)
+
         self.has_allowed_token_ids: set[str] = set()
         self.allowed_token_ids_mask: Optional[torch.Tensor] = None
 
@@ -164,20 +319,8 @@ class InputBatch:
                                             dtype=torch.bool,
                                             device=device)
 
-        # Initialize with max number of requests
-        self.padded_batch_size = self.max_num_reqs
-
         # This is updated each time the batch constituents change.
         self.sampling_metadata = self._make_sampling_metadata()
-
-        # Keep tracking of number of requests
-        self._num_requests = 0
-
-    @property
-    def req_ids(self) -> list[str]:
-        # None elements should only be present transiently
-        # while performing state updates to the batch.
-        return cast(list[str], self._req_ids)
 
     def req_id_to_dense_index(self, req_id) -> int:
         '''
@@ -227,7 +370,7 @@ class InputBatch:
         '''
         return self.req_indices_mask[:req_index].sum().item()
 
-    def get_available_index(self) -> int:
+    def get_available_index(self) -> Optional[int]:
         '''
         Find a free slot in the batching, used primarily in continuous batching
         '''
@@ -237,35 +380,34 @@ class InputBatch:
 
     def add_request(
         self,
-        request: "CachedRequestState",
+        request: "SamplingRequestState",
         req_index: Optional[int] = None,
-    ) -> None:
-        if req_index is None:
-            req_index = self.get_available_index()
-        assert req_index is not None
-        assert req_index < self.max_num_reqs
+    ) -> int:
 
-        assert self.req_indices_mask[req_index].item() is False
-        self.req_indices_mask[req_index] = True
+        req_index = super().add_request(request, req_index)
         req_id = request.req_id
-        self._req_ids[req_index] = req_id
 
         # NOTE: differently from gpu input batch, self.req_output_token_ids
         # is not synced with self._req_ids, it should use
         # self.req_indices_mask to resolve its index considering masked
         # out requests.
+        assert self.req_indices_mask[req_index].item() is False
+        self.req_indices_mask[req_index] = True
         dense_index = self.req_idx_to_dense_index(req_index)
         self.req_output_token_ids.insert(dense_index, request.output_token_ids)
 
-        self.req_id_to_index[req_id] = req_index
+        params = request.sampling_params  # TODO add pooling params
+        tmp_dense = self.num_reqs - 1
+        self.batch_update_builder.added.append(
+            (tmp_dense, params, request.output_token_ids))
 
-        # Copy the prompt token ids and output token ids.
-        num_prompt_tokens = len(request.prompt_token_ids)
-        self.num_prompt_tokens[req_index] = num_prompt_tokens
+        while tmp_dense > dense_index:
+            self.batch_update_builder.moved.append(
+                (tmp_dense, tmp_dense - 1, MoveDirectionality.SWAP))
+            tmp_dense = tmp_dense - 1
 
-        self.token_ids_cpu[
-            req_index, :num_prompt_tokens] = request.prompt_token_ids
-        start_idx = num_prompt_tokens
+        # Copy the output token ids.
+        start_idx = len(request.prompt_token_ids)
         end_idx = start_idx + len(request.output_token_ids)
         self.token_ids_cpu[req_index,
                            start_idx:end_idx] = request.output_token_ids
@@ -285,11 +427,8 @@ class InputBatch:
         self.top_k_cpu[req_index] = sampling_params.top_k
         if sampling_params.top_k > 0:
             self.top_k_reqs.add(req_id)
-        self.min_p_cpu[req_index] = sampling_params.min_p
         self.frequency_penalties_cpu[
             req_index] = sampling_params.frequency_penalty
-        if sampling_params.min_p > _SAMPLING_EPS:
-            self.min_p_reqs.add(req_id)
         if sampling_params.frequency_penalty != 0.0:
             self.frequency_penalties_reqs.add(req_id)
         self.presence_penalties_cpu[
@@ -300,9 +439,6 @@ class InputBatch:
             req_index] = sampling_params.repetition_penalty
         if sampling_params.repetition_penalty != 1.0:
             self.repetition_penalties_reqs.add(req_id)
-        if sampling_params.min_tokens:
-            self.min_tokens[req_index] = (sampling_params.min_tokens,
-                                          sampling_params.all_stop_token_ids)
 
         # NOTE(woosuk): self.generators should not include the requests that
         # do not have their own generator.
@@ -313,8 +449,6 @@ class InputBatch:
             self.num_logprobs[req_id] = sampling_params.logprobs
         if sampling_params.prompt_logprobs is not None:
             self.num_prompt_logprobs[req_id] = sampling_params.prompt_logprobs
-        if sampling_params.logit_bias is not None:
-            self.logit_bias[req_index] = sampling_params.logit_bias
 
         if sampling_params.allowed_token_ids:
             self.has_allowed_token_ids.add(req_id)
@@ -330,25 +464,20 @@ class InputBatch:
         if sampling_params.bad_words_token_ids:
             self.bad_words_token_ids[
                 req_index] = sampling_params.bad_words_token_ids
-        self._num_requests += 1
-        assert self._num_requests <= self.max_num_reqs
+        return req_index
 
     def clear_requests(self):
         '''
         Clear the batch, mostly used by static batching
         '''
-        self.req_id_to_index = {}
+        super().clear_requests()
         self.req_indices_mask.fill_(False)
-
-        self._req_ids = [None] * self.max_num_reqs
         self.req_output_token_ids = []
 
         self.greedy_reqs = set()
         self.random_reqs = set()
         self.top_p_reqs = set()
         self.top_k_reqs = set()
-        self.min_p_reqs = set()
-        self.min_tokens = {}
         self.frequency_penalties_reqs = set()
         self.presence_penalties_reqs = set()
         self.repetition_penalties_reqs = set()
@@ -356,12 +485,11 @@ class InputBatch:
         self.num_logprobs = {}
         self.num_prompt_logprobs = {}
 
-        self.logit_bias = [None] * self.max_num_reqs
         self.has_allowed_token_ids = set()
         if self.allowed_token_ids_mask is not None:
             self.allowed_token_ids_mask.fill_(False)
 
-        self._num_requests = 0
+        self.batch_update_builder.get_and_reset(0)
 
     def remove_request(self, req_id: str):
         '''
@@ -378,26 +506,33 @@ class InputBatch:
         overwritten by new requests
         '''
 
-        req_index = self.req_id_to_index.pop(req_id, None)
-
+        req_index = super().remove_request(req_id)
         if req_index is None:
             return
-
-        # Mask out the request
-        self.req_indices_mask[req_index] = False
 
         # Remove the references
 
         # Index corrected based on the padded/deactivated requests
         dense_index = self.req_idx_to_dense_index(req_index)
+        # Mask out the request
+        self.req_indices_mask[req_index] = False
+
+        # Remove and move up
+        tmp_dense = dense_index
+        self.batch_update_builder.removed_append(tmp_dense)
+
+        while tmp_dense < self._num_requests + 1:
+            self.batch_update_builder.moved.append(
+                (tmp_dense, tmp_dense + 1, MoveDirectionality.SWAP))
+            tmp_dense = tmp_dense + 1
+
+        # Remove the references
         self.req_output_token_ids.pop(dense_index)
-        self._req_ids[req_index] = None
 
         self.greedy_reqs.discard(req_id)
         self.random_reqs.discard(req_id)
         self.top_p_reqs.discard(req_id)
         self.top_k_reqs.discard(req_id)
-        self.min_p_reqs.discard(req_id)
 
         self.frequency_penalties_reqs.discard(req_id)
         self.presence_penalties_reqs.discard(req_id)
@@ -406,20 +541,24 @@ class InputBatch:
         self.num_logprobs.pop(req_id, None)
         self.num_prompt_logprobs.pop(req_id, None)
 
-        self.logit_bias[req_index] = None
         self.has_allowed_token_ids.discard(req_id)
 
         if self.allowed_token_ids_mask is not None:
             self.allowed_token_ids_mask[req_index].fill_(False)
 
-        self.min_tokens.pop(req_index, None)
-
-        self._num_requests -= 1
-
         self.bad_words_token_ids.pop(req_index, None)
 
-    def refresh_sampling_metadata(self):
-        self.sampling_metadata = self._make_sampling_metadata()
+    def refresh_metadata(self):
+        """Apply batch updates, reset input batch at end of step
+        
+        * Apply batch add/remove/permute to logits procs' states
+        * If batch state is modified, update sampling metadata
+        """
+        batch_update = self.batch_update_builder.get_and_reset(self.num_reqs)
+        for logit_proc in self.logitsprocs.all:
+            logit_proc.update_state(batch_update)
+        if batch_update:
+            self.sampling_metadata = self._make_sampling_metadata()
 
     def _make_sampling_metadata(self) -> SamplingMetadata:
 
@@ -446,15 +585,10 @@ class InputBatch:
             allowed_token_ids_mask = self.allowed_token_ids_mask[indices_mask]
 
         indices = indices_mask.nonzero().squeeze(dim=-1).tolist()
-        logit_bias = [self.logit_bias[i] for i in indices]
 
         generators = { i: self.generators[idx] \
             for i, idx in enumerate(indices) \
                 if self.generators.get(idx) is not None}
-
-        min_tokens = { i: self.min_tokens[idx] \
-            for i, idx in enumerate(indices) \
-                if self.min_tokens.get(idx) is not None}
 
         return SamplingMetadata(
             temperature=temperature,
@@ -462,7 +596,6 @@ class InputBatch:
             all_random=self.all_random,
             top_p=None if self.no_top_p else self.top_p[indices_mask],
             top_k=None if self.no_top_k else self.top_k[indices_mask],
-            min_p=None if self.no_min_p else self.min_p[indices_mask],
             generators=generators,
             max_num_logprobs=self.max_num_logprobs,
             prompt_token_ids=prompt_token_ids,
@@ -473,32 +606,19 @@ class InputBatch:
             # and may be updated from other contexts. For instance,
             # spyre_model_runner updates this data at _update_states.
             output_token_ids=cast(list[list[int]], self.req_output_token_ids),
-            min_tokens=min_tokens,
             no_penalties=self.no_penalties,
-            logit_bias=logit_bias,
             allowed_token_ids_mask=allowed_token_ids_mask,
             bad_words_token_ids=self.bad_words_token_ids,
+            logitsprocs=self.logitsprocs,
         )
 
-    def _make_prompt_token_ids_tensor(self) -> torch.Tensor:
-
+    def _get_num_prompt_tokens(self) -> np.ndarray:
         req_indices_mask_cpu = self.req_indices_mask.numpy()
-        num_prompt_tokens = self.num_prompt_tokens[req_indices_mask_cpu]
-        max_prompt_len = num_prompt_tokens.max()
-        prompt_token_ids_tensor = torch.empty(
-            (self._num_requests, max_prompt_len),
-            device=self.device,
-            dtype=torch.int64,
-        )
-        prompt_token_ids = prompt_token_ids_tensor.numpy()
-        prompt_token_ids[:] = self.token_ids_cpu[
-            req_indices_mask_cpu, :max_prompt_len]
-        # Use the value of vocab_size as a pad since we don't have a
-        # token_id of this value.
+        return self.num_prompt_tokens[req_indices_mask_cpu]
 
-        for i in range(self._num_requests):
-            prompt_token_ids[i, num_prompt_tokens[i]:] = self.vocab_size
-        return prompt_token_ids_tensor
+    def _get_token_ids(self) -> np.ndarray:
+        req_indices_mask_cpu = self.req_indices_mask.numpy()
+        return self.token_ids_cpu[req_indices_mask_cpu]
 
     def get_unpadded_output_indices(self) -> dict[str, int]:
         """The inputs to the model are all padded to a constant batch size, and
@@ -519,13 +639,6 @@ class InputBatch:
     def get_model_indices(self):
         return self.req_indices_mask[:self.padded_batch_size]
 
-    def get_req_index(self, req_id):
-        return self.req_id_to_index.get(req_id)
-
-    @property
-    def num_reqs(self) -> int:
-        return self._num_requests
-
     @property
     def all_greedy(self) -> bool:
         return len(self.random_reqs) == 0
@@ -541,10 +654,6 @@ class InputBatch:
     @property
     def no_top_k(self) -> bool:
         return len(self.top_k_reqs) == 0
-
-    @property
-    def no_min_p(self) -> bool:
-        return len(self.min_p_reqs) == 0
 
     @property
     def no_penalties(self) -> bool:
@@ -564,11 +673,82 @@ class InputBatch:
     def no_allowed_token_ids(self) -> bool:
         return len(self.has_allowed_token_ids) == 0
 
-    @property
-    def requests_ids(self) -> list[str]:
-        return list(self.req_id_to_index.keys())
+
+@dataclass
+class PoolingRequestState(BaseRequestState):
+
+    pooling_params: PoolingParams = PoolingParams()
+
+    def __post_init__(self):
+        self.num_prompt_tokens = len(self.prompt_token_ids)
 
     @property
-    def sorted_requests_ids(self) -> list[str]:
-        return sorted(self.req_id_to_index,
-                      key=self.req_id_to_index.get)  # type: ignore
+    def num_tokens(self) -> int:
+        return self.num_prompt_tokens
+
+
+class PoolingInputBatch(BaseInputBatch[PoolingRequestState]):
+
+    def __init__(
+        self,
+        max_num_reqs: int,
+        max_model_len: int,
+        device: torch.device,
+        pin_memory: bool,
+        vocab_size: int,
+    ):
+        super().__init__(
+            max_num_reqs,
+            max_model_len,
+            device,
+            pin_memory,
+            vocab_size,
+        )
+        self.pooling_params: dict[str, PoolingParams] = {}
+
+    def get_available_index(self) -> Optional[int]:
+        return self._num_requests
+
+    def add_request(
+        self,
+        request: "PoolingRequestState",
+        req_index: Optional[int] = None,
+    ) -> int:
+
+        req_index = super().add_request(request, req_index)
+
+        assert request.pooling_params is not None
+        self.pooling_params[request.req_id] = request.pooling_params
+        return req_index
+
+    def clear_requests(self):
+        '''
+        Clear the batch, mostly used by static batching
+        '''
+        super().clear_requests()
+        self.pooling_params = {}
+
+    def remove_request(self, req_id: str):
+
+        req_index = super().remove_request(req_id)
+        if req_index is None:
+            return
+
+        self.pooling_params.pop(req_id, None)
+
+    def make_pooling_metadata(self) -> PoolingMetadata:
+        prompt_token_ids = self._make_prompt_token_ids_tensor()
+
+        # Note, for now this assumes that all request in the batch
+        # are either sampling or pooling requests
+        assert len(self.requests_ids) == len(self.pooling_params)
+        pooling_params = [
+            self.pooling_params[req_id] for req_id in self.requests_ids
+        ]
+
+        return PoolingMetadata(
+            prompt_lens=torch.from_numpy(self._get_num_prompt_tokens()).to(
+                self.device),
+            prompt_token_ids=prompt_token_ids,
+            pooling_params=pooling_params,
+        )

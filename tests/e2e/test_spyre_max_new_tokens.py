@@ -26,16 +26,13 @@ def test_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     '''
+    Checks that `max_tokens` parameter of `SamplingParams` works correctly
+    
     The warmup is based on a single shape. After the warmup,
     one request with the provided prompts is input to vLLM.
     The same prompts are also input to HF. The generated output
     including text, token ids, and logprobs, is verified to be
     identical for vLLM and HF.
-
-    If errors occur, these can be analyzed/debugged by setting
-    'DISABLE_ASSERTS = True' in spyre_util.py and by rerunning the
-    test using 'pytest --capture=no tests/spyre/test_spyre_max_new_tokens.py'
-    After debugging, DISABLE_ASSERTS should be reset to 'False'.
     '''
 
     prompts = get_chicken_soup_prompts(4)
@@ -94,7 +91,6 @@ def test_output(
 
     compare_results(model=model,
                     prompts=prompts,
-                    warmup_shapes=[warmup_shape],
                     tensor_parallel_size=1,
                     backend=backend,
                     vllm_results=vllm_results,

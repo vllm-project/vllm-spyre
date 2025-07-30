@@ -42,6 +42,18 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
     """A worker class that executes the model on a group of Spyre cores.
     """
 
+    @property
+    def is_pooling(self) -> bool:
+        return self.model_config.task == "embed" \
+            if self.model_config.task else \
+                "embed" in self.model_config.supported_tasks
+
+    @property
+    def is_decoder(self) -> bool:
+        return self.model_config.task == "generate" \
+            if self.model_config.task else \
+                "generate" in self.model_config.supported_tasks
+
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -64,7 +76,7 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
             from vllm.utils import init_cached_hf_modules
             init_cached_hf_modules()
 
-        if self.model_config.task == "embed":
+        if self.is_pooling:
             self.model_runner: SpyreModelRunner = SpyreEmbeddingModelRunner(
                 self.model_config, self.parallel_config, self.scheduler_config,
                 self.device_config, self.is_driver_worker)
@@ -205,12 +217,12 @@ class SpyreWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
             (s["prompt_length"], s["new_tokens"], s["batch_size"])
                 for s in self.spyre_warmup_shapes
         ]):
-            if self.model_config.task != "embed":
+            if not self.is_pooling:
                 # TODO: remove if spyre supports
                 # lower number of output tokens
-                assert num_decode_tokens >= 3, (
+                assert num_decode_tokens >= 2, (
                     "VLLM_SPYRE_WARMUP_NEW_TOKENS must be "
-                    "at least 3 (spyre requirement).")
+                    "at least 2 (spyre requirement).")
             # warmup individual combination
             print(f"[SpyreWorker] Warmup {i+1}/"
                   f"{len(wup_new_tokens)} "
