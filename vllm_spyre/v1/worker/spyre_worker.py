@@ -57,6 +57,18 @@ class SpyreWorker(WorkerBaseV1):
     """A worker class that executes the model on a group of Spyre cores.
     """
 
+    @property
+    def is_pooling(self) -> bool:
+        return self.model_config.task == "embed" \
+            if self.model_config.task else \
+                "embed" in self.model_config.supported_tasks
+
+    @property
+    def is_decoder(self) -> bool:
+        return self.model_config.task == "generate" \
+            if self.model_config.task else \
+                "generate" in self.model_config.supported_tasks
+
     def get_kv_cache_spec(self) -> KVCacheSpec:
         """Get specifications for KV cache implementation.
 
@@ -85,7 +97,7 @@ class SpyreWorker(WorkerBaseV1):
             (s["prompt_length"], s["new_tokens"], s["batch_size"])
                 for s in self.spyre_warmup_shapes
         ]):
-            if self.model_config.task != "embed":
+            if not self.is_pooling:
                 # TODO: remove if spyre supports
                 # lower number of output tokens
                 assert num_decode_tokens >= 2, (
@@ -168,7 +180,7 @@ class SpyreWorker(WorkerBaseV1):
         self.model_runner: \
             Union[StaticBatchingSpyreModelRunner,
                   ContinuousBatchingSpyreModelRunner, SpyrePoolingModelRunner]
-        if self.model_config.task == "embed":
+        if self.is_pooling:
             self.model_runner = SpyrePoolingModelRunner(
                 self.vllm_config, self.is_driver_worker)
             self.spyre_warmup_shapes = SpyrePlatform.get_warmup_shapes(
@@ -457,7 +469,7 @@ class SpyreWorker(WorkerBaseV1):
             0, len(valid_token_ids_tensor), (batch_size, prompt_len))]
 
         sampling_params, pooling_params = None, None
-        if self.model_config.task != "embed":
+        if not self.is_pooling:
             sampling_params = SamplingParams(max_tokens=num_decode_tokens)
         else:
             pooling_params = PoolingParams()
