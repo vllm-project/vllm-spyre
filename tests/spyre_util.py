@@ -512,7 +512,7 @@ def get_spyre_backend_list():
 # get model names from env, if not set then use default models for each type.
 # Multiple models can be specified with a comma separated list in
 # VLLM_SPYRE_TEST_MODEL_LIST
-def get_spyre_model_list(isEmbeddings=False, quantization=None):
+def get_spyre_model_list(isEmbeddings=False, quantized=None):
     spyre_model_dir_path = get_spyre_model_dir_path()
 
     def _get_or_default(env: str, default: str) -> str:
@@ -527,10 +527,15 @@ def get_spyre_model_list(isEmbeddings=False, quantization=None):
             "VLLM_SPYRE_TEST_MODEL_LIST",
             "sentence-transformers/all-roberta-large-v1")
         marks = [pytest.mark.embedding]
-    elif quantization == "gptq":
+    elif quantized == "gptq":
         # TODO: need a HF hub reference here as a default
         user_test_model_list = _get_or_default("VLLM_SPYRE_TEST_MODEL_LIST",
                                                "granite-3.0-8b-instruct-gptq")
+        marks = [pytest.mark.decoder, pytest.mark.quantized, pytest.mark.spyre]
+    elif quantized == "fp8":
+        # TODO: need a HF hub reference here as a default
+        user_test_model_list = _get_or_default("VLLM_SPYRE_TEST_MODEL_LIST",
+                                               "placeholder-8b-instruct-FP8")
         marks = [pytest.mark.decoder, pytest.mark.quantized, pytest.mark.spyre]
     else:
         user_test_model_list = _get_or_default(
