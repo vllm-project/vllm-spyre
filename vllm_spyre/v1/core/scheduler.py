@@ -257,6 +257,9 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         for req in self.running:
             cond4_current = req.max_tokens <= (max_context_len - tkv_updated)
             cond4_updated = cond4_updated and cond4_current
+            # early exiting loop if violated 4th condition
+            if not cond4_updated:
+                return False
 
         # check if enough number of blocks to serve sequence with updated tkv
         num_blocks_required_updated = math.ceil(
