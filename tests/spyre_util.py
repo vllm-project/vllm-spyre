@@ -7,7 +7,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Any, Optional, Union
-from vllm.v1.engine.core import EngineCore
+
 import numpy as np
 import openai
 import pytest
@@ -18,8 +18,9 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, SamplingParams
 from vllm.entrypoints.openai.cli_args import make_arg_parser
 from vllm.utils import FlexibleArgumentParser, get_open_port
-from vllm.v1.request import Request
 from vllm.v1.engine import EngineCoreRequest
+from vllm.v1.engine.core import EngineCore
+from vllm.v1.request import Request
 
 DISABLE_ASSERTS = False  # used for debugging
 
