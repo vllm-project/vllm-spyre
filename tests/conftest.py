@@ -18,7 +18,7 @@ os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 def pytest_collection_modifyitems(config, items):
     """ Mark all tests in e2e directory"""
     for item in items:
-        if "tests/e2e" in str(item.nodeid):
+        if "e2e" in str(item.nodeid):
             item.add_marker(pytest.mark.e2e)
 
 

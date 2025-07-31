@@ -5,7 +5,7 @@ from spyre_util import get_spyre_backend_list, get_spyre_model_list
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("tp_size", [
-    pytest.param(1),
+    pytest.param(1, marks=pytest.mark.basic),
     pytest.param(2, marks=pytest.mark.multi),
     pytest.param(4, marks=pytest.mark.multi),
     pytest.param(8, marks=pytest.mark.multi),
@@ -82,6 +82,7 @@ def test_openai_serving_gptq(remote_openai_server, model, backend,
     assert len(completion.choices[0].text) > 0
 
 
+@pytest.mark.basic
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("cb",
                          [pytest.param(1, marks=pytest.mark.cb, id="cb")])
