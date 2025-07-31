@@ -1,6 +1,5 @@
-import os
-
 import hashlib
+import os
 import random
 
 import pytest
