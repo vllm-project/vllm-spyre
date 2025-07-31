@@ -48,7 +48,7 @@ override-dependencies = [
     "torch; sys_platform == 'never'",
     "torchaudio; sys_platform == 'never'",
     "torchvision; sys_platform == 'never'",
-    "triton; sys_platform != 'never'",
+    "triton; sys_platform == 'never'",
 ]
 # fms-mo doesn't support python 3.9, so don't have UV try to resolve it
 environments = [

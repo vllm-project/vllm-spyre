@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.9"
 resolution-markers = [
     "python_full_version >= '3.12' and sys_platform == 'darwin'",
@@ -21,7 +21,7 @@ overrides = [
     { name = "torch", marker = "sys_platform == 'never'" },
     { name = "torchaudio", marker = "sys_platform == 'never'" },
     { name = "torchvision", marker = "sys_platform == 'never'" },
-    { name = "triton", marker = "sys_platform != 'darwin'", specifier = ">=3.0,<3.2" },
+    { name = "triton", marker = "sys_platform == 'never'" },
 ]
 
 [[package]]
@@ -187,7 +187,7 @@ wheels = [
 [[package]]
 name = "aiu-fms-testing-utils"
 version = "0.0.1"
-source = { git = "https://github.com/foundation-model-stack/aiu-fms-testing-utils?rev=1a77f630104a5661fff554164c1e536ea08393e3#1a77f630104a5661fff554164c1e536ea08393e3" }
+source = { git = "https://github.com/foundation-model-stack/aiu-fms-testing-utils.git#bd1090ef7aa1323b28587533d29935827b7a6755" }
 dependencies = [
     { name = "torch", marker = "python_full_version >= '3.10' and sys_platform == 'never'" },
 ]
@@ -4479,7 +4479,7 @@ dependencies = [
     { name = "networkx", marker = "(python_full_version >= '3.10' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.10' and sys_platform != 'darwin' and sys_platform != 'linux')" },
     { name = "setuptools", marker = "(python_full_version >= '3.12' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.12' and sys_platform != 'darwin' and sys_platform != 'linux')" },
     { name = "sympy", marker = "(python_full_version >= '3.10' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.10' and sys_platform != 'darwin' and sys_platform != 'linux')" },
-    { name = "triton", marker = "(python_full_version >= '3.10' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.10' and sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "triton", marker = "python_full_version >= '3.10' and sys_platform == 'never'" },
     { name = "typing-extensions", marker = "(python_full_version >= '3.10' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.10' and sys_platform != 'darwin' and sys_platform != 'linux')" },
 ]
 
@@ -4573,13 +4573,7 @@ name = "triton"
 version = "3.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "filelock", marker = "python_full_version >= '3.10' and sys_platform != 'darwin'" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/98/29/69aa56dc0b2eb2602b553881e34243475ea2afd9699be042316842788ff5/triton-3.1.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:6b0dd10a925263abbe9fa37dcde67a5e9b2383fc269fdf59f5657cac38c5d1d8", size = 209460013, upload-time = "2024-10-14T16:05:32.106Z" },
-    { url = "https://files.pythonhosted.org/packages/86/17/d9a5cf4fcf46291856d1e90762e36cbabd2a56c7265da0d1d9508c8e3943/triton-3.1.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:0f34f6e7885d1bf0eaaf7ba875a5f0ce6f3c13ba98f9503651c1e6dc6757ed5c", size = 209506424, upload-time = "2024-10-14T16:05:42.337Z" },
-    { url = "https://files.pythonhosted.org/packages/78/eb/65f5ba83c2a123f6498a3097746607e5b2f16add29e36765305e4ac7fdd8/triton-3.1.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:c8182f42fd8080a7d39d666814fa36c5e30cc00ea7eeeb1a2983dbb4c99a0fdc", size = 209551444, upload-time = "2024-10-14T16:05:53.433Z" },
-    { url = "https://files.pythonhosted.org/packages/c4/69/57e0fed438d547524e08bfedc587078314176ad1c15c8be904d3f03149ec/triton-3.1.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:aafa9a20cd0d9fee523cd4504aa7131807a864cd77dcf6efe7e981f18b8c6c11", size = 209460480, upload-time = "2024-10-14T16:06:13.116Z" },
+    { name = "filelock", marker = "(python_full_version >= '3.10' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.10' and sys_platform != 'darwin' and sys_platform != 'linux')" },
 ]
 
 [[package]]
@@ -4856,7 +4850,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "aiu-fms-testing-utils", git = "https://github.com/foundation-model-stack/aiu-fms-testing-utils?rev=1a77f630104a5661fff554164c1e536ea08393e3" },
+    { name = "aiu-fms-testing-utils", git = "https://github.com/foundation-model-stack/aiu-fms-testing-utils.git" },
     { name = "pytest", specifier = "==8.3.4" },
     { name = "pytest-asyncio", specifier = ">=1.0.0" },
     { name = "pytest-forked", specifier = ">=1.6.0" },
@@ -5112,7 +5106,7 @@ dependencies = [
     { name = "tiktoken", marker = "python_full_version >= '3.10'" },
     { name = "torch", marker = "python_full_version >= '3.10' and sys_platform == 'never'" },
     { name = "transformers", marker = "python_full_version >= '3.10'" },
-    { name = "triton", marker = "python_full_version >= '3.10' and sys_platform != 'darwin'" },
+    { name = "triton", marker = "python_full_version >= '3.10' and sys_platform == 'never'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/b5/55/73e1e4f918ade656c4fa7f3a5fcfb3d521a429fe305d2cb8ca58bfb201d4/xgrammar-0.1.19.tar.gz", hash = "sha256:75bf3e814283b1cbaee9252234c5d4081f0058d29b26d8984f1cdf031c99b775", size = 1714056, upload-time = "2025-05-08T07:13:46.05Z" }
 wheels = [
