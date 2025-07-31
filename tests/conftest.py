@@ -1,5 +1,8 @@
 import os
 
+import hashlib
+import random
+
 import pytest
 import torch
 from spyre_util import RemoteOpenAIServer, skip_unsupported_tp_size
@@ -123,3 +126,11 @@ def remote_openai_server(request):
             yield server
     except Exception as e:
         pytest.fail(f"Failed to setup server: {e}")
+
+
+@pytest.fixture
+def set_random_seed(request):
+    func_hash = hashlib.sha256(request.node.originalname.encode('utf-8'))
+    seed = int(func_hash.hexdigest(), 16)
+    random.seed(seed)
+    yield

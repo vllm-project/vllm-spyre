@@ -4,10 +4,10 @@ Run `python -m pytest tests/e2e/test_spyre_basic.py`.
 """
 
 import pytest
-from spyre_util import (compare_results, create_random_request,
-                        generate_hf_output, generate_spyre_vllm_output,
-                        get_chicken_soup_prompts, get_spyre_backend_list,
-                        get_spyre_model_list, skip_unsupported_tp_size)
+from spyre_util import (check_output_against_hf, create_random_request,
+                        generate_spyre_vllm_output, get_chicken_soup_prompts,
+                        get_spyre_backend_list, get_spyre_model_list,
+                        skip_unsupported_tp_size)
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor
@@ -85,17 +85,8 @@ def test_output(
         backend=backend,
         monkeypatch=monkeypatch,
         **kwargs)
-
-    hf_results = generate_hf_output(model=model,
-                                    prompts=prompts,
-                                    max_new_tokens=max_new_tokens)
-
-    compare_results(model=model,
-                    prompts=prompts,
-                    tensor_parallel_size=tp_size,
-                    backend=backend,
-                    vllm_results=vllm_results,
-                    hf_results=hf_results)
+    check_output_against_hf(model, backend, max_new_tokens, vllm_results,
+                            prompts)
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
@@ -137,16 +128,8 @@ def test_output_sendnn_decoder(
         backend=backend,
         monkeypatch=monkeypatch)
 
-    hf_results = generate_hf_output(model=model,
-                                    prompts=prompts,
-                                    max_new_tokens=max_new_tokens)
-
-    compare_results(model=model,
-                    prompts=prompts,
-                    tensor_parallel_size=1,
-                    backend=backend,
-                    vllm_results=vllm_results,
-                    hf_results=hf_results)
+    check_output_against_hf(model, backend, max_new_tokens, vllm_results,
+                            prompts)
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
@@ -194,18 +177,9 @@ def test_batch_handling(model: str, backend: str, cb: int,
         backend=backend,
         monkeypatch=monkeypatch,
         **kwargs)
-    hf_results = generate_hf_output(model=model,
-                                    prompts=prompts,
-                                    max_new_tokens=max_new_tokens)
 
-    compare_results(
-        model=model,
-        prompts=prompts,
-        tensor_parallel_size=1,
-        backend=backend,
-        vllm_results=vllm_results,
-        hf_results=hf_results,
-    )
+    check_output_against_hf(model, backend, max_new_tokens, vllm_results,
+                            prompts)
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
@@ -250,9 +224,12 @@ def test_full_batch_scheduling(model: str, backend: str, monkeypatch):
                                           logprobs=0)
     for i in range(batch_size):
         engine_core.add_request(
-            create_random_request(request_id=i,
-                                  num_tokens=max_batched_tokens,
-                                  sampling_params=vllm_sampling_params))
+            create_random_request(
+                request_id=i,
+                num_tokens=max_batched_tokens,
+                sampling_params=vllm_sampling_params,
+                model=model,
+            ))
     schedule = scheduler.schedule()
 
     assert len(schedule.scheduled_new_reqs) == batch_size

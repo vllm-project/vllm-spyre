@@ -185,6 +185,14 @@ wheels = [
 ]
 
 [[package]]
+name = "aiu-fms-testing-utils"
+version = "0.0.1"
+source = { git = "https://github.com/foundation-model-stack/aiu-fms-testing-utils?rev=1a77f630104a5661fff554164c1e536ea08393e3#1a77f630104a5661fff554164c1e536ea08393e3" }
+dependencies = [
+    { name = "torch", marker = "python_full_version >= '3.10' and sys_platform == 'never'" },
+]
+
+[[package]]
 name = "annotated-types"
 version = "0.7.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4816,6 +4824,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "aiu-fms-testing-utils", marker = "python_full_version >= '3.10'" },
     { name = "pytest", marker = "python_full_version >= '3.10'" },
     { name = "pytest-asyncio", marker = "python_full_version >= '3.10'" },
     { name = "pytest-forked", marker = "python_full_version >= '3.10'" },
@@ -4847,6 +4856,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "aiu-fms-testing-utils", git = "https://github.com/foundation-model-stack/aiu-fms-testing-utils?rev=1a77f630104a5661fff554164c1e536ea08393e3" },
     { name = "pytest", specifier = "==8.3.4" },
     { name = "pytest-asyncio", specifier = ">=1.0.0" },
     { name = "pytest-forked", specifier = ">=1.6.0" },
