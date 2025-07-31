@@ -1,6 +1,7 @@
 import os
 
 import pytest
+from spyre_util import get_spyre_model_list
 
 pytestmark = pytest.mark.compat
 
@@ -29,11 +30,12 @@ def test_vllm_bert_support():
 
 
 @pytest.mark.cpu
-def test_model_config_task():
+@pytest.mark.parametrize("model", get_spyre_model_list())
+def test_model_config_task(model: str):
 
     from vllm.engine.arg_utils import EngineArgs
 
-    vllm_config = EngineArgs(model="facebook/opt-125m").create_engine_config()
+    vllm_config = EngineArgs(model=model).create_engine_config()
     model_config = vllm_config.model_config
 
     task = getattr(model_config, "task", None)
