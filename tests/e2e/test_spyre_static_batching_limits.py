@@ -30,7 +30,6 @@ def test_max_prompt_len_and_new_tokens(model: str,
     '''
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     patch_warmup_shapes(warmup_shapes, monkeypatch)
-    monkeypatch.setenv("VLLM_USE_V1", "1")
 
     max_prompt_length = max([t[0] for t in warmup_shapes])
     max_new_tokens = max([t[1] for t in warmup_shapes])
