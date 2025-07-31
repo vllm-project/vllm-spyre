@@ -212,7 +212,6 @@ def compare_results(sampling_metadata, expected_sampling_metadata):
 
 
 @pytest.mark.cpu
-@pytest.mark.v1
 @pytest.mark.worker
 @pytest.mark.parametrize("batch_size", [1, 2, 32, 64])
 def test_sampling_metadata_in_input_batch(batch_size: int):
