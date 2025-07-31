@@ -46,8 +46,9 @@ def test_model_config_task(model: str):
         assert task is not None, (
             "The lowest supported vLLM version already"
             "switched to the new definition of runners and task.")
-        # The compat code introduced in the PR below can now be removed:
+        # The compat code introduced in the PRs below can now be removed:
         # https://github.com/vllm-project/vllm-spyre/pull/341
+        # https://github.com/vllm-project/vllm-spyre/pull/352
 
 
 @pytest.mark.cpu
