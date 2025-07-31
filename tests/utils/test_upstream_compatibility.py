@@ -1,3 +1,4 @@
+import inspect
 import os
 
 import pytest
@@ -83,3 +84,24 @@ def test_pooler_from_config():
             "switched to the new definition of runners and task.")
         # The compat code introduced in the PR below can now be removed:
         # https://github.com/vllm-project/vllm-spyre/pull/338
+
+
+@pytest.mark.cpu
+def test_engine_core_add_request():
+
+    from vllm.v1.engine import EngineCoreRequest
+    from vllm.v1.engine.core import EngineCore
+    from vllm.v1.request import Request
+
+    sig = inspect.signature(EngineCore.add_request)
+    changed_engine_core_request = \
+        sig.parameters["request"].annotation == Request
+
+    if VLLM_VERSION == "vLLM:main":
+        assert changed_engine_core_request
+    elif VLLM_VERSION == "vLLM:lowest":
+        assert sig.parameters["request"].annotation == EngineCoreRequest, (
+            "The lowest supported vLLM version already"
+            "switched to the new definition of EngineCore.add_request()")
+        # The compat code introduced in the PR below can now be removed:
+        # https://github.com/vllm-project/vllm-spyre/pull/354
