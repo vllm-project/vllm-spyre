@@ -567,11 +567,13 @@ def create_text_prompt(model: str, min_tokens: int, max_tokens: int) -> str:
     return prompt
 
 
-def create_random_request(request_id: int,
-                          num_tokens: int,
-                          sampling_params: SamplingParams,
-                          from_model_vocab: bool = False,
-                          model: Optional[str] = None) -> Request:
+def create_random_request(
+    request_id: int,
+    num_tokens: int,
+    sampling_params: SamplingParams,
+    from_model_vocab: bool = False,
+    model: Optional[str] = None,
+) -> Request | EngineCoreRequest:
 
     tokenizer = AutoTokenizer.from_pretrained(model)
     if from_model_vocab:
