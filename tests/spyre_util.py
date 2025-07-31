@@ -17,7 +17,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, SamplingParams
 from vllm.entrypoints.openai.cli_args import make_arg_parser
 from vllm.utils import FlexibleArgumentParser, get_open_port
-from vllm.v1.engine import EngineCoreRequest
+from vllm.v1.request import Request
 
 DISABLE_ASSERTS = False  # used for debugging
 
@@ -568,7 +568,7 @@ def create_random_request(request_id: int,
                           num_tokens: int,
                           sampling_params: SamplingParams,
                           from_model_vocab: bool = False,
-                          model: Optional[str] = None) -> EngineCoreRequest:
+                          model: Optional[str] = None) -> Request:
 
     tokenizer = AutoTokenizer.from_pretrained(model)
     if from_model_vocab:
@@ -590,17 +590,16 @@ def create_random_request(request_id: int,
         assert (len(prompt_token_ids) == num_tokens
                 ), f"need {num_tokens} but got {len(prompt_token_ids)}"
 
-    return EngineCoreRequest(
+    return Request(
         request_id=str(request_id),
         prompt_token_ids=prompt_token_ids,
-        mm_inputs=None,
-        mm_hashes=None,
-        mm_placeholders=None,
+        multi_modal_inputs=None,
+        multi_modal_hashes=None,
+        multi_modal_placeholders=None,
         sampling_params=sampling_params,
         eos_token_id=None,
         arrival_time=0,
         lora_request=None,
-        data_parallel_rank=None,
         pooling_params=None,
         cache_salt=None,
     )
