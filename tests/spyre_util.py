@@ -533,9 +533,8 @@ def get_spyre_model_list(isEmbeddings=False, quantized=None):
                                                "granite-3.0-8b-instruct-gptq")
         marks = [pytest.mark.decoder, pytest.mark.quantized, pytest.mark.spyre]
     elif quantized == "fp8":
-        # TODO: need a HF hub reference here as a default
         user_test_model_list = _get_or_default("VLLM_SPYRE_TEST_MODEL_LIST",
-                                               "placeholder-8b-instruct-FP8")
+                                               "ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8")
         marks = [pytest.mark.decoder, pytest.mark.quantized, pytest.mark.spyre]
     else:
         user_test_model_list = _get_or_default(
