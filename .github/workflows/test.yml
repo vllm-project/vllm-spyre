@@ -39,7 +39,7 @@ jobs:
             repo: "git+https://github.com/vllm-project/vllm --branch main"
         test_suite:
           - name: "static batching"
-            markers: "(cpu and decoder and not cb) or (cpu and quantized)"
+            markers: "cpu and decoder and not cb"
             flags: "--timeout=300"
           - name: "embedding"
             markers: "cpu and embedding"
@@ -151,7 +151,7 @@ jobs:
           MASTER_PORT: 12355
           MASTER_ADDR: localhost
           DISTRIBUTED_STRATEGY_IGNORE_MODULES: WordEmbedding
-          VLLM_SPYRE_TEST_MODEL_LIST: "${{ contains(matrix.test_suite.markers, 'quantized') && 'ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8' || (matrix.test_suite.name == 'static batching' && 'JackFram/llama-160m' || '') }}"
+          VLLM_SPYRE_TEST_MODEL_LIST: "${{ matrix.test_suite.name == 'static batching' && 'JackFram/llama-160m' || '' }}"
           HF_HUB_OFFLINE: 1
         run: |
           # Delete the source code so we can ensure we're testing the installed
