@@ -56,6 +56,7 @@ def test_openai_serving(remote_openai_server, model, warmup_shape, backend,
     except openai.BadRequestError as e:
         assert "warmup" in str(e)
 
+
 @pytest.mark.skip(reason="Test disabled until a model is available")
 @pytest.mark.parametrize("model", get_spyre_model_list(quantized="gptq"))
 @pytest.mark.parametrize("backend", ["sendnn"])
