@@ -39,7 +39,7 @@ jobs:
             repo: "git+https://github.com/vllm-project/vllm --branch main"
         test_suite:
           - name: "static batching"
-            markers: "(cpu and decoder and not cb) or quantized"
+            markers: "cpu and decoder and not cb"
             flags: "--timeout=300"
           - name: "embedding"
             markers: "cpu and embedding"
@@ -49,6 +49,9 @@ jobs:
             flags: "--timeout=300"
           - name: "worker and utils"
             markers: "not e2e"
+            flags: "--timeout=300"
+          - name: "quantized"
+            markers: "quantized"
             flags: "--timeout=300"
 
     name: "${{ matrix.test_suite.name }} (${{ matrix.vllm_version.name }})"
@@ -123,6 +126,7 @@ jobs:
           
           download_tinygranite() {
             python -c "from transformers import pipeline; pipeline('text-generation', model='ibm-ai-platform/micro-g3.3-8b-instruct-1b')"
+            python -c "from transformers import pipeline; pipeline('text-generation', model='ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8')"
           }
           download_roberta_large() {
             python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-roberta-large-v1')"
