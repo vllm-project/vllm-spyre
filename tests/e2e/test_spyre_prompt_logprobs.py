@@ -61,6 +61,31 @@ def test_prompt_logprobs(
     force_engine_shutdown(llm)
 
 
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+@pytest.mark.parametrize("model", get_spyre_model_list())
+def test_prompt_logprobs_work_with_logprobs(
+    backend: str,
+    model: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    '''
+    This test checks that prompt_logprobs and logprobs can work together.
+    '''
+
+    prompts = get_chicken_soup_prompts(4)
+
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+    monkeypatch.setenv("VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS", "1")
+    llm = LLM(model, tokenizer=model)
+
+    responses: list[RequestOutput] = llm.generate(
+        prompts, sampling_params=SamplingParams(prompt_logprobs=5, logprobs=5))
+
+    for r in responses:
+        assert r.outputs[0].logprobs is not None
+    force_engine_shutdown(llm)
+
+
 @pytest.mark.cpu
 @pytest.mark.decoder
 def test_prompt_logprobs_must_be_enabled(monkeypatch: pytest.MonkeyPatch):
