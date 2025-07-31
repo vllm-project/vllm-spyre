@@ -33,7 +33,7 @@ def test_model_config_task():
 
     from vllm.engine.arg_utils import EngineArgs
 
-    vllm_config = EngineArgs().create_engine_config()
+    vllm_config = EngineArgs(model="facebook/opt-125m").create_engine_config()
     model_config = vllm_config.model_config
 
     task = getattr(model_config, "task", None)
