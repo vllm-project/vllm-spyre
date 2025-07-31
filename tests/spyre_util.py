@@ -1,3 +1,4 @@
+import inspect
 import math
 import os
 import random
@@ -6,7 +7,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Any, Optional, Union
-
+from vllm.v1.engine.core import EngineCore
 import numpy as np
 import openai
 import pytest
@@ -18,6 +19,7 @@ from vllm import LLM, SamplingParams
 from vllm.entrypoints.openai.cli_args import make_arg_parser
 from vllm.utils import FlexibleArgumentParser, get_open_port
 from vllm.v1.request import Request
+from vllm.v1.engine import EngineCoreRequest
 
 DISABLE_ASSERTS = False  # used for debugging
 
@@ -590,6 +592,22 @@ def create_random_request(request_id: int,
         assert (len(prompt_token_ids) == num_tokens
                 ), f"need {num_tokens} but got {len(prompt_token_ids)}"
 
+    sig = inspect.signature(EngineCore.add_request)
+    if sig.parameters["request"].annotation == EngineCoreRequest:
+        return EngineCoreRequest(
+            request_id=str(request_id),
+            prompt_token_ids=prompt_token_ids,
+            mm_inputs=None,
+            mm_hashes=None,
+            mm_placeholders=None,
+            sampling_params=sampling_params,
+            eos_token_id=None,
+            arrival_time=0,
+            lora_request=None,
+            data_parallel_rank=None,
+            pooling_params=None,
+            cache_salt=None,
+        )
     return Request(
         request_id=str(request_id),
         prompt_token_ids=prompt_token_ids,
