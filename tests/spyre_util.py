@@ -203,7 +203,6 @@ def generate_spyre_vllm_output(
                            ",".join(str(val) for val in warmup_batch_size))
     # --------------
     monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1" if use_cb else "0")
-    monkeypatch.setenv("VLLM_USE_V1", "1")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
 
     # Allows to run multiprocess V1 engine without dumping meaningless logs at
@@ -417,8 +416,7 @@ def check_output_against_hf(model, backend, max_new_tokens, vllm_results,
 # vLLM / Spyre
 def spyre_vllm_embeddings(model: str, prompts: list[str], max_model_len: int,
                           block_size: int, tensor_parallel_size: int,
-                          backend: str,
-                          vllm_version: str) -> list[dict[str, Any]]:
+                          backend: str) -> list[dict[str, Any]]:
 
     vllm_model = LLM(model=model,
                      tokenizer=model,
