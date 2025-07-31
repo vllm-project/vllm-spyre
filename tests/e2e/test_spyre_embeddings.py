@@ -12,13 +12,16 @@ from spyre_util import (compare_embedding_results, get_chicken_soup_prompts,
                         st_embeddings)
 from vllm import LLM
 
-pytestmark = pytest.mark.basic
-
 
 @pytest.mark.parametrize("model", get_spyre_model_list(isEmbeddings=True))
-@pytest.mark.parametrize("warmup_shape",
-                         [(64, 4), (64, 8), (128, 4),
-                          (128, 8)])  # (prompt_length/batch_size)
+@pytest.mark.parametrize(
+    "warmup_shape",
+    [  # (prompt_length/batch_size)
+        pytest.param((64, 4), marks=pytest.mark.basic),
+        pytest.param((64, 8)),
+        pytest.param((128, 4)),
+        pytest.param((128, 8))
+    ])
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("vllm_version", ["V0", "V1"])
 def test_output(
