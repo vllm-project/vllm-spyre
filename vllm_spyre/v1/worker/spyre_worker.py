@@ -58,15 +58,17 @@ class SpyreWorker(WorkerBaseV1):
 
     @property
     def is_pooling(self) -> bool:
+        # Can be simplified after the deprecation of `model_config.task` in
+        # vllm > 0.10.0
         return self.model_config.task == "embed" \
-            if self.model_config.task else \
-                "embed" in self.model_config.supported_tasks
+            or "embed" in self.model_config.supported_tasks
 
     @property
     def is_decoder(self) -> bool:
+        # Can be simplified after the deprecation of `model_config.task` in
+        # vllm > 0.10.0
         return self.model_config.task == "generate" \
-            if self.model_config.task else \
-                "generate" in self.model_config.supported_tasks
+            or "generate" in self.model_config.supported_tasks
 
     def get_kv_cache_spec(self) -> KVCacheSpec:
         """Get specifications for KV cache implementation.
