@@ -123,7 +123,8 @@ jobs:
           
           download_tinygranite() {
             python -c "from transformers import pipeline; pipeline('text-generation', model='ibm-ai-platform/micro-g3.3-8b-instruct-1b')"
-            python -c "from transformers import pipeline; pipeline('text-generation', model='ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8')"}
+            python -c "from transformers import pipeline; pipeline('text-generation', model='ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8')"
+          }
           download_roberta_large() {
             python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-roberta-large-v1')"
           }
@@ -150,7 +151,7 @@ jobs:
           MASTER_PORT: 12355
           MASTER_ADDR: localhost
           DISTRIBUTED_STRATEGY_IGNORE_MODULES: WordEmbedding
-          VLLM_SPYRE_TEST_MODEL_LIST: ${{ contains(matrix.test_suite.markers, 'quantized') && 'ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8' || (matrix.test_suite.name == 'static batching' && 'JackFram/llama-160m' || '') }}
+          VLLM_SPYRE_TEST_MODEL_LIST: "${{ contains(matrix.test_suite.markers, 'quantized') && 'ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8' || (matrix.test_suite.name == 'static batching' && 'JackFram/llama-160m' || '') }}"
         run: |
           # Delete the source code so we can ensure we're testing the installed
           # wheel
