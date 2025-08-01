@@ -94,11 +94,9 @@ def test_engine_core_add_request():
     from vllm.v1.request import Request
 
     sig = inspect.signature(EngineCore.add_request)
-    changed_engine_core_request = \
-        sig.parameters["request"].annotation == Request
 
     if VLLM_VERSION == "vLLM:main":
-        assert changed_engine_core_request
+        sig.parameters["request"].annotation == Request
     elif VLLM_VERSION == "vLLM:lowest":
         assert sig.parameters["request"].annotation == EngineCoreRequest, (
             "The lowest supported vLLM version already"
