@@ -57,13 +57,38 @@ def test_openai_serving(remote_openai_server, model, warmup_shape, backend,
         assert "warmup" in str(e)
 
 
-@pytest.mark.parametrize("model", get_spyre_model_list(quantization="gptq"))
+@pytest.mark.skip(reason="Test disabled until a model is available")
+@pytest.mark.parametrize("model", get_spyre_model_list(quantized="gptq"))
 @pytest.mark.parametrize("backend", ["sendnn"])
 @pytest.mark.parametrize("quantization", ["gptq"])
 @pytest.mark.parametrize("warmup_shape", [[(64, 20, 1)]])
 def test_openai_serving_gptq(remote_openai_server, model, backend,
                              warmup_shape, quantization):
     """Test online serving a GPTQ model with the sendnn backend only"""
+
+    client = remote_openai_server.get_client()
+    completion = client.completions.create(model=model,
+                                           prompt="Hello World!",
+                                           max_tokens=5,
+                                           temperature=0.0)
+    assert len(completion.choices) == 1
+    assert len(completion.choices[0].text) > 0
+
+    completion = client.completions.create(model=model,
+                                           prompt="Hello World!",
+                                           max_tokens=5,
+                                           temperature=1.0,
+                                           n=2)
+    assert len(completion.choices) == 2
+    assert len(completion.choices[0].text) > 0
+
+
+@pytest.mark.parametrize("model", get_spyre_model_list(quantized="fp8"))
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+@pytest.mark.parametrize("warmup_shape", [[(64, 20, 1)]])
+def test_openai_serving_fp8(remote_openai_server, model, backend,
+                            warmup_shape):
+    """Test online serving an FP8 model"""
 
     client = remote_openai_server.get_client()
     completion = client.completions.create(model=model,
