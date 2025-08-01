@@ -56,17 +56,28 @@ class SpyreWorker(WorkerBaseV1):
     """A worker class that executes the model on a group of Spyre cores.
     """
 
+    def get_supported_pooling_tasks(self):
+        # Compatibility code required for vllm == 0.10.0
+        # Can be removed for vllm > 0.10.0
+        if self.is_pooling:
+            return ["embed"]
+        return []
+
     @property
     def is_pooling(self) -> bool:
-        return self.model_config.task == "embed" \
-            if self.model_config.task else \
-                "embed" in self.model_config.supported_tasks
+        # Can be simplified after the deprecation of `model_config.task` in
+        # vllm > 0.10.0
+        return "embed" in self.model_config.supported_tasks if (
+            self.model_config.task == "auto" or self.model_config.task
+            is None) else self.model_config.task == "embed"
 
     @property
     def is_decoder(self) -> bool:
-        return self.model_config.task == "generate" \
-            if self.model_config.task else \
-                "generate" in self.model_config.supported_tasks
+        # Can be simplified after the deprecation of `model_config.task` in
+        # vllm > 0.10.0
+        return "generate" in self.model_config.supported_tasks if (
+            self.model_config.task == "auto" or self.model_config.task
+            is None) else self.model_config.task == "generate"
 
     def get_kv_cache_spec(self) -> KVCacheSpec:
         """Get specifications for KV cache implementation.

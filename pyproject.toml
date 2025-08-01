@@ -123,8 +123,10 @@ asyncio_default_fixture_loop_scope = "function"
 markers = [
     "skip_global_cleanup",
     "e2e: Tests using end-to-end engine spin-up",
+    "basic: Basic correctness tests",
     "cb: Continuous batching tests",
     "cpu: Tests using CPU (i.e. eager) backend",
+    "compat: backward compatibility tests",
     "spyre: Tests using Spyre hardware backend",
     "decoder: Tests for decoder models",
     "embedding: Tests for embedding models",

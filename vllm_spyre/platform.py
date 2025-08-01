@@ -111,14 +111,15 @@ class SpyrePlatform(Platform):
         if scheduler_config.is_multi_step:
             raise NotImplementedError
 
-        # Can be simplified after the model_config change from vllm:main
-        is_decoder = model_config.task == "generate" \
-            if model_config.task \
-                else "generate" in model_config.supported_tasks
+        # Can be simplified after the deprecation of `model_config.task` in
+        # vllm > 0.10.0
+        is_decoder = "generate" in model_config.supported_tasks if (
+            model_config.task == "auto"
+            or model_config.task is None) else model_config.task == "generate"
 
-        is_pooling = model_config.task == "embed" \
-            if model_config.task \
-        else "embed" in model_config.supported_tasks
+        is_pooling = "embed" in model_config.supported_tasks if (
+            model_config.task == "auto"
+            or model_config.task is None) else model_config.task == "embed"
 
         if not bool(int(os.getenv("VLLM_USE_V1", "1"))):
             raise ValueError("vllm-spyre is only supported with vLLM v1. "
