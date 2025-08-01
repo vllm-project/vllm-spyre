@@ -41,13 +41,14 @@ local_scheme = "no-local-version"
 [tool.uv]
 # Never install torch, so that no dependencies can override it.
 # This requires that torch is installed separately in the target environment.
-# Triton >3.1 breaks tests against vllm/main and fms-mo requires it.
-# Triton also cannot be installed on macs.
+# Triton is optional in most dependencies, however, xgrammar requires it.
+# So we set to 'never' to prevent installing it or eventually any other 
+# by accident
 override-dependencies = [
     "torch; sys_platform == 'never'",
     "torchaudio; sys_platform == 'never'",
     "torchvision; sys_platform == 'never'",
-    "triton>=3.0,<3.2; sys_platform != 'darwin'",
+    "triton; sys_platform == 'never'",
 ]
 # fms-mo doesn't support python 3.9, so don't have UV try to resolve it
 environments = [
