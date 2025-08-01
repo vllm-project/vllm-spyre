@@ -19,6 +19,7 @@ from vllm.model_executor.model_loader.weight_utils import (
 from vllm.model_executor.sampling_metadata import SamplingMetadata
 
 import vllm_spyre.envs as envs_spyre
+import vllm_spyre.utils as utils_spyre
 from vllm_spyre.platform import SpyrePlatform
 
 try:
@@ -49,6 +50,7 @@ class SpyreCausalLM(nn.Module):
         scheduler_config: SchedulerConfig,
         max_prompt_length: int,
         max_decode_length: int,
+        rank: int,
     ) -> None:
         super().__init__()
 
@@ -68,7 +70,7 @@ class SpyreCausalLM(nn.Module):
         if envs_spyre.VLLM_SPYRE_USE_CB:
             self.model = ContinuousBatchingFmsModel(model_config,
                                                     parallel_config,
-                                                    scheduler_config)
+                                                    scheduler_config, rank)
         else:
             self.model = StaticBatchingFmsModel(
                 model_config,
@@ -76,6 +78,7 @@ class SpyreCausalLM(nn.Module):
                 scheduler_config,
                 max_prompt_length,
                 max_decode_length,
+                rank,
             )
 
     def forward(
@@ -142,6 +145,7 @@ class FmsModelBase(nn.Module):
         parallel_config: ParallelConfig,
         max_prompt_length: int,
         max_decode_length: int,
+        rank: int,
         sendnn_dynamic: bool,
     ) -> None:
         super().__init__()
@@ -149,6 +153,8 @@ class FmsModelBase(nn.Module):
         self.config: PretrainedConfig = model_config.hf_config
         self.dtype = torch.float16 if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == \
             'sendnn' else torch.float32
+        # rank of the parent worker, used to limit calls to get_model
+        self.rank = rank
 
         # Actual FMS model
         self.model: nn.Module
@@ -212,15 +218,18 @@ class FmsModelBase(nn.Module):
         # we can use fused weights unless running on Spyre
         fused_weights = envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn"
 
-        self.model = get_model(architecture="hf_configured",
-                               variant=model_config.model,
-                               model_path=model_path,
-                               source=model_source,
-                               data_type=self.dtype,
-                               distributed_strategy=distributed_strategy,
-                               group=dist.group.WORLD,
-                               fused_weights=fused_weights,
-                               linear_config=linear_config)
+        with utils_spyre.stagger_region(
+                envs_spyre.VLLM_SPYRE_MAX_LOAD_PROCESSES,
+                self.parallel_config.world_size, self.rank):
+            self.model = get_model(architecture="hf_configured",
+                                   variant=model_config.model,
+                                   model_path=model_path,
+                                   source=model_source,
+                                   data_type=self.dtype,
+                                   distributed_strategy=distributed_strategy,
+                                   group=dist.group.WORLD,
+                                   fused_weights=fused_weights,
+                                   linear_config=linear_config)
 
         self.model.eval()
         torch.set_grad_enabled(False)
@@ -280,6 +289,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         model_config: ModelConfig,
         parallel_config: ParallelConfig,
         scheduler_config: SchedulerConfig,
+        rank: int,
     ) -> None:
 
         BLOCK_SIZE = SpyrePlatform.get_block_size()
@@ -295,6 +305,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                          parallel_config,
                          max_prompt_length,
                          max_decode_length,
+                         rank,
                          sendnn_dynamic=True)
 
         # physical KV cache on AIU Spyre: will eventually not live in this class
@@ -398,11 +409,13 @@ class StaticBatchingFmsModel(FmsModelBase):
         _: SchedulerConfig,
         max_prompt_length: int,
         max_decode_length: int,
+        rank: int,
     ) -> None:
         super().__init__(model_config,
                          parallel_config,
                          max_prompt_length,
                          max_decode_length,
+                         rank,
                          sendnn_dynamic=False)
 
         # dynamic KV cache
