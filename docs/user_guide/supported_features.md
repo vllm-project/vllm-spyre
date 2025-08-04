@@ -10,7 +10,6 @@ This table summarize the status of features on Spyre. By default, those features
 | Prompt Adapter                |   ⛔   | Being deprecated in vLLM [vllm#13981](https://github.com/vllm-project/vllm/issues/13981) |
 | Speculative Decoding          |   🗓️   |      |
 | Guided Decoding               |   🗓️   |      |
-| Pooling                       |   ✅   |      |
 | Enc-dec                       |   ⛔   | No plans for now |
 | Multi Modality                |   🗓️   |      |
 | LogProbs                      |   ✅   |      |
