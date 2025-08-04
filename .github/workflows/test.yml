@@ -176,5 +176,8 @@ jobs:
           # re-install the vllm_sypre package from source
           source .venv/bin/activate
 
+          # temporarily install fms main
+          uv pip install git+https://github.com/foundation-model-stack/foundation-model-stack.git@main --force-reinstall
+
           python3 -m pytest ${{ matrix.test_suite.flags }} \
             tests -v -m "${{ matrix.test_suite.markers }}"
