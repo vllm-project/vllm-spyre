@@ -171,9 +171,6 @@ class FmsModelBase(nn.Module):
         **kwargs,
     ) -> None:
 
-        linear_config = {"linear_type": "torch_linear"}
-        model_source = "hf"
-
         if self.dtype is not model_config.dtype:
             logger.info(
                 "Ignoring user-provided dtype=%s and using dtype=%s instead.",
@@ -195,12 +192,11 @@ class FmsModelBase(nn.Module):
         self.model = get_model(architecture="hf_configured",
                                variant=model_config.model,
                                model_path=model_path,
-                               source=model_source,
+                               source="hf",
                                data_type=self.dtype,
                                distributed_strategy=distributed_strategy,
                                group=dist.group.WORLD,
-                               fused_weights=fused_weights,
-                               linear_config=linear_config)
+                               fused_weights=fused_weights)
 
         self.model.eval()
         torch.set_grad_enabled(False)
