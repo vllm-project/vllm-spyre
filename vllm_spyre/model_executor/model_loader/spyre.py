@@ -171,28 +171,8 @@ class FmsModelBase(nn.Module):
         **kwargs,
     ) -> None:
 
-        if model_config.quantization == "gptq":
-            if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
-                from fms_mo.aiu_addons.gptq import (  # noqa: F401
-                    gptq_aiu_adapter, gptq_aiu_linear)
-                linear_type = "gptq_aiu"
-                logger.info("Loaded `aiu_addons` functionalities")
-            else:
-                linear_type = "gptq_cpu"
-                logger.warning("GPTQ is not expected to work on CPU.")
-
-            quant_cfg = model_config._parse_quant_hf_config()
-
-            linear_config = {
-                "linear_type": linear_type,
-                "group_size": quant_cfg['group_size'],
-                "desc_act": quant_cfg['desc_act'],
-            }
-            self.dtype = None
-            model_source = "hf_gptq_aiu"
-        else:
-            linear_config = {"linear_type": "torch_linear"}
-            model_source = "hf"
+        linear_config = {"linear_type": "torch_linear"}
+        model_source = "hf"
 
         if self.dtype is not model_config.dtype:
             logger.info(
