@@ -330,6 +330,8 @@ class SpyreWorker(WorkerBaseV1):
         logger.info("load model took %.3fs", load_model_total_t)
 
     def _warmup_spyre_dynamic_size(self, special_token_ids):
+        from torch.fx.experimental import _config as config
+        config.backed_size_oblivious = True
 
         warmup_start_t = time.time()
 
