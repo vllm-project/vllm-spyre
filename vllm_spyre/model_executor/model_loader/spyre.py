@@ -189,14 +189,17 @@ class FmsModelBase(nn.Module):
         # we can use fused weights unless running on Spyre
         fused_weights = envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn"
 
-        self.model = get_model(architecture="hf_configured",
-                               variant=model_config.model,
-                               model_path=model_path,
-                               source="hf",
-                               data_type=self.dtype,
-                               distributed_strategy=distributed_strategy,
-                               group=dist.group.WORLD,
-                               fused_weights=fused_weights)
+        self.model = get_model(
+            architecture="hf_configured",
+            variant=model_config.model,
+            model_path=model_path,
+            source="hf",
+            data_type=self.dtype,
+            distributed_strategy=distributed_strategy,
+            group=dist.group.WORLD,
+            fused_weights=fused_weights,
+            linear_config={"linear_type": "torch_linear"},
+        )
 
         self.model.eval()
         torch.set_grad_enabled(False)
