@@ -79,7 +79,7 @@ def remote_openai_server(request):
         raise pytest.UsageError(
             "Error setting up remote_openai_server params") from e
 
-        # Default to None if not present
+    # Default to None if not present
     quantization = params.get("quantization", None)
 
     # Add extra server args if present in test
