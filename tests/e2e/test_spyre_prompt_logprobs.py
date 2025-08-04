@@ -40,7 +40,6 @@ def test_prompt_logprobs(
 
     prompts = get_chicken_soup_prompts(4)
 
-    monkeypatch.setenv("VLLM_USE_V1", "1")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS", "1")
     llm = LLM(model, tensor_parallel_size=tp_size, tokenizer=model)
@@ -75,27 +74,29 @@ def test_prompt_logprobs_must_be_enabled(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.mark.cpu
 @pytest.mark.decoder
+@pytest.mark.parametrize("model", get_spyre_model_list())
 def test_prompt_logprobs_not_supported_with_cb(
-        monkeypatch: pytest.MonkeyPatch):
+        model: str, monkeypatch: pytest.MonkeyPatch):
     # Server shouldn't boot with both prompt logprobs and continuous batching
     # enabled
     monkeypatch.setenv("VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS", "1")
     monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
 
     with pytest.raises(ValueError, match="continuous batching"):
-        VllmConfig(model_config=ModelConfig(task="generate"))
+        VllmConfig(model_config=ModelConfig(model=model, task="generate"))
 
 
 @pytest.mark.cpu
 @pytest.mark.decoder
+@pytest.mark.parametrize("model", get_spyre_model_list())
 def test_prompt_logprobs_on_single_requests_only(
-        monkeypatch: pytest.MonkeyPatch):
+        model: str, monkeypatch: pytest.MonkeyPatch):
     # Only bs=1 is supported for prompt logprobs
     monkeypatch.setenv("VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS", "1")
     monkeypatch.setenv("VLLM_SPYRE_WARMUP_BATCH_SIZES", "2")
 
     with pytest.raises(ValueError, match="batch size 1"):
-        VllmConfig(model_config=ModelConfig(task="generate"))
+        VllmConfig(model_config=ModelConfig(model=model, task="generate"))
 
 
 def _compare_prompt_logprobs(expected: list, actual: list,

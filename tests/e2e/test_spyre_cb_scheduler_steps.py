@@ -8,14 +8,16 @@ Run `python -m pytest tests/e2e/test_spyre_cb_inference_steps.py`.
 
 import pytest
 from scheduling_utils import check_scheduler_inference_steps
-from spyre_util import get_spyre_backend_list, get_spyre_model_list
+from spyre_util import (check_output_against_hf, get_spyre_backend_list,
+                        get_spyre_model_list)
 
 
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_prompts_aligned_with_tkv_boundaries(model: str, backend: str,
-                                             monkeypatch: pytest.MonkeyPatch):
+                                             monkeypatch: pytest.MonkeyPatch,
+                                             set_random_seed: None):
     """ Scenario where it happens that all the sequences get scheduled in a 
     fashion where they are aligned with the block boundaries (i.e. tkv multiple 
     of 64 at the time of prefilling).
@@ -162,7 +164,7 @@ def test_prompts_aligned_with_tkv_boundaries(model: str, backend: str,
         },
     ]
 
-    check_scheduler_inference_steps(
+    cb_outputs, prompts = check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -176,12 +178,16 @@ def test_prompts_aligned_with_tkv_boundaries(model: str, backend: str,
         use_cb=True,
     )
 
+    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                            prompts)
+
 
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_prompts_misaligned_with_tkv_boundaries(
-        model: str, backend: str, monkeypatch: pytest.MonkeyPatch):
+        model: str, backend: str, monkeypatch: pytest.MonkeyPatch,
+        set_random_seed: None):
     """ Scenario where it happens that some sequence gets scheduled in a way 
     that it is misaligned with the block boundary (i.e. tkv is not a multiple 
     of 64 at the time of prefilling).
@@ -193,7 +199,6 @@ def test_prompts_misaligned_with_tkv_boundaries(
             * 2: len = 41, max tokens = 67, step joining = 0
             * 3: len = 47, max tokens = 9, step joining = 0
     """
-
     seqs_max_tokens = [57, 67, 9]
     prompts_lengths = [49, 41, 47]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
@@ -326,7 +331,7 @@ def test_prompts_misaligned_with_tkv_boundaries(
         },
     ]
 
-    check_scheduler_inference_steps(
+    cb_outputs, prompts = check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -340,12 +345,16 @@ def test_prompts_misaligned_with_tkv_boundaries(
         use_cb=True,
     )
 
+    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                            prompts)
+
 
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_two_sequences_finish_same_time_as_new_arrive(
-        model: str, backend: str, monkeypatch: pytest.MonkeyPatch):
+        model: str, backend: str, monkeypatch: pytest.MonkeyPatch,
+        set_random_seed):
     """ 2-cases-in-1: (1) Two sequences finish at the same time and (2) a new
     request arrives when another finishes.
 
@@ -356,7 +365,6 @@ def test_two_sequences_finish_same_time_as_new_arrive(
             * 2: len = 30, max tokens = 30, step joining = 0
             * 3: len = 20, max tokens = 10, step joining = 31
     """
-
     seqs_max_tokens = [30, 30, 10]
     prompts_lengths = [49, 30, 20]
     steps_add_reqs = [0, 0, 31]
@@ -466,7 +474,7 @@ def test_two_sequences_finish_same_time_as_new_arrive(
         },
     ]
 
-    check_scheduler_inference_steps(
+    cb_outputs, prompts = check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -480,12 +488,16 @@ def test_two_sequences_finish_same_time_as_new_arrive(
         use_cb=True,
     )
 
+    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                            prompts)
+
 
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_new_sequence_joins_during_decode(model: str, backend: str,
-                                          monkeypatch: pytest.MonkeyPatch):
+                                          monkeypatch: pytest.MonkeyPatch,
+                                          set_random_seed):
     """ Scenario where a new sequence joins while decoding other sequences
 
     Configuration:
@@ -731,7 +743,7 @@ def test_new_sequence_joins_during_decode(model: str, backend: str,
         # },
     ]
 
-    check_scheduler_inference_steps(
+    cb_outputs, prompts = check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -745,12 +757,16 @@ def test_new_sequence_joins_during_decode(model: str, backend: str,
         use_cb=True,
     )
 
+    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                            prompts)
+
 
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_prompt_too_long_for_current_tkv(model: str, backend: str,
-                                         monkeypatch: pytest.MonkeyPatch):
+                                         monkeypatch: pytest.MonkeyPatch,
+                                         set_random_seed):
     """ Scenario where the requested prompt is too long for current tkv value
 
     Configuration:
@@ -880,7 +896,7 @@ def test_prompt_too_long_for_current_tkv(model: str, backend: str,
         },
     ]
 
-    check_scheduler_inference_steps(
+    cb_outputs, prompts = check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -894,13 +910,18 @@ def test_prompt_too_long_for_current_tkv(model: str, backend: str,
         use_cb=True,
     )
 
+    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                            prompts)
+
 
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_requested_tokens_not_fitting_remaining_space(
-        model: str, backend: str, monkeypatch: pytest.MonkeyPatch):
-    """ Scenario where the request goes beyond max_model_len 
+        model: str, backend: str, monkeypatch: pytest.MonkeyPatch,
+        set_random_seed):
+    """ Scenario where the request goes beyond max_model_len and needs to wait
+    for a new batch.
 
     Configuration:
         * max_num_seqs: 2
@@ -909,7 +930,6 @@ def test_requested_tokens_not_fitting_remaining_space(
             * 2: len = 49, max tokens = 57, step joining = 0
             * 3: len = 41, max tokens = 80, step joining = 0
     """
-
     seqs_max_tokens = [67, 57, 80]
     prompts_lengths = [70, 49, 41]
     steps_add_reqs = [0, 0, 0]
@@ -1067,7 +1087,7 @@ def test_requested_tokens_not_fitting_remaining_space(
         },
     ]
 
-    check_scheduler_inference_steps(
+    cb_outputs, prompts = check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -1081,12 +1101,16 @@ def test_requested_tokens_not_fitting_remaining_space(
         use_cb=True,
     )
 
+    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                            prompts)
+
 
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_requests_use_all_available_blocks(model: str, backend: str,
-                                           monkeypatch: pytest.MonkeyPatch):
+                                           monkeypatch: pytest.MonkeyPatch,
+                                           set_random_seed):
     """ Scenario where the requests use all of the available blocks 
     
     Configuration:
@@ -1098,7 +1122,6 @@ def test_requests_use_all_available_blocks(model: str, backend: str,
             * 4: len = 10, max tokens = 3, step joining = 0
         * available_blocks: 8
     """
-
     seqs_max_tokens = [3, 3, 3, 3]  # 2 decodes into a new block per sequence
     prompts_lengths = [10, 10, 10, 10]  # 1 block for prefil per sequence
     steps_add_reqs = [0, 0, 0, 0]
@@ -1201,7 +1224,7 @@ def test_requests_use_all_available_blocks(model: str, backend: str,
         },
     ]
 
-    check_scheduler_inference_steps(
+    cb_outputs, prompts = check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -1215,12 +1238,16 @@ def test_requests_use_all_available_blocks(model: str, backend: str,
         use_cb=True,
     )
 
+    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                            prompts)
+
 
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_requests_use_more_than_available_blocks(
-        model: str, backend: str, monkeypatch: pytest.MonkeyPatch):
+        model: str, backend: str, monkeypatch: pytest.MonkeyPatch,
+        set_random_seed):
     """ Scenario where some request need to wait because of the number of 
     available blocks. 
     
@@ -1361,7 +1388,7 @@ def test_requests_use_more_than_available_blocks(
         },
     ]
 
-    check_scheduler_inference_steps(
+    cb_outputs, prompts = check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -1374,3 +1401,6 @@ def test_requests_use_more_than_available_blocks(
         available_blocks=available_blocks,
         use_cb=True,
     )
+
+    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                            prompts)

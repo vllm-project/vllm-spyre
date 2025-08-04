@@ -65,7 +65,6 @@ async def test_abort(
 ):
     """Test handling of cancelled requests"""
     with monkeypatch.context() as m, ExitStack() as after:
-        m.setenv("VLLM_USE_V1", "1")
         m.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
         if cb == 1:
             m.setenv("VLLM_SPYRE_USE_CB", "1")

@@ -68,7 +68,6 @@ if platform.machine() == "arm64":
 if "VLLM_SPYRE_DYNAMO_BACKEND" not in os.environ:
     os.environ['VLLM_SPYRE_DYNAMO_BACKEND'] = 'eager'
 os.environ['VLLM_SPYRE_USE_CB'] = '1'
-os.environ['VLLM_USE_V1'] = '1'
 
 template = ("Summarize the following code: \n\n{}")
 

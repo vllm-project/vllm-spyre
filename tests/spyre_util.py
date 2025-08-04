@@ -1,5 +1,7 @@
+import inspect
 import math
 import os
+import random
 import subprocess
 import sys
 import time
@@ -10,12 +12,15 @@ import numpy as np
 import openai
 import pytest
 import requests
+import torch
 from sentence_transformers import SentenceTransformer, util
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, SamplingParams
 from vllm.entrypoints.openai.cli_args import make_arg_parser
 from vllm.utils import FlexibleArgumentParser, get_open_port
 from vllm.v1.engine import EngineCoreRequest
+from vllm.v1.engine.core import EngineCore
+from vllm.v1.request import Request
 
 DISABLE_ASSERTS = False  # used for debugging
 
@@ -172,7 +177,7 @@ def patch_warmup_shapes(warmup_shapes: Union[list[tuple[int, int, int]],
 # vLLM / Spyre
 def generate_spyre_vllm_output(
     model: str,
-    prompts: list[str],
+    prompts: Union[list[str], list[list[int]]],
     max_model_len: int,
     block_size: int,
     sampling_params: Union[SamplingParams, list[SamplingParams]],
@@ -201,7 +206,6 @@ def generate_spyre_vllm_output(
                            ",".join(str(val) for val in warmup_batch_size))
     # --------------
     monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1" if use_cb else "0")
-    monkeypatch.setenv("VLLM_USE_V1", "1")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
 
     # Allows to run multiprocess V1 engine without dumping meaningless logs at
@@ -243,18 +247,25 @@ def generate_spyre_vllm_output(
 
 # Hugging Face
 def generate_hf_output(
-        model: str, prompts: list[str],
-        max_new_tokens: Union[int, list[int]]) -> list[dict[str, Any]]:
+    model: str,
+    prompts: Union[list[str], list[list[int]]],  # also accept token ids
+    max_new_tokens: Union[int, list[int]],
+    ignore_eos: bool = False,
+) -> list[dict[str, Any]]:
 
     if not isinstance(max_new_tokens, list):
         max_new_tokens = [max_new_tokens] * len(prompts)
 
     hf_model = AutoModelForCausalLM.from_pretrained(model)
     hf_tokenizer = AutoTokenizer.from_pretrained(model)
+    if ignore_eos:
+        hf_model.generation_config.eos_token_id = None
 
     results = []
     for prompt_index, prompt in enumerate(prompts):
-        hf_input_tokens = hf_tokenizer(prompt, return_tensors="pt").input_ids
+        hf_input_tokens = hf_tokenizer(prompt, return_tensors="pt").input_ids \
+                    if isinstance(prompt[0], str) \
+                    else torch.tensor([prompts[prompt_index]])
         hf_output = hf_model.generate(
             hf_input_tokens,
             do_sample=False,
@@ -289,9 +300,16 @@ def generate_hf_output(
 
 
 # compare results
-def compare_results(model: str, prompts: list[str], tensor_parallel_size: int,
-                    backend: str, vllm_results: list[dict[str, Any]],
-                    hf_results: list[dict[str, Any]]):
+def compare_results(
+    model: str,
+    tensor_parallel_size: int,
+    backend: str,
+    vllm_results: list[dict[str, Any]],
+    hf_results: list[dict[str, Any]],
+    prompts: Optional[list[str]] = None,
+):
+    if prompts is None:
+        prompts = [""] * len(vllm_results)
 
     print(f"\nmodel:         {model:s}")
     print(f"tp size:       {tensor_parallel_size}")
@@ -308,12 +326,14 @@ def compare_results(model: str, prompts: list[str], tensor_parallel_size: int,
 
     for prompt_index, (prompt, hf_result, vllm_result) in enumerate(
             zip(prompts, hf_results, vllm_results)):
-        err_msg = '' if hf_result['text'] == vllm_result['text'] else '  ERROR'
-        print(f"\nprompt {prompt_index:3d}:    {repr(prompt):s}")
-        print("generated:")
-        print(f"        HF:    {repr(hf_result['text']):s}")
-        print(f"        vLLM:  {repr(vllm_result['text']):s}{err_msg}")
-        print()
+        if "text" in vllm_result:
+            err_msg = '' if hf_result['text'] == vllm_result[
+                'text'] else '  ERROR'
+            print(f"\nprompt {prompt_index:3d}:    {repr(prompt):s}")
+            print("generated:")
+            print(f"        HF:    {repr(hf_result['text']):s}")
+            print(f"        vLLM:  {repr(vllm_result['text']):s}{err_msg}")
+            print()
 
         assert DISABLE_ASSERTS or backend == 'sendnn' or\
             hf_result['token_ids'] == vllm_result['token_ids']
@@ -325,20 +345,23 @@ def compare_results(model: str, prompts: list[str], tensor_parallel_size: int,
             logprob_abs_diff_list = []
             logprob_rel_diff_list = []
 
-            for hf_token, hf_token_id, hf_logprob, vllm_token,\
-                 vllm_token_id, vllm_logprob in zip(
-                    hf_result['tokens'], hf_result['token_ids'],
-                    hf_result['logprobs'], vllm_result['tokens'],
-                    vllm_result['token_ids'], vllm_result['logprobs']):
+            for i, (hf_token_id, hf_logprob, vllm_token_id,
+                    vllm_logprob) in enumerate(
+                        zip(hf_result['token_ids'], hf_result['logprobs'],
+                            vllm_result['token_ids'],
+                            vllm_result['logprobs'])):
                 logprob_abs_diff = math.fabs(hf_logprob - vllm_logprob)
                 logprob_abs_diff_list.append(logprob_abs_diff)
                 logprob_rel_diff = math.fabs(logprob_abs_diff / hf_logprob)
                 logprob_rel_diff_list.append(logprob_rel_diff)
 
+                hf_token = repr(
+                    hf_result['tokens'][i]) if 'tokens' in vllm_result else '-'
+                vllm_token = repr(vllm_result['tokens']
+                                  [i]) if 'tokens' in vllm_result else '-'
                 print(
-                    f"HF: {hf_token_id:8d} {repr(hf_token):14s} "
-                    f"{hf_logprob:14f}  "
-                    f"vLLM: {vllm_token_id:8d} {repr(vllm_token):14s} "
+                    f"HF: {hf_token_id:8d} {hf_token:14s} {hf_logprob:14f}  "
+                    f"vLLM: {vllm_token_id:8d} {vllm_token:14s} "
                     f"{vllm_logprob:14f}  ",
                     end='')
 
@@ -376,11 +399,27 @@ def compare_results(model: str, prompts: list[str], tensor_parallel_size: int,
         print()
 
 
+def check_output_against_hf(model, backend, max_new_tokens, vllm_results,
+                            prompts) -> None:
+    hf_outputs = generate_hf_output(
+        model=model,
+        prompts=prompts,
+        max_new_tokens=max_new_tokens,
+        ignore_eos=True,
+    )
+    compare_results(
+        model=model,
+        tensor_parallel_size=1,
+        backend=backend,
+        vllm_results=vllm_results,
+        hf_results=hf_outputs,
+    )
+
+
 # vLLM / Spyre
 def spyre_vllm_embeddings(model: str, prompts: list[str], max_model_len: int,
                           block_size: int, tensor_parallel_size: int,
-                          backend: str,
-                          vllm_version: str) -> list[dict[str, Any]]:
+                          backend: str) -> list[dict[str, Any]]:
 
     vllm_model = LLM(model=model,
                      tokenizer=model,
@@ -474,7 +513,7 @@ def get_spyre_backend_list():
 # get model names from env, if not set then use default models for each type.
 # Multiple models can be specified with a comma separated list in
 # VLLM_SPYRE_TEST_MODEL_LIST
-def get_spyre_model_list(isEmbeddings=False, quantization=None):
+def get_spyre_model_list(isEmbeddings=False, quantized=None):
     spyre_model_dir_path = get_spyre_model_dir_path()
 
     def _get_or_default(env: str, default: str) -> str:
@@ -489,11 +528,16 @@ def get_spyre_model_list(isEmbeddings=False, quantization=None):
             "VLLM_SPYRE_TEST_MODEL_LIST",
             "sentence-transformers/all-roberta-large-v1")
         marks = [pytest.mark.embedding]
-    elif quantization == "gptq":
+    elif quantized == "gptq":
         # TODO: need a HF hub reference here as a default
         user_test_model_list = _get_or_default("VLLM_SPYRE_TEST_MODEL_LIST",
                                                "granite-3.0-8b-instruct-gptq")
         marks = [pytest.mark.decoder, pytest.mark.quantized, pytest.mark.spyre]
+    elif quantized == "fp8":
+        user_test_model_list = _get_or_default(
+            "VLLM_SPYRE_TEST_MODEL_LIST",
+            "ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8")
+        marks = [pytest.mark.decoder, pytest.mark.quantized]
     else:
         user_test_model_list = _get_or_default(
             "VLLM_SPYRE_TEST_MODEL_LIST",
@@ -529,21 +573,62 @@ def create_text_prompt(model: str, min_tokens: int, max_tokens: int) -> str:
 
 
 def create_random_request(
-        request_id: int, num_tokens: int,
-        sampling_params: SamplingParams) -> EngineCoreRequest:
+    request_id: int,
+    num_tokens: int,
+    sampling_params: SamplingParams,
+    from_model_vocab: bool = False,
+    model: Optional[str] = None,
+) -> Request | EngineCoreRequest:
 
-    return EngineCoreRequest(request_id=str(request_id),
-                             prompt_token_ids=[request_id] * num_tokens,
-                             mm_inputs=None,
-                             mm_hashes=None,
-                             mm_placeholders=None,
-                             sampling_params=sampling_params,
-                             eos_token_id=None,
-                             arrival_time=0,
-                             lora_request=None,
-                             data_parallel_rank=None,
-                             pooling_params=None,
-                             cache_salt=None)
+    tokenizer = AutoTokenizer.from_pretrained(model)
+    if from_model_vocab:
+        assert model is not None, "Prompt requested to be generated from " \
+        "model's vocabulary: need to provide model."
+
+        valid_token_ids = sorted([
+            v for v in tokenizer.vocab.values()
+            if v not in tokenizer.all_special_ids
+        ])
+        prompt_token_ids = random.choices(valid_token_ids, k=num_tokens)
+    else:
+        # start with existing prompts and tokenize them
+        prompts = get_longer_chicken_soup_prompts(1)
+        tokenized_prompts = tokenizer(prompts)["input_ids"]
+        prompt_token_ids = [p[:num_tokens] for p in tokenized_prompts][0]
+
+        # make sure we get enough tokens from the prompts
+        assert (len(prompt_token_ids) == num_tokens
+                ), f"need {num_tokens} but got {len(prompt_token_ids)}"
+
+    sig = inspect.signature(EngineCore.add_request)
+    if sig.parameters["request"].annotation == EngineCoreRequest:
+        return EngineCoreRequest(
+            request_id=str(request_id),
+            prompt_token_ids=prompt_token_ids,
+            mm_inputs=None,
+            mm_hashes=None,
+            mm_placeholders=None,
+            sampling_params=sampling_params,
+            eos_token_id=None,
+            arrival_time=0,
+            lora_request=None,
+            data_parallel_rank=None,
+            pooling_params=None,
+            cache_salt=None,
+        )
+    return Request(
+        request_id=str(request_id),
+        prompt_token_ids=prompt_token_ids,
+        multi_modal_inputs=None,
+        multi_modal_hashes=None,
+        multi_modal_placeholders=None,
+        sampling_params=sampling_params,
+        eos_token_id=None,
+        arrival_time=0,
+        lora_request=None,
+        pooling_params=None,
+        cache_salt=None,
+    )
 
 
 def skip_unsupported_tp_size(size: int, backend: str):
@@ -574,6 +659,43 @@ def get_chicken_soup_prompts(num_prompts: int) -> list[str]:
             "how do I add multiple new columns in m for power query or \
                 power bi?"),
         template.format("Convert char to string in Java."),
+    ]
+
+    if num_prompts > 4:
+        prompts = prompts * (math.ceil(num_prompts / 4))
+
+    return prompts[:num_prompts]
+
+
+def get_longer_chicken_soup_prompts(num_prompts: int) -> list[str]:
+    template = (
+        "Below is an instruction that describes a task. Write a response that "
+        "appropriately completes the request. Be polite in your response to the"
+        " user.\n\n### Instruction:\n{}\n\n### Response:")
+
+    prompts = [
+        template.format("Provide a list of instructions "
+                        "for preparing chicken soup along with "
+                        "rice curry to go with it so that "
+                        "the flavor is amazing and make sure to follow the "
+                        "recipe that my mum used to make during my "
+                        "childhood so that I can relive my good "
+                        "memories thanks"),
+        template.format("Provide me a list of things that I can do with my "
+                        "new found wealth which I have obtained through "
+                        "nefarious activities including gambling "
+                        "and betting on sports thanks"),
+        template.format(
+            "how do I add multiple new columns in m for power query or \
+                power bi? Can you explain that to me like I'm 5 years old "
+            "with thorough step by step explanation and covering all edge "
+            "cases thanks"),
+        template.format(
+            "Convert char to string in Java "
+            "and write unit tests for the same, making sure they all pass "
+            "and we get amazing test coverage along with high level "
+            "correctness so that the PR reviewers have an easy time "
+            "reviewing the changes thanks"),
     ]
 
     if num_prompts > 4:

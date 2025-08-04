@@ -29,7 +29,6 @@ import vllm_spyre.envs as envs_spyre
 import vllm_spyre.perf_metrics as perf_metrics
 from vllm_spyre.model_executor.model_loader import spyre_setup
 from vllm_spyre.platform import SpyrePlatform
-from vllm_spyre.v1.worker.spyre_input_batch import SamplingInputBatch
 from vllm_spyre.v1.worker.spyre_model_runner import (
     ContinuousBatchingSpyreModelRunner, SpyrePoolingModelRunner,
     StaticBatchingSpyreModelRunner, SupportedTask)
@@ -57,17 +56,28 @@ class SpyreWorker(WorkerBaseV1):
     """A worker class that executes the model on a group of Spyre cores.
     """
 
+    def get_supported_pooling_tasks(self):
+        # Compatibility code required for vllm == 0.10.0
+        # Can be removed for vllm > 0.10.0
+        if self.is_pooling:
+            return ["embed"]
+        return []
+
     @property
     def is_pooling(self) -> bool:
-        return self.model_config.task == "embed" \
-            if self.model_config.task else \
-                "embed" in self.model_config.supported_tasks
+        # Can be simplified after the deprecation of `model_config.task` in
+        # vllm > 0.10.0
+        return "embed" in self.model_config.supported_tasks if (
+            self.model_config.task == "auto" or self.model_config.task
+            is None) else self.model_config.task == "embed"
 
     @property
     def is_decoder(self) -> bool:
-        return self.model_config.task == "generate" \
-            if self.model_config.task else \
-                "generate" in self.model_config.supported_tasks
+        # Can be simplified after the deprecation of `model_config.task` in
+        # vllm > 0.10.0
+        return "generate" in self.model_config.supported_tasks if (
+            self.model_config.task == "auto" or self.model_config.task
+            is None) else self.model_config.task == "generate"
 
     def get_kv_cache_spec(self) -> KVCacheSpec:
         """Get specifications for KV cache implementation.
@@ -110,6 +120,9 @@ class SpyreWorker(WorkerBaseV1):
                 prompt_len, num_decode_tokens, batch_size)
             self._warmup_spyre_fixed_size(prompt_len, num_decode_tokens,
                                           self.restricted_tokens, batch_size)
+
+        self.model_runner.complete_warmup()
+
         all_warmup_end_t = time.time()
         all_warmup_total_t = all_warmup_end_t - all_warmup_start_t
         self.perf_metrics.log("total warmup time", all_warmup_total_t)
@@ -119,7 +132,6 @@ class SpyreWorker(WorkerBaseV1):
             "[WARMUP] All %d prompt/decode/batchsize-shape "
             "combinations finished in %.3fs", num_shape_combinations,
             all_warmup_total_t)
-        self.model_runner.complete_warmup()
 
     def check_health(self) -> None:
         """Basic health check (override for device-specific checks)."""
@@ -339,18 +351,6 @@ class SpyreWorker(WorkerBaseV1):
         prompt_len = 42
         num_decode_tokens = 2
 
-        # Fix for batch size 1: set input batch to fit 2 requests for warmup
-        if model_runner.vllm_config.scheduler_config.max_num_seqs == 1:
-            model_runner.input_batch = SamplingInputBatch(
-                max_num_reqs=2,
-                max_model_len=model_runner.vllm_config.model_config.
-                max_model_len,
-                device=model_runner.device,
-                pin_memory=model_runner.pin_memory,
-                vocab_size=model_runner.vllm_config.model_config.
-                get_vocab_size(),
-            )
-
         # Sample from the valid token ids
         warmup_tokens_tensor = valid_token_ids_tensor[torch.randint(
             0, len(valid_token_ids_tensor), (batch_size + 1, prompt_len))]
@@ -398,20 +398,7 @@ class SpyreWorker(WorkerBaseV1):
         self.execute_model(scheduler_output)
         self._cleanup_model_runner(request=[add_dummy_request])
 
-        # Fix for batch size 1: reset input batch to fit max_num_seqs requests
-        if model_runner.vllm_config.scheduler_config.max_num_seqs == 1:
-            model_runner.input_batch = SamplingInputBatch(
-                max_num_reqs=model_runner.vllm_config.scheduler_config.
-                max_num_seqs,
-                max_model_len=model_runner.vllm_config.model_config.
-                max_model_len,
-                device=model_runner.device,
-                pin_memory=model_runner.pin_memory,
-                vocab_size=model_runner.vllm_config.model_config.
-                get_vocab_size(),
-            )
-
-        model_runner.finish_warmup()
+        model_runner.complete_warmup()
 
         warmup_end_t = time.time()
         warmup_total_t = warmup_end_t - warmup_start_t
@@ -684,7 +671,7 @@ class SpyreWorker(WorkerBaseV1):
 # handler from vLLM when it starts a process for the engine code. Therefore,
 # the engine does not have a chance to gracefully shutdown.
 def maybe_override_signals_handler():
-    if not (envs.VLLM_USE_V1 and envs.VLLM_ENABLE_V1_MULTIPROCESSING
+    if not (envs.VLLM_ENABLE_V1_MULTIPROCESSING
             and envs_spyre.VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER):
         return
 
