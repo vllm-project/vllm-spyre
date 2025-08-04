@@ -349,13 +349,12 @@ class SpyreWorker(WorkerBaseV1):
         valid_token_ids_tensor = torch.tensor(valid_token_ids,
                                               dtype=torch.long,
                                               device=torch.device("cpu"))
-        batch_size = 2
         prompt_len = 42
         num_decode_tokens = 2
 
         # Sample from the valid token ids
         warmup_tokens_tensor = valid_token_ids_tensor[torch.randint(
-            0, len(valid_token_ids_tensor), (batch_size + 1, prompt_len))]
+            0, len(valid_token_ids_tensor), (2, prompt_len))]
 
         dummy_requests: list[NewRequestData] = [
             NewRequestData(
@@ -369,14 +368,13 @@ class SpyreWorker(WorkerBaseV1):
                 block_ids=[0],  # not actually used
                 num_computed_tokens=0,
                 lora_request=None,
-            ) for i in range(batch_size + 1)
+            ) for i in range(2)
         ]
-        add_dummy_request = dummy_requests.pop(-1)
+        warmup_req, deploy_req = dummy_requests[0], dummy_requests[1]
 
         with _maybe_warmup_context():
-            self._dynamic_warmup(dummy_requests=dummy_requests,
+            self._dynamic_warmup(request=warmup_req,
                                  prompt_len=prompt_len,
-                                 batch_size=batch_size,
                                  valid_token_ids_tensor=valid_token_ids_tensor)
 
         # warmup_mode completes the graph compilation, but we need to do
@@ -384,9 +382,9 @@ class SpyreWorker(WorkerBaseV1):
         # the necessary operations are included in the graph and will be removed
         # after this execution
         scheduler_output = SchedulerOutput(
-            scheduled_new_reqs=[add_dummy_request],
+            scheduled_new_reqs=[deploy_req],
             scheduled_cached_reqs=CachedRequestData.make_empty(),
-            num_scheduled_tokens={add_dummy_request.req_id: prompt_len},
+            num_scheduled_tokens={deploy_req.req_id: prompt_len},
             total_num_scheduled_tokens=prompt_len,
             scheduled_spec_decode_tokens={},
             scheduled_encoder_inputs={},
@@ -398,7 +396,7 @@ class SpyreWorker(WorkerBaseV1):
         )
         logger.info("[WARMUP] Deploying to device...")
         self.execute_model(scheduler_output)
-        self._cleanup_model_runner(request=[add_dummy_request])
+        self._cleanup_model_runner(request=[deploy_req])
 
         model_runner.complete_warmup()
 
@@ -552,9 +550,8 @@ class SpyreWorker(WorkerBaseV1):
 
     def _dynamic_warmup(
         self,
-        dummy_requests: list[NewRequestData],
+        request: NewRequestData,
         prompt_len: int,
-        batch_size: int,
         valid_token_ids_tensor: torch.Tensor,
     ) -> None:
 
@@ -562,51 +559,39 @@ class SpyreWorker(WorkerBaseV1):
             _inside_warmup_mode
         ), "it looks like you are outside the warmup context for warmup"
 
-        for i, req in enumerate(dummy_requests):
-            scheduler_output = SchedulerOutput(
-                scheduled_new_reqs=[req],
-                scheduled_cached_reqs=CachedRequestData.make_empty(),
-                num_scheduled_tokens={req.req_id: prompt_len},
-                total_num_scheduled_tokens=prompt_len,
-                scheduled_spec_decode_tokens={},
-                scheduled_encoder_inputs={},
-                num_common_prefix_blocks=0,
-                finished_req_ids=set(),
-                free_encoder_input_ids=[],
-                structured_output_request_ids={},
-                grammar_bitmask=None,
-            )
-            logger.info("[WARMUP] Prefill %d/%d...", i + 1, batch_size)
+        scheduler_output = SchedulerOutput(
+            scheduled_new_reqs=[request],
+            scheduled_cached_reqs=CachedRequestData.make_empty(),
+            num_scheduled_tokens={request.req_id: prompt_len},
+            total_num_scheduled_tokens=prompt_len,
+            scheduled_spec_decode_tokens={},
+            scheduled_encoder_inputs={},
+            num_common_prefix_blocks=0,
+            finished_req_ids=set(),
+            free_encoder_input_ids=[],
+            structured_output_request_ids={},
+            grammar_bitmask=None,
+        )
+        logger.info("[WARMUP] Prefill...")
 
-            self.execute_model(scheduler_output)
+        self.execute_model(scheduler_output)
 
-        # one decode iteration across all sequences
-        req_ids = []
-        new_token_ids = []
-        new_block_ids = []
-        num_computed_tokens = []
-        for req in dummy_requests:
-            req_ids.append(req.req_id)
-            new_token_ids.append([
+        cached_request_data = CachedRequestData(
+            req_ids=[request.req_id],
+            resumed_from_preemption=False,
+            new_token_ids=[[
                 valid_token_ids_tensor[torch.randint(
                     0, len(valid_token_ids_tensor), (1, )).item()]
-            ])  # placeholder token
-            new_block_ids.append([req.block_ids])
-            num_computed_tokens.append(prompt_len)
-        cached_request_data = CachedRequestData(
-            req_ids=req_ids,
-            resumed_from_preemption=False,
-            new_token_ids=new_token_ids,
-            new_block_ids=new_block_ids,
-            num_computed_tokens=num_computed_tokens,
+            ]],
+            new_block_ids=[request.block_ids],
+            num_computed_tokens=[prompt_len],
         )
 
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=[],
             scheduled_cached_reqs=cached_request_data,
-            num_scheduled_tokens={f"warmup-{i}": 1
-                                  for i in range(batch_size)},
-            total_num_scheduled_tokens=batch_size,
+            num_scheduled_tokens={request.req_id: 1},
+            total_num_scheduled_tokens=1,
             scheduled_spec_decode_tokens={},
             scheduled_encoder_inputs={},
             num_common_prefix_blocks=0,
@@ -617,7 +602,7 @@ class SpyreWorker(WorkerBaseV1):
         )
         logger.info("[WARMUP] Decode...")
         self.execute_model(scheduler_output)
-        self._cleanup_model_runner(request=dummy_requests)
+        self._cleanup_model_runner(request=[request])
 
     def _warmup_model_forward_pass(
         self,
