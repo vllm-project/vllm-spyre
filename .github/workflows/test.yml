@@ -41,6 +41,9 @@ jobs:
           - name: "static batching"
             markers: "cpu and decoder and not cb"
             flags: "--timeout=300"
+          - name: "quantized"
+            markers: "cpu and decoder"
+            flags: "--timeout=300"
           - name: "embedding"
             markers: "cpu and embedding"
             flags: "--timeout=300"
@@ -179,5 +182,11 @@ jobs:
           # temporarily install fms main
           uv pip install git+https://github.com/foundation-model-stack/foundation-model-stack.git@main --force-reinstall
 
+          if [ ${{ matrix.test_suite.markers }} == "quantized" ]; then
+          # use quantized
+              export VLLM_SPYRE_TEST_MODEL_LIST="ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8"
+          fi
+          # commands to run if condition is true
+       
           python3 -m pytest ${{ matrix.test_suite.flags }} \
             tests -v -m "${{ matrix.test_suite.markers }}"

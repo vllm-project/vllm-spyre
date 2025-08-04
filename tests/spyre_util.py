@@ -513,7 +513,7 @@ def get_spyre_backend_list():
 # get model names from env, if not set then use default models for each type.
 # Multiple models can be specified with a comma separated list in
 # VLLM_SPYRE_TEST_MODEL_LIST
-def get_spyre_model_list(isEmbeddings=False, quantized=None):
+def get_spyre_model_list(isEmbeddings=False):
     spyre_model_dir_path = get_spyre_model_dir_path()
 
     def _get_or_default(env: str, default: str) -> str:
@@ -531,9 +531,7 @@ def get_spyre_model_list(isEmbeddings=False, quantized=None):
     else:
         user_test_model_list = _get_or_default(
             "VLLM_SPYRE_TEST_MODEL_LIST",
-            "ibm-ai-platform/micro-g3.3-8b-instruct-1b, \
-                ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8",
-        )
+            "ibm-ai-platform/micro-g3.3-8b-instruct-1b")
         marks = [pytest.mark.decoder]
 
     test_model_list = []
