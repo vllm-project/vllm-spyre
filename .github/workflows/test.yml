@@ -182,8 +182,8 @@ jobs:
           # temporarily install fms main
           uv pip install git+https://github.com/foundation-model-stack/foundation-model-stack.git@main --force-reinstall
 
-          if [ ${{ matrix.test_suite.markers }} == "quantized" ]; then
-              export VLLM_SPYRE_TEST_MODEL_LIST="ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8"
+          if [ "${{ matrix.test_suite.name }}" == "quantized" ]; then
+            export VLLM_SPYRE_TEST_MODEL_LIST="ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8"
           fi
        
           python3 -m pytest ${{ matrix.test_suite.flags }} \
