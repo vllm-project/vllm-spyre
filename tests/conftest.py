@@ -79,7 +79,18 @@ def remote_openai_server(request):
         raise pytest.UsageError(
             "Error setting up remote_openai_server params") from e
 
-    if 'cb' in params:
+        # Default to None if not present
+    quantization = params.get("quantization", None)
+
+    # Add extra server args if present in test
+    server_args = ["--quantization", quantization] if quantization else []
+
+    if 'tp_size' in params:
+        tp_size = params['tp_size']
+        skip_unsupported_tp_size(int(tp_size), backend)
+        server_args.extend(["--tensor-parallel-size", str(tp_size)])
+
+    if "cb" in params and params["cb"] == 1:
         max_model_len = params["max_model_len"]
         max_num_seqs = params["max_num_seqs"]
         env_dict = {
@@ -107,17 +118,6 @@ def remote_openai_server(request):
             "VLLM_SPYRE_DYNAMO_BACKEND":
             backend,
         }
-
-        # Default to None if not present
-        quantization = params.get('quantization', None)
-
-        # Add extra server args if present in test
-        server_args = ["--quantization", quantization] if quantization else []
-
-        if 'tp_size' in params:
-            tp_size = params['tp_size']
-            skip_unsupported_tp_size(int(tp_size), backend)
-            server_args.extend(["--tensor-parallel-size", str(tp_size)])
 
     try:
         with RemoteOpenAIServer(model, server_args,
