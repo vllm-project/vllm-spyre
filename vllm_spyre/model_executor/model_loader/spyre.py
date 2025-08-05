@@ -186,19 +186,16 @@ class FmsModelBase(nn.Module):
                 allow_patterns=["*.safetensors", "*.bin", "*.pt"],
                 revision=model_config.revision)
 
-        # we can use fused weights unless running on Spyre
-        fused_weights = envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn"
-
         self.model = get_model(
-            architecture="hf_configured",
-            variant=model_config.model,
+            # architecture="hf_configured",
+            architecture="hf_pretrained",
+            # variant=model_config.model,
             model_path=model_path,
-            source="hf",
-            data_type=self.dtype,
+            # data_type=self.dtype,
             distributed_strategy=distributed_strategy,
             group=dist.group.WORLD,
-            fused_weights=fused_weights,
-            linear_config={"linear_type": "torch_linear"},
+            fused_weights=False,
+            # linear_config={"linear_type": "torch_linear"},
         )
 
         self.model.eval()
@@ -233,6 +230,14 @@ class FmsModelBase(nn.Module):
                 max_prompt_length, max_decode_length)
 
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in BACKEND_LIST:
+
+            for name, param in self.model.named_parameters():
+                if param.dtype == torch.bfloat16:
+                    logger.debug(
+                        "You are casting param %s to fp16, which \
+                            will cause loss of accuracy. You can ignore \
+                                this warning if this is intended.", name)
+                    param.data = param.data.to(dtype=torch.float16)
 
             options = {"sendnn.dynamic": True} if sendnn_dynamic else {}
 
