@@ -200,7 +200,9 @@ class SpyrePlatform(Platform):
         # set env vars for torch_sendnn to consume
         os.environ["VLLM_DT_MAX_CONTEXT_LEN"] = str(
             vllm_config.model_config.max_model_len)
-        # min decode batch size is 2 due to symbolic shape constraint in torch
+        # min value 2 needed for VLLM_DT_MAX_BATCH_SIZE (compiler constraint)
+        # Note that we can still have decodes of batch size 1 as the env var
+        # only concerns the max batch size.
         os.environ["VLLM_DT_MAX_BATCH_SIZE"] = str(
             max(vllm_config.scheduler_config.max_num_seqs, 2))
 
