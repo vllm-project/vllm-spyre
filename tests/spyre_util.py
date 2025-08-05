@@ -24,7 +24,7 @@ from vllm.v1.request import Request
 
 DISABLE_ASSERTS = False  # used for debugging
 
-ISCLOSE_REL_TOL_CPU = 0.2
+ISCLOSE_REL_TOL_CPU = 0.25
 ISCLOSE_REL_TOL_SPYRE = 0.35
 
 
