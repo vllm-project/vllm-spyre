@@ -330,6 +330,8 @@ class SpyreWorker(WorkerBaseV1):
         logger.info("load model took %.3fs", load_model_total_t)
 
     def _warmup_spyre_dynamic_size(self, special_token_ids):
+        # this setting is required to mark a dimension of size 1 as dynamic
+        # for pytorch >= 2.7.1 (needed to support batch size 1 for decodes)
         from torch.fx.experimental import _config as config
         config.backed_size_oblivious = True
 
@@ -356,7 +358,7 @@ class SpyreWorker(WorkerBaseV1):
         warmup_tokens_tensor = valid_token_ids_tensor[torch.randint(
             0, len(valid_token_ids_tensor), (2, prompt_len))]
 
-        dummy_requests: list[NewRequestData] = [
+        warmup_req, deploy_req = (
             NewRequestData(
                 req_id="warmup-%d" % (i),
                 prompt_token_ids=warmup_tokens_tensor[i].tolist(),
@@ -368,9 +370,7 @@ class SpyreWorker(WorkerBaseV1):
                 block_ids=[0],  # not actually used
                 num_computed_tokens=0,
                 lora_request=None,
-            ) for i in range(2)
-        ]
-        warmup_req, deploy_req = dummy_requests[0], dummy_requests[1]
+            ) for i in range(2))
 
         with _maybe_warmup_context():
             self._dynamic_warmup(request=warmup_req,
