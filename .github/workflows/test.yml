@@ -178,6 +178,8 @@ jobs:
           # `uv run`, to avoid having `uv run` re-sync any dependencies or 
           # re-install the vllm_sypre package from source
           source .venv/bin/activate
+          # overwrite fms v1.1 with feature branch only_last_token_rework
+          uv pip install git+https://github.com/foundation-model-stack/foundation-model-stack@only_last_token_rework --force-reinstall
 
           python3 -m pytest ${{ matrix.test_suite.flags }} \
             tests -v -m "${{ matrix.test_suite.markers }}"
