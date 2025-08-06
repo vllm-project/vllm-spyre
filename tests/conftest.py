@@ -21,6 +21,8 @@ def pytest_collection_modifyitems(config, items):
 
     _skip_quantized_by_default(config, items)
 
+    _xfail_fp8_on_spyre(items)
+
 
 def _mark_all_e2e(items):
     """Mark all tests within the e2e package with the e2e marker"""
@@ -42,14 +44,23 @@ def _skip_quantized_by_default(config, items):
 
     skip_mymarker = pytest.mark.skip(reason='quantized not selected')
     for item in items:
-        print(item.name)
-        print(item.own_markers)
-        print(item.user_properties)
-
-        print(dir(item))
         if "quantized" in item.keywords:
-            print("ASDGASDGASDG")
             item.add_marker(skip_mymarker)
+
+
+def _xfail_fp8_on_spyre(items):
+    """Set an xfail marker on all tests that run quantized models on Spyre
+    hardware.
+    
+    TODO: Relax this to only "spyre and cb" once static batching is supported
+    on spyre.
+    """
+
+    xfail_marker = pytest.mark.xfail(
+        reason="fp8 is not yet supported on Spyre")
+    for item in items:
+        if "quantized" in item.keywords and "spyre" in item.keywords:
+            item.add_marker(xfail_marker)
 
 
 @pytest.fixture(autouse=True)
