@@ -203,6 +203,8 @@ class SpyrePlatform(Platform):
         # min decode batch size is 2 due to symbolic shape constraint in torch
         os.environ["VLLM_DT_MAX_BATCH_SIZE"] = str(
             max(vllm_config.scheduler_config.max_num_seqs, 2))
+        # max product of batch size x tkv supported by the Spyre compiler
+        os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(131072)
 
     @classmethod
     def use_all_gather(cls) -> bool:
