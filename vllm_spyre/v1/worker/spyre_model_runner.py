@@ -835,19 +835,19 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         Will eventually contain a function in torch_sendnn which reads 
         the actual value provided by the compiler for backend sendnn"""
 
-        max_batch_size = self.vllm_config.scheduler_config.max_num_seqs
         max_model_len = self.vllm_config.scheduler_config.max_model_len
 
         min_req_num_blocks = max_model_len // self.block_size
-        # min_req_num_blocks is not enough blocks for the following test:
-        # tests/e2e/test_spyre_cb.py::test_scheduler_cb_steps_tkv
-        # [seqs_max_tokens4-prompts_lengths4-steps_add_reqs4-
-        # checked_steps4-256-False-2-eager-llama-194m]
+
+        # TODO: replace NUM_BLOCKS_SPYRE_GRANITE_3_3_8B_INSTRUCT by calling
+        # a function in torch_sendnn which returns the value set by the Spyre
+        # compiler for the model being run, in the meantime we hard code the
+        # value for https://huggingface.co/ibm-granite/granite-3.3-8b-instruct
+
+        NUM_BLOCKS_SPYRE_GRANITE_3_3_8B_INSTRUCT = 2080  # HARD CODED VALUE
 
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == 'sendnn':
-            # TODO: replace num_blocks_spyre by calling a function in
-            # torch_sendnn which returns the value set by the Spyre compiler
-            num_blocks_spyre = max_batch_size * min_req_num_blocks
+            num_blocks_spyre = NUM_BLOCKS_SPYRE_GRANITE_3_3_8B_INSTRUCT
             assert num_blocks_spyre >= min_req_num_blocks, (
                 "Number of pages available on Spyre (%d) is not enough to "
                 "serve the current model (need at least %d pages)." %
@@ -860,7 +860,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                         str(max_model_len), max_concurrency_spyre)
             return num_blocks_spyre
         else:  # dynamo backend 'eager'
-            num_blocks_cpu = max_batch_size * min_req_num_blocks
+            # for debugging purposes we also put the spyre value here for cpu
+            num_blocks_cpu = NUM_BLOCKS_SPYRE_GRANITE_3_3_8B_INSTRUCT
             assert num_blocks_cpu >= min_req_num_blocks, (
                 "Number of pages available on CPU (%d) is not enough to "
                 "serve the current model (need at least %d pages)." %
