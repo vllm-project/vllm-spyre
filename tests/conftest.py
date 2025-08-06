@@ -16,10 +16,40 @@ os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 
 
 def pytest_collection_modifyitems(config, items):
-    """ Mark all tests in e2e directory"""
+    """ Modify tests at collection time """
+    _mark_all_e2e(items)
+
+    _skip_quantized_by_default(config, items)
+
+
+def _mark_all_e2e(items):
+    """Mark all tests within the e2e package with the e2e marker"""
     for item in items:
         if "e2e" in str(item.nodeid):
             item.add_marker(pytest.mark.e2e)
+
+
+def _skip_quantized_by_default(config, items):
+    """Skip tests marked with `quantized` unless the `-m` flag includes it
+    Ref: https://stackoverflow.com/questions/56374588/how-can-i-ensure-tests-with-a-marker-are-only-run-if-explicitly-asked-in-pytest
+
+    This will skip the quantized tests at runtime, but they will still show up
+    as collected when running pytest --collect-only.
+    """
+    markexpr = config.option.markexpr
+    if "quantized" in markexpr:
+        return  # let pytest handle the collection logic
+
+    skip_mymarker = pytest.mark.skip(reason='quantized not selected')
+    for item in items:
+        print(item.name)
+        print(item.own_markers)
+        print(item.user_properties)
+
+        print(dir(item))
+        if "quantized" in item.keywords:
+            print("ASDGASDGASDG")
+            item.add_marker(skip_mymarker)
 
 
 @pytest.fixture(autouse=True)
