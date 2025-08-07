@@ -178,10 +178,6 @@ jobs:
           # `uv run`, to avoid having `uv run` re-sync any dependencies or 
           # re-install the vllm_sypre package from source
           source .venv/bin/activate
-
-          if [ "${{ matrix.test_suite.name }}" == "quantized" ]; then
-            export VLLM_SPYRE_TEST_MODEL_LIST="ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8"
-          fi
        
           python3 -m pytest ${{ matrix.test_suite.flags }} \
             tests -v -m "${{ matrix.test_suite.markers }}"
