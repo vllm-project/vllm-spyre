@@ -848,6 +848,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             # hard coded value for tensor parallel size 4 with the below model
             # https://huggingface.co/ibm-granite/granite-3.3-8b-instruct
             NUM_BLOCKS_SPYRE = 2080
+            logger.info("Model granite-3.3-8b-instruct and tensor parallel " \
+            "size 4 detected. Using NUM_BLOCKS_SPYRE = %d", 2080)
         else:
             # default value for any other model/ tensor parallel size
             NUM_BLOCKS_SPYRE = max_batch_size * min_req_num_blocks
