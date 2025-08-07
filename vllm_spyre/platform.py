@@ -210,6 +210,8 @@ class SpyrePlatform(Platform):
             # hard coded value for tensor parallel size 4 with the below model
             # https://huggingface.co/ibm-granite/granite-3.3-8b-instruct
             os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(131072)
+            logger.info("Model granite-3.3-8b-instruct and tensor parallel " \
+            "size 4 detected. Using VLLM_DT_MAX_BATCH_TKV_LIMIT = %d", 131072)
         else:
             # default value for any other model/ tensor parallel size
             default_max_batch_tkv_limit = \
