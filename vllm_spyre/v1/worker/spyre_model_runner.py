@@ -835,19 +835,26 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         Will eventually contain a function in torch_sendnn which reads 
         the actual value provided by the compiler for backend sendnn"""
 
+        max_batch_size = self.vllm_config.scheduler_config.max_num_seqs
         max_model_len = self.vllm_config.scheduler_config.max_model_len
 
         min_req_num_blocks = max_model_len // self.block_size
 
-        # TODO: replace NUM_BLOCKS_SPYRE_GRANITE_3_3_8B_INSTRUCT by calling
-        # a function in torch_sendnn which returns the value set by the Spyre
-        # compiler for the model being run, in the meantime we hard code the
-        # value for https://huggingface.co/ibm-granite/granite-3.3-8b-instruct
+        # TODO: replace the hard coded NUM_BLOCKS_SPYRE by calling a function
+        # in torch_sendnn which returns the value set by the Spyre compiler.
 
-        NUM_BLOCKS_SPYRE_GRANITE_3_3_8B_INSTRUCT = 2080  # HARD CODED VALUE
+        if 'granite-3.3-8b-instruct' in self.model_config.model:
+            # https://huggingface.co/ibm-granite/granite-3.3-8b-instruct
+            NUM_BLOCKS_SPYRE = 2080  # HARD CODED VALUE
+        else:
+            # default value for any other model
+            NUM_BLOCKS_SPYRE = max_batch_size * min_req_num_blocks
+            logger.info("No model specific value for the number of KV cache " \
+            "blocks available on Spyre found. Using default value " \
+            "(max_batch_size * min_req_num_blocks): %d", NUM_BLOCKS_SPYRE)
 
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == 'sendnn':
-            num_blocks_spyre = NUM_BLOCKS_SPYRE_GRANITE_3_3_8B_INSTRUCT
+            num_blocks_spyre = NUM_BLOCKS_SPYRE
             assert num_blocks_spyre >= min_req_num_blocks, (
                 "Number of pages available on Spyre (%d) is not enough to "
                 "serve the current model (need at least %d pages)." %
@@ -861,7 +868,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             return num_blocks_spyre
         else:  # dynamo backend 'eager'
             # for debugging purposes we also put the spyre value here for cpu
-            num_blocks_cpu = NUM_BLOCKS_SPYRE_GRANITE_3_3_8B_INSTRUCT
+            num_blocks_cpu = NUM_BLOCKS_SPYRE
             assert num_blocks_cpu >= min_req_num_blocks, (
                 "Number of pages available on CPU (%d) is not enough to "
                 "serve the current model (need at least %d pages)." %
