@@ -241,10 +241,34 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         # check that batch size x tkv is smaller than the max supported number
         max_batch_tkv_limit = os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT")
         assert max_batch_tkv_limit is not None
-        max_batch_size = len(self.running) + 1
-        # max_tkv is chosen conservatively, a lower number could be found by
-        # considering max_tokens and start tkv of all requests in self.running
-        max_tkv = self.tkv + request.max_tokens - 1
-        cond6 = max_batch_size * max_tkv <= int(max_batch_tkv_limit)
+
+        # Compute the effective token length of the new request
+        new_req_tkv = self.tkv + request.max_tokens - 1
+
+        # Compute token lengths for all running requests (decode batch)
+        decode_req_tkvs = [
+            self.tkv + req.max_tokens - 1 - req.num_computed_tokens
+            for req in self.running
+        ]
+        # Sort decode requests token lengths in ascending order
+        decode_req_tkvs.sort()
+
+        # Initialize values
+        batch_size = len(self.running) + 1
+        max_batch_tkv = 0
+
+        # Try adding the new request to the batch and check the max volume
+        for decode_req_tkv in decode_req_tkvs:
+            if new_req_tkv <= decode_req_tkv:
+                # If the new request is shorter, it limits the batch volume
+                max_batch_tkv = max(max_batch_tkv, batch_size * new_req_tkv)
+                break
+            else:
+                # Otherwise, use the current (longer) request's volume
+                max_batch_tkv = max(max_batch_tkv, batch_size * decode_req_tkv)
+                # decrease batch_size by 1 as the current request finished
+                batch_size -= 1
+
+        cond6 = max_batch_tkv <= int(max_batch_tkv_limit)
         return start_new_batch or (cond1 and cond2 and cond3 and cond4
                                    and cond5 and cond6)
