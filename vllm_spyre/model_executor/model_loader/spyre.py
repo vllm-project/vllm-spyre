@@ -282,6 +282,9 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         scheduler_config: SchedulerConfig,
     ) -> None:
 
+        if model_config.quantization:
+            raise ValueError("FP8 is not supported with continuous batching")
+
         BLOCK_SIZE = SpyrePlatform.get_block_size()
         max_model_len = scheduler_config.max_model_len
 

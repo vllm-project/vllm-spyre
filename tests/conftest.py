@@ -23,6 +23,8 @@ def pytest_collection_modifyitems(config, items):
 
     _xfail_fp8_on_spyre(items)
 
+    _skip_all_cb_and_fp8_tests(items)
+
 
 def _mark_all_e2e(items):
     """Mark all tests within the e2e package with the e2e marker"""
@@ -61,6 +63,18 @@ def _xfail_fp8_on_spyre(items):
     for item in items:
         if "quantized" in item.keywords and "spyre" in item.keywords:
             item.add_marker(xfail_marker)
+
+
+def _skip_all_cb_and_fp8_tests(items):
+    """Skip all tests that run fp8 with continuous batching.
+    This can be relaxed once the TODOs to implement fp8 paged attention are
+    resolved.
+    """
+    skip_marker = pytest.mark.skip(
+        reason="FP8 is not supported with continuous batching yet")
+    for item in items:
+        if "quantized" in item.keywords and "cb" in item.keywords:
+            item.add_marker(skip_marker)
 
 
 @pytest.fixture(autouse=True)
