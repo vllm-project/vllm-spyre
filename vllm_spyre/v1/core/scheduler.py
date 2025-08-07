@@ -239,12 +239,12 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         num_blocks_required -= num_fully_padded_blocks
         cond5 = num_blocks_required <= self.n_free_blocks
         # check that batch size x tkv is smaller than the max supported number
-        max_batch_tkv_limit = int(
-            os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", default=str(131072)))
+        max_batch_tkv_limit = os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT")
+        assert max_batch_tkv_limit is not None
         max_batch_size = len(self.running) + 1
         # max_tkv is chosen conservatively, a lower number could be found by
         # considering max_tokens and start tkv of all requests in self.running
         max_tkv = self.tkv + request.max_tokens - 1
-        cond6 = max_batch_size * max_tkv <= max_batch_tkv_limit
+        cond6 = max_batch_size * max_tkv <= int(max_batch_tkv_limit)
         return start_new_batch or (cond1 and cond2 and cond3 and cond4
                                    and cond5 and cond6)
