@@ -456,6 +456,12 @@ class StaticBatchingFmsModel(FmsModelBase):
         # dynamic KV cache
         self.past_key_value_states = None
 
+        if self.model_config.quantization:
+            self.attention_name = "math_fp8"
+        else:
+            self.attention_name = "sdpa_causal"
+
+
     def forward(
         self,
         input_ids: torch.Tensor,
