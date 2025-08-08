@@ -9,7 +9,7 @@ import pytest
 from openai import BadRequestError
 from spyre_util import (RemoteOpenAIServer, generate_spyre_vllm_output,
                         get_chicken_soup_prompts, get_spyre_backend_list,
-                        get_spyre_model_list)
+                        get_spyre_model_list, skip_unsupported_tp_size)
 from vllm import SamplingParams
 
 
@@ -190,6 +190,8 @@ def test_long_context_batches(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Tests continuous batching with various batch sizes and prompt lengths."""
+
+    skip_unsupported_tp_size(tp_size, backend)
 
     max_model_len = 32768
     max_num_seqs = 32
