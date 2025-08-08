@@ -16,6 +16,7 @@ For more information, check out the following:
 - 📚 [Meet the IBM Artificial Intelligence Unit](https://research.ibm.com/blog/ibm-artificial-intelligence-unit-aiu)
 - 📽️ [AI Accelerators: Transforming Scalability & Model Efficiency](https://www.youtube.com/watch?v=KX0qBM-ByAg)
 - 🚀 [Spyre Accelerator for IBM Z](https://research.ibm.com/blog/spyre-for-z)
+- 🚀 [Spyre Accelerator for IBM POWER](https://newsroom.ibm.com/2025-07-08-ibm-power11-raises-the-bar-for-enterprise-it)
 
 ## Getting Started
 
