@@ -908,9 +908,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             tkv_offset = math.ceil(
                 (prompt_len - self.tkv) / self.block_size) * self.block_size
             if tkv_offset > 0:
-                logger.debug(
-                    "Decode batch padded by %d blocks to fit new prompt.",
-                    tkv_offset // self.block_size)
+                logger.debug("Prefill optimization: Adding %d blocks per " \
+                "sequence in the decode batch to prefill the current " \
+                "sequence.", tkv_offset // self.block_size)
                 self.tkv += tkv_offset
 
                 # adding left pads to the requests in the current decode batch
