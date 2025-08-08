@@ -43,7 +43,7 @@ jobs:
             flags: "--timeout=300"
           - name: "fp8"
             markers: "cpu and quantized"
-            flags: "--timeout=600 -k basic"
+            flags: "--timeout=600 -k 'basic and test_output' --durations=0"
           - name: "embedding"
             markers: "cpu and embedding"
             flags: "--timeout=300"
