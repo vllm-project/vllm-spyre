@@ -189,7 +189,7 @@ def test_long_context_batches(
     prompt_len: int,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Test continuous batching with various batch sizes and prompt lengths."""
+    """Tests continuous batching with various batch sizes and prompt lengths."""
 
     max_model_len = 32768
     max_num_seqs = 32
