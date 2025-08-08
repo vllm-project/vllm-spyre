@@ -764,10 +764,15 @@ def test_new_sequence_joins_during_decode(model: str, backend: str,
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
+@pytest.mark.parametrize("prefill_optimization", [True, False])
 def test_prompt_too_long_for_current_tkv(model: str, backend: str,
+                                         prefill_optimization: bool,
                                          monkeypatch: pytest.MonkeyPatch,
                                          set_random_seed):
     """ Scenario where the requested prompt is too long for current tkv value
+   
+     Note that with VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION enabled, we can 
+    prefill the prompt straight away -> using checked_steps_with_optimization
 
     Configuration:
         * max_num_seqs: 2
@@ -775,6 +780,9 @@ def test_prompt_too_long_for_current_tkv(model: str, backend: str,
             * 1: len = 49, max tokens = 57, step joining = 0
             * 2: len = 70, max tokens = 67, step joining = 0
     """
+
+    if prefill_optimization:
+        monkeypatch.setenv('VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION', '1')
 
     seqs_max_tokens = [57, 67]
     prompts_lengths = [49, 70]
@@ -784,6 +792,119 @@ def test_prompt_too_long_for_current_tkv(model: str, backend: str,
     max_model_len = 256
 
     checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0", "1"],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+        {
+            # Prefill sequence 0
+            # total blocks in use: 1
+            "step": 1,
+            "tkv": 64,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 2,  # prefill (1 block) + 56 decodes (1 block)
+            "n_used_blocks": 1
+        },
+        {
+            # Decode sequence 0
+            # total blocks in use: 1 + 1
+            # Cannot prefill sequence 1, because of tkv constraint
+            "step": 2,
+            "tkv": 65,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 2,
+            "n_used_blocks": 2
+        },
+        {
+            # Prefill sequence 1, tkv large enough
+            # total blocks in use: 2 + 2
+            "step": 8,
+            "tkv": 70,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1"],
+            # 2 + 3 (prefill (2 block) + 66 decodes (1 block))
+            "n_reserved_blocks": 5,
+            "n_used_blocks": 4
+        },
+        {
+            # Decode sequences 0 and 1
+            "step": 9,
+            "tkv": 71,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"],
+            "n_reserved_blocks": 5,
+            "n_used_blocks": 4  # seq 1 writes into the right pads
+        },
+        {
+            # Sequence 0 finishes at step 58
+            # (start step + 2 prefills + 56 decodes - 1) = 1 + 2 + 56 - 1 = 58
+            "step": 58,
+            "tkv": 120,
+            "waiting": [],
+            "running": ["1"],
+            "request_outputs": ["1", "0"],
+            "finished_requests": ["0"],
+            "n_reserved_blocks": 5,
+            "n_used_blocks": 4
+        },
+        {
+            # Decode sequence 1
+            # total blocks in use: 4 - 2 = 2
+            "step": 59,
+            "tkv": 121,
+            "waiting": [],
+            "running": ["1"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 3,  # 5 - 2 (seq 0)
+            "n_used_blocks": 2
+        },
+        {
+            # Decode sequence 1 needs another block
+            # total blocks in use: 2 + 1 = 3
+            "step": 67,
+            "tkv": 129,
+            "waiting": [],
+            "running": ["1"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 3,
+            "n_used_blocks": 3
+        },
+        {
+            # Sequence 1 finishes at step 74
+            # (start step + 1 prefill + 66 decodes - 1) = 8 + 1 + 66 - 1 = 74
+            "step": 74,
+            "tkv": 136,
+            "waiting": [],
+            "running": [],
+            "request_outputs": ["1"],
+            "finished_requests": ["1"],
+            "n_reserved_blocks": 3,
+            "n_used_blocks": 3
+        },
+        {
+            # Tkv should be cleared one step later
+            "step": 75,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+    ]
+
+    checked_steps_with_optimization = [
         {
             "step": 0,
             "tkv": 0,
@@ -893,7 +1014,8 @@ def test_prompt_too_long_for_current_tkv(model: str, backend: str,
         seqs_max_tokens=seqs_max_tokens,
         prompts_lengths=prompts_lengths,
         steps_add_reqs=steps_add_reqs,
-        checked_steps=checked_steps,
+        checked_steps=checked_steps_with_optimization
+        if prefill_optimization else checked_steps,
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
