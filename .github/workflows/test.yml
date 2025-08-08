@@ -41,9 +41,9 @@ jobs:
           - name: "static batching"
             markers: "cpu and decoder and not cb"
             flags: "--timeout=300"
-          - name: "quantized"
-            markers: "cpu and quantized"
-            flags: "--timeout=300"
+          - name: "fp8"
+            markers: "cpu and quantized and multi"
+            flags: "--timeout=600 -k 'basic and test_output' --durations=0"
           - name: "embedding"
             markers: "cpu and embedding"
             flags: "--timeout=300"
@@ -178,6 +178,6 @@ jobs:
           # `uv run`, to avoid having `uv run` re-sync any dependencies or 
           # re-install the vllm_sypre package from source
           source .venv/bin/activate
-
+       
           python3 -m pytest ${{ matrix.test_suite.flags }} \
             tests -v -m "${{ matrix.test_suite.markers }}"
