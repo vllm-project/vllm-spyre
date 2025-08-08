@@ -10,6 +10,7 @@ from vllm.v1.engine import EngineCoreOutputs
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request
 
+import vllm_spyre.envs as envs_spyre
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import CBSpyreModelRunnerOutput
 
@@ -237,5 +238,34 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             (self.tkv - request.num_prompt_tokens) / self.block_size)
         num_blocks_required -= num_fully_padded_blocks
         cond5 = num_blocks_required <= self.n_free_blocks
-        return start_new_batch or (cond1 and cond2 and cond3 and cond4
-                                   and cond5)
+        if start_new_batch or (cond1 and cond2 and cond3 and cond4 and cond5):
+            return True
+
+        # the following conditions must always be true, if not we can exit here
+        if not (cond1 and cond2 and cond4 and cond5
+                ) or not envs_spyre.VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION:
+            return False
+
+        # cond3 is violated: request.num_prompt_tokens > self.tkv
+        # check whether the new sequence can join the decode batch by
+        # increasing the current tkv by a multiple of the block size
+        tkv_offset = math.ceil((request.num_prompt_tokens - self.tkv) /
+                               self.block_size) * self.block_size
+        tkv_updated = self.tkv + tkv_offset
+        # check cond4 again with updated tkv for current sequence
+        cond4_updated = request.max_tokens <= (max_context_len - tkv_updated)
+
+        # check cond4 for all other sequences in the current decode batch
+        for req in self.running:
+            cond4_current = req.max_tokens <= (max_context_len - tkv_updated)
+            cond4_updated = cond4_updated and cond4_current
+            # early exiting loop if violated 4th condition
+            if not cond4_updated:
+                return False
+
+        # check if enough number of blocks to serve sequence with updated tkv
+        num_blocks_required_updated = math.ceil(
+            (tkv_updated + request.max_tokens - 1) / self.block_size)
+        cond5_updated = num_blocks_required_updated <= self.n_free_blocks
+
+        return cond4_updated and cond5_updated
