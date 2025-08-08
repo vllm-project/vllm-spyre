@@ -461,7 +461,6 @@ class StaticBatchingFmsModel(FmsModelBase):
         else:
             self.attention_name = "sdpa_causal"
 
-
     def forward(
         self,
         input_ids: torch.Tensor,
