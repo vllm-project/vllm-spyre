@@ -268,4 +268,10 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             (tkv_updated + request.max_tokens - 1) / self.block_size)
         cond5_updated = num_blocks_required_updated <= self.n_free_blocks
 
-        return cond4_updated and cond5_updated
+        if cond4_updated and cond5_updated:
+            logger.debug("Prefill optimization: Adding %d blocks per " \
+                "sequence in the decode batch to prefill the current " \
+                "sequence.", tkv_offset // self.block_size)
+            return True
+        else:
+            return False
