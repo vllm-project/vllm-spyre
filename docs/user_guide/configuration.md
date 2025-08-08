@@ -13,8 +13,8 @@ To run inference on IBM Spyre Accelerators, the backend should be set as:
 | --- | --- | --- | --- |
 | Decoder | v0 | sendnn | V0 support for decoder models is deprecated |
 | Decoder | v1 | sendnn | |
-| Embedding | v0 | sendnn | |
-| Embedding | v1 | N/A | Embedding models are not yet supported on V1 |
+| Embedding | v0 | sendnn | V0 support for embedding models is deprecated|
+| Embedding | v1 | sendnn | |
 
 ## Batching Modes
 

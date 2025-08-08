@@ -27,7 +27,6 @@ if TYPE_CHECKING:
 else:
     ModelConfig = None
     VllmConfig = None
-import vllm.envs as envs
 from vllm.platforms import Platform, PlatformEnum
 
 import vllm_spyre.envs as envs_spyre
@@ -112,25 +111,26 @@ class SpyrePlatform(Platform):
         if scheduler_config.is_multi_step:
             raise NotImplementedError
 
-        # Can be simplified after the model_config change from vllm:main
-        is_decoder = model_config.task == "generate" \
-            if model_config.task \
-                else "generate" in model_config.supported_tasks
+        # Can be simplified after the deprecation of `model_config.task` in
+        # vllm > 0.10.0
+        is_decoder = "generate" in model_config.supported_tasks if (
+            model_config.task == "auto"
+            or model_config.task is None) else model_config.task == "generate"
 
-        is_pooling = model_config.task == "embed" \
-            if model_config.task \
-        else "embed" in model_config.supported_tasks
+        is_pooling = "embed" in model_config.supported_tasks if (
+            model_config.task == "auto"
+            or model_config.task is None) else model_config.task == "embed"
 
-        if is_decoder and not envs.VLLM_USE_V1:
-            raise ValueError("Decoder models are only supported on v1")
+        if not bool(int(os.getenv("VLLM_USE_V1", "1"))):
+            raise ValueError("vllm-spyre is only supported with vLLM v1. "
+                             "Please set VLLM_USE_V1=1")
         elif not is_decoder and not is_pooling:
             raise ValueError("Only the 'generate' and 'embed' tasks are "
                              "supported")
 
         if parallel_config.worker_cls == "auto":
-            parallel_config.worker_cls = (
-                f'vllm_spyre{".v1" if envs.VLLM_USE_V1 else ""}'\
-                    '.worker.spyre_worker.SpyreWorker')
+            parallel_config.worker_cls = "vllm_spyre.v1.worker."\
+                "spyre_worker.SpyreWorker"
 
         cls._check_threading_config(parallel_config.world_size)
 
@@ -163,18 +163,9 @@ class SpyrePlatform(Platform):
             model_config.max_model_len = max_seq_len
             scheduler_config.max_num_seqs = max_batch_size
 
-            if is_decoder:
-                scheduler_config.scheduler_cls = (
+            scheduler_config.scheduler_cls = (
                     "vllm_spyre.v1.core.scheduler."\
                         "StaticBatchingSpyreScheduler")
-            elif is_pooling:
-                if not envs.VLLM_USE_V1:
-                    scheduler_config.scheduler_cls = (
-                        "vllm_spyre.core.scheduler.SpyreScheduler")
-                else:
-                    scheduler_config.scheduler_cls = (
-                        "vllm_spyre.v1.core.scheduler."\
-                            "StaticBatchingSpyreScheduler")
 
         # To disable any paged attention ops in the base scheduler, we:
         # - Set the block size (in tokens) to the maximum sequence length
@@ -186,17 +177,13 @@ class SpyrePlatform(Platform):
         #       length requests, so that the scheduler will always have token
         #       budget available to schedule a full batch
         if cache_config is not None:
-            if envs.VLLM_USE_V1:
-                # overriding number of available Spyre blocks if not None
-                if cache_config.num_gpu_blocks_override:
-                    cls._num_spyre_blocks_override = \
-                        cache_config.num_gpu_blocks_override
-                # The V1 scheduler actually needs 2 blocks for each sequence...
-                cache_config.num_gpu_blocks_override = \
-                    scheduler_config.max_num_seqs * 2
-            else:
-                cache_config.num_gpu_blocks_override = \
-                    scheduler_config.max_num_seqs
+            # overriding number of available Spyre blocks if not None
+            if cache_config.num_gpu_blocks_override:
+                cls._num_spyre_blocks_override = \
+                    cache_config.num_gpu_blocks_override
+            # The V1 scheduler actually needs 2 blocks for each sequence...
+            cache_config.num_gpu_blocks_override = \
+                scheduler_config.max_num_seqs * 2
 
             cache_config.block_size = model_config.max_model_len
             scheduler_config.max_num_batched_tokens = (

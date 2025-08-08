@@ -41,6 +41,9 @@ jobs:
           - name: "static batching"
             markers: "cpu and decoder and not cb"
             flags: "--timeout=300"
+          - name: "quantized"
+            markers: "cpu and quantized"
+            flags: "--timeout=300"
           - name: "embedding"
             markers: "cpu and embedding"
             flags: "--timeout=300"
@@ -50,6 +53,19 @@ jobs:
           - name: "worker and utils"
             markers: "not e2e"
             flags: "--timeout=300"
+          - name: "compatibility"
+            markers: "compat"
+            flags: "--timeout=300"
+        include:
+          - vllm_version:
+              name: "vLLM:lowest"
+              repo: "git+https://github.com/vllm-project/vllm --tag v0.9.2"
+            test_suite:
+              name: "backward compat"
+              markers: "compat or (cpu and basic)"
+              flags: "--timeout=300"
+            os: "ubuntu-latest"
+            python_version: "3.12"
 
     name: "${{ matrix.test_suite.name }} (${{ matrix.vllm_version.name }})"
 
@@ -90,6 +106,7 @@ jobs:
         if: (steps.changed-src-files.outputs.any_changed == 'true' && matrix.vllm_version.repo)
         run: |
           uv add ${{ matrix.vllm_version.repo }}
+          echo "TEST_VLLM_VERSION=${{ matrix.vllm_version.name }}" >> "$GITHUB_ENV"
 
       - name: "Install vLLM with Spyre plugin"
         if: steps.changed-src-files.outputs.any_changed == 'true'
@@ -122,7 +139,8 @@ jobs:
           # be removed by an admin or can be left to expire after 7 days.
           
           download_tinygranite() {
-            python -c "from transformers import pipeline; pipeline('text-generation', model='ibm-ai-platform/micro-g3.3-8b-instruct-1b')"
+            python -c "from transformers import pipeline, AutoTokenizer; pipeline('text-generation', model='ibm-ai-platform/micro-g3.3-8b-instruct-1b'); tokenizer=AutoTokenizer.from_pretrained('ibm-ai-platform/micro-g3.3-8b-instruct-1b')"
+            python -c "from transformers import pipeline, AutoTokenizer; pipeline('text-generation', model='ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8'); tokenizer=AutoTokenizer.from_pretrained('ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8')"
           }
           download_roberta_large() {
             python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-roberta-large-v1')"
@@ -151,6 +169,7 @@ jobs:
           MASTER_ADDR: localhost
           DISTRIBUTED_STRATEGY_IGNORE_MODULES: WordEmbedding
           VLLM_SPYRE_TEST_MODEL_LIST: "${{ matrix.test_suite.name == 'static batching' && 'JackFram/llama-160m' || '' }}"
+          HF_HUB_OFFLINE: 1
         run: |
           # Delete the source code so we can ensure we're testing the installed
           # wheel

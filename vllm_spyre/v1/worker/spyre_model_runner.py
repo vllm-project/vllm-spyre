@@ -290,8 +290,13 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
         )
 
     def build_input_batch(self) -> SamplingInputBatch:
+        # Fix for batch size 1: set input batch to fit 2 requests for warmup,
+        # and reset input batch to fit max_num_seqs requests after warmup
+        min_seqs_required = 2 if self.warmup_mode else 1
+
         return SamplingInputBatch(
-            max_num_reqs=self.scheduler_config.max_num_seqs,
+            max_num_reqs=max(min_seqs_required,
+                             self.scheduler_config.max_num_seqs),
             max_model_len=self.model_config.max_model_len,
             device=self.device,
             pin_memory=self.pin_memory,
@@ -802,7 +807,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             vocab_size=vllm_config.model_config.get_vocab_size(),
         )
 
-    def finish_warmup(self) -> None:
+    def complete_warmup(self) -> None:
+        super().complete_warmup()
+        # Fix for batch size 1: need to update the input_batch after the warmup
+        self.input_batch = self.build_input_batch()
         # get the number or pages from the actual Spyre card after the warmup
         # and set it accordingly in the model runner and the kv cache size
         n_blocks_avail = self._get_num_blocks_available()
