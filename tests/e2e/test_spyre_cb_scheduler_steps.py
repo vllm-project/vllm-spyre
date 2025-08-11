@@ -1056,6 +1056,8 @@ def test_prefill_optimization_tkv_too_big(model: str, backend: str,
     steps_add_reqs = [0, 0]
     available_blocks = -1  # no restriction
     max_num_seqs = 2
+    # restricting the max model length here to trigger the violated
+    # scheduler condition
     max_model_len = 192
 
     checked_steps_with_optimization = [
