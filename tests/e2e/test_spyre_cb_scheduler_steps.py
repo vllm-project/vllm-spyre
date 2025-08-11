@@ -33,7 +33,7 @@ def test_prompts_aligned_with_tkv_boundaries(model: str, backend: str,
     seqs_max_tokens = [65, 67, 7]
     prompts_lengths = [49, 41, 47]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
-    available_blocks = -1  # no restriction
+    available_blocks = 1000  # no restriction
     max_num_seqs = 2
     max_model_len = 256
 
@@ -202,7 +202,7 @@ def test_prompts_misaligned_with_tkv_boundaries(
     seqs_max_tokens = [57, 67, 9]
     prompts_lengths = [49, 41, 47]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
-    available_blocks = -1  # no restriction
+    available_blocks = 1000  # no restriction
     max_num_seqs = 2
     max_model_len = 256
 
@@ -368,7 +368,7 @@ def test_two_sequences_finish_same_time_as_new_arrive(
     seqs_max_tokens = [30, 30, 10]
     prompts_lengths = [49, 30, 20]
     steps_add_reqs = [0, 0, 31]
-    available_blocks = -1  # no restriction
+    available_blocks = 1000  # no restriction
     max_num_seqs = 2
     max_model_len = 256
 
@@ -513,7 +513,7 @@ def test_new_sequence_joins_during_decode(model: str, backend: str,
     seqs_max_tokens = [119, 52, 104, 64]
     prompts_lengths = [49, 14, 89, 9]
     steps_add_reqs = [0, 0, 32, 131]
-    available_blocks = -1  # no restriction
+    available_blocks = 1000  # no restriction
     max_num_seqs = 4
     max_model_len = 256
 
@@ -787,7 +787,7 @@ def test_prompt_too_long_for_current_tkv(model: str, backend: str,
     seqs_max_tokens = [57, 67]
     prompts_lengths = [49, 70]
     steps_add_reqs = [0, 0]
-    available_blocks = -1  # no restriction
+    available_blocks = 1000  # no restriction
     max_num_seqs = 2
     max_model_len = 256
 
@@ -1054,7 +1054,7 @@ def test_prefill_optimization_tkv_too_big(model: str, backend: str,
     seqs_max_tokens = [67, 50]
     prompts_lengths = [49, 70]
     steps_add_reqs = [0, 0]
-    available_blocks = -1  # no restriction
+    available_blocks = 1000  # no restriction
     max_num_seqs = 2
     # restricting the max model length here to trigger the violated
     # scheduler condition
@@ -1384,7 +1384,7 @@ def test_requested_tokens_not_fitting_remaining_space(
     seqs_max_tokens = [67, 57, 80]
     prompts_lengths = [70, 49, 41]
     steps_add_reqs = [0, 0, 0]
-    available_blocks = -1  # no restriction
+    available_blocks = 1000  # no restriction
     max_num_seqs = 2
     max_model_len = 256
 
