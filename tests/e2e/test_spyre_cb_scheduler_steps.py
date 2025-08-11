@@ -8,8 +8,10 @@ Run `python -m pytest tests/e2e/test_spyre_cb_inference_steps.py`.
 
 import pytest
 from scheduling_utils import check_scheduler_inference_steps
-from spyre_util import (check_output_against_hf, get_spyre_backend_list,
-                        get_spyre_model_list)
+from spyre_util import (check_output_against_hf, generate_spyre_vllm_output,
+                        get_chicken_soup_prompts, get_spyre_backend_list,
+                        get_spyre_model_list, skip_unsupported_tp_size)
+from vllm import SamplingParams
 
 
 @pytest.mark.cb
@@ -1404,3 +1406,65 @@ def test_requests_use_more_than_available_blocks(
 
     check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
                             prompts)
+
+
+@pytest.mark.cb
+@pytest.mark.parametrize(
+    "tp_size",
+    [
+        pytest.param(4, marks=pytest.mark.multi),
+    ],
+    ids=lambda val: f"TP({val})",
+)
+@pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+def test_max_batch_tkv_multi_decoding(
+    model: str,
+    tp_size: int,
+    backend: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    '''
+    16 prompts with max_new_tokens 1k
+    8 prompts with max_new_tokens 2k
+    4 prompts with max_new_tokens 4k
+    2 prompts with max_new_tokens 8k
+    1 prompt with max_new_tokens 16k
+    1 prompt with max_new_tokens 32k
+    '''
+
+    max_num_seqs = 32
+    max_model_len = 32 * 1024
+
+    skip_unsupported_tp_size(tp_size, backend)
+    prompts = get_chicken_soup_prompts(max_num_seqs)
+
+    create_sampling_params = lambda max_new_tokens: SamplingParams(
+        max_tokens=max_new_tokens,
+        temperature=0,
+        logprobs=0,  # return logprobs of generated tokens only
+        ignore_eos=True)
+
+    sampling_params_1k = [create_sampling_params(1 * 1024) for _ in range(16)]
+    sampling_params_2k = [create_sampling_params(2 * 1024) for _ in range(8)]
+    sampling_params_4k = [create_sampling_params(4 * 1024) for _ in range(4)]
+    sampling_params_8k = [create_sampling_params(8 * 1024) for _ in range(2)]
+    sampling_params_16k = [create_sampling_params(16 * 1024) for _ in range(1)]
+    sampling_params_32k = [create_sampling_params(32 * 1024) for _ in range(1)]
+
+
+    sampling_params = sampling_params_1k + sampling_params_2k + \
+        sampling_params_4k + sampling_params_8k + sampling_params_16k + \
+            sampling_params_32k
+
+    vllm_results = generate_spyre_vllm_output(model=model,
+                                              prompts=prompts,
+                                              sampling_params=sampling_params,
+                                              tensor_parallel_size=tp_size,
+                                              backend=backend,
+                                              monkeypatch=monkeypatch,
+                                              block_size=max_model_len,
+                                              max_model_len=max_model_len,
+                                              use_cb=True)
+
+    print(vllm_results)  # TODO: remove
