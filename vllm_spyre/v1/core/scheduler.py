@@ -243,6 +243,34 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         num_blocks_required -= num_fully_padded_blocks
         cond5 = num_blocks_required <= self.n_free_blocks
         # check that batch size x tkv is smaller than the max supported number
+        cond6 = self.check_batch_tkv_limit(request)
+
+        return start_new_batch or (cond1 and cond2 and cond3 and cond4
+                                   and cond5 and cond6)
+
+    def check_batch_tkv_limit(self, request) -> bool:
+        """
+        Check whether adding a new sequence to the decode batch would violate
+        Spyre's maximum batch volume constraint.
+
+        In Spyre, the product of `batch_size` and the current `tkv` 
+        (tokens-per-sequence) must not exceed the limit defined by 
+        `VLLM_DT_MAX_BATCH_TKV_LIMIT`. Before scheduling a new sequence, 
+        we must ensure that this constraint will hold for all decoding 
+        steps that result from combining the new sequence with the currently 
+        running decode batch.
+
+        This implementation:
+        1. Computes the maximum possible `tkv` for each sequence in the 
+        decode batch.
+        2. Sorts these values in ascending order.
+        3. Iterates through them, stopping once the `tkv` of the new sequence.
+        is reached. Remaining sequences do not need to be checked explicitly, 
+        since they were validated when they were added (by inductive reasoning).
+
+        WIP: The result of this check could be cached and reused if both the 
+        decode batch and the new input request are unchanged between calls.
+        """
 
         # Compute the effective token length of the new request
         new_req_tkv = self.tkv + request.max_tokens - 1
@@ -271,6 +299,4 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
                 # decrease batch_size by 1 as the current request finished
                 batch_size -= 1
 
-        cond6 = max_batch_tkv <= int(self.max_batch_tkv_limit)
-        return start_new_batch or (cond1 and cond2 and cond3 and cond4
-                                   and cond5 and cond6)
+        return max_batch_tkv <= int(self.max_batch_tkv_limit)
