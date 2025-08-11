@@ -1040,6 +1040,7 @@ def test_prefill_optimization_tkv_too_big(model: str, backend: str,
     However, in this test the max model length is decreased to a value where
     the tkv of the decode batch would be shifted beyond the max model length, 
     we therefore have to wait with scheduling it via the prefill optimization. 
+    -> see cond4_updated in vllm_spyre/v1/core/scheduler.py
 
     Configuration:
         * max_num_seqs: 2
