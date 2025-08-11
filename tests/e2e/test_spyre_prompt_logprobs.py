@@ -36,6 +36,8 @@ def test_prompt_logprobs(
     implementation using huggingface.
     '''
     skip_unsupported_tp_size(tp_size, backend)
+    if "FP8" in model:
+        pytest.skip(reason="Prompt logprobs does not support FP8")
     num_prompt_logprobs = 5
 
     prompts = get_chicken_soup_prompts(4)
