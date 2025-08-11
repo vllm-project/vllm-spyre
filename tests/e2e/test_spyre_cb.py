@@ -3,14 +3,13 @@
 Run `python -m pytest tests/e2e/test_spyre_cb.py`.
 """
 
-import math
-
 import pytest
 from openai import BadRequestError
-from spyre_util import (RemoteOpenAIServer, generate_spyre_vllm_output,
+from spyre_util import (RemoteOpenAIServer, create_text_prompt,
+                        force_engine_shutdown, generate_spyre_vllm_output,
                         get_chicken_soup_prompts, get_spyre_backend_list,
                         get_spyre_model_list, skip_unsupported_tp_size)
-from vllm import SamplingParams
+from vllm import LLM, SamplingParams
 
 
 @pytest.mark.cb
@@ -170,56 +169,76 @@ def test_continuous_batching_with_long_contexts(model, monkeypatch):
     ],
     ids=lambda val: f"TP({val})",
 )
-@pytest.mark.parametrize(
-    "batch_size,prompt_len",
-    [
+def test_long_context_batches(
+    model: str,
+    backend: str,
+    tp_size: int,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Tests continuous batching with various batch sizes and prompt lengths."""
+
+    monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+    monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
+
+    max_model_len = 32768
+    max_num_seqs = 32
+    max_tokens = 10
+    cases = [
         (32, 512),
         (16, 1500),
         (8, 3000),
         (4, 5000),
         (2, 9000),
         (1, 17000),
-    ],
-)
-def test_long_context_batches(
-    model: str,
-    backend: str,
-    tp_size: int,
-    batch_size: int,
-    prompt_len: int,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    """Tests continuous batching with various batch sizes and prompt lengths."""
+    ]
 
     skip_unsupported_tp_size(tp_size, backend)
 
-    max_model_len = 32768
-    max_num_seqs = 32
-    max_tokens = 10
-
-    # Extend tokens to at least the required length
-    base_prompt = get_chicken_soup_prompts(1)[0]
-    words = base_prompt.split()
-    prompt = " ".join(words * math.ceil(prompt_len / len(words)))
-
-    prompts = [prompt] * batch_size
-
-    sampling_params = SamplingParams(max_tokens=max_tokens,
-                                     temperature=0,
-                                     ignore_eos=True,
-                                     logprobs=0)
-
-    results = generate_spyre_vllm_output(
+    vllm_model = LLM(
         model=model,
-        prompts=prompts,
+        tokenizer=model,
         max_model_len=max_model_len,
-        block_size=max_model_len,
-        sampling_params=sampling_params,
-        tensor_parallel_size=tp_size,
-        backend=backend,
         max_num_seqs=max_num_seqs,
-        use_cb=True,
-        monkeypatch=monkeypatch,
+        block_size=max_model_len,
+        tensor_parallel_size=tp_size,
     )
 
-    assert len(results) == batch_size
+    sampling_params = SamplingParams(
+        max_tokens=max_tokens,
+        temperature=0,
+        ignore_eos=True,
+        logprobs=0,
+    )
+
+    for batch_size, prompt_len in cases:
+        prompt = create_text_prompt(model,
+                                    min_tokens=prompt_len,
+                                    max_tokens=prompt_len + 1)
+        prompts = [prompt] * batch_size
+
+        vllm_outputs = vllm_model.generate(prompts, sampling_params)
+
+        results = []
+        for req_output in vllm_outputs:
+            token_ids = [t for t in req_output.outputs[0].token_ids if t >= 0]
+            results.append({
+                "text":
+                req_output.outputs[0].text,
+                "token_ids":
+                tuple(token_ids),
+                "tokens":
+                tuple([
+                    req_output.outputs[0].logprobs[i][t].decoded_token
+                    for i, t in enumerate(token_ids)
+                ]),
+                "logprobs":
+                tuple([
+                    req_output.outputs[0].logprobs[i][t].logprob
+                    for i, t in enumerate(token_ids)
+                ]),
+            })
+
+        assert len(results) == batch_size
+
+    force_engine_shutdown(vllm_model)
