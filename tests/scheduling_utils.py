@@ -60,8 +60,6 @@ def check_scheduler_inference_steps(
     if use_cb:
         monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
 
-    max_model_len = 256
-
     # Input parameters sanity check, not actual testing
     # ------
     if not (len(prompts_lengths) == len(seqs_max_tokens)
