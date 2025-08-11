@@ -1080,7 +1080,7 @@ def test_prefill_optimization_tkv_too_big(model: str, backend: str,
             3,  # prefill (1 block) + 66 decodes (2 blocks)
             "n_used_blocks": 1
         },
-        # Here we cannot schedule sequence 1. By shifting sequence by 1 block
+        # Here we cannot schedule sequence 1. By shifting sequence 0 by 1 block
         # due to the prefill optimization, its max tkv would exceed the max
         # model length: 64 + 67 - 1 + 64 (shift) = 194 > 192 (max model length)
         {
@@ -1095,7 +1095,178 @@ def test_prefill_optimization_tkv_too_big(model: str, backend: str,
             "n_used_blocks": 2
         },
         {
-            # Prefill sequence 1, tkv large enough to not shift decode batch
+            # Prefill sequence 1, tkv large enough to prefill w/o optimization
+            # total blocks in use: 2 + 2
+            "step": 8,
+            "tkv": 70,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1"],
+            # 3 + 2 (prefill (2 block) + 49 decodes in the last block)
+            "n_reserved_blocks": 5,
+            "n_used_blocks": 4
+        },
+        {
+            # Decode sequences 0 and 1
+            "step": 9,
+            "tkv": 71,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"],
+            "n_reserved_blocks": 5,
+            "n_used_blocks": 4  # seq 1 writes into the right pads
+        },
+        {
+            # Sequence 1 finishes at step 57
+            # (start step 8 + 1 prefills + 49 decodes - 1) = 8 + 1 + 49 - 1 = 57
+            "step": 57,
+            "tkv": 119,
+            "waiting": [],
+            "running": ["0"],
+            "request_outputs": ["1", "0"],
+            "finished_requests": ["1"],
+            "n_reserved_blocks": 5,
+            "n_used_blocks": 4
+        },
+        {
+            # Decode sequence 0
+            # total blocks in use: 4 - 2 = 2
+            "step": 58,
+            "tkv": 120,
+            "waiting": [],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 3,  # 5 - 2 (seq 1)
+            "n_used_blocks": 2
+        },
+        {
+            # Decode sequence 0 needs another block
+            # total blocks in use: 2 + 1 = 3
+            "step": 67,
+            "tkv": 129,
+            "waiting": [],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 3,
+            "n_used_blocks": 3
+        },
+        {
+            # Sequence 0 finishes at step 68
+            # (start step + 2 prefill + 66 decodes - 1) = 1 + 2 + 66 - 1 = 68
+            "step": 68,
+            "tkv": 130,
+            "waiting": [],
+            "running": [],
+            "request_outputs": ["0"],
+            "finished_requests": ["0"],
+            "n_reserved_blocks": 3,
+            "n_used_blocks": 3
+        },
+        {
+            # Tkv should be cleared one step later
+            "step": 69,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+    ]
+
+    cb_outputs, prompts = check_scheduler_inference_steps(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        seqs_max_tokens=seqs_max_tokens,
+        prompts_lengths=prompts_lengths,
+        steps_add_reqs=steps_add_reqs,
+        checked_steps=checked_steps_with_optimization,
+        max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
+        available_blocks=available_blocks,
+        use_cb=True,
+    )
+
+    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                            prompts)
+
+
+@pytest.mark.cb
+@pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+def test_prefill_optimization_use_more_than_available_blocks(
+        model: str, backend: str, monkeypatch: pytest.MonkeyPatch,
+        set_random_seed):
+    """ Scenario where the requested prompt is too long for current tkv value
+   
+    Note that as VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION is enabled, we could 
+    prefill the prompt straight away -> using checked_steps_with_optimization
+
+    However, in this test the number of available KV cache blocks is decreased
+    to a value where the the number of reserved blocks would exceed the number
+    of available blocks, we therefore have to wait with scheduling it via the 
+    prefill optimization. 
+    -> see cond5_updated in vllm_spyre/v1/core/scheduler.py
+
+    Configuration:
+        * max_num_seqs: 2
+        * number of prompts: 2
+            * 1: len = 49, max tokens = 67, step joining = 0
+            * 2: len = 70, max tokens = 50, step joining = 0
+    """
+
+    monkeypatch.setenv('VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION', '1')
+
+    seqs_max_tokens = [67, 50]
+    prompts_lengths = [49, 70]
+    steps_add_reqs = [0, 0]
+    # provide only 5 blocks, to use the prefill optimization
+    # at least 6 blocks would be required
+    available_blocks = 5
+    max_num_seqs = 2
+    max_model_len = 256
+
+    checked_steps_with_optimization = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0", "1"],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+        {
+            # Prefill sequence 0
+            # total blocks in use: 1
+            "step": 1,
+            "tkv": 64,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks":
+            3,  # prefill (1 block) + 66 decodes (2 blocks)
+            "n_used_blocks": 1
+        },
+        # We cannot schedule sequence 1 here. Prefill optimization shifts
+        # sequence 0 by 1 block, so it still needs 3 blocks (not counting
+        # fully padded blocks!) Aligning sequence 1 would then require
+        # 3 blocks (instead of 2). With only 5 blocks available, scheduling
+        # sequence 1 is not possible.
+        {
+            # Decode sequence 0
+            # total blocks in use: 1 + 1
+            "step": 2,
+            "tkv": 65,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 3,
+            "n_used_blocks": 2
+        },
+        {
+            # Prefill sequence 1, tkv large enough to prefill w/o optimization
             # total blocks in use: 2 + 2
             "step": 8,
             "tkv": 70,
