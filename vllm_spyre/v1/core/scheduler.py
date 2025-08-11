@@ -150,6 +150,10 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         self.tkv = 0
         self.n_free_blocks = 0
         self.block_size = SpyrePlatform.get_block_size()
+        self.max_batch_tkv_limit = os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT",
+                                             default='-1')
+        assert self.max_batch_tkv_limit != '-1', "Expecting the env var"
+        "VLLM_DT_MAX_BATCH_TKV_LIMIT to be set in platform.py"
 
     def update_from_output(
         self,
@@ -239,8 +243,6 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         num_blocks_required -= num_fully_padded_blocks
         cond5 = num_blocks_required <= self.n_free_blocks
         # check that batch size x tkv is smaller than the max supported number
-        max_batch_tkv_limit = os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT")
-        assert max_batch_tkv_limit is not None
 
         # Compute the effective token length of the new request
         new_req_tkv = self.tkv + request.max_tokens - 1
@@ -269,6 +271,6 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
                 # decrease batch_size by 1 as the current request finished
                 batch_size -= 1
 
-        cond6 = max_batch_tkv <= int(max_batch_tkv_limit)
+        cond6 = max_batch_tkv <= int(self.max_batch_tkv_limit)
         return start_new_batch or (cond1 and cond2 and cond3 and cond4
                                    and cond5 and cond6)
