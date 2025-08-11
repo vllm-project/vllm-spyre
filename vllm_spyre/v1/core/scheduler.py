@@ -268,6 +268,9 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         is reached. Remaining sequences do not need to be checked explicitly, 
         since they were validated when they were added (by inductive reasoning).
 
+        Note: drawing explaining the algorithm in more detail uploaded here: 
+        https://github.com/vllm-project/vllm-spyre/pull/363#issuecomment-3173605517
+        
         WIP: The result of this check could be cached and reused if both the 
         decode batch and the new input request are unchanged between calls.
         """
