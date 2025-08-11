@@ -216,8 +216,11 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         max_prompt_batch_size = 1
         max_context_len = self.scheduler_config.max_model_len
 
-        # running and waiting queues are both empty -> start new batch
-        start_new_batch = len(self.running) + len(self.waiting) == 0
+        # running and waiting queues are both empty -> start a new batch
+        # which can always be scheduled
+        if len(self.running) + len(self.waiting) == 0:
+            return True
+
         # check that there is space in the current decode batch
         cond1 = len(self.running) + len(
             self.waiting) < self.max_num_running_reqs
@@ -238,7 +241,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             (self.tkv - request.num_prompt_tokens) / self.block_size)
         num_blocks_required -= num_fully_padded_blocks
         cond5 = num_blocks_required <= self.n_free_blocks
-        if start_new_batch or (cond1 and cond2 and cond3 and cond4 and cond5):
+        if cond1 and cond2 and cond3 and cond4 and cond5:
             return True
 
         # the following conditions must always be true, if not we can exit here
