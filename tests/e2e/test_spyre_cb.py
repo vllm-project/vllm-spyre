@@ -5,7 +5,8 @@ Run `python -m pytest tests/e2e/test_spyre_cb.py`.
 
 import pytest
 from openai import BadRequestError
-from spyre_util import (RemoteOpenAIServer, create_text_prompt, extract_output,
+from spyre_util import (RemoteOpenAIServer, check_output_against_hf,
+                        create_seq_prompt, extract_output,
                         force_engine_shutdown, generate_spyre_vllm_output,
                         get_chicken_soup_prompts, get_spyre_backend_list,
                         get_spyre_model_list, skip_unsupported_tp_size)
@@ -165,6 +166,7 @@ def test_continuous_batching_with_long_contexts(model, monkeypatch):
 @pytest.mark.parametrize(
     "tp_size",
     [
+        pytest.param(1, marks=pytest.mark.basic),
         pytest.param(4, marks=pytest.mark.multi),
     ],
     ids=lambda val: f"TP({val})",
@@ -214,9 +216,7 @@ def test_long_context_batches(
     )
 
     for batch_size, prompt_len in batch_prompt_pairs:
-        prompt = create_text_prompt(model,
-                                    min_token_length=prompt_len,
-                                    max_token_length=prompt_len + 10)
+        prompt = create_seq_prompt(model, min_token_length=prompt_len)
         prompts = [prompt] * batch_size
 
         vllm_outputs = vllm_model.generate(prompts, sampling_params)
@@ -227,5 +227,16 @@ def test_long_context_batches(
             results.append(result)
 
         assert len(results) == batch_size
+
+    # Compare output against HF output
+    check_output_against_hf(
+        model=model,
+        backend=backend,
+        max_new_tokens=max_tokens,
+        vllm_results=results,
+        prompts=prompts,
+    )
+
+    force_engine_shutdown(vllm_model)
 
     force_engine_shutdown(vllm_model)
