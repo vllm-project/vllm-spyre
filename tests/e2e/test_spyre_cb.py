@@ -184,7 +184,9 @@ def test_long_context_batches(
     max_model_len = 32768
     max_num_seqs = 32
     max_tokens = 10
-    cases = [
+    
+    # (batch_size, prompt_length) pairs
+    batch_prompt_pairs = [
         (32, 512),
         (16, 1500),
         (8, 3000),
@@ -211,7 +213,7 @@ def test_long_context_batches(
         logprobs=0,
     )
 
-    for batch_size, prompt_len in cases:
+    for batch_size, prompt_len in batch_prompt_pairs:
         prompt = create_text_prompt(model,
                                     min_tokens=prompt_len,
                                     max_tokens=prompt_len + 1)
