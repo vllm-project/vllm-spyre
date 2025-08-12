@@ -247,7 +247,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         num_blocks_required -= num_fully_padded_blocks
         cond5 = num_blocks_required <= self.n_free_blocks
         # check that batch size x tkv is smaller than the max supported number
-        cond6 = self.check_batch_tkv_limit(request)
+        cond6 = self.check_batch_tkv_limit(request=request, tkv=self.tkv)
 
         if cond1 and cond2 and cond3 and cond4 and cond5 and cond6:
             return True
@@ -279,9 +279,14 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             (tkv_updated + request.max_tokens - 1) / self.block_size)
         cond5_updated = num_blocks_required_updated <= self.n_free_blocks
 
-        return cond4_updated and cond5_updated
+        # check that batch size x tkv is smaller than the max supported number
+        # with updated tkv (cond6)
+        cond6_updated = self.check_batch_tkv_limit(request=request,
+                                                   tkv=tkv_updated)
 
-    def check_batch_tkv_limit(self, request) -> bool:
+        return cond4_updated and cond5_updated and cond6_updated
+
+    def check_batch_tkv_limit(self, request, tkv) -> bool:
         """
         Check whether adding a new sequence to the decode batch would violate
         Spyre's maximum batch volume constraint.
@@ -309,11 +314,11 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         """
 
         # Compute the effective token length of the new request
-        new_req_tkv = self.tkv + request.max_tokens - 1
+        new_req_tkv = tkv + request.max_tokens - 1
 
         # Compute token lengths for all running requests (decode batch)
         decode_req_tkvs = [
-            self.tkv + req.max_tokens - 1 - req.num_computed_tokens
+            tkv + req.max_tokens - 1 - req.num_computed_tokens
             for req in self.running
         ]
         # Sort decode requests token lengths in ascending order
