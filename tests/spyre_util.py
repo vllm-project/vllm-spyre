@@ -407,6 +407,10 @@ def compare_results(
 
 def check_output_against_hf(model, backend, max_new_tokens, vllm_results,
                             prompts) -> None:
+    if isinstance(prompts[0], list):
+        # list of lists of token ids -> need to convert to tuples
+        prompts = [tuple(p) for p in prompts]
+
     # To cache results from hf, we have to pass tuples instead of lists
     hf_outputs = generate_hf_output(
         model=model,
