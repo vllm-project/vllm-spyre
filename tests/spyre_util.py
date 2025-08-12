@@ -557,7 +557,8 @@ def _default_test_models(isEmbeddings=False):
     return params
 
 
-def create_text_prompt(model: str, min_tokens: int, max_tokens: int) -> str:
+def create_text_prompt(model: str, min_token_length: int,
+                       max_token_length: int) -> str:
     """Create a text prompt for the specified model that will tokenize to within
     the specified token length range."""
     tokenizer = AutoTokenizer.from_pretrained(model)
