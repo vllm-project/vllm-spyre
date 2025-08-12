@@ -5,7 +5,7 @@ Run `python -m pytest tests/e2e/test_spyre_cb.py`.
 
 import pytest
 from openai import BadRequestError
-from spyre_util import (RemoteOpenAIServer, create_text_prompt,
+from spyre_util import (RemoteOpenAIServer, create_text_prompt, extract_output,
                         force_engine_shutdown, generate_spyre_vllm_output,
                         get_chicken_soup_prompts, get_spyre_backend_list,
                         get_spyre_model_list, skip_unsupported_tp_size)
@@ -223,23 +223,8 @@ def test_long_context_batches(
 
         results = []
         for req_output in vllm_outputs:
-            token_ids = [t for t in req_output.outputs[0].token_ids if t >= 0]
-            results.append({
-                "text":
-                req_output.outputs[0].text,
-                "token_ids":
-                tuple(token_ids),
-                "tokens":
-                tuple([
-                    req_output.outputs[0].logprobs[i][t].decoded_token
-                    for i, t in enumerate(token_ids)
-                ]),
-                "logprobs":
-                tuple([
-                    req_output.outputs[0].logprobs[i][t].logprob
-                    for i, t in enumerate(token_ids)
-                ]),
-            })
+            result = extract_output(req_output)
+            results.append(result)
 
         assert len(results) == batch_size
 
