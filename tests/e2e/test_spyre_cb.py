@@ -198,12 +198,10 @@ def test_swap_decode_programs_for_cb(
 
     backend = 'sendnn'
     max_num_seqs = 32
-    # max_model_len = 32 * 1024
-    max_model_len = 8 * 1024
+    max_model_len = 32 * 1024
 
     skip_unsupported_tp_size(tp_size, backend)
-    # prompts = get_chicken_soup_prompts(max_num_seqs)
-    prompts = get_chicken_soup_prompts(max_num_seqs - 2)
+    prompts = get_chicken_soup_prompts(max_num_seqs)
 
     create_sampling_params = lambda max_new_tokens: SamplingParams(
         # The prompt will pad to 64 tokens, therefore to match
@@ -213,12 +211,12 @@ def test_swap_decode_programs_for_cb(
         logprobs=0,  # return logprobs of generated tokens only
         ignore_eos=True)
 
-    p1k = 1 * 128
-    p2k = 2 * 128
-    p4k = 4 * 128
-    p8k = 8 * 128
-    p16k = 16 * 128
-    p32k = 32 * 128
+    p1k = 1 * 1024
+    p2k = 2 * 1024
+    p4k = 4 * 1024
+    p8k = 8 * 1024
+    p16k = 16 * 1024
+    p32k = 32 * 1024
 
     sampling_params_1k = [create_sampling_params(p1k) for _ in range(16)]
     sampling_params_2k = [create_sampling_params(p2k) for _ in range(8)]
