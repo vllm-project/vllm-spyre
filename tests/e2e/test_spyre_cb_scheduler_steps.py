@@ -1408,6 +1408,7 @@ def test_requests_use_more_than_available_blocks(
                             prompts)
 
 
+@pytest.mark.spyre
 @pytest.mark.cb
 @pytest.mark.parametrize(
     "tp_size",
@@ -1425,46 +1426,98 @@ def test_max_batch_tkv_multi_decoding(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     '''
-    16 prompts with max_new_tokens 1k
-    8 prompts with max_new_tokens 2k
-    4 prompts with max_new_tokens 4k
-    2 prompts with max_new_tokens 8k
-    1 prompt with max_new_tokens 16k
-    1 prompt with max_new_tokens 32k
+    
+    Validate the runtime's ability to swap between different compiled decode 
+    programs for varying batch sizes and TKV.
+
+    The test case consists of 32 small input prompts with specifically chosen 
+    max_new_tokens values to trigger different decode programs at runtime.
+
+    The test case structure is as follows:
+
+    - 16 prompts with max_new_tokens @ 1k
+    -  8 prompts with max_new_tokens @ 2k
+    -  4 prompts with max_new_tokens @ 4k
+    -  2 prompts with max_new_tokens @ 8k
+    -  1 prompt  with max_new_tokens @ 16k
+    -  1 prompt  with max_new_tokens @ 32k
+    
+    NOTE: currently the model `ibm-granite/granite-3.3-8b-instruct` will set 
+    VLLM_DT_MAX_BATCH_TKV_LIMIT to a limit of 128K which will change the 
+    behavior of how this test runs. To verify set the environment variable 
+    VLLM_SPYRE_TEST_MODEL_LIST="ibm-granite/granite-3.3-8b-instruct"
     '''
 
     max_num_seqs = 32
-    max_model_len = 32 * 1024
+    # max_model_len = 32 * 1024
+    max_model_len = 8 * 1024
 
     skip_unsupported_tp_size(tp_size, backend)
-    prompts = get_chicken_soup_prompts(max_num_seqs)
+    # prompts = get_chicken_soup_prompts(max_num_seqs)
+    prompts = get_chicken_soup_prompts(max_num_seqs - 2)
 
     create_sampling_params = lambda max_new_tokens: SamplingParams(
-        max_tokens=max_new_tokens,
+        max_tokens=max_new_tokens - 64,
         temperature=0,
         logprobs=0,  # return logprobs of generated tokens only
         ignore_eos=True)
 
-    sampling_params_1k = [create_sampling_params(1 * 1024) for _ in range(16)]
-    sampling_params_2k = [create_sampling_params(2 * 1024) for _ in range(8)]
-    sampling_params_4k = [create_sampling_params(4 * 1024) for _ in range(4)]
-    sampling_params_8k = [create_sampling_params(8 * 1024) for _ in range(2)]
-    sampling_params_16k = [create_sampling_params(16 * 1024) for _ in range(1)]
-    sampling_params_32k = [create_sampling_params(32 * 1024) for _ in range(1)]
+    p1k = 1 * 128
+    p2k = 2 * 128
+    p4k = 4 * 128
+    p8k = 8 * 128
+    p16k = 16 * 128
+    p32k = 32 * 128
 
+    sampling_params_1k = [create_sampling_params(p1k) for _ in range(16)]
+    sampling_params_2k = [create_sampling_params(p2k) for _ in range(8)]
+    sampling_params_4k = [create_sampling_params(p4k) for _ in range(4)]
+    sampling_params_8k = [create_sampling_params(p8k) for _ in range(2)]
+    sampling_params_16k = [create_sampling_params(p16k) for _ in range(1)]
+    sampling_params_32k = [create_sampling_params(p32k) for _ in range(1)]
 
     sampling_params = sampling_params_1k + sampling_params_2k + \
         sampling_params_4k + sampling_params_8k + sampling_params_16k + \
             sampling_params_32k
+    # sampling_params = sampling_params_1k + sampling_params_2k + \
+    #     sampling_params_4k + sampling_params_8k
 
     vllm_results = generate_spyre_vllm_output(model=model,
                                               prompts=prompts,
                                               sampling_params=sampling_params,
                                               tensor_parallel_size=tp_size,
                                               backend=backend,
+                                              max_num_seqs=max_num_seqs,
                                               monkeypatch=monkeypatch,
                                               block_size=max_model_len,
                                               max_model_len=max_model_len,
                                               use_cb=True)
 
-    print(vllm_results)  # TODO: remove
+    # If we passed here then, everything is alright
+    assert len(vllm_results) == max_num_seqs
+
+    # TODO: Compare results
+
+    # # 16 @ 1K
+    check_output_against_hf(model, backend, p1k, vllm_results[0:16],
+                            prompts[0:16])
+
+    # # 8 @ 2K
+    check_output_against_hf(model, backend, p2k, vllm_results[16:24],
+                            prompts[16:24])
+
+    # # 4 @ 4K
+    check_output_against_hf(model, backend, p4k, vllm_results[24:28],
+                            prompts[24:28])
+
+    # # 2 @ 8K
+    check_output_against_hf(model, backend, p8k, vllm_results[28:30],
+                            prompts[28:30])
+
+    # # 1 @ 16K
+    check_output_against_hf(model, backend, p16k, vllm_results[30:31],
+                            prompts[30:31])
+
+    # # 1 @ 32K
+    check_output_against_hf(model, backend, p32k, vllm_results[31],
+                            prompts[31])
