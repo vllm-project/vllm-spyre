@@ -1,3 +1,4 @@
+import functools
 import inspect
 import math
 import os
@@ -247,14 +248,18 @@ def generate_spyre_vllm_output(
 
 
 # Hugging Face
+# This uses lru_cache to cache the generated text so that we don't have to
+# always load and run the transformers model, nor manage a set of files of
+# expected results.
+@functools.lru_cache
 def generate_hf_output(
     model: str,
-    prompts: Union[list[str], list[list[int]]],  # also accept token ids
-    max_new_tokens: Union[int, list[int]],
+    prompts: Union[tuple[str], tuple[list[int]]],  # also accept token ids
+    max_new_tokens: Union[int, tuple[int]],
     ignore_eos: bool = False,
 ) -> list[dict[str, Any]]:
 
-    if not isinstance(max_new_tokens, list):
+    if not isinstance(max_new_tokens, tuple):
         max_new_tokens = [max_new_tokens] * len(prompts)
 
     hf_model = AutoModelForCausalLM.from_pretrained(model)
@@ -402,10 +407,12 @@ def compare_results(
 
 def check_output_against_hf(model, backend, max_new_tokens, vllm_results,
                             prompts) -> None:
+    # To cache results from hf, we have to pass tuples instead of lists
     hf_outputs = generate_hf_output(
         model=model,
-        prompts=prompts,
-        max_new_tokens=max_new_tokens,
+        prompts=tuple(prompts),
+        max_new_tokens=tuple(max_new_tokens) if isinstance(
+            max_new_tokens, list) else max_new_tokens,
         ignore_eos=True,
     )
     compare_results(
