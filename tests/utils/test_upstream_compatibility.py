@@ -118,7 +118,7 @@ def test_pooler_default_pooling_type():
         elif VLLM_VERSION == "vLLM:lowest":
             assert 'default_pooling_type' in args
             # The compat code introduced in the PR below can now be removed:
-            # TBD
+            # https://github.com/vllm-project/vllm-spyre/pull/374
 
 
 @pytest.mark.cpu
