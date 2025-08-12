@@ -1349,19 +1349,17 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
         else:
             # TODO: remove this when we no longer support vllm version pre this
             # PR https://github.com/vllm-project/vllm/pull/20538 (post v0.10.0)
-            annotations = inspect.getfullargspec(Pooler.for_embed).annotations
-            if ('default_normalize' in annotations
-                    and 'default_softmax' in annotations):
-                extra_args = {
+            args = inspect.getfullargspec(Pooler.for_embed).args
+            extra_args = {}
+            if ('default_normalize' in args and 'default_softmax' in args):
+                extra_args.update({
                     'default_normalize': True,
                     'default_softmax': False
-                }
-            else:
-                extra_args = {}
-            self.pooler = Pooler.for_embed(
-                pooler_config=pooler_config,
-                default_pooling_type=PoolingType.CLS,
-                **extra_args)
+                })
+            if 'default_pooling_type' in args:
+                extra_args['default_pooling_type'] = PoolingType.CLS
+            self.pooler = Pooler.for_embed(pooler_config=pooler_config,
+                                           **extra_args)
 
     def build_input_batch(self) -> PoolingInputBatch:
         return PoolingInputBatch(
