@@ -205,7 +205,8 @@ def test_swap_decode_programs_for_cb(
 
     create_sampling_params = lambda max_new_tokens: SamplingParams(
         # The prompt will pad to 64 tokens, therefore to match
-        # max_model_len/max_new_tokens, we need to decrease the prompt length
+        # max_model_len/max_new_tokens, we need to decrease by the prompt
+        # length
         max_tokens=max_new_tokens - 64,
         temperature=0,
         logprobs=0,  # return logprobs of generated tokens only
@@ -240,5 +241,6 @@ def test_swap_decode_programs_for_cb(
                                               max_model_len=max_model_len,
                                               use_cb=True)
 
-    # If we passed here then, everything is alright
+    # TODO: for now, If we passed here then, everything is alright
+    # We shall find a way to validate better the generated result
     assert len(vllm_results) == max_num_seqs
