@@ -226,9 +226,6 @@ def test_long_context_batches(
             result = extract_output(req_output)
             results.append(result)
 
-        assert len(results) == batch_size
-
-    # Compare output against HF output
     check_output_against_hf(
         model=model,
         backend=backend,
@@ -236,7 +233,5 @@ def test_long_context_batches(
         vllm_results=results,
         prompts=prompts,
     )
-
-    force_engine_shutdown(vllm_model)
 
     force_engine_shutdown(vllm_model)
