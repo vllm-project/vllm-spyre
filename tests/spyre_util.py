@@ -24,7 +24,8 @@ from vllm.v1.request import Request
 
 DISABLE_ASSERTS = False  # used for debugging
 
-ISCLOSE_REL_TOL_CPU = 0.2
+# TODO: Needs to be separate for quantized models
+ISCLOSE_REL_TOL_CPU = 0.35
 ISCLOSE_REL_TOL_SPYRE = 0.35
 
 
@@ -518,36 +519,14 @@ def get_spyre_backend_list():
 # get model names from env, if not set then use default models for each type.
 # Multiple models can be specified with a comma separated list in
 # VLLM_SPYRE_TEST_MODEL_LIST
-def get_spyre_model_list(isEmbeddings=False, quantized=None):
+def get_spyre_model_list(isEmbeddings=False):
+    user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST")
+    if not user_test_model_list:
+        return _default_test_models(isEmbeddings)
+
+    # User overridden model list
     spyre_model_dir_path = get_spyre_model_dir_path()
-
-    def _get_or_default(env: str, default: str) -> str:
-        """Handle empty strings in env var"""
-        val = os.environ.get(env, default)
-        if not val:
-            val = default
-        return val
-
-    if isEmbeddings:
-        user_test_model_list = _get_or_default(
-            "VLLM_SPYRE_TEST_MODEL_LIST",
-            "sentence-transformers/all-roberta-large-v1")
-        marks = [pytest.mark.embedding]
-    elif quantized == "gptq":
-        # TODO: need a HF hub reference here as a default
-        user_test_model_list = _get_or_default("VLLM_SPYRE_TEST_MODEL_LIST",
-                                               "granite-3.0-8b-instruct-gptq")
-        marks = [pytest.mark.decoder, pytest.mark.quantized, pytest.mark.spyre]
-    elif quantized == "fp8":
-        user_test_model_list = _get_or_default(
-            "VLLM_SPYRE_TEST_MODEL_LIST",
-            "ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8")
-        marks = [pytest.mark.decoder, pytest.mark.quantized]
-    else:
-        user_test_model_list = _get_or_default(
-            "VLLM_SPYRE_TEST_MODEL_LIST",
-            "ibm-ai-platform/micro-g3.3-8b-instruct-1b")
-        marks = [pytest.mark.decoder]
+    marks = [pytest.mark.embedding] if isEmbeddings else [pytest.mark.decoder]
 
     test_model_list = []
     for model in user_test_model_list.split(","):
@@ -557,8 +536,28 @@ def get_spyre_model_list(isEmbeddings=False, quantized=None):
     return test_model_list
 
 
-def create_text_prompt(model: str, min_token_length: int,
-                       max_token_length: int) -> str:
+def _default_test_models(isEmbeddings=False):
+    """Return the default set of test models as pytest parameterizations"""
+    if isEmbeddings:
+        model = "sentence-transformers/all-roberta-large-v1"
+        return [pytest.param(model, marks=[pytest.mark.embedding], id=model)]
+
+    # Decoders
+    # We run tests for both the full-precision bf16 and fp8-quantized models,
+    # but by default the `pytest.mark.quantized` marker is de-selected unless
+    # the test command includes `-m quantized`.
+    tinygranite = "ibm-ai-platform/micro-g3.3-8b-instruct-1b"
+    tinygranite_fp8 = "ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8"
+    params = [
+        pytest.param(tinygranite, marks=[pytest.mark.decoder], id=tinygranite),
+        pytest.param(tinygranite_fp8,
+                     marks=[pytest.mark.decoder, pytest.mark.quantized],
+                     id=tinygranite_fp8)
+    ]
+    return params
+
+
+def create_text_prompt(model: str, min_tokens: int, max_tokens: int) -> str:
     """Create a text prompt for the specified model that will tokenize to within
     the specified token length range."""
     tokenizer = AutoTokenizer.from_pretrained(model)

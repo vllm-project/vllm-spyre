@@ -147,11 +147,11 @@ class FmsModelBase(nn.Module):
         super().__init__()
 
         self.config: PretrainedConfig = model_config.hf_config
-        self.dtype = torch.float16 if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == \
-            'sendnn' else torch.float32
 
         # Actual FMS model
         self.model: nn.Module
+        self.model_config = model_config
+        self.dtype = self.get_dtype()
 
         # Load the weights from the cached or downloaded files.
         self.load_weights(model_config=model_config,
@@ -171,29 +171,6 @@ class FmsModelBase(nn.Module):
         **kwargs,
     ) -> None:
 
-        if model_config.quantization == "gptq":
-            if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
-                from fms_mo.aiu_addons.gptq import (  # noqa: F401
-                    gptq_aiu_adapter, gptq_aiu_linear)
-                linear_type = "gptq_aiu"
-                logger.info("Loaded `aiu_addons` functionalities")
-            else:
-                linear_type = "gptq_cpu"
-                logger.warning("GPTQ is not expected to work on CPU.")
-
-            quant_cfg = model_config._parse_quant_hf_config()
-
-            linear_config = {
-                "linear_type": linear_type,
-                "group_size": quant_cfg['group_size'],
-                "desc_act": quant_cfg['desc_act'],
-            }
-            self.dtype = None
-            model_source = "hf_gptq_aiu"
-        else:
-            linear_config = {"linear_type": "torch_linear"}
-            model_source = "hf"
-
         if self.dtype is not model_config.dtype:
             logger.info(
                 "Ignoring user-provided dtype=%s and using dtype=%s instead.",
@@ -209,18 +186,13 @@ class FmsModelBase(nn.Module):
                 allow_patterns=["*.safetensors", "*.bin", "*.pt"],
                 revision=model_config.revision)
 
-        # we can use fused weights unless running on Spyre
-        fused_weights = envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn"
-
-        self.model = get_model(architecture="hf_configured",
-                               variant=model_config.model,
-                               model_path=model_path,
-                               source=model_source,
-                               data_type=self.dtype,
-                               distributed_strategy=distributed_strategy,
-                               group=dist.group.WORLD,
-                               fused_weights=fused_weights,
-                               linear_config=linear_config)
+        self.model = get_model(
+            architecture="hf_pretrained",
+            model_path=model_path,
+            distributed_strategy=distributed_strategy,
+            group=dist.group.WORLD,
+            fused_weights=False,
+        )
 
         self.model.eval()
         torch.set_grad_enabled(False)
@@ -254,7 +226,9 @@ class FmsModelBase(nn.Module):
                 max_prompt_length, max_decode_length)
 
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in BACKEND_LIST:
-
+            # When running on Spyre cards for either non-quantized (bf16) models
+            # or quantized (fp8) models, we cast any bf16 params down
+            self._cast_bf16_to_f16()
             options = {"sendnn.dynamic": True} if sendnn_dynamic else {}
 
             # Lazy import to avoid load torch_sendnn runtime before it is really
@@ -271,6 +245,32 @@ class FmsModelBase(nn.Module):
                 backend=envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND,
                 options=options,
             )
+        else:
+            # CPU execution
+            # For continuous batching w/ paged attention, we only support either
+            # fp32 or fp8, not f16 or bf16.
+            if not model_config.quantization:
+                assert self.dtype == torch.float32
+                self._cast_to_f32()
+
+    def _cast_bf16_to_f16(self):
+        """Cast all bf16 params in the model to f16.
+        This is required for spyre cards that don't support bf16."""
+        for name, param in self.model.named_parameters():
+            if param.dtype == torch.bfloat16:
+                logger.debug(
+                    "You are casting param %s to fp16, which"
+                    " will cause loss of accuracy. You can ignore"
+                    " this warning if this is intended.", name)
+                param.data = param.data.to(dtype=torch.float16)
+
+    def _cast_to_f32(self):
+        """Cast model parameters to f32.
+        This is required for attention implementations that only support full
+        precision."""
+        for name, param in self.model.named_parameters():
+            logger.debug("Casting param %s to fp32", name)
+            param.data = param.data.to(dtype=torch.float32)
 
 
 class ContinuousBatchingFmsModel(FmsModelBase):
@@ -281,6 +281,9 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         parallel_config: ParallelConfig,
         scheduler_config: SchedulerConfig,
     ) -> None:
+
+        if model_config.quantization:
+            raise ValueError("FP8 is not supported with continuous batching")
 
         BLOCK_SIZE = SpyrePlatform.get_block_size()
         max_model_len = scheduler_config.max_model_len
@@ -316,6 +319,11 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                 f"[SpyreCausalLM] model type {self.config.model_type} "
                 f"not supported in ContinuousBatchingFmsModel")
 
+        if self.model_config.quantization:
+            self.attention_name = "spyre_paged_attn_fp8"
+        else:
+            self.attention_name = "spyre_paged_attn"
+
         # set num_blocks to the minimal value of 4 required for warmup
         # is reset to the value returned by the Spyre compiler after warmup
         # self._set_past_key_value_states(num_blocks=4)
@@ -337,19 +345,44 @@ class ContinuousBatchingFmsModel(FmsModelBase):
 
         # List[layers] of Tuple[k,v] of
         # Tensor[num_blocks, block_size, num_kv_heads, head_dim]
-        self.past_key_value_states = [
-            (torch.zeros(num_blocks,
-                         self.kv_cache_specs['block_size'],
-                         self.kv_cache_specs['num_kv_heads'],
-                         self.kv_cache_specs['head_dim'],
-                         dtype=self.dtype),
-             torch.zeros(num_blocks,
-                         self.kv_cache_specs['block_size'],
-                         self.kv_cache_specs['num_kv_heads'],
-                         self.kv_cache_specs['head_dim'],
-                         dtype=self.dtype))
-            for _ in range(self.kv_cache_specs['num_layers'])
-        ]
+
+        if not self.model_config.quantization:
+            self.past_key_value_states = [
+                (torch.zeros(num_blocks,
+                             self.kv_cache_specs['block_size'],
+                             self.kv_cache_specs['num_kv_heads'],
+                             self.kv_cache_specs['head_dim'],
+                             dtype=self.dtype),
+                 torch.zeros(num_blocks,
+                             self.kv_cache_specs['block_size'],
+                             self.kv_cache_specs['num_kv_heads'],
+                             self.kv_cache_specs['head_dim'],
+                             dtype=self.dtype))
+                for _ in range(self.kv_cache_specs['num_layers'])
+            ]
+        else:
+            # TODO: This does not work yet. The scale needs to be handled, see:
+            # https://github.com/foundation-model-stack/aiu-fms-testing-utils/blob/v0.1.0rc3/aiu_fms_testing_utils/utils/paged.py#L306-L319
+            from fms_mo.aiu_addons.fp8.fp8_utils import ScaledTensor
+            self.past_key_value_states = [
+                (ScaledTensor(torch.zeros(num_blocks,
+                                          self.kv_cache_specs['block_size'],
+                                          self.kv_cache_specs['num_kv_heads'],
+                                          self.kv_cache_specs['head_dim'],
+                                          dtype=self.dtype),
+                              scale=torch.tensor([1.0] * 1,
+                                                 dtype=torch.float32),
+                              scaled=False),
+                 ScaledTensor(torch.zeros(num_blocks,
+                                          self.kv_cache_specs['block_size'],
+                                          self.kv_cache_specs['num_kv_heads'],
+                                          self.kv_cache_specs['head_dim'],
+                                          dtype=self.dtype),
+                              scale=torch.tensor([1.0] * 1,
+                                                 dtype=torch.float32),
+                              scaled=False))
+                for _ in range(self.kv_cache_specs['num_layers'])
+            ]
 
     def forward(
         self,
@@ -368,7 +401,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         import fms.utils.spyre.paged  # noqa # pylint: disable=unused-import
 
         # specify attention type for continuous batching
-        extra_kwargs['attn_name'] = "spyre_paged_attn"
+        extra_kwargs['attn_name'] = self.attention_name
 
         output = self.model(
             input_ids,
@@ -387,6 +420,21 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         logits, self.past_key_value_states = output
 
         return logits
+
+    def get_dtype(self) -> torch.dtype:
+        # Get the model's data type
+        # This should be:
+        # FP32 for un-quantized models on cpu
+        # FP16 for un-quantized models on spyre
+        # FP8 (float8_e4m3fn) for quantized models
+        # (only fp8 quantization is supported)
+        if self.model_config.quantization:
+            return torch.float8_e4m3fn
+        else:
+            if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in BACKEND_LIST:
+                return torch.float16
+            else:
+                return torch.float32
 
 
 class StaticBatchingFmsModel(FmsModelBase):
@@ -407,6 +455,11 @@ class StaticBatchingFmsModel(FmsModelBase):
 
         # dynamic KV cache
         self.past_key_value_states = None
+
+        if self.model_config.quantization:
+            self.attention_name = "math_fp8"
+        else:
+            self.attention_name = "sdpa_causal"
 
     def forward(
         self,
@@ -440,3 +493,11 @@ class StaticBatchingFmsModel(FmsModelBase):
         logits, self.past_key_value_states = output
 
         return logits
+
+    def get_dtype(self) -> torch.dtype:
+        # For static batching, we set fp16 on spyre and fp32 on cpu
+        # (This applies even when running fp8 quantized models)
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in BACKEND_LIST:
+            return torch.float16
+        else:
+            return torch.float32

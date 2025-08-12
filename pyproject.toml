@@ -11,9 +11,9 @@ description = "vLLM plugin for Spyre hardware support"
 readme = "README.md"
 license = {text = "Apache 2"}
 dependencies = [
-    "fms-model-optimizer>=0.2.0",
-    "ibm-fms==1.1.0",
-    "vllm>=0.9.2",
+    "fms-model-optimizer[fp8]>=0.6.0",
+    "ibm-fms>=1.2.1",
+    "vllm>=0.9.2,<=0.10.0",
 ]
 requires-python = ">=3.9"
 dynamic = ["version"]

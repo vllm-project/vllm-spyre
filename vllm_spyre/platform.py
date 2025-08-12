@@ -204,6 +204,26 @@ class SpyrePlatform(Platform):
         os.environ["VLLM_DT_MAX_BATCH_SIZE"] = str(
             max(vllm_config.scheduler_config.max_num_seqs, 2))
 
+        # max product of batch size x tkv supported by the Spyre compiler
+        if ('granite-3.3-8b-instruct' in model_config.model
+                and parallel_config.world_size == 4):
+            # hard coded value for tensor parallel size 4 with the below model
+            # https://huggingface.co/ibm-granite/granite-3.3-8b-instruct
+            os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(128 * 1024)
+            logger.info("Model granite-3.3-8b-instruct and tensor parallel " \
+            "size 4 detected. Using VLLM_DT_MAX_BATCH_TKV_LIMIT = %d",
+            128 * 1024)
+        else:
+            # default value for any other model/ tensor parallel size
+            default_max_batch_tkv_limit = \
+                vllm_config.model_config.max_model_len * \
+                vllm_config.scheduler_config.max_num_seqs
+            os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(
+                default_max_batch_tkv_limit)
+            logger.info("No model / tensor parallel size specific value for " \
+            "VLLM_DT_MAX_BATCH_TKV_LIMIT found. Using the default value " \
+            "(max_model_len * max_batch_size): %d", default_max_batch_tkv_limit)
+
     @classmethod
     def use_all_gather(cls) -> bool:
         """
