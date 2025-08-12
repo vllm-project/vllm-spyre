@@ -14,27 +14,22 @@ You can change these with the env variables VLLM_SPYRE_WARMUP_BATCH_SIZES,
 VLLM_SPYRE_WARMUP_PROMPT_LENS, and VLLM_SPYRE_WARMUP_NEW_TOKENS.
 """
 
-import time
 import argparse
+import time
+
+from openai import OpenAI
 
 parser = argparse.ArgumentParser(
-    description="Script to submit an inference request to vllm server."
-)
+    description="Script to submit an inference request to vllm server.")
 
 parser.add_argument(
     "--max_tokens",
     type=int,
+    default=20,
     help="Maximum tokens.",
 )
 
 args = parser.parse_args()
-if args.max_tokens is None:
-    print(f"max_tokens is set to 20.")
-    max_tokens = 20
-else:
-    max_tokens = args.max_tokens
-
-from openai import OpenAI
 
 # Modify OpenAI's API key and API base to use vLLM's API server.
 openai_api_key = "EMPTY"
@@ -74,7 +69,6 @@ for i in range(0, len(prompts), batch_size):
     prompt = prompts[i:i + batch_size]
 
     stream = False
-    # max_tokens = 20
 
     print(f"Prompt: {prompt}")
     start_t = time.time()
@@ -85,7 +79,7 @@ for i in range(0, len(prompts), batch_size):
                                            n=1,
                                            stream=stream,
                                            temperature=0.0,
-                                           max_tokens=max_tokens)
+                                           max_tokens=args.max_tokens)
 
     end_t = time.time()
     print("Results:")
