@@ -110,8 +110,7 @@ def check_scheduler_inference_steps(
                              max_model_len=max_model_len,
                              block_size=max_model_len,
                              max_num_seqs=max_num_seqs,
-                             num_gpu_blocks_override=available_blocks
-                             if available_blocks > 0 else None)
+                             num_gpu_blocks_override=available_blocks)
     vllm_config = engine_args.create_engine_config()
     executor_class = Executor.get_class(vllm_config)
     engine_core = EngineCore(vllm_config=vllm_config,
