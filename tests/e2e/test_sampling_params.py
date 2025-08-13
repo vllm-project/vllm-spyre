@@ -8,7 +8,7 @@ from vllm import AsyncLLMEngine, EngineArgs, SamplingParams
 def engine() -> AsyncLLMEngine:
     engine_args = EngineArgs(
         model="ibm-granite/granite-3.2-8b-instruct",
-        device="spyre",
+        # device="spyre",
         max_model_len=1024,
         max_num_seqs=16,
     )
@@ -31,12 +31,17 @@ async def test_spyre_backend_batch1_determinism(engine: AsyncLLMEngine):
     assert "London" in text1
 
 
-async def test_spyre_dynamic_batch_isolation(engine: AsyncLLMEngine):
+@pytest.mark.asyncio
+@pytest.mark.parametrize(["minimal", "limit", "spected_text"],
+                         [50, 2, "red, blue and yellow"])
+async def test_spyre_dynamic_batch_isolation(engine: AsyncLLMEngine,
+                                             minimal: int, limit: int,
+                                             spected_text: str):
 
-    # needs to check more
+    # need to check more cases
     long_task = engine.generate(
         "Write a 100-word essay on artificial intelligence.",
-        SamplingParams(temperature=0.7, max_tokens=100),
+        SamplingParams(temperature=0.7, max_tokens=100, seed=42),
         request_id="long_req",
     )
 
@@ -52,6 +57,12 @@ async def test_spyre_dynamic_batch_isolation(engine: AsyncLLMEngine):
         request_id="penalty_req",
     )
 
+    # expected results
+    expected_penalty_result = await asyncio.wait_for(penalty_task)
+    expected_long_res = await asyncio.wait_for(long_task)
+    expected_deterministic_result = await asyncio.wait_for(deterministic_task)
+
+    # async requests
     results = await asyncio.gather(
         long_task,
         deterministic_task,
@@ -67,9 +78,8 @@ async def test_spyre_dynamic_batch_isolation(engine: AsyncLLMEngine):
     assert not isinstance(penalty_task, Exception)
 
     # checks isolation
-    assert long_result.outputs[0].finish_reason == "length"
-    assert len(long_result.outputs[0].text) > 50
-    assert "red, blue and yellow" in deterministic_result.outputs[
-        0].text.lower()
-
-    assert penalty_result.outputs[0].text.lower().count("test") <= 2
+    assert long_result.outputs[0].text == expected_long_res.outputs[0].text
+    assert deterministic_result.outputs[
+        0].text == expected_deterministic_result[0].text
+    assert penalty_result.outputs[0].text == expected_penalty_result.outputs[
+        0].text
