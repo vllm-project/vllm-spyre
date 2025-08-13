@@ -163,7 +163,7 @@ def test_continuous_batching_with_long_contexts(model, monkeypatch):
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
-    "backend", pytest.param("sendnn", marks=pytest.mark.spyre, id="sendnn"))
+    "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 @pytest.mark.parametrize(
     "tp_size",
     [
@@ -178,6 +178,8 @@ def test_long_context_batches(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Tests continuous batching with various batch sizes and prompt lengths."""
+
+    skip_unsupported_tp_size(tp_size, backend)
 
     monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
@@ -196,8 +198,6 @@ def test_long_context_batches(
         (2, 9000),
         (1, 17000),
     ]
-
-    skip_unsupported_tp_size(tp_size, backend)
 
     vllm_model = LLM(
         model=model,
