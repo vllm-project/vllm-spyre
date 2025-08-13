@@ -108,7 +108,7 @@ class SpyrePlatform(Platform):
         model_config = vllm_config.model_config
         cache_config = vllm_config.cache_config
 
-        if scheduler_config.is_multi_step:
+        if getattr(scheduler_config, "is_multi_step", False):
             raise NotImplementedError
 
         # Can be simplified after the deprecation of `model_config.task` in
