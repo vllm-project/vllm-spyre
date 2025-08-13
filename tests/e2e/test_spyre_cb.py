@@ -204,7 +204,7 @@ def test_long_context_batches(
         tokenizer=model,
         max_model_len=max_model_len,
         max_num_seqs=max_num_seqs,
-        block_size=max_model_len,
+        block_size=2048,
         tensor_parallel_size=tp_size,
     )
 
