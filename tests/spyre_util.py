@@ -1,4 +1,3 @@
-import functools
 import inspect
 import math
 import os
@@ -14,6 +13,7 @@ import openai
 import pytest
 import requests
 import torch
+from hf_result_cache import HFResultCache
 from sentence_transformers import SentenceTransformer, util
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, SamplingParams
@@ -28,6 +28,8 @@ DISABLE_ASSERTS = False  # used for debugging
 # TODO: Needs to be separate for quantized models
 ISCLOSE_REL_TOL_CPU = 0.35
 ISCLOSE_REL_TOL_SPYRE = 0.35
+
+HF_RESULT_CACHE = HFResultCache()
 
 
 def force_engine_shutdown(llm: LLM):
@@ -248,27 +250,42 @@ def generate_spyre_vllm_output(
 
 
 # Hugging Face
-# This uses lru_cache to cache the generated text so that we don't have to
-# always load and run the transformers model, nor manage a set of files of
-# expected results.
-@functools.lru_cache
 def generate_hf_output(
     model: str,
     prompts: Union[tuple[str], tuple[list[int]]],  # also accept token ids
     max_new_tokens: Union[int, tuple[int]],
     ignore_eos: bool = False,
 ) -> list[dict[str, Any]]:
+    """Loads and runs the model on cpu with transformers, caching the results.
+    Returns cached results if any are found to avoid overhead."""
 
-    if not isinstance(max_new_tokens, tuple):
+    if not isinstance(max_new_tokens, list):
         max_new_tokens = [max_new_tokens] * len(prompts)
+
+    print(prompts)
+    print(max_new_tokens)
+    assert len(max_new_tokens) == len(prompts)
+
+    results = []
+    for prompt, max_tokens in zip(prompts, max_new_tokens):
+        results.append(
+            HF_RESULT_CACHE.get_cached_result(model, prompt, max_tokens))
+
+    if all(results):
+        # Everything hit cache
+        return results
 
     hf_model = AutoModelForCausalLM.from_pretrained(model)
     hf_tokenizer = AutoTokenizer.from_pretrained(model)
     if ignore_eos:
         hf_model.generation_config.eos_token_id = None
 
-    results = []
     for prompt_index, prompt in enumerate(prompts):
+
+        if results[prompt_index]:
+            # Already have cached result
+            continue
+
         hf_input_tokens = hf_tokenizer(prompt, return_tensors="pt").input_ids \
                     if isinstance(prompt[0], str) \
                     else torch.tensor([prompts[prompt_index]])
@@ -300,8 +317,14 @@ def generate_hf_output(
         result['token_ids'] = tuple(result['token_ids'])
         result['tokens'] = tuple(result['tokens'])
         result['logprobs'] = tuple(result['logprobs'])
-        results.append(result)
 
+        # Save and cache new result
+        results[prompt_index] = result
+        HF_RESULT_CACHE.add_to_cache(model, prompt,
+                                     max_new_tokens[prompt_index], result)
+
+    # Write back to the cache
+    HF_RESULT_CACHE.write_cache()
     return results
 
 
@@ -407,16 +430,10 @@ def compare_results(
 
 def check_output_against_hf(model, backend, max_new_tokens, vllm_results,
                             prompts) -> None:
-    if isinstance(prompts[0], list):
-        # list of lists of token ids -> need to convert to tuples
-        prompts = [tuple(p) for p in prompts]
-
-    # To cache results from hf, we have to pass tuples instead of lists
     hf_outputs = generate_hf_output(
         model=model,
-        prompts=tuple(prompts),
-        max_new_tokens=tuple(max_new_tokens) if isinstance(
-            max_new_tokens, list) else max_new_tokens,
+        prompts=prompts,
+        max_new_tokens=max_new_tokens,
         ignore_eos=True,
     )
     compare_results(
