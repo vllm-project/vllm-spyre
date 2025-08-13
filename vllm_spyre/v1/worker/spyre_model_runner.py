@@ -291,13 +291,8 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
         )
 
     def build_input_batch(self) -> SamplingInputBatch:
-        # Fix for batch size 1: set input batch to fit 2 requests for warmup,
-        # and reset input batch to fit max_num_seqs requests after warmup
-        min_seqs_required = 2 if self.warmup_mode else 1
-
         return SamplingInputBatch(
-            max_num_reqs=max(min_seqs_required,
-                             self.scheduler_config.max_num_seqs),
+            max_num_reqs=self.scheduler_config.max_num_seqs,
             max_model_len=self.model_config.max_model_len,
             device=self.device,
             pin_memory=self.pin_memory,
@@ -810,8 +805,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
     def complete_warmup(self) -> None:
         super().complete_warmup()
-        # Fix for batch size 1: need to update the input_batch after the warmup
-        self.input_batch = self.build_input_batch()
         # get the number or pages from the actual Spyre card after the warmup
         # and set it accordingly in the model runner and the kv cache size
         n_blocks_avail = self._get_num_blocks_available()
@@ -1124,23 +1117,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         # mask not needed during decode
         mask = None
-
-        # add pads for min decode batch size of 2 (Spyre compiler constraint)
-        if len(cached_request_data.req_ids) == 1:
-            padd_seq_indices = torch.zeros(1, dtype=torch.bool, device="cpu")
-            self.model.indices = torch.cat(
-                (self.model.indices, padd_seq_indices), -1)
-            assert self.model.indices.size(dim=0) == 2
-
-            input_tokens = torch.cat(2 * [input_tokens])
-            position_ids = torch.cat(2 * [position_ids])
-            current_tkv_mask = torch.cat(2 * [current_tkv_mask])
-            left_padded_prompt_mask = torch.cat(2 * [left_padded_prompt_mask])
-            block_table = torch.cat(2 * [block_table])
-            slot_mapping = torch.cat(2 * [slot_mapping])
-
-        # assert min batch size 2 for decodes (Spyre compiler constraint)
-        assert len(input_tokens) >= 2
 
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
