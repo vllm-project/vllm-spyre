@@ -8,6 +8,9 @@ class HFResultCache:
     A simple cache for storing and retrieving results from Hugging Face models.
     The cache is stored in a JSON file named 'hf_cache.json' in the same
     directory as this script.
+
+    This cache can be (re)populated by running all tests and committing the
+    changes to the .json file.
     """
 
     def __init__(self):
