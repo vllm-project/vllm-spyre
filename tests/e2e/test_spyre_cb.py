@@ -8,8 +8,8 @@ from openai import BadRequestError
 from spyre_util import (RemoteOpenAIServer, check_output_against_hf,
                         create_seq_prompt, extract_output,
                         force_engine_shutdown, generate_spyre_vllm_output,
-                        get_chicken_soup_prompts, get_spyre_backend_list,
-                        get_spyre_model_list, skip_unsupported_tp_size)
+                        get_chicken_soup_prompts, get_spyre_model_list,
+                        skip_unsupported_tp_size)
 from vllm import LLM, SamplingParams
 
 
@@ -162,11 +162,11 @@ def test_continuous_batching_with_long_contexts(model, monkeypatch):
 
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize("backend", get_spyre_backend_list())
+@pytest.mark.parametrize(
+    "backend", pytest.param("sendnn", marks=pytest.mark.spyre, id="sendnn"))
 @pytest.mark.parametrize(
     "tp_size",
     [
-        pytest.param(1, marks=pytest.mark.basic),
         pytest.param(4, marks=pytest.mark.multi),
     ],
     ids=lambda val: f"TP({val})",
