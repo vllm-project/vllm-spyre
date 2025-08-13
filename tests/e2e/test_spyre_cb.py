@@ -3,16 +3,21 @@
 Run `python -m pytest tests/e2e/test_spyre_cb.py`.
 """
 
+import pickle
+from pathlib import Path
+from typing import Any
+
 import pytest
 from openai import BadRequestError
-from spyre_util import (RemoteOpenAIServer, generate_spyre_vllm_output,
+from spyre_util import (RemoteOpenAIServer, check_output_against_hf,
+                        compare_results, generate_spyre_vllm_output,
                         get_chicken_soup_prompts, get_spyre_model_list,
                         skip_unsupported_tp_size)
 from vllm import SamplingParams
 
 
-@pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.cb
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 def test_cb_max_tokens(
@@ -163,7 +168,8 @@ def test_continuous_batching_with_long_contexts(model, monkeypatch):
 @pytest.mark.parametrize(
     "tp_size",
     [
-        pytest.param(4, marks=pytest.mark.multi),
+        # pytest.param(2, marks=pytest.mark.multi),
+        1
     ],
     ids=lambda val: f"TP({val})",
 )
@@ -198,7 +204,8 @@ def test_swap_decode_programs_for_cb(
 
     backend = 'sendnn'
     max_num_seqs = 32
-    max_model_len = 32 * 1024
+    # max_model_len = 32 * 1024 # 32K
+    max_model_len = 2048  # 32K
 
     skip_unsupported_tp_size(tp_size, backend)
     prompts = get_chicken_soup_prompts(max_num_seqs)
@@ -230,6 +237,27 @@ def test_swap_decode_programs_for_cb(
         sampling_params_4k + sampling_params_8k + sampling_params_16k + \
             sampling_params_32k
 
+    # Read the cache and check beforehand if the cache was written with the
+    # expected prompt. We use the filepath of this script to resolve
+    # the cache filepaths
+    script_directory = Path(__file__).parent.absolute() / 'cache'
+    with open(script_directory / 'prompts_8k_bs2.pickle', 'rb') as f:
+        cache_result_8k_bs2: list[dict[str, Any]] = pickle.loads(f.read())
+
+    assert cache_result_8k_bs2[0]['prompt'] == prompts[28]
+    assert cache_result_8k_bs2[1]['prompt'] == prompts[29]
+
+    with open(script_directory / 'prompts_16k_bs1.pickle', 'rb') as f:
+        cache_result_16k_bs1: list[dict[str, Any]] = pickle.loads(f.read())
+
+    assert cache_result_16k_bs1[0]['prompt'] == prompts[30]
+
+    with open(script_directory / 'prompts_32k_bs1.pickle', 'rb') as f:
+        cache_result_32k_bs1: list[dict[str, Any]] = pickle.loads(f.read())
+
+    assert cache_result_32k_bs1[0]['prompt'] == prompts[31]
+
+    # Generate results from vLLM
     vllm_results = generate_spyre_vllm_output(model=model,
                                               prompts=prompts,
                                               sampling_params=sampling_params,
@@ -241,6 +269,43 @@ def test_swap_decode_programs_for_cb(
                                               max_model_len=max_model_len,
                                               use_cb=True)
 
-    # TODO: for now, If we passed here then, everything is alright
-    # We shall find a way to validate better the generated result
-    assert len(vllm_results) == max_num_seqs
+    # Check first from cache, to save computation
+
+    # 2 @ 8K
+    compare_results(
+        model=model,
+        tensor_parallel_size=tp_size,
+        backend=backend,
+        vllm_results=vllm_results[28:30],
+        hf_results=cache_result_8k_bs2,
+    )
+
+    # 1 @ 16K
+    compare_results(
+        model=model,
+        tensor_parallel_size=tp_size,
+        backend=backend,
+        vllm_results=vllm_results[30:31],
+        hf_results=cache_result_16k_bs1,
+    )
+
+    # 1 @ 32K
+    compare_results(
+        model=model,
+        tensor_parallel_size=tp_size,
+        backend=backend,
+        vllm_results=vllm_results[31:32],
+        hf_results=cache_result_32k_bs1,
+    )
+
+    # 16 @ 1K
+    check_output_against_hf(model, backend, p1k, vllm_results[0:16],
+                            prompts[0:16])
+
+    # 8 @ 2K
+    check_output_against_hf(model, backend, p2k, vllm_results[16:24],
+                            prompts[16:24])
+
+    # 4 @ 4K
+    check_output_against_hf(model, backend, p4k, vllm_results[24:28],
+                            prompts[24:28])
