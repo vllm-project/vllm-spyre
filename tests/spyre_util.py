@@ -252,8 +252,8 @@ def generate_spyre_vllm_output(
 # Hugging Face
 def generate_hf_output(
     model: str,
-    prompts: Union[tuple[str], tuple[list[int]]],  # also accept token ids
-    max_new_tokens: Union[int, tuple[int]],
+    prompts: Union[list[str], list[list[int]]],  # also accept token ids
+    max_new_tokens: Union[int, list[int]],
     ignore_eos: bool = False,
 ) -> list[dict[str, Any]]:
     """Loads and runs the model on cpu with transformers, caching the results.
@@ -261,10 +261,6 @@ def generate_hf_output(
 
     if not isinstance(max_new_tokens, list):
         max_new_tokens = [max_new_tokens] * len(prompts)
-
-    print(prompts)
-    print(max_new_tokens)
-    assert len(max_new_tokens) == len(prompts)
 
     results = []
     for prompt, max_tokens in zip(prompts, max_new_tokens):
@@ -364,8 +360,13 @@ def compare_results(
             print(f"        vLLM:  {repr(vllm_result['text']):s}{err_msg}")
             print()
 
+        if isinstance(hf_result['token_ids'], list):
+            hf_result['token_ids'] = tuple(hf_result['token_ids'])
+
         assert DISABLE_ASSERTS or backend == 'sendnn' or\
-            hf_result['token_ids'] == vllm_result['token_ids']
+            hf_result['token_ids'] == vllm_result['token_ids'], \
+            f"Token ids differ: {hf_result['token_ids']} != " \
+            f"{vllm_result['token_ids']}"
 
         if len(hf_result['tokens']) > 0:
             print("   token id. token               logprob      "

@@ -50,6 +50,8 @@ class HFResultCache:
         """
         if isinstance(prompt, list):
             prompt = self._token_ids_to_string(prompt)
+        max_tokens = str(max_tokens)
+
         return self.cached_results.get(model, {}).get(prompt,
                                                       {}).get(max_tokens, {})
 
@@ -62,6 +64,8 @@ class HFResultCache:
         """
         if isinstance(prompt, list):
             prompt = self._token_ids_to_string(prompt)
+        max_tokens = str(max_tokens)
+
         self.cached_results.setdefault(model,
                                        {}).setdefault(prompt, {}).setdefault(
                                            max_tokens, result)
