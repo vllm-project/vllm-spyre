@@ -152,12 +152,11 @@ def remote_openai_server(request):
             "VLLM_SPYRE_USE_CB": "1",
             "VLLM_SPYRE_DYNAMO_BACKEND": backend
         }
-        server_args = [
+        server_args.extend([
             "--max_num_seqs",
             str(max_num_seqs), "--max-model-len",
             str(max_model_len)
-        ]
-
+        ])
     else:
         warmup_shape = params['warmup_shape']
         warmup_prompt_length = [t[0] for t in warmup_shape]
