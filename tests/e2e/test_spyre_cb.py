@@ -10,10 +10,9 @@ from typing import Any
 import pytest
 from openai import BadRequestError
 from spyre_util import (RemoteOpenAIServer, check_output_against_hf,
-                        compare_results,
-                        generate_cache_for_test_swap_decode_programs_for_cb,
-                        generate_spyre_vllm_output, get_chicken_soup_prompts,
-                        get_spyre_model_list, skip_unsupported_tp_size)
+                        compare_results, generate_spyre_vllm_output,
+                        get_chicken_soup_prompts, get_spyre_model_list,
+                        skip_unsupported_tp_size)
 from vllm import SamplingParams
 
 
@@ -312,4 +311,3 @@ def test_swap_decode_programs_for_cb(
     # 4 @ 4K
     check_output_against_hf(model, backend, p4k, vllm_results[24:28],
                             prompts[24:28])
-
