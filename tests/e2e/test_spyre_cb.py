@@ -10,10 +10,11 @@ from typing import Any
 import pytest
 from openai import BadRequestError
 from spyre_util import (RemoteOpenAIServer, check_output_against_hf,
-                        compare_results, generate_spyre_vllm_output,
+                        compare_results, create_seq_prompt, extract_output,
+                        force_engine_shutdown, generate_spyre_vllm_output,
                         get_chicken_soup_prompts, get_spyre_model_list,
                         skip_unsupported_tp_size)
-from vllm import SamplingParams
+from vllm import LLM, SamplingParams
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
@@ -161,6 +162,83 @@ def test_continuous_batching_with_long_contexts(model, monkeypatch):
         # As long as no sequences have top candidate tokens with very close
         # logprobs, the generated text should be identical.
         assert vllm_cpu_results[i]["text"] == vllm_spyre_results[i]["text"]
+
+
+@pytest.mark.cb
+@pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.parametrize(
+    "backend", [pytest.param("sendnn", marks=pytest.mark.spyre, id="sendnn")])
+@pytest.mark.parametrize(
+    "tp_size",
+    [
+        pytest.param(4, marks=pytest.mark.multi),
+    ],
+    ids=lambda val: f"TP({val})",
+)
+def test_long_context_batches(
+    model: str,
+    backend: str,
+    tp_size: int,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Tests continuous batching with various batch sizes and prompt lengths."""
+
+    skip_unsupported_tp_size(tp_size, backend)
+
+    monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+    monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
+
+    max_model_len = 32768
+    max_num_seqs = 32
+    max_tokens = 10
+
+    # (batch_size, prompt_length) pairs
+    batch_token_pairs = [
+        (32, 512),
+        (16, 1500),
+        (8, 3000),
+        (4, 5000),
+        (2, 9000),
+        (1, 17000),
+    ]
+
+    vllm_model = LLM(
+        model=model,
+        tokenizer=model,
+        max_model_len=max_model_len,
+        max_num_seqs=max_num_seqs,
+        block_size=2048,
+        tensor_parallel_size=tp_size,
+    )
+
+    sampling_params = SamplingParams(
+        max_tokens=max_tokens,
+        temperature=0,
+        ignore_eos=True,
+        logprobs=0,
+    )
+
+    for batch_size, token_len in batch_token_pairs:
+        prompt = create_seq_prompt(model, token_length=token_len)
+        prompts = [prompt] * batch_size
+
+        vllm_outputs = vllm_model.generate(prompts, sampling_params)
+
+        results = []
+        for req_output in vllm_outputs:
+            result = extract_output(req_output)
+            results.append(result)
+
+    check_output_against_hf(
+        model=model,
+        backend=backend,
+        max_new_tokens=max_tokens,
+        vllm_results=results,
+        prompts=prompts,
+    )
+
+    force_engine_shutdown(vllm_model)
 
 
 @pytest.mark.spyre

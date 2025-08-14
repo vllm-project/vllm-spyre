@@ -175,6 +175,24 @@ def patch_warmup_shapes(warmup_shapes: Union[list[tuple[int, int, int]],
                            ','.join(str(val) for val in warmup_new_tokens))
 
 
+def extract_output(req_output):
+    """Extract text, token_ids, tokens, and logprobs from request output."""
+
+    result = {}
+    result['text'] = req_output.outputs[0].text
+
+    # TODO: Workaround for V1, if request does not fit in a warmup shape
+    # token_ids may be filled with -1.
+    token_ids = [t for t in req_output.outputs[0].token_ids if t >= 0]
+    result['token_ids'] = tuple(token_ids)
+    result['tokens'] = tuple(req_output.outputs[0].logprobs[i][t].decoded_token
+                             for i, t in enumerate(token_ids))
+    result['logprobs'] = tuple(req_output.outputs[0].logprobs[i][t].logprob
+                               for i, t in enumerate(token_ids))
+
+    return result
+
+
 # vLLM / Spyre
 def generate_spyre_vllm_output(
     model: str,
@@ -226,20 +244,7 @@ def generate_spyre_vllm_output(
     results = []
 
     for req_output in vllm_outputs:
-        result = {}
-        result['text'] = req_output.outputs[0].text
-        # TODO: Workaround for V1, if request does not fit in a warmup shape
-        # token_ids may be filled with -1.
-        token_ids = [t for t in req_output.outputs[0].token_ids if t >= 0]
-        result['token_ids'] = tuple(token_ids)
-        result['tokens'] = tuple([
-            req_output.outputs[0].logprobs[i][t].decoded_token
-            for i, t in enumerate(result['token_ids'])
-        ])
-        result['logprobs'] = tuple([
-            req_output.outputs[0].logprobs[i][t].logprob
-            for i, t in enumerate(result['token_ids'])
-        ])
+        result = extract_output(req_output)
         results.append(result)
 
     force_engine_shutdown(vllm_model)
@@ -554,7 +559,8 @@ def _default_test_models(isEmbeddings=False):
     return params
 
 
-def create_text_prompt(model: str, min_tokens: int, max_tokens: int) -> str:
+def create_text_prompt(model: str, min_token_length: int,
+                       max_token_length: int) -> str:
     """Create a text prompt for the specified model that will tokenize to within
     the specified token length range."""
     tokenizer = AutoTokenizer.from_pretrained(model)
@@ -562,16 +568,39 @@ def create_text_prompt(model: str, min_tokens: int, max_tokens: int) -> str:
     pepper_tokens = len(tokenizer.encode(pepper, add_special_tokens=False))
 
     # Find a good starting number of peppers
-    prompt = pepper * (min_tokens // pepper_tokens + 1)
+    prompt = pepper * (min_token_length // pepper_tokens + 1)
 
     # And add more until we're over the minimum token length
-    while len(tokenizer.encode(prompt)) <= min_tokens:
+    while len(tokenizer.encode(prompt)) <= min_token_length:
         prompt += pepper
 
     # Make sure this prompt is within the specified range
-    assert min_tokens < len(tokenizer.encode(prompt)) < max_tokens
+    assert min_token_length < len(tokenizer.encode(prompt)) < max_token_length
 
     return prompt
+
+
+def create_seq_prompt(model: str, token_length: int) -> str:
+    """Create a repeating sequential number prompt for the specified
+    model that will tokenize to exactly the specified token length."""
+
+    tokenizer = AutoTokenizer.from_pretrained(model)
+
+    # 20-token pattern
+    pattern = "0 1 2 3 4 5 6 7 8 9 "
+
+    # Repeat to token_length
+    repeat_count = (token_length // 20) + 1
+    text_prompt = pattern * repeat_count
+
+    # Tokenize and slice
+    tokens = tokenizer.encode(text_prompt)[:token_length]
+
+    # Assert exact token length
+    assert len(tokens) == token_length, \
+        f"Token length mismatch: {len(tokens)} != {token_length}"
+
+    return tokenizer.decode(tokens)
 
 
 def create_random_request(
