@@ -711,8 +711,7 @@ def generate_cache_for_test_swap_decode_programs_for_cb(
     '''
     This function bakes the generation of prompts with long contexts. Which
     currently are used in the test 
-    `test_spyre_cb::test_swap_decode_programs_for_cb`. This function is 
-    function is helpful 
+    `test_spyre_cb::test_swap_decode_programs_for_cb`. 
     '''
 
     # Generate
