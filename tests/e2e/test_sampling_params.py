@@ -38,7 +38,6 @@ async def test_spyre_dynamic_batch_isolation(engine: AsyncLLMEngine,
                                              minimal: int, limit: int,
                                              spected_text: str):
 
-    # need to check more cases
     long_task = engine.generate(
         "Write a 100-word essay on artificial intelligence.",
         SamplingParams(temperature=0.7, max_tokens=100, seed=42),
@@ -58,9 +57,9 @@ async def test_spyre_dynamic_batch_isolation(engine: AsyncLLMEngine,
     )
 
     # expected results
-    expected_penalty_result = await asyncio.wait_for(penalty_task)
-    expected_long_res = await asyncio.wait_for(long_task)
-    expected_deterministic_result = await asyncio.wait_for(deterministic_task)
+    expected_penalty_result = await asyncio.run(penalty_task)
+    expected_long_res = await asyncio.run(long_task)
+    expected_deterministic_result = await asyncio.run(deterministic_task)
 
     # async requests
     results = await asyncio.gather(
