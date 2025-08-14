@@ -168,14 +168,11 @@ def test_continuous_batching_with_long_contexts(model, monkeypatch):
 @pytest.mark.parametrize(
     "tp_size",
     [
-        # pytest.param(2, marks=pytest.mark.multi),
-        1
+        pytest.param(4, marks=pytest.mark.multi),
     ],
     ids=lambda val: f"TP({val})",
 )
-@pytest.mark.parametrize("model", get_spyre_model_list())
 def test_swap_decode_programs_for_cb(
-    model: str,
     tp_size: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -196,14 +193,9 @@ def test_swap_decode_programs_for_cb(
     -  1 prompt  with max_new_tokens @ 16k
     -  1 prompt  with max_new_tokens @ 32k
     
-    NOTE: currently the model `ibm-granite/granite-3.3-8b-instruct` will set 
-    VLLM_DT_MAX_BATCH_TKV_LIMIT to a limit of 128K which will change the 
-    behavior of how this test runs. To verify set the environment variable 
-    VLLM_SPYRE_TEST_MODEL_LIST="ibm-granite/granite-3.3-8b-instruct".
-    Also, the cache built of this test is only for this model.
-    
     '''
 
+    model = 'ibm-granite/granite-3.3-8b-instruct'
     backend = 'sendnn'
     max_num_seqs = 32
     max_model_len = 32 * 1024  # 32K
@@ -241,23 +233,22 @@ def test_swap_decode_programs_for_cb(
     # Read the cache and check beforehand if the cache was written with the
     # expected prompt. We use the filepath of this script to resolve
     # the cache filepaths
-    if 'granite-3.3-8b-instruct' in model:
-        script_directory = Path(__file__).parent.absolute() / 'cache'
-        with open(script_directory / 'prompts_8k_bs2.pickle', 'rb') as f:
-            cache_result_8k_bs2: list[dict[str, Any]] = pickle.loads(f.read())
+    script_directory = Path(__file__).parent.absolute() / 'cache'
+    with open(script_directory / 'prompts_8k_bs2.pickle', 'rb') as f:
+        cache_result_8k_bs2: list[dict[str, Any]] = pickle.loads(f.read())
 
-        assert cache_result_8k_bs2[0]['prompt'] == prompts[28]
-        assert cache_result_8k_bs2[1]['prompt'] == prompts[29]
+    assert cache_result_8k_bs2[0]['prompt'] == prompts[28]
+    assert cache_result_8k_bs2[1]['prompt'] == prompts[29]
 
-        with open(script_directory / 'prompts_16k_bs1.pickle', 'rb') as f:
-            cache_result_16k_bs1: list[dict[str, Any]] = pickle.loads(f.read())
+    with open(script_directory / 'prompts_16k_bs1.pickle', 'rb') as f:
+        cache_result_16k_bs1: list[dict[str, Any]] = pickle.loads(f.read())
 
-        assert cache_result_16k_bs1[0]['prompt'] == prompts[30]
+    assert cache_result_16k_bs1[0]['prompt'] == prompts[30]
 
-        with open(script_directory / 'prompts_32k_bs1.pickle', 'rb') as f:
-            cache_result_32k_bs1: list[dict[str, Any]] = pickle.loads(f.read())
+    with open(script_directory / 'prompts_32k_bs1.pickle', 'rb') as f:
+        cache_result_32k_bs1: list[dict[str, Any]] = pickle.loads(f.read())
 
-        assert cache_result_32k_bs1[0]['prompt'] == prompts[31]
+    assert cache_result_32k_bs1[0]['prompt'] == prompts[31]
 
     # Generate results from vLLM
     vllm_results = generate_spyre_vllm_output(model=model,
@@ -272,33 +263,32 @@ def test_swap_decode_programs_for_cb(
                                               use_cb=True)
 
     # Check first from cache, to save computation
-    if 'granite-3.3-8b-instruct' in model:
-        # 2 @ 8K
-        compare_results(
-            model=model,
-            tensor_parallel_size=tp_size,
-            backend=backend,
-            vllm_results=vllm_results[28:30],
-            hf_results=cache_result_8k_bs2,
-        )
+    # 2 @ 8K
+    compare_results(
+        model=model,
+        tensor_parallel_size=tp_size,
+        backend=backend,
+        vllm_results=vllm_results[28:30],
+        hf_results=cache_result_8k_bs2,
+    )
 
-        # 1 @ 16K
-        compare_results(
-            model=model,
-            tensor_parallel_size=tp_size,
-            backend=backend,
-            vllm_results=vllm_results[30:31],
-            hf_results=cache_result_16k_bs1,
-        )
+    # 1 @ 16K
+    compare_results(
+        model=model,
+        tensor_parallel_size=tp_size,
+        backend=backend,
+        vllm_results=vllm_results[30:31],
+        hf_results=cache_result_16k_bs1,
+    )
 
-        # 1 @ 32K
-        compare_results(
-            model=model,
-            tensor_parallel_size=tp_size,
-            backend=backend,
-            vllm_results=vllm_results[31:32],
-            hf_results=cache_result_32k_bs1,
-        )
+    # 1 @ 32K
+    compare_results(
+        model=model,
+        tensor_parallel_size=tp_size,
+        backend=backend,
+        vllm_results=vllm_results[31:32],
+        hf_results=cache_result_32k_bs1,
+    )
 
     # 16 @ 1K
     check_output_against_hf(model, backend, p1k, vllm_results[0:16],
