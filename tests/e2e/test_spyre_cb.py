@@ -163,7 +163,7 @@ def test_continuous_batching_with_long_contexts(model, monkeypatch):
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
-    "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
+    "backend", [pytest.param("sendnn", marks=pytest.mark.spyre, id="sendnn")])
 @pytest.mark.parametrize(
     "tp_size",
     [
