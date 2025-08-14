@@ -13,6 +13,7 @@ import openai
 import pytest
 import requests
 import torch
+from hf_result_cache import HFResultCache
 from sentence_transformers import SentenceTransformer, util
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, SamplingParams
@@ -27,6 +28,8 @@ DISABLE_ASSERTS = False  # used for debugging
 # TODO: Needs to be separate for quantized models
 ISCLOSE_REL_TOL_CPU = 0.35
 ISCLOSE_REL_TOL_SPYRE = 0.35
+
+HF_RESULT_CACHE = HFResultCache()
 
 
 def force_engine_shutdown(llm: LLM):
@@ -258,17 +261,32 @@ def generate_hf_output(
         max_new_tokens: Union[int, list[int]],
         ignore_eos: bool = False,
         include_prompt: bool = False) -> list[dict[str, Any]]:
+    """Loads and runs the model on cpu with transformers, caching the results.
+    Returns cached results if any are found to avoid overhead."""
 
     if not isinstance(max_new_tokens, list):
         max_new_tokens = [max_new_tokens] * len(prompts)
+
+    results = []
+    for prompt, max_tokens in zip(prompts, max_new_tokens):
+        results.append(
+            HF_RESULT_CACHE.get_cached_result(model, prompt, max_tokens))
+
+    if all(results):
+        # Everything hit cache
+        return results
 
     hf_model = AutoModelForCausalLM.from_pretrained(model)
     hf_tokenizer = AutoTokenizer.from_pretrained(model)
     if ignore_eos:
         hf_model.generation_config.eos_token_id = None
 
-    results = []
     for prompt_index, prompt in enumerate(prompts):
+
+        if results[prompt_index]:
+            # Already have cached result
+            continue
+
         hf_input_tokens = hf_tokenizer(prompt, return_tensors="pt").input_ids \
                     if isinstance(prompt[0], str) \
                     else torch.tensor([prompts[prompt_index]])
@@ -302,8 +320,14 @@ def generate_hf_output(
         result['logprobs'] = tuple(result['logprobs'])
         if include_prompt:
             result['prompt'] = prompt
-        results.append(result)
 
+        # Save and cache new result
+        results[prompt_index] = result
+        HF_RESULT_CACHE.add_to_cache(model, prompt,
+                                     max_new_tokens[prompt_index], result)
+
+    # Write back to the cache
+    HF_RESULT_CACHE.write_cache()
     return results
 
 
@@ -343,8 +367,13 @@ def compare_results(
             print(f"        vLLM:  {repr(vllm_result['text']):s}{err_msg}")
             print()
 
+        if isinstance(hf_result['token_ids'], list):
+            hf_result['token_ids'] = tuple(hf_result['token_ids'])
+
         assert DISABLE_ASSERTS or backend == 'sendnn' or\
-            hf_result['token_ids'] == vllm_result['token_ids']
+            hf_result['token_ids'] == vllm_result['token_ids'], \
+            f"Token ids differ: {hf_result['token_ids']} != " \
+            f"{vllm_result['token_ids']}"
 
         if len(hf_result['tokens']) > 0:
             print("   token id. token               logprob      "
