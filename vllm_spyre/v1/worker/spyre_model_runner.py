@@ -291,13 +291,8 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
         )
 
     def build_input_batch(self) -> SamplingInputBatch:
-        # Fix for batch size 1: set input batch to fit 2 requests for warmup,
-        # and reset input batch to fit max_num_seqs requests after warmup
-        min_seqs_required = 2 if self.warmup_mode else 1
-
         return SamplingInputBatch(
-            max_num_reqs=max(min_seqs_required,
-                             self.scheduler_config.max_num_seqs),
+            max_num_reqs=self.scheduler_config.max_num_seqs,
             max_model_len=self.model_config.max_model_len,
             device=self.device,
             pin_memory=self.pin_memory,
@@ -810,8 +805,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
     def complete_warmup(self) -> None:
         super().complete_warmup()
-        # Fix for batch size 1: need to update the input_batch after the warmup
-        self.input_batch = self.build_input_batch()
         # get the number or pages from the actual Spyre card after the warmup
         # and set it accordingly in the model runner and the kv cache size
         n_blocks_avail = self._get_num_blocks_available()
@@ -915,10 +908,23 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         is_new_batch = len(self.req_ids2blocks) == 0
         prompt_len = len(prompt_token_ids)
 
-        # make sure that the prompt length is at most the current tkv
-        # if it joins an existing decode batch
-        if not is_new_batch:
-            assert prompt_len <= self.tkv
+        # make sure that the current tkv of the decode batch is greater or
+        # equal to the prompt length of the new joining sequence
+        if not is_new_batch and prompt_len > self.tkv:
+            # increasing the current tkv by a multiple of the block size
+            tkv_offset = math.ceil(
+                (prompt_len - self.tkv) / self.block_size) * self.block_size
+            if tkv_offset > 0:
+                logger.debug("Prefill optimization: Adding %d blocks per " \
+                "sequence in the decode batch to prefill the current " \
+                "sequence.", tkv_offset // self.block_size)
+                self.tkv += tkv_offset
+
+                # adding left pads to the requests in the current decode batch
+                requests = self.requests.values()
+                for req in requests:
+                    if req.req_id != req_id:
+                        req.left_padding += tkv_offset
 
         self.prefill_batch.clear_requests()
 
@@ -1111,23 +1117,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         # mask not needed during decode
         mask = None
-
-        # add pads for min decode batch size of 2 (Spyre compiler constraint)
-        if len(cached_request_data.req_ids) == 1:
-            padd_seq_indices = torch.zeros(1, dtype=torch.bool, device="cpu")
-            self.model.indices = torch.cat(
-                (self.model.indices, padd_seq_indices), -1)
-            assert self.model.indices.size(dim=0) == 2
-
-            input_tokens = torch.cat(2 * [input_tokens])
-            position_ids = torch.cat(2 * [position_ids])
-            current_tkv_mask = torch.cat(2 * [current_tkv_mask])
-            left_padded_prompt_mask = torch.cat(2 * [left_padded_prompt_mask])
-            block_table = torch.cat(2 * [block_table])
-            slot_mapping = torch.cat(2 * [slot_mapping])
-
-        # assert min batch size 2 for decodes (Spyre compiler constraint)
-        assert len(input_tokens) >= 2
 
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
@@ -1350,18 +1339,17 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
             # TODO: remove this when we no longer support vllm version pre this
             # PR https://github.com/vllm-project/vllm/pull/20538 (post v0.10.0)
             annotations = inspect.getfullargspec(Pooler.for_embed).annotations
+            extra_args = {}
             if ('default_normalize' in annotations
                     and 'default_softmax' in annotations):
-                extra_args = {
+                extra_args.update({
                     'default_normalize': True,
                     'default_softmax': False
-                }
-            else:
-                extra_args = {}
-            self.pooler = Pooler.for_embed(
-                pooler_config=pooler_config,
-                default_pooling_type=PoolingType.CLS,
-                **extra_args)
+                })
+            if 'default_pooling_type' in annotations:
+                extra_args['default_pooling_type'] = PoolingType.CLS
+            self.pooler = Pooler.for_embed(pooler_config=pooler_config,
+                                           **extra_args)
 
     def build_input_batch(self) -> PoolingInputBatch:
         return PoolingInputBatch(

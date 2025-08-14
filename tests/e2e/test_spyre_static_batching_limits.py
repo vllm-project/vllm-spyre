@@ -38,9 +38,9 @@ def test_max_prompt_len_and_new_tokens(model: str,
     # Craft a request with a prompt that is slightly too long for the warmup
     # shape
     prompt = create_text_prompt(model,
-                                min_tokens=max_prompt_length,
-                                max_tokens=max_prompt_length + max_new_tokens -
-                                1)
+                                min_token_length=max_prompt_length,
+                                max_token_length=max_prompt_length +
+                                max_new_tokens - 1)
     sampling_params = SamplingParams(max_tokens=1)
 
     with pytest.raises(ValueError, match="warmup"):

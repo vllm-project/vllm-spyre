@@ -259,9 +259,9 @@ class FmsModelBase(nn.Module):
         for name, param in self.model.named_parameters():
             if param.dtype == torch.bfloat16:
                 logger.debug(
-                    "You are casting param %s to fp16, which \
-                        will cause loss of accuracy. You can ignore \
-                            this warning if this is intended.", name)
+                    "You are casting param %s to fp16, which"
+                    " will cause loss of accuracy. You can ignore"
+                    " this warning if this is intended.", name)
                 param.data = param.data.to(dtype=torch.float16)
 
     def _cast_to_f32(self):

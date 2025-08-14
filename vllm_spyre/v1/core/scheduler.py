@@ -11,6 +11,7 @@ from vllm.v1.engine import EngineCoreOutputs
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request
 
+import vllm_spyre.envs as envs_spyre
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import CBSpyreModelRunnerOutput
 
@@ -220,8 +221,11 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         max_prompt_batch_size = 1
         max_context_len = self.scheduler_config.max_model_len
 
-        # running and waiting queues are both empty -> start new batch
-        start_new_batch = len(self.running) + len(self.waiting) == 0
+        # running and waiting queues are both empty -> start a new batch
+        # which can always be scheduled
+        if len(self.running) + len(self.waiting) == 0:
+            return True
+
         # check that there is space in the current decode batch
         cond1 = len(self.running) + len(
             self.waiting) < self.max_num_running_reqs
@@ -243,12 +247,46 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         num_blocks_required -= num_fully_padded_blocks
         cond5 = num_blocks_required <= self.n_free_blocks
         # check that batch size x tkv is smaller than the max supported number
-        cond6 = self.check_batch_tkv_limit(request)
+        cond6 = self.check_batch_tkv_limit(request=request, tkv=self.tkv)
 
-        return start_new_batch or (cond1 and cond2 and cond3 and cond4
-                                   and cond5 and cond6)
+        if cond1 and cond2 and cond3 and cond4 and cond5 and cond6:
+            return True
 
-    def check_batch_tkv_limit(self, request) -> bool:
+        # the following conditions must always be true, if not we can exit here
+        if not (cond1 and cond2 and cond4 and cond5 and cond6
+                ) or not envs_spyre.VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION:
+            return False
+
+        # cond3 is violated: request.num_prompt_tokens > self.tkv
+        # check whether the new sequence can join the decode batch by
+        # increasing the current tkv by a multiple of the block size
+        tkv_offset = math.ceil((request.num_prompt_tokens - self.tkv) /
+                               self.block_size) * self.block_size
+        tkv_updated = self.tkv + tkv_offset
+        # check cond4 again with updated tkv for current sequence
+        cond4_updated = request.max_tokens <= (max_context_len - tkv_updated)
+
+        # check cond4 for all other sequences in the current decode batch
+        for req in self.running:
+            cond4_current = req.max_tokens <= (max_context_len - tkv_updated)
+            cond4_updated = cond4_updated and cond4_current
+            # early exiting loop if violated 4th condition
+            if not cond4_updated:
+                return False
+
+        # check if enough number of blocks to serve sequence with updated tkv
+        num_blocks_required_updated = math.ceil(
+            (tkv_updated + request.max_tokens - 1) / self.block_size)
+        cond5_updated = num_blocks_required_updated <= self.n_free_blocks
+
+        # check that batch size x tkv is smaller than the max supported number
+        # with updated tkv (cond6)
+        cond6_updated = self.check_batch_tkv_limit(request=request,
+                                                   tkv=tkv_updated)
+
+        return cond4_updated and cond5_updated and cond6_updated
+
+    def check_batch_tkv_limit(self, request, tkv) -> bool:
         """
         Check whether adding a new sequence to the decode batch would violate
         Spyre's maximum batch volume constraint.
@@ -276,11 +314,11 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         """
 
         # Compute the effective token length of the new request
-        new_req_tkv = self.tkv + request.max_tokens - 1
+        new_req_tkv = tkv + request.max_tokens - 1
 
         # Compute token lengths for all running requests (decode batch)
         decode_req_tkvs = [
-            self.tkv + req.max_tokens - 1 - req.num_computed_tokens
+            tkv + req.max_tokens - 1 - req.num_computed_tokens
             for req in self.running
         ]
         # Sort decode requests token lengths in ascending order

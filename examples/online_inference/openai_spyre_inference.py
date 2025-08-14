@@ -14,9 +14,37 @@ You can change these with the env variables VLLM_SPYRE_WARMUP_BATCH_SIZES,
 VLLM_SPYRE_WARMUP_PROMPT_LENS, and VLLM_SPYRE_WARMUP_NEW_TOKENS.
 """
 
+import argparse
 import time
 
 from openai import OpenAI
+
+parser = argparse.ArgumentParser(
+    description="Script to submit an inference request to vllm server.")
+
+parser.add_argument(
+    "--max_tokens",
+    type=int,
+    default=20,
+    help="Maximum tokens. Must match VLLM_SPYRE_WARMUP_NEW_TOKENS",
+)
+parser.add_argument(
+    "--batch_size",
+    type=int,
+    default=1,
+)
+parser.add_argument(
+    "--num_prompts",
+    type=int,
+    default=3,
+)
+parser.add_argument(
+    "--stream",
+    action=argparse.BooleanOptionalAction,
+    help="Whether to stream the response.",
+)
+
+args = parser.parse_args()
 
 # Modify OpenAI's API key and API base to use vLLM's API server.
 openai_api_key = "EMPTY"
@@ -46,17 +74,18 @@ instructions = [
 ]
 
 prompts = [template.format(instr) for instr in instructions]
+prompts = prompts * (args.num_prompts // len(prompts) + 1)
+prompts = prompts[0:args.num_prompts]
 
 # This batch size must match VLLM_SPYRE_WARMUP_BATCH_SIZES
-batch_size = 1
+batch_size = args.batch_size
 print('submitting prompts of batch size', batch_size)
 
 # making sure not to submit more prompts than the batch size
 for i in range(0, len(prompts), batch_size):
     prompt = prompts[i:i + batch_size]
 
-    stream = False
-    max_tokens = 20
+    stream = args.stream
 
     print(f"Prompt: {prompt}")
     start_t = time.time()
@@ -67,7 +96,7 @@ for i in range(0, len(prompts), batch_size):
                                            n=1,
                                            stream=stream,
                                            temperature=0.0,
-                                           max_tokens=max_tokens)
+                                           max_tokens=args.max_tokens)
 
     end_t = time.time()
     print("Results:")
