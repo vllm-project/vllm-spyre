@@ -601,11 +601,12 @@ def create_random_request(
                 ), f"need {num_tokens} but got {len(prompt_token_ids)}"
 
     sig = inspect.signature(EngineCore.add_request)
+    inputs_renamed = hasattr(EngineCoreRequest, 'mm_inputs')
     if sig.parameters["request"].annotation == EngineCoreRequest:
+        kwargs = {"mm_kwargs" if inputs_renamed else "mm_inputs": None}
         return EngineCoreRequest(
             request_id=str(request_id),
             prompt_token_ids=prompt_token_ids,
-            mm_inputs=None,
             mm_hashes=None,
             mm_placeholders=None,
             sampling_params=sampling_params,
@@ -615,11 +616,14 @@ def create_random_request(
             data_parallel_rank=None,
             pooling_params=None,
             cache_salt=None,
+            **kwargs,
         )
+    kwargs = {
+        "multi_modal_kwargs" if inputs_renamed else "multi_modal_inputs": None
+    }
     return Request(
         request_id=str(request_id),
         prompt_token_ids=prompt_token_ids,
-        multi_modal_inputs=None,
         multi_modal_hashes=None,
         multi_modal_placeholders=None,
         sampling_params=sampling_params,
@@ -628,6 +632,7 @@ def create_random_request(
         lora_request=None,
         pooling_params=None,
         cache_salt=None,
+        **kwargs,
     )
 
 
