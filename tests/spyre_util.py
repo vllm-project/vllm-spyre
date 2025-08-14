@@ -320,7 +320,6 @@ def generate_hf_output(
         result['logprobs'] = tuple(result['logprobs'])
         if include_prompt:
             result['prompt'] = prompt
-        results.append(result)
 
         # Save and cache new result
         results[prompt_index] = result
