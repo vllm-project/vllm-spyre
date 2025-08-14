@@ -42,7 +42,7 @@ class HFResultCache:
                 json.dump(self.cached_results, f)
             self.dirty = False
 
-    def get_cached_result(self, model: str, prompt: str,
+    def get_cached_result(self, model: str, prompt: str | list[int],
                           max_tokens: int) -> dict:
         """
         Retrieve a cached result for the given model, prompt, and max_tokens.
@@ -55,8 +55,8 @@ class HFResultCache:
         return self.cached_results.get(model, {}).get(prompt,
                                                       {}).get(max_tokens, {})
 
-    def add_to_cache(self, model: str, prompt: str, max_tokens: int,
-                     result: dict):
+    def add_to_cache(self, model: str, prompt: str | list[int],
+                     max_tokens: int, result: dict):
         """
         Add a new result to the cache for the given model, prompt, and
         max_tokens. Marks the cache as 'dirty' to indicate that it needs to be
