@@ -167,4 +167,4 @@ def test_mm_inputs():
         assert has_mm_inputs, ("The lowest supported vLLM version already"
                                "renamed mm_inputs to mm_kwargs.")
         # The compat code introduced in the PR below can now be removed:
-        # TBD
+        # https://github.com/vllm-project/vllm-spyre/pull/380
