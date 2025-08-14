@@ -1,5 +1,7 @@
 import inspect
 import os
+from dataclasses import fields
+from typing import Type
 
 import pytest
 from spyre_util import get_spyre_model_list
@@ -8,6 +10,8 @@ pytestmark = pytest.mark.compat
 
 VLLM_VERSION = os.getenv("TEST_VLLM_VERSION", "default")
 
+def dataclass_fields(cls: Type) -> list[str]:
+    return [f.name for f in fields(cls)]
 
 @pytest.mark.cpu
 def test_vllm_bert_support():
@@ -159,7 +163,7 @@ def test_engine_core_add_request():
 def test_mm_inputs():
 
     from vllm.v1.core.sched.output import NewRequestData
-    has_mm_inputs = hasattr(NewRequestData, 'mm_inputs')
+    has_mm_inputs = 'mm_inputs' in dataclass_fields(NewRequestData)
 
     if VLLM_VERSION == "vLLM:main":
         assert not has_mm_inputs
