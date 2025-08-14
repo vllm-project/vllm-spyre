@@ -837,20 +837,13 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # TODO: replace the hard coded NUM_BLOCKS_SPYRE by calling a function
         # in torch_sendnn which returns the value set by the Spyre compiler.
 
-        if ('granite-3.3-8b-instruct' in self.model_config.model
-                and self.parallel_config.world_size == 4):
-            # hard coded value for tensor parallel size 4 with the below model
-            # https://huggingface.co/ibm-granite/granite-3.3-8b-instruct
-            NUM_BLOCKS_SPYRE = 2080
-            logger.info("Model granite-3.3-8b-instruct and tensor parallel " \
-            "size 4 detected. Using NUM_BLOCKS_SPYRE = %d", 2080)
-        else:
-            # default value for any other model/ tensor parallel size
-            NUM_BLOCKS_SPYRE = max_batch_size * min_req_num_blocks
-            logger.info("No model / tensor parallel size specific value for" \
-            "the number of KV cache blocks available on Spyre found. Using " \
-            "default value (max_batch_size * max_model_len / block_size): %d",
-              NUM_BLOCKS_SPYRE)
+
+        # default value for all model/ tensor parallel size
+        NUM_BLOCKS_SPYRE = max_batch_size * min_req_num_blocks
+        logger.info("No model / tensor parallel size specific value for" \
+        "the number of KV cache blocks available on Spyre found. Using " \
+        "default value (max_batch_size * max_model_len / block_size): %d",
+            NUM_BLOCKS_SPYRE)
 
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == 'sendnn':
             num_blocks_spyre = NUM_BLOCKS_SPYRE
