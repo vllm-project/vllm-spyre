@@ -837,7 +837,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # TODO: replace the hard coded NUM_BLOCKS_SPYRE by calling a function
         # in torch_sendnn which returns the value set by the Spyre compiler.
 
-
         # default value for all model/ tensor parallel size
         NUM_BLOCKS_SPYRE = max_batch_size * min_req_num_blocks
         logger.info("No model / tensor parallel size specific value for" \
