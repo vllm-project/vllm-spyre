@@ -27,6 +27,7 @@ from vllm.worker.worker_base import WorkerBase
 
 import vllm_spyre.envs as envs_spyre
 import vllm_spyre.perf_metrics as perf_metrics
+from vllm_spyre.compat_utils import dataclass_fields
 from vllm_spyre.model_executor.model_loader import spyre_setup
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import (
@@ -55,7 +56,7 @@ def new_request_data_builder(
         "num_computed_tokens": 0,
         "lora_request": None,
     }
-    if hasattr(NewRequestData, 'mm_inputs'):
+    if 'mm_inputs' in dataclass_fields(NewRequestData):
         kwargs["mm_inputs"] = []
     else:
         kwargs["mm_kwargs"] = []

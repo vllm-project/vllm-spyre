@@ -1,17 +1,14 @@
 import inspect
 import os
-from dataclasses import fields
 
 import pytest
 from spyre_util import get_spyre_model_list
 
+from vllm_spyre.compat_utils import dataclass_fields
+
 pytestmark = pytest.mark.compat
 
 VLLM_VERSION = os.getenv("TEST_VLLM_VERSION", "default")
-
-
-def dataclass_fields(cls: type) -> list[str]:
-    return [f.name for f in fields(cls)]
 
 
 @pytest.mark.cpu
