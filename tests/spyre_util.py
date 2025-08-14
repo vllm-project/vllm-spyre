@@ -253,11 +253,11 @@ def generate_spyre_vllm_output(
 
 # Hugging Face
 def generate_hf_output(
-    model: str,
-    prompts: Union[list[str], list[list[int]]],  # also accept token ids
-    max_new_tokens: Union[int, list[int]],
-    ignore_eos: bool = False,
-) -> list[dict[str, Any]]:
+        model: str,
+        prompts: Union[list[str], list[list[int]]],  # also accept token ids
+        max_new_tokens: Union[int, list[int]],
+        ignore_eos: bool = False,
+        include_prompt: bool = False) -> list[dict[str, Any]]:
 
     if not isinstance(max_new_tokens, list):
         max_new_tokens = [max_new_tokens] * len(prompts)
@@ -300,6 +300,8 @@ def generate_hf_output(
         result['token_ids'] = tuple(result['token_ids'])
         result['tokens'] = tuple(result['tokens'])
         result['logprobs'] = tuple(result['logprobs'])
+        if include_prompt:
+            result['prompt'] = prompt
         results.append(result)
 
     return results
@@ -731,3 +733,48 @@ def get_longer_chicken_soup_prompts(num_prompts: int) -> list[str]:
         prompts = prompts * (math.ceil(num_prompts / 4))
 
     return prompts[:num_prompts]
+
+
+def generate_cache_for_test_swap_decode_programs_for_cb(
+        model: str, prompts: list[str], parent_path: str):
+    '''
+    This function bakes the generation of prompts with long contexts. Which
+    currently are used in the test 
+    `test_spyre_cb::test_swap_decode_programs_for_cb`. 
+    '''
+
+    # Generate
+    assert len(prompts) == 4
+
+    p8k = 8 * 1024
+    p16k = 16 * 1024
+    p32k = 32 * 1024
+
+    import pickle
+    hf_outputs = generate_hf_output(model=model,
+                                    prompts=prompts[0:2],
+                                    max_new_tokens=p8k,
+                                    ignore_eos=True,
+                                    include_prompt=True)
+    with open(Path(parent_path) / 'prompts_8k_bs2.pickle', 'wb') as f:
+        f.write(pickle.dumps(hf_outputs))
+
+    hf_outputs = generate_hf_output(
+        model=model,
+        prompts=[prompts[2]],
+        max_new_tokens=p16k,
+        ignore_eos=True,
+        include_prompt=True,
+    )
+    with open(Path(parent_path) / 'prompts_16k_bs1.pickle', 'wb') as f:
+        f.write(pickle.dumps(hf_outputs))
+
+    hf_outputs = generate_hf_output(
+        model=model,
+        prompts=[prompts[3]],
+        max_new_tokens=p32k,
+        ignore_eos=True,
+        include_prompt=True,
+    )
+    with open(Path(parent_path) / 'prompts_32k_bs1.pickle', 'wb') as f:
+        f.write(pickle.dumps(hf_outputs))
