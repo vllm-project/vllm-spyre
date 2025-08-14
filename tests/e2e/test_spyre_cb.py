@@ -3,15 +3,21 @@
 Run `python -m pytest tests/e2e/test_spyre_cb.py`.
 """
 
+import pickle
+from pathlib import Path
+from typing import Any
+
 import pytest
 from openai import BadRequestError
-from spyre_util import (RemoteOpenAIServer, generate_spyre_vllm_output,
-                        get_chicken_soup_prompts, get_spyre_model_list)
+from spyre_util import (RemoteOpenAIServer, check_output_against_hf,
+                        compare_results, generate_spyre_vllm_output,
+                        get_chicken_soup_prompts, get_spyre_model_list,
+                        skip_unsupported_tp_size)
 from vllm import SamplingParams
 
 
-@pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.cb
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 def test_cb_max_tokens(
@@ -155,3 +161,143 @@ def test_continuous_batching_with_long_contexts(model, monkeypatch):
         # As long as no sequences have top candidate tokens with very close
         # logprobs, the generated text should be identical.
         assert vllm_cpu_results[i]["text"] == vllm_spyre_results[i]["text"]
+
+
+@pytest.mark.spyre
+@pytest.mark.cb
+@pytest.mark.parametrize(
+    "tp_size",
+    [
+        pytest.param(4, marks=pytest.mark.multi),
+    ],
+    ids=lambda val: f"TP({val})",
+)
+def test_swap_decode_programs_for_cb(
+    tp_size: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    '''
+    
+    Validate the runtime's ability to swap between different compiled decode 
+    programs for varying batch sizes and TKV.
+
+    The test case consists of 32 small input prompts with specifically chosen 
+    max_new_tokens values to trigger different decode programs at runtime.
+
+    The test case structure is as follows:
+
+    - 16 prompts with max_new_tokens @ 1k
+    -  8 prompts with max_new_tokens @ 2k
+    -  4 prompts with max_new_tokens @ 4k
+    -  2 prompts with max_new_tokens @ 8k
+    -  1 prompt  with max_new_tokens @ 16k
+    -  1 prompt  with max_new_tokens @ 32k
+    
+    '''
+
+    model = 'ibm-granite/granite-3.3-8b-instruct'
+    backend = 'sendnn'
+    max_num_seqs = 32
+    max_model_len = 32 * 1024  # 32K
+
+    skip_unsupported_tp_size(tp_size, backend)
+    prompts = get_chicken_soup_prompts(max_num_seqs)
+
+    create_sampling_params = lambda max_new_tokens: SamplingParams(
+        # The prompt will pad to 64 tokens, therefore to match
+        # max_model_len/max_new_tokens, we need to decrease by the prompt
+        # length
+        max_tokens=max_new_tokens - 64,
+        temperature=0,
+        logprobs=0,  # return logprobs of generated tokens only
+        ignore_eos=True)
+
+    p1k = 1 * 1024
+    p2k = 2 * 1024
+    p4k = 4 * 1024
+    p8k = 8 * 1024
+    p16k = 16 * 1024
+    p32k = 32 * 1024
+
+    sampling_params_1k = [create_sampling_params(p1k) for _ in range(16)]
+    sampling_params_2k = [create_sampling_params(p2k) for _ in range(8)]
+    sampling_params_4k = [create_sampling_params(p4k) for _ in range(4)]
+    sampling_params_8k = [create_sampling_params(p8k) for _ in range(2)]
+    sampling_params_16k = [create_sampling_params(p16k) for _ in range(1)]
+    sampling_params_32k = [create_sampling_params(p32k) for _ in range(1)]
+
+    sampling_params = sampling_params_1k + sampling_params_2k + \
+        sampling_params_4k + sampling_params_8k + sampling_params_16k + \
+            sampling_params_32k
+
+    # Read the cache and check beforehand if the cache was written with the
+    # expected prompt. We use the filepath of this script to resolve
+    # the cache filepaths
+    script_directory = Path(__file__).parent.absolute() / 'cache'
+    with open(script_directory / 'prompts_8k_bs2.pickle', 'rb') as f:
+        cache_result_8k_bs2: list[dict[str, Any]] = pickle.loads(f.read())
+
+    assert cache_result_8k_bs2[0]['prompt'] == prompts[28]
+    assert cache_result_8k_bs2[1]['prompt'] == prompts[29]
+
+    with open(script_directory / 'prompts_16k_bs1.pickle', 'rb') as f:
+        cache_result_16k_bs1: list[dict[str, Any]] = pickle.loads(f.read())
+
+    assert cache_result_16k_bs1[0]['prompt'] == prompts[30]
+
+    with open(script_directory / 'prompts_32k_bs1.pickle', 'rb') as f:
+        cache_result_32k_bs1: list[dict[str, Any]] = pickle.loads(f.read())
+
+    assert cache_result_32k_bs1[0]['prompt'] == prompts[31]
+
+    # Generate results from vLLM
+    vllm_results = generate_spyre_vllm_output(model=model,
+                                              prompts=prompts,
+                                              sampling_params=sampling_params,
+                                              tensor_parallel_size=tp_size,
+                                              backend=backend,
+                                              max_num_seqs=max_num_seqs,
+                                              monkeypatch=monkeypatch,
+                                              block_size=max_model_len,
+                                              max_model_len=max_model_len,
+                                              use_cb=True)
+
+    # Check first from cache, to save computation
+    # 2 @ 8K
+    compare_results(
+        model=model,
+        tensor_parallel_size=tp_size,
+        backend=backend,
+        vllm_results=vllm_results[28:30],
+        hf_results=cache_result_8k_bs2,
+    )
+
+    # 1 @ 16K
+    compare_results(
+        model=model,
+        tensor_parallel_size=tp_size,
+        backend=backend,
+        vllm_results=vllm_results[30:31],
+        hf_results=cache_result_16k_bs1,
+    )
+
+    # 1 @ 32K
+    compare_results(
+        model=model,
+        tensor_parallel_size=tp_size,
+        backend=backend,
+        vllm_results=vllm_results[31:32],
+        hf_results=cache_result_32k_bs1,
+    )
+
+    # 16 @ 1K
+    check_output_against_hf(model, backend, p1k, vllm_results[0:16],
+                            prompts[0:16])
+
+    # 8 @ 2K
+    check_output_against_hf(model, backend, p2k, vllm_results[16:24],
+                            prompts[16:24])
+
+    # 4 @ 4K
+    check_output_against_hf(model, backend, p4k, vllm_results[24:28],
+                            prompts[24:28])
