@@ -579,21 +579,26 @@ def create_text_prompt(model: str, min_token_length: int,
 
 
 def create_seq_prompt(model: str, token_length: int) -> str:
-    """Create a sequential number prompt for the specified model that will 
-    tokenize to exactly the specified token length."""
+    """Create a repeating sequential number prompt for the specified
+    model that will tokenize to exactly the specified token length."""
 
     tokenizer = AutoTokenizer.from_pretrained(model)
 
-    # Generate "0 1 2 3 ..." with extra so we have enough tokens to trim
-    text_prompt = " ".join(str(i) for i in range(token_length * 2))
+    # 20-token pattern
+    pattern = "0 1 2 3 4 5 6 7 8 9 "
 
-    # Take exactly the needed token count
+    # Repeat to token_length
+    repeat_count = (token_length // 20) + 1
+    text_prompt = pattern * repeat_count
+
+    # Tokenize and slice
     tokens = tokenizer.encode(text_prompt)[:token_length]
 
-    # Remove trailing number that may have been split
-    text_prompt = tokenizer.decode(tokens).rsplit(" ", 1)[0]
+    # Assert exact token length
+    assert len(tokens) == token_length, \
+        f"Token length mismatch: {len(tokens)} != {token_length}"
 
-    return text_prompt
+    return tokenizer.decode(tokens)
 
 
 def create_random_request(
