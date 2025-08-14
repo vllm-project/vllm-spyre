@@ -39,6 +39,29 @@ logger = init_logger(__name__)
 _inside_warmup_mode = False
 
 
+def new_request_data_builder(
+        req_id: str, prompt_token_ids: list[int],
+        sampling_params: Optional[SamplingParams],
+        pooling_params: Optional[PoolingParams]) -> NewRequestData:
+
+    kwargs = {
+        "req_id": req_id,
+        "prompt_token_ids": prompt_token_ids,
+        "mm_hashes": [],
+        "mm_positions": [],
+        "sampling_params": sampling_params,
+        "pooling_params": pooling_params,
+        "block_ids": [0],  # not actually used
+        "num_computed_tokens": 0,
+        "lora_request": None,
+    }
+    if hasattr(NewRequestData, 'mm_inputs'):
+        kwargs["mm_inputs"] = []
+    else:
+        kwargs["mm_kwargs"] = []
+    return NewRequestData(**kwargs)
+
+
 @contextlib.contextmanager
 def _maybe_warmup_context():
     global _inside_warmup_mode
@@ -358,19 +381,12 @@ class SpyreWorker(WorkerBaseV1):
         warmup_tokens_tensor = valid_token_ids_tensor[torch.randint(
             0, len(valid_token_ids_tensor), (2, prompt_len))]
 
-        warmup_req, deploy_req = (
-            NewRequestData(
-                req_id="warmup-%d" % (i),
-                prompt_token_ids=warmup_tokens_tensor[i].tolist(),
-                mm_inputs=[],
-                mm_hashes=[],
-                mm_positions=[],
-                sampling_params=SamplingParams(max_tokens=num_decode_tokens),
-                pooling_params=None,
-                block_ids=[0],  # not actually used
-                num_computed_tokens=0,
-                lora_request=None,
-            ) for i in range(2))
+        warmup_req, deploy_req = (new_request_data_builder(
+            req_id="warmup-%d" % (i),
+            prompt_token_ids=warmup_tokens_tensor[i].tolist(),
+            sampling_params=SamplingParams(max_tokens=num_decode_tokens),
+            pooling_params=None,
+        ) for i in range(2))
 
         with _maybe_warmup_context():
             self._dynamic_warmup(request=warmup_req,
@@ -463,16 +479,11 @@ class SpyreWorker(WorkerBaseV1):
 
         # Set up dummy requests for prefill steps
         dummy_requests = [
-            NewRequestData(req_id="warmup",
-                           prompt_token_ids=warmup_tokens_tensor[i].tolist(),
-                           mm_inputs=[],
-                           mm_hashes=[],
-                           mm_positions=[],
-                           sampling_params=sampling_params,
-                           pooling_params=pooling_params,
-                           block_ids=[0],
-                           num_computed_tokens=0,
-                           lora_request=None) for i in range(batch_size)
+            new_request_data_builder(
+                req_id="warmup",
+                prompt_token_ids=warmup_tokens_tensor[i].tolist(),
+                sampling_params=sampling_params,
+                pooling_params=pooling_params) for i in range(batch_size)
         ]
 
         # Set up dummy cached_requests for decode steps

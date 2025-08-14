@@ -153,3 +153,18 @@ def test_engine_core_add_request():
             "switched to the new definition of EngineCore.add_request()")
         # The compat code introduced in the PR below can now be removed:
         # https://github.com/vllm-project/vllm-spyre/pull/354
+
+
+@pytest.mark.cpu
+def test_mm_inputs():
+
+    from vllm.v1.core.sched.output import NewRequestData
+    has_mm_inputs = hasattr(NewRequestData, 'mm_inputs')
+
+    if VLLM_VERSION == "vLLM:main":
+        assert not has_mm_inputs
+    elif VLLM_VERSION == "vLLM:lowest":
+        assert has_mm_inputs, ("The lowest supported vLLM version already"
+                               "renamed mm_inputs to mm_kwargs.")
+        # The compat code introduced in the PR below can now be removed:
+        # TBD
