@@ -11,6 +11,8 @@ from vllm.v1.executor.abstract import Executor
 
 from vllm_spyre.v1.core.scheduler import ContinuousBatchingSpyreScheduler
 
+DISABLE_ASSERTS = False  # used for debugging
+
 
 def augment_checked_steps(
         checked_steps: list[dict[str, Any]]) -> deque[dict[str, Any]]:
@@ -140,17 +142,18 @@ def check_scheduler_inference_steps(
                 r.request_id for r in request_outputs if r.finished
             ]
 
-            assert (scheduler.tkv == step_ref["tkv"]
-                    ), f"Step {step}, tkv: {scheduler.tkv}"
-            assert waiting == step_ref[
+            assert DISABLE_ASSERTS or (scheduler.tkv == step_ref["tkv"]
+                                       ), f"Step {step}, tkv: {scheduler.tkv}"
+            assert DISABLE_ASSERTS or waiting == step_ref[
                 "waiting"], f"Step {step}, waiting: {waiting}"
-            assert running == step_ref[
+            assert DISABLE_ASSERTS or running == step_ref[
                 "running"], f"Step {step}, running: {running}"
-            assert (out_reqs_ids == step_ref["request_outputs"]
-                    ), f"Step {step}, request outputs: {out_reqs_ids}"
+            assert DISABLE_ASSERTS or (
+                out_reqs_ids == step_ref["request_outputs"]
+            ), f"Step {step}, request outputs: {out_reqs_ids}"
 
             ref_finished_reqs = step_ref.get("finished_requests", [])
-            assert (
+            assert DISABLE_ASSERTS or (
                 out_reqs_finished == ref_finished_reqs
             ), f"Step {step}, finished request output: {out_reqs_finished}"
 
@@ -167,16 +170,18 @@ def check_scheduler_inference_steps(
                 [len(blocks) for blocks in req_ids2blocks.values()])
 
             if step > 0:
-                assert (
+                assert DISABLE_ASSERTS or (
                     n_reserved_blocks == step_ref["n_reserved_blocks"]
                 ), f"Step {step}, n_reserved_blocks: {n_reserved_blocks}"
-                assert (n_used_blocks == step_ref["n_used_blocks"]
-                        ), f"Step {step}, n_used_blocks: {n_used_blocks}"
+                assert DISABLE_ASSERTS or (
+                    n_used_blocks == step_ref["n_used_blocks"]
+                ), f"Step {step}, n_used_blocks: {n_used_blocks}"
 
-            assert len(req_ids2blocks) == len(req_ids2reserved_blocks)
+            assert DISABLE_ASSERTS or len(req_ids2blocks) == len(
+                req_ids2reserved_blocks)
             for req_id in req_ids2blocks:
                 # current number of used blocks should be less than reserved
-                assert len(
+                assert DISABLE_ASSERTS or len(
                     req_ids2blocks[req_id]) <= req_ids2reserved_blocks[req_id]
                 # update requested/reserved blocks to check in last step
                 # Note: overwrite and not max because of reduce_left_padding()
@@ -187,7 +192,8 @@ def check_scheduler_inference_steps(
         # Note: no early stopping, all sequences produce max_num_tokens
         if len(checked_steps) == 0:
             for req_id in requested_blocks:
-                assert requested_blocks[req_id] == reserved_blocks[req_id]
+                assert DISABLE_ASSERTS or requested_blocks[
+                    req_id] == reserved_blocks[req_id]
 
         # Perform next step
         step_output = engine_core.step()
@@ -198,7 +204,8 @@ def check_scheduler_inference_steps(
         for output in request_outputs:
             new_token_ids = output.new_token_ids
             new_logprobs = output.new_logprobs.logprobs
-            assert len(new_token_ids) == 1 and len(new_logprobs) == 1
+            assert DISABLE_ASSERTS or len(new_token_ids) == 1 and len(
+                new_logprobs) == 1
 
             collected_outputs[output.request_id]["token_ids"].append(
                 new_token_ids[0])
@@ -206,7 +213,8 @@ def check_scheduler_inference_steps(
                 new_logprobs[0][0])
 
     output_keys = sorted(int(k) for k in collected_outputs)
-    assert output_keys[0] == 0 and output_keys[-1] == len(output_keys) - 1
+    assert DISABLE_ASSERTS or output_keys[0] == 0 and output_keys[-1] == len(
+        output_keys) - 1
 
     # convert dict of dicts to ordered list and make values immutable
     collected_outputs_new = []
