@@ -14,7 +14,7 @@ from spyre_util import (RemoteOpenAIServer, check_output_against_hf,
                         force_engine_shutdown, generate_spyre_vllm_output,
                         get_chicken_soup_prompts, get_spyre_model_list,
                         skip_unsupported_tp_size)
-from vllm import SamplingParams
+from vllm import LLM, SamplingParams
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
@@ -164,9 +164,10 @@ def test_continuous_batching_with_long_contexts(model, monkeypatch):
         assert vllm_cpu_results[i]["text"] == vllm_spyre_results[i]["text"]
 
 
-@pytest.mark.spyre
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.parametrize(
+    "backend", [pytest.param("sendnn", marks=pytest.mark.spyre, id="sendnn")])
 @pytest.mark.parametrize(
     "tp_size",
     [
@@ -191,7 +192,6 @@ def test_long_context_batches(
     max_model_len = 32768
     max_num_seqs = 32
     max_tokens = 10
-    backend = 'sendnn'
 
     # (batch_size, prompt_length) pairs
     batch_token_pairs = [
