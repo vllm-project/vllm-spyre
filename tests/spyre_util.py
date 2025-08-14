@@ -601,7 +601,7 @@ def create_random_request(
                 ), f"need {num_tokens} but got {len(prompt_token_ids)}"
 
     sig = inspect.signature(EngineCore.add_request)
-    inputs_renamed = hasattr(EngineCoreRequest, 'mm_inputs')
+    inputs_renamed = hasattr(EngineCoreRequest, 'mm_kwargs')
     if sig.parameters["request"].annotation == EngineCoreRequest:
         kwargs = {"mm_kwargs" if inputs_renamed else "mm_inputs": None}
         return EngineCoreRequest(
