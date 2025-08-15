@@ -389,6 +389,8 @@ class SpyreWorker(WorkerBaseV1):
             pooling_params=None,
         ) for i in range(2))
 
+        model_runner.pre_warmup()
+
         with _maybe_warmup_context():
             self._dynamic_warmup(request=warmup_req,
                                  prompt_len=prompt_len,
