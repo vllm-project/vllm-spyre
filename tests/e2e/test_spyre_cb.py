@@ -58,7 +58,7 @@ def test_cb_max_tokens(
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
-def test__api_cb_rejects_oversized_request(
+def test_api_cb_rejects_oversized_request(
     remote_openai_server: RemoteOpenAIServer,
     model: str,
     backend: str,
