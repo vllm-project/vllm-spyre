@@ -62,11 +62,9 @@ def test_output(
         "max_num_seqs": max_num_seqs,
         "use_cb": True,
         "max_model_len": 256,
-        "block_size": 256,
     } if cb == 1 else {
         "warmup_shapes": (warmup_shape, ),
         "max_model_len": 2048,
-        "block_size": 2048,
     })
 
     max_new_tokens = warmup_shape[1]
@@ -122,7 +120,6 @@ def test_output_sendnn_decoder(
         prompts=prompts,
         warmup_shapes=[warmup_shape],
         max_model_len=2048,
-        block_size=2048,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
         backend=backend,
@@ -171,7 +168,6 @@ def test_batch_handling(model: str, backend: str, cb: int,
         model=model,
         prompts=prompts,
         max_model_len=256,
-        block_size=256,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
         backend=backend,

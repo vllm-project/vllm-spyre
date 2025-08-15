@@ -49,7 +49,6 @@ def test_seed(
         prompts=prompts,
         warmup_shapes=[warmup_shape],
         max_model_len=2048,
-        block_size=2048,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
         backend=backend,

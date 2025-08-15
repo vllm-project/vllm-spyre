@@ -85,7 +85,6 @@ sampling_params = SamplingParams(max_tokens=args.max_tokens,
 llm = LLM(model=args.model,
           tokenizer=args.model,
           max_model_len=args.max_model_len,
-          block_size=2048,
           tensor_parallel_size=args.tp)
 
 # Generate texts from the prompts. The output is a list of RequestOutput objects

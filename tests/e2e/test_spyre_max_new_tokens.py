@@ -78,7 +78,6 @@ def test_output(
     vllm_results = generate_spyre_vllm_output(
         model=model,
         prompts=prompts,
-        block_size=2048,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
         backend=backend,

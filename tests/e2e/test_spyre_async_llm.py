@@ -87,7 +87,6 @@ async def test_abort(
                 tokenizer=model,
                 max_model_len=128,
                 max_num_seqs=2,
-                block_size=2048,
             ))
         has_unfinished_requests = \
             engine.output_processor.has_unfinished_requests
