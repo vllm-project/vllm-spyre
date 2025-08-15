@@ -92,9 +92,9 @@ def test_output(
     "warmup_shape", [(64, 20, 4)])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize(
     "backend",
-    pytest.param("sendnn_decoder",
+    [pytest.param("sendnn_decoder",
                  marks=pytest.mark.spyre,
-                 id="sendnn_decoder"))
+                 id="sendnn_decoder")])
 def test_output_sendnn_decoder(
     model: str,
     warmup_shape: tuple[int, int, int],
@@ -180,7 +180,7 @@ def test_batch_handling(model: str, backend: str, cb: int,
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def test_full_batch_scheduling(model: str, backend: str, monkeypatch):
+def test_full_batch_scheduling(model: str, backend: str, monkeypatch, no_llm_cache):
     """Test that we can schedule a full batch of prompts."""
 
     # We need to ensure here that the max number of tokens in a full batch

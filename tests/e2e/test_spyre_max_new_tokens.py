@@ -15,7 +15,7 @@ from vllm import SamplingParams
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("stop_last", [True, False])
 @pytest.mark.parametrize(
-    "warmup_shape", [(64, 10, 4)])  # (prompt_length/new_tokens/batch_size)
+    "warmup_shape", [[(64, 10, 4)]])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_output(
     model: str,
@@ -37,7 +37,7 @@ def test_output(
 
     prompts = get_chicken_soup_prompts(4)
 
-    max_new_tokens_warmup = warmup_shape[1]
+    max_new_tokens_warmup = warmup_shape[0][1]
     max_new_tokens_early_stop = 1
 
     vllm_sampling_params_normal = SamplingParams(
@@ -71,7 +71,7 @@ def test_output(
         "use_cb": True,
         "max_model_len": 256
     } if cb == 1 else {
-        "warmup_shapes": (warmup_shape, ),
+        "warmup_shapes": warmup_shape,
         "max_model_len": 2048
     })
 

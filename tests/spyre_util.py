@@ -32,6 +32,8 @@ ISCLOSE_REL_TOL_SPYRE = 0.35
 HF_RESULT_CACHE = HFResultCache()
 CACHED_LLM: LLM | None = None
 CACHED_LLM_CONFIG: dict | None = None
+PREVIOUS_CACHED_RUNTIME_CONFIGS = []
+HF_RESULT_CACHE = HFResultCache()
 
 
 def force_engine_shutdown(llm: LLM):
@@ -235,15 +237,6 @@ def generate_spyre_vllm_output(
     # shutdown engine this context.
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
-<<<<<<< HEAD
-    vllm_model = LLM(
-        model=model,
-        tokenizer=model,
-        max_model_len=max_model_len,
-        max_num_seqs=max_num_seqs,
-        tensor_parallel_size=tensor_parallel_size,
-    )
-=======
     start = time.time()
     vllm_model = _get_llm(model=model,
              max_model_len=max_model_len,
@@ -254,7 +247,6 @@ def generate_spyre_vllm_output(
              max_num_seqs=max_num_seqs,
              use_cb=use_cb)
     load_duration = time.time() - start
->>>>>>> 8efc335 (:poop: try to cache an LLM)
 
     start = time.time()
     vllm_outputs = vllm_model.generate(prompts, sampling_params)
@@ -276,7 +268,7 @@ def generate_spyre_vllm_output(
         result = extract_output(req_output)
         results.append(result)
 
-    force_engine_shutdown(vllm_model)
+    # force_engine_shutdown(vllm_model)
     return results
 
 def _get_llm(
@@ -315,8 +307,10 @@ def _get_llm(
 
     global CACHED_LLM
     global CACHED_LLM_CONFIG
+    global PREVIOUS_CACHED_RUNTIME_CONFIGS
 
     if CACHED_LLM_CONFIG and CACHED_LLM_CONFIG == runtime_config:
+        print("\n\n\t\t\tCACHE HIT!\n")
         # cache hit
         return CACHED_LLM
     # cache miss
@@ -326,6 +320,10 @@ def _get_llm(
     print()
     print(CACHED_LLM_CONFIG)
     print("\n\n\n\n")
+
+    PREVIOUS_CACHED_RUNTIME_CONFIGS.append(CACHED_LLM_CONFIG)
+
+    assert runtime_config not in PREVIOUS_CACHED_RUNTIME_CONFIGS, f"Runtime config {runtime_config} was previously cached- error in test ordering!"
 
     CACHED_LLM_CONFIG = runtime_config
     
@@ -343,7 +341,14 @@ def _get_llm(
     return CACHED_LLM
 
 
-    
+def clear_cached_llm():
+    global CACHED_LLM
+    global CACHED_LLM_CONFIG
+
+    if CACHED_LLM:
+        force_engine_shutdown(CACHED_LLM)
+        CACHED_LLM = None
+        CACHED_LLM_CONFIG = None
 
 
 def _patch_environment(use_cb: bool, warmup_shapes: Optional[list[tuple[int, int, int]]], backend: str, monkeypatch):
@@ -572,6 +577,8 @@ def check_output_against_hf(model, backend, max_new_tokens, vllm_results,
 def spyre_vllm_embeddings(model: str, prompts: list[str], max_model_len: int,
                           tensor_parallel_size: int,
                           backend: str) -> list[dict[str, Any]]:
+    # Clear any cached decoder model
+    clear_cached_llm()
 
     vllm_model = LLM(model=model,
                      tokenizer=model,

@@ -62,6 +62,7 @@ async def test_abort(
     warmup_shapes: list[list[int]],
     output_kind: RequestOutputKind,
     monkeypatch: pytest.MonkeyPatch,
+    no_llm_cache
 ):
     """Test handling of cancelled requests"""
     with monkeypatch.context() as m, ExitStack() as after:

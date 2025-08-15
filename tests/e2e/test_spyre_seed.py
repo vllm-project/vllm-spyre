@@ -15,14 +15,17 @@ from vllm import SamplingParams
 @pytest.mark.parametrize("temperature", [0.1, 1.0])
 @pytest.mark.parametrize("seed", [42])
 @pytest.mark.parametrize(
-    "warmup_shape", [(64, 20, 4)])  # (prompt_length/new_tokens/batch_size)
+    "warmup_shape", [[(64, 20, 4)]])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
+@pytest.mark.parametrize("cb",
+                         [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
 def test_seed(
     model: str,
     temperature: float,
     seed: int,
     warmup_shape: tuple[int, int, int],
     backend: str,
+    cb: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     '''
@@ -47,11 +50,13 @@ def test_seed(
     vllm_results = generate_spyre_vllm_output(
         model=model,
         prompts=prompts,
-        warmup_shapes=[warmup_shape],
-        max_model_len=2048,
+        warmup_shapes=warmup_shape,
+        max_model_len=256,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
         backend=backend,
+        use_cb=bool(cb),
+        max_num_Seqs=2,
         monkeypatch=monkeypatch)
 
     # compare all generated outputs against the first generated output
