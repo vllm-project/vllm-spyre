@@ -801,7 +801,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # Note: Until this feature is supported by the compiler we have to set:
         # n_blocks_warmup = n_blocks_avail
 
-        n_blocks_warmup = self.model.model._get_num_blocks_available()
+        n_blocks_warmup = self.model.model.get_num_blocks_available()
         self._set_blocks(num_blocks=n_blocks_warmup)
         self.model.model._set_past_key_value_states(num_blocks=n_blocks_warmup)
 
@@ -821,7 +821,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         super().complete_warmup()
         # get the number or pages from the actual Spyre card after the warmup
         # and set it accordingly in the model runner and for the kv cache size
-        n_blocks_avail = self.model.model._get_num_blocks_available()
+        n_blocks_avail = self.model.model.get_num_blocks_available()
         self._set_blocks(num_blocks=n_blocks_avail)
         self.model.model._set_past_key_value_states(num_blocks=n_blocks_avail)
 

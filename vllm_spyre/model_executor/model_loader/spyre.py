@@ -327,7 +327,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         else:
             self.attention_name = "spyre_paged_attn"
 
-    def _get_num_blocks_available(self) -> int:
+    def get_num_blocks_available(self) -> int:
         """Function returns the number of available blocks/pages.
         Will eventually contain a function in torch_sendnn which reads 
         the actual value provided by the compiler for backend sendnn"""
