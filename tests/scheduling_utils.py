@@ -228,6 +228,6 @@ def check_scheduler_inference_steps(
                 output[k] = tuple(list_values)
         collected_outputs_new.append(output)
 
-    # need this for TP
+    # good practice?
     engine_core.shutdown()
     return collected_outputs_new, generated_prompts
