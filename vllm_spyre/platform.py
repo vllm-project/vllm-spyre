@@ -203,7 +203,7 @@ class SpyrePlatform(Platform):
         if (envs_spyre.VLLM_SPYRE_USE_CB
                 and vllm_config.model_config.max_model_len > 32 * 1024):
             logger.warning(
-                'Max context length too big. Currently only 32K (32768) ' \
+                'Max context length is too big. Currently only 32K (32768) ' \
                 'context length is supported on Spyre for continuous ' \
                 'batching. Results might be off!'
             )
