@@ -9,7 +9,7 @@ Run `python -m pytest tests/e2e/test_spyre_cb_inference_steps.py`.
 import pytest
 from scheduling_utils import check_scheduler_inference_steps
 from spyre_util import (check_output_against_hf, get_spyre_backend_list,
-                        get_spyre_model_list)
+                        get_spyre_model_list, skip_unsupported_tp_size)
 
 
 @pytest.mark.cb
@@ -1851,6 +1851,187 @@ def test_requests_use_more_than_available_blocks(
         max_model_len=max_model_len,
         available_blocks=available_blocks,
         use_cb=True,
+    )
+
+    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                            prompts)
+
+
+@pytest.mark.cb
+@pytest.mark.parametrize("model", ["ibm-granite/granite-3.3-8b-instruct"])
+@pytest.mark.parametrize(
+    "backend", [pytest.param("sendnn", marks=pytest.mark.spyre, id="sendnn")])
+@pytest.mark.parametrize(
+    "tp_size",
+    [
+        pytest.param(1, marks=pytest.mark.basic),
+        pytest.param(2, marks=pytest.mark.multi),
+        pytest.param(4, marks=pytest.mark.multi),
+        pytest.param(8, marks=pytest.mark.multi),
+    ],
+    ids=lambda val: f"TP({val})",
+)
+def test_staggered_requests(
+    model: str,
+    backend: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tp_size: int,
+    set_random_seed,
+    # seqs_max_tokens,
+):
+    """Scenario where some request arrive later than others.
+
+    Configuration:
+        * max_num_seqs: 4
+        * number of prompts: 12
+            * 1: len = 10, max tokens = 15, step joining = 0
+            * 2: len = 10, max tokens = 10, step joining = 0
+            * 3: len = 10, max tokens = 5, step joining = 0
+            * 4: len = 10, max tokens = 20, step joining = 0
+            * 5: len = 10, max tokens = 15, step joining = 10
+            * 6: len = 10, max tokens = 10, step joining = 10
+            * 7: len = 10, max tokens = 5, step joining = 10
+            * 8: len = 10, max tokens = 20, step joining = 10
+            * 9: len = 10, max tokens = 15, step joining = 20
+            * 10: len = 10, max tokens = 10, step joining = 20
+            * 11: len = 10, max tokens = 5, step joining = 20
+            * 12: len = 10, max tokens = 20, step joining = 20
+    """
+
+    skip_unsupported_tp_size(int(tp_size), backend)
+
+    seqs_max_tokens = [15, 10, 5, 20] * 3
+    prompts_lengths = [10] * 12
+    steps_add_reqs = [0, 0, 0, 0, 10, 10, 10, 10, 20, 20, 20, 20]
+    available_blocks = 1000
+    max_num_seqs = 4
+    max_model_len = 256
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0", "1", "2", "3"],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0,
+        },
+        {
+            "step": 1,
+            "tkv": 64,
+            "waiting": ["1", "2", "3"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 2,
+            "n_used_blocks": 1,
+        },
+        {
+            "step": 2,
+            "tkv": 64,
+            "waiting": ["2", "3"],
+            "running": ["1", "0"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 2,
+        },
+        {
+            "step": 3,
+            "tkv": 64,
+            "waiting": ["3"],
+            "running": ["2", "1", "0"],
+            "request_outputs": ["2"],
+            "n_reserved_blocks": 6,
+            "n_used_blocks": 3,
+        },
+        {
+            "step": 4,
+            "tkv": 64,
+            "waiting": [],
+            "running": ["3", "2", "1", "0"],
+            "request_outputs": ["3"],
+            "n_reserved_blocks": 8,
+            "n_used_blocks": 4,
+        },
+        {
+            "step": 5,
+            "tkv": 65,
+            "waiting": [],
+            "running": ["3", "2", "1", "0"],
+            "request_outputs": ["3", "2", "1", "0"],
+            "n_reserved_blocks": 8,
+            "n_used_blocks": 8,
+        },
+        {
+            "step": 6,
+            "tkv": 66,
+            "waiting": [],
+            "running": ["3", "2", "1", "0"],
+            "request_outputs": ["3", "2", "1", "0"],
+            "n_reserved_blocks": 8,
+            "n_used_blocks": 8,
+        },
+        {
+            "step": 8,
+            "tkv": 68,
+            "waiting": [],
+            "running": ["3", "1", "0"],
+            "request_outputs": ["3", "2", "1", "0"],
+            "n_reserved_blocks": 8,
+            "finished_requests": ["2"],
+            "n_used_blocks": 8,
+        },
+        {
+            "step": 9,
+            "tkv": 69,
+            "waiting": [],
+            "running": ["3", "1", "0"],
+            "request_outputs": ["3", "1", "0"],
+            "n_reserved_blocks": 6,
+            "n_used_blocks": 6,
+        },
+        {
+            "step": 10,
+            "tkv": 70,
+            "waiting": ["4", "5", "6", "7"],
+            "running": ["3", "1", "0"],
+            "request_outputs": ["3", "1", "0"],
+            "n_reserved_blocks": 6,
+            "n_used_blocks": 6,
+        },
+        {
+            "step": 11,
+            "tkv": 70,
+            "waiting": ["5", "6", "7"],
+            "running": ["4", "3", "1", "0"],
+            "request_outputs": ["4"],
+            "n_reserved_blocks": 8,
+            "n_used_blocks": 8,
+        },
+        {
+            "step": 100,
+            "tkv": 66,
+            "waiting": ["2", "3"],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 4,
+        },
+    ]
+
+    cb_outputs, prompts = check_scheduler_inference_steps(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        seqs_max_tokens=seqs_max_tokens,
+        prompts_lengths=prompts_lengths,
+        steps_add_reqs=steps_add_reqs,
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
+        available_blocks=available_blocks,
+        use_cb=True,
+        tensor_parallel_size=tp_size,
     )
 
     check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
