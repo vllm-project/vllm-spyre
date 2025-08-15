@@ -161,18 +161,17 @@ def check_scheduler_inference_steps(
                 out_reqs_finished == ref_finished_reqs
             ), f"Step {step}, finished request output: {out_reqs_finished}"
 
+            # 'MultiprocExecutor' object has no attribute 'driver_worker'
             if tensor_parallel_size == 1:
-                # multi-proc executor needs a separate way
-                # of getting the driver_worker?
                 # checking the scheduler handling of free and reserved blocks
                 n_blocks = (engine_core.model_executor.driver_worker.worker.
                             model_runner.n_blocks)
                 n_reserved_blocks = n_blocks - scheduler.n_free_blocks
-                req_ids2blocks = (engine_core.model_executor.driver_worker.worker.
-                                model_runner.req_ids2blocks)
+                req_ids2blocks = (engine_core.model_executor.driver_worker.
+                                  worker.model_runner.req_ids2blocks)
                 req_ids2reserved_blocks = (
-                    engine_core.model_executor.driver_worker.worker.model_runner.
-                    req_ids2reserved_blocks)
+                    engine_core.model_executor.driver_worker.worker.
+                    model_runner.req_ids2reserved_blocks)
                 n_used_blocks = sum(
                     [len(blocks) for blocks in req_ids2blocks.values()])
 
@@ -191,7 +190,8 @@ def check_scheduler_inference_steps(
                     assert (DISABLE_ASSERTS or len(req_ids2blocks[req_id])
                             <= req_ids2reserved_blocks[req_id])
                     # update requested/reserved blocks to check in last step
-                    # Note: overwrite and not max because of reduce_left_padding()
+                    # Note: overwrite and not max
+                    # because of reduce_left_padding()
                     requested_blocks[req_id] = len(req_ids2blocks[req_id])
                     reserved_blocks[req_id] = req_ids2reserved_blocks[req_id]
 
