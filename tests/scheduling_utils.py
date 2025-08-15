@@ -46,7 +46,6 @@ def check_scheduler_inference_steps(
     max_model_len: int,
     available_blocks: int,
     use_cb: bool = True,
-    tensor_parallel_size: int = 1,
 ):
     """
     Test the scheduler execution by comparing the scheduler attributes at each 
@@ -115,7 +114,6 @@ def check_scheduler_inference_steps(
         block_size=max_model_len,
         max_num_seqs=max_num_seqs,
         num_gpu_blocks_override=available_blocks,
-        tensor_parallel_size=tensor_parallel_size,
     )
     vllm_config = engine_args.create_engine_config()
     executor_class = Executor.get_class(vllm_config)
@@ -161,39 +159,37 @@ def check_scheduler_inference_steps(
                 out_reqs_finished == ref_finished_reqs
             ), f"Step {step}, finished request output: {out_reqs_finished}"
 
-            # 'MultiprocExecutor' object has no attribute 'driver_worker'
-            if tensor_parallel_size == 1:
-                # checking the scheduler handling of free and reserved blocks
-                n_blocks = (engine_core.model_executor.driver_worker.worker.
-                            model_runner.n_blocks)
-                n_reserved_blocks = n_blocks - scheduler.n_free_blocks
-                req_ids2blocks = (engine_core.model_executor.driver_worker.
-                                  worker.model_runner.req_ids2blocks)
-                req_ids2reserved_blocks = (
-                    engine_core.model_executor.driver_worker.worker.
-                    model_runner.req_ids2reserved_blocks)
-                n_used_blocks = sum(
-                    [len(blocks) for blocks in req_ids2blocks.values()])
+            # checking the scheduler handling of free and reserved blocks
+            n_blocks = (engine_core.model_executor.driver_worker.worker.
+                        model_runner.n_blocks)
+            n_reserved_blocks = n_blocks - scheduler.n_free_blocks
+            req_ids2blocks = (engine_core.model_executor.driver_worker.worker.
+                              model_runner.req_ids2blocks)
+            req_ids2reserved_blocks = (
+                engine_core.model_executor.driver_worker.worker.model_runner.
+                req_ids2reserved_blocks)
+            n_used_blocks = sum(
+                [len(blocks) for blocks in req_ids2blocks.values()])
 
-                if step > 0:
-                    assert DISABLE_ASSERTS or (
-                        n_reserved_blocks == step_ref["n_reserved_blocks"]
-                    ), f"Step {step}, n_reserved_blocks: {n_reserved_blocks}"
-                    assert DISABLE_ASSERTS or (
-                        n_used_blocks == step_ref["n_used_blocks"]
-                    ), f"Step {step}, n_used_blocks: {n_used_blocks}"
+            if step > 0:
+                assert DISABLE_ASSERTS or (
+                    n_reserved_blocks == step_ref["n_reserved_blocks"]
+                ), f"Step {step}, n_reserved_blocks: {n_reserved_blocks}"
+                assert DISABLE_ASSERTS or (
+                    n_used_blocks == step_ref["n_used_blocks"]
+                ), f"Step {step}, n_used_blocks: {n_used_blocks}"
 
-                assert DISABLE_ASSERTS or len(req_ids2blocks) == len(
-                    req_ids2reserved_blocks)
-                for req_id in req_ids2blocks:
-                    # current number of used blocks should be less than reserved
-                    assert (DISABLE_ASSERTS or len(req_ids2blocks[req_id])
-                            <= req_ids2reserved_blocks[req_id])
-                    # update requested/reserved blocks to check in last step
-                    # Note: overwrite and not max
-                    # because of reduce_left_padding()
-                    requested_blocks[req_id] = len(req_ids2blocks[req_id])
-                    reserved_blocks[req_id] = req_ids2reserved_blocks[req_id]
+            assert DISABLE_ASSERTS or len(req_ids2blocks) == len(
+                req_ids2reserved_blocks)
+            for req_id in req_ids2blocks:
+                # current number of used blocks should be less than reserved
+                assert (DISABLE_ASSERTS or len(req_ids2blocks[req_id])
+                        <= req_ids2reserved_blocks[req_id])
+                # update requested/reserved blocks to check in last step
+                # Note: overwrite and not max
+                # because of reduce_left_padding()
+                requested_blocks[req_id] = len(req_ids2blocks[req_id])
+                reserved_blocks[req_id] = req_ids2reserved_blocks[req_id]
 
         # last step: check that sequences used all their reserved blocks
         # Note: no early stopping, all sequences produce max_num_tokens

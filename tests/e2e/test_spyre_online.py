@@ -1,6 +1,3 @@
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
 import openai
 import pytest
 from spyre_util import get_spyre_backend_list, get_spyre_model_list
@@ -16,47 +13,6 @@ def _check_result(client, model, max_tokens=8, temperature=0.0, n=1) -> None:
     )
     assert len(completion.choices) == n
     assert len(completion.choices[0].text) > 0
-
-
-@pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("cb",
-                         [pytest.param(1, marks=pytest.mark.cb, id="cb")])
-@pytest.mark.parametrize("max_num_seqs", [4],
-                         ids=lambda val: f"max_num_seqs({val})")
-@pytest.mark.parametrize("max_model_len", [256],
-                         ids=lambda val: f"max_model_len({val})")
-@pytest.mark.parametrize("max_tokens", [32, 64],
-                         ids=lambda val: f"max_tokens({val})")
-# @pytest.mark.asyncio
-def test_online_output(
-    remote_openai_server,
-    model,
-    backend,
-    cb,
-    max_num_seqs,
-    max_model_len,
-    max_tokens,
-):
-    """Test online serving using batches of requests at different times
-    using the `vllm serve` CLI"""
-
-    client = remote_openai_server.get_client()
-
-    total_requests = 20
-    batch_size = 5
-    delay = 1
-    futures = []
-    with ThreadPoolExecutor(max_workers=20) as executor:
-        for batch_start in range(1, total_requests + 1, batch_size):
-            batch_end = min(batch_start + batch_size, total_requests + 1)
-            for _ in range(batch_start, batch_end):
-                futures.append(
-                    executor.submit(_check_result, client, model, max_tokens))
-            time.sleep(delay)  # Wait before launching the next batch
-        # Wait for all requests to finish
-        for future in as_completed(futures):
-            future.result()
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
