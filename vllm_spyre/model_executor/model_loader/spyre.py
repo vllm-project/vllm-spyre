@@ -350,7 +350,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         else:
             # default value for any other model/ tensor parallel size
             NUM_BLOCKS_SPYRE = max_batch_size * min_req_num_blocks
-            logger.info("No model / tensor parallel size specific value for" \
+            logger.info("No model / tensor parallel size specific value for " \
             "the number of KV cache blocks available on Spyre found. Using " \
             "default value (max_batch_size * max_model_len / block_size): %d",
               NUM_BLOCKS_SPYRE)
