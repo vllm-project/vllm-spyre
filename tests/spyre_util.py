@@ -201,7 +201,6 @@ def generate_spyre_vllm_output(
     model: str,
     prompts: Union[list[str], list[list[int]]],
     max_model_len: int,
-    block_size: int,
     sampling_params: Union[SamplingParams, list[SamplingParams]],
     tensor_parallel_size: int,
     backend: str,
@@ -239,7 +238,6 @@ def generate_spyre_vllm_output(
         tokenizer=model,
         max_model_len=max_model_len,
         max_num_seqs=max_num_seqs,
-        block_size=block_size,
         tensor_parallel_size=tensor_parallel_size,
     )
 
@@ -455,13 +453,12 @@ def check_output_against_hf(model, backend, max_new_tokens, vllm_results,
 
 # vLLM / Spyre
 def spyre_vllm_embeddings(model: str, prompts: list[str], max_model_len: int,
-                          block_size: int, tensor_parallel_size: int,
+                          tensor_parallel_size: int,
                           backend: str) -> list[dict[str, Any]]:
 
     vllm_model = LLM(model=model,
                      tokenizer=model,
                      max_model_len=max_model_len,
-                     block_size=block_size,
                      tensor_parallel_size=tensor_parallel_size)
 
     vllm_outputs = vllm_model.embed(prompts)

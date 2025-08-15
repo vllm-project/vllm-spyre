@@ -43,7 +43,6 @@ def test_cb_max_tokens(
         generate_spyre_vllm_output(model=model,
                                    prompts=overflow_prompt,
                                    max_model_len=max_model_len,
-                                   block_size=max_model_len,
                                    sampling_params=vllm_sampling_params,
                                    tensor_parallel_size=1,
                                    backend=backend,
@@ -138,7 +137,6 @@ def test_continuous_batching_with_long_contexts(model, monkeypatch):
         model=model,
         prompts=prompts,
         max_model_len=max_model_len,
-        block_size=max_model_len,
         sampling_params=sampling_params,
         tensor_parallel_size=1,
         backend="eager",
@@ -150,7 +148,6 @@ def test_continuous_batching_with_long_contexts(model, monkeypatch):
         model=model,
         prompts=prompts,
         max_model_len=max_model_len,
-        block_size=max_model_len,
         sampling_params=sampling_params,
         tensor_parallel_size=1,
         backend="sendnn",
@@ -208,7 +205,6 @@ def test_long_context_batches(
         tokenizer=model,
         max_model_len=max_model_len,
         max_num_seqs=max_num_seqs,
-        block_size=2048,
         tensor_parallel_size=tp_size,
     )
 
@@ -336,7 +332,6 @@ def test_swap_decode_programs_for_cb(
                                               backend=backend,
                                               max_num_seqs=max_num_seqs,
                                               monkeypatch=monkeypatch,
-                                              block_size=max_model_len,
                                               max_model_len=max_model_len,
                                               use_cb=True)
 
