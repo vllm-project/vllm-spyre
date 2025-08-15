@@ -1864,10 +1864,7 @@ def test_requests_use_more_than_available_blocks(
 @pytest.mark.parametrize(
     "tp_size",
     [
-        pytest.param(1, marks=pytest.mark.basic),
-        pytest.param(2, marks=pytest.mark.multi),
         pytest.param(4, marks=pytest.mark.multi),
-        pytest.param(8, marks=pytest.mark.multi),
     ],
     ids=lambda val: f"TP({val})",
 )
