@@ -27,6 +27,7 @@ from vllm.worker.worker_base import WorkerBase
 
 import vllm_spyre.envs as envs_spyre
 import vllm_spyre.perf_metrics as perf_metrics
+import vllm_spyre.utils as utils_spyre
 from vllm_spyre.compat_utils import dataclass_fields
 from vllm_spyre.model_executor.model_loader import spyre_setup
 from vllm_spyre.platform import SpyrePlatform
@@ -64,12 +65,20 @@ def new_request_data_builder(
 
 
 @contextlib.contextmanager
-def _maybe_warmup_context():
+def _maybe_warmup_context(limit: int, world_size: int, rank: int):
     global _inside_warmup_mode
     warmup_context = contextlib.nullcontext
     if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
         from torch_sendnn import warmup_mode
         warmup_context = warmup_mode
+
+    sendnn_exit = warmup_context.__exit__
+
+    def __stagger_exit__(self, *exc_details):
+        with utils_spyre.stagger_region(limit, world_size, rank):
+            sendnn_exit(warmup_context, *exc_details)  # type: ignore
+
+    warmup_context.__exit__ = __stagger_exit__  # type: ignore
     with warmup_context():
         _inside_warmup_mode = True
         yield
@@ -91,17 +100,21 @@ class SpyreWorker(WorkerBaseV1):
     def is_pooling(self) -> bool:
         # Can be simplified after the deprecation of `model_config.task` in
         # vllm > 0.10.0
+        # yapf: disable
         return "embed" in self.model_config.supported_tasks if (
             self.model_config.task == "auto" or self.model_config.task
             is None) else self.model_config.task == "embed"
+        # yapf: enable
 
     @property
     def is_decoder(self) -> bool:
         # Can be simplified after the deprecation of `model_config.task` in
         # vllm > 0.10.0
+        # yapf: disable
         return "generate" in self.model_config.supported_tasks if (
             self.model_config.task == "auto" or self.model_config.task
             is None) else self.model_config.task == "generate"
+        # yapf: enable
 
     def get_kv_cache_spec(self) -> KVCacheSpec:
         """Get specifications for KV cache implementation.
@@ -218,16 +231,16 @@ class SpyreWorker(WorkerBaseV1):
                   ContinuousBatchingSpyreModelRunner, SpyrePoolingModelRunner]
         if self.is_pooling:
             self.model_runner = SpyrePoolingModelRunner(
-                self.vllm_config, self.is_driver_worker)
+                self.vllm_config, self.is_driver_worker, self.rank)
             self.spyre_warmup_shapes = SpyrePlatform.get_warmup_shapes(
                 self.vllm_config.scheduler_config)
         else:
             if envs_spyre.VLLM_SPYRE_USE_CB:
                 self.model_runner = ContinuousBatchingSpyreModelRunner(
-                    self.vllm_config, self.is_driver_worker)
+                    self.vllm_config, self.is_driver_worker, self.rank)
             else:
                 self.model_runner = StaticBatchingSpyreModelRunner(
-                    self.vllm_config, self.is_driver_worker)
+                    self.vllm_config, self.is_driver_worker, self.rank)
                 self.spyre_warmup_shapes = SpyrePlatform.get_warmup_shapes(
                     self.vllm_config.scheduler_config)
         self._env_initialized = False
@@ -390,8 +403,8 @@ class SpyreWorker(WorkerBaseV1):
         ) for i in range(2))
 
         model_runner.pre_warmup()
-
-        with _maybe_warmup_context():
+        with _maybe_warmup_context(envs_spyre.VLLM_SPYRE_MAX_LOAD_PROCESSES,
+                                   self.parallel_config.world_size, self.rank):
             self._dynamic_warmup(request=warmup_req,
                                  prompt_len=prompt_len,
                                  valid_token_ids_tensor=valid_token_ids_tensor)
@@ -531,7 +544,8 @@ class SpyreWorker(WorkerBaseV1):
         # First full forward pass
         logger.info("[WARMUP] Compiling graphs...")
         # The fixed size warmup needs to happen only in here
-        with _maybe_warmup_context():
+        with _maybe_warmup_context(envs_spyre.VLLM_SPYRE_MAX_LOAD_PROCESSES,
+                                   self.parallel_config.world_size, self.rank):
             self._warmup_model_forward_pass(scheduler_output, dummy_requests,
                                             cached_request_data,
                                             num_decode_tokens)
