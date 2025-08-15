@@ -200,6 +200,13 @@ class SpyrePlatform(Platform):
         # set env vars for torch_sendnn to consume
         os.environ["VLLM_DT_MAX_CONTEXT_LEN"] = str(
             vllm_config.model_config.max_model_len)
+        if (envs_spyre.VLLM_SPYRE_USE_CB
+                and vllm_config.model_config.max_model_len > 32 * 1024):
+            logger.warning(
+                'Max context length is too big. Currently only 32K (32768) ' \
+                'context length is supported on Spyre for continuous ' \
+                'batching. Results might be off!'
+            )
         # min value 2 needed for VLLM_DT_MAX_BATCH_SIZE (compiler constraint)
         # Note that we can still have decodes of batch size 1 as the env var
         # only concerns the max batch size.

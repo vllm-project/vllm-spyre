@@ -13,6 +13,7 @@ import openai
 import pytest
 import requests
 import torch
+from hf_result_cache import HFResultCache
 from sentence_transformers import SentenceTransformer, util
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, SamplingParams
@@ -27,6 +28,8 @@ DISABLE_ASSERTS = False  # used for debugging
 # TODO: Needs to be separate for quantized models
 ISCLOSE_REL_TOL_CPU = 0.35
 ISCLOSE_REL_TOL_SPYRE = 0.35
+
+HF_RESULT_CACHE = HFResultCache()
 
 
 def force_engine_shutdown(llm: LLM):
@@ -175,6 +178,24 @@ def patch_warmup_shapes(warmup_shapes: Union[list[tuple[int, int, int]],
                            ','.join(str(val) for val in warmup_new_tokens))
 
 
+def extract_output(req_output):
+    """Extract text, token_ids, tokens, and logprobs from request output."""
+
+    result = {}
+    result['text'] = req_output.outputs[0].text
+
+    # TODO: Workaround for V1, if request does not fit in a warmup shape
+    # token_ids may be filled with -1.
+    token_ids = [t for t in req_output.outputs[0].token_ids if t >= 0]
+    result['token_ids'] = tuple(token_ids)
+    result['tokens'] = tuple(req_output.outputs[0].logprobs[i][t].decoded_token
+                             for i, t in enumerate(token_ids))
+    result['logprobs'] = tuple(req_output.outputs[0].logprobs[i][t].logprob
+                               for i, t in enumerate(token_ids))
+
+    return result
+
+
 # vLLM / Spyre
 def generate_spyre_vllm_output(
     model: str,
@@ -226,20 +247,7 @@ def generate_spyre_vllm_output(
     results = []
 
     for req_output in vllm_outputs:
-        result = {}
-        result['text'] = req_output.outputs[0].text
-        # TODO: Workaround for V1, if request does not fit in a warmup shape
-        # token_ids may be filled with -1.
-        token_ids = [t for t in req_output.outputs[0].token_ids if t >= 0]
-        result['token_ids'] = tuple(token_ids)
-        result['tokens'] = tuple([
-            req_output.outputs[0].logprobs[i][t].decoded_token
-            for i, t in enumerate(result['token_ids'])
-        ])
-        result['logprobs'] = tuple([
-            req_output.outputs[0].logprobs[i][t].logprob
-            for i, t in enumerate(result['token_ids'])
-        ])
+        result = extract_output(req_output)
         results.append(result)
 
     force_engine_shutdown(vllm_model)
@@ -248,22 +256,37 @@ def generate_spyre_vllm_output(
 
 # Hugging Face
 def generate_hf_output(
-    model: str,
-    prompts: Union[list[str], list[list[int]]],  # also accept token ids
-    max_new_tokens: Union[int, list[int]],
-    ignore_eos: bool = False,
-) -> list[dict[str, Any]]:
+        model: str,
+        prompts: Union[list[str], list[list[int]]],  # also accept token ids
+        max_new_tokens: Union[int, list[int]],
+        ignore_eos: bool = False,
+        include_prompt: bool = False) -> list[dict[str, Any]]:
+    """Loads and runs the model on cpu with transformers, caching the results.
+    Returns cached results if any are found to avoid overhead."""
 
     if not isinstance(max_new_tokens, list):
         max_new_tokens = [max_new_tokens] * len(prompts)
+
+    results = []
+    for prompt, max_tokens in zip(prompts, max_new_tokens):
+        results.append(
+            HF_RESULT_CACHE.get_cached_result(model, prompt, max_tokens))
+
+    if all(results):
+        # Everything hit cache
+        return results
 
     hf_model = AutoModelForCausalLM.from_pretrained(model)
     hf_tokenizer = AutoTokenizer.from_pretrained(model)
     if ignore_eos:
         hf_model.generation_config.eos_token_id = None
 
-    results = []
     for prompt_index, prompt in enumerate(prompts):
+
+        if results[prompt_index]:
+            # Already have cached result
+            continue
+
         hf_input_tokens = hf_tokenizer(prompt, return_tensors="pt").input_ids \
                     if isinstance(prompt[0], str) \
                     else torch.tensor([prompts[prompt_index]])
@@ -295,8 +318,16 @@ def generate_hf_output(
         result['token_ids'] = tuple(result['token_ids'])
         result['tokens'] = tuple(result['tokens'])
         result['logprobs'] = tuple(result['logprobs'])
-        results.append(result)
+        if include_prompt:
+            result['prompt'] = prompt
 
+        # Save and cache new result
+        results[prompt_index] = result
+        HF_RESULT_CACHE.add_to_cache(model, prompt,
+                                     max_new_tokens[prompt_index], result)
+
+    # Write back to the cache
+    HF_RESULT_CACHE.write_cache()
     return results
 
 
@@ -336,8 +367,13 @@ def compare_results(
             print(f"        vLLM:  {repr(vllm_result['text']):s}{err_msg}")
             print()
 
+        if isinstance(hf_result['token_ids'], list):
+            hf_result['token_ids'] = tuple(hf_result['token_ids'])
+
         assert DISABLE_ASSERTS or backend == 'sendnn' or\
-            hf_result['token_ids'] == vllm_result['token_ids']
+            hf_result['token_ids'] == vllm_result['token_ids'], \
+            f"Token ids differ: {hf_result['token_ids']} != " \
+            f"{vllm_result['token_ids']}"
 
         if len(hf_result['tokens']) > 0:
             print("   token id. token               logprob      "
@@ -552,7 +588,8 @@ def _default_test_models(isEmbeddings=False):
     return params
 
 
-def create_text_prompt(model: str, min_tokens: int, max_tokens: int) -> str:
+def create_text_prompt(model: str, min_token_length: int,
+                       max_token_length: int) -> str:
     """Create a text prompt for the specified model that will tokenize to within
     the specified token length range."""
     tokenizer = AutoTokenizer.from_pretrained(model)
@@ -560,16 +597,39 @@ def create_text_prompt(model: str, min_tokens: int, max_tokens: int) -> str:
     pepper_tokens = len(tokenizer.encode(pepper, add_special_tokens=False))
 
     # Find a good starting number of peppers
-    prompt = pepper * (min_tokens // pepper_tokens + 1)
+    prompt = pepper * (min_token_length // pepper_tokens + 1)
 
     # And add more until we're over the minimum token length
-    while len(tokenizer.encode(prompt)) <= min_tokens:
+    while len(tokenizer.encode(prompt)) <= min_token_length:
         prompt += pepper
 
     # Make sure this prompt is within the specified range
-    assert min_tokens < len(tokenizer.encode(prompt)) < max_tokens
+    assert min_token_length < len(tokenizer.encode(prompt)) < max_token_length
 
     return prompt
+
+
+def create_seq_prompt(model: str, token_length: int) -> str:
+    """Create a repeating sequential number prompt for the specified
+    model that will tokenize to exactly the specified token length."""
+
+    tokenizer = AutoTokenizer.from_pretrained(model)
+
+    # 20-token pattern
+    pattern = "0 1 2 3 4 5 6 7 8 9 "
+
+    # Repeat to token_length
+    repeat_count = (token_length // 20) + 1
+    text_prompt = pattern * repeat_count
+
+    # Tokenize and slice
+    tokens = tokenizer.encode(text_prompt)[:token_length]
+
+    # Assert exact token length
+    assert len(tokens) == token_length, \
+        f"Token length mismatch: {len(tokens)} != {token_length}"
+
+    return tokenizer.decode(tokens)
 
 
 def create_random_request(
@@ -601,11 +661,12 @@ def create_random_request(
                 ), f"need {num_tokens} but got {len(prompt_token_ids)}"
 
     sig = inspect.signature(EngineCore.add_request)
+    inputs_renamed = hasattr(EngineCoreRequest, 'mm_kwargs')
     if sig.parameters["request"].annotation == EngineCoreRequest:
+        kwargs = {"mm_kwargs" if inputs_renamed else "mm_inputs": None}
         return EngineCoreRequest(
             request_id=str(request_id),
             prompt_token_ids=prompt_token_ids,
-            mm_inputs=None,
             mm_hashes=None,
             mm_placeholders=None,
             sampling_params=sampling_params,
@@ -615,11 +676,14 @@ def create_random_request(
             data_parallel_rank=None,
             pooling_params=None,
             cache_salt=None,
+            **kwargs,
         )
+    kwargs = {
+        "multi_modal_kwargs" if inputs_renamed else "multi_modal_inputs": None
+    }
     return Request(
         request_id=str(request_id),
         prompt_token_ids=prompt_token_ids,
-        multi_modal_inputs=None,
         multi_modal_hashes=None,
         multi_modal_placeholders=None,
         sampling_params=sampling_params,
@@ -628,6 +692,7 @@ def create_random_request(
         lora_request=None,
         pooling_params=None,
         cache_salt=None,
+        **kwargs,
     )
 
 
@@ -702,3 +767,48 @@ def get_longer_chicken_soup_prompts(num_prompts: int) -> list[str]:
         prompts = prompts * (math.ceil(num_prompts / 4))
 
     return prompts[:num_prompts]
+
+
+def generate_cache_for_test_swap_decode_programs_for_cb(
+        model: str, prompts: list[str], parent_path: str):
+    '''
+    This function bakes the generation of prompts with long contexts. Which
+    currently are used in the test 
+    `test_spyre_cb::test_swap_decode_programs_for_cb`. 
+    '''
+
+    # Generate
+    assert len(prompts) == 4
+
+    p8k = 8 * 1024
+    p16k = 16 * 1024
+    p32k = 32 * 1024
+
+    import pickle
+    hf_outputs = generate_hf_output(model=model,
+                                    prompts=prompts[0:2],
+                                    max_new_tokens=p8k,
+                                    ignore_eos=True,
+                                    include_prompt=True)
+    with open(Path(parent_path) / 'prompts_8k_bs2.pickle', 'wb') as f:
+        f.write(pickle.dumps(hf_outputs))
+
+    hf_outputs = generate_hf_output(
+        model=model,
+        prompts=[prompts[2]],
+        max_new_tokens=p16k,
+        ignore_eos=True,
+        include_prompt=True,
+    )
+    with open(Path(parent_path) / 'prompts_16k_bs1.pickle', 'wb') as f:
+        f.write(pickle.dumps(hf_outputs))
+
+    hf_outputs = generate_hf_output(
+        model=model,
+        prompts=[prompts[3]],
+        max_new_tokens=p32k,
+        ignore_eos=True,
+        include_prompt=True,
+    )
+    with open(Path(parent_path) / 'prompts_32k_bs1.pickle', 'wb') as f:
+        f.write(pickle.dumps(hf_outputs))

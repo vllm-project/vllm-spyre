@@ -300,6 +300,9 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                          max_decode_length,
                          sendnn_dynamic=True)
 
+        self.scheduler_config = scheduler_config
+        self.parallel_config = parallel_config
+
         # physical KV cache on AIU Spyre: will eventually not live in this class
         self.kv_cache_specs = {}
         self.kv_cache_specs['block_size'] = BLOCK_SIZE
@@ -324,18 +327,61 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         else:
             self.attention_name = "spyre_paged_attn"
 
-        # set num_blocks to the minimal value of 4 required for warmup
-        # is reset to the value returned by the Spyre compiler after warmup
-        # self._set_past_key_value_states(num_blocks=4)
-        num_blocks = scheduler_config.max_num_seqs * max_model_len // BLOCK_SIZE
-        self._set_past_key_value_states(num_blocks=num_blocks)
+    def get_num_blocks_available(self) -> int:
+        """Function returns the number of available blocks/pages.
+        Will eventually contain a function in torch_sendnn which reads 
+        the actual value provided by the compiler for backend sendnn"""
 
-        # mark the num_blocks dimension dynamic for Spyre compiler for warmup
-        # only, compiler will return the number of blocks it can accommodate.
-        # (This is not yet supported by the compiler)
-        # for layer in self.past_key_value_states:
-        #     for tensor in layer:
-        #         torch._dynamo.mark_dynamic(tensor, 0)
+        max_batch_size = self.scheduler_config.max_num_seqs
+        max_model_len = self.scheduler_config.max_model_len
+        block_size = self.kv_cache_specs['block_size']
+
+        min_req_num_blocks = max_model_len // block_size
+
+        # TODO: replace the hard coded NUM_BLOCKS_SPYRE by calling a function
+        # in torch_sendnn which returns the value set by the Spyre compiler.
+        if ('granite-3.3-8b-instruct' in self.model_config.model
+                and self.parallel_config.world_size == 4):
+            # hard coded value for tensor parallel size 4 with the below model
+            # https://huggingface.co/ibm-granite/granite-3.3-8b-instruct
+            NUM_BLOCKS_SPYRE = 2080
+            logger.info("Model granite-3.3-8b-instruct and tensor parallel " \
+            "size 4 detected. Using NUM_BLOCKS_SPYRE = %d", 2080)
+        else:
+            # default value for any other model/ tensor parallel size
+            NUM_BLOCKS_SPYRE = max_batch_size * min_req_num_blocks
+            logger.info("No model / tensor parallel size specific value for" \
+            "the number of KV cache blocks available on Spyre found. Using " \
+            "default value (max_batch_size * max_model_len / block_size): %d",
+              NUM_BLOCKS_SPYRE)
+
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == 'sendnn':
+            num_blocks_spyre = NUM_BLOCKS_SPYRE
+            assert num_blocks_spyre >= min_req_num_blocks, (
+                "Number of pages available on Spyre (%d) is not enough to "
+                "serve the current model (need at least %d pages)." %
+                (num_blocks_spyre, min_req_num_blocks))
+            max_concurrency_spyre = num_blocks_spyre * block_size \
+                / max_model_len
+            logger.info("Spyre KV cache size: %s tokens",
+                        num_blocks_spyre * block_size)
+            logger.info("Maximum concurrency for %s tokens per request: %.2fx",
+                        str(max_model_len), max_concurrency_spyre)
+            return num_blocks_spyre
+        else:  # dynamo backend 'eager'
+            # for debugging purposes we also put the spyre value here for cpu
+            num_blocks_cpu = NUM_BLOCKS_SPYRE
+            assert num_blocks_cpu >= min_req_num_blocks, (
+                "Number of pages available on CPU (%d) is not enough to "
+                "serve the current model (need at least %d pages)." %
+                (num_blocks_cpu, min_req_num_blocks))
+            max_concurrency_cpu = num_blocks_cpu * block_size \
+                / max_model_len
+            logger.info("CPU KV cache size: %s tokens",
+                        num_blocks_cpu * block_size)
+            logger.info("Maximum concurrency for %s tokens per request: %.2fx",
+                        str(max_model_len), max_concurrency_cpu)
+            return num_blocks_cpu
 
     def _set_past_key_value_states(self, num_blocks) -> None:
         # overwrite num_blocks for testing scheduler constraints
