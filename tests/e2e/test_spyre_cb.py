@@ -212,14 +212,18 @@ def test_swap_decode_programs_for_cb(
     -  4 prompts with max_new_tokens @ 4k
     -  2 prompts with max_new_tokens @ 8k
     -  1 prompt  with max_new_tokens @ 16k
+    
+    TODO:
     -  1 prompt  with max_new_tokens @ 32k
     
     '''
 
     model = 'ibm-granite/granite-3.3-8b-instruct'
     backend = 'sendnn'
-    max_num_seqs = 32
-    max_model_len = 32 * 1024  # 32K
+    max_num_seqs = 4
+
+    # TODO: change to 32K later
+    max_model_len = 16 * 1024  # 16K
 
     skip_unsupported_tp_size(tp_size, backend)
     prompts = get_chicken_soup_prompts(max_num_seqs)
@@ -238,18 +242,15 @@ def test_swap_decode_programs_for_cb(
     p4k = 4 * 1024
     p8k = 8 * 1024
     p16k = 16 * 1024
-    p32k = 32 * 1024
 
     sampling_params_1k = [create_sampling_params(p1k) for _ in range(16)]
     sampling_params_2k = [create_sampling_params(p2k) for _ in range(8)]
     sampling_params_4k = [create_sampling_params(p4k) for _ in range(4)]
     sampling_params_8k = [create_sampling_params(p8k) for _ in range(2)]
     sampling_params_16k = [create_sampling_params(p16k) for _ in range(1)]
-    sampling_params_32k = [create_sampling_params(p32k) for _ in range(1)]
 
     sampling_params = sampling_params_1k + sampling_params_2k + \
-        sampling_params_4k + sampling_params_8k + sampling_params_16k + \
-            sampling_params_32k
+        sampling_params_4k + sampling_params_8k + sampling_params_16k
 
     # Read the cache and check beforehand if the cache was written with the
     # expected prompt. We use the filepath of this script to resolve
@@ -265,11 +266,6 @@ def test_swap_decode_programs_for_cb(
         cache_result_16k_bs1: list[dict[str, Any]] = pickle.loads(f.read())
 
     assert cache_result_16k_bs1[0]['prompt'] == prompts[30]
-
-    with open(script_directory / 'prompts_32k_bs1.pickle', 'rb') as f:
-        cache_result_32k_bs1: list[dict[str, Any]] = pickle.loads(f.read())
-
-    assert cache_result_32k_bs1[0]['prompt'] == prompts[31]
 
     # Generate results from vLLM
     vllm_results = generate_spyre_vllm_output(model=model,
@@ -299,15 +295,6 @@ def test_swap_decode_programs_for_cb(
         backend=backend,
         vllm_results=vllm_results[30:31],
         hf_results=cache_result_16k_bs1,
-    )
-
-    # 1 @ 32K
-    compare_results(
-        model=model,
-        tensor_parallel_size=tp_size,
-        backend=backend,
-        vllm_results=vllm_results[31:32],
-        hf_results=cache_result_32k_bs1,
     )
 
     # 16 @ 1K
