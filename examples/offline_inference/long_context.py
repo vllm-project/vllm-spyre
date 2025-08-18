@@ -137,7 +137,6 @@ vllm_token_prompts = [
 llm = LLM(model=args.model,
           tokenizer=args.model,
           max_model_len=args.max_model_len,
-          block_size=2048,
           max_num_seqs=max_num_seqs,
           tensor_parallel_size=args.tp)
 

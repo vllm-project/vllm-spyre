@@ -111,7 +111,6 @@ def check_scheduler_inference_steps(
         model=model,
         tokenizer=model,
         max_model_len=max_model_len,
-        block_size=max_model_len,
         max_num_seqs=max_num_seqs,
         num_gpu_blocks_override=available_blocks,
     )
