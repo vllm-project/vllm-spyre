@@ -55,15 +55,10 @@ async def generate(
 @pytest.mark.parametrize(
     "output_kind", [RequestOutputKind.DELTA, RequestOutputKind.FINAL_ONLY])
 @pytest.mark.asyncio
-async def test_abort(
-    model: str,
-    backend: str,
-    cb: int,
-    warmup_shapes: list[list[int]],
-    output_kind: RequestOutputKind,
-    monkeypatch: pytest.MonkeyPatch,
-    no_llm_cache
-):
+async def test_abort(model: str, backend: str, cb: int,
+                     warmup_shapes: list[list[int]],
+                     output_kind: RequestOutputKind,
+                     monkeypatch: pytest.MonkeyPatch):
     """Test handling of cancelled requests"""
     with monkeypatch.context() as m, ExitStack() as after:
         m.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)

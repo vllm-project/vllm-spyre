@@ -27,14 +27,8 @@ from vllm_spyre.platform import SpyrePlatform
                          ids=lambda val: f"TP({val})")
 # parametrized for test sorting
 @pytest.mark.parametrize("cb", [0])
-def test_prompt_logprobs(
-    backend: str,
-    model: str,
-    tp_size: int,
-    monkeypatch: pytest.MonkeyPatch,
-    cb: int,
-    no_llm_cache
-) -> None:
+def test_prompt_logprobs(backend: str, model: str, tp_size: int,
+                         monkeypatch: pytest.MonkeyPatch, cb: int) -> None:
     '''
     This test checks the prompt_logprobs output from vllm against a reference
     implementation using huggingface.

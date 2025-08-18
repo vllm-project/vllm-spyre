@@ -17,14 +17,9 @@ from vllm import SamplingParams
 @pytest.mark.parametrize(
     "warmup_shape", [[(64, 10, 4)]])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def test_output(
-    model: str,
-    stop_last: bool,
-    warmup_shape: tuple[int, int, int],
-    backend: str,
-    cb: int,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_output(model: str, stop_last: bool,
+                warmup_shape: tuple[int, int, int], backend: str, cb: int,
+                monkeypatch: pytest.MonkeyPatch, use_llm_cache) -> None:
     '''
     Checks that `max_tokens` parameter of `SamplingParams` works correctly
     

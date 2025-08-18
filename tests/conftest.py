@@ -1,11 +1,12 @@
 import hashlib
 import os
 import random
-from typing import NamedTuple
 
 import pytest
 import torch
-from spyre_util import RemoteOpenAIServer, clear_cached_llm, skip_unsupported_tp_size
+from llm_cache import SortKey, sort_tests_for_llm_caching
+from spyre_util import (RemoteOpenAIServer, clear_cached_llm,
+                        skip_unsupported_tp_size)
 from vllm.connections import global_http_connection
 from vllm.distributed import cleanup_dist_env_and_memory
 
@@ -27,212 +28,14 @@ def pytest_collection_modifyitems(config, items):
     _skip_all_cb_and_fp8_tests(items)
 
     _skip_unsupported_compiler_tests(config, items)
-    _sort_by_llm_config(items)
+
+    sort_tests_for_llm_caching(items)
 
     with open(".test_sort.txt", "w") as f:
         for item in items:
             f.write("\n")
-            f.write(item.name + "\n")
-            f.write(str(_llm_sort_key(item)) + "\n")
-
-    # for item in items:
-    #     if "e2e" in item.listnames():
-    #         print("###")
-    #         print(item.own_markers)
-    #         print("!!!")
-    #         print(list(item.keywords))
-    #         print("@@@")
-    #         if hasattr(item, "callspec"):
-    #             print(item.callspec)
-    #         print("***")
-    #         print(item.listnames())
-
-    # print("###################################################################")
-    # for item in items:
-    #     # print(item)
-    #     print(item.name)
-    #     print(dir(item))
-    #     print(list(item.keywords))
-    #     print(item.own_markers)
-    #     print(item.fixturenames)
-    #     print(item.funcargs)
-    #     print(item.listnames())
-    #     print()
-
-    # own_markers has all the markers we should need to make ordering decisions
-
-    # sort by....
-    # model
-    # backend
-    # TP size
-    # CB vs SB
-        
-        # For CB
-        # max model len
-        # max num seqs
-        
-        # For SB
-        # Warmup shapes
-    
-    
-
-    # print(items)
-
-    # import random
-    # random.shuffle(items)
-
-def _sort_by_llm_config(items: list) -> None:
-    # Sorts `items` in-place to group identical LLM configs together
-    items.sort(key=_llm_sort_key)
-
-
-def _llm_sort_key(item) -> tuple:
-    cache_type = _get_cache_type(item)
-    if not cache_type:
-        # Don't add any extra re-ordering logic for tests that won't utilize the
-        # cache
-        return SortKey(cache_type=cache_type)
-    
-    if not hasattr(item, "callspec"):
-        # This isn't great- we probably want to cache but can't because the test
-        # has no parameters at all
-        return SortKey(cache_type="")
-        
-    use_cb = _uses_cb(item)
-    if use_cb:
-        sort_kwargs = {
-            "max_model_len": _get_max_model_len(item),
-            "max_num_seqs": _get_max_num_seqs(item),
-        }
-    else:
-        sort_kwargs = {
-            "warmup_shapes": _get_warmup_shapes(item),
-        }
-    
-    return SortKey(
-        cache_type=cache_type,
-        model=_get_model(item),
-        backend=_get_backend(item),
-        tp_size=_get_tp_size(item),
-        use_cb=_uses_cb(item),
-        **sort_kwargs
-    )
-
-
-def _get_cache_type(item) -> str:
-    # If not an e2e test then assume no cache
-    if "e2e" not in item.listnames():
-        return ""
-    
-    if "remote_openai_server" in item.fixturenames:
-        # (Not actually caching these yet, but can in future)
-        return "online"
-    
-    if "use_llm_cache" in item.fixturenames:
-        return "LLM"
-    
-    if "test_spyre_cb_scheduler_steps.py" in item.listnames():
-        # Not currently cached and needs updating to fixture name
-        # CB step tests require a raw engine for scheduler access
-        return "engine"
-    
-    # Else shouldn't be using any cache
-    return ""
-
-def _uses_cb(item) -> bool:
-    """True if the test uses continuous batching, false for static batching"""
-    # Check for common param names
-    CB_KEYS = ["cb", "use_cb"]
-    params = item.callspec.params
-    for key in CB_KEYS:
-        if key in params:
-            return bool(params[key])
-    
-    # Otherwise assume that the test uses CB
-    return True
-
-def _get_max_model_len(item) -> int:
-    params = item.callspec.params
-    if "max_model_len" in params.keys():
-        _assert_param(isinstance(params["max_model_len"], int), "max_model_len must be an int", item)
-        return params["max_model_len"]
-    # Assume 256 if not specified, we use that a lot
-    return 256
-    
-def _get_max_num_seqs(item) -> int:
-    params = item.callspec.params
-    if "max_num_seqs" in params.keys():
-        _assert_param(isinstance(params["max_num_seqs"], int), "max_num_seqs must be an int", item)
-        return params["max_num_seqs"]
-    # Assume 2 if not specified, we use that a lot
-    return 2
-
-def _get_warmup_shapes(item) -> list[tuple[int, int, int]]:
-    WARMUP_KEYS = ["warmup_shape", " warmup_shapes"]
-    params = item.callspec.params
-    for key in WARMUP_KEYS:
-        if key in params:
-            shapes = params[key]
-            if isinstance(shapes, tuple):
-                shapes = list(shapes)
-
-            _assert_param(isinstance(shapes, list), "Warmup shape must be a list of tuples", item)
-            _assert_param(isinstance(shapes[0], tuple), "Warmup shape must be a list of tuples", item)
-            return params[key]
-    # Assume [(64, 20, 1)] if not specified
-    return [(64, 20, 1)]
-
-def _is_online(item) -> bool:
-    # Online tests use the remote_openai_server fixture
-    return "remote_openai_server" in item.fixturenames
-    # return "test_spyre_online.py" in item.listnames()
-
-def _get_tp_size(item) -> int:
-    TP_KEYS = ["tp_size", "tensor_parallel_size", "tp"]
-    params = item.callspec.params
-    for key in TP_KEYS:
-        if key in params:
-            _assert_param(isinstance(params[key], int), "tp size must be an int", item)
-            return params[key]
-    # Assume no TP if not set
-    return 1
-
-def _get_model(item) -> str:
-    MODEL_KEYS = ["model", "model_name"]
-    params = item.callspec.params
-    for key in MODEL_KEYS:
-        if key in params:
-            _assert_param(isinstance(params[key], str), "model must be a string", item)
-            return params[key]
-    # No assumption about default model, we likely don't need an llm if this
-    # isn't set
-    return ""
-
-def _get_backend(item) -> str:
-    if "backend" in item.callspec.params:
-        backend = item.callspec.params["backend"]
-        # if isinstance(backend, tuple) and len(backend) == 1:
-        #     backend = backend[0]
-
-        _assert_param(isinstance(backend, str), "backend must be a string.", item)
-        return backend
-    # If backend isn't given then this is likely a spyre-only test
-    return "sendnn"
-
-def _assert_param(condition, message, item):
-    assert condition, message + f"\n\n\tTest: {item.listnames()}"\
-        f"\n\n\tParams: {item.callspec.params}"
-
-class SortKey(NamedTuple):
-    """Sort key for our unit tests that groups by runtime configuration"""
-    cache_type: str # None (emtpy str), online, offline, engine
-    backend: str = ""
-    model: str = ""
-    tp_size: int = 1
-    use_cb: bool = False
-    max_model_len: int = 0
-    max_num_seqs: int = 0
-    warmup_shapes: list[tuple[int, int, int]] | None = None
+            f.write(str(item.listnames()[-2]) + " " + item.name + "\n")
+            f.write(str(SortKey.from_item(item)) + "\n")
 
 
 def _mark_all_e2e(items):
@@ -300,8 +103,9 @@ def _skip_unsupported_compiler_tests(config, items):
         if "spyre" in item.keywords and "compiler_support_16k" in item.keywords:
             item.add_marker(skip_marker)
 @pytest.fixture()
-def no_llm_cache():
-    clear_cached_llm()
+def use_llm_cache():
+    """Fixture for test sorting to denote that this should use a cached LLM
+    instance"""
 
 
 @pytest.fixture(autouse=True)

@@ -19,15 +19,9 @@ from vllm import SamplingParams
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("cb",
                          [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
-def test_seed(
-    model: str,
-    temperature: float,
-    seed: int,
-    warmup_shape: tuple[int, int, int],
-    backend: str,
-    cb: int,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_seed(model: str, temperature: float, seed: int,
+              warmup_shape: tuple[int, int, int], backend: str, cb: int,
+              monkeypatch: pytest.MonkeyPatch, use_llm_cache) -> None:
     '''
     The warmup is based on a single shape. After the warmup,
     output is generated for one request with 16 identical prompts
@@ -36,7 +30,7 @@ def test_seed(
     logprobs is verified to be identical for all 16 sequences.
     '''
 
-    max_new_tokens = warmup_shape[1]
+    max_new_tokens = warmup_shape[0][1]
 
     prompts = get_chicken_soup_prompts(1) * 16
 
@@ -47,6 +41,10 @@ def test_seed(
         ignore_eos=True,
         seed=seed)
 
+    if bool(cb):
+        # Turn off warmup shapes for CB
+        warmup_shape = None
+
     vllm_results = generate_spyre_vllm_output(
         model=model,
         prompts=prompts,
@@ -56,7 +54,7 @@ def test_seed(
         tensor_parallel_size=1,
         backend=backend,
         use_cb=bool(cb),
-        max_num_Seqs=2,
+        max_num_seqs=2,
         monkeypatch=monkeypatch)
 
     # compare all generated outputs against the first generated output

@@ -21,11 +21,8 @@ from vllm import LLM, SamplingParams
 @pytest.mark.cb
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
-def test_cb_max_tokens(
-    model: str,
-    backend: str,
-    monkeypatch: pytest.MonkeyPatch,
-):
+def test_cb_max_tokens(model: str, backend: str,
+                       monkeypatch: pytest.MonkeyPatch, use_llm_cache):
     """Test that continuous batches of requests that
     are longer than the `max_model_len` are correctly rejected"""
 

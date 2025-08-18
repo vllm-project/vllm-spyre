@@ -31,14 +31,10 @@ from vllm_spyre.v1.core.scheduler import StaticBatchingSpyreScheduler
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("max_num_seqs", [4],
                          ids=lambda val: f"max_num_seqs({val})")
-def test_output(
-    model: str,
-    tp_size: int,
-    backend: str,
-    cb: int,
-    max_num_seqs: int,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+# TODO put warmup shapes back in parameter here for test sorting
+def test_output(model: str, tp_size: int, backend: str, cb: int,
+                max_num_seqs: int, monkeypatch: pytest.MonkeyPatch,
+                use_llm_cache) -> None:
     '''
     The warmup is based on a single shape. After the warmup,
     one request with the provided prompts is input to vLLM.
@@ -90,17 +86,13 @@ def test_output(
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
     "warmup_shape", [(64, 20, 4)])  # (prompt_length/new_tokens/batch_size)
-@pytest.mark.parametrize(
-    "backend",
-    [pytest.param("sendnn_decoder",
-                 marks=pytest.mark.spyre,
-                 id="sendnn_decoder")])
-def test_output_sendnn_decoder(
-    model: str,
-    warmup_shape: tuple[int, int, int],
-    backend: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+@pytest.mark.parametrize("backend", [
+    pytest.param(
+        "sendnn_decoder", marks=pytest.mark.spyre, id="sendnn_decoder")
+])
+def test_output_sendnn_decoder(model: str, warmup_shape: tuple[int, int, int],
+                               backend: str, monkeypatch: pytest.MonkeyPatch,
+                               use_llm_cache) -> None:
     '''
     Tests the deprecated sendnn_decoder backend, which should fall-back to
     sendnn
@@ -134,7 +126,7 @@ def test_output_sendnn_decoder(
 @pytest.mark.parametrize("cb",
                          [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
 def test_batch_handling(model: str, backend: str, cb: int,
-                        monkeypatch: pytest.MonkeyPatch):
+                        monkeypatch: pytest.MonkeyPatch, use_llm_cache):
     """Test that the spyre worker correctly handles
     continuous batches of requests that
     finish after different numbers of forward passes
@@ -180,7 +172,7 @@ def test_batch_handling(model: str, backend: str, cb: int,
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def test_full_batch_scheduling(model: str, backend: str, monkeypatch, no_llm_cache):
+def test_full_batch_scheduling(model: str, backend: str, monkeypatch):
     """Test that we can schedule a full batch of prompts."""
 
     # We need to ensure here that the max number of tokens in a full batch

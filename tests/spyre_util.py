@@ -14,6 +14,7 @@ import pytest
 import requests
 import torch
 from hf_result_cache import HFResultCache
+from llm_cache import LLMCache
 from sentence_transformers import SentenceTransformer, util
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, SamplingParams
@@ -30,10 +31,7 @@ ISCLOSE_REL_TOL_CPU = 0.35
 ISCLOSE_REL_TOL_SPYRE = 0.35
 
 HF_RESULT_CACHE = HFResultCache()
-CACHED_LLM: LLM | None = None
-CACHED_LLM_CONFIG: dict | None = None
-PREVIOUS_CACHED_RUNTIME_CONFIGS = []
-HF_RESULT_CACHE = HFResultCache()
+LLM_CACHE = LLMCache()
 
 
 def force_engine_shutdown(llm: LLM):
@@ -213,39 +211,20 @@ def generate_spyre_vllm_output(
     max_num_seqs: Optional[int] = None,
     use_cb: bool = False,
 ) -> list[dict[str, Any]]:
-    
-    # # ---- For static batching ----
-    # if warmup_shapes:
-    #     assert not use_cb, "Warmup shapes through environment variables have "\
-    #         "been deprecated in continuous batching"
-
-    #     warmup_prompt_length = [t[0] for t in warmup_shapes]
-    #     warmup_new_tokens = [t[1] for t in warmup_shapes]
-    #     warmup_batch_size = [t[2] for t in warmup_shapes]
-
-    #     monkeypatch.setenv("VLLM_SPYRE_WARMUP_PROMPT_LENS",
-    #                        ",".join(str(val) for val in warmup_prompt_length))
-    #     monkeypatch.setenv("VLLM_SPYRE_WARMUP_NEW_TOKENS",
-    #                        ",".join(str(val) for val in warmup_new_tokens))
-    #     monkeypatch.setenv("VLLM_SPYRE_WARMUP_BATCH_SIZES",
-    #                        ",".join(str(val) for val in warmup_batch_size))
-    # # --------------
-    # monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1" if use_cb else "0")
-    # monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
-
     # Allows to run multiprocess V1 engine without dumping meaningless logs at
     # shutdown engine this context.
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
     start = time.time()
-    vllm_model = _get_llm(model=model,
-             max_model_len=max_model_len,
-             tensor_parallel_size=tensor_parallel_size,
-             backend=backend,
-             monkeypatch=monkeypatch,
-             warmup_shapes=warmup_shapes,
-             max_num_seqs=max_num_seqs,
-             use_cb=use_cb)
+    vllm_model = LLM_CACHE.get_cached_llm(
+        model=model,
+        max_model_len=max_model_len,
+        tensor_parallel_size=tensor_parallel_size,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        warmup_shapes=warmup_shapes,
+        max_num_seqs=max_num_seqs,
+        use_cb=use_cb)
     load_duration = time.time() - start
 
     start = time.time()
@@ -271,107 +250,9 @@ def generate_spyre_vllm_output(
     # force_engine_shutdown(vllm_model)
     return results
 
-def _get_llm(
-    model: str,
-    max_model_len: int,
-    tensor_parallel_size: int,
-    backend: str,
-    monkeypatch: pytest.MonkeyPatch,
-    warmup_shapes: Optional[list[tuple[int, int, int]]] = None,
-    max_num_seqs: Optional[int] = None,
-    use_cb: bool = False,
-) -> LLM:
-    """Creates an LLM with the provided runtime configuration.
-    
-    If the last LLM created matches the config, then returns the cached LLM
-    instead to reduce LLM instantiation overhead.
-    """
-    runtime_config = {
-        "model": model,
-        "tensor_parallel_size": tensor_parallel_size,
-        "backend": backend,
-        "use_cb": use_cb
-    }
-    if use_cb:
-        runtime_config.update({
-            "max_model_len": max_model_len,
-            "max_num_seqs": max_num_seqs
-        })
-    else:
-        runtime_config.update({
-            "warmup_shapes": tuple(warmup_shapes)
-        })
-
-    # Always patch the environment so that it's consistent with the LLM
-    _patch_environment(use_cb, warmup_shapes, backend, monkeypatch)
-
-    global CACHED_LLM
-    global CACHED_LLM_CONFIG
-    global PREVIOUS_CACHED_RUNTIME_CONFIGS
-
-    if CACHED_LLM_CONFIG and CACHED_LLM_CONFIG == runtime_config:
-        print("\n\n\t\t\tCACHE HIT!\n")
-        # cache hit
-        return CACHED_LLM
-    # cache miss
-
-    print("\n\n\n\n\t\t\tCACHE MISS!\n")
-    print(runtime_config)
-    print()
-    print(CACHED_LLM_CONFIG)
-    print("\n\n\n\n")
-
-    PREVIOUS_CACHED_RUNTIME_CONFIGS.append(CACHED_LLM_CONFIG)
-
-    assert runtime_config not in PREVIOUS_CACHED_RUNTIME_CONFIGS, f"Runtime config {runtime_config} was previously cached- error in test ordering!"
-
-    CACHED_LLM_CONFIG = runtime_config
-    
-    if CACHED_LLM:
-        # Tear down the previous LLM before reconstruction
-        force_engine_shutdown(CACHED_LLM)
-    
-    CACHED_LLM = LLM(
-        model=model,
-        tokenizer=model,
-        max_model_len=max_model_len,
-        max_num_seqs=max_num_seqs,
-        tensor_parallel_size=tensor_parallel_size,
-    )
-    return CACHED_LLM
-
 
 def clear_cached_llm():
-    global CACHED_LLM
-    global CACHED_LLM_CONFIG
-
-    if CACHED_LLM:
-        force_engine_shutdown(CACHED_LLM)
-        CACHED_LLM = None
-        CACHED_LLM_CONFIG = None
-
-
-def _patch_environment(use_cb: bool, warmup_shapes: Optional[list[tuple[int, int, int]]], backend: str, monkeypatch):
-    # Setup the environment correctly for the LLM
-
-    # ---- For static batching ----
-    if warmup_shapes:
-        assert not use_cb, "Warmup shapes through environment variables have "\
-            "been deprecated in continuous batching"
-
-        warmup_prompt_length = [t[0] for t in warmup_shapes]
-        warmup_new_tokens = [t[1] for t in warmup_shapes]
-        warmup_batch_size = [t[2] for t in warmup_shapes]
-
-        monkeypatch.setenv("VLLM_SPYRE_WARMUP_PROMPT_LENS",
-                           ",".join(str(val) for val in warmup_prompt_length))
-        monkeypatch.setenv("VLLM_SPYRE_WARMUP_NEW_TOKENS",
-                           ",".join(str(val) for val in warmup_new_tokens))
-        monkeypatch.setenv("VLLM_SPYRE_WARMUP_BATCH_SIZES",
-                           ",".join(str(val) for val in warmup_batch_size))
-    # --------------
-    monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1" if use_cb else "0")
-    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+    LLM_CACHE.clear()
 
 
 # Hugging Face

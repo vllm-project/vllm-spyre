@@ -20,11 +20,8 @@ from vllm import SamplingParams
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("max_num_seqs", [4],
                          ids=lambda val: f"max_num_seqs({val})")
-def test_compare_graphs_cb(
-    model: str,
-    max_num_seqs: int,
-    monkeypatch: pytest.MonkeyPatch,
-):
+def test_compare_graphs_cb(model: str, max_num_seqs: int,
+                           monkeypatch: pytest.MonkeyPatch, use_llm_cache):
     """Test that the spyre worker correctly outputs
     continuous batches of requests by comparing to HF"""
 
@@ -97,10 +94,8 @@ def test_compare_graphs_cb(
 @pytest.mark.parametrize("warmup_shape",
                          [(64, 4, 4)])  # (prompt_length/new_tokens/batch_size)
 def test_compare_graphs_static_batching(
-    model: str,
-    warmup_shape: tuple[int, int, int],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+        model: str, warmup_shape: tuple[int, int, int],
+        monkeypatch: pytest.MonkeyPatch) -> None:
 
     # AFTU
     script_dir = get_aftu_script_dir()
