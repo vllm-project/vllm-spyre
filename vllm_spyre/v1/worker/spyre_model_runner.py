@@ -123,6 +123,11 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT,
             if self.model_config.get_sliding_window():
                 logger.warning("Sliding window is not supported on Spyre. "
                                "The model will run without sliding window.")
+            assert (
+                self.cache_config.block_size == self.model_config.max_model_len
+            ), ("cache_config.block_size must be set to model_config."
+                "max_model_len to disable any paged attention ops in the base "
+                "scheduler.")
         if vllm_config.device_config is None:
             self.device_config = DeviceConfig()
         self.device = self.device_config.device
