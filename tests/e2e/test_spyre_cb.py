@@ -109,10 +109,12 @@ def test_api_cb_generates_correct_max_tokens(
     assert response.usage.completion_tokens == max_tokens
 
 
+@pytest.mark.compiler_support_16k
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
-    "backend", [pytest.param("sendnn", marks=pytest.mark.spyre, id="sendnn")])
+    "backend", [pytest.param("sendnn", marks=pytest.mark.spyre, id="sendnn")]
+)
 @pytest.mark.parametrize(
     "tp_size",
     [
@@ -184,6 +186,7 @@ def test_long_context_batches(
     force_engine_shutdown(vllm_model)
 
 
+@pytest.mark.compiler_support_16k
 @pytest.mark.spyre
 @pytest.mark.cb
 @pytest.mark.parametrize(
