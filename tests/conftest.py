@@ -25,6 +25,8 @@ def pytest_collection_modifyitems(config, items):
 
     _skip_all_cb_and_fp8_tests(items)
 
+    _skip_unsupported_compiler_tests(config, items)
+
 
 def _mark_all_e2e(items):
     """Mark all tests within the e2e package with the e2e marker"""
@@ -74,6 +76,21 @@ def _skip_all_cb_and_fp8_tests(items):
         reason="FP8 is not supported with continuous batching yet")
     for item in items:
         if "quantized" in item.keywords and "cb" in item.keywords:
+            item.add_marker(skip_marker)
+
+
+def _skip_unsupported_compiler_tests(config, items):
+    """Skip all tests that need compiler changes to run.
+    This can be relaxed once the compiler changes are in place
+    """
+
+    markexpr = config.option.markexpr
+    if "compiler_support_16k" in markexpr:
+        return  # let pytest handle the collection logic
+
+    skip_marker = pytest.mark.skip(reason="Needs compiler changes")
+    for item in items:
+        if "compiler_support_16k" in item.keywords:
             item.add_marker(skip_marker)
 
 
