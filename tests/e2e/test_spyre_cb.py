@@ -113,8 +113,7 @@ def test_api_cb_generates_correct_max_tokens(
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
-    "backend", [pytest.param("sendnn", marks=pytest.mark.spyre, id="sendnn")]
-)
+    "backend", [pytest.param("sendnn", marks=pytest.mark.spyre, id="sendnn")])
 @pytest.mark.parametrize(
     "tp_size",
     [
