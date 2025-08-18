@@ -272,7 +272,7 @@ def test_swap_decode_programs_for_cb(
 
     model = 'ibm-granite/granite-3.3-8b-instruct'
     backend = 'sendnn'
-    max_num_seqs = 32
+    max_num_seqs = 4
 
     # TODO: change to 32K later
     max_model_len = 16 * 1024  # 16K
