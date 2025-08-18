@@ -44,7 +44,6 @@ def test_output(
     vllm_results = spyre_vllm_embeddings(model=model,
                                          prompts=prompts,
                                          max_model_len=256,
-                                         block_size=256,
                                          tensor_parallel_size=1,
                                          backend=backend)
 
@@ -91,7 +90,6 @@ def test_scheduling_invariance(
                      task="embed",
                      tokenizer=model,
                      max_model_len=256,
-                     block_size=256,
                      tensor_parallel_size=1)
 
     def batch_embeds(step):
