@@ -68,15 +68,13 @@ jobs:
               flags: "--timeout=300"
             os: "ubuntu-latest"
             python_version: "3.12"
+        # Exclude vLLM:main if PR does NOT have the ready label
+        exclude: ${{ github.event_name == 'pull_request' && !contains(toJson(github.event.pull_request.labels), '"ready"') && fromJSON('[{"vllm_version":{"name":"vLLM:main"}}]') || '[]' }}
+
 
     name: "${{ matrix.test_suite.name }} (${{ matrix.vllm_version.name }})"
 
     steps:
-      - name: "Skip vLLM:main if ready label is not present"
-        if: matrix.vllm_version.name == 'vLLM:main' && !contains(toJson(github.event.pull_request.labels), '"ready"')
-        run: |
-          echo "Skipping vLLM:main because PR does not have the 'ready' label."
-          exit 0
       - name: "Checkout"
         uses: actions/checkout@v4
         with:
