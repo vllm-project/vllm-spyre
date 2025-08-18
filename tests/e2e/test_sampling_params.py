@@ -29,13 +29,10 @@ def test_spyre_backend_batch1_determinism(model: str, max_model_len: int,
     assert "London" in output1.outputs[0].text
 
 
-@pytest.mark.asyncio
-async def test_spyre_dynamic_batch_isolation(model: str, max_model_len: int,
-                                             max_num_seqs: int,
-                                             block_size: int,
-                                             tensor_parallel_size: int,
-                                             backend: str,
-                                             monkeypatch: pytest.MonkeyPatch):
+def test_spyre_dynamic_batch_isolation(model: str, max_model_len: int,
+                                       max_num_seqs: int, block_size: int,
+                                       tensor_parallel_size: int, backend: str,
+                                       monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
