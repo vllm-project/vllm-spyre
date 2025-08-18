@@ -5,6 +5,8 @@ on:
   # for all pull requests on main irrespective of file type or location
   # Use `changed-src-files` step to determine if source code was changed
   pull_request:
+    # add labeled and unlabeled to the default types (runs when label is added)
+    types: [opened, synchronize, reopened, labeled, unlabeled]
     branches:
       - main
   push:
@@ -70,6 +72,11 @@ jobs:
     name: "${{ matrix.test_suite.name }} (${{ matrix.vllm_version.name }})"
 
     steps:
+      - name: "Skip vLLM:main if ready label is not present"
+        if: matrix.vllm_version.name == 'vLLM:main' && !contains(toJson(github.event.pull_request.labels), '"ready"')
+        run: |
+          echo "Skipping vLLM:main because PR does not have the 'ready' label."
+          exit 0
       - name: "Checkout"
         uses: actions/checkout@v4
         with:
