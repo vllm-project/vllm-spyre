@@ -155,10 +155,6 @@ def runtime_xfail(request):
 @pytest.fixture(scope="function")
 def remote_openai_server(request):
     """ Fixture to set up a test server."""
-
-    # Clear the offline (vllm.LLM) cache so the server can boot
-    clear_cached_llm()
-
     params = request.node.callspec.params
 
     try:
@@ -214,9 +210,6 @@ def remote_openai_server(request):
                                        server_args=server_args,
                                        server_env=env_dict)
         yield server
-        # with RemoteOpenAIServer(model, server_args,
-        #                         env_dict=env_dict) as server:
-        #     yield server
     except Exception as e:
         pytest.fail(f"Failed to setup server: {e}")
 
