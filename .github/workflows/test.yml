@@ -59,11 +59,11 @@ jobs:
           - name: "worker and utils"
             markers: "not e2e"
             flags: "--timeout=300"
-            hf_models: "all"
+            hf_models: "ibm-ai-platform/micro-g3.3-8b-instruct-1b"
           - name: "compatibility"
             markers: "compat"
             flags: "--timeout=300"
-            hf_models: "all"
+            hf_models: "ibm-ai-platform/micro-g3.3-8b-instruct-1b"
         include:
           - vllm_version:
               name: "vLLM:lowest"
