@@ -133,42 +133,40 @@ jobs:
           # overwritten.
           uv pip install -v .
 
+      # Standardize model name for cache keys
+      - name: Standardize HF model name
+        id: standardize-names
+        run: |
+          if [[ "${{ matrix.test_suite.hf_models }}" == "all" ]]; then
+            echo "model_key=ALL" >> $GITHUB_ENV
+            echo "model_path=${HF_HUB_CACHE}" >> $GITHUB_ENV
+          else
+            model="${{ matrix.test_suite.hf_models }}"
+            # replace / with --
+            safe_name="${model//\//--}"
+            echo "model_key=$safe_name" >> $GITHUB_ENV
+            echo "model_path=${HF_HUB_CACHE}/models--$safe_name" >> $GITHUB_ENV
+          fi
+
       - name: "Restore HF models cache"
         if: steps.changed-src-files.outputs.any_changed == 'true'
-        run: |
-          mkdir -p "${HF_HUB_CACHE}"
-
-          restore_model() {
-            model="$1"
-            folder_name="${model//\//--}"
-            key="${RUNNER_OS}-hf-model-${folder_name}"
-            echo "Restoring cache for $model..."
-            gh actions cache restore \
-              --path "${HF_HUB_CACHE}/models--${folder_name}" \
-              --key "$key" || echo "No cache found for $model"
-          }
-
-          if [[ "${{ matrix.test_suite.hf_models }}" == "all" ]]; then
-            echo "Restoring full HF cache for all models..."
-            gh actions cache restore \
-              --path "${HF_HUB_CACHE}" \
-              --key "${RUNNER_OS}-hub-cache-ALL" || echo "No full cache found"
-          else
-            for model in ${{ matrix.test_suite.hf_models }}; do
-              restore_model "$model"
-            done
-          fi
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.model_path }}
+          key: ${{ runner.os }}-hf-model-${{ env.model_key }}
 
       - name: "Download HF models"
         if: steps.changed-src-files.outputs.any_changed == 'true'
         run: |
           # We are caching HF models (HF_HUB_CACHE) for reliability rather than speed, since HF downloads are flaky for concurrent jobs.
           # Be careful when adding models to the cache here, as the GHA cache is limited to 10 GB.
-          # If a new model is added here, hashFiles('cached_models.txt') should create a new hash key. The previous cache blob can then
+          # If a new model is added here, a new hash key is generated. The previous cache blob can then
           # be removed by an admin or can be left to expire after 7 days.
           
           download_tinygranite() {
             python -c "from transformers import pipeline, AutoTokenizer; pipeline('text-generation', model='ibm-ai-platform/micro-g3.3-8b-instruct-1b'); tokenizer=AutoTokenizer.from_pretrained('ibm-ai-platform/micro-g3.3-8b-instruct-1b')"
+          }
+          download_tinygranite_fp8() {
             python -c "from transformers import pipeline, AutoTokenizer; pipeline('text-generation', model='ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8'); tokenizer=AutoTokenizer.from_pretrained('ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8')"
           }
           download_roberta_large() {
@@ -178,33 +176,39 @@ jobs:
           download_tinyllama() {
             python -c "from transformers import pipeline; pipeline('text-generation', model='JackFram/llama-160m')"
           }
-          download_tinygranite &
-          download_roberta_large &
-          download_tinyllama &
+          needed_models="${{ matrix.test_suite.hf_models }}"
+          case "$needed_models" in
+            "all")
+              download_tinygranite & 
+              download_tinygranite_fp8 &
+              download_roberta_large &
+              download_tinyllama &
+              wait
+              ;;
+            "JackFram/llama-160m")
+              download_tinyllama
+              ;;
+            "ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8")
+              download_tinygranite_fp8
+              ;;
+            "sentence-transformers/all-roberta-large-v1")
+              download_roberta_large
+              ;;
+            "ibm-ai-platform/micro-g3.3-8b-instruct-1b")
+              download_tinygranite
+              ;;
+            *)
+              echo "No downloads needed for: $needed_models"
+              ;;
+          esac
           wait
-          ls "${HF_HUB_CACHE}" > cached_models.txt
 
       - name: "Save HF models cache"
         if: ( steps.changed-src-files.outputs.any_changed == 'true' && github.event_name != 'pull_request' && strategy.job-index == 0 )
-        run: |
-          save_model() {
-            model="$1"
-            folder_name="${model//\//--}"
-            key="${RUNNER_OS}-hf-model-${folder_name}"
-            gh actions cache save \
-              --path "${HF_HUB_CACHE}/models--${folder_name}" \
-              --key "$key" || echo "Failed to save $model"
-          }
-
-          if [[ "${{ matrix.test_suite.hf_models }}" == "all" ]]; then
-            gh actions cache save \
-              --path "${HF_HUB_CACHE}" \
-              --key "${RUNNER_OS}-hub-cache-ALL" || echo "Failed to save full cache"
-          else
-            for model in ${{ matrix.test_suite.hf_models }}; do
-              save_model "$model"
-            done
-          fi
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.model_path }}
+          key: ${{ runner.os }}-hf-model-${{ env.model_key }}
 
       - name: "Run tests"
         if: steps.changed-src-files.outputs.any_changed == 'true'
