@@ -44,6 +44,7 @@ class SortKey(NamedTuple):
     use_cb: bool = False
     max_model_len: int = 0
     max_num_seqs: int = 0
+    num_blocks: int = 0
     warmup_shapes: list[tuple[int, int, int]] | None = None
 
     @staticmethod
@@ -75,6 +76,7 @@ class SortKey(NamedTuple):
                        backend=SortKey._get_backend(item),
                        tp_size=SortKey._get_tp_size(item),
                        use_cb=SortKey._uses_cb(item),
+                       num_blocks=SortKey._get_num_blocks(item),
                        **sort_kwargs)
 
     @staticmethod
@@ -194,6 +196,16 @@ class SortKey(NamedTuple):
             return backend
         # If backend isn't given then this is likely a spyre-only test
         return "sendnn"
+
+    @staticmethod
+    def _get_num_blocks(item) -> int:
+        if "available_blocks" in item.callspec.params:
+            blocks = item.callspec.params["available_blocks"]
+            SortKey._assert_param(isinstance(blocks, int),
+                                  "available_blocks must be an int.", item)
+            return blocks
+        # Most tests don't use this param
+        return 0
 
     @staticmethod
     def _assert_param(condition, message, item):
