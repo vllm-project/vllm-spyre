@@ -204,7 +204,7 @@ jobs:
           wait
 
       - name: "Save HF models cache"
-        # if: ( steps.changed-src-files.outputs.any_changed == 'true' && github.event_name != 'pull_request' && strategy.job-index == 0 )
+        if: ( steps.changed-src-files.outputs.any_changed == 'true' && github.event_name != 'pull_request' && strategy.job-index == 0 )
         uses: actions/cache/save@v4
         with:
           path: ${{ env.model_path }}
