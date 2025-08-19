@@ -135,6 +135,46 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-hub-cache
 
+      - name: "Filter models for this suite"
+        if: steps.changed-src-files.outputs.any_changed == 'true'
+        run: |
+          SLIM_CACHE="${PWD}/.cache_slim/huggingface/hub"
+          mkdir -p "$SLIM_CACHE"
+
+          link_model() {
+            model="$1"
+            # Convert model name to HF cache folder format
+            model_dir="models--${model//\//--}"
+            if [ -d "${HF_HUB_CACHE}/${model_dir}" ]; then
+              ln -s "${HF_HUB_CACHE}/${model_dir}" "${SLIM_CACHE}/${model_dir}"
+            else
+              echo "WARNING: Model $model not found in cache!"
+            fi
+          }
+
+          case "${{ matrix.test_suite.name }}" in
+            "static batching")
+              link_model "JackFram/llama-160m"
+              ;;
+            "fp8")
+              link_model "ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8"
+              ;;
+            "embedding")
+              link_model "sentence-transformers/all-roberta-large-v1"
+              ;;
+            "continuous batching")
+              link_model "ibm-ai-platform/micro-g3.3-8b-instruct-1b"
+              ;;
+            "worker and utils"|"compatibility")
+              # Link all cached models
+              cp -as "${HF_HUB_CACHE}/." "${SLIM_CACHE}/"
+              ;;
+          esac
+
+          # Overwrite env var for following steps
+          echo "HF_HUB_CACHE=$SLIM_CACHE" >> "$GITHUB_ENV"
+          ls -R "$SLIM_CACHE"
+
       - name: "Download HF models"
         if: steps.changed-src-files.outputs.any_changed == 'true'
         run: |
