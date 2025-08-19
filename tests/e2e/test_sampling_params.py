@@ -314,14 +314,21 @@ def test_spyre_dynamic_batch_isolation(model: str, max_model_len: int,
     )
 
     prompts = [
-        "Write a 100-word essay on artificial intelligence.",
-        "The primary colors are", "Request this word: test test test test test"
+        "Write an essay on artificial intelligence.",
+        "The primary colors are ",
+        "Repeat this word once: test",
+        "Write a 100-word essay on LLM reasoning capabilities.",
+        "Teach me about the history of Isaac Newton",
+        "Who is the greatest mathematician of the 21st century?",
     ]
 
     sampling_params = [
-        SamplingParams(temperature=0.7, max_tokens=100, seed=8780),
-        SamplingParams(temperature=0.0, max_tokens=10, seed=8780),
-        SamplingParams(max_tokens=20, presence_penalty=2.0, seed=8780)
+        SamplingParams(temperature=0.7, max_tokens=100),
+        SamplingParams(temperature=0.0, max_tokens=10),
+        SamplingParams(max_tokens=20, ignore_eos=True),
+        SamplingParams(max_tokens=100, ignore_eos=True, presence_penalty=2.0),
+        SamplingParams(max_tokens=100, presence_penalty=2.0),
+        SamplingParams(max_tokens=100, min_tokens=90, presence_penalty=2.0),
     ]
 
     expected_out = []
@@ -332,7 +339,10 @@ def test_spyre_dynamic_batch_isolation(model: str, max_model_len: int,
     vllm_outputs = vllm_model.generate(prompts=prompts,
                                        sampling_params=sampling_params)
 
-    # checks isolation
+    # checks isolationgit
     assert expected_out[0].outputs[0].text == vllm_outputs[0].outputs[0].text
     assert expected_out[1].outputs[0].text == vllm_outputs[0].outputs[1].text
     assert expected_out[2].outputs[0].text == vllm_outputs[0].outputs[2].text
+    assert expected_out[3].outputs[0].text == vllm_outputs[0].outputs[3].text
+    assert expected_out[4].outputs[0].text == vllm_outputs[0].outputs[4].text
+    assert expected_out[5].outputs[0].text == vllm_outputs[0].outputs[5].text
