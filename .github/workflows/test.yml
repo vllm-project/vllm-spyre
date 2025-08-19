@@ -43,21 +43,27 @@ jobs:
           - name: "static batching"
             markers: "cpu and decoder and not cb"
             flags: "--timeout=300"
+            hf_models: "JackFram/llama-160m"
           - name: "fp8"
             markers: "cpu and quantized and multi"
             flags: "--timeout=600 -k 'basic and test_output' --durations=0"
+            hf_models: "ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8"
           - name: "embedding"
             markers: "cpu and embedding"
             flags: "--timeout=300"
+            hf_models: "sentence-transformers/all-roberta-large-v1"
           - name: "continuous batching"
             markers: "cpu and cb"
             flags: "--timeout=300"
+            hf_models: "ibm-ai-platform/micro-g3.3-8b-instruct-1b"
           - name: "worker and utils"
             markers: "not e2e"
             flags: "--timeout=300"
+            hf_models: "all"
           - name: "compatibility"
             markers: "compat"
             flags: "--timeout=300"
+            hf_models: "all"
         include:
           - vllm_version:
               name: "vLLM:lowest"
@@ -66,6 +72,7 @@ jobs:
               name: "backward compat"
               markers: "compat or (cpu and basic)"
               flags: "--timeout=300"
+              hf_models: "all"
             os: "ubuntu-latest"
             python_version: "3.12"
         # Exclude vLLM:main if PR does NOT have the ready label
@@ -128,12 +135,29 @@ jobs:
 
       - name: "Restore HF models cache"
         if: steps.changed-src-files.outputs.any_changed == 'true'
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ env.HF_HUB_CACHE }}
-          key: ${{ runner.os }}-hub-cache-${{ hashFiles('cached_models.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-hub-cache
+        run: |
+          mkdir -p "${HF_HUB_CACHE}"
+
+          restore_model() {
+            model="$1"
+            folder_name="${model//\//--}"
+            key="${RUNNER_OS}-hf-model-${folder_name}"
+            echo "Restoring cache for $model..."
+            gh actions cache restore \
+              --path "${HF_HUB_CACHE}/models--${folder_name}" \
+              --key "$key" || echo "No cache found for $model"
+          }
+
+          if [[ "${{ matrix.test_suite.hf_models }}" == "all" ]]; then
+            echo "Restoring full HF cache for all models..."
+            gh actions cache restore \
+              --path "${HF_HUB_CACHE}" \
+              --key "${RUNNER_OS}-hub-cache-ALL" || echo "No full cache found"
+          else
+            for model in ${{ matrix.test_suite.hf_models }}; do
+              restore_model "$model"
+            done
+          fi
 
       - name: "Download HF models"
         if: steps.changed-src-files.outputs.any_changed == 'true'
@@ -162,10 +186,25 @@ jobs:
 
       - name: "Save HF models cache"
         if: ( steps.changed-src-files.outputs.any_changed == 'true' && github.event_name != 'pull_request' && strategy.job-index == 0 )
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ env.HF_HUB_CACHE }}
-          key: ${{ runner.os }}-hub-cache-${{ hashFiles('cached_models.txt') }}
+        run: |
+          save_model() {
+            model="$1"
+            folder_name="${model//\//--}"
+            key="${RUNNER_OS}-hf-model-${folder_name}"
+            gh actions cache save \
+              --path "${HF_HUB_CACHE}/models--${folder_name}" \
+              --key "$key" || echo "Failed to save $model"
+          }
+
+          if [[ "${{ matrix.test_suite.hf_models }}" == "all" ]]; then
+            gh actions cache save \
+              --path "${HF_HUB_CACHE}" \
+              --key "${RUNNER_OS}-hub-cache-ALL" || echo "Failed to save full cache"
+          else
+            for model in ${{ matrix.test_suite.hf_models }}; do
+              save_model "$model"
+            done
+          fi
 
       - name: "Run tests"
         if: steps.changed-src-files.outputs.any_changed == 'true'
