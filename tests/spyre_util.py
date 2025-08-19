@@ -477,6 +477,10 @@ def check_output_against_hf(model, backend, max_new_tokens, vllm_results,
 def spyre_vllm_embeddings(model: str, prompts: list[str], max_model_len: int,
                           tensor_parallel_size: int,
                           backend: str) -> list[dict[str, Any]]:
+    # NB: This doesn't use the same LLM caching as generate_spyre_vllm_output
+    # There aren't as many embedding tests so it's not worth the effort atm to
+    # cache
+
     # Clear any cached decoder model
     clear_cached_llm()
 
