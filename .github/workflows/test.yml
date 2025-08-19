@@ -138,14 +138,14 @@ jobs:
         id: standardize-names
         run: |
           if [[ "${{ matrix.test_suite.hf_models }}" == "all" ]]; then
-            echo "model_key=ALL" >> $GITHUB_ENV
-            echo "model_path=${HF_HUB_CACHE}" >> $GITHUB_ENV
+            echo "model_key=ALL" >> "$GITHUB_ENV"
+            echo "model_path=${HF_HUB_CACHE}" >> "$GITHUB_ENV"
           else
             model="${{ matrix.test_suite.hf_models }}"
             # replace / with --
             safe_name="${model//\//--}"
-            echo "model_key=$safe_name" >> $GITHUB_ENV
-            echo "model_path=${HF_HUB_CACHE}/models--$safe_name" >> $GITHUB_ENV
+            echo "model_key=$safe_name" >> "$GITHUB_ENV"
+            echo "model_path=${HF_HUB_CACHE}/models--$safe_name" >> "$GITHUB_ENV"
           fi
 
       - name: "Restore HF models cache"
