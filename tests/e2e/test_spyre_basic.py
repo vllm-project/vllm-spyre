@@ -31,10 +31,11 @@ from vllm_spyre.v1.core.scheduler import StaticBatchingSpyreScheduler
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("max_num_seqs", [4],
                          ids=lambda val: f"max_num_seqs({val})")
-# TODO put warmup shapes back in parameter here for test sorting
+@pytest.mark.parametrize(
+    "warmup_shapes", [[(64, 20, 4)]])  # (prompt_length/new_tokens/batch_size)
 def test_output(model: str, tp_size: int, backend: str, cb: int,
-                max_num_seqs: int, monkeypatch: pytest.MonkeyPatch,
-                use_llm_cache) -> None:
+                max_num_seqs: int, warmup_shapes: list[tuple[int, int, int]],
+                monkeypatch: pytest.MonkeyPatch, use_llm_cache) -> None:
     '''
     The warmup is based on a single shape. After the warmup,
     one request with the provided prompts is input to vLLM.
@@ -52,18 +53,17 @@ def test_output(model: str, tp_size: int, backend: str, cb: int,
     skip_unsupported_tp_size(tp_size, backend)
 
     prompts = get_chicken_soup_prompts(4)
-    warmup_shape = (64, 20, 4)
 
     kwargs = ({
         "max_num_seqs": max_num_seqs,
         "use_cb": True,
         "max_model_len": 256,
     } if cb == 1 else {
-        "warmup_shapes": (warmup_shape, ),
+        "warmup_shapes": warmup_shapes,
         "max_model_len": 2048,
     })
 
-    max_new_tokens = warmup_shape[1]
+    max_new_tokens = warmup_shapes[0][1]
 
     vllm_sampling_params = SamplingParams(
         max_tokens=max_new_tokens,

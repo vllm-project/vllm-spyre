@@ -30,7 +30,7 @@ def _check_result(client, model, max_tokens=8, temperature=0.0, n=1) -> None:
 @pytest.mark.parametrize(
     "warmup_shape",
     [[
-        (64, 20, 1),
+        (64, 20, 4),
     ]],
 )
 @pytest.mark.parametrize("cb",

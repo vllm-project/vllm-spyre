@@ -216,15 +216,14 @@ def generate_spyre_vllm_output(
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
     start = time.time()
-    vllm_model = LLM_CACHE.get_cached_llm(
-        model=model,
-        max_model_len=max_model_len,
-        tensor_parallel_size=tensor_parallel_size,
-        backend=backend,
-        monkeypatch=monkeypatch,
-        warmup_shapes=warmup_shapes,
-        max_num_seqs=max_num_seqs,
-        use_cb=use_cb)
+    vllm_model = get_cached_llm(model=model,
+                                max_model_len=max_model_len,
+                                tensor_parallel_size=tensor_parallel_size,
+                                backend=backend,
+                                monkeypatch=monkeypatch,
+                                warmup_shapes=warmup_shapes,
+                                max_num_seqs=max_num_seqs,
+                                use_cb=use_cb)
     load_duration = time.time() - start
 
     start = time.time()
@@ -249,6 +248,26 @@ def generate_spyre_vllm_output(
 
     # force_engine_shutdown(vllm_model)
     return results
+
+
+def get_cached_llm(
+    model: str,
+    max_model_len: int,
+    tensor_parallel_size: int,
+    backend: str,
+    monkeypatch: pytest.MonkeyPatch,
+    warmup_shapes: Optional[list[tuple[int, int, int]]] = None,
+    max_num_seqs: Optional[int] = None,
+    use_cb: bool = False,
+) -> LLM:
+    return LLM_CACHE.get_cached_llm(model=model,
+                                    max_model_len=max_model_len,
+                                    tensor_parallel_size=tensor_parallel_size,
+                                    backend=backend,
+                                    monkeypatch=monkeypatch,
+                                    warmup_shapes=warmup_shapes,
+                                    max_num_seqs=max_num_seqs,
+                                    use_cb=use_cb)
 
 
 def clear_cached_llm():
