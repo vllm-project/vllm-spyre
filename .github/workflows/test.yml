@@ -72,7 +72,7 @@ jobs:
               name: "backward compat"
               markers: "compat or (cpu and basic)"
               flags: "--timeout=300"
-              hf_models: "all"
+              hf_models: "micro-g3.3_roberta-large"
             os: "ubuntu-latest"
             python_version: "3.12"
         # Exclude vLLM:main if PR does NOT have the ready label
@@ -137,8 +137,8 @@ jobs:
       - name: Standardize HF model name
         id: standardize-names
         run: |
-          if [[ "${{ matrix.test_suite.hf_models }}" == "all" ]]; then
-            echo "model_key=ALL" >> "$GITHUB_ENV"
+          if [[ "${{ matrix.test_suite.hf_models }}" == "micro-g3.3_roberta-large" ]]; then
+            echo "model_key=micro-g3.3_roberta-large" >> "$GITHUB_ENV"
             echo "model_path=${HF_HUB_CACHE}" >> "$GITHUB_ENV"
           else
             model="${{ matrix.test_suite.hf_models }}"
@@ -178,11 +178,9 @@ jobs:
           }
           needed_models="${{ matrix.test_suite.hf_models }}"
           case "$needed_models" in
-            "all")
+            "micro-g3.3_roberta-large")
               download_tinygranite & 
-              download_tinygranite_fp8 &
               download_roberta_large &
-              download_tinyllama &
               wait
               ;;
             "JackFram/llama-160m")
@@ -201,10 +199,9 @@ jobs:
               echo "No downloads needed for: $needed_models"
               ;;
           esac
-          wait
 
       - name: "Save HF models cache"
-        if: ( steps.changed-src-files.outputs.any_changed == 'true' && github.event_name != 'pull_request' && strategy.job-index == 0 )
+        # if: ( steps.changed-src-files.outputs.any_changed == 'true' && github.event_name != 'pull_request' && strategy.job-index == 0 )
         uses: actions/cache/save@v4
         with:
           path: ${{ env.model_path }}
