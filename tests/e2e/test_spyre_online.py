@@ -35,7 +35,7 @@ def _check_result(client, model, max_tokens=8, temperature=0.0, n=1) -> None:
 )
 @pytest.mark.parametrize("cb",
                          [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
-@pytest.mark.parametrize("max_num_seqs", [2],
+@pytest.mark.parametrize("max_num_seqs", [4],
                          ids=lambda val: f"max_num_seqs({val})")
 @pytest.mark.parametrize("max_model_len", [256],
                          ids=lambda val: f"max_model_len({val})")
