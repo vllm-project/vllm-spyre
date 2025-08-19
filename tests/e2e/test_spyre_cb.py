@@ -52,7 +52,7 @@ def test_cb_max_tokens(model: str, backend: str,
 @pytest.mark.parametrize("cb", [True])
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("max_model_len", [256])
-@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_num_seqs", [4])
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 def test_api_cb_rejects_oversized_request(
@@ -82,7 +82,7 @@ def test_api_cb_rejects_oversized_request(
 @pytest.mark.parametrize("cb", [True])
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("max_model_len", [256])
-@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_num_seqs", [4])
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 def test_api_cb_generates_correct_max_tokens(

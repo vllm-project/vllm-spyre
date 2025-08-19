@@ -2,24 +2,18 @@ import inspect
 import math
 import os
 import random
-import subprocess
-import sys
 import time
 from pathlib import Path
 from typing import Any, Optional, Union
 
 import numpy as np
-import openai
 import pytest
-import requests
 import torch
 from hf_result_cache import HFResultCache
-from llm_cache import LLMCache
+from llm_cache import LLMCache, RemoteOpenAIServer, RemoteOpenAIServerCache
 from sentence_transformers import SentenceTransformer, util
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, SamplingParams
-from vllm.entrypoints.openai.cli_args import make_arg_parser
-from vllm.utils import FlexibleArgumentParser, get_open_port
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.request import Request
@@ -32,6 +26,7 @@ ISCLOSE_REL_TOL_SPYRE = 0.35
 
 HF_RESULT_CACHE = HFResultCache()
 LLM_CACHE = LLMCache()
+API_SERVER_CACHE = RemoteOpenAIServerCache()
 
 
 def force_engine_shutdown(llm: LLM):
@@ -49,118 +44,6 @@ def force_engine_shutdown(llm: LLM):
     🌶️🌶️🌶️
     """
     llm.llm_engine.engine_core.shutdown()
-
-
-class RemoteOpenAIServer:
-    """Subprocess wrapper that boots a vllm server with `vllm serve` for testing
-    against"""
-
-    DUMMY_API_KEY = "token-abc123"  # vLLM's OpenAI server does not need API key
-
-    def __init__(self,
-                 model: str,
-                 vllm_serve_args: list[str],
-                 *,
-                 env_dict: Optional[dict[str, str]] = None,
-                 seed: Optional[int] = 0,
-                 auto_port: bool = True,
-                 max_wait_seconds: Optional[float] = None) -> None:
-        # NB: This implementation does not ensure that the model is downloaded
-        # before booting the server, it should be used with models already
-        # cached on disk
-
-        if auto_port:
-            if "-p" in vllm_serve_args or "--port" in vllm_serve_args:
-                raise ValueError("You have manually specified the port "
-                                 "when `auto_port=True`.")
-
-            # Don't mutate the input args
-            vllm_serve_args = vllm_serve_args + [
-                "--port", str(get_open_port())
-            ]
-        if seed is not None:
-            if "--seed" in vllm_serve_args:
-                raise ValueError("You have manually specified the seed "
-                                 f"when `seed={seed}`.")
-
-            vllm_serve_args = vllm_serve_args + ["--seed", str(seed)]
-
-        parser = FlexibleArgumentParser(
-            description="vLLM's remote OpenAI server.")
-        parser = make_arg_parser(parser)
-        args = parser.parse_args(["--model", model, *vllm_serve_args])
-        self.host = str(args.host or 'localhost')
-        self.port = int(args.port)
-
-        env = os.environ.copy()
-        if env_dict is not None:
-            env.update(env_dict)
-        self.proc = subprocess.Popen(
-            ["vllm", "serve", model, *vllm_serve_args],
-            env=env,
-            stdout=sys.stdout,
-            stderr=sys.stderr,
-        )
-        max_wait_seconds = max_wait_seconds or 600
-        self._wait_for_server(url=self.url_for("health"),
-                              timeout=max_wait_seconds)
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.proc.terminate()
-        try:
-            self.proc.wait(8)
-        except subprocess.TimeoutExpired:
-            # force kill if needed
-            self.proc.kill()
-
-    def _wait_for_server(self, *, url: str, timeout: float):
-        # run health check
-        start = time.time()
-        while True:
-            try:
-                if requests.get(url).status_code == 200:
-                    break
-            except Exception:
-                # this exception can only be raised by requests.get,
-                # which means the server is not ready yet.
-                # the stack trace is not useful, so we suppress it
-                # by using `raise from None`.
-                result = self.proc.poll()
-                if result is not None and result != 0:
-                    raise RuntimeError("Server exited unexpectedly.") from None
-
-                time.sleep(0.5)
-                if time.time() - start > timeout:
-                    raise RuntimeError(
-                        "Server failed to start in time.") from None
-
-    @property
-    def url_root(self) -> str:
-        return f"http://{self.host}:{self.port}"
-
-    def url_for(self, *parts: str) -> str:
-        return self.url_root + "/" + "/".join(parts)
-
-    def get_client(self, **kwargs):
-        if "timeout" not in kwargs:
-            kwargs["timeout"] = 600
-        return openai.OpenAI(
-            base_url=self.url_for("v1"),
-            api_key=self.DUMMY_API_KEY,
-            max_retries=0,
-            **kwargs,
-        )
-
-    def get_async_client(self, **kwargs):
-        if "timeout" not in kwargs:
-            kwargs["timeout"] = 600
-        return openai.AsyncOpenAI(base_url=self.url_for("v1"),
-                                  api_key=self.DUMMY_API_KEY,
-                                  max_retries=0,
-                                  **kwargs)
 
 
 def patch_warmup_shapes(warmup_shapes: Union[list[tuple[int, int, int]],
@@ -272,6 +155,23 @@ def get_cached_llm(
 
 def clear_cached_llm():
     LLM_CACHE.clear()
+
+
+def get_cached_api_server(model: str, server_args: list[str],
+                          server_env: dict) -> RemoteOpenAIServer:
+    # All `online` tests should be ordered after `llm` ones, so we may need to
+    # clear the LLM cache first
+    clear_cached_llm()
+
+    return API_SERVER_CACHE.get_api_server(
+        model=model,
+        server_args=server_args,
+        server_env=server_env,
+    )
+
+
+def clear_cached_runtime_server():
+    API_SERVER_CACHE.clear()
 
 
 # Hugging Face
