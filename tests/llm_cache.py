@@ -10,9 +10,11 @@ from typing import NamedTuple, Optional
 import openai
 import pytest
 import requests
-from vllm import LLM
+from vllm import LLM, EngineArgs
 from vllm.entrypoints.openai.cli_args import make_arg_parser
 from vllm.utils import FlexibleArgumentParser, get_open_port
+from vllm.v1.engine.core import EngineCore
+from vllm.v1.executor.abstract import Executor
 
 
 def sort_tests_for_llm_caching(items: list) -> None:
@@ -152,11 +154,6 @@ class SortKey(NamedTuple):
                                       item)
                 return params[key]
         # Assume [(64, 20, 1)] if not specified
-
-        print("\n\n\nSHAPES NOT IN CALLSPEC\n\n")
-        print(item.callspec.params)
-        print("\n\n")
-
         return [(64, 20, 1)]
 
     @staticmethod
@@ -428,10 +425,6 @@ class RemoteOpenAIServerCache:
         self.hits = 0
         self.misses = 0
 
-    def __del__(self):
-        if self._api_server:
-            self._api_server.shutdown()
-
     def get_api_server(self, model: str, server_args: list[str],
                        server_env: dict) -> RemoteOpenAIServer:
         """Get or create a new OpenAI server for a given model. and config"""
@@ -476,6 +469,80 @@ class RemoteOpenAIServerCache:
         if self._api_server:
             self._api_server.shutdown()
             self._api_server = None
+            self._runtime_config = None
+
+
+class EngineCache:
+    """Cache for continuous batching engines"""
+
+    def __init__(self):
+        self._engine: EngineCore | None = None
+        self._runtime_config: dict | None = None
+        self._past_runtime_configs: list[dict] = []
+
+        self.hits = 0
+        self.misses = 0
+
+    def get_engine(self, model: str, max_model_len: int, max_num_seqs: int,
+                   available_blocks: int, backend: str,
+                   monkeypatch) -> EngineCore:
+        runtime_config = {
+            "model": model,
+            "max_model_len": max_model_len,
+            "max_num_seqs": max_num_seqs,
+            "available_blocks": available_blocks,
+        }
+
+        # Patch the environment so it always matches the running engine
+        _patch_environment(use_cb=True,
+                           warmup_shapes=None,
+                           backend=backend,
+                           monkeypatch=monkeypatch)
+
+        if self._runtime_config and self._runtime_config == runtime_config:
+            self.hits += 1
+            return self._engine
+
+        # cache miss
+        self.misses += 1
+
+        print("\n\n\n\n\t\t\tCACHE MISS!\n")
+        print(runtime_config)
+        print()
+        print(self._runtime_config)
+        print("\n\n\n\n")
+
+        assert runtime_config not in self._past_runtime_configs, \
+            f"Runtime config {runtime_config} was previously cached, error " \
+                "in test ordering!"
+
+        self._runtime_config = runtime_config
+        self._past_runtime_configs.append(self._runtime_config)
+
+        # Tear down old engine
+        if self._engine:
+            self._engine.shutdown()
+
+        # Setup the engine
+        engine_args = EngineArgs(
+            model=model,
+            tokenizer=model,
+            max_model_len=max_model_len,
+            max_num_seqs=max_num_seqs,
+            num_gpu_blocks_override=available_blocks,
+        )
+        vllm_config = engine_args.create_engine_config()
+        executor_class = Executor.get_class(vllm_config)
+        self._engine = EngineCore(vllm_config=vllm_config,
+                                  executor_class=executor_class,
+                                  log_stats=False)
+
+        return self._engine
+
+    def clear(self) -> None:
+        if self._engine:
+            self._engine.shutdown()
+            self._engine = None
             self._runtime_config = None
 
 

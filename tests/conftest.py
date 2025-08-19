@@ -5,8 +5,9 @@ import random
 import pytest
 import torch
 from llm_cache import SortKey, sort_tests_for_llm_caching
-from spyre_util import (clear_cached_llm, clear_cached_runtime_server,
-                        get_cached_api_server, skip_unsupported_tp_size)
+from spyre_util import (clear_cached_engine, clear_cached_llm,
+                        clear_cached_runtime_server, get_cached_api_server,
+                        skip_unsupported_tp_size)
 from vllm.connections import global_http_connection
 from vllm.distributed import cleanup_dist_env_and_memory
 
@@ -222,6 +223,7 @@ def teardown_fixture():
     # Clear out any cached LLMs so no subprocesses get orphaned
     clear_cached_llm()
     clear_cached_runtime_server()
+    clear_cached_engine()
 
 
 @pytest.fixture

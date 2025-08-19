@@ -10,7 +10,8 @@ import numpy as np
 import pytest
 import torch
 from hf_result_cache import HFResultCache
-from llm_cache import LLMCache, RemoteOpenAIServer, RemoteOpenAIServerCache
+from llm_cache import (EngineCache, LLMCache, RemoteOpenAIServer,
+                       RemoteOpenAIServerCache)
 from sentence_transformers import SentenceTransformer, util
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, SamplingParams
@@ -27,6 +28,7 @@ ISCLOSE_REL_TOL_SPYRE = 0.35
 HF_RESULT_CACHE = HFResultCache()
 LLM_CACHE = LLMCache()
 API_SERVER_CACHE = RemoteOpenAIServerCache()
+ENGINE_CACHE = EngineCache()
 
 
 def force_engine_shutdown(llm: LLM):
@@ -143,6 +145,10 @@ def get_cached_llm(
     max_num_seqs: Optional[int] = None,
     use_cb: bool = False,
 ) -> LLM:
+    # Clear other caches first
+    clear_cached_runtime_server()
+    clear_cached_engine()
+
     return LLM_CACHE.get_cached_llm(model=model,
                                     max_model_len=max_model_len,
                                     tensor_parallel_size=tensor_parallel_size,
@@ -159,9 +165,9 @@ def clear_cached_llm():
 
 def get_cached_api_server(model: str, server_args: list[str],
                           server_env: dict) -> RemoteOpenAIServer:
-    # All `online` tests should be ordered after `llm` ones, so we may need to
-    # clear the LLM cache first
+    # Clear other caches first
     clear_cached_llm()
+    clear_cached_engine()
 
     return API_SERVER_CACHE.get_api_server(
         model=model,
@@ -172,6 +178,25 @@ def get_cached_api_server(model: str, server_args: list[str],
 
 def clear_cached_runtime_server():
     API_SERVER_CACHE.clear()
+
+
+def get_cached_engine(model: str, max_model_len: int, max_num_seqs: int,
+                      available_blocks: int, backend: str,
+                      monkeypatch) -> EngineCore:
+    # Clear other caches first
+    clear_cached_llm()
+    clear_cached_runtime_server()
+
+    return ENGINE_CACHE.get_engine(model=model,
+                                   max_model_len=max_model_len,
+                                   max_num_seqs=max_num_seqs,
+                                   available_blocks=available_blocks,
+                                   backend=backend,
+                                   monkeypatch=monkeypatch)
+
+
+def clear_cached_engine():
+    ENGINE_CACHE.clear()
 
 
 # Hugging Face
