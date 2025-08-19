@@ -1,15 +1,13 @@
 import pytest
+from spyre_util import get_spyre_backend_list, get_spyre_model_list
 from vllm import LLM, SamplingParams
 
 
-def test_spyre_batch1_determinism(model: str, max_model_len: int,
-                                  max_num_seqs: int, block_size: int,
-                                  tensor_parallel_size: int, backend: str,
-                                  monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
-    monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
-
-    vllm_model = LLM(
+@pytest.fixture
+@pytest.mark.parametrize("model", get_spyre_model_list())
+def spyre_model(model: str, max_model_len: int, max_num_seqs: int,
+                block_size: int, tensor_parallel_size: int) -> LLM:
+    return LLM(
         model=model,
         tokenizer=model,
         max_model_len=max_model_len,
@@ -18,95 +16,80 @@ def test_spyre_batch1_determinism(model: str, max_model_len: int,
         tensor_parallel_size=tensor_parallel_size,
     )
 
+
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+def test_spyre_batch1_temperature(spyre_model: LLM, backend: str,
+                                  monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+    monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
+
     prompt = "The capital of the United Kingdom is"
     params = SamplingParams(temperature=0.0, seed=8780, max_tokens=5)
 
-    output1 = vllm_model.generate(prompt, params, request_id="1")[0]
-    output2 = vllm_model.generate(prompt, params, request_id="2")[0]
+    output1 = spyre_model.generate(prompt, params, request_id="1")[0]
+    output2 = spyre_model.generate(prompt, params, request_id="2")[0]
 
     assert output1.outputs[0].text == output2.outputs[0].text
     assert "London" in output1.outputs[0].text
 
 
-def test_spyre_batch1_max_tokens(model: str, max_model_len: int,
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+def test_spyre_batch1_max_tokens(spyre_model: LLM, max_model_len: int,
                                  max_num_seqs: int, block_size: int,
                                  tensor_parallel_size: int, backend: str,
                                  monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
-    vllm_model = LLM(
-        model=model,
-        tokenizer=model,
-        max_model_len=max_model_len,
-        max_num_seqs=max_num_seqs,
-        block_size=block_size,
-        tensor_parallel_size=tensor_parallel_size,
-    )
-
     prompt = "Count to twenty"
     params = SamplingParams(temperature=0, seed=8780, max_tokens=15)
 
-    output = vllm_model.generate(prompt, params, request_id="1")[0]
+    output = spyre_model.generate(prompt, params, request_id="1")[0]
 
     assert len(output.outputs[0].token_ids) == 15
     assert "London" in output.outputs[0].text
 
 
-def test_spyre_batch1_stop_sequence(model: str, max_model_len: int,
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+def test_spyre_batch1_stop_sequence(spyre_model: LLM, max_model_len: int,
                                     max_num_seqs: int, block_size: int,
                                     tensor_parallel_size: int, backend: str,
                                     monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
-    vllm_model = LLM(
-        model=model,
-        tokenizer=model,
-        max_model_len=max_model_len,
-        max_num_seqs=max_num_seqs,
-        block_size=block_size,
-        tensor_parallel_size=tensor_parallel_size,
-    )
-
     stop_str = "London"
     prompt = f"The best way to travel from Paris to {stop_str} is by train."
     params = SamplingParams(stop=[stop_str], max_tokens=50)
 
-    output = vllm_model.generate(prompt, params, request_id="1")[0]
+    output = spyre_model.generate(prompt, params, request_id="1")[0]
 
     assert stop_str not in output.outputs[0].text == 15
     assert output.outputs[0].finish_reason == 'stop'
 
 
-def test_spyre_batch1_presence_penalty(model: str, max_model_len: int,
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+def test_spyre_batch1_presence_penalty(spyre_model: LLM, max_model_len: int,
                                        max_num_seqs: int, block_size: int,
                                        tensor_parallel_size: int, backend: str,
                                        monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
-    vllm_model = LLM(
-        model=model,
-        tokenizer=model,
-        max_model_len=max_model_len,
-        max_num_seqs=max_num_seqs,
-        block_size=block_size,
-        tensor_parallel_size=tensor_parallel_size,
-    )
     prompt = "Repeat over and over again: a new day. Repeat: a new day."
 
     param1 = SamplingParams(presence_penalty=2.0, max_tokens=50)
-    output = vllm_model.generate(prompt, param1, request_id="1")[0]
+    output = spyre_model.generate(prompt, param1, request_id="1")[0]
 
     param2 = SamplingParams(presence_penalty=0.0, max_tokens=50)
-    no_penalty = vllm_model.generate(prompt, param2, request_id="2")[0]
+    no_penalty = spyre_model.generate(prompt, param2, request_id="2")[0]
     no_penalty_count = no_penalty.outputs[0].text.lower().count("a new day")
 
     assert output.outputs[0].text.lower().count("a new day") < no_penalty_count
 
 
-def test_spyre_batch1_frequency_penalty(model: str, max_model_len: int,
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+def test_spyre_batch1_frequency_penalty(spyre_model: LLM, max_model_len: int,
                                         max_num_seqs: int, block_size: int,
                                         tensor_parallel_size: int,
                                         backend: str,
@@ -114,21 +97,13 @@ def test_spyre_batch1_frequency_penalty(model: str, max_model_len: int,
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
-    vllm_model = LLM(
-        model=model,
-        tokenizer=model,
-        max_model_len=max_model_len,
-        max_num_seqs=max_num_seqs,
-        block_size=block_size,
-        tensor_parallel_size=tensor_parallel_size,
-    )
     prompt = "Add fruits to the list: apple, banana, apple, banana"
 
     param1 = SamplingParams(frequency_penalty=2.0, max_tokens=50)
-    output = vllm_model.generate(prompt, param1, request_id="1")[0]
+    output = spyre_model.generate(prompt, param1, request_id="1")[0]
 
     param2 = SamplingParams(presence_penalty=0.0, max_tokens=50)
-    no_penalty = vllm_model.generate(prompt, param2, request_id="2")[0]
+    no_penalty = spyre_model.generate(prompt, param2, request_id="2")[0]
 
     first_word_count = no_penalty.outputs[0].text.lower().count("banana")
     second_word_count = no_penalty.outputs[0].text.lower().count("apple")
@@ -137,92 +112,65 @@ def test_spyre_batch1_frequency_penalty(model: str, max_model_len: int,
     assert output.outputs[0].text.lower().count("banana") < second_word_count
 
 
-def test_spyre_batch1_n_generations(model: str, max_model_len: int,
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+def test_spyre_batch1_n_generations(spyre_model: LLM, max_model_len: int,
                                     max_num_seqs: int, block_size: int,
                                     tensor_parallel_size: int, backend: str,
                                     monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
-    vllm_model = LLM(
-        model=model,
-        tokenizer=model,
-        max_model_len=max_model_len,
-        max_num_seqs=max_num_seqs,
-        block_size=block_size,
-        tensor_parallel_size=tensor_parallel_size,
-    )
     prompt = "The three most popular sports in the world are: "
 
     params = SamplingParams(n=3, temperature=0.8, seed=8780, max_tokens=50)
-    output = vllm_model.generate(prompt, params, request_id="1")[0]
+    output = spyre_model.generate(prompt, params, request_id="1")[0]
 
     assert len(output.outputs) == 3
     assert output.outputs[0].text != output.outputs[1].text
     assert output.outputs[1].text != output.outputs[2].text
 
 
-def test_spyre_batch1_top_p(model: str, max_model_len: int, max_num_seqs: int,
-                            block_size: int, tensor_parallel_size: int,
-                            backend: str, monkeypatch: pytest.MonkeyPatch):
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+def test_spyre_batch1_top_p(spyre_model: LLM, max_model_len: int,
+                            max_num_seqs: int, block_size: int,
+                            tensor_parallel_size: int, backend: str,
+                            monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
-    vllm_model = LLM(
-        model=model,
-        tokenizer=model,
-        max_model_len=max_model_len,
-        max_num_seqs=max_num_seqs,
-        block_size=block_size,
-        tensor_parallel_size=tensor_parallel_size,
-    )
     prompt = "The first three letters of the alphabet are "
 
     params = SamplingParams(top_p=0.01, temperature=0.5, max_tokens=10)
-    output = vllm_model.generate(prompt, params, request_id="1")[0]
+    output = spyre_model.generate(prompt, params, request_id="1")[0]
 
     assert "A, B and C" in output.outputs[0].text
 
 
-def test_spyre_batch1_top_k(model: str, max_model_len: int, max_num_seqs: int,
-                            block_size: int, tensor_parallel_size: int,
-                            backend: str, monkeypatch: pytest.MonkeyPatch):
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+def test_spyre_batch1_top_k(spyre_model: LLM, max_model_len: int,
+                            max_num_seqs: int, block_size: int,
+                            tensor_parallel_size: int, backend: str,
+                            monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
-    vllm_model = LLM(
-        model=model,
-        tokenizer=model,
-        max_model_len=max_model_len,
-        max_num_seqs=max_num_seqs,
-        block_size=block_size,
-        tensor_parallel_size=tensor_parallel_size,
-    )
     prompt = "The opposite of hot is "
 
     params = SamplingParams(top_k=1, max_tokens=5)
-    output = vllm_model.generate(prompt, params, request_id="1")[0]
+    output = spyre_model.generate(prompt, params, request_id="1")[0]
 
     assert "cold" in output.outputs[0].text.lower()
 
 
-def test_spyre_batch1_logit_bias(model: str, max_model_len: int,
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+def test_spyre_batch1_logit_bias(spyre_model: LLM, max_model_len: int,
                                  max_num_seqs: int, block_size: int,
                                  tensor_parallel_size: int, backend: str,
                                  monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
-    vllm_model = LLM(
-        model=model,
-        tokenizer=model,
-        max_model_len=max_model_len,
-        max_num_seqs=max_num_seqs,
-        block_size=block_size,
-        tensor_parallel_size=tensor_parallel_size,
-    )
-
-    tokenizer = vllm_model.get_tokenizer()
+    tokenizer = spyre_model.get_tokenizer()
     banned_word = "train"
     forced_word = "plane"
 
@@ -241,77 +189,53 @@ def test_spyre_batch1_logit_bias(model: str, max_model_len: int,
                                 forced_word_id: 100,
                             })
 
-    output = vllm_model.generate(prompt, params, request_id="1")[0]
+    output = spyre_model.generate(prompt, params, request_id="1")[0]
 
     assert banned_word not in output.outputs[0].text.lower()
     assert forced_word in output.outputs[0].text.lower()
 
 
-def test_spyre_batch1_min_tokens(model: str, max_model_len: int,
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+def test_spyre_batch1_min_tokens(spyre_model: LLM, max_model_len: int,
                                  max_num_seqs: int, block_size: int,
                                  tensor_parallel_size: int, backend: str,
                                  monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
-
-    vllm_model = LLM(
-        model=model,
-        tokenizer=model,
-        max_model_len=max_model_len,
-        max_num_seqs=max_num_seqs,
-        block_size=block_size,
-        tensor_parallel_size=tensor_parallel_size,
-    )
 
     prompt = "Hello."
     params = SamplingParams(temperature=0, min_tokens=20, max_tokens=25)
 
-    output = vllm_model.generate(prompt, params, request_id="1")[0]
+    output = spyre_model.generate(prompt, params, request_id="1")[0]
 
     assert output.outputs[0].tokens_ids >= 20
 
 
-def test_spyre_batch1_ignore_eos(model: str, max_model_len: int,
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+def test_spyre_batch1_ignore_eos(spyre_model: LLM, max_model_len: int,
                                  max_num_seqs: int, block_size: int,
                                  tensor_parallel_size: int, backend: str,
                                  monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
-    vllm_model = LLM(
-        model=model,
-        tokenizer=model,
-        max_model_len=max_model_len,
-        max_num_seqs=max_num_seqs,
-        block_size=block_size,
-        tensor_parallel_size=tensor_parallel_size,
-    )
-
     prompt = "One plus one equals two."
     params = SamplingParams(temperature=0, ignore_eos=True, max_tokens=100)
 
-    output = vllm_model.generate(prompt, params, request_id="1")[0]
+    output = spyre_model.generate(prompt, params, request_id="1")[0]
 
     assert output.outputs[0].finish_reason == 'length'
     assert len(output.outputs[0].tokens_ids) == 100
 
 
-def test_spyre_dynamic_batch_isolation(model: str, max_model_len: int,
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+def test_spyre_dynamic_batch_isolation(spyre_model: LLM, max_model_len: int,
                                        max_num_seqs: int, block_size: int,
                                        tensor_parallel_size: int, backend: str,
                                        monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
-
-    vllm_model = LLM(
-        model=model,
-        tokenizer=model,
-        max_model_len=max_model_len,
-        max_num_seqs=max_num_seqs,
-        block_size=block_size,
-        tensor_parallel_size=tensor_parallel_size,
-    )
 
     prompts = [
         "Write an essay on artificial intelligence.",
@@ -333,13 +257,13 @@ def test_spyre_dynamic_batch_isolation(model: str, max_model_len: int,
 
     expected_out = []
     for prompt, param in zip(prompts, sampling_params):
-        output = vllm_model.generate(prompt, param)
+        output = spyre_model.generate(prompt, param)
         expected_out.append(output[0])
 
-    vllm_outputs = vllm_model.generate(prompts=prompts,
-                                       sampling_params=sampling_params)
+    vllm_outputs = spyre_model.generate(prompts=prompts,
+                                        sampling_params=sampling_params)
 
-    # checks isolationgit
+    # checks isolation
     assert expected_out[0].outputs[0].text == vllm_outputs[0].outputs[0].text
     assert expected_out[1].outputs[0].text == vllm_outputs[0].outputs[1].text
     assert expected_out[2].outputs[0].text == vllm_outputs[0].outputs[2].text
