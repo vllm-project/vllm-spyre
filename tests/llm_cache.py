@@ -20,7 +20,7 @@ from vllm.v1.executor.abstract import Executor
 def sort_tests_for_llm_caching(items: list) -> None:
     """Sorts a list of pytest cases based on the LLM parameterizations.
     
-    This allows us to group tests together that use the samme model and config,
+    This allows us to group tests together that use the same model and config,
     which means they can reuse the underlying LLM. Then we can cache the LLM
     across tests to save time.
 
