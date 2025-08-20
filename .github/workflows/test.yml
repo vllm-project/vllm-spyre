@@ -6,12 +6,8 @@ on:
   # Use `changed-src-files` step to determine if source code was changed
   pull_request:
     # add labeled and unlabeled to the default types (runs when label is added)
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    types: [opened, synchronize, reopened, labeled, unlabeled, auto_merge_enabled]
     branches: [main]
-
-  pull_request_target:
-    # bot-applied label changes need to be triggered with pull_request_target.auto_merge_enabled
-    types: [auto_merge_enabled]
 
   push:
     branches: [main]
