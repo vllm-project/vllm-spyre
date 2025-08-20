@@ -5,12 +5,12 @@ on:
   # for all pull requests on main irrespective of file type or location
   # Use `changed-src-files` step to determine if source code was changed
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    types: [opened, synchronize, reopened]
     branches: [main]
 
   pull_request_target:
     # Label changes (including bot-applied) need pull_request_target
-    types: [labeled, unlabeled]
+    types: [labeled, unlabeled, auto_merge_enabled]
     branches: [main]
 
   push:
@@ -72,6 +72,8 @@ jobs:
               flags: "--timeout=300"
             os: "ubuntu-latest"
             python_version: "3.12"
+        # Exclude vLLM:main if PR does NOT have the ready label
+        exclude: ${{ github.event_name == 'pull_request' && !contains(toJson(github.event.pull_request.labels), '"ready"') && fromJSON('[{"vllm_version":{"name":"vLLM:main"}}]') || fromJSON('[]') }}
 
     name: "${{ matrix.test_suite.name }} (${{ matrix.vllm_version.name }})"
 
@@ -80,20 +82,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-
-      - name: "Skip vLLM:main if PR not ready"
-        if: matrix.vllm_version.name == 'vLLM:main' && github.event_name == 'pull_request'
-        run: |
-          PR_NUMBER=$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")
-          LABELS=$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name')
-          if echo "$LABELS" | grep -qi '^ready$'; then
-            echo "ready label present — continuing"
-          else
-            echo "ready label missing — skipping vLLM:main"
-            exit 1
-          fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: "Get changed source files"
         id: changed-src-files
