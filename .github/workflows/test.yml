@@ -20,6 +20,7 @@ env:
   VLLM_TARGET_DEVICE: "empty"
   VLLM_PLUGINS: "spyre"
   HF_HUB_CACHE: "${{ github.workspace }}/.cache/huggingface/hub"
+  DEFAULT_HF_MODEL: "ibm-ai-platform/micro-g3.3-8b-instruct-1b"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -55,15 +56,12 @@ jobs:
           - name: "continuous batching"
             markers: "cpu and cb"
             flags: "--timeout=300"
-            hf_models: "ibm-ai-platform/micro-g3.3-8b-instruct-1b"
           - name: "worker and utils"
             markers: "not e2e"
             flags: "--timeout=300"
-            hf_models: "ibm-ai-platform/micro-g3.3-8b-instruct-1b"
           - name: "compatibility"
             markers: "compat"
             flags: "--timeout=300"
-            hf_models: "ibm-ai-platform/micro-g3.3-8b-instruct-1b"
         include:
           - vllm_version:
               name: "vLLM:lowest"
@@ -137,11 +135,11 @@ jobs:
       - name: Standardize HF model name
         id: standardize-names
         run: |
-          if [[ "${{ matrix.test_suite.hf_models }}" == "micro-g3.3_roberta-large" ]]; then
+          model="${{ matrix.test_suite.hf_models || env.DEFAULT_HF_MODEL }}"
+          if [[ "$model" == "micro-g3.3_roberta-large" ]]; then
             echo "model_key=micro-g3.3_roberta-large" >> "$GITHUB_ENV"
             echo "model_path=${HF_HUB_CACHE}" >> "$GITHUB_ENV"
           else
-            model="${{ matrix.test_suite.hf_models }}"
             # replace / with --
             safe_name="${model//\//--}"
             echo "model_key=$safe_name" >> "$GITHUB_ENV"
@@ -177,7 +175,7 @@ jobs:
           download_tinyllama() {
             python -c "from transformers import pipeline; pipeline('text-generation', model='JackFram/llama-160m')"
           }
-          needed_models="${{ matrix.test_suite.hf_models }}"
+          needed_models="${{ matrix.test_suite.hf_models || env.DEFAULT_HF_MODEL }}"
           case "$needed_models" in
             "micro-g3.3_roberta-large")
               download_tinygranite & 
