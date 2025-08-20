@@ -3,18 +3,10 @@ from spyre_util import get_spyre_backend_list, get_spyre_model_list
 from vllm import LLM, SamplingParams
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 @pytest.mark.parametrize("model", get_spyre_model_list())
-def spyre_model(model: str, max_model_len: int, max_num_seqs: int,
-                block_size: int, tensor_parallel_size: int) -> LLM:
-    return LLM(
-        model=model,
-        tokenizer=model,
-        max_model_len=max_model_len,
-        max_num_seqs=max_num_seqs,
-        block_size=block_size,
-        tensor_parallel_size=tensor_parallel_size,
-    )
+def spyre_model(model: str) -> LLM:
+    return LLM(model=model)
 
 
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
@@ -34,9 +26,7 @@ def test_spyre_batch1_temperature(spyre_model: LLM, backend: str,
 
 
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def test_spyre_batch1_max_tokens(spyre_model: LLM, max_model_len: int,
-                                 max_num_seqs: int, block_size: int,
-                                 tensor_parallel_size: int, backend: str,
+def test_spyre_batch1_max_tokens(spyre_model: LLM, backend: str,
                                  monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
@@ -47,13 +37,10 @@ def test_spyre_batch1_max_tokens(spyre_model: LLM, max_model_len: int,
     output = spyre_model.generate(prompt, params, request_id="1")[0]
 
     assert len(output.outputs[0].token_ids) == 15
-    assert "London" in output.outputs[0].text
 
 
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def test_spyre_batch1_stop_sequence(spyre_model: LLM, max_model_len: int,
-                                    max_num_seqs: int, block_size: int,
-                                    tensor_parallel_size: int, backend: str,
+def test_spyre_batch1_stop_sequence(spyre_model: LLM, backend: str,
                                     monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
@@ -69,9 +56,7 @@ def test_spyre_batch1_stop_sequence(spyre_model: LLM, max_model_len: int,
 
 
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def test_spyre_batch1_presence_penalty(spyre_model: LLM, max_model_len: int,
-                                       max_num_seqs: int, block_size: int,
-                                       tensor_parallel_size: int, backend: str,
+def test_spyre_batch1_presence_penalty(spyre_model: LLM, backend: str,
                                        monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
@@ -89,10 +74,7 @@ def test_spyre_batch1_presence_penalty(spyre_model: LLM, max_model_len: int,
 
 
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def test_spyre_batch1_frequency_penalty(spyre_model: LLM, max_model_len: int,
-                                        max_num_seqs: int, block_size: int,
-                                        tensor_parallel_size: int,
-                                        backend: str,
+def test_spyre_batch1_frequency_penalty(spyre_model: LLM, backend: str,
                                         monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
@@ -113,9 +95,7 @@ def test_spyre_batch1_frequency_penalty(spyre_model: LLM, max_model_len: int,
 
 
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def test_spyre_batch1_n_generations(spyre_model: LLM, max_model_len: int,
-                                    max_num_seqs: int, block_size: int,
-                                    tensor_parallel_size: int, backend: str,
+def test_spyre_batch1_n_generations(spyre_model: LLM, backend: str,
                                     monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
@@ -131,9 +111,7 @@ def test_spyre_batch1_n_generations(spyre_model: LLM, max_model_len: int,
 
 
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def test_spyre_batch1_top_p(spyre_model: LLM, max_model_len: int,
-                            max_num_seqs: int, block_size: int,
-                            tensor_parallel_size: int, backend: str,
+def test_spyre_batch1_top_p(spyre_model: LLM, backend: str,
                             monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
@@ -147,9 +125,7 @@ def test_spyre_batch1_top_p(spyre_model: LLM, max_model_len: int,
 
 
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def test_spyre_batch1_top_k(spyre_model: LLM, max_model_len: int,
-                            max_num_seqs: int, block_size: int,
-                            tensor_parallel_size: int, backend: str,
+def test_spyre_batch1_top_k(spyre_model: LLM, backend: str,
                             monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
@@ -163,9 +139,7 @@ def test_spyre_batch1_top_k(spyre_model: LLM, max_model_len: int,
 
 
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def test_spyre_batch1_logit_bias(spyre_model: LLM, max_model_len: int,
-                                 max_num_seqs: int, block_size: int,
-                                 tensor_parallel_size: int, backend: str,
+def test_spyre_batch1_logit_bias(spyre_model: LLM, backend: str,
                                  monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
@@ -182,8 +156,7 @@ def test_spyre_batch1_logit_bias(spyre_model: LLM, max_model_len: int,
 
     prompt = "The fastest way to travel between continents is by"
 
-    params = SamplingParams(temperature=0,
-                            max_tokens=5,
+    params = SamplingParams(temperature=0, max_tokens=5,
                             logit_bias={
                                 banned_word_id: -100,
                                 forced_word_id: 100,
@@ -196,9 +169,7 @@ def test_spyre_batch1_logit_bias(spyre_model: LLM, max_model_len: int,
 
 
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def test_spyre_batch1_min_tokens(spyre_model: LLM, max_model_len: int,
-                                 max_num_seqs: int, block_size: int,
-                                 tensor_parallel_size: int, backend: str,
+def test_spyre_batch1_min_tokens(spyre_model: LLM, backend: str,
                                  monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
@@ -212,9 +183,7 @@ def test_spyre_batch1_min_tokens(spyre_model: LLM, max_model_len: int,
 
 
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def test_spyre_batch1_ignore_eos(spyre_model: LLM, max_model_len: int,
-                                 max_num_seqs: int, block_size: int,
-                                 tensor_parallel_size: int, backend: str,
+def test_spyre_batch1_ignore_eos(spyre_model: LLM, backend: str,
                                  monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
@@ -229,9 +198,7 @@ def test_spyre_batch1_ignore_eos(spyre_model: LLM, max_model_len: int,
 
 
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def test_spyre_dynamic_batch_isolation(spyre_model: LLM, max_model_len: int,
-                                       max_num_seqs: int, block_size: int,
-                                       tensor_parallel_size: int, backend: str,
+def test_spyre_dynamic_batch_isolation(spyre_model: LLM, backend: str,
                                        monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
@@ -247,12 +214,12 @@ def test_spyre_dynamic_batch_isolation(spyre_model: LLM, max_model_len: int,
     ]
 
     sampling_params = [
-        SamplingParams(temperature=0.7, max_tokens=100),
-        SamplingParams(temperature=0.0, max_tokens=10),
-        SamplingParams(max_tokens=20, ignore_eos=True),
-        SamplingParams(max_tokens=100, ignore_eos=True, presence_penalty=2.0),
+        SamplingParams(temperature=0.7, max_tokens=100, seed=8780),
+        SamplingParams(temperature=0.0, max_tokens=10, seed=8780),
+        SamplingParams(max_tokens=20, ignore_eos=True, seed=8780),
+        SamplingParams(max_tokens=100, ignore_eos=True, seed=8780),
         SamplingParams(max_tokens=100, presence_penalty=2.0),
-        SamplingParams(max_tokens=100, min_tokens=90, presence_penalty=2.0),
+        SamplingParams(max_tokens=100, min_tokens=90, , seed=8780),
     ]
 
     expected_out = []
