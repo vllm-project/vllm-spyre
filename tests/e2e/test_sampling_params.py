@@ -51,7 +51,7 @@ def test_spyre_batch1_stop_sequence(spyre_model: LLM, backend: str,
 
     output = spyre_model.generate(prompt, params, request_id="1")[0]
 
-    assert stop_str not in output.outputs[0].text == 15
+    assert stop_str not in output.outputs[0].text
     assert output.outputs[0].finish_reason == 'stop'
 
 
@@ -154,7 +154,7 @@ def test_spyre_batch1_logit_bias(spyre_model: LLM, backend: str,
     banned_word_id = banned_ids[0]
     forced_word_id = forced_ids[0]
 
-    prompt = "The fastest way to travel between continents is by"
+    prompt = "The fastest way to travel between continents is by "
 
     params = SamplingParams(temperature=0,
                             max_tokens=5,
@@ -180,7 +180,7 @@ def test_spyre_batch1_min_tokens(spyre_model: LLM, backend: str,
 
     output = spyre_model.generate(prompt, params, request_id="1")[0]
 
-    assert output.outputs[0].tokens_ids >= 20
+    assert len(output.outputs[0].tokens_ids) >= 20
 
 
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
