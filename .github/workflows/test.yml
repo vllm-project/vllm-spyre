@@ -76,6 +76,11 @@ jobs:
     name: "${{ matrix.test_suite.name }} (${{ matrix.vllm_version.name }})"
 
     steps:
+      - name: "Checkout"
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
       - name: "Skip vLLM:main if PR not ready"
         if: matrix.vllm_version.name == 'vLLM:main' && github.event_name == 'pull_request'
         run: |
@@ -89,11 +94,6 @@ jobs:
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: "Checkout"
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
 
       - name: "Get changed source files"
         id: changed-src-files
