@@ -85,7 +85,7 @@ jobs:
         if: matrix.vllm_version.name == 'vLLM:main' && github.event_name == 'pull_request'
         run: |
           PR_NUMBER=$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")
-          LABELS=$(gh pr view $PR_NUMBER --json labels --jq '.labels[].name')
+          LABELS=$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name')
           if echo "$LABELS" | grep -qi '^ready$'; then
             echo "ready label present — continuing"
           else
