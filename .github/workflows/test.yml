@@ -90,7 +90,7 @@ jobs:
             echo "ready label present — continuing"
           else
             echo "ready label missing — skipping vLLM:main"
-            exit 0
+            exit 1
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
