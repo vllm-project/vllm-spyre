@@ -179,6 +179,11 @@ class FmsModelBase(nn.Module):
         **kwargs,
     ) -> None:
 
+        if self.dtype is not model_config.dtype:
+            logger.info(
+                "Ignoring user-provided dtype=%s and using dtype=%s instead.",
+                model_config.dtype, self.dtype)
+
         is_local = os.path.isdir(model_config.model)
         model_path = model_config.model
         # Get location of model from HF cache.
