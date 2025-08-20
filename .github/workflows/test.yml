@@ -20,6 +20,7 @@ env:
   VLLM_TARGET_DEVICE: "empty"
   VLLM_PLUGINS: "spyre"
   HF_HUB_CACHE: "${{ github.workspace }}/.cache/huggingface/hub"
+  DEFAULT_HF_MODEL: "ibm-ai-platform/micro-g3.3-8b-instruct-1b"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -43,12 +44,15 @@ jobs:
           - name: "static batching"
             markers: "cpu and decoder and not cb"
             flags: "--timeout=300"
+            hf_models: "JackFram/llama-160m"
           - name: "fp8"
             markers: "cpu and quantized and multi"
             flags: "--timeout=600 -k 'basic and test_output' --durations=0"
+            hf_models: "ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8"
           - name: "embedding"
             markers: "cpu and embedding"
             flags: "--timeout=300"
+            hf_models: "sentence-transformers/all-roberta-large-v1"
           - name: "continuous batching"
             markers: "cpu and cb"
             flags: "--timeout=300"
@@ -66,6 +70,7 @@ jobs:
               name: "backward compat"
               markers: "compat or (cpu and basic)"
               flags: "--timeout=300"
+              hf_models: "micro-g3.3_roberta-large"
             os: "ubuntu-latest"
             python_version: "3.12"
         # Exclude vLLM:main if PR does NOT have "ready" label AND auto-merge is not enabled
@@ -135,25 +140,41 @@ jobs:
           # overwritten.
           uv pip install -v .
 
+      # Standardize model name for cache keys
+      - name: Standardize HF model name
+        id: standardize-names
+        run: |
+          model="${{ matrix.test_suite.hf_models || env.DEFAULT_HF_MODEL }}"
+          if [[ "$model" == "micro-g3.3_roberta-large" ]]; then
+            echo "model_key=micro-g3.3_roberta-large" >> "$GITHUB_ENV"
+            echo "model_path=${HF_HUB_CACHE}" >> "$GITHUB_ENV"
+          else
+            # replace / with --
+            safe_name="${model//\//--}"
+            echo "model_key=$safe_name" >> "$GITHUB_ENV"
+            echo "model_path=${HF_HUB_CACHE}/models--$safe_name" >> "$GITHUB_ENV"
+          fi
+
       - name: "Restore HF models cache"
+        id: cache_restore
         if: steps.changed-src-files.outputs.any_changed == 'true'
         uses: actions/cache/restore@v4
         with:
-          path: ${{ env.HF_HUB_CACHE }}
-          key: ${{ runner.os }}-hub-cache-${{ hashFiles('cached_models.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-hub-cache
+          path: ${{ env.model_path }}
+          key: ${{ runner.os }}-hf-model-${{ env.model_key }}
 
       - name: "Download HF models"
-        if: steps.changed-src-files.outputs.any_changed == 'true'
+        if: steps.changed-src-files.outputs.any_changed == 'true' && steps.cache_restore.outputs.cache-hit != 'true'
         run: |
           # We are caching HF models (HF_HUB_CACHE) for reliability rather than speed, since HF downloads are flaky for concurrent jobs.
           # Be careful when adding models to the cache here, as the GHA cache is limited to 10 GB.
-          # If a new model is added here, hashFiles('cached_models.txt') should create a new hash key. The previous cache blob can then
+          # If a new model is added here, a new hash key is generated. The previous cache blob can then
           # be removed by an admin or can be left to expire after 7 days.
           
           download_tinygranite() {
             python -c "from transformers import pipeline, AutoTokenizer; pipeline('text-generation', model='ibm-ai-platform/micro-g3.3-8b-instruct-1b'); tokenizer=AutoTokenizer.from_pretrained('ibm-ai-platform/micro-g3.3-8b-instruct-1b')"
+          }
+          download_tinygranite_fp8() {
             python -c "from transformers import pipeline, AutoTokenizer; pipeline('text-generation', model='ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8'); tokenizer=AutoTokenizer.from_pretrained('ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8')"
           }
           download_roberta_large() {
@@ -163,18 +184,36 @@ jobs:
           download_tinyllama() {
             python -c "from transformers import pipeline; pipeline('text-generation', model='JackFram/llama-160m')"
           }
-          download_tinygranite &
-          download_roberta_large &
-          download_tinyllama &
-          wait
-          ls "${HF_HUB_CACHE}" > cached_models.txt
+          needed_models="${{ matrix.test_suite.hf_models || env.DEFAULT_HF_MODEL }}"
+          case "$needed_models" in
+            "micro-g3.3_roberta-large")
+              download_tinygranite & 
+              download_roberta_large &
+              wait
+              ;;
+            "JackFram/llama-160m")
+              download_tinyllama
+              ;;
+            "ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8")
+              download_tinygranite_fp8
+              ;;
+            "sentence-transformers/all-roberta-large-v1")
+              download_roberta_large
+              ;;
+            "ibm-ai-platform/micro-g3.3-8b-instruct-1b")
+              download_tinygranite
+              ;;
+            *)
+              echo "No downloads needed for: $needed_models"
+              ;;
+          esac
 
       - name: "Save HF models cache"
         if: ( steps.changed-src-files.outputs.any_changed == 'true' && github.event_name != 'pull_request' && strategy.job-index == 0 )
         uses: actions/cache/save@v4
         with:
-          path: ${{ env.HF_HUB_CACHE }}
-          key: ${{ runner.os }}-hub-cache-${{ hashFiles('cached_models.txt') }}
+          path: ${{ env.model_path }}
+          key: ${{ runner.os }}-hf-model-${{ env.model_key }}
 
       - name: "Run tests"
         if: steps.changed-src-files.outputs.any_changed == 'true'
