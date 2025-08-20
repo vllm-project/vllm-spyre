@@ -179,10 +179,14 @@ class FmsModelBase(nn.Module):
         **kwargs,
     ) -> None:
 
+        log_msg = f"Ignoring user-provided dtype={model_config.dtype} and"\
+             f" using dtype={self.dtype} instead."
+        quantization_log_msg =  "This is true for quantized models also since" \
+                f" static batching requires us to cast to {self.dtype}" \
+                    " even if quantized."  if model_config.quantization else ""
+
         if self.dtype is not model_config.dtype:
-            logger.info(
-                "Ignoring user-provided dtype=%s and using dtype=%s instead.",
-                model_config.dtype, self.dtype)
+            logger.info("%s %s", log_msg, quantization_log_msg)
 
         is_local = os.path.isdir(model_config.model)
         model_path = model_config.model
