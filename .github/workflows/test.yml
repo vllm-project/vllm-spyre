@@ -68,8 +68,17 @@ jobs:
               flags: "--timeout=300"
             os: "ubuntu-latest"
             python_version: "3.12"
-        # Exclude vLLM:main if PR does NOT have the ready label
-        exclude: ${{ github.event_name == 'pull_request' && !contains(toJson(github.event.pull_request.labels), '"ready"') && fromJSON('[{"vllm_version":{"name":"vLLM:main"}}]') || fromJSON('[]') }}
+        # Exclude vLLM:main if PR is not ready or if auto-merge was enabled
+        exclude: >-
+          ${{ 
+            github.event_name == 'pull_request' &&
+            (
+              github.event.action == 'auto_merge_enabled' ||
+              !contains(toJson(github.event.pull_request.labels), '"ready"')
+            )
+              && fromJSON('[{"vllm_version":{"name":"vLLM:main"}}]')
+              || fromJSON('[]')
+          }}
 
 
     name: "${{ matrix.test_suite.name }} (${{ matrix.vllm_version.name }})"
