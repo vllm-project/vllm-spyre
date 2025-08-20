@@ -5,12 +5,12 @@ on:
   # for all pull requests on main irrespective of file type or location
   # Use `changed-src-files` step to determine if source code was changed
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
     branches: [main]
 
   pull_request_target:
-    # Label changes (including bot-applied) need pull_request_target
-    types: [labeled, unlabeled, auto_merge_enabled]
+    # bot-applied label changes need to be triggered with pull_request_target.auto_merge_enabled
+    types: [auto_merge_enabled]
     branches: [main]
 
   push:
