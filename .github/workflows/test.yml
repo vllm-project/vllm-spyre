@@ -6,12 +6,12 @@ on:
   # Use `changed-src-files` step to determine if source code was changed
   pull_request:
     # add labeled and unlabeled to the default types (runs when label is added)
-    types: [opened, synchronize, reopened, labeled, unlabeled]
-    branches:
-      - main
+    types: [opened, synchronize, reopened, labeled, unlabeled, auto_merge_enabled]
+    branches: [main]
+
   push:
-    branches:
-      - main
+    branches: [main]
+
   workflow_dispatch:
 
 env:
@@ -68,8 +68,17 @@ jobs:
               flags: "--timeout=300"
             os: "ubuntu-latest"
             python_version: "3.12"
-        # Exclude vLLM:main if PR does NOT have the ready label
-        exclude: ${{ github.event_name == 'pull_request' && !contains(toJson(github.event.pull_request.labels), '"ready"') && fromJSON('[{"vllm_version":{"name":"vLLM:main"}}]') || fromJSON('[]') }}
+        # Exclude vLLM:main if PR does NOT have "ready" label AND auto-merge is not enabled
+        exclude: >-
+          ${{
+            github.event_name == 'pull_request' &&
+            !(
+              contains(toJson(github.event.pull_request.labels), '"ready"') ||
+              github.event.action == 'auto_merge_enabled'
+            )
+              && fromJSON('[{"vllm_version":{"name":"vLLM:main"}}]')
+              || fromJSON('[]')
+          }}
 
 
     name: "${{ matrix.test_suite.name }} (${{ matrix.vllm_version.name }})"
