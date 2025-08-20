@@ -156,7 +156,8 @@ def test_spyre_batch1_logit_bias(spyre_model: LLM, backend: str,
 
     prompt = "The fastest way to travel between continents is by"
 
-    params = SamplingParams(temperature=0, max_tokens=5,
+    params = SamplingParams(temperature=0,
+                            max_tokens=5,
                             logit_bias={
                                 banned_word_id: -100,
                                 forced_word_id: 100,
@@ -219,7 +220,7 @@ def test_spyre_dynamic_batch_isolation(spyre_model: LLM, backend: str,
         SamplingParams(max_tokens=20, ignore_eos=True, seed=8780),
         SamplingParams(max_tokens=100, ignore_eos=True, seed=8780),
         SamplingParams(max_tokens=100, presence_penalty=2.0),
-        SamplingParams(max_tokens=100, min_tokens=90, , seed=8780),
+        SamplingParams(max_tokens=100, min_tokens=90, seed=8780),
     ]
 
     expected_out = []
