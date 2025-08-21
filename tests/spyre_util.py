@@ -2,7 +2,6 @@ import inspect
 import math
 import os
 import random
-import time
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -100,7 +99,6 @@ def generate_spyre_vllm_output(
     # shutdown engine this context.
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
-    start = time.time()
     vllm_model = get_cached_llm(model=model,
                                 max_model_len=max_model_len,
                                 tensor_parallel_size=tensor_parallel_size,
@@ -109,30 +107,32 @@ def generate_spyre_vllm_output(
                                 warmup_shapes=warmup_shapes,
                                 max_num_seqs=max_num_seqs,
                                 use_cb=use_cb)
-    load_duration = time.time() - start
 
-    start = time.time()
     vllm_outputs = vllm_model.generate(prompts, sampling_params)
     results = []
-    run_duration = time.time() - start
-
-    with open("test_timings.txt", "a") as f:
-        f.writelines([
-            "\n"
-            "-----------\n"
-            f"USE_CB: {use_cb}\n",
-            f"TP SIZE: {tensor_parallel_size}\n",
-            f"# PROMPTS: {len(prompts)}\n",
-            f"vLLM Load time: {load_duration}\n",
-            f"vLLM Runtime: {run_duration}\n",
-        ])
 
     for req_output in vllm_outputs:
         result = extract_output(req_output)
         results.append(result)
 
-    # force_engine_shutdown(vllm_model)
     return results
+
+
+def clear_llm_caches():
+    LLM_CACHE.clear()
+    API_SERVER_CACHE.clear()
+    ENGINE_CACHE.clear()
+
+
+def print_llm_cache_info():
+    print("\n----- LLM Cache info ----\n")
+    print(
+        f"vllm.LLM Cache hits: {LLM_CACHE.hits} / misses: {LLM_CACHE.misses}")
+    print(f"Runtime Server Cache hits: {API_SERVER_CACHE.hits} / "
+          f"misses: {API_SERVER_CACHE.misses}")
+    print(f"Engine Core Cache hits: {ENGINE_CACHE.hits} / "
+          f"misses: {ENGINE_CACHE.misses}")
+    print("\n-------------------------\n")
 
 
 def get_cached_llm(
@@ -146,8 +146,8 @@ def get_cached_llm(
     use_cb: bool = False,
 ) -> LLM:
     # Clear other caches first
-    clear_cached_runtime_server()
-    clear_cached_engine()
+    API_SERVER_CACHE.clear()
+    ENGINE_CACHE.clear()
 
     return LLM_CACHE.get_cached_llm(model=model,
                                     max_model_len=max_model_len,
@@ -159,15 +159,11 @@ def get_cached_llm(
                                     use_cb=use_cb)
 
 
-def clear_cached_llm():
-    LLM_CACHE.clear()
-
-
 def get_cached_api_server(model: str, server_args: list[str],
                           server_env: dict) -> RemoteOpenAIServer:
     # Clear other caches first
-    clear_cached_llm()
-    clear_cached_engine()
+    LLM_CACHE.clear()
+    ENGINE_CACHE.clear()
 
     return API_SERVER_CACHE.get_api_server(
         model=model,
@@ -176,16 +172,12 @@ def get_cached_api_server(model: str, server_args: list[str],
     )
 
 
-def clear_cached_runtime_server():
-    API_SERVER_CACHE.clear()
-
-
 def get_cached_engine(model: str, max_model_len: int, max_num_seqs: int,
                       available_blocks: int, backend: str,
                       monkeypatch) -> EngineCore:
     # Clear other caches first
-    clear_cached_llm()
-    clear_cached_runtime_server()
+    LLM_CACHE.clear()
+    API_SERVER_CACHE.clear()
 
     return ENGINE_CACHE.get_engine(model=model,
                                    max_model_len=max_model_len,
@@ -193,10 +185,6 @@ def get_cached_engine(model: str, max_model_len: int, max_num_seqs: int,
                                    available_blocks=available_blocks,
                                    backend=backend,
                                    monkeypatch=monkeypatch)
-
-
-def clear_cached_engine():
-    ENGINE_CACHE.clear()
 
 
 # Hugging Face
@@ -407,7 +395,7 @@ def spyre_vllm_embeddings(model: str, prompts: list[str], max_model_len: int,
     # cache
 
     # Clear any cached decoder model
-    clear_cached_llm()
+    LLM_CACHE.clear()
 
     vllm_model = LLM(model=model,
                      tokenizer=model,
