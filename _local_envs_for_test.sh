@@ -11,9 +11,6 @@ export VLLM_SPYRE_DYNAMO_BACKEND=eager
 
 # Test related
 export VLLM_SPYRE_TEST_BACKEND_LIST=eager
-# Note: Make sure model name aligns with the model that you downloaded 
-export VLLM_SPYRE_TEST_MODEL_LIST="ibm-ai-platform/micro-g3.3-8b-instruct-1b"
-export VLLM_SPYRE_TEST_MODEL_DIR=""
-# We have to use `HF_HUB_OFFLINE=1` otherwise vllm tries to download a
-# different version of the model using HF API which does not work locally
+# We have to use `HF_HUB_OFFLINE=1` otherwise vllm might try to download a
+# different version of the model using HF API which might not work locally
 export HF_HUB_OFFLINE=1
