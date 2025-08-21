@@ -21,9 +21,9 @@ def pytest_collection_modifyitems(config, items):
 
     _skip_quantized_by_default(config, items)
 
-    _xfail_fp8_on_spyre(items)
+    _xfail_fp8_on_cb_spyre(items)
 
-    _skip_all_cb_and_fp8_tests(items)
+    # _skip_all_cb_and_fp8_tests(items)
 
     _skip_unsupported_compiler_tests(config, items)
 
@@ -52,18 +52,17 @@ def _skip_quantized_by_default(config, items):
             item.add_marker(skip_mymarker)
 
 
-def _xfail_fp8_on_spyre(items):
-    """Set an xfail marker on all tests that run quantized models on Spyre
-    hardware.
+def _xfail_fp8_on_cb_spyre(items):
+    """Set an xfail marker on all tests that run quantized models on Continuous
+    Batching on Spyre.
     
-    TODO: Relax this to only "spyre and cb" once static batching is supported
-    on spyre.
     """
 
     xfail_marker = pytest.mark.xfail(
-        reason="fp8 is not yet supported on Spyre")
+        reason="fp8 is not yet supported on Continuous Batching on Spyre")
     for item in items:
-        if "quantized" in item.keywords and "spyre" in item.keywords:
+        if "quantized" in item.keywords and "spyre" \
+            in item.keywords and "cb" in item.keywords:
             item.add_marker(xfail_marker)
 
 
