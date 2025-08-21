@@ -134,6 +134,14 @@ class SpyrePlatform(Platform):
 
         cls._check_threading_config(parallel_config.world_size)
 
+        # set env vars based on the model
+        if is_decoder:
+            os.environ["FLEX_OVERWRITE_NMB_FRAME"] = "true"
+            os.environ["COMPILATION_MODE"] = "offline_decoder"
+        if is_pooling:
+            os.environ["FLEX_OVERWRITE_NMB_FRAME"] = "false"
+            os.environ["COMPILATION_MODE"] = "offline"
+
         if envs_spyre.VLLM_SPYRE_USE_CB and is_decoder:
             scheduler_config.scheduler_cls = "vllm_spyre.v1.core."\
                 "scheduler.ContinuousBatchingSpyreScheduler"
