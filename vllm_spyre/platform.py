@@ -113,19 +113,15 @@ class SpyrePlatform(Platform):
 
         # Can be simplified after the deprecation of `model_config.task` in
         # vllm > 0.10.0
-        is_decoder = "generate" in model_config.supported_tasks if (
-            model_config.task == "auto"
-            or model_config.task is None) else model_config.task == "generate"
+        is_decoder = model_config.runner_type == "generate"
 
-        is_pooling = "embed" in model_config.supported_tasks if (
-            model_config.task == "auto"
-            or model_config.task is None) else model_config.task == "embed"
+        is_pooling = model_config.runner_type == "pooling"
 
         if not bool(int(os.getenv("VLLM_USE_V1", "1"))):
             raise ValueError("vllm-spyre is only supported with vLLM v1. "
                              "Please set VLLM_USE_V1=1")
         elif not is_decoder and not is_pooling:
-            raise ValueError("Only the 'generate' and 'embed' tasks are "
+            raise ValueError("Only the 'generate' and 'pooling' runners are "
                              "supported")
 
         if parallel_config.worker_cls == "auto":
