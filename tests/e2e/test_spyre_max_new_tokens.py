@@ -4,9 +4,9 @@ Run `python -m pytest tests/e2e/test_spyre_max_new_tokens.py`.
 """
 
 import pytest
-from spyre_util import (check_output_against_hf, generate_spyre_vllm_output,
-                        get_chicken_soup_prompts, get_spyre_backend_list,
-                        get_spyre_model_list)
+from spyre_util import (check_output_against_hf, default_sb_cb_params,
+                        generate_spyre_vllm_output, get_chicken_soup_prompts,
+                        get_spyre_backend_list, get_spyre_model_list)
 from vllm import SamplingParams
 
 
@@ -14,12 +14,12 @@ from vllm import SamplingParams
                          [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("stop_last", [True, False])
-@pytest.mark.parametrize(
-    "warmup_shape", [[(64, 20, 4)]])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def test_output(model: str, stop_last: bool,
-                warmup_shape: tuple[int, int, int], backend: str, cb: int,
-                monkeypatch: pytest.MonkeyPatch, use_llm_cache) -> None:
+@default_sb_cb_params
+def test_output(model: str, stop_last: bool, max_model_len: int,
+                max_num_seqs: int, warmup_shapes: tuple[int, int, int],
+                backend: str, cb: int, monkeypatch: pytest.MonkeyPatch,
+                use_llm_cache) -> None:
     '''
     Checks that `max_tokens` parameter of `SamplingParams` works correctly
     
@@ -62,12 +62,10 @@ def test_output(model: str, stop_last: bool,
         hf_max_new_tokens = [max_new_tokens_early_stop] + hf_max_new_tokens
 
     kwargs = ({
-        "max_num_seqs": 2,
+        "max_num_seqs": max_num_seqs,
         "use_cb": True,
-        "max_model_len": 256
     } if cb == 1 else {
-        "warmup_shapes": warmup_shape,
-        "max_model_len": 2048
+        "warmup_shapes": warmup_shapes
     })
 
     vllm_results = generate_spyre_vllm_output(
@@ -77,6 +75,7 @@ def test_output(model: str, stop_last: bool,
         tensor_parallel_size=1,
         backend=backend,
         monkeypatch=monkeypatch,
+        max_model_len=max_model_len,
         **kwargs)
 
     check_output_against_hf(model, backend, hf_max_new_tokens, vllm_results,

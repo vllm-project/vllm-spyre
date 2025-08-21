@@ -6,22 +6,23 @@ Run `python -m pytest tests/e2e/test_spyre_seed.py`.
 import math
 
 import pytest
-from spyre_util import (generate_spyre_vllm_output, get_chicken_soup_prompts,
-                        get_spyre_backend_list, get_spyre_model_list)
+from spyre_util import (default_sb_cb_params, generate_spyre_vllm_output,
+                        get_chicken_soup_prompts, get_spyre_backend_list,
+                        get_spyre_model_list)
 from vllm import SamplingParams
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("temperature", [0.1, 1.0])
 @pytest.mark.parametrize("seed", [42])
-@pytest.mark.parametrize(
-    "warmup_shape", [[(64, 20, 4)]])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("cb",
                          [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
-def test_seed(model: str, temperature: float, seed: int,
-              warmup_shape: tuple[int, int, int], backend: str, cb: int,
-              monkeypatch: pytest.MonkeyPatch, use_llm_cache) -> None:
+@default_sb_cb_params
+def test_seed(model: str, temperature: float, seed: int, max_model_len: int,
+              max_num_seqs: int, warmup_shapes: tuple[int, int,
+                                                      int], backend: str,
+              cb: int, monkeypatch: pytest.MonkeyPatch, use_llm_cache) -> None:
     '''
     The warmup is based on a single shape. After the warmup,
     output is generated for one request with 5 identical prompts
@@ -30,7 +31,7 @@ def test_seed(model: str, temperature: float, seed: int,
     logprobs is verified to be identical for all 5 sequences.
     '''
 
-    max_new_tokens = warmup_shape[0][1]
+    max_new_tokens = warmup_shapes[0][1]
 
     prompts = get_chicken_soup_prompts(1) * 5
 
@@ -43,18 +44,18 @@ def test_seed(model: str, temperature: float, seed: int,
 
     if bool(cb):
         # Turn off warmup shapes for CB
-        warmup_shape = None
+        warmup_shapes = None
 
     vllm_results = generate_spyre_vllm_output(
         model=model,
         prompts=prompts,
-        warmup_shapes=warmup_shape,
-        max_model_len=256,
+        warmup_shapes=warmup_shapes,
+        max_model_len=max_model_len,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
         backend=backend,
         use_cb=bool(cb),
-        max_num_seqs=2,
+        max_num_seqs=max_num_seqs,
         monkeypatch=monkeypatch)
 
     # compare all generated outputs against the first generated output

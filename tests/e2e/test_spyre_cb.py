@@ -21,12 +21,13 @@ from vllm import LLM, SamplingParams
 @pytest.mark.cb
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
-def test_cb_max_tokens(model: str, backend: str,
-                       monkeypatch: pytest.MonkeyPatch, use_llm_cache):
+@pytest.mark.parametrize("max_num_seqs", [4])
+@pytest.mark.parametrize("max_model_len", [256])
+def test_cb_max_tokens(model: str, backend: str, max_model_len: int,
+                       max_num_seqs: int, monkeypatch: pytest.MonkeyPatch,
+                       use_llm_cache):
     """Test that continuous batches of requests that
     are longer than the `max_model_len` are correctly rejected"""
-
-    max_model_len = 256
     max_tokens = 20
 
     overflow_prompt = " ".join(["a"] * max_model_len)
@@ -43,7 +44,7 @@ def test_cb_max_tokens(model: str, backend: str,
                                    sampling_params=vllm_sampling_params,
                                    tensor_parallel_size=1,
                                    backend=backend,
-                                   max_num_seqs=2,
+                                   max_num_seqs=max_num_seqs,
                                    use_cb=True,
                                    monkeypatch=monkeypatch)
 

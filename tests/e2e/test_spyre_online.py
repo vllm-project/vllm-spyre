@@ -1,6 +1,7 @@
 import openai
 import pytest
-from spyre_util import get_spyre_backend_list, get_spyre_model_list
+from spyre_util import (default_sb_cb_params, get_spyre_backend_list,
+                        get_spyre_model_list)
 
 
 def _check_result(client, model, max_tokens=8, temperature=0.0, n=1) -> None:
@@ -27,22 +28,13 @@ def _check_result(client, model, max_tokens=8, temperature=0.0, n=1) -> None:
     ids=lambda val: f"TP({val})",
 )
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize(
-    "warmup_shape",
-    [[
-        (64, 20, 4),
-    ]],
-)
 @pytest.mark.parametrize("cb",
                          [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
-@pytest.mark.parametrize("max_num_seqs", [4],
-                         ids=lambda val: f"max_num_seqs({val})")
-@pytest.mark.parametrize("max_model_len", [256],
-                         ids=lambda val: f"max_model_len({val})")
+@default_sb_cb_params
 def test_openai_serving(
     remote_openai_server,
     model,
-    warmup_shape,
+    warmup_shapes,
     backend,
     tp_size,
     cb,

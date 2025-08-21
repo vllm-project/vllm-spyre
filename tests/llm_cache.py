@@ -123,8 +123,8 @@ class SortKey(NamedTuple):
             SortKey._assert_param(isinstance(params["max_model_len"], int),
                                   "max_model_len must be an int", item)
             return params["max_model_len"]
-        # Assume 256 if not specified, we use that a lot
-        return 256
+        # Put `-1` to indicate that this couldn't be found
+        return -1
 
     @staticmethod
     def _get_max_num_seqs(item) -> int:
@@ -133,8 +133,8 @@ class SortKey(NamedTuple):
             SortKey._assert_param(isinstance(params["max_num_seqs"], int),
                                   "max_num_seqs must be an int", item)
             return params["max_num_seqs"]
-        # Assume 2 if not specified, we use that a lot
-        return 2
+        # Put `-1` to indicate that this couldn't be found
+        return -1
 
     @staticmethod
     def _get_warmup_shapes(item) -> list[tuple[int, int, int]]:
@@ -153,8 +153,10 @@ class SortKey(NamedTuple):
                                       "Warmup shape must be a list of tuples",
                                       item)
                 return params[key]
-        # Assume [(64, 20, 1)] if not specified
-        return [(64, 20, 1)]
+        # Use -1s to indicate that this couldn't be found
+        return [
+            (-1, -1, -1),
+        ]
 
     @staticmethod
     def _get_tp_size(item) -> int:
