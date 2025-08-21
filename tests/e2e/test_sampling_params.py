@@ -16,13 +16,16 @@ def test_spyre_batch1_temperature(spyre_model: LLM, backend: str,
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
     prompt = "The capital of the United Kingdom is"
-    params = SamplingParams(temperature=0.0, seed=8780, max_tokens=5)
+    params1 = SamplingParams(temperature=0.0, seed=8780, max_tokens=5)
+    params2 = SamplingParams(temperature=0.5, seed=8780, max_tokens=5)
+    params3 = SamplingParams(temperature=1.0, seed=8780, max_tokens=5)
 
-    output1 = spyre_model.generate(prompt, params)[0]
-    output2 = spyre_model.generate(prompt, params)[0]
+    output1 = spyre_model.generate(prompt, params1)[0]
+    output2 = spyre_model.generate(prompt, params2)[0]
+    output3 = spyre_model.generate(prompt, params3)[0]
 
-    assert output1.outputs[0].text == output2.outputs[0].text
-    assert "London" in output1.outputs[0].text
+    assert output1.outputs[0].text != output2.outputs[0].text
+    assert output2.outputs[0].text != output3.outputs[0].text
 
 
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
@@ -32,11 +35,14 @@ def test_spyre_batch1_max_tokens(spyre_model: LLM, backend: str,
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
     prompt = "Count to twenty"
-    params = SamplingParams(temperature=0, seed=8780, max_tokens=15)
+    params1 = SamplingParams(temperature=0, seed=8780, max_tokens=15)
+    params2 = SamplingParams(temperature=0, seed=8780)
 
-    output = spyre_model.generate(prompt, params)[0]
+    output1 = spyre_model.generate(prompt, params1)[0]
+    output2 = spyre_model.generate(prompt, params2)[0]
 
-    assert len(output.outputs[0].token_ids) == 15
+    assert len(output1.outputs[0].token_ids) == 15
+    assert len(output2.outputs[0].token_ids) > 15
 
 
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
@@ -47,12 +53,15 @@ def test_spyre_batch1_stop_sequence(spyre_model: LLM, backend: str,
 
     stop_str = "London"
     prompt = f"The best way to travel from Paris to {stop_str} is by train."
-    params = SamplingParams(stop=[stop_str], max_tokens=50)
+    params1 = SamplingParams(stop=[stop_str], max_tokens=50)
+    params2 = SamplingParams(stop=[stop_str], max_tokens=50)
 
-    output = spyre_model.generate(prompt, params)[0]
+    output1 = spyre_model.generate(prompt, params1)[0]
+    output2 = spyre_model.generate(prompt, params2)[0]
 
-    assert stop_str not in output.outputs[0].text
-    assert output.outputs[0].finish_reason == 'stop'
+    assert stop_str not in output1.outputs[0].text
+    assert output1.outputs[0].finish_reason == 'stop'
+    assert output2.outputs[0].finish_reason != 'stop'
 
 
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
@@ -64,10 +73,11 @@ def test_spyre_batch1_presence_penalty(spyre_model: LLM, backend: str,
     prompt = "Repeat over and over again: a new day. Repeat: a new day."
 
     param1 = SamplingParams(presence_penalty=2.0, max_tokens=50)
-    output = spyre_model.generate(prompt, param1)[0]
-
     param2 = SamplingParams(presence_penalty=0.0, max_tokens=50)
+
+    output = spyre_model.generate(prompt, param1)[0]
     no_penalty = spyre_model.generate(prompt, param2)[0]
+
     no_penalty_count = no_penalty.outputs[0].text.lower().count("a new day")
 
     assert output.outputs[0].text.lower().count("a new day") < no_penalty_count
@@ -80,11 +90,10 @@ def test_spyre_batch1_frequency_penalty(spyre_model: LLM, backend: str,
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
     prompt = "Add fruits to the list: apple, banana, apple, banana"
-
     param1 = SamplingParams(frequency_penalty=2.0, max_tokens=50)
-    output = spyre_model.generate(prompt, param1)[0]
-
     param2 = SamplingParams(presence_penalty=0.0, max_tokens=50)
+
+    output = spyre_model.generate(prompt, param1)[0]
     no_penalty = spyre_model.generate(prompt, param2)[0]
 
     first_word_count = no_penalty.outputs[0].text.lower().count("banana")
@@ -101,8 +110,8 @@ def test_spyre_batch1_n_generations(spyre_model: LLM, backend: str,
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
     prompt = "The three most popular sports in the world are: "
-
     params = SamplingParams(n=3, temperature=0.8, seed=8780, max_tokens=50)
+
     output = spyre_model.generate(prompt, params)[0]
 
     assert len(output.outputs) == 3
@@ -117,11 +126,14 @@ def test_spyre_batch1_top_p(spyre_model: LLM, backend: str,
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
     prompt = "The first three letters of the alphabet are "
+    params1 = SamplingParams(top_p=0.01, temperature=0.5, max_tokens=10)
+    params2 = SamplingParams(temperature=0.5, max_tokens=10)
 
-    params = SamplingParams(top_p=0.01, temperature=0.5, max_tokens=10)
-    output = spyre_model.generate(prompt, params)[0]
+    output1 = spyre_model.generate(prompt, params1)[0]
+    output2 = spyre_model.generate(prompt, params2)[0]
 
-    assert "A, B and C" in output.outputs[0].text
+    assert "A, B and C" in output1.outputs[0].text
+    assert output1.outputs[0].text != output2.outputs[0].text
 
 
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
@@ -131,11 +143,14 @@ def test_spyre_batch1_top_k(spyre_model: LLM, backend: str,
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
     prompt = "The opposite of hot is "
+    params1 = SamplingParams(top_k=1, max_tokens=5)
+    params2 = SamplingParams(max_tokens=5)
 
-    params = SamplingParams(top_k=1, max_tokens=5)
-    output = spyre_model.generate(prompt, params)[0]
+    output1 = spyre_model.generate(prompt, params1)[0]
+    output2 = spyre_model.generate(prompt, params2)[0]
 
-    assert "cold" in output.outputs[0].text.lower()
+    assert "cold" in output1.outputs[0].text.lower()
+    assert output1.outputs[0].text != output2.outputs[0].text
 
 
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
@@ -155,18 +170,21 @@ def test_spyre_batch1_logit_bias(spyre_model: LLM, backend: str,
     forced_word_id = forced_ids[0]
 
     prompt = "The fastest way to travel between continents is by "
+    params1 = SamplingParams(temperature=0,
+                             max_tokens=5,
+                             logit_bias={
+                                 banned_word_id: -100,
+                                 forced_word_id: 100,
+                             })
+    params2 = SamplingParams(temperature=0, max_tokens=5)
 
-    params = SamplingParams(temperature=0,
-                            max_tokens=5,
-                            logit_bias={
-                                banned_word_id: -100,
-                                forced_word_id: 100,
-                            })
+    output1 = spyre_model.generate(prompt, params1)[0]
+    output2 = spyre_model.generate(prompt, params2)[0]
 
-    output = spyre_model.generate(prompt, params)[0]
+    assert banned_word not in output1.outputs[0].text.lower()
+    assert forced_word in output1.outputs[0].text.lower()
 
-    assert banned_word not in output.outputs[0].text.lower()
-    assert forced_word in output.outputs[0].text.lower()
+    assert output1.outputs[0].text != output2.outputs[0].text
 
 
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
@@ -176,11 +194,14 @@ def test_spyre_batch1_min_tokens(spyre_model: LLM, backend: str,
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
     prompt = "Hello."
-    params = SamplingParams(temperature=0, min_tokens=20, max_tokens=25)
+    params1 = SamplingParams(temperature=0, min_tokens=20, max_tokens=25)
+    params2 = SamplingParams(temperature=0, max_tokens=25)
 
-    output = spyre_model.generate(prompt, params)[0]
+    output1 = spyre_model.generate(prompt, params1)[0]
+    output2 = spyre_model.generate(prompt, params2)[0]
 
-    assert len(output.outputs[0].tokens_ids) >= 20
+    assert len(output1.outputs[0].tokens_ids) >= 20
+    assert len(output2.outputs[0].tokens_ids) < 20
 
 
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
@@ -190,12 +211,18 @@ def test_spyre_batch1_ignore_eos(spyre_model: LLM, backend: str,
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
     prompt = "One plus one equals two."
-    params = SamplingParams(temperature=0, ignore_eos=True, max_tokens=100)
+    params1 = SamplingParams(temperature=0, ignore_eos=True, max_tokens=100)
+    params2 = SamplingParams(temperature=0, ignore_eos=False, max_tokens=100)
 
-    output = spyre_model.generate(prompt, params)[0]
+    output1 = spyre_model.generate(prompt, params1)[0]
+    output2 = spyre_model.generate(prompt, params2)[0]
 
-    assert output.outputs[0].finish_reason == 'length'
-    assert len(output.outputs[0].tokens_ids) == 100
+    assert len(output1.outputs[0].tokens_ids) == 100
+    assert len(output2.outputs[0].tokens_ids) != len(
+        output1.outputs[0].tokens_ids)
+
+    assert output1.outputs[0].finish_reason == 'length'
+    assert output2.outputs[0].finish_reason != 'length'
 
 
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
@@ -225,11 +252,14 @@ def test_spyre_batch1_min_p(spyre_model: LLM, backend: str,
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
     prompt = "The opposite of black is"
-    params = SamplingParams(min_p=0.5, temperature=0.5, max_tokens=5)
+    params1 = SamplingParams(min_p=0.5, temperature=0.5, max_tokens=5)
+    params2 = SamplingParams(temperature=0.5, max_tokens=5)
 
-    output = spyre_model.generate(prompt, params)[0]
+    output1 = spyre_model.generate(prompt, params1)[0]
+    output2 = spyre_model.generate(prompt, params2)[0]
 
-    assert "white" in output.outputs[0].text.lower()
+    assert "white" in output1.outputs[0].text.lower()
+    assert output1.outputs[0].text != output2.outputs[0].text
 
 
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
@@ -238,16 +268,18 @@ def test_spyre_batch1_bad_words(spyre_model: LLM, backend: str,
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
-    tokenizer = spyre_model.get_tokenizer()
     prompt = "The capital of France is"
+    params1 = SamplingParams(max_tokens=5,
+                             temperature=0,
+                             bad_words=["Paris", "France"])
+    params2 = SamplingParams(max_tokens=5, temperature=0)
 
-    params = SamplingParams(max_tokens=5,
-                            temperature=0,
-                            bad_words=["Paris", "France"])
+    output1 = spyre_model.generate(prompt, params1)[0]
+    output2 = spyre_model.generate(prompt, params2)[0]
 
-    output = spyre_model.generate(prompt, params)[0]
-
-    assert tokenizer.eos not in output.outputs[0].text
+    assert "Paris" not in output1.outputs[0].text
+    assert "France" not in output1.outputs[0].text
+    assert output1.outputs[0].text != output2.outputs[0].text
 
 
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
