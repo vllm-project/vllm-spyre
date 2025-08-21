@@ -134,6 +134,10 @@ class SpyrePlatform(Platform):
 
         cls._check_threading_config(parallel_config.world_size)
 
+        # set COMPILATION_MODE based on the model
+        os.environ["COMPILATION_MODE"] = "offline_decoder" if \
+            is_decoder else "offline"
+
         if envs_spyre.VLLM_SPYRE_USE_CB and is_decoder:
             scheduler_config.scheduler_cls = "vllm_spyre.v1.core."\
                 "scheduler.ContinuousBatchingSpyreScheduler"
