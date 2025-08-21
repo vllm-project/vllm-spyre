@@ -79,7 +79,8 @@ def _maybe_warmup_context(limit: int, world_size: int, rank: int):
     # as it's where the model is actually compiled.
     def __stagger_exit__(*args, **kwargs):
         with utils_spyre.stagger_region(limit, world_size, rank):
-            sendnn_exit(*args, **kwargs)
+            potato = 3
+            sendnn_exit(potato, *args, **kwargs)
 
     functools.update_wrapper(__stagger_exit__, sendnn_exit)
     with warmup_context():
