@@ -23,6 +23,7 @@ from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.outputs import LogprobsTensors, SamplerOutput
 
 import vllm_spyre.envs as envs_spyre
+import vllm_spyre.utils as utils_spyre
 from vllm_spyre.model_executor.model_loader.spyre import (
     BACKEND_LIST, SpyreAttentionMetadata, SpyreCausalLM)
 from vllm_spyre.platform import SpyrePlatform
@@ -109,8 +110,10 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT,
         self,
         vllm_config: VllmConfig,
         is_driver_worker: bool,
+        rank: int,
     ):
         self.is_driver_worker = is_driver_worker
+        self.rank = rank
         self.vllm_config = vllm_config
         self.model_config = vllm_config.model_config
         self.cache_config = vllm_config.cache_config
@@ -283,13 +286,11 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
                                             SamplingRequestState,
                                             SamplingForwardInputs]):
 
-    def __init__(
-        self,
-        vllm_config: VllmConfig,
-        is_driver_worker: bool,
-    ):
+    def __init__(self, vllm_config: VllmConfig, is_driver_worker: bool,
+                 rank: int):
         super().__init__(vllm_config=vllm_config,
-                         is_driver_worker=is_driver_worker)
+                         is_driver_worker=is_driver_worker,
+                         rank=rank)
 
     def load_model(self, prompt_lens: Iterable[int],
                    num_decode_tokens: Iterable[int]) -> None:
@@ -301,6 +302,7 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
             scheduler_config=self.scheduler_config,
             max_prompt_length=max_pad_length,
             max_decode_length=max_decode_length,
+            rank=self.rank,
         )
 
     def build_input_batch(self) -> SamplingInputBatch:
@@ -608,9 +610,11 @@ class StaticBatchingSpyreModelRunner(WarmupShapesMixin, SpyreModelRunner):
         self,
         vllm_config: VllmConfig,
         is_driver_worker: bool,
+        rank: int,
     ):
         super().__init__(vllm_config=vllm_config,
-                         is_driver_worker=is_driver_worker)
+                         is_driver_worker=is_driver_worker,
+                         rank=rank)
 
         # position_ids of all the sequences in current batch
         self._position_ids: torch.Tensor = None
@@ -783,9 +787,11 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self,
         vllm_config: VllmConfig,
         is_driver_worker: bool,
+        rank: int,
     ):
         super().__init__(vllm_config=vllm_config,
-                         is_driver_worker=is_driver_worker)
+                         is_driver_worker=is_driver_worker,
+                         rank=rank)
 
         self.block_size = SpyrePlatform.get_block_size()
 
@@ -1311,9 +1317,11 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
         self,
         vllm_config: VllmConfig,
         is_driver_worker: bool,
+        rank: int,
     ):
         super().__init__(vllm_config=vllm_config,
-                         is_driver_worker=is_driver_worker)
+                         is_driver_worker=is_driver_worker,
+                         rank=rank)
 
         # position_ids of all the sequences in current batch
         self._position_ids: torch.Tensor = None
@@ -1364,12 +1372,14 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
                 from torch_sendnn import torch_sendnn  # noqa: F401
             except ImportError:
                 print("WARNING: Disabled: torch_sendnn")
-
-            self.model = torch.compile(
-                self.model,
-                mode="default",
-                dynamic=False,
-                backend=envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND)
+            with utils_spyre.stagger_region(
+                    envs_spyre.VLLM_SPYRE_MAX_LOAD_PROCESSES,
+                    self.parallel_config.world_size, self.rank):
+                self.model = torch.compile(
+                    self.model,
+                    mode="default",
+                    dynamic=False,
+                    backend=envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND)
 
         if self.model_config.task == "classify":
             tokenizer = AutoTokenizer.from_pretrained(self.model_config.model)
