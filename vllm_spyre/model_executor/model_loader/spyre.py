@@ -38,6 +38,9 @@ class SpyreAttentionMetadata:
     current_tkv_mask: torch.Tensor = None
     left_padded_prompt_mask: torch.Tensor = None
     block_table: torch.Tensor = None
+    # TODO: review this, we need the index to use the scale
+    # for quantized model
+    prefill_index: int = None
 
 
 class SpyreCausalLM(nn.Module):
@@ -95,6 +98,7 @@ class SpyreCausalLM(nn.Module):
             # cpu impl when padding too much
             extra_kwargs["attn_algorithm"] = "math"
 
+        extra_kwargs["is_prefill"] = is_prompt
         # normal prefill or decoding step
         logits = self.model(
             input_ids,
@@ -282,8 +286,6 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         scheduler_config: SchedulerConfig,
     ) -> None:
 
-        if model_config.quantization:
-            raise ValueError("FP8 is not supported with continuous batching")
 
         BLOCK_SIZE = SpyrePlatform.get_block_size()
         max_model_len = scheduler_config.max_model_len
@@ -302,6 +304,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
 
         self.scheduler_config = scheduler_config
         self.parallel_config = parallel_config
+        self.prefill_past_key_values = None
 
         # physical KV cache on AIU Spyre: will eventually not live in this class
         self.kv_cache_specs = {}
@@ -326,6 +329,8 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             self.attention_name = "spyre_paged_attn_fp8"
         else:
             self.attention_name = "spyre_paged_attn"
+            
+        self.current_scale : list[tuple] = None
 
     def get_num_blocks_available(self) -> int:
         """Function returns the number of available blocks/pages.
@@ -416,7 +421,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                                           self.kv_cache_specs['num_kv_heads'],
                                           self.kv_cache_specs['head_dim'],
                                           dtype=self.dtype),
-                              scale=torch.tensor([1.0] * 1,
+                              scale=torch.tensor([1.0] * self.scheduler_config.max_num_seqs,
                                                  dtype=torch.float32),
                               scaled=False),
                  ScaledTensor(torch.zeros(num_blocks,
@@ -424,11 +429,17 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                                           self.kv_cache_specs['num_kv_heads'],
                                           self.kv_cache_specs['head_dim'],
                                           dtype=self.dtype),
-                              scale=torch.tensor([1.0] * 1,
+                              scale=torch.tensor([1.0] * self.scheduler_config.max_num_seqs,
                                                  dtype=torch.float32),
                               scaled=False))
                 for _ in range(self.kv_cache_specs['num_layers'])
             ]
+            self.current_kv_scales = [
+                    (k_cache._scale, v_cache._scale) for k_cache, v_cache \
+                        in self.past_key_value_states
+                ]
+            
+            
 
     def forward(
         self,
@@ -448,7 +459,39 @@ class ContinuousBatchingFmsModel(FmsModelBase):
 
         # specify attention type for continuous batching
         extra_kwargs['attn_name'] = self.attention_name
-
+        
+        is_prefill = extra_kwargs['is_prefill']
+    
+        
+        is_fp8 = "fp8" in self.attention_name
+        current_kv_cache = self.past_key_value_states
+        
+        batch_size = input_ids.shape[0]
+        if is_fp8:
+            if is_prefill:
+                seq_index = attn_metadata.prefill_index
+                # Reset scale, set to one, set unscaled for prefill and also set dynamic
+                for layer_idx, (k, v) in enumerate(current_kv_cache):
+                    v._scale = self.current_kv_scales[layer_idx][1][seq_index] = torch.ones(1, dtype=torch.float32)
+                    k._scale = self.current_kv_scales[layer_idx][0][seq_index] = torch.ones(1, dtype=torch.float32)
+                    
+                    v._scaled = False
+                    k._scaled = False
+                    
+                    torch._dynamo.mark_dynamic(v._scale, 1)
+                    torch._dynamo.mark_dynamic(k._scale, 1)
+            else:
+                # TODO: we are considering that the scales for the current batch are
+                # contiguous, but this might not be true. 
+                for layer_idx, (k, v) in enumerate(current_kv_cache):
+                    v._scale = self.current_kv_scales[layer_idx][1][:batch_size].reshape(-1)
+                    k._scale = self.current_kv_scales[layer_idx][0][:batch_size].reshape(-1)
+                    
+                    torch._dynamo.mark_dynamic(v._scale, 0)
+                    torch._dynamo.mark_dynamic(k._scale, 0)
+                  
+        extra_kwargs.pop('is_prefill', None)
+            
         output = self.model(
             input_ids,
             position_ids=position_ids,
@@ -464,6 +507,32 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         )
 
         logits, self.past_key_value_states = output
+        
+        current_kv_cache = self.past_key_value_states
+        if is_fp8:
+            if is_prefill:
+                seq_index = attn_metadata.prefill_index
+                for layer_idx, (k, v) in enumerate(current_kv_cache):
+                    self.current_kv_scales[layer_idx][0][seq_index] = k._scale
+                    self.current_kv_scales[layer_idx][1][seq_index] = v._scale
+
+                # TODO: Still don't know why we would need this
+                # if seq_index != self.scheduler_config.max_num_seqs - 1:
+                #     for layer_cache in current_kv_cache:
+                #         layer_cache[0]._scaled = False
+                #         layer_cache[1]._scaled = False
+                # else:
+                for layer_idx, (t1, t2) in enumerate(current_kv_cache):
+                    t1._scale = self.current_kv_scales[layer_idx][0]
+                    t2._scale = self.current_kv_scales[layer_idx][1]
+            else:
+                for layer_idx, (k, v) in enumerate(current_kv_cache):
+                    self.current_kv_scales[layer_idx][0][:batch_size] = k._scale
+                    self.current_kv_scales[layer_idx][1][:batch_size] = v._scale
+                    
+                for layer_idx, (t1, t2) in enumerate(current_kv_cache):
+                    t1._scale = self.current_kv_scales[layer_idx][0]
+                    t2._scale = self.current_kv_scales[layer_idx][1]
 
         return logits
 
