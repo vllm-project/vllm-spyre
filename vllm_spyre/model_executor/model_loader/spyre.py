@@ -415,13 +415,14 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             # TODO: This does not work yet. The scale needs to be handled, see:
             # https://github.com/foundation-model-stack/aiu-fms-testing-utils/blob/v0.1.0rc3/aiu_fms_testing_utils/utils/paged.py#L306-L319
             from fms_mo.aiu_addons.fp8.fp8_utils import ScaledTensor
+            batch_size = max(2, self.scheduler_config.max_num_seqs)
             self.past_key_value_states = [
                 (ScaledTensor(torch.zeros(num_blocks,
                                           self.kv_cache_specs['block_size'],
                                           self.kv_cache_specs['num_kv_heads'],
                                           self.kv_cache_specs['head_dim'],
                                           dtype=self.dtype),
-                              scale=torch.tensor([1.0] * self.scheduler_config.max_num_seqs,
+                              scale=torch.tensor([1.0] * batch_size,
                                                  dtype=torch.float32),
                               scaled=False),
                  ScaledTensor(torch.zeros(num_blocks,
@@ -429,7 +430,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                                           self.kv_cache_specs['num_kv_heads'],
                                           self.kv_cache_specs['head_dim'],
                                           dtype=self.dtype),
-                              scale=torch.tensor([1.0] * self.scheduler_config.max_num_seqs,
+                              scale=torch.tensor([1.0] * batch_size,
                                                  dtype=torch.float32),
                               scaled=False))
                 for _ in range(self.kv_cache_specs['num_layers'])

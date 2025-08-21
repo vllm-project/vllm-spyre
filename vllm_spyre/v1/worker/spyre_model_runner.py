@@ -804,7 +804,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             vocab_size=vllm_config.model_config.get_vocab_size(),
         )
         
-        self.is_quantized_model = False
 
     def pre_warmup(self) -> None:
         # Set the number of kv cache blocks to the minimal value of 2 which is
@@ -836,13 +835,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         n_blocks_avail = self.model.model.get_num_blocks_available()
         self._set_blocks(num_blocks=n_blocks_avail)
         self.model.model._set_past_key_value_states(num_blocks=n_blocks_avail)
-        
-    def load_model(self, prompt_lens, num_decode_tokens):
-        super().load_model(prompt_lens, num_decode_tokens)
-        
-        fms_cb_model = cast(ContinuousBatchingFmsModel, self.model.model)
-        if fms_cb_model:
-            self.is_quantized_model = "fp8" in fms_cb_model.attention_name
         
 
     def _set_blocks(self, num_blocks: int) -> None:
@@ -1292,12 +1284,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             torch._dynamo.mark_static(model_input.slot_mapping, 1)  # always 1
             torch._dynamo.mark_static(model_input.input_positions,
                                       1)  # always 1
-            
-            if self.is_quantized_model:
-                model = cast(ContinuousBatchingFmsModel, self.model.model)
-                for k_cache, v_cache in model.past_key_value_states:
-                    torch._dynamo.mark_dynamic(k_cache._scale, 0)
-                    torch._dynamo.mark_dynamic(v_cache._scale, 0)
             
 
 
