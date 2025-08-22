@@ -64,8 +64,7 @@ FROM base as release
 COPY --from=builder /opt/vllm /opt/vllm
 
 # Required Spyre environment configuration
-ENV COMPILATION_MODE=offline_decoder \
-    DISTRIBUTED_STRATEGY_IGNORE_MODULES=WordEmbedding,Embedding \
+ENV DISTRIBUTED_STRATEGY_IGNORE_MODULES=WordEmbedding,Embedding \
     DTLOG_LEVEL=error \
     DT_DEEPRT_VERBOSE=-1 \
     FLEX_COMPUTE=SENTIENT \
