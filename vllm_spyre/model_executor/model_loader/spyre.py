@@ -459,7 +459,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                 for _ in range(self.kv_cache_specs['num_layers'])
             ]
             # This list keep the reference of scales of the quantized weights
-            # that will be updated after model execution 
+            # that will be updated after model execution
             self.current_kv_scales = [
                     (k_cache._scale, v_cache._scale) for k_cache, v_cache \
                         in self.past_key_value_states
@@ -516,7 +516,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             if attn_metadata.is_prefill:
                 # NOTE: Currently, prefill is only for a single prompt
                 # In prefill, we restore the scale (no scale) and
-                # reset to 1. 
+                # reset to 1.
                 assert len(attn_metadata.scale_indices) == 1
                 prefill_index = attn_metadata.scale_indices[0]
                 v._scale = self.current_kv_scales[layer_idx][1][
@@ -532,13 +532,12 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                 k._scale = self.current_kv_scales[layer_idx][0][
                     attn_metadata.scale_indices].reshape(-1)
 
-            # We set dynamic only for the first dimension of scale 
+            # We set dynamic only for the first dimension of scale
             # during decoding
             is_dynamic_flag = 0 if attn_metadata.is_prefill else 1
 
             torch._dynamo.mark_dynamic(v._scale, is_dynamic_flag)
             torch._dynamo.mark_dynamic(k._scale, is_dynamic_flag)
-                
 
     def _update_scale_for_fp8(self, attn_metadata: SpyreAttentionMetadata):
 
