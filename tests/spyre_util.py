@@ -18,6 +18,7 @@ from sentence_transformers import SentenceTransformer, util
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, SamplingParams
 from vllm.entrypoints.openai.cli_args import make_arg_parser
+from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.utils import FlexibleArgumentParser, get_open_port
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
@@ -340,6 +341,16 @@ def compare_results(
 ):
     if prompts is None:
         prompts = [""] * len(vllm_results)
+
+    tokenizer = None
+    # Decode the prompts if needed
+    for idx in range(len(prompts)):
+        prompt = prompts[idx]
+        if not all(isinstance(t, int) for t in prompt):
+            continue
+        tokenizer = get_tokenizer(model) if tokenizer is None \
+            else tokenizer
+        prompts[idx] = tokenizer.decode(prompt)
 
     print(f"\nmodel:         {model:s}")
     print(f"tp size:       {tensor_parallel_size}")

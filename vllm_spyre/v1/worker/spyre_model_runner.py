@@ -1000,6 +1000,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             block_table=block_table,
             slot_mapping=slot_mapping,
             is_prompt=True,
+            # used only for quantized model
             scale_indices=[prefill_index])
 
         self._mark_input_tensors(model_inputs)

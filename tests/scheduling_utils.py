@@ -133,7 +133,7 @@ def check_scheduler_inference_steps(
         scheduler_config=vllm_config.scheduler_config,
         lora_config=vllm_config.lora_config).tokenizer
 
-    generated_prompts = [tokenizer.decode(p) for p in generated_prompts]
+    # generated_prompts = [tokenizer.decode(p) for p in generated_prompts]
     # In-between steps are added as normal decode steps
     checked_steps = augment_checked_steps(checked_steps)
 

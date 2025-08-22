@@ -39,8 +39,12 @@ class SpyreAttentionMetadata:
     current_tkv_mask: torch.Tensor = None
     left_padded_prompt_mask: torch.Tensor = None
     block_table: torch.Tensor = None
-    scale_indices: list[int] = field(default_factory=list)
     is_prefill: bool = False
+    # We need this indices because when requests are removed from the
+    # persistent batch, we need to keep the reference of the remaining
+    # requests, that is, this index must be the same from the prefill until
+    # the end.
+    scale_indices: list[int] = field(default_factory=list)
 
 
 class SpyreCausalLM(nn.Module):
