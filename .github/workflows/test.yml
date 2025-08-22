@@ -191,6 +191,7 @@ jobs:
           fi
 
           for model in "${models[@]}"; do
+            echo "Downloading $model ..."
             case "$model" in
               "ibm-ai-platform/micro-g3.3-8b-instruct-1b"*)
                 download_tinygranite "$model" &
