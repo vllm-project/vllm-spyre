@@ -1,16 +1,18 @@
 import pytest
 from sentence_transformers import CrossEncoder
-from spyre_util import get_spyre_backend_list, patch_warmup_shapes
+from spyre_util import (get_spyre_backend_list, get_spyre_model_list,
+                        patch_warmup_shapes)
 from vllm import LLM
 
 
-@pytest.mark.parametrize("model", ["BAAI/bge-reranker-v2-m3"])
+@pytest.mark.parametrize("model", get_spyre_model_list(isScoring=True))
 @pytest.mark.parametrize(
     "warmup_shape",
     [  # (prompt_length/batch_size)
         pytest.param((64, 4), marks=pytest.mark.basic),
     ])
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
+@pytest.mark.scoring
 def test_output(
     model: str,
     warmup_shape: tuple[int, int],

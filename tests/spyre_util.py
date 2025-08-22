@@ -547,14 +547,19 @@ def get_spyre_backend_list():
 # get model names from env, if not set then use default models for each type.
 # Multiple models can be specified with a comma separated list in
 # VLLM_SPYRE_TEST_MODEL_LIST
-def get_spyre_model_list(isEmbeddings=False):
+def get_spyre_model_list(isEmbeddings=False, isScoring=False):
     user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST")
     if not user_test_model_list:
-        return _default_test_models(isEmbeddings)
+        return _default_test_models(isEmbeddings, isScoring)
 
     # User overridden model list
     spyre_model_dir_path = get_spyre_model_dir_path()
-    marks = [pytest.mark.embedding] if isEmbeddings else [pytest.mark.decoder]
+    if isEmbeddings:
+        marks = [pytest.mark.embedding]
+    elif isScoring:
+        marks = [pytest.mark.scoring]
+    else:
+        marks = [pytest.mark.decoder]
 
     test_model_list = []
     for model in user_test_model_list.split(","):
@@ -564,11 +569,15 @@ def get_spyre_model_list(isEmbeddings=False):
     return test_model_list
 
 
-def _default_test_models(isEmbeddings=False):
+def _default_test_models(isEmbeddings=False, isScoring=False):
     """Return the default set of test models as pytest parameterizations"""
     if isEmbeddings:
         model = "sentence-transformers/all-roberta-large-v1"
         return [pytest.param(model, marks=[pytest.mark.embedding], id=model)]
+
+    if isScoring:
+        model = "BAAI/bge-reranker-v2-m3"
+        return [pytest.param(model, marks=[pytest.mark.scoring], id=model)]
 
     # Decoders
     # We run tests for both the full-precision bf16 and fp8-quantized models,
