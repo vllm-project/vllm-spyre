@@ -1,5 +1,6 @@
 """A Spyre worker class."""
 import contextlib
+import functools
 import json
 import os
 import platform
@@ -27,6 +28,7 @@ from vllm.worker.worker_base import WorkerBase
 
 import vllm_spyre.envs as envs_spyre
 import vllm_spyre.perf_metrics as perf_metrics
+import vllm_spyre.utils as utils_spyre
 from vllm_spyre.compat_utils import dataclass_fields
 from vllm_spyre.model_executor.model_loader import spyre_setup
 from vllm_spyre.platform import SpyrePlatform
@@ -64,12 +66,22 @@ def new_request_data_builder(
 
 
 @contextlib.contextmanager
-def _maybe_warmup_context():
+def _maybe_warmup_context(limit: int, world_size: int, rank: int):
     global _inside_warmup_mode
     warmup_context = contextlib.nullcontext
     if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
         from torch_sendnn import warmup_mode
         warmup_context = warmup_mode
+
+    sendnn_exit = warmup_context.__exit__
+
+    # We wrap warmup_mode's __exit__ method in a stagger region
+    # as it's where the model is actually compiled.
+    def __stagger_exit__(*args, **kwargs):
+        with utils_spyre.stagger_region(limit, world_size, rank):
+            sendnn_exit(*args, **kwargs)
+
+    functools.update_wrapper(__stagger_exit__, sendnn_exit)
     with warmup_context():
         _inside_warmup_mode = True
         yield
@@ -218,16 +230,16 @@ class SpyreWorker(WorkerBaseV1):
                   ContinuousBatchingSpyreModelRunner, SpyrePoolingModelRunner]
         if self.is_pooling:
             self.model_runner = SpyrePoolingModelRunner(
-                self.vllm_config, self.is_driver_worker)
+                self.vllm_config, self.is_driver_worker, self.rank)
             self.spyre_warmup_shapes = SpyrePlatform.get_warmup_shapes(
                 self.vllm_config.scheduler_config)
         else:
             if envs_spyre.VLLM_SPYRE_USE_CB:
                 self.model_runner = ContinuousBatchingSpyreModelRunner(
-                    self.vllm_config, self.is_driver_worker)
+                    self.vllm_config, self.is_driver_worker, self.rank)
             else:
                 self.model_runner = StaticBatchingSpyreModelRunner(
-                    self.vllm_config, self.is_driver_worker)
+                    self.vllm_config, self.is_driver_worker, self.rank)
                 self.spyre_warmup_shapes = SpyrePlatform.get_warmup_shapes(
                     self.vllm_config.scheduler_config)
         self._env_initialized = False
@@ -390,8 +402,8 @@ class SpyreWorker(WorkerBaseV1):
         ) for i in range(2))
 
         model_runner.pre_warmup()
-
-        with _maybe_warmup_context():
+        with _maybe_warmup_context(envs_spyre.VLLM_SPYRE_MAX_LOAD_PROCESSES,
+                                   self.parallel_config.world_size, self.rank):
             self._dynamic_warmup(request=warmup_req,
                                  prompt_len=prompt_len,
                                  valid_token_ids_tensor=valid_token_ids_tensor)
@@ -531,7 +543,8 @@ class SpyreWorker(WorkerBaseV1):
         # First full forward pass
         logger.info("[WARMUP] Compiling graphs...")
         # The fixed size warmup needs to happen only in here
-        with _maybe_warmup_context():
+        with _maybe_warmup_context(envs_spyre.VLLM_SPYRE_MAX_LOAD_PROCESSES,
+                                   self.parallel_config.world_size, self.rank):
             self._warmup_model_forward_pass(scheduler_output, dummy_requests,
                                             cached_request_data,
                                             num_decode_tokens)
