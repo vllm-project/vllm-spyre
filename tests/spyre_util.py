@@ -368,11 +368,6 @@ def compare_results(
         if isinstance(hf_result['token_ids'], list):
             hf_result['token_ids'] = tuple(hf_result['token_ids'])
 
-        assert DISABLE_ASSERTS or backend == 'sendnn' or\
-            hf_result['token_ids'] == vllm_result['token_ids'], \
-            f"Token ids differ: {hf_result['token_ids']} != " \
-            f"{vllm_result['token_ids']}"
-
         if len(hf_result['tokens']) > 0:
             print("   token id. token               logprob      "
                   "   token id. token               logprob")
@@ -431,6 +426,13 @@ def compare_results(
                   f"average={np.mean(logprob_rel_diff_list):f}  "
                   f"maximum={np.max(logprob_rel_diff_list):f}")
 
+        if hf_result['token_ids'] != vllm_result['token_ids']:
+            print(hf_result['token_ids'])
+            print(vllm_result['token_ids'])
+        assert DISABLE_ASSERTS or backend == 'sendnn' or\
+            hf_result['token_ids'] == vllm_result['token_ids'], \
+            f"Token ids differ: {hf_result['token_ids']} != " \
+            f"{vllm_result['token_ids']}"
         print()
 
 
@@ -442,13 +444,12 @@ def check_output_against_hf(model, backend, max_new_tokens, vllm_results,
         max_new_tokens=max_new_tokens,
         ignore_eos=True,
     )
-    compare_results(
-        model=model,
-        tensor_parallel_size=1,
-        backend=backend,
-        vllm_results=vllm_results,
-        hf_results=hf_outputs,
-    )
+    compare_results(model=model,
+                    tensor_parallel_size=1,
+                    backend=backend,
+                    vllm_results=vllm_results,
+                    hf_results=hf_outputs,
+                    prompts=prompts)
 
 
 # vLLM / Spyre
