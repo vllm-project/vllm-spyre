@@ -109,6 +109,13 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # based on the detected CPU cores and server configuration
     "VLLM_SPYRE_UPDATE_THREAD_CONFIG":
     lambda: bool(int(os.getenv("VLLM_SPYRE_UPDATE_THREAD_CONFIG", "1"))),
+
+    # If set, limit the number of concurrent processes loading/compiling
+    # large models or models with larger context lengths to limit
+    # memory usage.
+    # Set to 0 to allow any number of processes
+    "VLLM_SPYRE_MAX_LOAD_PROCESSES":
+    lambda: bool(int(os.getenv("VLLM_SPYRE_MAX_LOAD_PROCESSES", "0"))),
 }
 # --8<-- [end:env-vars-definition]
 
