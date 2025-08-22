@@ -11,10 +11,11 @@ import pytest
 from openai import BadRequestError
 from spyre_util import (RemoteOpenAIServer, check_output_against_hf,
                         compare_results, create_seq_prompt, extract_output,
-                        force_engine_shutdown, generate_spyre_vllm_output,
-                        get_chicken_soup_prompts, get_spyre_model_list,
-                        skip_unsupported_tp_size)
+                        generate_spyre_vllm_output, get_chicken_soup_prompts,
+                        get_spyre_model_list, skip_unsupported_tp_size)
 from vllm import LLM, SamplingParams
+
+from tests.llm_cache import force_engine_shutdown
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list())

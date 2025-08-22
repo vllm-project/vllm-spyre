@@ -30,23 +30,6 @@ API_SERVER_CACHE = RemoteOpenAIServerCache()
 ENGINE_CACHE = EngineCache()
 
 
-def force_engine_shutdown(llm: LLM):
-    """
-    🌶️🌶️🌶️
-    This hack is here because of an issue in vllm 0.9.2+ where a circular
-    reference occurs in vllm.executor.ray_utils if ray is not installed. This
-    circular reference holds a copy of the vllm config which contains a
-    reference to the LLM, which means it can never be garbage collected.
-    Since vllm.LLM relies on garbage collection to shut down its engine, the
-    engine never shuts down. When running tensor parallel workloads, if the
-    engine is never shut down then the TP worker processes are never killed.
-    When the TP worker processes are held open, all future attempts to create a
-    new engine will fail with an EADDRINUSE error.
-    🌶️🌶️🌶️
-    """
-    llm.llm_engine.engine_core.shutdown()
-
-
 def patch_warmup_shapes(warmup_shapes: Union[list[tuple[int, int, int]],
                                              list[tuple[int, int]]],
                         monkeypatch):
@@ -146,12 +129,12 @@ def clear_llm_caches():
 
 def print_llm_cache_info():
     print("\n----- LLM Cache info ----\n")
-    print(
-        f"vllm.LLM Cache hits: {LLM_CACHE.hits} / misses: {LLM_CACHE.misses}")
-    print(f"Runtime Server Cache hits: {API_SERVER_CACHE.hits} / "
-          f"misses: {API_SERVER_CACHE.misses}")
-    print(f"Engine Core Cache hits: {ENGINE_CACHE.hits} / "
-          f"misses: {ENGINE_CACHE.misses}")
+    print(f"vllm.LLM Cache hits: {LLM_CACHE._cache.hits} / "
+          f"misses: {LLM_CACHE._cache.misses}")
+    print(f"Runtime Server Cache hits: {API_SERVER_CACHE._cache.hits} / "
+          f"misses: {API_SERVER_CACHE._cache.misses}")
+    print(f"Engine Core Cache hits: {ENGINE_CACHE._cache.hits} / "
+          f"misses: {ENGINE_CACHE._cache.misses}")
     print("\n-------------------------\n")
 
 

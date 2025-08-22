@@ -5,7 +5,7 @@ import os
 import subprocess
 import sys
 import time
-from typing import NamedTuple, Optional
+from typing import Callable, Generic, NamedTuple, Optional, TypeVar
 
 import openai
 import pytest
@@ -15,6 +15,23 @@ from vllm.entrypoints.openai.cli_args import make_arg_parser
 from vllm.utils import FlexibleArgumentParser, get_open_port
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor
+
+
+def force_engine_shutdown(llm: LLM):
+    """
+    🌶️🌶️🌶️
+    This hack is here because of an issue in vllm 0.9.2+ where a circular
+    reference occurs in vllm.executor.ray_utils if ray is not installed. This
+    circular reference holds a copy of the vllm config which contains a
+    reference to the LLM, which means it can never be garbage collected.
+    Since vllm.LLM relies on garbage collection to shut down its engine, the
+    engine never shuts down. When running tensor parallel workloads, if the
+    engine is never shut down then the TP worker processes are never killed.
+    When the TP worker processes are held open, all future attempts to create a
+    new engine will fail with an EADDRINUSE error.
+    🌶️🌶️🌶️
+    """
+    llm.llm_engine.engine_core.shutdown()
 
 
 def sort_tests_for_llm_caching(items: list) -> None:
@@ -212,6 +229,57 @@ class SortKey(NamedTuple):
             f"\n\n\tParams: {item.callspec.params}"
 
 
+T = TypeVar('T')
+
+
+class ModelCache(Generic[T]):
+
+    def __init__(self, teardown_method: Callable[[T], None] | None = None):
+        self._model: T | None = None
+        self._runtime_config: dict | None = None
+        self._past_runtime_configs: list[dict] = []
+
+        self.hits = 0
+        self.misses = 0
+
+        if not teardown_method:
+            self._teardown = lambda x: x.shutdown()
+        else:
+            self._teardown = teardown_method
+
+    def maybe_get(self, runtime_config: dict) -> T | None:
+        if runtime_config == self._runtime_config:
+            self.hits += 1
+            return self._model
+
+        self.misses += 1
+
+        print(f"\n\tModel cache miss for type [{T}]")
+        print(f"Requested config: {runtime_config}")
+        print(f"Currently cached config {self._runtime_config}\n")
+
+        return None
+
+    def set(self, runtime_config: dict, model: T) -> T:
+        assert runtime_config not in self._past_runtime_configs, \
+            f"Runtime config {runtime_config} was previously cached for type " \
+                f"[{T}], error in test ordering!"
+
+        self.clear()
+
+        self._runtime_config = runtime_config
+        self._past_runtime_configs.append(self._runtime_config)
+        self._model = model
+
+        return self._model
+
+    def clear(self):
+        if self._model:
+            self._teardown(self._model)
+            self._model = None
+            self._runtime_config = None
+
+
 class LLMCache:
     """Caches a vllm.LLM for use in subsequent tests.
 
@@ -219,12 +287,8 @@ class LLMCache:
     multiple models at once."""
 
     def __init__(self):
-        self._llm: LLM | None = None
-        self._runtime_config: dict | None = None
-        self._past_runtime_configs: list[dict] = []
-
-        self.hits = 0
-        self.misses = 0
+        self._cache: ModelCache[LLM] = ModelCache(
+            teardown_method=lambda x: force_engine_shutdown(x))
 
     def get_cached_llm(
         self,
@@ -259,47 +323,21 @@ class LLMCache:
         # Always patch the environment so that it's consistent with the LLM
         _patch_environment(use_cb, warmup_shapes, backend, monkeypatch)
 
-        if self._runtime_config and self._runtime_config == runtime_config:
-            self.hits += 1
-            return self._llm
+        maybe_llm = self._cache.maybe_get(runtime_config)
+        if maybe_llm:
+            return maybe_llm
 
-        # cache miss
-        self.misses += 1
-
-        print("\n\n\n\n\t\t\tCACHE MISS!\n")
-        print(runtime_config)
-        print()
-        print(self._runtime_config)
-        print("\n\n\n\n")
-
-        assert runtime_config not in self._past_runtime_configs, \
-            f"Runtime config {runtime_config} was previously cached, error " \
-                "in test ordering!"
-
-        self._runtime_config = runtime_config
-        self._past_runtime_configs.append(self._runtime_config)
-
-        if self._llm:
-            # Tear down the previous LLM before reconstruction
-            # TODO: remove or refactor this
-            from spyre_util import force_engine_shutdown
-            force_engine_shutdown(self._llm)
-
-        self._llm = LLM(
-            model=model,
-            tokenizer=model,
-            max_model_len=max_model_len,
-            max_num_seqs=max_num_seqs,
-            tensor_parallel_size=tensor_parallel_size,
-        )
-        return self._llm
+        return self._cache.set(
+            LLM(
+                model=model,
+                tokenizer=model,
+                max_model_len=max_model_len,
+                max_num_seqs=max_num_seqs,
+                tensor_parallel_size=tensor_parallel_size,
+            ))
 
     def clear(self) -> None:
-        if self._llm:
-            from spyre_util import force_engine_shutdown
-            force_engine_shutdown(self._llm)
-            self._llm = None
-            self._runtime_config = None
+        self._cache.clear()
 
 
 class RemoteOpenAIServer:
@@ -420,12 +458,7 @@ class RemoteOpenAIServer:
 class RemoteOpenAIServerCache:
 
     def __init__(self):
-        self._api_server: RemoteOpenAIServer | None = None
-        self._runtime_config: dict | None = None
-        self._past_runtime_configs: list[dict] = []
-
-        self.hits = 0
-        self.misses = 0
+        self._cache: ModelCache[RemoteOpenAIServer] = ModelCache()
 
     def get_api_server(self, model: str, server_args: list[str],
                        server_env: dict) -> RemoteOpenAIServer:
@@ -435,55 +468,24 @@ class RemoteOpenAIServerCache:
             "server_args": tuple(server_args),
             "server_env": server_env,
         }
+        maybe_server = self._cache.maybe_get(runtime_config)
+        if maybe_server:
+            return maybe_server
 
-        if self._runtime_config and self._runtime_config == runtime_config:
-            self.hits += 1
-            return self._api_server
-
-        # cache miss
-        self.misses += 1
-
-        print("\n\n\n\n\t\t\tCACHE MISS!\n")
-        print(runtime_config)
-        print()
-        print(self._runtime_config)
-        print("\n\n\n\n")
-
-        assert runtime_config not in self._past_runtime_configs, \
-            f"Runtime config {runtime_config} was previously cached, error " \
-                "in test ordering!"
-
-        self._runtime_config = runtime_config
-        self._past_runtime_configs.append(self._runtime_config)
-
-        # Tear down old server before making a new one
-        if self._api_server:
-            self._api_server.shutdown()
-
-        # Boot up new server
-        self._api_server = RemoteOpenAIServer(model=model,
-                                              vllm_serve_args=server_args,
-                                              env_dict=server_env)
-
-        return self._api_server
+        return self._cache.set(
+            RemoteOpenAIServer(model=model,
+                               vllm_serve_args=server_args,
+                               env_dict=server_env))
 
     def clear(self) -> None:
-        if self._api_server:
-            self._api_server.shutdown()
-            self._api_server = None
-            self._runtime_config = None
+        self._cache.clear()
 
 
 class EngineCache:
     """Cache for continuous batching engines"""
 
     def __init__(self):
-        self._engine: EngineCore | None = None
-        self._runtime_config: dict | None = None
-        self._past_runtime_configs: list[dict] = []
-
-        self.hits = 0
-        self.misses = 0
+        self._cache: ModelCache[EngineCore] = ModelCache()
 
     def get_engine(self, model: str, max_model_len: int, max_num_seqs: int,
                    available_blocks: int, backend: str,
@@ -494,36 +496,9 @@ class EngineCache:
             "max_num_seqs": max_num_seqs,
             "available_blocks": available_blocks,
         }
-
-        # Patch the environment so it always matches the running engine
-        _patch_environment(use_cb=True,
-                           warmup_shapes=None,
-                           backend=backend,
-                           monkeypatch=monkeypatch)
-
-        if self._runtime_config and self._runtime_config == runtime_config:
-            self.hits += 1
-            return self._engine
-
-        # cache miss
-        self.misses += 1
-
-        print("\n\n\n\n\t\t\tCACHE MISS!\n")
-        print(runtime_config)
-        print()
-        print(self._runtime_config)
-        print("\n\n\n\n")
-
-        assert runtime_config not in self._past_runtime_configs, \
-            f"Runtime config {runtime_config} was previously cached, error " \
-                "in test ordering!"
-
-        self._runtime_config = runtime_config
-        self._past_runtime_configs.append(self._runtime_config)
-
-        # Tear down old engine
-        if self._engine:
-            self._engine.shutdown()
+        maybe_engine = self._cache.maybe_get(runtime_config)
+        if maybe_engine:
+            return maybe_engine
 
         # Setup the engine
         engine_args = EngineArgs(
@@ -535,17 +510,13 @@ class EngineCache:
         )
         vllm_config = engine_args.create_engine_config()
         executor_class = Executor.get_class(vllm_config)
-        self._engine = EngineCore(vllm_config=vllm_config,
-                                  executor_class=executor_class,
-                                  log_stats=False)
-
-        return self._engine
+        return self._cache.set(
+            EngineCore(vllm_config=vllm_config,
+                       executor_class=executor_class,
+                       log_stats=False))
 
     def clear(self) -> None:
-        if self._engine:
-            self._engine.shutdown()
-            self._engine = None
-            self._runtime_config = None
+        self._cache.clear()
 
 
 def _patch_environment(use_cb: bool,
