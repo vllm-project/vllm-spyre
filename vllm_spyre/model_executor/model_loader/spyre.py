@@ -343,8 +343,10 @@ class ContinuousBatchingFmsModel(FmsModelBase):
 
         if self.model_config.quantization:
             self.attention_name = "spyre_paged_attn_fp8"
+            self.is_fp8_model = True
         else:
             self.attention_name = "spyre_paged_attn"
+            self.is_fp8_model = False
 
         self.current_scale: Optional[list[tuple]] = None
 
@@ -456,6 +458,8 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                               scaled=False))
                 for _ in range(self.kv_cache_specs['num_layers'])
             ]
+            # This list keep the reference of scales of the quantized weights
+            # that will be updated after model execution 
             self.current_kv_scales = [
                     (k_cache._scale, v_cache._scale) for k_cache, v_cache \
                         in self.past_key_value_states
@@ -481,41 +485,9 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         # specify attention type for continuous batching
         extra_kwargs['attn_name'] = self.attention_name
 
-        is_prefill = attn_metadata.is_prefill
-
-        is_fp8 = "fp8" in self.attention_name
-        current_kv_cache = self.past_key_value_states
-
-        if is_fp8:
-            if is_prefill:
-                assert len(attn_metadata.scale_indices) == 1
-                seq_index = attn_metadata.scale_indices[0]
-                # Reset scale, set to one, set unscaled for prefill and
-                # also set dynamic
-                for layer_idx, (k, v) in enumerate(current_kv_cache):
-                    v._scale = self.current_kv_scales[layer_idx][1][
-                        seq_index] = torch.ones(1, dtype=torch.float32)
-                    k._scale = self.current_kv_scales[layer_idx][0][
-                        seq_index] = torch.ones(1, dtype=torch.float32)
-
-                    v._scaled = False
-                    k._scaled = False
-
-                    torch._dynamo.mark_dynamic(v._scale, 1)
-                    torch._dynamo.mark_dynamic(k._scale, 1)
-            else:
-                # TODO: we are considering that the scales for the current batch
-                # are contiguous, but this might not be true.
-                for layer_idx, (k, v) in enumerate(current_kv_cache):
-                    v._scale = self.current_kv_scales[layer_idx][1][
-                        attn_metadata.scale_indices].reshape(-1)
-                    k._scale = self.current_kv_scales[layer_idx][0][
-                        attn_metadata.scale_indices].reshape(-1)
-
-                    torch._dynamo.mark_dynamic(v._scale, 0)
-                    torch._dynamo.mark_dynamic(k._scale, 0)
-
-        extra_kwargs.pop('is_prefill', None)
+        if self.is_fp8_model:
+            # set scale for kv_cache
+            self._set_scale_for_fp8(attn_metadata)
 
         output = self.model(
             input_ids,
@@ -533,35 +505,48 @@ class ContinuousBatchingFmsModel(FmsModelBase):
 
         logits, self.past_key_value_states = output
 
-        current_kv_cache = self.past_key_value_states
-        if is_fp8:
-            if is_prefill:
-                seq_index = attn_metadata.scale_indices[0]
-                for layer_idx, (k, v) in enumerate(current_kv_cache):
-                    self.current_kv_scales[layer_idx][0][seq_index] = k._scale
-                    self.current_kv_scales[layer_idx][1][seq_index] = v._scale
-
-                # TODO: Still don't know why we would need this
-                # if seq_index != self.scheduler_config.max_num_seqs - 1:
-                #     for layer_cache in current_kv_cache:
-                #         layer_cache[0]._scaled = False
-                #         layer_cache[1]._scaled = False
-                # else:
-                for layer_idx, (t1, t2) in enumerate(current_kv_cache):
-                    t1._scale = self.current_kv_scales[layer_idx][0]
-                    t2._scale = self.current_kv_scales[layer_idx][1]
-            else:
-                for layer_idx, (k, v) in enumerate(current_kv_cache):
-                    self.current_kv_scales[layer_idx][0][
-                        attn_metadata.scale_indices] = k._scale
-                    self.current_kv_scales[layer_idx][1][
-                        attn_metadata.scale_indices] = v._scale
-
-                for layer_idx, (t1, t2) in enumerate(current_kv_cache):
-                    t1._scale = self.current_kv_scales[layer_idx][0]
-                    t2._scale = self.current_kv_scales[layer_idx][1]
+        if self.is_fp8_model:
+            # update scale for kv_cache after execute model
+            self._update_scale_for_fp8(attn_metadata)
 
         return logits
+
+    def _set_scale_for_fp8(self, attn_metadata: SpyreAttentionMetadata):
+        for layer_idx, (k, v) in enumerate(self.past_key_value_states):
+            if attn_metadata.is_prefill:
+                # NOTE: Currently, prefill is only for a single prompt
+                # In prefill, we restore the scale (no scale) and
+                # reset to 1. 
+                assert len(attn_metadata.scale_indices) == 1
+                prefill_index = attn_metadata.scale_indices[0]
+                v._scale = self.current_kv_scales[layer_idx][1][
+                    prefill_index] = torch.ones(1, dtype=torch.float32)
+                k._scale = self.current_kv_scales[layer_idx][0][
+                    prefill_index] = torch.ones(1, dtype=torch.float32)
+                v._scaled = False
+                k._scaled = False
+            else:
+                # Set scale only for the requests of the batch
+                v._scale = self.current_kv_scales[layer_idx][1][
+                    attn_metadata.scale_indices].reshape(-1)
+                k._scale = self.current_kv_scales[layer_idx][0][
+                    attn_metadata.scale_indices].reshape(-1)
+
+            # We set dynamic only for the first dimension of scale 
+            # during decoding
+            is_dynamic_flag = 0 if attn_metadata.is_prefill else 1
+
+            torch._dynamo.mark_dynamic(v._scale, is_dynamic_flag)
+            torch._dynamo.mark_dynamic(k._scale, is_dynamic_flag)
+                
+
+    def _update_scale_for_fp8(self, attn_metadata: SpyreAttentionMetadata):
+
+        for layer_idx, (k, v) in enumerate(self.past_key_value_states):
+            self.current_kv_scales[layer_idx][0][
+                attn_metadata.scale_indices] = k._scale
+            self.current_kv_scales[layer_idx][1][
+                attn_metadata.scale_indices] = v._scale
 
     def get_dtype(self) -> torch.dtype:
         # Get the model's data type
