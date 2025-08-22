@@ -356,7 +356,7 @@ class SpyreWorker(WorkerBaseV1):
     def _warmup_spyre_dynamic_size(self, special_token_ids):
         # this setting is required to mark a dimension of size 1 as dynamic
         # for pytorch >= 2.7.1 (needed to support batch size 1 for decodes)
-        
+
         from torch.fx.experimental import _config as config
         config.backed_size_oblivious = True
 
@@ -593,7 +593,7 @@ class SpyreWorker(WorkerBaseV1):
         logger.info("[WARMUP] Prefill...[1/2]")
 
         self.execute_model(scheduler_output)
-        
+
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=[request1],
             scheduled_cached_reqs=CachedRequestData.make_empty(),
@@ -610,7 +610,6 @@ class SpyreWorker(WorkerBaseV1):
         logger.info("[WARMUP] Prefill...[2/2]")
 
         self.execute_model(scheduler_output)
-        
 
         cached_request_data = CachedRequestData(
             req_ids=[request0.req_id, request1.req_id],
@@ -618,8 +617,12 @@ class SpyreWorker(WorkerBaseV1):
             new_token_ids=[[
                 valid_token_ids_tensor[torch.randint(
                     0, len(valid_token_ids_tensor), (1, )).item()],
-                ], [valid_token_ids_tensor[torch.randint(
-                    0, len(valid_token_ids_tensor), (1, )).item()]]],
+            ],
+                           [
+                               valid_token_ids_tensor[torch.randint(
+                                   0, len(valid_token_ids_tensor),
+                                   (1, )).item()]
+                           ]],
             new_block_ids=[request0.block_ids + request1.block_ids],
             num_computed_tokens=[prompt_len, prompt_len],
         )
@@ -627,7 +630,10 @@ class SpyreWorker(WorkerBaseV1):
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=[],
             scheduled_cached_reqs=cached_request_data,
-            num_scheduled_tokens={request0.req_id: 1, request1.req_id: 1},
+            num_scheduled_tokens={
+                request0.req_id: 1,
+                request1.req_id: 1
+            },
             total_num_scheduled_tokens=1,
             scheduled_spec_decode_tokens={},
             scheduled_encoder_inputs={},

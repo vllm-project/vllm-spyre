@@ -38,9 +38,8 @@ class SpyreAttentionMetadata:
     current_tkv_mask: torch.Tensor = None
     left_padded_prompt_mask: torch.Tensor = None
     block_table: torch.Tensor = None
-    # TODO: review this, we need the index to use the scale
-    # for quantized model
-    prefill_index: int = None
+    scale_indices: list[int] = []
+    is_prefill: bool = False
 
 
 class SpyreCausalLM(nn.Module):
@@ -98,7 +97,6 @@ class SpyreCausalLM(nn.Module):
             # cpu impl when padding too much
             extra_kwargs["attn_algorithm"] = "math"
 
-        extra_kwargs["is_prefill"] = is_prompt
         # normal prefill or decoding step
         logits = self.model(
             input_ids,
@@ -286,7 +284,6 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         scheduler_config: SchedulerConfig,
     ) -> None:
 
-
         BLOCK_SIZE = SpyrePlatform.get_block_size()
         max_model_len = scheduler_config.max_model_len
 
@@ -329,8 +326,8 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             self.attention_name = "spyre_paged_attn_fp8"
         else:
             self.attention_name = "spyre_paged_attn"
-            
-        self.current_scale : list[tuple] = None
+
+        self.current_scale: Optional[list[tuple]] = None
 
     def get_num_blocks_available(self) -> int:
         """Function returns the number of available blocks/pages.
@@ -388,7 +385,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                         str(max_model_len), max_concurrency_cpu)
             return num_blocks_cpu
 
-    def _set_past_key_value_states(self, num_blocks) -> None:
+    def set_past_key_value_states(self, num_blocks) -> None:
         # overwrite num_blocks for testing scheduler constraints
         num_blocks_override = SpyrePlatform.get_num_spyre_blocks_override()
         if num_blocks_override > 0:
@@ -439,8 +436,6 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                     (k_cache._scale, v_cache._scale) for k_cache, v_cache \
                         in self.past_key_value_states
                 ]
-            
-            
 
     def forward(
         self,
@@ -455,44 +450,49 @@ class ContinuousBatchingFmsModel(FmsModelBase):
 
         attn_metadata = cast(SpyreAttentionMetadata,
                              forward_context.attn_metadata)
+        assert attn_metadata is not None
         # import will be not be needed/ handled by FMS soon
         import fms.utils.spyre.paged  # noqa # pylint: disable=unused-import
 
         # specify attention type for continuous batching
         extra_kwargs['attn_name'] = self.attention_name
-        
-        is_prefill = extra_kwargs['is_prefill']
-    
-        
+
+        is_prefill = attn_metadata.is_prefill
+
         is_fp8 = "fp8" in self.attention_name
         current_kv_cache = self.past_key_value_states
-        
-        batch_size = input_ids.shape[0]
+
         if is_fp8:
             if is_prefill:
-                seq_index = attn_metadata.prefill_index
-                # Reset scale, set to one, set unscaled for prefill and also set dynamic
+                assert len(attn_metadata.scale_indices) == 1
+                seq_index = attn_metadata.scale_indices[0]
+                # Reset scale, set to one, set unscaled for prefill and
+                # also set dynamic
                 for layer_idx, (k, v) in enumerate(current_kv_cache):
-                    v._scale = self.current_kv_scales[layer_idx][1][seq_index] = torch.ones(1, dtype=torch.float32)
-                    k._scale = self.current_kv_scales[layer_idx][0][seq_index] = torch.ones(1, dtype=torch.float32)
-                    
+                    v._scale = self.current_kv_scales[layer_idx][1][
+                        seq_index] = torch.ones(1, dtype=torch.float32)
+                    k._scale = self.current_kv_scales[layer_idx][0][
+                        seq_index] = torch.ones(1, dtype=torch.float32)
+
                     v._scaled = False
                     k._scaled = False
-                    
+
                     torch._dynamo.mark_dynamic(v._scale, 1)
                     torch._dynamo.mark_dynamic(k._scale, 1)
             else:
-                # TODO: we are considering that the scales for the current batch are
-                # contiguous, but this might not be true. 
+                # TODO: we are considering that the scales for the current batch
+                # are contiguous, but this might not be true.
                 for layer_idx, (k, v) in enumerate(current_kv_cache):
-                    v._scale = self.current_kv_scales[layer_idx][1][:batch_size].reshape(-1)
-                    k._scale = self.current_kv_scales[layer_idx][0][:batch_size].reshape(-1)
-                    
+                    v._scale = self.current_kv_scales[layer_idx][1][
+                        attn_metadata.scale_indices].reshape(-1)
+                    k._scale = self.current_kv_scales[layer_idx][0][
+                        attn_metadata.scale_indices].reshape(-1)
+
                     torch._dynamo.mark_dynamic(v._scale, 0)
                     torch._dynamo.mark_dynamic(k._scale, 0)
-                  
+
         extra_kwargs.pop('is_prefill', None)
-            
+
         output = self.model(
             input_ids,
             position_ids=position_ids,
@@ -508,11 +508,11 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         )
 
         logits, self.past_key_value_states = output
-        
+
         current_kv_cache = self.past_key_value_states
         if is_fp8:
             if is_prefill:
-                seq_index = attn_metadata.prefill_index
+                seq_index = attn_metadata.scale_indices[0]
                 for layer_idx, (k, v) in enumerate(current_kv_cache):
                     self.current_kv_scales[layer_idx][0][seq_index] = k._scale
                     self.current_kv_scales[layer_idx][1][seq_index] = v._scale
@@ -528,9 +528,11 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                     t2._scale = self.current_kv_scales[layer_idx][1]
             else:
                 for layer_idx, (k, v) in enumerate(current_kv_cache):
-                    self.current_kv_scales[layer_idx][0][:batch_size] = k._scale
-                    self.current_kv_scales[layer_idx][1][:batch_size] = v._scale
-                    
+                    self.current_kv_scales[layer_idx][0][
+                        attn_metadata.scale_indices] = k._scale
+                    self.current_kv_scales[layer_idx][1][
+                        attn_metadata.scale_indices] = v._scale
+
                 for layer_idx, (t1, t2) in enumerate(current_kv_cache):
                     t1._scale = self.current_kv_scales[layer_idx][0]
                     t2._scale = self.current_kv_scales[layer_idx][1]

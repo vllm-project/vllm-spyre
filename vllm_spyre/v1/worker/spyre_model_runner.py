@@ -22,7 +22,7 @@ from vllm.v1.outputs import LogprobsTensors, SamplerOutput
 
 import vllm_spyre.envs as envs_spyre
 from vllm_spyre.model_executor.model_loader.spyre import (
-    BACKEND_LIST, SpyreAttentionMetadata, SpyreCausalLM, ContinuousBatchingFmsModel)
+    BACKEND_LIST, SpyreAttentionMetadata, SpyreCausalLM)
 from vllm_spyre.platform import SpyrePlatform
 # yapf conflicts with ruff for this block
 # yapf: disable
@@ -68,7 +68,7 @@ class ModelForwardInputs:
     input_tokens: Optional[torch.Tensor] = None
     input_positions: Optional[torch.Tensor] = None
     input_masks: Optional[torch.Tensor] = None
-    is_prompt: Optional[bool] = None
+    is_prompt: bool = False
 
 
 @dataclass(frozen=True)
@@ -80,7 +80,7 @@ class SamplingForwardInputs(ModelForwardInputs):
     left_padded_prompt_mask: Optional[torch.Tensor] = None
     block_table: Optional[torch.Tensor] = None
     slot_mapping: Optional[torch.Tensor] = None
-    prefill_index: Optional[int] = None
+    scale_indices: list[int] = []
 
 
 @dataclass
@@ -324,7 +324,7 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
         mask = (mask.unsqueeze(-1) == mask.unsqueeze(-2)).tril()
         mask = torch.where(mask.logical_not(), -torch.inf, 0.0)
         # Currently, using this quantization will generate NaN, keep it float32
-        if self.model.model.dtype in [torch.float8_e4m3fn]: 
+        if self.model.model.dtype in [torch.float8_e4m3fn]:
             mask = mask.to(torch.float32)
         else:
             mask = mask.to(self.model.model.dtype)
@@ -803,7 +803,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             pin_memory=self.pin_memory,
             vocab_size=vllm_config.model_config.get_vocab_size(),
         )
-        
 
     def pre_warmup(self) -> None:
         # Set the number of kv cache blocks to the minimal value of 2 which is
@@ -814,12 +813,12 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         n_blocks_warmup = self.model.model.get_num_blocks_available()
         self._set_blocks(num_blocks=n_blocks_warmup)
-        self.model.model._set_past_key_value_states(num_blocks=n_blocks_warmup)
+        self.model.model.set_past_key_value_states(num_blocks=n_blocks_warmup)
 
         # Future code:
 
         # self._set_blocks(num_blocks=2)
-        # self.model.model._set_past_key_value_states(num_blocks=2)
+        # self.model.model.set_past_key_value_states(num_blocks=2)
 
         # mark the num_blocks dimension dynamic for Spyre compiler for warmup
         # only, compiler will return the number of blocks it can accommodate.
@@ -834,8 +833,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # and set it accordingly in the model runner and for the kv cache size
         n_blocks_avail = self.model.model.get_num_blocks_available()
         self._set_blocks(num_blocks=n_blocks_avail)
-        self.model.model._set_past_key_value_states(num_blocks=n_blocks_avail)
-        
+        self.model.model.set_past_key_value_states(num_blocks=n_blocks_avail)
 
     def _set_blocks(self, num_blocks: int) -> None:
         # overwrite num_blocks for testing scheduler constraints
@@ -957,9 +955,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                                          left_padding=left_padding)
         self.requests[req_id] = req_state
         prefill_index = self.input_batch.add_request(req_state)
-        prefill_index = self.input_batch.req_idx_to_dense_index(prefill_index) 
         self.prefill_batch.add_request(req_state)
-        
 
         # Refresh sampling metadata after all request are added to the batch
         self.input_batch.refresh_metadata()
@@ -998,8 +994,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             block_table=block_table,
             slot_mapping=slot_mapping,
             is_prompt=True,
-            prefill_index=prefill_index
-        )
+            scale_indices=[prefill_index])
 
         self._mark_input_tensors(model_inputs)
 
@@ -1100,7 +1095,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             block_table=block_table,
             slot_mapping=slot_mapping,
             is_prompt=False,
-        )
+            scale_indices=self.input_batch.request_indices)
 
         self._mark_input_tensors(model_inputs)
 
@@ -1192,14 +1187,14 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         # TODO: probably we can remove some fields of the model input and
         # update only the SpyreAttentionMetadata
-        
-        
+
         return SpyreAttentionMetadata(
             slot_mapping=model_input.slot_mapping,
             current_tkv_mask=model_input.current_tkv_mask,
             left_padded_prompt_mask=model_input.left_padded_prompt_mask,
             block_table=model_input.block_table,
-            prefill_index=model_input.prefill_index)
+            scale_indices=model_input.scale_indices,
+            is_prefill=model_input.is_prompt)
 
     def get_sampling_metadata(self, is_prefill: bool) -> SamplingMetadata:
         return self.prefill_batch.sampling_metadata \
@@ -1284,7 +1279,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             torch._dynamo.mark_static(model_input.slot_mapping, 1)  # always 1
             torch._dynamo.mark_static(model_input.input_positions,
                                       1)  # always 1
-            
 
 
 class SpyrePoolingModelRunner(WarmupShapesMixin,
