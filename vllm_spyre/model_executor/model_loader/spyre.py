@@ -1,6 +1,6 @@
 """Utilities for selecting and loading Spyre models."""
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional, cast
 
 import torch
@@ -39,7 +39,7 @@ class SpyreAttentionMetadata:
     current_tkv_mask: torch.Tensor = None
     left_padded_prompt_mask: torch.Tensor = None
     block_table: torch.Tensor = None
-    scale_indices: list[int] = []
+    scale_indices: list[int] = field(default_factory=list)
     is_prefill: bool = False
 
 

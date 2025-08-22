@@ -4,7 +4,7 @@ import time
 from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import Iterable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import (TYPE_CHECKING, Generic, Literal, Optional, TypeVar, cast,
                     get_args)
 
@@ -81,7 +81,7 @@ class SamplingForwardInputs(ModelForwardInputs):
     left_padded_prompt_mask: Optional[torch.Tensor] = None
     block_table: Optional[torch.Tensor] = None
     slot_mapping: Optional[torch.Tensor] = None
-    scale_indices: list[int] = []
+    scale_indices: list[int] = field(default_factory=list)
 
 
 @dataclass
