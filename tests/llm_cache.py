@@ -497,6 +497,13 @@ class EngineCache:
             "max_num_seqs": max_num_seqs,
             "available_blocks": available_blocks,
         }
+
+        # Always patch the environment so that it's consistent with the engine
+        _patch_environment(use_cb=True,
+                           warmup_shapes=None,
+                           backend=backend,
+                           monkeypatch=monkeypatch)
+
         maybe_engine = self._cache.maybe_get(runtime_config)
         if maybe_engine:
             return maybe_engine
