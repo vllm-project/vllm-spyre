@@ -264,9 +264,6 @@ class ModelCache(Generic[T]):
         assert runtime_config not in self._past_runtime_configs, \
             f"Runtime config {runtime_config} was previously cached for type " \
                 f"[{T}], error in test ordering!"
-
-        self.clear()
-
         self._runtime_config = runtime_config
         self._past_runtime_configs.append(self._runtime_config)
         self._model = model
@@ -326,6 +323,7 @@ class LLMCache:
         maybe_llm = self._cache.maybe_get(runtime_config)
         if maybe_llm:
             return maybe_llm
+        self.clear()
 
         return self._cache.set(
             runtime_config,
@@ -472,6 +470,7 @@ class RemoteOpenAIServerCache:
         maybe_server = self._cache.maybe_get(runtime_config)
         if maybe_server:
             return maybe_server
+        self.clear()
 
         return self._cache.set(
             runtime_config,
@@ -501,6 +500,7 @@ class EngineCache:
         maybe_engine = self._cache.maybe_get(runtime_config)
         if maybe_engine:
             return maybe_engine
+        self.clear()
 
         # Setup the engine
         engine_args = EngineArgs(
