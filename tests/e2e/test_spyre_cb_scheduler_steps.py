@@ -25,9 +25,9 @@ def test_prompts_aligned_with_tkv_boundaries(model: str, backend: str,
     Configuration:
         * max_num_seqs: 2
         * number of prompts: 3
-            * 1: len = 49, max tokens = 65, step joining = 0
-            * 2: len = 41, max tokens = 67, step joining = 0
-            * 3: len = 47, max tokens = 7, step joining = 0
+            * 0: len = 49, max tokens = 65, step joining = 0
+            * 1: len = 41, max tokens = 67, step joining = 0
+            * 2: len = 47, max tokens = 7, step joining = 0
     """
 
     seqs_max_tokens = [65, 67, 7]
@@ -195,9 +195,9 @@ def test_prompts_misaligned_with_tkv_boundaries(
     Configuration:
         * max_num_seqs: 2
         * number of prompts: 3
-            * 1: len = 49, max tokens = 57, step joining = 0
-            * 2: len = 41, max tokens = 67, step joining = 0
-            * 3: len = 47, max tokens = 9, step joining = 0
+            * 0: len = 49, max tokens = 57, step joining = 0
+            * 1: len = 41, max tokens = 67, step joining = 0
+            * 2: len = 47, max tokens = 9, step joining = 0
     """
     seqs_max_tokens = [57, 67, 9]
     prompts_lengths = [49, 41, 47]
@@ -361,9 +361,9 @@ def test_two_sequences_finish_same_time_as_new_arrive(
     Configuration:
         * max_num_seqs: 2
         * number of prompts: 3
-            * 1: len = 49, max tokens = 30, step joining = 0
-            * 2: len = 30, max tokens = 30, step joining = 0
-            * 3: len = 20, max tokens = 10, step joining = 31
+            * 0: len = 49, max tokens = 30, step joining = 0
+            * 1: len = 30, max tokens = 30, step joining = 0
+            * 2: len = 20, max tokens = 10, step joining = 31
     """
     seqs_max_tokens = [30, 30, 10]
     prompts_lengths = [49, 30, 20]
@@ -712,8 +712,8 @@ def test_prompt_too_long_for_current_tkv(model: str, backend: str,
     Configuration:
         * max_num_seqs: 2
         * number of prompts: 2
-            * 1: len = 49, max tokens = 57, step joining = 0
-            * 2: len = 70, max tokens = 67, step joining = 0
+            * 0: len = 49, max tokens = 57, step joining = 0
+            * 1: len = 70, max tokens = 67, step joining = 0
     """
 
     if prefill_optimization:
@@ -980,8 +980,8 @@ def test_prefill_optimization_tkv_too_big(model: str, backend: str,
     Configuration:
         * max_num_seqs: 2
         * number of prompts: 2
-            * 1: len = 49, max tokens = 67, step joining = 0
-            * 2: len = 70, max tokens = 50, step joining = 0
+            * 0: len = 49, max tokens = 67, step joining = 0
+            * 1: len = 70, max tokens = 50, step joining = 0
     """
 
     monkeypatch.setenv('VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION', '1')
@@ -1149,8 +1149,8 @@ def test_prefill_optimization_use_more_than_available_blocks(
     Configuration:
         * max_num_seqs: 2
         * number of prompts: 2
-            * 1: len = 49, max tokens = 67, step joining = 0
-            * 2: len = 70, max tokens = 50, step joining = 0
+            * 0: len = 49, max tokens = 67, step joining = 0
+            * 1: len = 70, max tokens = 50, step joining = 0
     """
 
     monkeypatch.setenv('VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION', '1')
@@ -1312,9 +1312,9 @@ def test_requested_tokens_not_fitting_remaining_space(
     Configuration:
         * max_num_seqs: 2
         * number of prompts: 3
-            * 1: len = 70, max tokens = 67, step joining = 0
-            * 2: len = 49, max tokens = 57, step joining = 0
-            * 3: len = 41, max tokens = 80, step joining = 0
+            * 0: len = 70, max tokens = 67, step joining = 0
+            * 1: len = 49, max tokens = 57, step joining = 0
+            * 2: len = 41, max tokens = 80, step joining = 0
     """
     seqs_max_tokens = [67, 57, 80]
     prompts_lengths = [70, 49, 41]
@@ -1502,10 +1502,10 @@ def test_requests_use_all_available_blocks(model: str, backend: str,
     Configuration:
         * max_num_seqs: 4
         * number of prompts: 4
+            * 0: len = 10, max tokens = 3, step joining = 0
             * 1: len = 10, max tokens = 3, step joining = 0
             * 2: len = 10, max tokens = 3, step joining = 0
             * 3: len = 10, max tokens = 3, step joining = 0
-            * 4: len = 10, max tokens = 3, step joining = 0
         * available_blocks: 8
     """
     seqs_max_tokens = [3, 3, 3, 3]  # 2 decodes into a new block per sequence
@@ -1640,10 +1640,10 @@ def test_requests_use_more_than_available_blocks(
     Configuration:
         * max_num_seqs: 4
         * number of prompts: 4
+            * 0: len = 10, max tokens = 3, step joining = 0
             * 1: len = 10, max tokens = 3, step joining = 0
             * 2: len = 10, max tokens = 3, step joining = 0
             * 3: len = 10, max tokens = 3, step joining = 0
-            * 4: len = 10, max tokens = 3, step joining = 0
         * available_blocks: 8
     """
 
