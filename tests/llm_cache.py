@@ -328,6 +328,7 @@ class LLMCache:
             return maybe_llm
 
         return self._cache.set(
+            runtime_config,
             LLM(
                 model=model,
                 tokenizer=model,
@@ -473,6 +474,7 @@ class RemoteOpenAIServerCache:
             return maybe_server
 
         return self._cache.set(
+            runtime_config,
             RemoteOpenAIServer(model=model,
                                vllm_serve_args=server_args,
                                env_dict=server_env))
@@ -511,6 +513,7 @@ class EngineCache:
         vllm_config = engine_args.create_engine_config()
         executor_class = Executor.get_class(vllm_config)
         return self._cache.set(
+            runtime_config,
             EngineCore(vllm_config=vllm_config,
                        executor_class=executor_class,
                        log_stats=False))
