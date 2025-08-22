@@ -164,7 +164,7 @@ jobs:
           key: ${{ runner.os }}-hf-model-${{ env.model_key }}
 
       - name: "Download HF models"
-        if: steps.changed-src-files.outputs.any_changed == 'true'
+        if: steps.changed-src-files.outputs.any_changed == 'true' && steps.cache_restore.outputs.cache-hit != 'true'
         run: |
           # We are caching HF models (HF_HUB_CACHE) for reliability rather than speed, since HF downloads are flaky for concurrent jobs.
           # Be careful when adding models to the cache here, as the GHA cache is limited to 10 GB.
@@ -209,7 +209,7 @@ jobs:
           esac
 
       - name: "Save HF models cache"
-        if: ( steps.changed-src-files.outputs.any_changed == 'true' && github.event_name != 'pull_request' )
+        if: ( steps.changed-src-files.outputs.any_changed == 'true' && github.event_name != 'pull_request' && steps.cache_restore.outputs.cache-hit != 'true' )
         uses: actions/cache/save@v4
         with:
           path: ${{ env.model_path }}
