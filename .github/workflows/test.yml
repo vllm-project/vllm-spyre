@@ -202,7 +202,8 @@ jobs:
                 download_roberta_large "$model" &
                 ;;
               *)
-                echo "No downloads needed for: $model"
+                echo "No download method found for: $model";
+                exit 1
                 ;;
             esac
           done
