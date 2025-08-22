@@ -56,6 +56,7 @@ jobs:
           - name: "scoring"
             markers: "cpu and scoring"
             flags: "--timeout=300"
+            hf_models: "BAAI/bge-reranker-v2-m3"
           - name: "continuous batching"
             markers: "cpu and cb"
             flags: "--timeout=300"
@@ -203,6 +204,9 @@ jobs:
                 download_tinyllama "$model" &
                 ;;
               "sentence-transformers/all-roberta-large-v1")
+                download_roberta_large "$model" &
+                ;;
+              "BAAI/bge-reranker-v2-m3")
                 download_roberta_large "$model" &
                 ;;
               *)
