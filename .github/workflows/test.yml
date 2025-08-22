@@ -172,41 +172,44 @@ jobs:
           # be removed by an admin or can be left to expire after 7 days.
           
           download_tinygranite() {
-            python -c "from transformers import pipeline, AutoTokenizer; pipeline('text-generation', model='ibm-ai-platform/micro-g3.3-8b-instruct-1b'); tokenizer=AutoTokenizer.from_pretrained('ibm-ai-platform/micro-g3.3-8b-instruct-1b')"
-          }
-          download_tinygranite_fp8() {
-            python -c "from transformers import pipeline, AutoTokenizer; pipeline('text-generation', model='ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8'); tokenizer=AutoTokenizer.from_pretrained('ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8')"
+            python -c "from transformers import pipeline, AutoTokenizer; pipeline('text-generation', model='$1'); tokenizer=AutoTokenizer.from_pretrained('$1')"
           }
           download_roberta_large() {
-            python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-roberta-large-v1')"
+            python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('$1')"
           }
           # tinyllama used for static batching tests because static batching is _too slow_
           download_tinyllama() {
-            python -c "from transformers import pipeline; pipeline('text-generation', model='JackFram/llama-160m')"
+            python -c "from transformers import pipeline; pipeline('text-generation', model='$1')"
           }
-          needed_models="${{ matrix.test_suite.hf_models || env.DEFAULT_HF_MODEL }}"
-          case "$needed_models" in
-            "micro-g3.3_roberta-large")
-              download_tinygranite & 
-              download_roberta_large &
-              wait
-              ;;
-            "JackFram/llama-160m")
-              download_tinyllama
-              ;;
-            "ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8")
-              download_tinygranite_fp8
-              ;;
-            "sentence-transformers/all-roberta-large-v1")
-              download_roberta_large
-              ;;
-            "ibm-ai-platform/micro-g3.3-8b-instruct-1b")
-              download_tinygranite
-              ;;
-            *)
-              echo "No downloads needed for: $needed_models"
-              ;;
-          esac
+
+          hf_models="${{ matrix.test_suite.hf_models || env.DEFAULT_HF_MODEL }}"
+
+          if [[ "$hf_models" == "micro-g3.3_roberta-large" ]]; then
+            models=("ibm-ai-platform/micro-g3.3-8b-instruct-1b" "sentence-transformers/all-roberta-large-v1")
+          else
+            models=("$hf_models")
+          fi
+
+          for model in "${models[@]}"; do
+            echo "Downloading $model ..."
+            case "$model" in
+              "ibm-ai-platform/micro-g3.3-8b-instruct-1b"*)
+                download_tinygranite "$model" &
+                ;;
+              "JackFram/llama-160m")
+                download_tinyllama "$model" &
+                ;;
+              "sentence-transformers/all-roberta-large-v1")
+                download_roberta_large "$model" &
+                ;;
+              *)
+                echo "No download method found for: $model";
+                exit 1
+                ;;
+            esac
+          done
+
+          wait
 
       - name: "Save HF models cache"
         if: ( steps.changed-src-files.outputs.any_changed == 'true' && github.event_name != 'pull_request' && steps.cache_restore.outputs.cache-hit != 'true' )
