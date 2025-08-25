@@ -182,7 +182,7 @@ class FmsModelBase(nn.Module):
         log_msg = f"Ignoring user-provided dtype={model_config.dtype} and"\
              f" using dtype={self.dtype} instead."
         quantization_log_msg =  "This is true for quantized models also since" \
-                f" static batching requires us to cast to {self.dtype}" \
+                f" static batching requires us to use {self.dtype} for Spyre" \
                     " even if quantized."  if model_config.quantization else ""
 
         if self.dtype is not model_config.dtype:
