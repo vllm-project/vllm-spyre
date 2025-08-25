@@ -4,7 +4,9 @@ import random
 
 import pytest
 import torch
-from spyre_util import RemoteOpenAIServer, skip_unsupported_tp_size
+from llm_cache import SortKey, sort_tests_for_llm_caching
+from spyre_util import (clear_llm_caches, get_cached_api_server,
+                        print_llm_cache_info, skip_unsupported_tp_size)
 from vllm.connections import global_http_connection
 from vllm.distributed import cleanup_dist_env_and_memory
 
@@ -26,6 +28,14 @@ def pytest_collection_modifyitems(config, items):
     _skip_all_cb_and_fp8_tests(items)
 
     _skip_unsupported_compiler_tests(config, items)
+
+    sort_tests_for_llm_caching(items)
+
+    with open(".test_sort.txt", "w") as f:
+        for item in items:
+            f.write("\n")
+            f.write(str(item.listnames()[-2]) + " " + item.name + "\n")
+            f.write(str(SortKey.from_item(item)) + "\n")
 
 
 def _mark_all_e2e(items):
@@ -94,6 +104,12 @@ def _skip_unsupported_compiler_tests(config, items):
             item.add_marker(skip_marker)
 
 
+@pytest.fixture()
+def use_llm_cache():
+    """Fixture for test sorting to denote that this should use a cached LLM
+    instance"""
+
+
 @pytest.fixture(autouse=True)
 def init_test_http_connection():
     # pytest_asyncio may use a different event loop per test
@@ -141,7 +157,6 @@ def runtime_xfail(request):
 @pytest.fixture(scope="function")
 def remote_openai_server(request):
     """ Fixture to set up a test server."""
-
     params = request.node.callspec.params
 
     try:
@@ -159,8 +174,10 @@ def remote_openai_server(request):
 
     if 'tp_size' in params:
         tp_size = params['tp_size']
-        skip_unsupported_tp_size(int(tp_size), backend)
-        server_args.extend(["--tensor-parallel-size", str(tp_size)])
+        if int(tp_size) > 1:
+            # Don't set tp size explicitly if it's 1
+            skip_unsupported_tp_size(int(tp_size), backend)
+            server_args.extend(["--tensor-parallel-size", str(tp_size)])
 
     if "cb" in params and params["cb"] == 1:
         max_model_len = params["max_model_len"]
@@ -175,10 +192,10 @@ def remote_openai_server(request):
             str(max_model_len)
         ])
     else:
-        warmup_shape = params['warmup_shape']
-        warmup_prompt_length = [t[0] for t in warmup_shape]
-        warmup_new_tokens = [t[1] for t in warmup_shape]
-        warmup_batch_size = [t[2] for t in warmup_shape]
+        warmup_shapes = params['warmup_shapes']
+        warmup_prompt_length = [t[0] for t in warmup_shapes]
+        warmup_new_tokens = [t[1] for t in warmup_shapes]
+        warmup_batch_size = [t[2] for t in warmup_shapes]
         env_dict = {
             "VLLM_SPYRE_WARMUP_PROMPT_LENS":
             ','.join(map(str, warmup_prompt_length)),
@@ -191,11 +208,22 @@ def remote_openai_server(request):
         }
 
     try:
-        with RemoteOpenAIServer(model, server_args,
-                                env_dict=env_dict) as server:
-            yield server
+        server = get_cached_api_server(model,
+                                       server_args=server_args,
+                                       server_env=env_dict)
+        yield server
     except Exception as e:
         pytest.fail(f"Failed to setup server: {e}")
+
+
+@pytest.fixture(scope='session', autouse=True)
+def teardown_fixture():
+    # Session scoped fixture will run once for the entire suite
+    yield
+
+    # Clear out any cached LLMs so no subprocesses get orphaned
+    clear_llm_caches()
+    print_llm_cache_info()
 
 
 @pytest.fixture
