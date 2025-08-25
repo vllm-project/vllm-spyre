@@ -111,8 +111,6 @@ class SpyrePlatform(Platform):
         if getattr(scheduler_config, "is_multi_step", False):
             raise NotImplementedError
 
-        # Can be simplified after the deprecation of `model_config.task` in
-        # vllm > 0.10.0
         is_decoder = model_config.runner_type == "generate"
 
         is_pooling = model_config.runner_type == "pooling"

@@ -1390,7 +1390,6 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
 
         pooler_config = self.model_config.pooler_config
         if hasattr(Pooler, "from_config_with_defaults"):
-            print("Checkpoint 1")
             # TODO: remove this when we no longer support
             # vllm version v0.9.2
             if self.model_config.task == "embed":
