@@ -60,6 +60,7 @@ jobs:
           - name: "continuous batching fp8"
             markers: "cpu and cb and quantized"
             flags: "--timeout=300"
+            hf_models: "ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8"
           - name: "worker and utils"
             markers: "not e2e"
             flags: "--timeout=300"
