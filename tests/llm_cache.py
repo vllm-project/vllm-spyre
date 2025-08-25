@@ -155,21 +155,17 @@ class SortKey(NamedTuple):
 
     @staticmethod
     def _get_warmup_shapes(item) -> list[tuple[int, int, int]]:
-        WARMUP_KEYS = ["warmup_shape", "warmup_shapes"]
+        key = "warmup_shapes"
         params = item.callspec.params
-        for key in WARMUP_KEYS:
-            if key in params:
-                shapes = params[key]
-                if isinstance(shapes, tuple):
-                    shapes = list(shapes)
-
-                SortKey._assert_param(isinstance(shapes, list),
-                                      "Warmup shape must be a list of tuples",
-                                      item)
-                SortKey._assert_param(isinstance(shapes[0], tuple),
-                                      "Warmup shape must be a list of tuples",
-                                      item)
-                return params[key]
+        if key in params:
+            shapes = params[key]
+            SortKey._assert_param(isinstance(shapes, list),
+                                  "Warmup shape must be a list of tuples",
+                                  item)
+            SortKey._assert_param(isinstance(shapes[0], tuple),
+                                  "Warmup shape must be a list of tuples",
+                                  item)
+            return params[key]
         # Use -1s to indicate that this couldn't be found
         return [
             (-1, -1, -1),

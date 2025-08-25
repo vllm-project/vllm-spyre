@@ -82,12 +82,12 @@ def test_output(model: str, tp_size: int, backend: str, cb: int,
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
-    "warmup_shape", [(64, 20, 4)])  # (prompt_length/new_tokens/batch_size)
+    "warmup_shapes", [[(64, 20, 4)]])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", [
     pytest.param(
         "sendnn_decoder", marks=pytest.mark.spyre, id="sendnn_decoder")
 ])
-def test_output_sendnn_decoder(model: str, warmup_shape: tuple[int, int, int],
+def test_output_sendnn_decoder(model: str, warmup_shapes: tuple[int, int, int],
                                backend: str, monkeypatch: pytest.MonkeyPatch,
                                use_llm_cache) -> None:
     '''
@@ -95,7 +95,7 @@ def test_output_sendnn_decoder(model: str, warmup_shape: tuple[int, int, int],
     sendnn
     '''
 
-    max_new_tokens = warmup_shape[1]
+    max_new_tokens = warmup_shapes[0][1]
     prompts = get_chicken_soup_prompts(1)
 
     vllm_sampling_params = SamplingParams(
@@ -107,7 +107,7 @@ def test_output_sendnn_decoder(model: str, warmup_shape: tuple[int, int, int],
     vllm_results = generate_spyre_vllm_output(
         model=model,
         prompts=prompts,
-        warmup_shapes=[warmup_shape],
+        warmup_shapes=warmup_shapes,
         max_model_len=2048,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
