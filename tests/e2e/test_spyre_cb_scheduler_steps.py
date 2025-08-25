@@ -132,7 +132,7 @@ def test_prompts_aligned_with_tkv_boundaries(model: str, backend: str,
             # Sequence 2 finishes at step 70
             # (start step + 1 prefill + 3 decodes - 1) = 67 + 1 + 3 - 1 = 70
             "step": 70,
-            "tkv": 67, # tkv is reset by 64 due to removing the padded block
+            "tkv": 67,  # tkv is reset by 64 due to removing the padded block
             "waiting": [],
             "running": [],
             "request_outputs": ["2"],
@@ -223,7 +223,7 @@ def test_prompts_misaligned_with_tkv_boundaries(
             "waiting": ["2"],
             "running": ["1", "0"],
             "request_outputs": ["1"],
-            "n_reserved_blocks": 4, # prefill (1 block) + 12 decodes (1 block)
+            "n_reserved_blocks": 4,  # prefill (1 block) + 12 decodes (1 block)
             "n_used_blocks": 2
         },
         {
