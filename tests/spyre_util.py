@@ -74,6 +74,8 @@ def default_sb_cb_params(test_func):
     same config, allowing us to cache more loaded models.
     """
     test_func = pytest.mark.parametrize(
+        "cb", [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
+    test_func = pytest.mark.parametrize(
         "max_model_len", [256],
         ids=lambda val: f"max_model_len({val})")(test_func)
     test_func = pytest.mark.parametrize(

@@ -15,8 +15,6 @@ from vllm.v1.executor.abstract import Executor
 from vllm_spyre.v1.core.scheduler import StaticBatchingSpyreScheduler
 
 
-@pytest.mark.parametrize("cb",
-                         [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
     "tp_size",
@@ -120,8 +118,6 @@ def test_output_sendnn_decoder(model: str, warmup_shapes: tuple[int, int, int],
 
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("cb",
-                         [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
 @default_sb_cb_params
 def test_batch_handling(model: str, backend: str, cb: int, warmup_shapes,
                         max_num_seqs: int, max_model_len: int,

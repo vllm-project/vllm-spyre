@@ -28,8 +28,6 @@ def _check_result(client, model, max_tokens=8, temperature=0.0, n=1) -> None:
     ids=lambda val: f"TP({val})",
 )
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("cb",
-                         [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
 @default_sb_cb_params
 def test_openai_serving(
     remote_openai_server,

@@ -10,8 +10,6 @@ from spyre_util import (check_output_against_hf, default_sb_cb_params,
 from vllm import SamplingParams
 
 
-@pytest.mark.parametrize("cb",
-                         [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("stop_last", [True, False])
 @pytest.mark.parametrize("backend", get_spyre_backend_list())

@@ -121,17 +121,10 @@ class SortKey(NamedTuple):
 
     @staticmethod
     def _uses_cb(item) -> bool:
-        """True if the test uses continuous batching, 
-        false for static batching"""
-        # Check for common param names
-        CB_KEYS = ["cb", "use_cb"]
-        params = item.callspec.params
-        for key in CB_KEYS:
-            if key in params:
-                return bool(params[key])
-
-        # Otherwise assume that the test uses CB
-        return True
+        """True if the test uses continuous batching, false for static batching.
+        Checks for the pytest.mark.cb mark."""
+        markers = {mark.name for mark in item.own_markers}
+        return "cb" in markers
 
     @staticmethod
     def _get_max_model_len(item) -> int:
@@ -250,7 +243,7 @@ class ModelCache(Generic[T]):
 
         self.misses += 1
 
-        print(f"\n\tModel cache miss for type [{T}]")
+        print(f"\n\tModel cache miss for type [{self._type()}]")
         print(f"Requested config: {runtime_config}")
         print(f"Currently cached config {self._runtime_config}\n")
 
@@ -259,7 +252,7 @@ class ModelCache(Generic[T]):
     def set(self, runtime_config: dict, model: T) -> T:
         assert runtime_config not in self._past_runtime_configs, \
             f"Runtime config {runtime_config} was previously cached for type " \
-                f"[{T}], error in test ordering!"
+                f"[{self._type()}], error in test ordering!"
         self._runtime_config = runtime_config
         self._past_runtime_configs.append(self._runtime_config)
         self._model = model
@@ -272,6 +265,11 @@ class ModelCache(Generic[T]):
             self._model = None
             self._runtime_config = None
 
+    def _type(self) -> type | None:
+        if hasattr(self, "__orig_class__"):
+            return self.__orig_class__.__args__[0]
+        return None
+
 
 class LLMCache:
     """Caches a vllm.LLM for use in subsequent tests.
@@ -280,7 +278,7 @@ class LLMCache:
     multiple models at once."""
 
     def __init__(self):
-        self._cache: ModelCache[LLM] = ModelCache(
+        self._cache: ModelCache[LLM] = ModelCache[LLM](
             teardown_method=lambda x: force_engine_shutdown(x))
 
     def get_cached_llm(
@@ -453,7 +451,8 @@ class RemoteOpenAIServer:
 class RemoteOpenAIServerCache:
 
     def __init__(self):
-        self._cache: ModelCache[RemoteOpenAIServer] = ModelCache()
+        self._cache: ModelCache[RemoteOpenAIServer] = ModelCache[
+            RemoteOpenAIServer]()
 
     def get_api_server(self, model: str, server_args: list[str],
                        server_env: dict) -> RemoteOpenAIServer:
@@ -482,7 +481,7 @@ class EngineCache:
     """Cache for continuous batching engines"""
 
     def __init__(self):
-        self._cache: ModelCache[EngineCore] = ModelCache()
+        self._cache: ModelCache[EngineCore] = ModelCache[EngineCore]()
 
     def get_engine(self, model: str, max_model_len: int, max_num_seqs: int,
                    available_blocks: int, backend: str,

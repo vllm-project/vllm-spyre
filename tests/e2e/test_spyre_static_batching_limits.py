@@ -15,12 +15,10 @@ from vllm import SamplingParams
     [[(64, 20, 4)], [(64, 20, 4),
                      (128, 20, 2)]])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-# parametrized for test sorting
-@pytest.mark.parametrize("cb", [0])
 def test_max_prompt_len_and_new_tokens(model: str,
                                        warmup_shapes: list[tuple[int, int,
                                                                  int]],
-                                       cb: int, backend: str, use_llm_cache,
+                                       backend: str, use_llm_cache,
                                        monkeypatch) -> None:
     '''
     Simple test that for static batching:
