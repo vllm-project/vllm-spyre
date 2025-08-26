@@ -9,7 +9,7 @@ from vllm import LLM
 @pytest.mark.parametrize(
     "warmup_shape",
     [  # (prompt_length/batch_size)
-        pytest.param((64, 4), marks=pytest.mark.basic),
+        pytest.param((64, 4)),
     ])
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.scoring
