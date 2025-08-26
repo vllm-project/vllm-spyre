@@ -95,7 +95,7 @@ def generate_spyre_vllm_output(
     tensor_parallel_size: int,
     backend: str,
     monkeypatch: pytest.MonkeyPatch,
-    warmup_shapes: DecodeWarmupShapes | None,
+    warmup_shapes: DecodeWarmupShapes | None = None,
     max_num_seqs: Optional[int] = None,
     use_cb: bool = False,
 ) -> list[dict[str, Any]]:
