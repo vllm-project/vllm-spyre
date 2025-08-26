@@ -179,14 +179,21 @@ class FmsModelBase(nn.Module):
         **kwargs,
     ) -> None:
 
-        log_msg = f"Ignoring user-provided dtype={model_config.dtype} and"\
-             f" using dtype={self.dtype} instead."
-        quantization_log_msg =  "This is true for quantized models also since" \
-                f" static batching requires us to use {self.dtype} for Spyre" \
-                    " even if quantized."  if model_config.quantization else ""
+        logger.debug("Loading model weights for model %s", model_config.model)
+        logger.debug("Model config has dtype: %s", model_config.dtype)
 
-        if self.dtype is not model_config.dtype:
-            logger.info("%s %s", log_msg, quantization_log_msg)
+        # When using quantized models, we might not be using the
+        # model_config's dtype, hence we don't log the msg below
+        # since it might confuse the user
+        if model_config.quantization:
+            logger.debug(
+                "Quantized model found with quantization : %s", \
+                    model_config.quantization)
+        else:
+            if self.dtype is not model_config.dtype:
+                logger.info(
+                    "Ignoring user-provided dtype=%s and using"
+                    " dtype=%s instead.", model_config.dtype, self.dtype)
 
         is_local = os.path.isdir(model_config.model)
         model_path = model_config.model
@@ -270,23 +277,28 @@ class FmsModelBase(nn.Module):
                 assert self.dtype == torch.float32
                 self._cast_to_f32()
 
+        logger.debug("Model weights loaded successfully.")
+
     def _cast_bf16_to_f16(self):
-        """Cast all bf16 params in the model to f16.
-        This is required for spyre cards that don't support bf16."""
+        """Cast all bf16 params in the model to f16."""
         for name, param in self.model.named_parameters():
             if param.dtype == torch.bfloat16:
                 logger.debug(
                     "You are casting param %s to fp16, which"
-                    " will cause loss of accuracy. You can ignore"
-                    " this warning if this is intended.", name)
+                    " will cause loss of accuracy. This is required for"
+                    " spyre cards that don't support bf16. You can ignore"
+                    " this warning if this is intended.",
+                    name,
+                )
                 param.data = param.data.to(dtype=torch.float16)
 
     def _cast_to_f32(self):
-        """Cast model parameters to f32.
-        This is required for attention implementations that only support full
-        precision."""
+        """Cast model parameters to f32."""
         for name, param in self.model.named_parameters():
-            logger.debug("Casting param %s to fp32", name)
+            logger.debug(
+                "Casting param %s to fp32. This is required"
+                " for attention implementations that only support"
+                " full precision.", name)
             param.data = param.data.to(dtype=torch.float32)
 
 
