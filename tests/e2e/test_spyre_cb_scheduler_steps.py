@@ -1216,6 +1216,7 @@ def test_prefill_optimization_use_more_than_available_blocks(
         * number of prompts: 2
             * 1: len = 49, max tokens = 67, step joining = 0
             * 2: len = 70, max tokens = 50, step joining = 0
+        * available_blocks: 5
     """
 
     monkeypatch.setenv('VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION', '1')
@@ -1709,7 +1710,7 @@ def test_requests_use_more_than_available_blocks(
             * 2: len = 10, max tokens = 3, step joining = 0
             * 3: len = 10, max tokens = 3, step joining = 0
             * 4: len = 10, max tokens = 3, step joining = 0
-        * available_blocks: 8
+        * available_blocks: 4
     """
 
     seqs_max_tokens = [3, 3, 3, 3]  # 2 decodes into a new block per sequence
