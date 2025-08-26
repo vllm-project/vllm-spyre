@@ -241,14 +241,6 @@ class SpyrePlatform(Platform):
             "VLLM_DT_MAX_BATCH_TKV_LIMIT found. Using the default value " \
             "(max_model_len * max_batch_size): %d", default_max_batch_tkv_limit)
 
-        override_batch_tkv_limit = int(
-            os.getenv("OVERRIDE_MAX_BATCH_TKV_LIMIT", default='-1'))
-        if override_batch_tkv_limit >= 0:
-            os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(
-                override_batch_tkv_limit)
-            logger.info("Overriding VLLM_DT_MAX_BATCH_TKV_LIMIT with: %d " \
-            " This is done for testing purposes... " , override_batch_tkv_limit)
-
     @classmethod
     def use_all_gather(cls) -> bool:
         """
