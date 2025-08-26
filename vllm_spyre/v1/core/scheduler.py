@@ -255,11 +255,11 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
                                                    max_batch_tkv_limit=self.
                                                    max_batch_tkv_limit)
 
-        if cond1 and cond2 and cond3 and cond4 and cond5 and cond6:
+        if cond1 and cond2 and cond3 and cond4 and cond5 and cond6():
             return True
 
         # the following conditions must always be true, if not we can exit here
-        if not (cond1 and cond2 and cond4 and cond5 and cond6
+        if not (cond1 and cond2 and cond4 and cond5 and cond6()
                 ) or not envs_spyre.VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION:
             return False
 
