@@ -11,8 +11,8 @@ import pytest
 from graph_compare_utils import (collect_graph_files, compare_graphs,
                                  get_aftu_script_dir, get_model_path,
                                  run_inference_py_and_get_graphs)
-from spyre_util import (generate_spyre_vllm_output, get_chicken_soup_prompts,
-                        get_spyre_model_list)
+from spyre_util import (DecodeWarmupShapes, generate_spyre_vllm_output,
+                        get_chicken_soup_prompts, get_spyre_model_list)
 from vllm import SamplingParams
 
 
@@ -94,7 +94,7 @@ def test_compare_graphs_cb(model: str, max_num_seqs: int,
 @pytest.mark.parametrize(
     "warmup_shapes", [[(64, 4, 4)]])  # (prompt_length/new_tokens/batch_size)
 def test_compare_graphs_static_batching(
-        model: str, warmup_shapes: tuple[int, int, int],
+        model: str, warmup_shapes: DecodeWarmupShapes,
         monkeypatch: pytest.MonkeyPatch) -> None:
 
     # AFTU

@@ -29,10 +29,12 @@ LLM_CACHE = LLMCache()
 API_SERVER_CACHE = RemoteOpenAIServerCache()
 ENGINE_CACHE = EngineCache()
 
+DecodeWarmupShapes = list[tuple[int, int, int]]
+EmbeddingWarmupShapes = list[tuple[int, int]]
 
-def patch_warmup_shapes(warmup_shapes: Union[list[tuple[int, int, int]],
-                                             list[tuple[int, int]]],
-                        monkeypatch):
+
+def patch_warmup_shapes(warmup_shapes: DecodeWarmupShapes
+                        | EmbeddingWarmupShapes, monkeypatch):
     warmup_prompt_length = [t[0] for t in warmup_shapes]
     warmup_batch_size = [t[-1] for t in warmup_shapes]
 
@@ -96,7 +98,7 @@ def generate_spyre_vllm_output(
     tensor_parallel_size: int,
     backend: str,
     monkeypatch: pytest.MonkeyPatch,
-    warmup_shapes: Optional[list[tuple[int, int, int]]] = None,
+    warmup_shapes: DecodeWarmupShapes | None,
     max_num_seqs: Optional[int] = None,
     use_cb: bool = False,
 ) -> list[dict[str, Any]]:
@@ -146,7 +148,7 @@ def get_cached_llm(
     tensor_parallel_size: int,
     backend: str,
     monkeypatch: pytest.MonkeyPatch,
-    warmup_shapes: Optional[list[tuple[int, int, int]]] = None,
+    warmup_shapes: DecodeWarmupShapes | None = None,
     max_num_seqs: Optional[int] = None,
     use_cb: bool = False,
 ) -> LLM:
@@ -437,7 +439,7 @@ def st_embeddings(model: str, prompts: list[str]) -> list[dict[str, Any]]:
 
 # compare results
 def compare_embedding_results(model: str, prompts: list[str],
-                              warmup_shapes: list[tuple[int, int]],
+                              warmup_shapes: EmbeddingWarmupShapes,
                               tensor_parallel_size: int, backend: str,
                               vllm_results: list[dict[str, Any]],
                               hf_results: list[dict[str, Any]]):

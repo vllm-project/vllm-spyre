@@ -6,10 +6,10 @@ Run `python -m pytest tests/e2e/test_spyre_embeddings.py`.
 from functools import partial
 
 import pytest
-from spyre_util import (compare_embedding_results, get_chicken_soup_prompts,
-                        get_spyre_backend_list, get_spyre_model_list,
-                        patch_warmup_shapes, spyre_vllm_embeddings,
-                        st_embeddings)
+from spyre_util import (EmbeddingWarmupShapes, compare_embedding_results,
+                        get_chicken_soup_prompts, get_spyre_backend_list,
+                        get_spyre_model_list, patch_warmup_shapes,
+                        spyre_vllm_embeddings, st_embeddings)
 from vllm import LLM
 
 
@@ -25,7 +25,7 @@ from vllm import LLM
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_output(
     model: str,
-    warmup_shapes: tuple[int, int],
+    warmup_shapes: EmbeddingWarmupShapes,
     backend: str,
     monkeypatch,
 ) -> None:
@@ -68,7 +68,7 @@ def test_output(
 def test_scheduling_invariance(
     model,
     backend,
-    warmup_shapes: tuple[int, int],
+    warmup_shapes: EmbeddingWarmupShapes,
     monkeypatch,
 ) -> None:
     '''

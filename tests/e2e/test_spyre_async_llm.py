@@ -2,8 +2,8 @@ import asyncio
 from contextlib import ExitStack
 
 import pytest
-from spyre_util import (get_chicken_soup_prompts, get_spyre_backend_list,
-                        get_spyre_model_list)
+from spyre_util import (DecodeWarmupShapes, get_chicken_soup_prompts,
+                        get_spyre_backend_list, get_spyre_model_list)
 from vllm import PromptType, SamplingParams
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
@@ -56,7 +56,7 @@ async def generate(
     "output_kind", [RequestOutputKind.DELTA, RequestOutputKind.FINAL_ONLY])
 @pytest.mark.asyncio
 async def test_abort(model: str, backend: str, cb: int,
-                     warmup_shapes: list[list[int]],
+                     warmup_shapes: DecodeWarmupShapes,
                      output_kind: RequestOutputKind,
                      monkeypatch: pytest.MonkeyPatch):
     """Test handling of cancelled requests"""

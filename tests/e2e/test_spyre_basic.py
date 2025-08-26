@@ -4,10 +4,11 @@ Run `python -m pytest tests/e2e/test_spyre_basic.py`.
 """
 
 import pytest
-from spyre_util import (check_output_against_hf, create_random_request,
-                        default_sb_cb_params, generate_spyre_vllm_output,
-                        get_chicken_soup_prompts, get_spyre_backend_list,
-                        get_spyre_model_list, skip_unsupported_tp_size)
+from spyre_util import (DecodeWarmupShapes, check_output_against_hf,
+                        create_random_request, default_sb_cb_params,
+                        generate_spyre_vllm_output, get_chicken_soup_prompts,
+                        get_spyre_backend_list, get_spyre_model_list,
+                        skip_unsupported_tp_size)
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor
@@ -30,7 +31,7 @@ from vllm_spyre.v1.core.scheduler import StaticBatchingSpyreScheduler
 @default_sb_cb_params
 def test_output(model: str, tp_size: int, backend: str, cb: int,
                 max_num_seqs: int, max_model_len: int,
-                warmup_shapes: list[tuple[int, int, int]],
+                warmup_shapes: DecodeWarmupShapes,
                 monkeypatch: pytest.MonkeyPatch, use_llm_cache) -> None:
     '''
     The warmup is based on a single shape. After the warmup,
@@ -85,7 +86,7 @@ def test_output(model: str, tp_size: int, backend: str, cb: int,
     pytest.param(
         "sendnn_decoder", marks=pytest.mark.spyre, id="sendnn_decoder")
 ])
-def test_output_sendnn_decoder(model: str, warmup_shapes: tuple[int, int, int],
+def test_output_sendnn_decoder(model: str, warmup_shapes: DecodeWarmupShapes,
                                backend: str, monkeypatch: pytest.MonkeyPatch,
                                use_llm_cache) -> None:
     '''

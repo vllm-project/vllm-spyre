@@ -10,6 +10,7 @@ from typing import Callable, Generic, NamedTuple, Optional, TypeVar
 import openai
 import pytest
 import requests
+from spyre_util import DecodeWarmupShapes
 from vllm import LLM, EngineArgs
 from vllm.entrypoints.openai.cli_args import make_arg_parser
 from vllm.utils import FlexibleArgumentParser, get_open_port
@@ -64,7 +65,7 @@ class SortKey(NamedTuple):
     max_model_len: int = 0
     max_num_seqs: int = 0
     num_blocks: int = 0
-    warmup_shapes: list[tuple[int, int, int]] | None = None
+    warmup_shapes: DecodeWarmupShapes | None = None
 
     @staticmethod
     def from_item(item) -> 'SortKey':
@@ -288,7 +289,7 @@ class LLMCache:
         tensor_parallel_size: int,
         backend: str,
         monkeypatch: pytest.MonkeyPatch,
-        warmup_shapes: Optional[list[tuple[int, int, int]]] = None,
+        warmup_shapes: DecodeWarmupShapes | None = None,
         max_num_seqs: Optional[int] = None,
         use_cb: bool = False,
     ) -> LLM:
@@ -524,8 +525,7 @@ class EngineCache:
         self._cache.clear()
 
 
-def _patch_environment(use_cb: bool,
-                       warmup_shapes: Optional[list[tuple[int, int, int]]],
+def _patch_environment(use_cb: bool, warmup_shapes: DecodeWarmupShapes | None,
                        backend: str, monkeypatch):
     # Setup the environment correctly for the LLM
 
