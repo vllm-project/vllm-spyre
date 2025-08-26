@@ -4,11 +4,11 @@ Run `python -m pytest tests/e2e/test_spyre_basic.py`.
 """
 
 import pytest
-from spyre_util import (DecodeWarmupShapes, check_output_against_hf,
-                        create_random_request, default_sb_cb_params,
-                        generate_spyre_vllm_output, get_chicken_soup_prompts,
-                        get_spyre_backend_list, get_spyre_model_list,
-                        skip_unsupported_tp_size)
+from llm_cache import DecodeWarmupShapes
+from spyre_util import (check_output_against_hf, create_random_request,
+                        default_sb_cb_params, generate_spyre_vllm_output,
+                        get_chicken_soup_prompts, get_spyre_backend_list,
+                        get_spyre_model_list, skip_unsupported_tp_size)
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor

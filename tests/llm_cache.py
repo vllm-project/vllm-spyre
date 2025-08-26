@@ -10,7 +10,6 @@ from typing import Callable, Generic, NamedTuple, Optional, TypeVar
 import openai
 import pytest
 import requests
-from spyre_util import DecodeWarmupShapes
 from vllm import LLM, EngineArgs
 from vllm.entrypoints.openai.cli_args import make_arg_parser
 from vllm.utils import FlexibleArgumentParser, get_open_port
@@ -49,6 +48,9 @@ def sort_tests_for_llm_caching(items: list) -> None:
     This sorts the `items` list in-place.
     """
     items.sort(key=SortKey.from_item)
+
+
+DecodeWarmupShapes = list[tuple[int, int, int]]
 
 
 class SortKey(NamedTuple):
@@ -547,3 +549,6 @@ def _patch_environment(use_cb: bool, warmup_shapes: DecodeWarmupShapes | None,
     # --------------
     monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1" if use_cb else "0")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+
+
+EmbeddingWarmupShapes = list[tuple[int, int]]

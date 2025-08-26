@@ -2,8 +2,9 @@ import asyncio
 from contextlib import ExitStack
 
 import pytest
-from spyre_util import (DecodeWarmupShapes, get_chicken_soup_prompts,
-                        get_spyre_backend_list, get_spyre_model_list)
+from llm_cache import DecodeWarmupShapes
+from spyre_util import (get_chicken_soup_prompts, get_spyre_backend_list,
+                        get_spyre_model_list)
 from vllm import PromptType, SamplingParams
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine

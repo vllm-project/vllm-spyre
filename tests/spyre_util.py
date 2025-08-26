@@ -9,8 +9,8 @@ import numpy as np
 import pytest
 import torch
 from hf_result_cache import HFResultCache
-from llm_cache import (EngineCache, LLMCache, RemoteOpenAIServer,
-                       RemoteOpenAIServerCache)
+from llm_cache import (DecodeWarmupShapes, EmbeddingWarmupShapes, EngineCache,
+                       LLMCache, RemoteOpenAIServer, RemoteOpenAIServerCache)
 from sentence_transformers import SentenceTransformer, util
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, SamplingParams
@@ -28,9 +28,6 @@ HF_RESULT_CACHE = HFResultCache()
 LLM_CACHE = LLMCache()
 API_SERVER_CACHE = RemoteOpenAIServerCache()
 ENGINE_CACHE = EngineCache()
-
-DecodeWarmupShapes = list[tuple[int, int, int]]
-EmbeddingWarmupShapes = list[tuple[int, int]]
 
 
 def patch_warmup_shapes(warmup_shapes: DecodeWarmupShapes

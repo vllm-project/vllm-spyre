@@ -11,8 +11,9 @@ import pytest
 from graph_compare_utils import (collect_graph_files, compare_graphs,
                                  get_aftu_script_dir, get_model_path,
                                  run_inference_py_and_get_graphs)
-from spyre_util import (DecodeWarmupShapes, generate_spyre_vllm_output,
-                        get_chicken_soup_prompts, get_spyre_model_list)
+from llm_cache import DecodeWarmupShapes
+from spyre_util import (generate_spyre_vllm_output, get_chicken_soup_prompts,
+                        get_spyre_model_list)
 from vllm import SamplingParams
 
 

@@ -4,9 +4,10 @@ Run `python -m pytest tests/e2e/test_spyre_warmup_shapes.py`.
 """
 
 import pytest
-from spyre_util import (DecodeWarmupShapes, check_output_against_hf,
-                        generate_spyre_vllm_output, get_chicken_soup_prompts,
-                        get_spyre_backend_list, get_spyre_model_list)
+from llm_cache import DecodeWarmupShapes
+from spyre_util import (check_output_against_hf, generate_spyre_vllm_output,
+                        get_chicken_soup_prompts, get_spyre_backend_list,
+                        get_spyre_model_list)
 from vllm import SamplingParams
 
 

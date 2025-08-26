@@ -6,9 +6,10 @@ Run `python -m pytest tests/e2e/test_spyre_seed.py`.
 import math
 
 import pytest
-from spyre_util import (DecodeWarmupShapes, default_sb_cb_params,
-                        generate_spyre_vllm_output, get_chicken_soup_prompts,
-                        get_spyre_backend_list, get_spyre_model_list)
+from llm_cache import DecodeWarmupShapes
+from spyre_util import (default_sb_cb_params, generate_spyre_vllm_output,
+                        get_chicken_soup_prompts, get_spyre_backend_list,
+                        get_spyre_model_list)
 from vllm import SamplingParams
 
 
