@@ -1,6 +1,6 @@
 """Utilities for selecting and loading Spyre models."""
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Optional, cast
 
 import torch
@@ -44,7 +44,7 @@ class SpyreAttentionMetadata:
     # persistent batch, we need to keep the reference of the remaining
     # requests, that is, this index must be the same from the prefill until
     # the end.
-    scale_indices: list[int] = field(default_factory=list)
+    scale_indices: torch.Tensor = None
 
 
 class SpyreCausalLM(nn.Module):

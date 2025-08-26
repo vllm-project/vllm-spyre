@@ -1201,7 +1201,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             current_tkv_mask=model_input.current_tkv_mask,
             left_padded_prompt_mask=model_input.left_padded_prompt_mask,
             block_table=model_input.block_table,
-            scale_indices=model_input.scale_indices,
+            scale_indices=torch.tensor(model_input.scale_indices,
+                                       dtype=torch.int32),
             is_prefill=model_input.is_prompt)
 
     def get_sampling_metadata(self, is_prefill: bool) -> SamplingMetadata:
