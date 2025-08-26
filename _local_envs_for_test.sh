@@ -10,6 +10,10 @@ export MASTER_PORT=12345
 export VLLM_SPYRE_DYNAMO_BACKEND=eager
 
 # Test related
+
+# This makes debugging easy on local setup
+export VLLM_ENABLE_V1_MULTIPROCESSING=0
+
 export VLLM_SPYRE_TEST_BACKEND_LIST=eager
 # We have to use `HF_HUB_OFFLINE=1` otherwise vllm might try to download a
 # different version of the model using HF API which might not work locally
