@@ -325,6 +325,7 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
         # this is a causal mask for generation
         mask = (mask.unsqueeze(-1) == mask.unsqueeze(-2)).tril()
         mask = torch.where(mask.logical_not(), -torch.inf, 0.0)
+        # TODO: improve this solution.
         # Currently, using this quantization will generate NaN, keep it float32
         if self.model.model.dtype in [torch.float8_e4m3fn]:
             mask = mask.to(torch.float32)
