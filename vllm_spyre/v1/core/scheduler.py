@@ -286,14 +286,14 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         cond5_updated = num_blocks_required_updated <= self.n_free_blocks
 
         # check that batch size x tkv is smaller than the max supported number
-        # with updated tkv (cond6)
-        cond6_updated = self.check_batch_tkv_limit(
+        # with updated tkv (cond6) -> only call if the other cond are met
+        cond6_updated = lambda: self.check_batch_tkv_limit(
             request=request,
             tkv=tkv_updated,
             running=self.running,
             max_batch_tkv_limit=self.max_batch_tkv_limit)
 
-        return cond4_updated and cond5_updated and cond6_updated
+        return cond4_updated and cond5_updated and cond6_updated()
 
     def check_batch_tkv_limit(self, request, tkv, running,
                               max_batch_tkv_limit) -> bool:
