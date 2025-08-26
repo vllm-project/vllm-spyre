@@ -21,12 +21,9 @@ def test_output(model: str, stop_last: bool, max_model_len: int,
                 use_llm_cache) -> None:
     '''
     Checks that `max_tokens` parameter of `SamplingParams` works correctly
-    
-    The warmup is based on a single shape. After the warmup,
-    one request with the provided prompts is input to vLLM.
-    The same prompts are also input to HF. The generated output
-    including text, token ids, and logprobs, is verified to be
-    identical for vLLM and HF.
+    For each batch, one prompt has max_tokens set to 1 and the others don't.
+    This checks that the correct request has only a single output token, while
+    the others are not affected.
     '''
 
     prompts = get_chicken_soup_prompts(4)
