@@ -1,4 +1,5 @@
 import copy
+import os
 from collections import defaultdict, deque
 from typing import Any
 
@@ -57,11 +58,6 @@ def check_scheduler_inference_steps(
     'checked_steps'
     """
 
-    # set env vars
-    if max_batch_tkv_limit >= 0:
-        monkeypatch.setenv("OVERRIDE_MAX_BATCH_TKV_LIMIT",
-                           str(max_batch_tkv_limit))
-
     # Input parameters sanity check, not actual testing
     # ------
     if not (len(prompts_lengths) == len(seqs_max_tokens)
@@ -115,6 +111,14 @@ def check_scheduler_inference_steps(
         backend=backend,
         monkeypatch=monkeypatch)
     scheduler: ContinuousBatchingSpyreScheduler = engine_core.scheduler
+
+    # Override the TKV limit in the scheduler if needed
+    if max_batch_tkv_limit >= 0:
+        scheduler.max_batch_tkv_limit = max_batch_tkv_limit
+    else:
+        # This default value is set by platform.py
+        scheduler.max_batch_tkv_limit = int(
+            os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"))
 
     # In-between steps are added as normal decode steps
     checked_steps = augment_checked_steps(checked_steps)

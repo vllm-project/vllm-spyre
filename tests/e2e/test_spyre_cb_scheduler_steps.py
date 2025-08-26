@@ -1891,7 +1891,9 @@ def test_requests_use_more_than_available_blocks(
 @pytest.mark.parametrize("available_blocks", [16])
 def test_requests_use_full_batch_tkv_limit(model: str, backend: str,
                                            monkeypatch: pytest.MonkeyPatch,
-                                           set_random_seed, max_num_seqs: int, max_model_len: int, available_blocks: int):
+                                           set_random_seed, max_num_seqs: int,
+                                           max_model_len: int,
+                                           available_blocks: int):
     """ Scenario where all requests can be scheduled right away as the
     max batch x tkv limit, e.g the volumetric limit, is just high enough
     
@@ -2020,7 +2022,9 @@ def test_requests_use_full_batch_tkv_limit(model: str, backend: str,
 @pytest.mark.parametrize("available_blocks", [16])
 def test_requests_exceed_batch_tkv_limit(model: str, backend: str,
                                          monkeypatch: pytest.MonkeyPatch,
-                                         set_random_seed, max_num_seqs: int, max_model_len: int, available_blocks: int):
+                                         set_random_seed, max_num_seqs: int,
+                                         max_model_len: int,
+                                         available_blocks: int):
     """ Scenario where a request cannot be scheduled right away as the
     max batch x tkv limit, e.g the volumetric limit, is exceeded
     
