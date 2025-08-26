@@ -1239,6 +1239,7 @@ def test_prefill_optimization_use_more_than_available_blocks(
         * number of prompts: 2
             * 1: len = 49, max tokens = 67, step joining = 0
             * 2: len = 70, max tokens = 50, step joining = 0
+        * available_blocks: 5
     """
 
     monkeypatch.setenv('VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION', '1')
@@ -1875,6 +1876,274 @@ def test_requests_use_more_than_available_blocks(
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
+        use_cb=True,
+    )
+
+    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                            prompts)
+
+
+@pytest.mark.cb
+@pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_model_len", [192])
+@pytest.mark.parametrize("available_blocks", [16])
+def test_requests_use_full_batch_tkv_limit(model: str, backend: str,
+                                           monkeypatch: pytest.MonkeyPatch,
+                                           set_random_seed, max_num_seqs: int, max_model_len: int, available_blocks: int):
+    """ Scenario where all requests can be scheduled right away as the
+    max batch x tkv limit, e.g the volumetric limit, is just high enough
+    
+    Configuration:
+        * max_num_seqs: 2
+        * number of prompts: 2
+            * 1: len = 74, max tokens = 3, step joining = 0
+            * 2: len = 10, max tokens = 4, step joining = 0
+    """
+
+    seqs_max_tokens = [3, 4]
+    prompts_lengths = [74, 10]
+    steps_add_reqs = [0, 0]
+    # total number of blocks needed if scheduled together: (2 + 1)+(1 + 1) = 5
+    # needs 2 * (64 + 64 + 2) = 2 * 130 = 260
+    max_batch_tkv_limit = 260  # just big enough
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0", "1"],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+        {
+            # Prefill sequence 0
+            # total blocks in use: 2
+            "step": 1,
+            "tkv": 128,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 3,  # prefill (2 blocks) + 2 decodes (1 block)
+            "n_used_blocks": 2
+        },
+        # Note: we can prefill seq 1 here as the volumetric limit
+        # max_batch_tkv_limit is just big enough (260)
+        {
+            # Prefill sequence 1
+            # total blocks in use: 3
+            "step": 2,
+            "tkv": 128,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 5,  # prefill (1 block) + 3 decodes (1 block)
+            "n_used_blocks": 3  # 2 + 1
+        },
+        {
+            # Decode sequences 0 and 1
+            # total blocks in use: 5
+            "step": 3,
+            "tkv": 129,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"],
+            "n_reserved_blocks": 5,
+            "n_used_blocks": 5
+        },
+        {
+            # Decode sequence 0 and 1
+            # Sequence 0 finishes at step 4
+            # total blocks in use: 5
+            "step": 4,
+            "tkv": 130,
+            "waiting": [],
+            "running": ["1"],
+            "request_outputs": ["1", "0"],
+            "finished_requests": ["0"],
+            "n_reserved_blocks": 5,
+            "n_used_blocks": 5
+        },
+        {
+            # Decode sequence 1
+            # Sequence 1 finishes at step 5
+            # total blocks in use: 2
+            "step": 5,
+            "tkv": 67,  # 131 - 64 (remove fully padded block)
+            "waiting": [],
+            "running": [],
+            "request_outputs": ["1"],
+            "finished_requests": ["1"],
+            "n_reserved_blocks": 2,
+            "n_used_blocks": 2
+        },
+        {
+            # Tkv should be cleared one step later
+            # total blocks in use: 2 - 2 = 0
+            "step": 6,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+    ]
+
+    cb_outputs, prompts = check_scheduler_inference_steps(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        seqs_max_tokens=seqs_max_tokens,
+        prompts_lengths=prompts_lengths,
+        steps_add_reqs=steps_add_reqs,
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
+        available_blocks=available_blocks,
+        max_batch_tkv_limit=max_batch_tkv_limit,
+        use_cb=True,
+    )
+
+    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                            prompts)
+
+
+@pytest.mark.cb
+@pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_model_len", [192])
+@pytest.mark.parametrize("available_blocks", [16])
+def test_requests_exceed_batch_tkv_limit(model: str, backend: str,
+                                         monkeypatch: pytest.MonkeyPatch,
+                                         set_random_seed, max_num_seqs: int, max_model_len: int, available_blocks: int):
+    """ Scenario where a request cannot be scheduled right away as the
+    max batch x tkv limit, e.g the volumetric limit, is exceeded
+    
+    Configuration:
+        * max_num_seqs: 2
+        * number of prompts: 2
+            * 1: len = 74, max tokens = 3, step joining = 0
+            * 2: len = 10, max tokens = 4, step joining = 0
+    """
+
+    seqs_max_tokens = [3, 4]
+    prompts_lengths = [74, 10]
+    steps_add_reqs = [0, 0]
+    # needs 2 * (64 + 64 + 2) = 2 * 130 = 260
+    max_batch_tkv_limit = 259  # not big enough: 259 < 260
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0", "1"],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+        {
+            # Prefill sequence 0
+            # total blocks in use: 2
+            "step": 1,
+            "tkv": 128,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 3,  # prefill (2 blocks) + 2 decodes (1 block)
+            "n_used_blocks": 2
+        },
+        # Note: we cannot prefill seq 1 here volumetric constraint
+        # max_batch_tkv_limit is violated: 259 < 260 -> do decodes of seq 0
+        {
+            # Decode sequence 0
+            # total blocks in use: 3
+            "step": 2,
+            "tkv": 129,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 3,
+            "n_used_blocks": 3
+        },
+        {
+            # Decode sequence 0
+            # Sequence 0 finishes at step 3
+            # total blocks in use: 3
+            "step": 3,
+            "tkv": 130,
+            "waiting": ["1"],
+            "running": [],
+            "request_outputs": ["0"],
+            "finished_requests": ["0"],
+            "n_reserved_blocks": 3,
+            "n_used_blocks": 3
+        },
+        {
+            # Prefill sequence 1
+            # total blocks in use: 1
+            "step": 4,
+            "tkv": 64,
+            "waiting": [],
+            "running": ["1"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 2,  # prefill (1 block) + 3 decodes (1 block)
+            "n_used_blocks": 1  # 3 - 3 + 1
+        },
+        {
+            # Decode sequence 1
+            # total blocks in use: 2
+            "step": 5,
+            "tkv": 65,
+            "waiting": [],
+            "running": ["1"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 2,
+            "n_used_blocks": 2
+        },
+        {
+            # Decode sequence 1
+            # Sequence 0 finishes at step 7
+            # total blocks in use: 2
+            "step": 7,
+            "tkv": 67,
+            "waiting": [],
+            "running": [],
+            "request_outputs": ["1"],
+            "finished_requests": ["1"],
+            "n_reserved_blocks": 2,
+            "n_used_blocks": 2
+        },
+        {
+            # Tkv should be cleared one step later
+            # total blocks in use: 2 - 2 = 0
+            "step": 8,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+    ]
+
+    cb_outputs, prompts = check_scheduler_inference_steps(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        seqs_max_tokens=seqs_max_tokens,
+        prompts_lengths=prompts_lengths,
+        steps_add_reqs=steps_add_reqs,
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
+        available_blocks=available_blocks,
+        max_batch_tkv_limit=max_batch_tkv_limit,
         use_cb=True,
     )
 
