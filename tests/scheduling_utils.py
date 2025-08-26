@@ -45,6 +45,7 @@ def check_scheduler_inference_steps(
     max_num_seqs: int,
     max_model_len: int,
     available_blocks: int,
+    max_batch_tkv_limit: int = -1,
     use_cb: bool = True,
 ):
     """
@@ -61,6 +62,9 @@ def check_scheduler_inference_steps(
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     if use_cb:
         monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
+    if max_batch_tkv_limit >= 0:
+        monkeypatch.setenv("OVERRIDE_MAX_BATCH_TKV_LIMIT",
+                           str(max_batch_tkv_limit))
 
     # Input parameters sanity check, not actual testing
     # ------
