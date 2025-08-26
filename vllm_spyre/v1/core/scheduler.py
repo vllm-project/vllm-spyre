@@ -156,7 +156,8 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         assert self.max_batch_tkv_limit != '-1', (
             "Expecting the env var VLLM_DT_MAX_BATCH_TKV_LIMIT to be set in "
             "platform.py")
-        self._cache_check_batch_tkv_limit: dict[tuple, bool] = {}
+        # outer key: tuple(Request), inner key: (Request, int)
+        self._cache_check_batch_tkv_limit: dict[tuple, dict[tuple, bool]] = {}
 
     def update_from_output(
         self,
@@ -321,11 +322,13 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         WIP: The result of this check could be cached and reused if both the 
         decode batch and the new input request are unchanged between calls.
         """
-        # caching the result if decode batch has not changed
-        key = (request, tuple(running), max_batch_tkv_limit)
-        if key in self._cache_check_batch_tkv_limit:
+        # checking if cached result can be used
+        outer_key = tuple(running)  # decode batch changes
+        inner_key = (request, max_batch_tkv_limit)  # new request changes
+        if (outer_key in self._cache_check_batch_tkv_limit) and (
+                inner_key in self._cache_check_batch_tkv_limit[outer_key]):
             logger.debug("Cache hit scheduler function check_batch_tkv_limit.")
-            return self._cache_check_batch_tkv_limit[key]
+            return self._cache_check_batch_tkv_limit[outer_key][inner_key]
 
         logger.debug("Computing scheduler function check_batch_tkv_limit.")
 
@@ -356,8 +359,19 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
                 # decrease batch_size by 1 as the current request finished
                 batch_size -= 1
 
-        # save cache (only the last element is sufficient)
-        self._cache_check_batch_tkv_limit = {
-            key: max_batch_tkv <= int(max_batch_tkv_limit)
-        }
-        return self._cache_check_batch_tkv_limit[key]
+        return_value = max_batch_tkv <= int(max_batch_tkv_limit)
+
+        # save cache
+        if outer_key in self._cache_check_batch_tkv_limit:
+            # add element to cache if decode batch did not change
+            self._cache_check_batch_tkv_limit[outer_key][
+                inner_key] = return_value
+        else:
+            # clear the whole cache if decode batch changed
+            self._cache_check_batch_tkv_limit = {
+                outer_key: {
+                    inner_key: return_value
+                }
+            }
+
+        return return_value
