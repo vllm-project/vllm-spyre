@@ -192,7 +192,8 @@ class FmsModelBase(nn.Module):
         else:
             if self.dtype is not model_config.dtype:
                 logger.info(
-                    "Ignoring user-provided dtype=%s and using"
+                    "Ignoring user-provided dtype=%s (provided either through"
+                    " --dtype CLI arg or model_config.dtype) and using"
                     " dtype=%s instead.", model_config.dtype, self.dtype)
 
         is_local = os.path.isdir(model_config.model)
