@@ -15,9 +15,16 @@ from spyre_util import (check_output_against_hf, get_spyre_backend_list,
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
+# These values are all parameterized for test sorting
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_model_len", [256])
+@pytest.mark.parametrize("available_blocks", [16])  # no restriction
 def test_prompts_aligned_with_tkv_boundaries(model: str, backend: str,
                                              monkeypatch: pytest.MonkeyPatch,
-                                             set_random_seed: None):
+                                             set_random_seed: None,
+                                             max_num_seqs: int,
+                                             max_model_len: int,
+                                             available_blocks: int):
     """ Scenario where it happens that all the sequences get scheduled in a 
     fashion where they are aligned with the block boundaries (i.e. tkv multiple 
     of 64 at the time of prefilling).
@@ -33,9 +40,6 @@ def test_prompts_aligned_with_tkv_boundaries(model: str, backend: str,
     seqs_max_tokens = [65, 67, 7]
     prompts_lengths = [49, 41, 47]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
-    available_blocks = 1000  # no restriction
-    max_num_seqs = 2
-    max_model_len = 256
 
     checked_steps = [
         {
@@ -185,9 +189,14 @@ def test_prompts_aligned_with_tkv_boundaries(model: str, backend: str,
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
+# These values are all parameterized for test sorting
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_model_len", [256])
+@pytest.mark.parametrize("available_blocks", [16])  # no restriction
 def test_prompts_misaligned_with_tkv_boundaries(
         model: str, backend: str, monkeypatch: pytest.MonkeyPatch,
-        set_random_seed: None):
+        set_random_seed: None, max_num_seqs: int, max_model_len: int,
+        available_blocks: int):
     """ Scenario where it happens that some sequence gets scheduled in a way 
     that it is misaligned with the block boundary (i.e. tkv is not a multiple 
     of 64 at the time of prefilling).
@@ -202,9 +211,6 @@ def test_prompts_misaligned_with_tkv_boundaries(
     seqs_max_tokens = [57, 67, 9]
     prompts_lengths = [49, 41, 47]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
-    available_blocks = 1000  # no restriction
-    max_num_seqs = 2
-    max_model_len = 256
 
     checked_steps = [
         {
@@ -352,9 +358,14 @@ def test_prompts_misaligned_with_tkv_boundaries(
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
+# These values are all parameterized for test sorting
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_model_len", [256])
+@pytest.mark.parametrize("available_blocks", [16])  # no restriction
 def test_two_sequences_finish_same_time_as_new_arrive(
         model: str, backend: str, monkeypatch: pytest.MonkeyPatch,
-        set_random_seed):
+        set_random_seed, max_num_seqs: int, max_model_len: int,
+        available_blocks: int):
     """ 2-cases-in-1: (1) Two sequences finish at the same time and (2) a new
     request arrives when another finishes.
 
@@ -368,9 +379,6 @@ def test_two_sequences_finish_same_time_as_new_arrive(
     seqs_max_tokens = [30, 30, 10]
     prompts_lengths = [49, 30, 20]
     steps_add_reqs = [0, 0, 31]
-    available_blocks = 1000  # no restriction
-    max_num_seqs = 2
-    max_model_len = 256
 
     checked_steps = [
         {
@@ -495,9 +503,15 @@ def test_two_sequences_finish_same_time_as_new_arrive(
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
+# These values are all parameterized for test sorting
+@pytest.mark.parametrize("max_num_seqs", [4])
+@pytest.mark.parametrize("max_model_len", [256])
+@pytest.mark.parametrize("available_blocks", [16])  # no restriction
 def test_new_sequence_joins_during_decode(model: str, backend: str,
                                           monkeypatch: pytest.MonkeyPatch,
-                                          set_random_seed):
+                                          set_random_seed, max_num_seqs: int,
+                                          max_model_len: int,
+                                          available_blocks: int):
     """ Scenario where a new sequence joins while decoding other sequences
 
     Configuration:
@@ -513,9 +527,6 @@ def test_new_sequence_joins_during_decode(model: str, backend: str,
     seqs_max_tokens = [119, 52, 104, 64]
     prompts_lengths = [49, 14, 89, 9]
     steps_add_reqs = [0, 0, 32, 131]
-    available_blocks = 1000  # no restriction
-    max_num_seqs = 4
-    max_model_len = 256
 
     checked_steps = [
         {
@@ -765,10 +776,16 @@ def test_new_sequence_joins_during_decode(model: str, backend: str,
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("prefill_optimization", [True, False])
+# These values are all parameterized for test sorting
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_model_len", [256])
+@pytest.mark.parametrize("available_blocks", [16])  # no restriction
 def test_prompt_too_long_for_current_tkv(model: str, backend: str,
                                          prefill_optimization: bool,
                                          monkeypatch: pytest.MonkeyPatch,
-                                         set_random_seed):
+                                         set_random_seed, max_num_seqs: int,
+                                         max_model_len: int,
+                                         available_blocks: int):
     """ Scenario where the requested prompt is too long for current tkv value
    
     Note that with VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION enabled, we can 
@@ -787,9 +804,6 @@ def test_prompt_too_long_for_current_tkv(model: str, backend: str,
     seqs_max_tokens = [57, 67]
     prompts_lengths = [49, 70]
     steps_add_reqs = [0, 0]
-    available_blocks = 1000  # no restriction
-    max_num_seqs = 2
-    max_model_len = 256
 
     checked_steps = [
         {
@@ -1029,9 +1043,16 @@ def test_prompt_too_long_for_current_tkv(model: str, backend: str,
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
+# These values are all parameterized for test sorting
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_model_len",
+                         [192])  # restricted to violate scheduler condition
+@pytest.mark.parametrize("available_blocks", [16])
 def test_prefill_optimization_tkv_too_big(model: str, backend: str,
                                           monkeypatch: pytest.MonkeyPatch,
-                                          set_random_seed):
+                                          set_random_seed, max_num_seqs: int,
+                                          max_model_len: int,
+                                          available_blocks: int):
     """ Scenario where the requested prompt is too long for current tkv value
    
     Note that as VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION is enabled, we could 
@@ -1054,11 +1075,6 @@ def test_prefill_optimization_tkv_too_big(model: str, backend: str,
     seqs_max_tokens = [67, 50]
     prompts_lengths = [49, 70]
     steps_add_reqs = [0, 0]
-    available_blocks = 1000  # no restriction
-    max_num_seqs = 2
-    # restricting the max model length here to trigger the violated
-    # scheduler condition
-    max_model_len = 192
 
     checked_steps_with_optimization = [
         {
@@ -1197,9 +1213,16 @@ def test_prefill_optimization_tkv_too_big(model: str, backend: str,
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
+# These values are all parameterized for test sorting
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_model_len", [256])
+# provide only 5 blocks, to use the prefill optimization
+# at least 6 blocks would be required
+@pytest.mark.parametrize("available_blocks", [5])
 def test_prefill_optimization_use_more_than_available_blocks(
         model: str, backend: str, monkeypatch: pytest.MonkeyPatch,
-        set_random_seed):
+        set_random_seed, max_num_seqs: int, max_model_len: int,
+        available_blocks: int):
     """ Scenario where the requested prompt is too long for current tkv value
    
     Note that as VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION is enabled, we could 
@@ -1224,11 +1247,6 @@ def test_prefill_optimization_use_more_than_available_blocks(
     seqs_max_tokens = [67, 50]
     prompts_lengths = [49, 70]
     steps_add_reqs = [0, 0]
-    # provide only 5 blocks, to use the prefill optimization
-    # at least 6 blocks would be required
-    available_blocks = 5
-    max_num_seqs = 2
-    max_model_len = 256
 
     checked_steps_with_optimization = [
         {
@@ -1369,9 +1387,14 @@ def test_prefill_optimization_use_more_than_available_blocks(
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
+# These values are all parameterized for test sorting
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_model_len", [256])
+@pytest.mark.parametrize("available_blocks", [16])  # no restriction
 def test_requested_tokens_not_fitting_remaining_space(
         model: str, backend: str, monkeypatch: pytest.MonkeyPatch,
-        set_random_seed):
+        set_random_seed, max_num_seqs: int, max_model_len: int,
+        available_blocks: int):
     """ Scenario where the request goes beyond max_model_len and needs to wait
     for a new batch.
 
@@ -1385,9 +1408,6 @@ def test_requested_tokens_not_fitting_remaining_space(
     seqs_max_tokens = [67, 57, 80]
     prompts_lengths = [70, 49, 41]
     steps_add_reqs = [0, 0, 0]
-    available_blocks = 1000  # no restriction
-    max_num_seqs = 2
-    max_model_len = 256
 
     checked_steps = [
         {
@@ -1560,9 +1580,15 @@ def test_requested_tokens_not_fitting_remaining_space(
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
+# These values are all parameterized for test sorting
+@pytest.mark.parametrize("max_num_seqs", [4])
+@pytest.mark.parametrize("max_model_len", [256])
+@pytest.mark.parametrize("available_blocks", [8])
 def test_requests_use_all_available_blocks(model: str, backend: str,
                                            monkeypatch: pytest.MonkeyPatch,
-                                           set_random_seed):
+                                           set_random_seed, max_num_seqs: int,
+                                           max_model_len: int,
+                                           available_blocks: int):
     """ Scenario where the requests use all of the available blocks 
     
     Configuration:
@@ -1578,9 +1604,6 @@ def test_requests_use_all_available_blocks(model: str, backend: str,
     prompts_lengths = [10, 10, 10, 10]  # 1 block for prefil per sequence
     steps_add_reqs = [0, 0, 0, 0]
     # total number of blocks needed if scheduled together : 4 * (1 + 1) = 8
-    available_blocks = 8
-    max_num_seqs = 4
-    max_model_len = 256
 
     checked_steps = [
         {
@@ -1697,9 +1720,14 @@ def test_requests_use_all_available_blocks(model: str, backend: str,
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
+# These values are all parameterized for test sorting
+@pytest.mark.parametrize("max_num_seqs", [4])
+@pytest.mark.parametrize("max_model_len", [256])
+@pytest.mark.parametrize("available_blocks", [4])
 def test_requests_use_more_than_available_blocks(
         model: str, backend: str, monkeypatch: pytest.MonkeyPatch,
-        set_random_seed):
+        set_random_seed, max_num_seqs: int, max_model_len: int,
+        available_blocks: int):
     """ Scenario where some request need to wait because of the number of 
     available blocks. 
     
@@ -1717,9 +1745,6 @@ def test_requests_use_more_than_available_blocks(
     prompts_lengths = [10, 10, 10, 10]  # 1 block for prefil per sequence
     steps_add_reqs = [0, 0, 0, 0]
     # total number of blocks needed if scheduled together : 4 * (1 + 1) = 8
-    available_blocks = 4
-    max_num_seqs = 4
-    max_model_len = 256
 
     checked_steps = [
         {
@@ -1861,9 +1886,14 @@ def test_requests_use_more_than_available_blocks(
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_model_len", [192])
+@pytest.mark.parametrize("available_blocks", [16])
 def test_requests_use_full_batch_tkv_limit(model: str, backend: str,
                                            monkeypatch: pytest.MonkeyPatch,
-                                           set_random_seed):
+                                           set_random_seed, max_num_seqs: int,
+                                           max_model_len: int,
+                                           available_blocks: int):
     """ Scenario where all requests can be scheduled right away as the
     max batch x tkv limit, e.g the volumetric limit, is just high enough
     
@@ -1878,11 +1908,8 @@ def test_requests_use_full_batch_tkv_limit(model: str, backend: str,
     prompts_lengths = [74, 10]
     steps_add_reqs = [0, 0]
     # total number of blocks needed if scheduled together: (2 + 1)+(1 + 1) = 5
-    available_blocks = 1000  # no restriction
     # needs 2 * (64 + 64 + 2) = 2 * 130 = 260
     max_batch_tkv_limit = 260  # just big enough
-    max_num_seqs = 2
-    max_model_len = 192
 
     checked_steps = [
         {
@@ -1990,9 +2017,14 @@ def test_requests_use_full_batch_tkv_limit(model: str, backend: str,
 @pytest.mark.cb
 @pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_model_len", [192])
+@pytest.mark.parametrize("available_blocks", [16])
 def test_requests_exceed_batch_tkv_limit(model: str, backend: str,
                                          monkeypatch: pytest.MonkeyPatch,
-                                         set_random_seed):
+                                         set_random_seed, max_num_seqs: int,
+                                         max_model_len: int,
+                                         available_blocks: int):
     """ Scenario where a request cannot be scheduled right away as the
     max batch x tkv limit, e.g the volumetric limit, is exceeded
     
@@ -2006,12 +2038,8 @@ def test_requests_exceed_batch_tkv_limit(model: str, backend: str,
     seqs_max_tokens = [3, 4]
     prompts_lengths = [74, 10]
     steps_add_reqs = [0, 0]
-    # total number of blocks needed if scheduled together: (2 + 1)+(1 + 1) = 5
-    available_blocks = 1000  # no restriction
     # needs 2 * (64 + 64 + 2) = 2 * 130 = 260
     max_batch_tkv_limit = 259  # not big enough: 259 < 260
-    max_num_seqs = 2
-    max_model_len = 192
 
     checked_steps = [
         {

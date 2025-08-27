@@ -1,13 +1,13 @@
 import copy
+import os
 from collections import defaultdict, deque
 from typing import Any
 
 import pytest
-from spyre_util import create_random_request
-from vllm import EngineArgs, SamplingParams
+from spyre_util import create_random_request, get_cached_engine
+from vllm import SamplingParams
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
-from vllm.v1.executor.abstract import Executor
 
 from vllm_spyre.v1.core.scheduler import ContinuousBatchingSpyreScheduler
 
@@ -58,14 +58,6 @@ def check_scheduler_inference_steps(
     'checked_steps'
     """
 
-    # set env vars
-    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
-    if use_cb:
-        monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
-    if max_batch_tkv_limit >= 0:
-        monkeypatch.setenv("OVERRIDE_MAX_BATCH_TKV_LIMIT",
-                           str(max_batch_tkv_limit))
-
     # Input parameters sanity check, not actual testing
     # ------
     if not (len(prompts_lengths) == len(seqs_max_tokens)
@@ -111,19 +103,22 @@ def check_scheduler_inference_steps(
         generated_prompts.append(request.prompt_token_ids)
 
     # Setup the engine
-    engine_args = EngineArgs(
+    engine_core: EngineCore = get_cached_engine(
         model=model,
-        tokenizer=model,
         max_model_len=max_model_len,
         max_num_seqs=max_num_seqs,
-        num_gpu_blocks_override=available_blocks,
-    )
-    vllm_config = engine_args.create_engine_config()
-    executor_class = Executor.get_class(vllm_config)
-    engine_core = EngineCore(vllm_config=vllm_config,
-                             executor_class=executor_class,
-                             log_stats=False)
+        available_blocks=available_blocks,
+        backend=backend,
+        monkeypatch=monkeypatch)
     scheduler: ContinuousBatchingSpyreScheduler = engine_core.scheduler
+
+    # Override the TKV limit in the scheduler if needed
+    if max_batch_tkv_limit >= 0:
+        scheduler.max_batch_tkv_limit = max_batch_tkv_limit
+    else:
+        # This default value is set by platform.py
+        scheduler.max_batch_tkv_limit = int(
+            os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"))
 
     # In-between steps are added as normal decode steps
     checked_steps = augment_checked_steps(checked_steps)
@@ -231,6 +226,4 @@ def check_scheduler_inference_steps(
                 output[k] = tuple(list_values)
         collected_outputs_new.append(output)
 
-    # good practice?
-    engine_core.shutdown()
     return collected_outputs_new, generated_prompts
