@@ -6,9 +6,10 @@ Run `python -m pytest tests/e2e/test_spyre_basic.py`.
 import pytest
 from llm_cache import DecodeWarmupShapes
 from spyre_util import (check_output_against_hf, create_random_request,
-                        default_sb_cb_params, generate_spyre_vllm_output,
-                        get_chicken_soup_prompts, get_spyre_backend_list,
-                        get_spyre_model_list, skip_unsupported_tp_size)
+                        default_full_model_sb_params, default_sb_cb_params,
+                        generate_spyre_vllm_output, get_chicken_soup_prompts,
+                        get_spyre_backend_list, get_spyre_model_list,
+                        skip_unsupported_tp_size)
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor
@@ -33,6 +34,41 @@ def test_output(model: str, tp_size: int, backend: str, cb: int,
                 max_num_seqs: int, max_model_len: int,
                 warmup_shapes: DecodeWarmupShapes,
                 monkeypatch: pytest.MonkeyPatch, use_llm_cache) -> None:
+    _test_output(
+        model=model,
+        tp_size=tp_size,
+        cb=cb,
+        backend=backend,
+        max_model_len=max_model_len,
+        max_num_seqs=max_num_seqs,
+        warmup_shapes=warmup_shapes,
+        monkeypatch=monkeypatch,
+    )
+
+
+@pytest.mark.full_model
+@default_full_model_sb_params
+def test_full_model_sb_output(model: str, tp_size: int, backend: str,
+                              max_model_len: int,
+                              warmup_shapes: DecodeWarmupShapes,
+                              monkeypatch: pytest.MonkeyPatch,
+                              use_llm_cache) -> None:
+    _test_output(
+        model=model,
+        tp_size=tp_size,
+        cb=0,
+        backend=backend,
+        max_model_len=max_model_len,
+        max_num_seqs=0,
+        warmup_shapes=warmup_shapes,
+        monkeypatch=monkeypatch,
+    )
+
+
+def _test_output(model: str, tp_size: int, backend: str, cb: int,
+                 max_num_seqs: int, max_model_len: int,
+                 warmup_shapes: DecodeWarmupShapes,
+                 monkeypatch: pytest.MonkeyPatch) -> None:
     '''
     The warmup is based on a single shape. After the warmup,
     one request with the provided prompts is input to vLLM.

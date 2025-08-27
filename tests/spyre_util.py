@@ -86,6 +86,33 @@ def default_sb_cb_params(test_func):
     return test_func
 
 
+def default_full_model_sb_params(test_func):
+    """Decorate a test function with the default parameterizations for:
+    - model as the full ibm-granite model
+    - warmup shapes for static batching for the full model
+    """
+    test_func = pytest.mark.parametrize(
+        "model", ["ibm-granite/granite-3.3-8b-instruct"])(test_func)
+    test_func = pytest.mark.parametrize("backend", ["sendnn"])(test_func)
+    test_func = pytest.mark.parametrize(
+        "tp_size",
+        [
+            pytest.param(1),
+            pytest.param(4),
+            pytest.param(8),
+        ],
+        ids=lambda val: f"TP({val})",
+    )(test_func)
+    test_func = pytest.mark.parametrize(
+        "max_model_len", [2048],
+        ids=lambda val: f"max_model_len({val})")(test_func)
+    test_func = pytest.mark.parametrize(
+        "warmup_shapes", [[(1024, 20, 4)]],
+        ids=lambda val: f"warmup_shapes({val})")(test_func)
+
+    return test_func
+
+
 # vLLM / Spyre
 def generate_spyre_vllm_output(
     model: str,
