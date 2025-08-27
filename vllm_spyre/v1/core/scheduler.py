@@ -325,16 +325,14 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         # checking if cached result can be used
         outer_key = tuple(running)  # decode batch changes
         inner_key = (request, max_batch_tkv_limit)  # new request changes
-        if (outer_key in self._cache_check_batch_tkv_limit) and (
-                inner_key in self._cache_check_batch_tkv_limit[outer_key]):
-            (lower,
-             upper) = self._cache_check_batch_tkv_limit[outer_key][inner_key]
+        cache = self._cache_check_batch_tkv_limit
+        if (outer_key in cache) and (inner_key in cache[outer_key]):
+            (lower, upper) = cache[outer_key][inner_key]
             if tkv <= lower or tkv >= upper:
                 logger.debug(
-                    "Cache hit scheduler function check_batch_tkv_limit.")
+                    "Cache hit function check_batch_tkv_limit: returning %s",
+                    str(tkv <= lower))
                 return tkv <= lower
-
-        logger.debug("Computing scheduler function check_batch_tkv_limit.")
 
         # Compute the effective token length of the new request
         new_req_tkv = tkv + request.max_tokens - 1
@@ -366,25 +364,29 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
 
         return_value = max_batch_tkv <= int(max_batch_tkv_limit)
 
-        # save cache
-        if outer_key in self._cache_check_batch_tkv_limit:
-            # add/change bounds in cache if decode batch did not change
-            cache = self._cache_check_batch_tkv_limit[outer_key]
-            # check if there are already limits
-            (lower, upper) = cache[inner_key] if inner_key in cache else (
-                -float("inf"), float("inf"))
-            if return_value:
-                lower = max(lower, tkv)
-            else:
-                upper = min(upper, tkv)
-            assert lower < upper
-            cache[inner_key] = (lower, upper)
+        if outer_key in cache:
+            # decode batch has not changed
+            if inner_key not in cache[outer_key]:
+                # adding new request to present decode batch
+                cache[outer_key][inner_key] = (-float("inf"), float("inf"))
         else:
-            # clear the whole cache if decode batch changed
-            self._cache_check_batch_tkv_limit = {
-                outer_key: {
-                    inner_key: (-float("inf"), float("inf"))
-                }
-            }
+            # decode batch has changed, empty the cache in place
+            cache.clear()
+            cache[outer_key] = {inner_key: (-float("inf"), float("inf"))}
+            logger.debug(
+                "Cleared cache of function check_batch_tkv_limit as the " \
+                "decode batch has changed."
+            )
+
+        # update lower bound (of acceptance) and upper bound (of rejection)
+        (lower, upper) = cache[outer_key][inner_key]
+        if return_value:
+            lower = max(lower, tkv)
+        else:
+            upper = min(upper, tkv)
+        assert lower < upper
+        cache[outer_key][inner_key] = (lower, upper)
+        logger.debug("Saved cache of function check_batch_tkv_limit: %s",
+                     self._cache_check_batch_tkv_limit[outer_key][inner_key])
 
         return return_value
