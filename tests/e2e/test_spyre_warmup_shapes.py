@@ -4,6 +4,7 @@ Run `python -m pytest tests/e2e/test_spyre_warmup_shapes.py`.
 """
 
 import pytest
+from llm_cache import DecodeWarmupShapes
 from spyre_util import (check_output_against_hf, generate_spyre_vllm_output,
                         get_chicken_soup_prompts, get_spyre_backend_list,
                         get_spyre_model_list)
@@ -15,12 +16,9 @@ from vllm import SamplingParams
     "warmup_shapes", [[(64, 20, 4),
                        (128, 20, 2)]])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def test_output(
-    model: str,
-    warmup_shapes: list[tuple[int, int, int]],
-    backend: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_multiple_warmup_shapes(model: str, warmup_shapes: DecodeWarmupShapes,
+                                backend: str, monkeypatch: pytest.MonkeyPatch,
+                                use_llm_cache) -> None:
     '''
     The warmup is based on two shapes, that 'overlap' each
     other. After the warmup, one request with the provided
@@ -64,13 +62,10 @@ def test_output(
 @pytest.mark.parametrize("prompts", [["Hello"]])
 @pytest.mark.parametrize("warmup_shapes", [[(65, 1, 1)]])
 @pytest.mark.parametrize("backend", get_spyre_backend_list())
-def test_invalid_prompt_len(
-    model: str,
-    prompts: list[str],
-    warmup_shapes: list[tuple[int, int, int]],
-    backend: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_invalid_prompt_len(model: str, prompts: list[str],
+                            warmup_shapes: DecodeWarmupShapes, backend: str,
+                            monkeypatch: pytest.MonkeyPatch,
+                            use_llm_cache) -> None:
     '''
     Expects an error to be raised if the warmup prompt length
     is not divisible by 64.

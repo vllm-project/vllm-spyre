@@ -318,7 +318,8 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
 
         # Compute token lengths for all running requests (decode batch)
         decode_req_tkvs = [
-            tkv + req.max_tokens - 1 - req.num_computed_tokens
+            tkv + req.max_tokens - 1 -
+            (req.num_computed_tokens - req.num_prompt_tokens)
             for req in self.running
         ]
         # Sort decode requests token lengths in ascending order
