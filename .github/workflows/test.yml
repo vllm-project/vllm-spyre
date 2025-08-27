@@ -56,7 +56,7 @@ jobs:
           - name: "scoring"
             markers: "cpu and scoring"
             flags: "--timeout=300"
-            hf_models: "BAAI/bge-reranker-v2-m3"
+            hf_models: "cross-encoder/stsb-roberta-large"
           - name: "continuous batching"
             markers: "cpu and cb"
             flags: "--timeout=300  --durations=0 -s"
@@ -206,7 +206,7 @@ jobs:
               "sentence-transformers/all-roberta-large-v1")
                 download_roberta_large "$model" &
                 ;;
-              "BAAI/bge-reranker-v2-m3")
+              "cross-encoder/stsb-roberta-large")
                 download_roberta_large "$model" &
                 ;;
               *)

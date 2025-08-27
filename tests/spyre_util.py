@@ -521,7 +521,7 @@ def _default_test_models(isEmbeddings=False, isScoring=False):
         return [pytest.param(model, marks=[pytest.mark.embedding], id=model)]
 
     if isScoring:
-        model = "BAAI/bge-reranker-v2-m3"
+        model = "cross-encoder/stsb-roberta-large"
         return [pytest.param(model, marks=[pytest.mark.scoring], id=model)]
 
     # Decoders
