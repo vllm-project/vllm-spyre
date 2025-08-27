@@ -352,6 +352,12 @@
                 "token_ids": [ 9133 ],
                 "tokens": [ "Prov" ],
                 "logprobs": [ -1.967644214630127 ]
+            },
+            "6": {
+                "text": "Provide a list of instructions",
+                "token_ids": [ 9133, 680, 263, 1051, 310, 11994 ],
+                "tokens": [ "Prov", "ide", "a", "list", "of", "instructions" ],
+                "logprobs": [ -1.9676533937454224, -0.040433239191770554, -0.5089076161384583, -0.20296713709831238, -0.0020171310752630234, -0.08453259617090225 ]
             }
         },
         "Below is an instruction that describes a task. Write a response that appropriately completes the request. Be polite in your response to the user.\n\n### Instruction:\nProvide me a list of things that I can do with my new found wealth.\n\n### Response:": {
@@ -366,6 +372,12 @@
                 "token_ids": [ 306, 864, 304, 15649, 263, 3699, 29889, 13, 2277, 29937 ],
                 "tokens": [ "I", "want", "to", "buy", "a", "house", ".", "\n", "##", "#" ],
                 "logprobs": [ -1.347567081451416, -1.736817717552185, -0.22189107537269592, -2.632402181625366, -0.8735470771789551, -1.2113419771194458, -0.5731930732727051, -0.11853943765163422, -1.3035320043563843, -0.0031280419789254665 ]
+            },
+            "6": {
+                "text": "I want to buy a house",
+                "token_ids": [ 306, 864, 304, 15649, 263, 3699 ],
+                "tokens": [ "I", "want", "to", "buy", "a", "house" ],
+                "logprobs": [ -1.3475680351257324, -1.7368229627609253, -0.22189192473888397, -2.6323986053466797, -0.8735487461090088, -1.2113405466079712 ]
             }
         },
         "Below is an instruction that describes a task. Write a response that appropriately completes the request. Be polite in your response to the user.\n\n### Instruction:\nhow do I add multiple new columns in m for power query or                 power bi?\n\n### Response:": {
@@ -380,6 +392,12 @@
                 "token_ids": [ 1128, 437, 306, 788, 2999, 716, 4341, 297, 286, 363 ],
                 "tokens": [ "How", "do", "I", "add", "multiple", "new", "columns", "in", "m", "for" ],
                 "logprobs": [ -2.0655946731567383, -0.5818343758583069, -0.1046733632683754, -0.5874699354171753, -0.1780477613210678, -0.08541657775640488, -0.04755059629678726, -0.013712609186768532, -0.17736363410949707, -0.01853116974234581 ]
+            },
+            "6": {
+                "text": "How do I add multiple new",
+                "token_ids": [ 1128, 437, 306, 788, 2999, 716 ],
+                "tokens": [ "How", "do", "I", "add", "multiple", "new" ],
+                "logprobs": [ -2.065593957901001, -0.5818334817886353, -0.10467303544282913, -0.5874689817428589, -0.17804735898971558, -0.08541624993085861 ]
             }
         },
         "Below is an instruction that describes a task. Write a response that appropriately completes the request. Be polite in your response to the user.\n\n### Instruction:\nConvert char to string in Java.\n\n### Response:": {
@@ -406,6 +424,12 @@
                 "token_ids": [ 376, 10994, 29892, 12853, 304, 278, 3355, 7881, 29991, 13 ],
                 "tokens": [ "\"", "Hello", ",", "welcome", "to", "the", "Java", "community", "!", "\n" ],
                 "logprobs": [ -1.56131911277771, -1.9557151794433594, -0.5875644087791443, -2.0813868045806885, -0.3190169334411621, -1.161803960800171, -1.5128810405731201, -1.3871722221374512, -1.197195291519165, -1.1658143997192383 ]
+            },
+            "6": {
+                "text": "\"Hello, welcome to the",
+                "token_ids": [ 376, 10994, 29892, 12853, 304, 278 ],
+                "tokens": [ "\"", "Hello", ",", "welcome", "to", "the" ],
+                "logprobs": [ -1.5613254308700562, -1.955716848373413, -0.5875644683837891, -2.0813889503479004, -0.3190162479877472, -1.1618010997772217 ]
             }
         }
     },
