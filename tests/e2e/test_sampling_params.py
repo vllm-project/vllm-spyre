@@ -255,7 +255,6 @@ def test_spyre_batch1_logprobs(spyre_model: LLM):
     assert len(completion_output.logprobs[0]) == num_logprobs
 
 
-@pytest.mark.parametrize("backend", "eager")
 def test_spyre_dynamic_batch_request_isolation(spyre_model: LLM):
 
     prompts = [
