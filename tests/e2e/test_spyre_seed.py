@@ -7,7 +7,7 @@ import math
 
 import pytest
 from llm_cache import DecodeWarmupShapes
-from spyre_util import (generate_spyre_vllm_output, get_chicken_soup_prompts)
+from spyre_util import generate_spyre_vllm_output, get_chicken_soup_prompts
 from vllm import SamplingParams
 
 
