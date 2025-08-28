@@ -35,70 +35,95 @@ def pytest_generate_tests(metafunc):
     default_max_num_seqs = [4]
     default_max_model_len = [256]
 
+    existing_markers = [
+        marker.name if marker.name != "parametrize" else marker.args[0]
+        for marker in metafunc.definition.own_markers
+    ]
+
     mode = metafunc.config.getoption("test_mode")  # from CLI
     if mode == "full":
         if metafunc.definition.get_closest_marker("full_model"):
-            metafunc.parametrize("model",
-                                 ["ibm-granite/granite-3.3-8b-instruct"])
-            metafunc.parametrize("backend", ["sendnn"])
-            metafunc.parametrize(
+            _add_param(
+                "model",
+                ["ibm-granite/granite-3.3-8b-instruct"],
+                metafunc,
+                existing_markers,
+            )
+            _add_param(
+                "backend",
+                ["sendnn"],
+                metafunc,
+                existing_markers,
+            )
+            _add_param(
                 "warmup_shapes",
                 [[(1024, 20, 4)]],
-                ids=lambda val: f"warmup_shapes({val})",
+                metafunc,
+                existing_markers,
+            )
+            _add_param(
+                "max_model_len",
+                [2048],
+                metafunc,
+                existing_markers,
             )
     else:
-        existing_markers = [
-            marker.name if marker.name != "parametrize" else marker.args[0]
-            for marker in metafunc.definition.own_markers
-        ]
         # Default parameters
-        if "model" in metafunc.fixturenames and "model" not in existing_markers:
-            metafunc.parametrize("model", get_spyre_model_list())
+        _add_param("model", get_spyre_model_list, metafunc, existing_markers)
+        _add_param(
+            "backend",
+            get_spyre_backend_list(),
+            metafunc,
+            existing_markers,
+        )
+        _add_param(
+            "warmup_shapes",
+            default_warmup_shape,
+            metafunc,
+            existing_markers,
+        )
+        _add_param(
+            "max_model_len",
+            default_max_model_len,
+            metafunc,
+            existing_markers,
+        )
 
-        if "backend" in metafunc.fixturenames and \
-            "backend" not in existing_markers:
-            metafunc.parametrize("backend", get_spyre_backend_list())
+    # apply to both
+    _add_param(
+        "max_num_seqs",
+        default_max_num_seqs,
+        metafunc,
+        existing_markers,
+    )
 
-        if ("warmup_shapes" in metafunc.fixturenames
-                and "warmup_shapes" not in existing_markers):
-            metafunc.parametrize(
-                "warmup_shapes",
-                default_warmup_shape,
-                ids=lambda val: f"warmup_shapes({val})",
-            )
+    if "cb" in metafunc.fixturenames and "cb" not in existing_markers:
+        metafunc.parametrize(
+            "cb", [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
 
-        if ("max_num_seqs" in metafunc.fixturenames
-                and "max_num_seqs" not in existing_markers):
-            metafunc.parametrize(
-                "max_num_seqs",
-                default_max_num_seqs,
-                ids=lambda val: f"max_num_seqs({val})",
-            )
+    if "tp_size" in metafunc.fixturenames and \
+        "tp_size" not in existing_markers:
+        metafunc.parametrize(
+            "tp_size",
+            [
+                pytest.param(1),
+                pytest.param(2, marks=pytest.mark.multi),
+                pytest.param(4, marks=pytest.mark.multi),
+                pytest.param(8, marks=pytest.mark.multi),
+            ],
+            ids=lambda val: f"TP({val})",
+        )
 
-        if ("max_model_len" in metafunc.fixturenames
-                and "max_model_len" not in existing_markers):
-            metafunc.parametrize(
-                "max_model_len",
-                default_max_model_len,
-                ids=lambda val: f"max_model_len({val})",
-            )
 
-        if "cb" in metafunc.fixturenames and "cb" not in existing_markers:
-            metafunc.parametrize(
-                "cb", [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
-
-        if "tp_size" in metafunc.fixturenames and \
-            "tp_size" not in existing_markers:
-            metafunc.parametrize(
-                "tp_size",
-                [
-                    pytest.param(1),
-                    pytest.param(2, marks=pytest.mark.multi),
-                    pytest.param(4, marks=pytest.mark.multi),
-                    pytest.param(8, marks=pytest.mark.multi),
-                ],
-                ids=lambda val: f"TP({val})",
-            )
+def _add_param(param_name: str, param_value, metafunc,
+               existing_markers) -> None:
+    if (param_name in metafunc.fixturenames
+            and param_name not in existing_markers):
+        metafunc.parametrize(
+            param_name,
+            param_value,
+            ids=lambda val: f"{param_name}({val}))",
+        )
 
 
 def pytest_collection_modifyitems(config, items):
