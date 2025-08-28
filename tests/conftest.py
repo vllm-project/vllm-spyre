@@ -128,6 +128,7 @@ def pytest_generate_tests(metafunc):
 
 def _add_param(param_name: str, param_value, metafunc,
                existing_markers) -> None:
+    """helper function to parametrize stuff"""
     if (param_name in metafunc.fixturenames
             and param_name not in existing_markers):
         metafunc.parametrize(
