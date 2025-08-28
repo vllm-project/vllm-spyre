@@ -83,7 +83,7 @@ def pytest_generate_tests(metafunc):
             )
     else:
         # Default parameters
-        _add_param("model", get_spyre_model_list, metafunc, existing_markers)
+        _add_param("model", get_spyre_model_list(), metafunc, existing_markers)
         _add_param(
             "backend",
             get_spyre_backend_list(),
@@ -136,7 +136,7 @@ def _add_param(param_name: str, param_value, metafunc,
         metafunc.parametrize(
             param_name,
             param_value,
-            ids=lambda val: f"{param_name}({val}))",
+            ids=lambda val: f"{param_name}({val})",
         )
 
 
