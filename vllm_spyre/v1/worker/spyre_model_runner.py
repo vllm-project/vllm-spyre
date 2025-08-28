@@ -1109,6 +1109,12 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         return model_inputs
 
     def reduce_left_padding(self) -> None:
+        """ Optimizes the decode batch by removing entire columns that consist 
+        solely of left pads. This reduces unnecessary decode computation. 
+
+        Note: drawing explaining the optimization in more detail uploaded here:
+        https://github.com/vllm-project/vllm-spyre/pull/131#issuecomment-3233440852 
+        """
 
         requests = self.requests.values()
         if len(self.requests) == 0:
