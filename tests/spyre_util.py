@@ -213,6 +213,11 @@ def generate_hf_output(
         # Everything hit cache
         return results
 
+    assert os.getenv("GITHUB_ACTIONS", "") != "true", \
+        "HF results cache miss during Github Actions run. " \
+        "Please run tests locally with `-m 'cpu'` and check in the changes " \
+        "to hf_cache.json"
+
     hf_model = AutoModelForCausalLM.from_pretrained(model)
     hf_tokenizer = AutoTokenizer.from_pretrained(model)
     if ignore_eos:
