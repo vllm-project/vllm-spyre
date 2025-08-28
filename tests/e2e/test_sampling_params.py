@@ -2,6 +2,8 @@ import pytest
 from spyre_util import get_spyre_backend_list
 from vllm import LLM, SamplingParams
 
+pytestmark = pytest.mark.basic
+
 
 @pytest.fixture(scope="module")
 def spyre_model() -> LLM:
