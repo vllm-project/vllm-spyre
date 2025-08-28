@@ -19,6 +19,11 @@ os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 
 
 def pytest_generate_tests(metafunc):
+    """This hook is called during the collection phase, 
+    specifically when Pytest encounters a test function that 
+    needs parametrization. It receives a metafunc object, 
+    which provides information about the test function and 
+    allows for dynamic parametrization."""
 
     # default parameterizations
     default_warmup_shape = [[(64, 20, 4)]]
