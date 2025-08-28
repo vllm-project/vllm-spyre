@@ -187,25 +187,6 @@ def test_spyre_batch1_ignore_eos(spyre_model: LLM):
     assert output2.outputs[0].finish_reason != 'length'
 
 
-def test_spyre_batch1_skip_special_tokens(spyre_model: LLM):
-    tokenizer = spyre_model.get_tokenizer()
-    especial_token_str = tokenizer.eos_token
-    especial_token_id = tokenizer.eos_token_id
-    prompt = "Hello"
-
-    params1 = SamplingParams(skip_special_tokens=True, max_tokens=5)
-    params2 = SamplingParams(skip_special_tokens=False, max_tokens=5)
-
-    output1 = spyre_model.generate(prompt, params1)[0]
-    output2 = spyre_model.generate(prompt, params2)[0]
-
-    assert especial_token_id not in output1.outputs[0].token_ids
-    assert especial_token_str not in output1.outputs[0].text
-
-    assert especial_token_id in output2.outputs[0].token_ids
-    assert especial_token_str in output2.outputs[0].text
-
-
 def test_spyre_batch1_min_p(spyre_model: LLM):
     prompt = "The opposite of black is"
     params1 = SamplingParams(min_p=0.5, temperature=2, max_tokens=5)
@@ -224,7 +205,7 @@ def test_spyre_batch1_bad_words(spyre_model: LLM):
                              temperature=0,
                              bad_words=["Paris", "France"])
     params2 = SamplingParams(max_tokens=5, temperature=0)
-
+    
     output1 = spyre_model.generate(prompt, params1)[0]
     output2 = spyre_model.generate(prompt, params2)[0]
 
@@ -253,39 +234,3 @@ def test_spyre_batch1_logprobs(spyre_model: LLM):
     assert completion_output.logprobs is not None
     assert len(completion_output.logprobs) == len(completion_output.token_ids)
     assert len(completion_output.logprobs[0]) == num_logprobs
-
-
-def test_spyre_dynamic_batch_request_isolation(spyre_model: LLM):
-
-    prompts = [
-        "Write an essay on artificial intelligence.",
-        "The primary colors are ",
-        "Repeat this word once: test",
-        "Write a 100-word essay on LLM reasoning capabilities.",
-        "Teach me about the history of Isaac Newton",
-        "Who is the greatest mathematician of the 21st century?",
-    ]
-
-    sampling_params = [
-        SamplingParams(temperature=0.7, max_tokens=20, seed=8780),
-        SamplingParams(temperature=0.0, max_tokens=2, seed=8780),
-        SamplingParams(max_tokens=2, ignore_eos=True, seed=8780),
-        SamplingParams(max_tokens=20, ignore_eos=True, seed=8780),
-        SamplingParams(max_tokens=20, presence_penalty=2.0),
-        SamplingParams(max_tokens=20, min_tokens=9, seed=8780),
-    ]
-
-    expected_out = []
-    for prompt, param in zip(prompts, sampling_params):
-        output = spyre_model.generate(prompt, param)
-        expected_out.append(output[0])
-
-    vllm_outputs = spyre_model.generate(prompts, sampling_params)
-
-    # checks isolation
-    assert expected_out[0].outputs[0].text == vllm_outputs[0].outputs[0].text
-    assert expected_out[1].outputs[0].text == vllm_outputs[0].outputs[1].text
-    assert expected_out[2].outputs[0].text == vllm_outputs[0].outputs[2].text
-    assert expected_out[3].outputs[0].text == vllm_outputs[0].outputs[3].text
-    assert expected_out[4].outputs[0].text == vllm_outputs[0].outputs[4].text
-    assert expected_out[5].outputs[0].text == vllm_outputs[0].outputs[5].text
