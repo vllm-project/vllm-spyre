@@ -100,7 +100,7 @@ def pytest_generate_tests(metafunc):
             existing_markers,
         )
 
-    # apply to both
+    # apply to all
     _add_param(
         "max_num_seqs",
         default_max_num_seqs,
