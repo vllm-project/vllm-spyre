@@ -1943,3 +1943,114 @@ def test_requests_exceed_batch_tkv_limit(model: str, backend: str,
 
     check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
                             prompts)
+
+
+@pytest.mark.cb
+@pytest.mark.parametrize("model", get_spyre_model_list())
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_model_len", [192])
+@pytest.mark.parametrize("available_blocks", [16])  # no restriction
+def test_requests_use_full_batch_tkv_limit_prefill_opt(
+        model: str, backend: str, monkeypatch: pytest.MonkeyPatch,
+        set_random_seed, max_num_seqs: int, max_model_len: int,
+        available_blocks: int):
+    """ Scenario where all requests can be scheduled right away as the
+    max batch x tkv limit, e.g the volumetric limit, is just high enough
+    with the prefill optimization enabled. Note that this test is about 
+    cond6_updated whereas test_requests_use_full_batch_tkv_limit
+    was testing cond6 (without VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION)
+    
+    Configuration:
+        * max_num_seqs: 2
+        * number of prompts: 2
+            * 1: len = 64, max tokens = 2, step joining = 0
+            * 2: len = 65, max tokens = 2, step joining = 0
+    """
+    monkeypatch.setenv('VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION', '1')
+
+    seqs_max_tokens = [2, 2]
+    prompts_lengths = [64, 65]
+    steps_add_reqs = [0, 0]
+    # total number of blocks needed if scheduled together: (1 + 1)+(2 + 1) = 5
+    # needs 2 * (64 + 64 + 1) = 2 * 129 = 258
+    max_batch_tkv_limit = 258  # just big enough
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0", "1"],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+        {
+            # Prefill sequence 0
+            # total blocks in use: 1
+            "step": 1,
+            "tkv": 64,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 2,  # prefill (1 block) + 1 decode (1 block)
+            "n_used_blocks": 1
+        },
+        # Note: we can prefill seq 1 here as the volumetric limit
+        # max_batch_tkv_limit is just big enough (258) with the prefill
+        # optimization activated: cond6_updated in can_schedule()
+        {
+            # Prefill sequence 1
+            # total blocks in use: 3
+            "step": 2,
+            "tkv": 128,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 5,  # prefill (2 block) + 1 decode (1 block)
+            "n_used_blocks": 3  # 1 + 2
+        },
+        {
+            # Decode sequences 0 and 1
+            # Sequence 0 and 1 finish at step 3
+            # total blocks in use: 5
+            "step": 3,
+            "tkv": 129,
+            "waiting": [],
+            "running": [],
+            "request_outputs": ["1", "0"],
+            "finished_requests": ["1", "0"],
+            "n_reserved_blocks": 5,
+            "n_used_blocks": 5
+        },
+        {
+            # Tkv should be cleared one step later
+            # total blocks in use: 5 - 5 = 0
+            "step": 4,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+    ]
+
+    cb_outputs, prompts = check_scheduler_inference_steps(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        seqs_max_tokens=seqs_max_tokens,
+        prompts_lengths=prompts_lengths,
+        steps_add_reqs=steps_add_reqs,
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
+        available_blocks=available_blocks,
+        max_batch_tkv_limit=max_batch_tkv_limit,
+        use_cb=True,
+    )
+
+    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                            prompts)
