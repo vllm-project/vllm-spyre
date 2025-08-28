@@ -884,6 +884,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             tkv_offset = math.ceil(
                 (prompt_len - self.tkv) / self.block_size) * self.block_size
             if tkv_offset > 0:
+                # Note: drawing explaining this optimization in more detail
+                # can be found here (see page 3 in particular):
+                # https://github.com/vllm-project/vllm-spyre/pull/340#issuecomment-3179337304
                 logger.debug("Prefill optimization: Adding %d blocks per " \
                 "sequence in the decode batch to prefill the current " \
                 "sequence.", tkv_offset // self.block_size)
