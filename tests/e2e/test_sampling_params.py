@@ -205,7 +205,7 @@ def test_spyre_batch1_bad_words(spyre_model: LLM):
                              temperature=0,
                              bad_words=["Paris", "France"])
     params2 = SamplingParams(max_tokens=5, temperature=0)
-    
+
     output1 = spyre_model.generate(prompt, params1)[0]
     output2 = spyre_model.generate(prompt, params2)[0]
 
