@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from pathlib import Path
 
 
@@ -38,8 +39,10 @@ class HFResultCache:
         Write the current cache to 'hf_cache.json' if it has been modified.
         """
         if self.dirty:
+            json_string = json.dumps(self.cached_results, indent=4)
+            json_string = self._remove_newlines_in_json_lists(json_string)
             with open(self.cached_results_file_path, 'w') as f:
-                json.dump(self.cached_results, f)
+                f.write(json_string)
             self.dirty = False
 
     def get_cached_result(self, model: str, prompt: str | list[int],
@@ -76,3 +79,30 @@ class HFResultCache:
         hashed and used as a json key."""
 
         return "__tokens__" + "_".join(str(token_id) for token_id in token_ids)
+
+    def _remove_newlines_in_json_lists(self, json_string):
+        """
+        Removes newline characters only within JSON list structures.
+        """
+        # Regex to find content inside square brackets (JSON lists)
+        # It captures the content within the brackets, including newlines.
+        # The 're.DOTALL' flag allows '.' to match newlines.
+        pattern = r'\[(.*?)\]'
+
+        def replace_newlines(match):
+            # Get the captured content (the list items)
+            list_content = match.group(1)
+            # Strip leading indentation, leaving one space between elements
+            cleaned_content = re.sub(r'\n\s+', "\n ", list_content)
+            # Delete all newline characters
+            cleaned_content = cleaned_content.replace("\n",
+                                                      "").replace("\r", "")
+            # Return the content wrapped in square brackets again
+            return f'[{cleaned_content}]'
+
+        # Apply the regex and replacement function
+        modified_json_string = re.sub(pattern,
+                                      replace_newlines,
+                                      json_string,
+                                      flags=re.DOTALL)
+        return modified_json_string
