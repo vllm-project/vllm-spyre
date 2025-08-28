@@ -23,7 +23,7 @@ def pytest_addoption(parser):
         "--test-mode",
         action="store",
         default="micro",
-        choices=["micro", "full"],
+        choices=["micro", "full_sb", "full_cb"],
         help="Choose test mode",
     )
 
@@ -41,7 +41,7 @@ def pytest_generate_tests(metafunc):
     ]
 
     mode = metafunc.config.getoption("test_mode")  # from CLI
-    if mode == "full":
+    if "full" in mode:
         if metafunc.definition.get_closest_marker("full_model"):
             _add_param(
                 "model",
@@ -55,6 +55,7 @@ def pytest_generate_tests(metafunc):
                 metafunc,
                 existing_markers,
             )
+        if mode == "full_sb":
             _add_param(
                 "warmup_shapes",
                 [[(1024, 20, 4)]],
@@ -64,6 +65,19 @@ def pytest_generate_tests(metafunc):
             _add_param(
                 "max_model_len",
                 [2048],
+                metafunc,
+                existing_markers,
+            )
+        if mode == "full_cb":
+            _add_param(
+                "max_model_len",
+                default_max_model_len,
+                metafunc,
+                existing_markers,
+            )
+            _add_param(
+                "warmup_shapes",
+                default_warmup_shape,
                 metafunc,
                 existing_markers,
             )
