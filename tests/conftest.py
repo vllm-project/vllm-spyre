@@ -18,16 +18,6 @@ from vllm.distributed import cleanup_dist_env_and_memory
 os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 
 
-def pytest_addoption(parser):
-    parser.addoption(
-        "--test-mode",
-        action="store",
-        default="micro",
-        choices=["micro", "full_sb", "full_cb"],
-        help="Choose test mode",
-    )
-
-
 def pytest_generate_tests(metafunc):
 
     # default parameterizations
@@ -40,8 +30,10 @@ def pytest_generate_tests(metafunc):
         for marker in metafunc.definition.own_markers
     ]
 
-    mode = metafunc.config.getoption("test_mode")  # from CLI
-    if "full" in mode:
+    marker = metafunc.config.option.markexpr  # From CLI
+    if "full_model" in marker:
+        # When -m full_model is called, all tests tagged with
+        # full_model mark will be injected with these custom values
         if metafunc.definition.get_closest_marker("full_model"):
             _add_param(
                 "model",
@@ -55,32 +47,32 @@ def pytest_generate_tests(metafunc):
                 metafunc,
                 existing_markers,
             )
-        if mode == "full_sb":
-            _add_param(
-                "warmup_shapes",
-                [[(1024, 20, 4)]],
-                metafunc,
-                existing_markers,
-            )
-            _add_param(
-                "max_model_len",
-                [2048],
-                metafunc,
-                existing_markers,
-            )
-        if mode == "full_cb":
-            _add_param(
-                "max_model_len",
-                default_max_model_len,
-                metafunc,
-                existing_markers,
-            )
-            _add_param(
-                "warmup_shapes",
-                default_warmup_shape,
-                metafunc,
-                existing_markers,
-            )
+            if "not cb" in marker:
+                _add_param(
+                    "warmup_shapes",
+                    [[(1024, 20, 4)]],
+                    metafunc,
+                    existing_markers,
+                )
+                _add_param(
+                    "max_model_len",
+                    [2048],
+                    metafunc,
+                    existing_markers,
+                )
+            else:
+                _add_param(
+                    "max_model_len",
+                    default_max_model_len,
+                    metafunc,
+                    existing_markers,
+                )
+                _add_param(
+                    "warmup_shapes",
+                    default_warmup_shape,
+                    metafunc,
+                    existing_markers,
+                )
     else:
         # Default parameters
         _add_param("model", get_spyre_model_list(), metafunc, existing_markers)
