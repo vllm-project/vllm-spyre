@@ -3,8 +3,7 @@ from contextlib import ExitStack
 
 import pytest
 from llm_cache import DecodeWarmupShapes
-from spyre_util import (get_chicken_soup_prompts, get_spyre_backend_list,
-                        get_spyre_model_list)
+from spyre_util import (get_chicken_soup_prompts)
 from vllm import PromptType, SamplingParams
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
@@ -46,13 +45,6 @@ async def generate(
     return count, request_id
 
 
-@pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("cb",
-                         [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
-@pytest.mark.parametrize("warmup_shapes", [[
-    (64, 20, 4),
-]])
 @pytest.mark.parametrize(
     "output_kind", [RequestOutputKind.DELTA, RequestOutputKind.FINAL_ONLY])
 @pytest.mark.asyncio

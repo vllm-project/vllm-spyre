@@ -6,6 +6,7 @@ import pytest
 import torch
 from llm_cache import SortKey, sort_tests_for_llm_caching
 from spyre_util import (clear_llm_caches, get_cached_api_server,
+                        get_spyre_backend_list, get_spyre_model_list,
                         print_llm_cache_info, skip_unsupported_tp_size)
 from vllm.connections import global_http_connection
 from vllm.distributed import cleanup_dist_env_and_memory
@@ -15,6 +16,191 @@ from vllm.distributed import cleanup_dist_env_and_memory
 # pool to be created, which is then lost when the next test launches vLLM and
 # forks a worker.
 os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--test-mode",
+        action="store",
+        default="micro",
+        choices=["micro", "full"],
+        help="Choose test mode",
+    )
+
+
+def pytest_generate_tests(metafunc):
+
+    # default parameterizations
+    default_warmup_shape = [[(64, 20, 4)]]
+    default_max_num_seqs = [4]
+    default_max_model_len = [256]
+
+    mode = metafunc.config.getoption("test_mode")  # from CLI
+    if mode == "full":
+        if metafunc.definition.get_closest_marker("full_model"):
+            metafunc.parametrize("model",
+                                 ["ibm-granite/granite-3.3-8b-instruct"])
+            metafunc.parametrize("backend", ["sendnn"])
+            metafunc.parametrize(
+                "warmup_shapes",
+                [[(1024, 20, 4)]],
+                ids=lambda val: f"warmup_shapes({val})",
+            )
+    else:
+        existing_markers = [
+            marker.name if marker.name != "parametrize" else marker.args[0]
+            for marker in metafunc.definition.own_markers
+        ]
+        # Default parameters
+        if "model" in metafunc.fixturenames and 'model' not in existing_markers:
+            metafunc.parametrize("model", get_spyre_model_list())
+
+        if "backend" in metafunc.fixturenames and "backend" not in existing_markers:
+            metafunc.parametrize("backend", get_spyre_backend_list())
+
+        if "warmup_shapes" in metafunc.fixturenames and "warmup_shapes" not in existing_markers:
+            metafunc.parametrize(
+                "warmup_shapes",
+                default_warmup_shape,
+                ids=lambda val: f"warmup_shapes({val})",
+            )
+        if "max_num_seqs" in metafunc.fixturenames and "max_num_seqs" not in existing_markers:
+            metafunc.parametrize(
+                "max_num_seqs",
+                default_max_num_seqs,
+                ids=lambda val: f"max_num_seqs({val})",
+            )
+        if "max_model_len" in metafunc.fixturenames and "max_model_len" not in existing_markers:
+            metafunc.parametrize(
+                "max_model_len",
+                default_max_model_len,
+                ids=lambda val: f"max_model_len({val})",
+            )
+        if "cb" in metafunc.fixturenames and "cb" not in existing_markers:
+            metafunc.parametrize(
+                "cb", [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
+        if "tp_size" in metafunc.fixturenames and "tp_size" not in existing_markers:
+            metafunc.parametrize(
+                "tp_size",
+                [
+                    pytest.param(1),
+                    pytest.param(2, marks=pytest.mark.multi),
+                    pytest.param(4, marks=pytest.mark.multi),
+                    pytest.param(8, marks=pytest.mark.multi),
+                ],
+                ids=lambda val: f"TP({val})",
+            )
+
+        # if {"model", "backend", "warmup_shapes"}.issubset(metafunc.fixturenames):
+        # override full model specs
+        # params = list(itertools.product(get_spyre_model_list(), get_spyre_backend_list()))
+        # Override both x and y with new values
+        # params.append(
+        #     pytest.param(
+        #         "ibm-granite/granite-3.3-8b-instruct",
+        #         "sendnn",
+        #         marks=pytest.mark.full_model,
+        #     ),
+        # )
+        # else:
+        # #     # Default parameters
+        #     params = [get_spyre_model_list(), get_spyre_backend_list()]
+        # params = ["a", "b"]
+
+        # else:
+        #     params = [(get_spyre_model_list(), get_spyre_backend_list())]
+
+        # metafunc.parametrize(("model, backend"), params)
+
+    # existing_markers = [
+    #     marker.name if marker.name != "parametrize" else marker.args[0]
+    #     for marker in metafunc.definition.own_markers
+    # ]
+    # if "model" in metafunc.fixturenames and "model" not in existing_markers:
+    #     if metafunc.definition.get_closest_marker("test_with_full_model"):
+    #         # we append it here dynamically only to tests marked with
+    #         # the custom marker
+    #         model_list = get_spyre_model_list()
+    #         model_list.append(
+    #             pytest.param(
+    #                 "ibm-granite/granite-3.3-8b-instruct",
+    #                 marks=[pytest.mark.full_model],
+    #             ),
+    #         )
+    #         metafunc.parametrize("model", model_list)
+    #     else:
+    #         metafunc.parametrize("model", get_spyre_model_list())
+    # if (
+    #     "backend" in metafunc.fixturenames
+    #     and "backend" not in existing_markers
+    # ):
+    #     if metafunc.definition.get_closest_marker("test_with_full_model"):
+    #         # we append it here dynamically only to tests marked with
+    #         # the custom marker
+    #         backend_list = get_spyre_backend_list()
+    #         backend_list.append(
+    #             pytest.param("sendnn", marks=[pytest.mark.full_model]),
+    #         )
+    #         metafunc.parametrize("backend", backend_list)
+    #     else:
+    #         metafunc.parametrize("backend", get_spyre_backend_list())
+
+
+# models = ["model_a", "model_b"]
+# backends = ["backend_a", "backend_b"]
+
+# # Generate all combinations
+# combinations = zip(models, backends)
+
+# # For each combination, add a custom marker name
+# params = []
+# ids = []
+# for model, backend in combinations:
+#     marker = f"{model}_{backend}"
+#     param = pytest.param(
+#         model, backend, marks=pytest.mark.__getattr__(marker)
+#     )
+#     params.append(param)
+#     ids.append(marker)
+
+# metafunc.parametrize(("model", "backend"), params, ids=ids)
+
+# def pytest_generate_tests(metafunc):
+#     param_names = ("model", "backend")
+#     if metafunc.definition.get_closest_marker("full_model"):
+#         # Override parameters
+#         print("metafunc.fixturenames : ", metafunc.fixturenames)
+#         metafunc.parametrize("model", ["ibm-granite/granite-3.3-8b-instruct"])
+#         metafunc.parametrize("backend", ["sendnn"])
+#     else:
+#         # Check if any of the parameter names are already explicitly parametrized
+#         already_parametrized = set(metafunc.fixturenames) & set(param_names)
+#         print("already_parametrized :", already_parametrized)
+#         # assert 0
+#         if len(already_parametrized) == len(param_names):
+#             # parameters already exist on the test, return
+#             return
+#         # Default parameters
+#         if "model" in metafunc.fixturenames:
+#             metafunc.parametrize("model", get_spyre_model_list())
+#         if "backend" in metafunc.fixturenames:
+#             metafunc.parametrize("backend", get_spyre_backend_list())
+
+#     if metafunc.definition.get_closest_marker("full_model"):
+#         # Check if the test is marked with @pytest.mark.full_model
+#         # Override parameters
+#         metafunc.parametrize("model", ["ibm-granite/granite-3.3-8b-instruct"])
+#     else:
+#         # Default parameters
+#         metafunc.parametrize("model", get_spyre_model_list())
+# if "backend" in metafunc.fixturenames:
+#     # Check if the test is marked with @pytest.mark.full_model
+#     if metafunc.definition.get_closest_marker("full_model"):
+#         # Override parameters
+#         metafunc.parametrize("backend", ["sendnn"])
+#     else:
+#         # Default parameters
+#         metafunc.parametrize("backend", get_spyre_backend_list())
 
 
 def pytest_collection_modifyitems(config, items):

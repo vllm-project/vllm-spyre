@@ -5,17 +5,14 @@ Run `python -m pytest tests/e2e/test_spyre_max_prompt_length.py`.
 
 import pytest
 from llm_cache import DecodeWarmupShapes
-from spyre_util import (create_text_prompt, get_cached_llm,
-                        get_spyre_backend_list, get_spyre_model_list)
+from spyre_util import (create_text_prompt, get_cached_llm)
 from vllm import SamplingParams
 
 
-@pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
     "warmup_shapes",
     [[(64, 20, 4)], [(64, 20, 4),
                      (128, 20, 2)]])  # (prompt_length/new_tokens/batch_size)
-@pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_max_prompt_len_and_new_tokens(model: str,
                                        warmup_shapes: DecodeWarmupShapes,
                                        backend: str, use_llm_cache,
