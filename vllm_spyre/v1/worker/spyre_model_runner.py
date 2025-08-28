@@ -917,6 +917,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         right_padding_tkv -= n_pad_blocks * self.block_size
         left_padding_tkv = self.tkv - n_pad_blocks * self.block_size
         if n_pad_blocks > 0:
+            # Note: drawing explaining this optimization in more detail can
+            # be found here (see page 2 in particular):
+            # https://github.com/vllm-project/vllm-spyre/pull/340#issuecomment-3179337304
             logger.debug("Prefill reduced by %d blocks due to optimization.",
                          n_pad_blocks)
 
