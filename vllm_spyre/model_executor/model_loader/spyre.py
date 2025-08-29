@@ -489,11 +489,13 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             # set scale for kv_cache
             self._set_scale_for_fp8(attn_metadata)
 
+            # Adjust decode for bs=1 if needed
             input_ids, position_ids, attn_metadata = \
                 self._adjust_input_for_fp8(input_ids=input_ids,
                                            position_ids=position_ids,
                                            attn_metadata=attn_metadata)
 
+        # Run the model
         output = self.model(
             input_ids,
             position_ids=position_ids,
@@ -514,6 +516,8 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             # update scale for kv_cache after execute model
             self._update_scale_for_fp8(attn_metadata)
 
+            logits = self._adjust_output_for_fp8(logits, attn_metadata)
+
         return logits
 
     def _set_scale_for_fp8(self, attn_metadata: SpyreAttentionMetadata):
@@ -524,17 +528,26 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                 # reset to 1.
                 assert len(attn_metadata.scale_indices) == 1
                 prefill_index = attn_metadata.scale_indices[0]
-                v._scale = self.current_kv_scales[layer_idx][1][
-                    prefill_index] = torch.ones(1, dtype=torch.float32)
                 k._scale = self.current_kv_scales[layer_idx][0][
                     prefill_index] = torch.ones(1, dtype=torch.float32)
-                v._scaled = False
+                v._scale = self.current_kv_scales[layer_idx][1][
+                    prefill_index] = torch.ones(1, dtype=torch.float32)
                 k._scaled = False
+                v._scaled = False
+            elif len(attn_metadata.scale_indices) == 1:
+                # Decode
+                # Special case for decode of bs=1, pad the batch to be bs=2
+                dec_index = attn_metadata.scale_indices[0]
+                k._scale = \
+                    self.current_kv_scales[layer_idx][0][dec_index].repeat(2)
+                v._scale = \
+                    self.current_kv_scales[layer_idx][1][dec_index].repeat(2)
+
             else:
                 # Set scale only for the requests of the batch
-                v._scale = self.current_kv_scales[layer_idx][1][
-                    attn_metadata.scale_indices].reshape(-1)
                 k._scale = self.current_kv_scales[layer_idx][0][
+                    attn_metadata.scale_indices].reshape(-1)
+                v._scale = self.current_kv_scales[layer_idx][1][
                     attn_metadata.scale_indices].reshape(-1)
 
             # We set dynamic only for the first dimension of scale
@@ -547,10 +560,20 @@ class ContinuousBatchingFmsModel(FmsModelBase):
     def _update_scale_for_fp8(self, attn_metadata: SpyreAttentionMetadata):
 
         for layer_idx, (k, v) in enumerate(self.past_key_value_states):
-            self.current_kv_scales[layer_idx][0][
-                attn_metadata.scale_indices] = k._scale
-            self.current_kv_scales[layer_idx][1][
-                attn_metadata.scale_indices] = v._scale
+            if attn_metadata.is_prefill or len(
+                    attn_metadata.scale_indices) > 1:
+
+                self.current_kv_scales[layer_idx][0][
+                    attn_metadata.scale_indices] = k._scale
+                self.current_kv_scales[layer_idx][1][
+                    attn_metadata.scale_indices] = v._scale
+            else:
+                # if we did the padding, then we need to update only the scale
+                # for the decoding index
+                self.current_kv_scales[layer_idx][0][
+                    attn_metadata.scale_indices[0]] = k._scale[0]
+                self.current_kv_scales[layer_idx][1][
+                    attn_metadata.scale_indices[0]] = v._scale[0]
 
     def get_dtype(self) -> torch.dtype:
         # Get the model's data type
@@ -572,20 +595,37 @@ class ContinuousBatchingFmsModel(FmsModelBase):
     def _adjust_input_for_fp8(self, input_ids: torch.Tensor,
                               position_ids: torch.Tensor,
                               attn_metadata: SpyreAttentionMetadata):
-        if attn_metadata.is_prefill and input_ids.shape:
-            # We only need this for decode
+
+        # NOTE: We only need to adjust the inputs for decode with
+        # batch_size=2
+        if attn_metadata.is_prefill or input_ids.shape[0] > 1:
             return input_ids, position_ids, attn_metadata
 
         input_ids = input_ids.repeat(2, 1)
         position_ids = position_ids.repeat(2, 1)
         attn_metadata = SpyreAttentionMetadata(
-            slot_mapping=attn_metadata.slot_mapping,
-            current_tkv_mask=attn_metadata.current_tkv_mask,
-            left_padded_prompt_mask=attn_metadata.left_padded_prompt_mask,
-            block_table=attn_metadata.block_table,
-            is_prefill=attn_metadata.is_prefill,
-            scale_indices=torch.ones(2, dtype=torch.bool, device="cpu"))
+            slot_mapping=\
+                attn_metadata.slot_mapping.repeat(2, 1),
+            current_tkv_mask=\
+                attn_metadata.current_tkv_mask.repeat(2),
+            left_padded_prompt_mask=\
+                attn_metadata.left_padded_prompt_mask.repeat(2),
+            block_table=\
+                attn_metadata.block_table.repeat(2, 1),
+            is_prefill=\
+                attn_metadata.is_prefill,
+            # NOTE: we don't change here, because we'll need this untouched
+            # when we update the the scale after run the model
+            scale_indices=attn_metadata.scale_indices)
         return input_ids, position_ids, attn_metadata
+
+    def _adjust_output_for_fp8(self, logits: torch.Tensor,
+                               attn_metadata: SpyreAttentionMetadata):
+        if attn_metadata.is_prefill or len(attn_metadata.scale_indices) > 1:
+            # skip for prefill or decode for bs>1
+            return logits
+
+        return logits[0].unsqueeze(0)
 
 
 class StaticBatchingFmsModel(FmsModelBase):

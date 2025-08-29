@@ -607,7 +607,7 @@ class SpyreWorker(WorkerBaseV1):
             structured_output_request_ids={},
             grammar_bitmask=None,
         )
-        logger.info("[WARMUP] Prefill[1/2]...")
+        logger.info("[WARMUP] Prefill [1/2]...")
 
         self.execute_model(scheduler_output)
 
@@ -624,7 +624,7 @@ class SpyreWorker(WorkerBaseV1):
             structured_output_request_ids={},
             grammar_bitmask=None,
         )
-        logger.info("[WARMUP] Prefill[2/2]...")
+        logger.info("[WARMUP] Prefill [2/2]...")
 
         self.execute_model(scheduler_output)
 
