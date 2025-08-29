@@ -141,6 +141,10 @@ Various log levels that can be configured:
     export TORCH_SENDNN_LOG=CRITICAL
     ```
 
+For tensor-parallel debugging, you can enable an option to redirect all log output from each rank to an individual file.
+Set `VLLM_SPYRE_WORKER_LOG_REDIRECT_DIR` to a local directory, and each rank will redirect stdout and stderr into their own file inside the directory.
+This can be helpful to avoid having interleaved stack dumps from different ranks in stderr.
+
 ### Topology Aware Allocation
 
 This section is specific to the AIU operator and scheduling workloads onto specific cards.
