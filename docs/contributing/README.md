@@ -130,7 +130,7 @@ Various log levels that can be configured:
 - `DTLOG_LEVEL` - `TRACE, DEBUG, INFO, WARNING, ERROR`
 - `TORCH_SENDNN_LOG` - `WARNING, CRITICAL`
 - `VLLM_LOGGING_LEVEL` - `DEBUG, INFO, WARNING, ERROR`
-- `DT_DEEPRT_VERBOSE` - `0, -1` 
+- `DT_DEEPRT_VERBOSE` - `0, -1`
 
 !!! tip
     `DTLOG_LEVEL=INFO` (piped to file) can help you see what device addresses are actually in use. Look for the string `Opened: SEN:VFIO`.
