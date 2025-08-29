@@ -85,7 +85,7 @@ def _maybe_warmup_context(limit: int, world_size: int, rank: int):
     # method on warmup_context
     functools.update_wrapper(__stagger_exit__, sendnn_exit)
     # Replace `warmup_context.__exit__` with our new wrapper
-    warmup_context.__exit__ = __stagger_exit__
+    warmup_context.__exit__ = __stagger_exit__  # type: ignore[method-assign]
 
     with warmup_context():
         _inside_warmup_mode = True
