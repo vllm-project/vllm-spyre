@@ -331,12 +331,12 @@ def compare_results(
                     f"{vllm_logprob:14f}  ",
                     end='')
 
-                if backend == 'sendnn':
-                    rel_tol = ISCLOSE_REL_TOL_SPYRE
-                elif 'FP8' in model:
+                if 'FP8' in model:
                     # TODO: Improve this. For now our testing model can be
                     # solved with this logic
                     rel_tol = ISCLOSE_REL_TOL_QUANTIZATION
+                elif backend == 'sendnn':
+                    rel_tol = ISCLOSE_REL_TOL_SPYRE
                 else:
                     rel_tol = ISCLOSE_REL_TOL_CPU
 
