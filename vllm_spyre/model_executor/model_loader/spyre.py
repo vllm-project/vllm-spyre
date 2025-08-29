@@ -489,6 +489,11 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             # set scale for kv_cache
             self._set_scale_for_fp8(attn_metadata)
 
+            input_ids, position_ids, attn_metadata = \
+                self._adjust_input_for_fp8(input_ids=input_ids,
+                                           position_ids=position_ids,
+                                           attn_metadata=attn_metadata)
+
         output = self.model(
             input_ids,
             position_ids=position_ids,
@@ -561,6 +566,26 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                 return torch.float16
             else:
                 return torch.float32
+
+    # TODO: this is not the best place to do. But we expect this to
+    # be temporary and here should be easy to remove later
+    def _adjust_input_for_fp8(self, input_ids: torch.Tensor,
+                              position_ids: torch.Tensor,
+                              attn_metadata: SpyreAttentionMetadata):
+        if attn_metadata.is_prefill and input_ids.shape:
+            # We only need this for decode
+            return input_ids, position_ids, attn_metadata
+
+        input_ids = input_ids.repeat(2, 1)
+        position_ids = position_ids.repeat(2, 1)
+        attn_metadata = SpyreAttentionMetadata(
+            slot_mapping=attn_metadata.slot_mapping,
+            current_tkv_mask=attn_metadata.current_tkv_mask,
+            left_padded_prompt_mask=attn_metadata.left_padded_prompt_mask,
+            block_table=attn_metadata.block_table,
+            is_prefill=attn_metadata.is_prefill,
+            scale_indices=torch.ones(2, dtype=torch.bool, device="cpu"))
+        return input_ids, position_ids, attn_metadata
 
 
 class StaticBatchingFmsModel(FmsModelBase):
