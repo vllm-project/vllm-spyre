@@ -1,7 +1,5 @@
 import openai
 import pytest
-from spyre_util import (default_sb_cb_params, get_spyre_backend_list,
-                        get_spyre_model_list)
 
 
 def _check_result(client, model, max_tokens=8, temperature=0.0, n=1) -> None:
@@ -16,19 +14,6 @@ def _check_result(client, model, max_tokens=8, temperature=0.0, n=1) -> None:
     assert len(completion.choices[0].text) > 0
 
 
-@pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize(
-    "tp_size",
-    [
-        pytest.param(1, marks=pytest.mark.basic),
-        pytest.param(2, marks=pytest.mark.multi),
-        pytest.param(4, marks=pytest.mark.multi),
-        pytest.param(8, marks=pytest.mark.multi),
-    ],
-    ids=lambda val: f"TP({val})",
-)
-@pytest.mark.parametrize("backend", get_spyre_backend_list())
-@default_sb_cb_params
 def test_openai_serving(
     remote_openai_server,
     model,

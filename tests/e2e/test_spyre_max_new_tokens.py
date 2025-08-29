@@ -5,16 +5,12 @@ Run `python -m pytest tests/e2e/test_spyre_max_new_tokens.py`.
 
 import pytest
 from llm_cache import DecodeWarmupShapes
-from spyre_util import (check_output_against_hf, default_sb_cb_params,
-                        generate_spyre_vllm_output, get_chicken_soup_prompts,
-                        get_spyre_backend_list, get_spyre_model_list)
+from spyre_util import (check_output_against_hf, generate_spyre_vllm_output,
+                        get_chicken_soup_prompts)
 from vllm import SamplingParams
 
 
-@pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("stop_last", [True, False])
-@pytest.mark.parametrize("backend", get_spyre_backend_list())
-@default_sb_cb_params
 def test_output(model: str, stop_last: bool, max_model_len: int,
                 max_num_seqs: int, warmup_shapes: DecodeWarmupShapes,
                 backend: str, cb: int, monkeypatch: pytest.MonkeyPatch,

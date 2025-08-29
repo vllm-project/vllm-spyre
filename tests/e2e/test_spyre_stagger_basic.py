@@ -5,26 +5,11 @@ Run `python -m pytest tests/e2e/test_stagger_spyre_basic.py`.
 """
 
 import pytest
-from spyre_util import (check_output_against_hf, default_sb_cb_params,
-                        generate_spyre_vllm_output, get_chicken_soup_prompts,
-                        get_spyre_backend_list, get_spyre_model_list,
-                        skip_unsupported_tp_size)
+from spyre_util import (check_output_against_hf, generate_spyre_vllm_output,
+                        get_chicken_soup_prompts, skip_unsupported_tp_size)
 from vllm import SamplingParams
 
 
-@pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize(
-    "tp_size",
-    [
-        pytest.param(1),
-        pytest.param(2, marks=pytest.mark.multi),
-        pytest.param(4, marks=pytest.mark.multi),
-        pytest.param(8, marks=pytest.mark.multi),
-    ],
-    ids=lambda val: f"TP({val})",
-)
-@pytest.mark.parametrize("backend", get_spyre_backend_list())
-@default_sb_cb_params
 def test_stagger_output(model: str, tp_size: int, backend: str, cb: int,
                         max_num_seqs: int, max_model_len: int, warmup_shapes,
                         monkeypatch: pytest.MonkeyPatch,

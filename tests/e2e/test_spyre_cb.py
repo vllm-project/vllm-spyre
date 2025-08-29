@@ -13,16 +13,13 @@ from openai import BadRequestError
 from spyre_util import (RemoteOpenAIServer, check_output_against_hf,
                         compare_results, create_seq_prompt, extract_output,
                         generate_spyre_vllm_output, get_chicken_soup_prompts,
-                        get_spyre_model_list, skip_unsupported_tp_size)
+                        skip_unsupported_tp_size)
 from vllm import LLM, SamplingParams
 
 
-@pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.cb
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
-@pytest.mark.parametrize("max_num_seqs", [4])
-@pytest.mark.parametrize("max_model_len", [256])
 def test_cb_max_tokens(model: str, backend: str, max_model_len: int,
                        max_num_seqs: int, monkeypatch: pytest.MonkeyPatch,
                        use_llm_cache):
@@ -51,9 +48,6 @@ def test_cb_max_tokens(model: str, backend: str, max_model_len: int,
 
 @pytest.mark.cb
 @pytest.mark.parametrize("cb", [True])
-@pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize("max_model_len", [256])
-@pytest.mark.parametrize("max_num_seqs", [4])
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 def test_api_cb_rejects_oversized_request(
@@ -81,9 +75,6 @@ def test_api_cb_rejects_oversized_request(
 
 @pytest.mark.cb
 @pytest.mark.parametrize("cb", [True])
-@pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize("max_model_len", [256])
-@pytest.mark.parametrize("max_num_seqs", [4])
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 def test_api_cb_generates_correct_max_tokens(
@@ -109,7 +100,6 @@ def test_api_cb_generates_correct_max_tokens(
 
 @pytest.mark.compiler_support_16k
 @pytest.mark.cb
-@pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
     "backend", [pytest.param("sendnn", marks=pytest.mark.spyre, id="sendnn")])
 @pytest.mark.parametrize(

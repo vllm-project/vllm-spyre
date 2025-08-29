@@ -12,15 +12,11 @@ from graph_compare_utils import (collect_graph_files, compare_graphs,
                                  get_aftu_script_dir, get_model_path,
                                  run_inference_py_and_get_graphs)
 from llm_cache import DecodeWarmupShapes
-from spyre_util import (generate_spyre_vllm_output, get_chicken_soup_prompts,
-                        get_spyre_model_list)
+from spyre_util import generate_spyre_vllm_output, get_chicken_soup_prompts
 from vllm import SamplingParams
 
 
 @pytest.mark.spyre
-@pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize("max_num_seqs", [4],
-                         ids=lambda val: f"max_num_seqs({val})")
 def test_compare_graphs_cb(model: str, max_num_seqs: int,
                            monkeypatch: pytest.MonkeyPatch, use_llm_cache):
     """Test that the spyre worker correctly outputs
@@ -91,7 +87,6 @@ def test_compare_graphs_cb(model: str, max_num_seqs: int,
 
 
 @pytest.mark.spyre
-@pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
     "warmup_shapes", [[(64, 4, 4)]])  # (prompt_length/new_tokens/batch_size)
 def test_compare_graphs_static_batching(
