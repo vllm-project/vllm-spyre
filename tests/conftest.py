@@ -36,6 +36,9 @@ def pytest_generate_tests(metafunc):
     ]
 
     marker = metafunc.config.option.markexpr  # From CLI
+    # TODO: make this condition better
+    # it can accidentally be triggered if we say
+    # -m "not full_model"
     if "full_model" in marker:
         # When -m full_model is called, all tests tagged with
         # full_model mark will be injected with these custom values
@@ -52,32 +55,18 @@ def pytest_generate_tests(metafunc):
                 metafunc,
                 existing_markers,
             )
-            if "not cb" in marker:
-                _add_param(
-                    "warmup_shapes",
-                    [[(1024, 20, 4)]],
-                    metafunc,
-                    existing_markers,
-                )
-                _add_param(
-                    "max_model_len",
-                    [2048],
-                    metafunc,
-                    existing_markers,
-                )
-            else:
-                _add_param(
-                    "max_model_len",
-                    default_max_model_len,
-                    metafunc,
-                    existing_markers,
-                )
-                _add_param(
-                    "warmup_shapes",
-                    default_warmup_shape,
-                    metafunc,
-                    existing_markers,
-                )
+            _add_param(
+                "warmup_shapes",
+                [[(1024, 20, 4)]],
+                metafunc,
+                existing_markers,
+            )
+            _add_param(
+                "max_model_len",
+                default_max_model_len,
+                metafunc,
+                existing_markers,
+            )
     else:
         # Default parameters
         _add_param("model", get_spyre_model_list(), metafunc, existing_markers)
@@ -108,6 +97,9 @@ def pytest_generate_tests(metafunc):
         existing_markers,
     )
 
+    # TODO: add both these using _add_param too
+    # Will need to do some fancy stuff to add custom
+    # markers
     if "cb" in metafunc.fixturenames and "cb" not in existing_markers:
         metafunc.parametrize(
             "cb", [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
