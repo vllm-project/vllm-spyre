@@ -6,35 +6,14 @@ Run `python -m pytest tests/e2e/test_stagger_spyre_basic.py`.
 
 import pytest
 from spyre_util import (check_output_against_hf, generate_spyre_vllm_output,
-                        get_chicken_soup_prompts, get_spyre_backend_list,
-                        get_spyre_model_list, skip_unsupported_tp_size)
+                        get_chicken_soup_prompts, skip_unsupported_tp_size)
 from vllm import SamplingParams
 
 
-@pytest.mark.parametrize("cb",
-                         [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
-@pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize(
-    "tp_size",
-    [
-        pytest.param(1),
-        pytest.param(2, marks=pytest.mark.multi),
-        pytest.param(4, marks=pytest.mark.multi),
-        pytest.param(8, marks=pytest.mark.multi),
-    ],
-    ids=lambda val: f"TP({val})",
-)
-@pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("max_num_seqs", [4],
-                         ids=lambda val: f"max_num_seqs({val})")
-def test_stagger_output(
-    model: str,
-    tp_size: int,
-    backend: str,
-    cb: int,
-    max_num_seqs: int,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_stagger_output(model: str, tp_size: int, backend: str, cb: int,
+                        max_num_seqs: int, max_model_len: int, warmup_shapes,
+                        monkeypatch: pytest.MonkeyPatch,
+                        use_llm_cache) -> None:
     '''
     This test verifies that generated output is still correct
     when stagget mode is enabled.
@@ -52,10 +31,8 @@ def test_stagger_output(
     kwargs = ({
         "max_num_seqs": max_num_seqs,
         "use_cb": True,
-        "max_model_len": 256,
     } if cb == 1 else {
-        "warmup_shapes": (warmup_shape, ),
-        "max_model_len": 2048,
+        "warmup_shapes": warmup_shapes
     })
 
     max_new_tokens = warmup_shape[1]
@@ -73,6 +50,7 @@ def test_stagger_output(
         tensor_parallel_size=tp_size,
         backend=backend,
         monkeypatch=monkeypatch,
+        max_model_len=max_model_len,
         **kwargs)
     check_output_against_hf(model, backend, max_new_tokens, vllm_results,
                             prompts)

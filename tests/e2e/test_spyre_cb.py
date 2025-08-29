@@ -8,28 +8,23 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from llm_cache import force_engine_shutdown
 from openai import BadRequestError
 from spyre_util import (RemoteOpenAIServer, check_output_against_hf,
                         compare_results, create_seq_prompt, extract_output,
-                        force_engine_shutdown, generate_spyre_vllm_output,
-                        get_chicken_soup_prompts, get_spyre_model_list,
+                        generate_spyre_vllm_output, get_chicken_soup_prompts,
                         skip_unsupported_tp_size)
 from vllm import LLM, SamplingParams
 
 
-@pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.cb
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
-def test_cb_max_tokens(
-    model: str,
-    backend: str,
-    monkeypatch: pytest.MonkeyPatch,
-):
+def test_cb_max_tokens(model: str, backend: str, max_model_len: int,
+                       max_num_seqs: int, monkeypatch: pytest.MonkeyPatch,
+                       use_llm_cache):
     """Test that continuous batches of requests that
     are longer than the `max_model_len` are correctly rejected"""
-
-    max_model_len = 256
     max_tokens = 20
 
     overflow_prompt = " ".join(["a"] * max_model_len)
@@ -46,16 +41,13 @@ def test_cb_max_tokens(
                                    sampling_params=vllm_sampling_params,
                                    tensor_parallel_size=1,
                                    backend=backend,
-                                   max_num_seqs=2,
+                                   max_num_seqs=max_num_seqs,
                                    use_cb=True,
                                    monkeypatch=monkeypatch)
 
 
 @pytest.mark.cb
 @pytest.mark.parametrize("cb", [True])
-@pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize("max_model_len", [256])
-@pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 def test_api_cb_rejects_oversized_request(
@@ -83,9 +75,6 @@ def test_api_cb_rejects_oversized_request(
 
 @pytest.mark.cb
 @pytest.mark.parametrize("cb", [True])
-@pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize("max_model_len", [256])
-@pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 def test_api_cb_generates_correct_max_tokens(
@@ -111,7 +100,6 @@ def test_api_cb_generates_correct_max_tokens(
 
 @pytest.mark.compiler_support_16k
 @pytest.mark.cb
-@pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
     "backend", [pytest.param("sendnn", marks=pytest.mark.spyre, id="sendnn")])
 @pytest.mark.parametrize(

@@ -2,24 +2,19 @@ import inspect
 import math
 import os
 import random
-import subprocess
-import sys
-import time
 from pathlib import Path
 from typing import Any, Optional, Union
 
 import numpy as np
-import openai
 import pytest
-import requests
 import torch
 from hf_result_cache import HFResultCache
+from llm_cache import (DecodeWarmupShapes, EmbeddingWarmupShapes, EngineCache,
+                       LLMCache, RemoteOpenAIServer, RemoteOpenAIServerCache)
 from sentence_transformers import SentenceTransformer, util
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, SamplingParams
-from vllm.entrypoints.openai.cli_args import make_arg_parser
 from vllm.transformers_utils.tokenizer import get_tokenizer
-from vllm.utils import FlexibleArgumentParser, get_open_port
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.request import Request
@@ -34,140 +29,13 @@ ISCLOSE_REL_TOL_SPYRE = 0.35
 ISCLOSE_REL_TOL_QUANTIZATION = 0.451
 
 HF_RESULT_CACHE = HFResultCache()
+LLM_CACHE = LLMCache()
+API_SERVER_CACHE = RemoteOpenAIServerCache()
+ENGINE_CACHE = EngineCache()
 
 
-def force_engine_shutdown(llm: LLM):
-    """
-    🌶️🌶️🌶️
-    This hack is here because of an issue in vllm 0.9.2+ where a circular
-    reference occurs in vllm.executor.ray_utils if ray is not installed. This
-    circular reference holds a copy of the vllm config which contains a
-    reference to the LLM, which means it can never be garbage collected.
-    Since vllm.LLM relies on garbage collection to shut down its engine, the
-    engine never shuts down. When running tensor parallel workloads, if the
-    engine is never shut down then the TP worker processes are never killed.
-    When the TP worker processes are held open, all future attempts to create a
-    new engine will fail with an EADDRINUSE error.
-    🌶️🌶️🌶️
-    """
-    llm.llm_engine.engine_core.shutdown()
-
-
-class RemoteOpenAIServer:
-    """Subprocess wrapper that boots a vllm server with `vllm serve` for testing
-    against"""
-
-    DUMMY_API_KEY = "token-abc123"  # vLLM's OpenAI server does not need API key
-
-    def __init__(self,
-                 model: str,
-                 vllm_serve_args: list[str],
-                 *,
-                 env_dict: Optional[dict[str, str]] = None,
-                 seed: Optional[int] = 0,
-                 auto_port: bool = True,
-                 max_wait_seconds: Optional[float] = None) -> None:
-        # NB: This implementation does not ensure that the model is downloaded
-        # before booting the server, it should be used with models already
-        # cached on disk
-
-        if auto_port:
-            if "-p" in vllm_serve_args or "--port" in vllm_serve_args:
-                raise ValueError("You have manually specified the port "
-                                 "when `auto_port=True`.")
-
-            # Don't mutate the input args
-            vllm_serve_args = vllm_serve_args + [
-                "--port", str(get_open_port())
-            ]
-        if seed is not None:
-            if "--seed" in vllm_serve_args:
-                raise ValueError("You have manually specified the seed "
-                                 f"when `seed={seed}`.")
-
-            vllm_serve_args = vllm_serve_args + ["--seed", str(seed)]
-
-        parser = FlexibleArgumentParser(
-            description="vLLM's remote OpenAI server.")
-        parser = make_arg_parser(parser)
-        args = parser.parse_args(["--model", model, *vllm_serve_args])
-        self.host = str(args.host or 'localhost')
-        self.port = int(args.port)
-
-        env = os.environ.copy()
-        if env_dict is not None:
-            env.update(env_dict)
-        self.proc = subprocess.Popen(
-            ["vllm", "serve", model, *vllm_serve_args],
-            env=env,
-            stdout=sys.stdout,
-            stderr=sys.stderr,
-        )
-        max_wait_seconds = max_wait_seconds or 600
-        self._wait_for_server(url=self.url_for("health"),
-                              timeout=max_wait_seconds)
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.proc.terminate()
-        try:
-            self.proc.wait(8)
-        except subprocess.TimeoutExpired:
-            # force kill if needed
-            self.proc.kill()
-
-    def _wait_for_server(self, *, url: str, timeout: float):
-        # run health check
-        start = time.time()
-        while True:
-            try:
-                if requests.get(url).status_code == 200:
-                    break
-            except Exception:
-                # this exception can only be raised by requests.get,
-                # which means the server is not ready yet.
-                # the stack trace is not useful, so we suppress it
-                # by using `raise from None`.
-                result = self.proc.poll()
-                if result is not None and result != 0:
-                    raise RuntimeError("Server exited unexpectedly.") from None
-
-                time.sleep(0.5)
-                if time.time() - start > timeout:
-                    raise RuntimeError(
-                        "Server failed to start in time.") from None
-
-    @property
-    def url_root(self) -> str:
-        return f"http://{self.host}:{self.port}"
-
-    def url_for(self, *parts: str) -> str:
-        return self.url_root + "/" + "/".join(parts)
-
-    def get_client(self, **kwargs):
-        if "timeout" not in kwargs:
-            kwargs["timeout"] = 600
-        return openai.OpenAI(
-            base_url=self.url_for("v1"),
-            api_key=self.DUMMY_API_KEY,
-            max_retries=0,
-            **kwargs,
-        )
-
-    def get_async_client(self, **kwargs):
-        if "timeout" not in kwargs:
-            kwargs["timeout"] = 600
-        return openai.AsyncOpenAI(base_url=self.url_for("v1"),
-                                  api_key=self.DUMMY_API_KEY,
-                                  max_retries=0,
-                                  **kwargs)
-
-
-def patch_warmup_shapes(warmup_shapes: Union[list[tuple[int, int, int]],
-                                             list[tuple[int, int]]],
-                        monkeypatch):
+def patch_warmup_shapes(warmup_shapes: DecodeWarmupShapes
+                        | EmbeddingWarmupShapes, monkeypatch):
     warmup_prompt_length = [t[0] for t in warmup_shapes]
     warmup_batch_size = [t[-1] for t in warmup_shapes]
 
@@ -209,41 +77,22 @@ def generate_spyre_vllm_output(
     tensor_parallel_size: int,
     backend: str,
     monkeypatch: pytest.MonkeyPatch,
-    warmup_shapes: Optional[list[tuple[int, int, int]]] = None,
+    warmup_shapes: DecodeWarmupShapes | None = None,
     max_num_seqs: Optional[int] = None,
     use_cb: bool = False,
 ) -> list[dict[str, Any]]:
-
-    # ---- For static batching ----
-    if warmup_shapes:
-        assert not use_cb, "Warmup shapes through environment variables have "\
-            "been deprecated in continuous batching"
-
-        warmup_prompt_length = [t[0] for t in warmup_shapes]
-        warmup_new_tokens = [t[1] for t in warmup_shapes]
-        warmup_batch_size = [t[2] for t in warmup_shapes]
-
-        monkeypatch.setenv("VLLM_SPYRE_WARMUP_PROMPT_LENS",
-                           ",".join(str(val) for val in warmup_prompt_length))
-        monkeypatch.setenv("VLLM_SPYRE_WARMUP_NEW_TOKENS",
-                           ",".join(str(val) for val in warmup_new_tokens))
-        monkeypatch.setenv("VLLM_SPYRE_WARMUP_BATCH_SIZES",
-                           ",".join(str(val) for val in warmup_batch_size))
-    # --------------
-    monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1" if use_cb else "0")
-    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
-
     # Allows to run multiprocess V1 engine without dumping meaningless logs at
     # shutdown engine this context.
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
-    vllm_model = LLM(
-        model=model,
-        tokenizer=model,
-        max_model_len=max_model_len,
-        max_num_seqs=max_num_seqs,
-        tensor_parallel_size=tensor_parallel_size,
-    )
+    vllm_model = get_cached_llm(model=model,
+                                max_model_len=max_model_len,
+                                tensor_parallel_size=tensor_parallel_size,
+                                backend=backend,
+                                monkeypatch=monkeypatch,
+                                warmup_shapes=warmup_shapes,
+                                max_num_seqs=max_num_seqs,
+                                use_cb=use_cb)
 
     vllm_outputs = vllm_model.generate(prompts, sampling_params)
     results = []
@@ -252,8 +101,76 @@ def generate_spyre_vllm_output(
         result = extract_output(req_output)
         results.append(result)
 
-    force_engine_shutdown(vllm_model)
     return results
+
+
+def clear_llm_caches():
+    LLM_CACHE.clear()
+    API_SERVER_CACHE.clear()
+    ENGINE_CACHE.clear()
+
+
+def print_llm_cache_info():
+    print("\n----- LLM Cache info ----\n")
+    print(f"vllm.LLM Cache hits: {LLM_CACHE._cache.hits} / "
+          f"misses: {LLM_CACHE._cache.misses}")
+    print(f"Runtime Server Cache hits: {API_SERVER_CACHE._cache.hits} / "
+          f"misses: {API_SERVER_CACHE._cache.misses}")
+    print(f"Engine Core Cache hits: {ENGINE_CACHE._cache.hits} / "
+          f"misses: {ENGINE_CACHE._cache.misses}")
+    print("\n-------------------------\n")
+
+
+def get_cached_llm(
+    model: str,
+    max_model_len: int,
+    tensor_parallel_size: int,
+    backend: str,
+    monkeypatch: pytest.MonkeyPatch,
+    warmup_shapes: DecodeWarmupShapes | None = None,
+    max_num_seqs: Optional[int] = None,
+    use_cb: bool = False,
+) -> LLM:
+    # Clear other caches first
+    API_SERVER_CACHE.clear()
+    ENGINE_CACHE.clear()
+
+    return LLM_CACHE.get_cached_llm(model=model,
+                                    max_model_len=max_model_len,
+                                    tensor_parallel_size=tensor_parallel_size,
+                                    backend=backend,
+                                    monkeypatch=monkeypatch,
+                                    warmup_shapes=warmup_shapes,
+                                    max_num_seqs=max_num_seqs,
+                                    use_cb=use_cb)
+
+
+def get_cached_api_server(model: str, server_args: list[str],
+                          server_env: dict) -> RemoteOpenAIServer:
+    # Clear other caches first
+    LLM_CACHE.clear()
+    ENGINE_CACHE.clear()
+
+    return API_SERVER_CACHE.get_api_server(
+        model=model,
+        server_args=server_args,
+        server_env=server_env,
+    )
+
+
+def get_cached_engine(model: str, max_model_len: int, max_num_seqs: int,
+                      available_blocks: int, backend: str,
+                      monkeypatch) -> EngineCore:
+    # Clear other caches first
+    LLM_CACHE.clear()
+    API_SERVER_CACHE.clear()
+
+    return ENGINE_CACHE.get_engine(model=model,
+                                   max_model_len=max_model_len,
+                                   max_num_seqs=max_num_seqs,
+                                   available_blocks=available_blocks,
+                                   backend=backend,
+                                   monkeypatch=monkeypatch)
 
 
 # Hugging Face
@@ -277,6 +194,11 @@ def generate_hf_output(
     if all(results):
         # Everything hit cache
         return results
+
+    assert os.getenv("GITHUB_ACTIONS", "") != "true", \
+        "HF results cache miss during Github Actions run. " \
+        "Please run tests locally with `-m 'cpu'` and check in the changes " \
+        "to hf_cache.json"
 
     hf_model = AutoModelForCausalLM.from_pretrained(model)
     hf_tokenizer = AutoTokenizer.from_pretrained(model)
@@ -474,6 +396,12 @@ def check_output_against_hf(model, backend, max_new_tokens, vllm_results,
 def spyre_vllm_embeddings(model: str, prompts: list[str], max_model_len: int,
                           tensor_parallel_size: int,
                           backend: str) -> list[dict[str, Any]]:
+    # NB: This doesn't use the same LLM caching as generate_spyre_vllm_output
+    # There aren't as many embedding tests so it's not worth the effort atm to
+    # cache
+
+    # Clear any cached decoder model
+    LLM_CACHE.clear()
 
     vllm_model = LLM(model=model,
                      tokenizer=model,
@@ -510,7 +438,7 @@ def st_embeddings(model: str, prompts: list[str]) -> list[dict[str, Any]]:
 
 # compare results
 def compare_embedding_results(model: str, prompts: list[str],
-                              warmup_shapes: list[tuple[int, int]],
+                              warmup_shapes: EmbeddingWarmupShapes,
                               tensor_parallel_size: int, backend: str,
                               vllm_results: list[dict[str, Any]],
                               hf_results: list[dict[str, Any]]):
