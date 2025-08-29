@@ -61,12 +61,6 @@ def pytest_generate_tests(metafunc):
                 metafunc,
                 existing_markers,
             )
-            _add_param(
-                "max_model_len",
-                default_max_model_len,
-                metafunc,
-                existing_markers,
-            )
     else:
         # Default parameters
         _add_param("model", get_spyre_model_list(), metafunc, existing_markers)
@@ -82,14 +76,15 @@ def pytest_generate_tests(metafunc):
             metafunc,
             existing_markers,
         )
-        _add_param(
-            "max_model_len",
-            default_max_model_len,
-            metafunc,
-            existing_markers,
-        )
 
     # apply to all
+    _add_param(
+        "max_model_len",
+        default_max_model_len,
+        metafunc,
+        existing_markers,
+    )
+
     _add_param(
         "max_num_seqs",
         default_max_num_seqs,
