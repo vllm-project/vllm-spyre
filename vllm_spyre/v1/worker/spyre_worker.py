@@ -81,7 +81,12 @@ def _maybe_warmup_context(limit: int, world_size: int, rank: int):
         with utils_spyre.stagger_region(limit, world_size, rank):
             sendnn_exit(*args, **kwargs)
 
+    # Use update_wrapper to make __stagger_exit__ look like a proper instance
+    # method on warmup_context
     functools.update_wrapper(__stagger_exit__, sendnn_exit)
+    # Replace `warmup_context.__exit__` with our new wrapper
+    warmup_context.__exit__ = __stagger_exit__  # type: ignore[method-assign]
+
     with warmup_context():
         _inside_warmup_mode = True
         yield
