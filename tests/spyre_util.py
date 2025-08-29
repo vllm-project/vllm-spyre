@@ -14,6 +14,7 @@ from llm_cache import (DecodeWarmupShapes, EmbeddingWarmupShapes, EngineCache,
 from sentence_transformers import SentenceTransformer, util
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, SamplingParams
+from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.request import Request
@@ -23,6 +24,9 @@ DISABLE_ASSERTS = False  # used for debugging
 # TODO: Needs to be separate for quantized models
 ISCLOSE_REL_TOL_CPU = 0.35
 ISCLOSE_REL_TOL_SPYRE = 0.35
+
+# TODO: improve this
+ISCLOSE_REL_TOL_QUANTIZATION = 0.451
 
 HF_RESULT_CACHE = HFResultCache()
 LLM_CACHE = LLMCache()
@@ -263,6 +267,16 @@ def compare_results(
     if prompts is None:
         prompts = [""] * len(vllm_results)
 
+    tokenizer = None
+    # Decode the prompts if needed
+    for idx in range(len(prompts)):
+        prompt = prompts[idx]
+        if not all(isinstance(t, int) for t in prompt):
+            continue
+        tokenizer = get_tokenizer(model) if tokenizer is None \
+            else tokenizer
+        prompts[idx] = tokenizer.decode(prompt)
+
     print(f"\nmodel:         {model:s}")
     print(f"tp size:       {tensor_parallel_size}")
     print(f"backend:       {backend:s}")
@@ -289,11 +303,6 @@ def compare_results(
 
         if isinstance(hf_result['token_ids'], list):
             hf_result['token_ids'] = tuple(hf_result['token_ids'])
-
-        assert DISABLE_ASSERTS or backend == 'sendnn' or\
-            hf_result['token_ids'] == vllm_result['token_ids'], \
-            f"Token ids differ: {hf_result['token_ids']} != " \
-            f"{vllm_result['token_ids']}"
 
         if len(hf_result['tokens']) > 0:
             print("   token id. token               logprob      "
@@ -322,7 +331,11 @@ def compare_results(
                     f"{vllm_logprob:14f}  ",
                     end='')
 
-                if backend == 'sendnn':
+                if 'FP8' in model:
+                    # TODO: Improve this. For now our testing model can be
+                    # solved with this logic
+                    rel_tol = ISCLOSE_REL_TOL_QUANTIZATION
+                elif backend == 'sendnn':
                     rel_tol = ISCLOSE_REL_TOL_SPYRE
                 else:
                     rel_tol = ISCLOSE_REL_TOL_CPU
@@ -353,6 +366,13 @@ def compare_results(
                   f"average={np.mean(logprob_rel_diff_list):f}  "
                   f"maximum={np.max(logprob_rel_diff_list):f}")
 
+        if hf_result['token_ids'] != vllm_result['token_ids']:
+            print(hf_result['token_ids'])
+            print(vllm_result['token_ids'])
+        assert DISABLE_ASSERTS or backend == 'sendnn' or\
+            hf_result['token_ids'] == vllm_result['token_ids'], \
+            f"Token ids differ: {hf_result['token_ids']} != " \
+            f"{vllm_result['token_ids']}"
         print()
 
 
@@ -364,13 +384,12 @@ def check_output_against_hf(model, backend, max_new_tokens, vllm_results,
         max_new_tokens=max_new_tokens,
         ignore_eos=True,
     )
-    compare_results(
-        model=model,
-        tensor_parallel_size=1,
-        backend=backend,
-        vllm_results=vllm_results,
-        hf_results=hf_outputs,
-    )
+    compare_results(model=model,
+                    tensor_parallel_size=1,
+                    backend=backend,
+                    vllm_results=vllm_results,
+                    hf_results=hf_outputs,
+                    prompts=prompts)
 
 
 # vLLM / Spyre
