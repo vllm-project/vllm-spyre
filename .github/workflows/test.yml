@@ -53,6 +53,10 @@ jobs:
             markers: "cpu and embedding"
             flags: "--timeout=300"
             hf_models: "sentence-transformers/all-roberta-large-v1"
+          - name: "scoring"
+            markers: "cpu and scoring"
+            flags: "--timeout=300"
+            hf_models: "cross-encoder/stsb-roberta-large"
           - name: "continuous batching"
             markers: "cpu and cb"
             flags: "--timeout=300  --durations=0 -s"
@@ -200,6 +204,9 @@ jobs:
                 download_tinyllama "$model" &
                 ;;
               "sentence-transformers/all-roberta-large-v1")
+                download_roberta_large "$model" &
+                ;;
+              "cross-encoder/stsb-roberta-large")
                 download_roberta_large "$model" &
                 ;;
               *)
