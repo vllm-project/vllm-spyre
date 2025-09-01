@@ -133,8 +133,6 @@ def pytest_collection_modifyitems(config, items):
 
     _skip_quantized_by_default(config, items)
 
-    _xfail_fp8_on_cb_spyre(items)
-
     _skip_unsupported_compiler_tests(config, items)
 
     sort_tests_for_llm_caching(items)
@@ -168,20 +166,6 @@ def _skip_quantized_by_default(config, items):
     for item in items:
         if "quantized" in item.keywords:
             item.add_marker(skip_mymarker)
-
-
-def _xfail_fp8_on_cb_spyre(items):
-    """Set an xfail marker on all tests that run quantized models on Continuous
-    Batching on Spyre.
-    
-    """
-
-    xfail_marker = pytest.mark.xfail(
-        reason="fp8 is not yet supported on Continuous Batching on Spyre")
-    for item in items:
-        if "quantized" in item.keywords and "spyre" \
-            in item.keywords and "cb" in item.keywords:
-            item.add_marker(xfail_marker)
 
 
 def _skip_unsupported_compiler_tests(config, items):
