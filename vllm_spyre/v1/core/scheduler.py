@@ -157,20 +157,6 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             "Expecting the env var VLLM_DT_MAX_BATCH_TKV_LIMIT to be set in "
             "platform.py")
 
-        self.n_blocks_prefill_prio = os.getenv("N_BLOCKS_PREFILL_PRIO",
-                                               default='-1')
-        if self.n_blocks_prefill_prio == '-1':
-            logger.info(
-                "Env var N_BLOCKS_PREFILL_PRIO for prefill/decode balancing is "
-                "not set. Defaulting to -1, which always prioritizes prefills "
-                "(behaving as if no scheduler heuristic/ balancing at all).")
-        else:
-            logger.info(
-                "Env var N_BLOCKS_PREFILL_PRIO for prefill/decode balancing is "
-                "set to %s. This means that prefills using up to %s blocks "
-                "will always be prioritized over decodes. ",
-                self.n_blocks_prefill_prio, self.n_blocks_prefill_prio)
-
     def update_from_output(
         self,
         scheduler_output: SchedulerOutput,
@@ -266,8 +252,8 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         num_blocks_prefill = math.ceil(
             self.tkv / self.block_size) - num_fully_padded_blocks
         # n_blocks_prefill_prio is -1 if no heuristic is enforced
-        cond6 = num_blocks_prefill <= int(self.n_blocks_prefill_prio) if int(
-            self.n_blocks_prefill_prio) >= 0 else True
+        cond6 = num_blocks_prefill <= envs_spyre.N_BLOCKS_PREFILL_PRIO if (
+            envs_spyre.N_BLOCKS_PREFILL_PRIO >= 0) else True
         # check that batch size x tkv is smaller than the max supported number
         cond7 = self.check_batch_tkv_limit(request=request, tkv=self.tkv)
 
@@ -303,9 +289,9 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
 
         # check prefill vs decode prioritization with updated tkv
         num_blocks_prefill_updated = math.ceil(tkv_updated / self.block_size)
-        cond6_updated = num_blocks_prefill_updated <= int(
-            self.n_blocks_prefill_prio) if int(
-                self.n_blocks_prefill_prio) >= 0 else True
+        cond6_updated = (num_blocks_prefill_updated
+                         <= envs_spyre.N_BLOCKS_PREFILL_PRIO) if (
+                             envs_spyre.N_BLOCKS_PREFILL_PRIO >= 0) else True
 
         # check that batch size x tkv is smaller than the max supported number
         # with updated tkv (cond7)
