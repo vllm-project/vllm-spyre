@@ -1,5 +1,4 @@
 import pytest
-from spyre_util import get_spyre_backend_list
 from vllm import LLM, SamplingParams
 
 pytestmark = pytest.mark.basic
@@ -10,13 +9,10 @@ def spyre_model() -> LLM:
     return LLM(model="ibm-granite/granite-3.1-2b-instruct", max_model_len=128)
 
 
-@pytest.fixture(scope="function", autouse=True)
-@pytest.mark.parametrize("backend", get_spyre_backend_list())
-def setenv(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", "eager")
+def test_spyre_batch1_temperature(spyre_model: LLM, backend, monkeypatch,
+                                  use_llm_cache):
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
 
-
-def test_spyre_batch1_temperature(spyre_model: LLM):
     prompt = "The capital of the United Kingdom is"
     params1 = SamplingParams(temperature=0.0, seed=8780, max_tokens=5)
     params2 = SamplingParams(temperature=0.5, seed=8780, max_tokens=5)
@@ -30,7 +26,10 @@ def test_spyre_batch1_temperature(spyre_model: LLM):
     assert output2.outputs[0].text != output3.outputs[0].text
 
 
-def test_spyre_batch1_max_tokens(spyre_model: LLM):
+def test_spyre_batch1_max_tokens(spyre_model: LLM, backend, monkeypatch,
+                                 use_llm_cache):
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+
     prompt = "Count to twenty"
     params1 = SamplingParams(temperature=0, seed=8780, max_tokens=15)
     params2 = SamplingParams(temperature=0, seed=8780)
@@ -42,7 +41,10 @@ def test_spyre_batch1_max_tokens(spyre_model: LLM):
     assert len(output2.outputs[0].token_ids) > 15
 
 
-def test_spyre_batch1_stop_sequence(spyre_model: LLM):
+def test_spyre_batch1_stop_sequence(spyre_model: LLM, backend, monkeypatch,
+                                    use_llm_cache):
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+
     tokenizer = spyre_model.get_tokenizer()
     stop_str = "train"
     stop_word_id = tokenizer.encode(stop_str)
@@ -61,7 +63,10 @@ def test_spyre_batch1_stop_sequence(spyre_model: LLM):
     assert output2.outputs[0].finish_reason != 'stop'
 
 
-def test_spyre_batch1_presence_penalty(spyre_model: LLM):
+def test_spyre_batch1_presence_penalty(spyre_model: LLM, backend, monkeypatch,
+                                       use_llm_cache):
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+
     prompt = "Repeat over and over again: one one"
     word = " one"
 
@@ -75,7 +80,10 @@ def test_spyre_batch1_presence_penalty(spyre_model: LLM):
                               no_penalty.outputs[0].text.lower().count(word)
 
 
-def test_spyre_batch1_frequency_penalty(spyre_model: LLM):
+def test_spyre_batch1_frequency_penalty(spyre_model: LLM, backend, monkeypatch,
+                                        use_llm_cache):
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+
     prompt = "Repeat just that word and nothing else \
                 over and over again: one one"
 
@@ -92,7 +100,10 @@ def test_spyre_batch1_frequency_penalty(spyre_model: LLM):
     assert output.outputs[0].text.lower().count(word) < word_count
 
 
-def test_spyre_batch1_n_generations(spyre_model: LLM):
+def test_spyre_batch1_n_generations(spyre_model: LLM, backend, monkeypatch,
+                                    use_llm_cache):
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+
     prompt = "The three most popular sports in the world are: "
     params = SamplingParams(n=3, max_tokens=20)
 
@@ -103,7 +114,10 @@ def test_spyre_batch1_n_generations(spyre_model: LLM):
     assert output.outputs[1].text != output.outputs[2].text
 
 
-def test_spyre_batch1_top_p(spyre_model: LLM):
+def test_spyre_batch1_top_p(spyre_model: LLM, backend, monkeypatch,
+                            use_llm_cache):
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+
     prompt = "The first three letters of the alphabet are"
     params1 = SamplingParams(top_p=0.01, temperature=2, max_tokens=10)
     params2 = SamplingParams(temperature=2, max_tokens=10)
@@ -115,7 +129,10 @@ def test_spyre_batch1_top_p(spyre_model: LLM):
     assert output1.outputs[0].text != output2.outputs[0].text
 
 
-def test_spyre_batch1_top_k(spyre_model: LLM):
+def test_spyre_batch1_top_k(spyre_model: LLM, backend, monkeypatch,
+                            use_llm_cache):
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+
     prompt = "The opposite of hot is"
     params1 = SamplingParams(top_k=1, seed=42, max_tokens=5)
     params2 = SamplingParams(seed=42, max_tokens=5)
@@ -127,7 +144,10 @@ def test_spyre_batch1_top_k(spyre_model: LLM):
     assert output1.outputs[0].text != output2.outputs[0].text
 
 
-def test_spyre_batch1_logit_bias(spyre_model: LLM):
+def test_spyre_batch1_logit_bias(spyre_model: LLM, backend, monkeypatch,
+                                 use_llm_cache):
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+
     tokenizer = spyre_model.get_tokenizer()
     banned_word = "train"
     forced_word = "plane"
@@ -156,7 +176,10 @@ def test_spyre_batch1_logit_bias(spyre_model: LLM):
     assert output1.outputs[0].text != output2.outputs[0].text
 
 
-def test_spyre_batch1_min_tokens(spyre_model: LLM):
+def test_spyre_batch1_min_tokens(spyre_model: LLM, backend, monkeypatch,
+                                 use_llm_cache):
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+
     prompt = "Answer only yes or no and do not explain further:\
                  can computers count?"
 
@@ -170,7 +193,10 @@ def test_spyre_batch1_min_tokens(spyre_model: LLM):
     assert len(output2.outputs[0].token_ids) < 19
 
 
-def test_spyre_batch1_ignore_eos(spyre_model: LLM):
+def test_spyre_batch1_ignore_eos(spyre_model: LLM, backend, monkeypatch,
+                                 use_llm_cache):
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+
     prompt = "Answer only yes or no and do not explain \
                 further: can computers count?"
 
@@ -188,7 +214,10 @@ def test_spyre_batch1_ignore_eos(spyre_model: LLM):
     assert output2.outputs[0].finish_reason != 'length'
 
 
-def test_spyre_batch1_min_p(spyre_model: LLM):
+def test_spyre_batch1_min_p(spyre_model: LLM, backend, monkeypatch,
+                            use_llm_cache):
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+
     prompt = "The opposite of black is"
     params1 = SamplingParams(min_p=0.5, temperature=2, max_tokens=5)
     params2 = SamplingParams(temperature=2, max_tokens=5)
@@ -200,7 +229,10 @@ def test_spyre_batch1_min_p(spyre_model: LLM):
     assert output1.outputs[0].text != output2.outputs[0].text
 
 
-def test_spyre_batch1_bad_words(spyre_model: LLM):
+def test_spyre_batch1_bad_words(spyre_model: LLM, backend, monkeypatch,
+                                use_llm_cache):
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+
     prompt = "The capital of France is"
     params1 = SamplingParams(max_tokens=5,
                              temperature=0,
@@ -215,7 +247,10 @@ def test_spyre_batch1_bad_words(spyre_model: LLM):
     assert output1.outputs[0].text != output2.outputs[0].text
 
 
-def test_spyre_batch1_detokenize(spyre_model: LLM):
+def test_spyre_batch1_detokenize(spyre_model: LLM, backend, monkeypatch,
+                                 use_llm_cache):
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+
     prompt = "Hello, world!"
     params = SamplingParams(max_tokens=5, temperature=0, detokenize=False)
     output = spyre_model.generate(prompt, params)[0]
@@ -224,7 +259,10 @@ def test_spyre_batch1_detokenize(spyre_model: LLM):
     assert len(output.outputs[0].token_ids) > 0
 
 
-def test_spyre_batch1_logprobs(spyre_model: LLM):
+def test_spyre_batch1_logprobs(spyre_model: LLM, backend, monkeypatch,
+                               use_llm_cache):
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+
     num_logprobs = 5
     prompt = "The sky is"
     params = SamplingParams(max_tokens=5, temperature=0, logprobs=num_logprobs)
