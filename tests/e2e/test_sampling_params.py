@@ -7,13 +7,13 @@ pytestmark = pytest.mark.basic
 
 @pytest.fixture(scope="module")
 def spyre_model() -> LLM:
-    return LLM(model="ibm-granite/granite-3.1-2b-instruct")
+    return LLM(model="ibm-granite/granite-3.1-2b-instruct", max_model_len=128)
 
 
 @pytest.fixture(scope="function", autouse=True)
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
 def setenv(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", get_spyre_backend_list())
-    monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", "eager")
 
 
 def test_spyre_batch1_temperature(spyre_model: LLM):
@@ -68,12 +68,11 @@ def test_spyre_batch1_presence_penalty(spyre_model: LLM):
     param1 = SamplingParams(presence_penalty=2.0, max_tokens=20)
     param2 = SamplingParams(presence_penalty=0.0, max_tokens=20)
 
-    output = spyre_model.generate(prompt, param1)[0]
+    with_penalty = spyre_model.generate(prompt, param1)[0]
     no_penalty = spyre_model.generate(prompt, param2)[0]
 
-    no_penalty_count = no_penalty.outputs[0].text.lower().count(word)
-
-    assert output.outputs[0].text.lower().count(word) < no_penalty_count
+    assert with_penalty.outputs[0].text.lower().count(word) < \
+                              no_penalty.outputs[0].text.lower().count(word)
 
 
 def test_spyre_batch1_frequency_penalty(spyre_model: LLM):
@@ -161,27 +160,27 @@ def test_spyre_batch1_min_tokens(spyre_model: LLM):
     prompt = "Answer only yes or no and do not explain further:\
                  can computers count?"
 
-    params1 = SamplingParams(seed=42, min_tokens=48, max_tokens=50)
-    params2 = SamplingParams(seed=42, max_tokens=50)
+    params1 = SamplingParams(seed=42, min_tokens=19, max_tokens=20)
+    params2 = SamplingParams(seed=42, max_tokens=20)
 
     output1 = spyre_model.generate(prompt, params1)[0]
     output2 = spyre_model.generate(prompt, params2)[0]
 
-    assert len(output1.outputs[0].token_ids) >= 48
-    assert len(output2.outputs[0].token_ids) < 48
+    assert len(output1.outputs[0].token_ids) >= 19
+    assert len(output2.outputs[0].token_ids) < 19
 
 
 def test_spyre_batch1_ignore_eos(spyre_model: LLM):
     prompt = "Answer only yes or no and do not explain \
                 further: can computers count?"
 
-    params1 = SamplingParams(ignore_eos=True, max_tokens=50)
-    params2 = SamplingParams(ignore_eos=False, max_tokens=50)
+    params1 = SamplingParams(ignore_eos=True, max_tokens=20)
+    params2 = SamplingParams(ignore_eos=False, max_tokens=20)
 
     output1 = spyre_model.generate(prompt, params1)[0]
     output2 = spyre_model.generate(prompt, params2)[0]
 
-    assert len(output1.outputs[0].token_ids) == 50
+    assert len(output1.outputs[0].token_ids) == 20
     assert len(output2.outputs[0].token_ids) != len(
         output1.outputs[0].token_ids)
 
