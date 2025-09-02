@@ -1372,7 +1372,7 @@ def test_requests_use_all_available_blocks(model: str, backend: str,
         * available_blocks: 8
     """
     seqs_max_tokens = [3, 3, 3, 3]  # 2 decodes into a new block per sequence
-    prompts_lengths = [10, 10, 10, 10]  # 1 block for prefil per sequence
+    prompts_lengths = [10, 10, 10, 10]  # 1 block for prefill per sequence
     steps_add_reqs = [0, 0, 0, 0]
     # total number of blocks needed if scheduled together : 4 * (1 + 1) = 8
 
@@ -1511,7 +1511,7 @@ def test_requests_use_more_than_available_blocks(
     """
 
     seqs_max_tokens = [3, 3, 3, 3]  # 2 decodes into a new block per sequence
-    prompts_lengths = [10, 10, 10, 10]  # 1 block for prefil per sequence
+    prompts_lengths = [10, 10, 10, 10]  # 1 block for prefill per sequence
     steps_add_reqs = [0, 0, 0, 0]
     # total number of blocks needed if scheduled together : 4 * (1 + 1) = 8
 

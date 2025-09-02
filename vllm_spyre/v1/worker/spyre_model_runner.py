@@ -1232,7 +1232,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
     def prepare_model_input(
             self, scheduler_output: SchedulerOutput) -> SamplingForwardInputs:
 
-        # remove left padding if applicable before next prefil/decode step
+        # remove left padding if applicable before next prefill/decode step
         self.reduce_left_padding()
 
         return super().prepare_model_input(scheduler_output)
