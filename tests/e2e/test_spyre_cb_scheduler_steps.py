@@ -612,7 +612,7 @@ def test_new_sequence_joins_during_decode(model: str, backend: str,
             "n_used_blocks": 5  # 2 blocks extended, one for each sequence
         },
         {
-            # Sequences 1 and 2 finish at step 70
+            # Sequences 1 and 2 finish at step 69
             # (start step + 2 prefills + 36 decodes - 1) = 32 + 2 + 36 - 1 = 69
             # (start step + 1 prefills + 3 decodes - 1) = 67 + 1 + 2 - 1 = 69
             "step": 69,
@@ -1446,7 +1446,7 @@ def test_requests_use_all_available_blocks(model: str, backend: str,
         },
         {
             # Decode sequences 0, 1, 2, 3
-            # all sequences finish at step 8
+            # all sequences finish at step 6
             # total blocks in use: 8
             "step": 6,
             "tkv": 66,
