@@ -157,6 +157,20 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             "Expecting the env var VLLM_DT_MAX_BATCH_TKV_LIMIT to be set in "
             "platform.py")
 
+        self.n_blocks_prefill_prio = os.getenv("N_BLOCKS_PREFILL_PRIO",
+                                               default='-1')
+        if self.n_blocks_prefill_prio == '-1':
+            logger.info(
+                "Env var N_BLOCKS_PREFILL_PRIO for prefill/decode balancing is "
+                "not set. Defaulting to -1, which always prioritizes prefills "
+                "(behaving as if no scheduler heuristic/ balancing at all).")
+        else:
+            logger.info(
+                "Env var N_BLOCKS_PREFILL_PRIO for prefill/decode balancing is "
+                "set to %s. This means that prefills using up to %s blocks "
+                "will always be prioritized over decodes. ",
+                self.n_blocks_prefill_prio, self.n_blocks_prefill_prio)
+
     def update_from_output(
         self,
         scheduler_output: SchedulerOutput,
@@ -246,14 +260,21 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             (self.tkv - request.num_prompt_tokens) / self.block_size)
         num_blocks_required -= num_fully_padded_blocks
         cond5 = num_blocks_required <= self.n_free_blocks
+        # scheduling heuristic: prefill vs decode prioritization
+        # note that we can reuse num_blocks_required as all prefills are
+        # performed on the minimal number of blocks needed and prefill time
+        # is therefore proporional to the number of blocks used for prefill.
+        # (n_blocks_prefill_prio is -1 if no heuristics is enforced)
+        cond6 = num_blocks_required <= int(self.n_blocks_prefill_prio) if int(
+            self.n_blocks_prefill_prio) >= 0 else True
         # check that batch size x tkv is smaller than the max supported number
-        cond6 = self.check_batch_tkv_limit(request=request, tkv=self.tkv)
+        cond7 = self.check_batch_tkv_limit(request=request, tkv=self.tkv)
 
-        if cond1 and cond2 and cond3 and cond4 and cond5 and cond6:
+        if cond1 and cond2 and cond3 and cond4 and cond5 and cond6 and cond7:
             return True
 
         # the following conditions must always be true, if not we can exit here
-        if not (cond1 and cond2 and cond4 and cond5 and cond6
+        if not (cond1 and cond2 and cond4 and cond5 and cond6 and cond7
                 ) or not envs_spyre.VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION:
             return False
 
@@ -279,12 +300,18 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             (tkv_updated + request.max_tokens - 1) / self.block_size)
         cond5_updated = num_blocks_required_updated <= self.n_free_blocks
 
+        # check prefill vs decode prioritization with updated tkv
+        cond6_updated = num_blocks_required_updated <= int(
+            self.n_blocks_prefill_prio) if int(
+                self.n_blocks_prefill_prio) >= 0 else True
+
         # check that batch size x tkv is smaller than the max supported number
-        # with updated tkv (cond6)
-        cond6_updated = self.check_batch_tkv_limit(request=request,
+        # with updated tkv (cond7)
+        cond7_updated = self.check_batch_tkv_limit(request=request,
                                                    tkv=tkv_updated)
 
-        return cond4_updated and cond5_updated and cond6_updated
+        return (cond4_updated and cond5_updated and cond6_updated
+                and cond7_updated)
 
     def check_batch_tkv_limit(self, request, tkv) -> bool:
         """
