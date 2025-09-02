@@ -318,9 +318,6 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
 
         Note: drawing explaining the algorithm in more detail uploaded here: 
         https://github.com/vllm-project/vllm-spyre/pull/363#issuecomment-3173605517
-        
-        WIP: The result of this check could be cached and reused if both the 
-        decode batch and the new input request are unchanged between calls.
         """
         # checking if cached result can be used
         outer_key = tuple(running)  # decode batch changes
@@ -368,11 +365,11 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             # decode batch has not changed
             if inner_key not in cache[outer_key]:
                 # adding new request to present decode batch
-                cache[outer_key][inner_key] = (-float("inf"), float("inf"))
+                cache[outer_key][inner_key] = (-math.inf, math.inf)
         else:
             # decode batch has changed, empty the cache in place
             cache.clear()
-            cache[outer_key] = {inner_key: (-float("inf"), float("inf"))}
+            cache[outer_key] = {inner_key: (-math.inf, math.inf)}
             logger.debug(
                 "Cleared cache of function check_batch_tkv_limit as the " \
                 "decode batch has changed."
