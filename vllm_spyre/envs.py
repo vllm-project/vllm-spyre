@@ -108,6 +108,8 @@ environment_variables: dict[str, Callable[[], Any]] = {
                  ),
 
     # scheduling heuristic: prefill vs decode prioritization
+    # Prefills using up to VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO blocks will always
+    # be prioritized over decodes. If limit is exceeded, decodes are prioterized
     "VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO":
     lambda: int(os.getenv("VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO", "-1")),
 
