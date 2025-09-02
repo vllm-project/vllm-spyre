@@ -2272,3 +2272,146 @@ def test_scheduler_heuristic_prioritize_prefill(
                             prompts)
 
 
+@pytest.mark.cb
+# These values are all parameterized for test sorting
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_model_len", [192])
+@pytest.mark.parametrize("available_blocks", [16])  # no restriction
+def test_scheduler_heuristic_prioritize_decode(model: str, backend: str,
+                                               monkeypatch: pytest.MonkeyPatch,
+                                               set_random_seed,
+                                               max_num_seqs: int,
+                                               max_model_len: int,
+                                               available_blocks: int):
+    """ Scenario where the decode is prioritized over the prefill as the
+    number of blocks needed for the prefill (proportional to the prompt length)
+    exceeds the threshold N_BLOCKS_PREFILL_PRIO.
+    
+    Configuration:
+        * max_num_seqs: 2
+        * number of prompts: 2
+            * 0: len = 70, max tokens = 3, step joining = 0
+            * 1: len = 70, max tokens = 3, step joining = 0
+        * available_blocks: 16
+    """
+    # prioritizing prefills over decodes only if they use up to 1 block
+    monkeypatch.setenv('N_BLOCKS_PREFILL_PRIO', '1')
+
+    seqs_max_tokens = [3, 3]  # 2 decodes into a new block per sequence
+    prompts_lengths = [70, 70]  # 2 blocks for prefill per sequence
+    steps_add_reqs = [0, 0]
+    # total number of blocks needed if scheduled together : 2 * (2 + 1) = 6
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0", "1"],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+        {
+            # Prefill sequence 0
+            # total blocks in use: 2
+            "step": 1,
+            "tkv": 128,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 3,  # prefill (2 blocks) + 3 decodes (1 block)
+            "n_used_blocks": 2
+        },
+        # request 1 can be prefilled as the number of blocks needed for the
+        # prefill (2) is more than N_BLOCKS_PREFILL_PRIO (1)
+
+        # thus decode sequence 0
+        {
+            # Decode sequence 0
+            # total blocks in use: 3
+            "step": 2,
+            "tkv": 129,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 3,
+            "n_used_blocks": 3
+        },
+        {
+            # Decode sequence 0
+            # Sequence 0 finishes at step 3
+            # total blocks in use: 3
+            "step": 3,
+            "tkv": 130,
+            "waiting": ["1"],
+            "running": [],
+            "request_outputs": ["0"],
+            "finished_requests": ["0"],
+            "n_reserved_blocks": 3,
+            "n_used_blocks": 3
+        },
+        {
+            # Prefill sequence 1
+            # total blocks in use: 2
+            "step": 4,
+            "tkv": 128,
+            "waiting": [],
+            "running": ["1"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 3,  # prefill (2 blocks) + 3 decodes (1 block)
+            "n_used_blocks": 2  # 3 - 3 + 2
+        },
+        {
+            # Decode sequence 1
+            # total blocks in use: 3
+            "step": 5,
+            "tkv": 129,
+            "waiting": [],
+            "running": ["1"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 3,
+            "n_used_blocks": 3
+        },
+        {
+            # Decode sequence 1
+            # Sequence 1 finishes at step 6
+            # total blocks in use: 3
+            "step": 6,
+            "tkv": 130,
+            "waiting": [],
+            "running": [],
+            "request_outputs": ["1"],
+            "finished_requests": ["1"],
+            "n_reserved_blocks": 3,
+            "n_used_blocks": 3
+        },
+        {
+            # Tkv should be cleared one step later
+            # total blocks in use: 3 - 3 = 0
+            "step": 7,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+    ]
+
+    cb_outputs, prompts = check_scheduler_inference_steps(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        seqs_max_tokens=seqs_max_tokens,
+        prompts_lengths=prompts_lengths,
+        steps_add_reqs=steps_add_reqs,
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
+        available_blocks=available_blocks,
+        use_cb=True,
+    )
+
+    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                            prompts)
