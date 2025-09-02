@@ -142,6 +142,11 @@ class SpyreCausalLM(nn.Module):
         next_tokens = self.sampler(logits, sampling_metadata)
         return next_tokens
 
+    def get_mask_dtype(self) -> torch.dtype:
+        return torch.float16 if \
+            envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn" \
+            else torch.float32
+
 
 class FmsModelBase(nn.Module):
 
@@ -452,8 +457,6 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                 for _ in range(self.kv_cache_specs['num_layers'])
             ]
         else:
-            # TODO: This does not work yet. The scale needs to be handled, see:
-            # https://github.com/foundation-model-stack/aiu-fms-testing-utils/blob/v0.1.0rc3/aiu_fms_testing_utils/utils/paged.py#L306-L319
             from fms_mo.aiu_addons.fp8.fp8_utils import ScaledTensor
             batch_size = max(2, self.scheduler_config.max_num_seqs)
             self.past_key_value_states = [
