@@ -252,8 +252,10 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         num_blocks_prefill = math.ceil(
             self.tkv / self.block_size) - num_fully_padded_blocks
         # n_blocks_prefill_prio is -1 if no heuristic is enforced
-        cond6 = num_blocks_prefill <= envs_spyre.N_BLOCKS_PREFILL_PRIO if (
-            envs_spyre.N_BLOCKS_PREFILL_PRIO >= 0) else True
+        cond6 = (num_blocks_prefill
+                 <= envs_spyre.VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO) if (
+                     envs_spyre.VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO
+                     >= 0) else True
         # check that batch size x tkv is smaller than the max supported number
         cond7 = self.check_batch_tkv_limit(request=request, tkv=self.tkv)
 
@@ -290,8 +292,9 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         # check prefill vs decode prioritization with updated tkv
         num_blocks_prefill_updated = math.ceil(tkv_updated / self.block_size)
         cond6_updated = (num_blocks_prefill_updated
-                         <= envs_spyre.N_BLOCKS_PREFILL_PRIO) if (
-                             envs_spyre.N_BLOCKS_PREFILL_PRIO >= 0) else True
+                         <= envs_spyre.VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO) if (
+                             envs_spyre.VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO
+                             >= 0) else True
 
         # check that batch size x tkv is smaller than the max supported number
         # with updated tkv (cond7)

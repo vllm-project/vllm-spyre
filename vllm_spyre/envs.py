@@ -108,8 +108,8 @@ environment_variables: dict[str, Callable[[], Any]] = {
                  ),
 
     # scheduling heuristic: prefill vs decode prioritization
-    "N_BLOCKS_PREFILL_PRIO":
-    lambda: int(os.getenv("N_BLOCKS_PREFILL_PRIO", "-1")),
+    "VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO":
+    lambda: int(os.getenv("VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO", "-1")),
 
     # Allow vllm-spyre to update env vars related to multi-threading (eg. OMP)
     # based on the detected CPU cores and server configuration

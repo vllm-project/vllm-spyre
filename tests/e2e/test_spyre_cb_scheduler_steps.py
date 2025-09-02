@@ -2166,7 +2166,7 @@ def test_scheduler_heuristic_prioritize_prefill(
         available_blocks: int):
     """ Scenario where the prefill is prioritized over the decode as the
     number of blocks needed for the prefill (proportional to the prompt length)
-    is less then or equal to the threshold N_BLOCKS_PREFILL_PRIO. 
+    is less then or equal to the threshold VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO. 
     
     Configuration:
         * max_num_seqs: 2
@@ -2176,7 +2176,7 @@ def test_scheduler_heuristic_prioritize_prefill(
         * available_blocks: 16
     """
     # prioritizing prefills over decodes only if they use up to 1 block
-    monkeypatch.setenv('N_BLOCKS_PREFILL_PRIO', '1')
+    monkeypatch.setenv('VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO', '1')
 
     seqs_max_tokens = [3, 3]  # 2 decodes into a new block per sequence
     prompts_lengths = [10, 10]  # 1 block for prefill per sequence
@@ -2205,7 +2205,7 @@ def test_scheduler_heuristic_prioritize_prefill(
             "n_used_blocks": 1
         },
         # request 1 can be prefilled as the number of blocks needed for the
-        # prefill (1) is less than or equal to N_BLOCKS_PREFILL_PRIO (1)
+        # prefill (1) is <= to VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO (1)
         {
             # Prefill sequence 1
             # total blocks in use: 2
@@ -2285,7 +2285,7 @@ def test_scheduler_heuristic_prioritize_decode(model: str, backend: str,
                                                available_blocks: int):
     """ Scenario where the decode is prioritized over the prefill as the
     number of blocks needed for the prefill (proportional to the prompt length)
-    exceeds the threshold N_BLOCKS_PREFILL_PRIO.
+    exceeds the threshold VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO.
     
     Configuration:
         * max_num_seqs: 2
@@ -2295,7 +2295,7 @@ def test_scheduler_heuristic_prioritize_decode(model: str, backend: str,
         * available_blocks: 16
     """
     # prioritizing prefills over decodes only if they use up to 1 block
-    monkeypatch.setenv('N_BLOCKS_PREFILL_PRIO', '1')
+    monkeypatch.setenv('VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO', '1')
 
     seqs_max_tokens = [3, 3]  # 2 decodes into a new block per sequence
     prompts_lengths = [70, 70]  # 2 blocks for prefill per sequence
@@ -2324,7 +2324,7 @@ def test_scheduler_heuristic_prioritize_decode(model: str, backend: str,
             "n_used_blocks": 2
         },
         # request 1 can be prefilled as the number of blocks needed for the
-        # prefill (2) is more than N_BLOCKS_PREFILL_PRIO (1)
+        # prefill (2) is more than VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO (1)
 
         # thus decode sequence 0
         {

@@ -242,18 +242,18 @@ class SpyrePlatform(Platform):
             "(max_model_len * max_batch_size): %d", default_max_batch_tkv_limit)
 
         # scheduling heuristic: prefill vs decode prioritization
-        if envs_spyre.N_BLOCKS_PREFILL_PRIO == -1:
+        if envs_spyre.VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO == -1:
             logger.info(
-                "Env var N_BLOCKS_PREFILL_PRIO for prefill/decode balancing is "
-                "not set. Defaulting to -1, which always prioritizes prefills "
-                "(behaving as if no scheduler heuristic/ balancing at all).")
+                "Env var VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO for prefill/decode "
+                "balancing unset. Defaulting to -1, which always prioritizes "
+                "prefills (no scheduler heuristic/ balancing at all).")
         else:
             logger.info(
-                "Env var N_BLOCKS_PREFILL_PRIO for prefill/decode balancing is "
-                "set to %s. This means that prefills using up to %s blocks "
-                "will always be prioritized over decodes. ",
-                envs_spyre.N_BLOCKS_PREFILL_PRIO,
-                envs_spyre.N_BLOCKS_PREFILL_PRIO)
+                "Env var VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO for prefill/decode "
+                "balancing is set to %s. This means that prefills using up to "
+                " %s blocks will always be prioritized over decodes. ",
+                envs_spyre.VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO,
+                envs_spyre.VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO)
 
     @classmethod
     def use_all_gather(cls) -> bool:
