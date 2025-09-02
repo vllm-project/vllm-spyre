@@ -264,6 +264,12 @@ def runtime_xfail(request):
     return _xfail
 
 
+@pytest.fixture(scope="session", autouse=True)
+def randomize_port():
+    random_port = random.randint(12345, 29500)
+    os.environ["MASTER_PORT"] = str(random_port)
+    print(f"MASTER_PORT has been set to: {os.environ['MASTER_PORT']}")
+
 @pytest.fixture(scope="function")
 def remote_openai_server(request):
     """ Fixture to set up a test server."""
