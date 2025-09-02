@@ -884,6 +884,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             tkv_offset = math.ceil(
                 (prompt_len - self.tkv) / self.block_size) * self.block_size
             if tkv_offset > 0:
+                # Note: drawing explaining this optimization in more detail
+                # can be found here (see page 3 in particular):
+                # https://github.com/vllm-project/vllm-spyre/pull/340#issuecomment-3179337304
                 logger.debug("Prefill optimization: Adding %d blocks per " \
                 "sequence in the decode batch to prefill the current " \
                 "sequence.", tkv_offset // self.block_size)
@@ -914,6 +917,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         right_padding_tkv -= n_pad_blocks * self.block_size
         left_padding_tkv = self.tkv - n_pad_blocks * self.block_size
         if n_pad_blocks > 0:
+            # Note: drawing explaining this optimization in more detail can
+            # be found here (see page 2 in particular):
+            # https://github.com/vllm-project/vllm-spyre/pull/340#issuecomment-3179337304
             logger.debug("Prefill reduced by %d blocks due to optimization.",
                          n_pad_blocks)
 
@@ -1103,6 +1109,12 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         return model_inputs
 
     def reduce_left_padding(self) -> None:
+        """ Optimizes the decode batch by removing entire columns that consist 
+        solely of left pads. This reduces unnecessary decode computation. 
+
+        Note: drawing explaining the optimization in more detail uploaded here:
+        https://github.com/vllm-project/vllm-spyre/pull/131#issuecomment-3233440852 
+        """
 
         requests = self.requests.values()
         if len(self.requests) == 0:

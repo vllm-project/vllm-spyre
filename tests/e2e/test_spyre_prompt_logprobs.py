@@ -8,8 +8,7 @@ import pytest
 import torch
 import torch.nn.functional
 from llm_cache import force_engine_shutdown
-from spyre_util import (get_chicken_soup_prompts, get_spyre_backend_list,
-                        get_spyre_model_list, skip_unsupported_tp_size)
+from spyre_util import get_chicken_soup_prompts, skip_unsupported_tp_size
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, RequestOutput, SamplingParams
 from vllm.config import ModelConfig, VllmConfig
@@ -17,14 +16,6 @@ from vllm.config import ModelConfig, VllmConfig
 from vllm_spyre.platform import SpyrePlatform
 
 
-@pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize("tp_size", [
-    pytest.param(1),
-    pytest.param(2, marks=pytest.mark.multi),
-    pytest.param(4, marks=pytest.mark.multi)
-],
-                         ids=lambda val: f"TP({val})")
 # Skip for now until prompt logprobs are fixed
 @pytest.mark.skip
 def test_prompt_logprobs(backend: str, model: str, tp_size: int,
@@ -74,7 +65,6 @@ def test_prompt_logprobs_must_be_enabled(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.mark.cpu
 @pytest.mark.decoder
-@pytest.mark.parametrize("model", get_spyre_model_list())
 def test_prompt_logprobs_not_supported_with_cb(
         model: str, monkeypatch: pytest.MonkeyPatch):
     # Server shouldn't boot with both prompt logprobs and continuous batching
@@ -88,7 +78,6 @@ def test_prompt_logprobs_not_supported_with_cb(
 
 @pytest.mark.cpu
 @pytest.mark.decoder
-@pytest.mark.parametrize("model", get_spyre_model_list())
 def test_prompt_logprobs_on_single_requests_only(
         model: str, monkeypatch: pytest.MonkeyPatch):
     # Only bs=1 is supported for prompt logprobs

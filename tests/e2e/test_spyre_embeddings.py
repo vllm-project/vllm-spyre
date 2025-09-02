@@ -8,9 +8,8 @@ from functools import partial
 import pytest
 from llm_cache import EmbeddingWarmupShapes
 from spyre_util import (compare_embedding_results, get_chicken_soup_prompts,
-                        get_spyre_backend_list, get_spyre_model_list,
-                        patch_warmup_shapes, spyre_vllm_embeddings,
-                        st_embeddings)
+                        get_spyre_model_list, patch_warmup_shapes,
+                        spyre_vllm_embeddings, st_embeddings)
 from vllm import LLM
 
 
@@ -23,7 +22,6 @@ from vllm import LLM
         pytest.param([(128, 4)]),
         pytest.param([(128, 8)])
     ])
-@pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_output(
     model: str,
     warmup_shapes: EmbeddingWarmupShapes,
@@ -64,7 +62,6 @@ def test_output(
     [(128, 2)],
     [(128, 4)],
 ])  # (prompt_length/batch_size)
-@pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("model", get_spyre_model_list(isEmbeddings=True))
 def test_scheduling_invariance(
     model,
