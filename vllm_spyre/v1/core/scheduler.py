@@ -251,7 +251,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         # needed and prefill time is thus proportional to the number of blocks
         num_blocks_prefill = math.ceil(
             self.tkv / self.block_size) - num_fully_padded_blocks
-        # n_blocks_prefill_prio is -1 if no heuristic is enforced
+        # VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO is -1 if no heuristic is enforced
         cond6 = (num_blocks_prefill
                  <= envs_spyre.VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO) if (
                      envs_spyre.VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO
