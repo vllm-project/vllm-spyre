@@ -43,7 +43,7 @@ jobs:
         test_suite:
           - name: "static batching"
             markers: "cpu and decoder and not cb"
-            flags: "--timeout=300"
+            flags: "--timeout=300 -n auto"
             hf_models: "JackFram/llama-160m"
           - name: "fp8"
             markers: "cpu and quantized and multi"
@@ -55,7 +55,7 @@ jobs:
             hf_models: "sentence-transformers/all-roberta-large-v1"
           - name: "continuous batching"
             markers: "cpu and cb"
-            flags: "--timeout=300  --durations=0 -n 4"
+            flags: "--timeout=300  --durations=0 -n auto"
           - name: "worker and utils"
             markers: "not e2e"
             flags: "--timeout=300"
