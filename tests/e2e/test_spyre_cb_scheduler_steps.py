@@ -1923,8 +1923,6 @@ def test_requests_exceed_batch_tkv_limit(model: str, backend: str,
 
 
 @pytest.mark.cb
-@pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [192])
 @pytest.mark.parametrize("available_blocks", [16])  # no restriction
@@ -2035,8 +2033,6 @@ def test_requests_use_full_batch_tkv_limit_prefill_opt(
 
 
 @pytest.mark.cb
-@pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [192])
 @pytest.mark.parametrize("available_blocks", [16])  # no restriction
