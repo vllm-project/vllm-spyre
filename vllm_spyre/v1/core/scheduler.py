@@ -261,11 +261,12 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         num_blocks_required -= num_fully_padded_blocks
         cond5 = num_blocks_required <= self.n_free_blocks
         # scheduling heuristic: prefill vs decode prioritization
-        # note that we can reuse num_blocks_required as all prefills are
-        # performed on the minimal number of blocks needed and prefill time
-        # is therefore proporional to the number of blocks used for prefill.
-        # (n_blocks_prefill_prio is -1 if no heuristics is enforced)
-        cond6 = num_blocks_required <= int(self.n_blocks_prefill_prio) if int(
+        # note that prefills are performed on the minimal number of blocks
+        # needed and prefill time is thus proportional to the number of blocks
+        num_blocks_prefill = math.ceil(
+            self.tkv / self.block_size) - num_fully_padded_blocks
+        # n_blocks_prefill_prio is -1 if no heuristic is enforced
+        cond6 = num_blocks_prefill <= int(self.n_blocks_prefill_prio) if int(
             self.n_blocks_prefill_prio) >= 0 else True
         # check that batch size x tkv is smaller than the max supported number
         cond7 = self.check_batch_tkv_limit(request=request, tkv=self.tkv)
@@ -301,7 +302,8 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         cond5_updated = num_blocks_required_updated <= self.n_free_blocks
 
         # check prefill vs decode prioritization with updated tkv
-        cond6_updated = num_blocks_required_updated <= int(
+        num_blocks_prefill_updated = math.ceil(tkv_updated / self.block_size)
+        cond6_updated = num_blocks_prefill_updated <= int(
             self.n_blocks_prefill_prio) if int(
                 self.n_blocks_prefill_prio) >= 0 else True
 
