@@ -55,7 +55,7 @@ jobs:
             hf_models: "sentence-transformers/all-roberta-large-v1"
           - name: "continuous batching"
             markers: "cpu and cb"
-            flags: "--timeout=300  --durations=0 -n auto"
+            flags: "--timeout=300  --durations=0 -n auto --dist loadfile"
           - name: "worker and utils"
             markers: "not e2e"
             flags: "--timeout=300"
