@@ -270,6 +270,7 @@ def randomize_port():
     os.environ["MASTER_PORT"] = str(random_port)
     print(f"MASTER_PORT has been set to: {os.environ['MASTER_PORT']}")
 
+
 @pytest.fixture(scope="function")
 def remote_openai_server(request):
     """ Fixture to set up a test server."""
