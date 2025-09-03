@@ -1,12 +1,12 @@
 """Contains utilities for caching models (instantiated as vLLM endpoints) 
 across test cases, to speed up test runtime."""
 
-from vllm.v1.executor.abstract import Executor
 from typing import Callable, Generic, Optional, TypeVar
 
 import pytest
 from vllm import LLM, EngineArgs
 from vllm.v1.engine.core import EngineCore
+from vllm.v1.executor.abstract import Executor
 
 from tests.llm_cache_utils import force_engine_shutdown
 from tests.spyre_util import (DecodeWarmupShapes, RemoteOpenAIServer,
