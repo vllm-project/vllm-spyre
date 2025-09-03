@@ -153,7 +153,6 @@ class SpyrePlatform(Platform):
             # Override --max-num-seqs to the biggest warmup batch size
             # And override --max-model-len to the biggest warmup sequence
             cls._warmup_shapes = None
-            max_model_len = model_config.max_model_len
             spyre_warmup_shapes = cls.get_warmup_shapes(scheduler_config)
             max_batch_size = 0
             max_seq_len = 0
