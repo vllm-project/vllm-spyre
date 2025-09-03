@@ -228,7 +228,7 @@ def test_full_batch_scheduling(model: str, backend: str, monkeypatch):
     assert len(schedule.scheduled_new_reqs) == batch_size
 
 
-def test_sb_warmup_shape_max_model_len(model: str, backend, warmup_shapes, cb,
+def test_max_model_len_override(model: str, backend, warmup_shapes, cb,
                                        monkeypatch):
     """Test that makes sure that --max-model-len
     doesn't affect SB, instead it is picked up from
