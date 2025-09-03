@@ -168,7 +168,7 @@ class SpyrePlatform(Platform):
                     "Prompt logprobs only supported with batch size 1")
 
             # verify that warmup shapes are not too large
-            model_config.get_and_verify_max_len(max_model_len=max_model_len)
+            model_config.get_and_verify_max_len(max_model_len=max_seq_len)
 
             # override stuff
             model_config.max_model_len = max_seq_len
