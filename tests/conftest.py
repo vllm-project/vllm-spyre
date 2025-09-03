@@ -6,6 +6,7 @@ import pytest
 import torch
 from llm_cache import SortKey, sort_tests_for_llm_caching
 from spyre_util import (clear_llm_caches, get_cached_api_server,
+                        get_spyre_backend_list, get_spyre_model_list,
                         print_llm_cache_info, skip_unsupported_tp_size)
 from vllm.connections import global_http_connection
 from vllm.distributed import cleanup_dist_env_and_memory
@@ -15,6 +16,115 @@ from vllm.distributed import cleanup_dist_env_and_memory
 # pool to be created, which is then lost when the next test launches vLLM and
 # forks a worker.
 os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
+
+
+def pytest_generate_tests(metafunc):
+    """This hook is called during the collection phase, 
+    specifically when Pytest encounters a test function that 
+    needs parametrization. It receives a metafunc object, 
+    which provides information about the test function and 
+    allows for dynamic parametrization."""
+
+    # default parameterizations
+    default_warmup_shape = [[(64, 20, 4)]]
+    default_max_num_seqs = [4]
+    default_max_model_len = [256]
+
+    existing_markers = [
+        marker.name if marker.name != "parametrize" else marker.args[0]
+        for marker in metafunc.definition.own_markers
+    ]
+
+    marker = metafunc.config.option.markexpr  # From CLI
+    # TODO: make this condition better
+    # it can accidentally be triggered if we say
+    # -m "not full_model"
+    if "full_model" in marker:
+        # When -m full_model is called, all tests tagged with
+        # full_model mark will be injected with these custom values
+        if metafunc.definition.get_closest_marker("full_model"):
+            _add_param(
+                "model",
+                ["ibm-granite/granite-3.3-8b-instruct"],
+                metafunc,
+                existing_markers,
+            )
+            _add_param(
+                "backend",
+                ["sendnn"],
+                metafunc,
+                existing_markers,
+            )
+            _add_param(
+                "warmup_shapes",
+                [[(1024, 20, 4)]],
+                metafunc,
+                existing_markers,
+            )
+    else:
+        # Default parameters
+        _add_param("model", get_spyre_model_list(), metafunc, existing_markers)
+        _add_param(
+            "backend",
+            get_spyre_backend_list(),
+            metafunc,
+            existing_markers,
+        )
+        _add_param(
+            "warmup_shapes",
+            default_warmup_shape,
+            metafunc,
+            existing_markers,
+        )
+
+    # apply to all
+    _add_param(
+        "max_model_len",
+        default_max_model_len,
+        metafunc,
+        existing_markers,
+    )
+
+    _add_param(
+        "max_num_seqs",
+        default_max_num_seqs,
+        metafunc,
+        existing_markers,
+    )
+
+    # TODO: add both these using _add_param too
+    # Will need to do some fancy stuff to add custom
+    # markers
+    if "cb" in metafunc.fixturenames and "cb" not in existing_markers:
+        metafunc.parametrize(
+            "cb", [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
+
+    if "tp_size" in metafunc.fixturenames and \
+        "tp_size" not in existing_markers:
+        metafunc.parametrize(
+            "tp_size",
+            [
+                pytest.param(1),
+                pytest.param(2, marks=pytest.mark.multi),
+                pytest.param(4, marks=pytest.mark.multi),
+                pytest.param(8, marks=pytest.mark.multi),
+            ],
+            ids=lambda val: f"TP({val})",
+        )
+
+
+def _add_param(param_name: str, param_value, metafunc,
+               existing_markers) -> None:
+    """helper function to parametrize stuff.
+    We make sure to not parametrize something 
+    if it exists explicitly on the test"""
+    if (param_name in metafunc.fixturenames
+            and param_name not in existing_markers):
+        metafunc.parametrize(
+            param_name,
+            param_value,
+            ids=lambda val: f"{param_name}({val})",
+        )
 
 
 def pytest_collection_modifyitems(config, items):

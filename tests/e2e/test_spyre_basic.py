@@ -6,9 +6,8 @@ Run `python -m pytest tests/e2e/test_spyre_basic.py`.
 import pytest
 from llm_cache import DecodeWarmupShapes
 from spyre_util import (check_output_against_hf, create_random_request,
-                        default_sb_cb_params, generate_spyre_vllm_output,
-                        get_chicken_soup_prompts, get_spyre_backend_list,
-                        get_spyre_model_list, skip_unsupported_tp_size)
+                        generate_spyre_vllm_output, get_chicken_soup_prompts,
+                        skip_unsupported_tp_size)
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor
@@ -16,19 +15,7 @@ from vllm.v1.executor.abstract import Executor
 from vllm_spyre.v1.core.scheduler import StaticBatchingSpyreScheduler
 
 
-@pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize(
-    "tp_size",
-    [
-        pytest.param(1),
-        pytest.param(2, marks=pytest.mark.multi),
-        pytest.param(4, marks=pytest.mark.multi),
-        pytest.param(8, marks=pytest.mark.multi),
-    ],
-    ids=lambda val: f"TP({val})",
-)
-@pytest.mark.parametrize("backend", get_spyre_backend_list())
-@default_sb_cb_params
+@pytest.mark.full_model
 def test_output(model: str, tp_size: int, backend: str, cb: int,
                 max_num_seqs: int, max_model_len: int,
                 warmup_shapes: DecodeWarmupShapes,
@@ -79,9 +66,6 @@ def test_output(model: str, tp_size: int, backend: str, cb: int,
                             prompts)
 
 
-@pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize(
-    "warmup_shapes", [[(64, 20, 4)]])  # (prompt_length/new_tokens/batch_size)
 @pytest.mark.parametrize("backend", [
     pytest.param(
         "sendnn_decoder", marks=pytest.mark.spyre, id="sendnn_decoder")
@@ -117,9 +101,6 @@ def test_output_sendnn_decoder(model: str, warmup_shapes: DecodeWarmupShapes,
                             prompts)
 
 
-@pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize("backend", get_spyre_backend_list())
-@default_sb_cb_params
 def test_batch_handling(model: str, backend: str, cb: int, warmup_shapes,
                         max_num_seqs: int, max_model_len: int,
                         monkeypatch: pytest.MonkeyPatch, use_llm_cache):
@@ -166,8 +147,6 @@ def test_batch_handling(model: str, backend: str, cb: int, warmup_shapes,
                             prompts)
 
 
-@pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_full_batch_scheduling(model: str, backend: str, monkeypatch):
     """Test that we can schedule a full batch of prompts."""
 

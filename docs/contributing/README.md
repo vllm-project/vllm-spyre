@@ -130,9 +130,14 @@ Various log levels that can be configured:
 - `DTLOG_LEVEL` - `TRACE, DEBUG, INFO, WARNING, ERROR`
 - `TORCH_SENDNN_LOG` - `WARNING, CRITICAL`
 - `VLLM_LOGGING_LEVEL` - `DEBUG, INFO, WARNING, ERROR`
+- `DT_DEEPRT_VERBOSE` - `0, -1`
 
 !!! tip
     `DTLOG_LEVEL=INFO` (piped to file) can help you see what device addresses are actually in use. Look for the string `Opened: SEN:VFIO`.
+
+!!! tip
+
+    Set `DT_DEEPRT_VERBOSE` to 0 to enable verbose compiler prints for debugging.
 
 !!! tip
     In order to stop massive log spew, this configuration is ideal:
@@ -140,6 +145,10 @@ Various log levels that can be configured:
     export DTLOG_LEVEL=ERROR
     export TORCH_SENDNN_LOG=CRITICAL
     ```
+
+For tensor-parallel debugging, you can enable an option to redirect all log output from each rank to an individual file.
+Set `VLLM_SPYRE_WORKER_LOG_REDIRECT_DIR` to a local directory, and each rank will redirect stdout and stderr into their own file inside the directory.
+This can be helpful to avoid having interleaved stack dumps from different ranks in stderr.
 
 ### Topology Aware Allocation
 

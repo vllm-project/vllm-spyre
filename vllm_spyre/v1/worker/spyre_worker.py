@@ -5,7 +5,9 @@ import json
 import os
 import platform
 import signal
+import sys
 import time
+from pathlib import Path
 from typing import Optional, Union, cast
 
 import torch
@@ -81,7 +83,12 @@ def _maybe_warmup_context(limit: int, world_size: int, rank: int):
         with utils_spyre.stagger_region(limit, world_size, rank):
             sendnn_exit(*args, **kwargs)
 
+    # Use update_wrapper to make __stagger_exit__ look like a proper instance
+    # method on warmup_context
     functools.update_wrapper(__stagger_exit__, sendnn_exit)
+    # Replace `warmup_context.__exit__` with our new wrapper
+    warmup_context.__exit__ = __stagger_exit__  # type: ignore[method-assign]
+
     with warmup_context():
         _inside_warmup_mode = True
         yield
@@ -209,6 +216,10 @@ class SpyreWorker(WorkerBaseV1):
         self.rank = rank
         self.distributed_init_method = distributed_init_method
         self.is_driver_worker = is_driver_worker
+
+        # For power-user debugging of spyre logs for tensor parallel ops
+        self.redirect_logs_to_files()
+
         self.perf_metrics = perf_metrics.create_perf_metric_logger(rank)
         if self.parallel_config and is_driver_worker:
             assert rank % self.parallel_config.tensor_parallel_size == 0, \
@@ -275,6 +286,32 @@ class SpyreWorker(WorkerBaseV1):
 
         # A small all_reduce for warmup.
         torch.distributed.all_reduce(torch.zeros(1).cpu())
+
+    def redirect_logs_to_files(self) -> None:
+        """Redirects all stdout and stderr to a rank-specific logfile.
+
+        This is 🌶️🌶️🌶️ for debugging purposes only, after it is invoked there
+        won't be any more logs on stdout or stderr from this worker process.
+        """
+        if envs_spyre.VLLM_SPYRE_WORKER_LOG_REDIRECT_DIR:
+            log_dir = Path(envs_spyre.VLLM_SPYRE_WORKER_LOG_REDIRECT_DIR)
+            log_dir.mkdir(parents=True, exist_ok=True)
+            log_path = log_dir / f"rank-{self.rank}.log"
+
+            logger.warning("Redirecting all logs to %s", str(log_path))
+
+            # As written, this isn't reversible. This could be made into a
+            # context manager with cleanup, but this is for debug purposes only.
+            # This uses system calls because we need to catch the output of all
+            # the C libraries running in this process under the hood.
+
+            # Open the file for redirection
+            redirected_file = log_path.open("w")
+            redirected_fd = redirected_file.fileno()
+
+            # Redirect stderr and stdout with `dup2`
+            os.dup2(redirected_fd, sys.stderr.fileno())
+            os.dup2(redirected_fd, sys.stdout.fileno())
 
     def init_device(self) -> None:
 

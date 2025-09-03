@@ -6,16 +6,13 @@ Run `python -m pytest tests/e2e/test_spyre_warmup_shapes.py`.
 import pytest
 from llm_cache import DecodeWarmupShapes
 from spyre_util import (check_output_against_hf, generate_spyre_vllm_output,
-                        get_chicken_soup_prompts, get_spyre_backend_list,
-                        get_spyre_model_list)
+                        get_chicken_soup_prompts)
 from vllm import SamplingParams
 
 
-@pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize(
     "warmup_shapes", [[(64, 20, 4),
                        (128, 20, 2)]])  # (prompt_length/new_tokens/batch_size)
-@pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_multiple_warmup_shapes(model: str, warmup_shapes: DecodeWarmupShapes,
                                 backend: str, monkeypatch: pytest.MonkeyPatch,
                                 use_llm_cache) -> None:
@@ -58,10 +55,8 @@ def test_multiple_warmup_shapes(model: str, warmup_shapes: DecodeWarmupShapes,
                             prompts)
 
 
-@pytest.mark.parametrize("model", get_spyre_model_list())
 @pytest.mark.parametrize("prompts", [["Hello"]])
 @pytest.mark.parametrize("warmup_shapes", [[(65, 1, 1)]])
-@pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_invalid_prompt_len(model: str, prompts: list[str],
                             warmup_shapes: DecodeWarmupShapes, backend: str,
                             monkeypatch: pytest.MonkeyPatch,

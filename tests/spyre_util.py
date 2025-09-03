@@ -64,28 +64,6 @@ def extract_output(req_output):
     return result
 
 
-def default_sb_cb_params(test_func):
-    """Decorate a test function with the default parameterizations for:
-    - warmup shapes for static batching
-    - max model length and max batch size for continuous batching
-    
-    Setting these defaults in one place helps ensure that most test reuse the
-    same config, allowing us to cache more loaded models.
-    """
-    test_func = pytest.mark.parametrize(
-        "cb", [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])(test_func)
-    test_func = pytest.mark.parametrize(
-        "max_model_len", [256],
-        ids=lambda val: f"max_model_len({val})")(test_func)
-    test_func = pytest.mark.parametrize(
-        "max_num_seqs", [4], ids=lambda val: f"max_num_seqs({val})")(test_func)
-    test_func = pytest.mark.parametrize(
-        "warmup_shapes", [[(64, 20, 4)]],
-        ids=lambda val: f"warmup_shapes({val})")(test_func)
-
-    return test_func
-
-
 # vLLM / Spyre
 def generate_spyre_vllm_output(
     model: str,
@@ -212,6 +190,11 @@ def generate_hf_output(
     if all(results):
         # Everything hit cache
         return results
+
+    assert os.getenv("GITHUB_ACTIONS", "") != "true", \
+        "HF results cache miss during Github Actions run. " \
+        "Please run tests locally with `-m 'cpu'` and check in the changes " \
+        "to hf_cache.json"
 
     hf_model = AutoModelForCausalLM.from_pretrained(model)
     hf_tokenizer = AutoTokenizer.from_pretrained(model)
