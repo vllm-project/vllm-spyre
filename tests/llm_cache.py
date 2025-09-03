@@ -1,7 +1,7 @@
 """Contains utilities for caching models (instantiated as vLLM endpoints) 
 across test cases, to speed up test runtime."""
 
-from concurrent.futures import Executor
+from vllm.v1.executor.abstract import Executor
 from typing import Callable, Generic, Optional, TypeVar
 
 import pytest
