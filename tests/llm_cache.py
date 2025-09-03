@@ -4,13 +4,12 @@ across test cases, to speed up test runtime."""
 from typing import Callable, Generic, Optional, TypeVar
 
 import pytest
+from llm_cache_utils import force_engine_shutdown
+from spyre_util import (DecodeWarmupShapes, RemoteOpenAIServer,
+                        patch_environment)
 from vllm import LLM, EngineArgs
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor
-
-from tests.llm_cache_utils import force_engine_shutdown
-from tests.spyre_util import (DecodeWarmupShapes, RemoteOpenAIServer,
-                              patch_environment)
 
 T = TypeVar("T")
 

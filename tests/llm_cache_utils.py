@@ -1,8 +1,7 @@
 from typing import NamedTuple
 
+from spyre_util import DecodeWarmupShapes
 from vllm import LLM
-
-from tests.spyre_util import DecodeWarmupShapes
 
 
 def force_engine_shutdown(llm: LLM):
