@@ -9,8 +9,6 @@ import numpy as np
 import pytest
 import torch
 from hf_result_cache import HFResultCache
-from llm_cache import (DecodeWarmupShapes, EmbeddingWarmupShapes, EngineCache,
-                       LLMCache, RemoteOpenAIServer, RemoteOpenAIServerCache)
 from sentence_transformers import SentenceTransformer, util
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, SamplingParams
@@ -25,9 +23,25 @@ ISCLOSE_REL_TOL_CPU = 0.35
 ISCLOSE_REL_TOL_SPYRE = 0.35
 
 HF_RESULT_CACHE = HFResultCache()
-LLM_CACHE = LLMCache()
-API_SERVER_CACHE = RemoteOpenAIServerCache()
-ENGINE_CACHE = EngineCache()
+
+EmbeddingWarmupShapes = list[tuple[int, int]]
+DecodeWarmupShapes = list[tuple[int, int, int]]
+
+
+def patch_environment(use_cb: bool, warmup_shapes: DecodeWarmupShapes | None,
+                      backend: str, monkeypatch):
+    # Setup the environment correctly for the LLM
+
+    # ---- For static batching ----
+    if warmup_shapes:
+        assert not use_cb, "Warmup shapes through environment variables have "\
+            "been deprecated in continuous batching"
+
+        patch_warmup_shapes(warmup_shapes, monkeypatch)
+
+    # --------------
+    monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1" if use_cb else "0")
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
 
 
 def patch_warmup_shapes(warmup_shapes: DecodeWarmupShapes
@@ -81,6 +95,8 @@ def generate_spyre_vllm_output(
     # shutdown engine this context.
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
+    from tests.llm_cache import get_cached_llm  # avoid circular imports
+
     vllm_model = get_cached_llm(model=model,
                                 max_model_len=max_model_len,
                                 tensor_parallel_size=tensor_parallel_size,
@@ -98,75 +114,6 @@ def generate_spyre_vllm_output(
         results.append(result)
 
     return results
-
-
-def clear_llm_caches():
-    LLM_CACHE.clear()
-    API_SERVER_CACHE.clear()
-    ENGINE_CACHE.clear()
-
-
-def print_llm_cache_info():
-    print("\n----- LLM Cache info ----\n")
-    print(f"vllm.LLM Cache hits: {LLM_CACHE._cache.hits} / "
-          f"misses: {LLM_CACHE._cache.misses}")
-    print(f"Runtime Server Cache hits: {API_SERVER_CACHE._cache.hits} / "
-          f"misses: {API_SERVER_CACHE._cache.misses}")
-    print(f"Engine Core Cache hits: {ENGINE_CACHE._cache.hits} / "
-          f"misses: {ENGINE_CACHE._cache.misses}")
-    print("\n-------------------------\n")
-
-
-def get_cached_llm(
-    model: str,
-    max_model_len: int,
-    tensor_parallel_size: int,
-    backend: str,
-    monkeypatch: pytest.MonkeyPatch,
-    warmup_shapes: DecodeWarmupShapes | None = None,
-    max_num_seqs: Optional[int] = None,
-    use_cb: bool = False,
-) -> LLM:
-    # Clear other caches first
-    API_SERVER_CACHE.clear()
-    ENGINE_CACHE.clear()
-
-    return LLM_CACHE.get_cached_llm(model=model,
-                                    max_model_len=max_model_len,
-                                    tensor_parallel_size=tensor_parallel_size,
-                                    backend=backend,
-                                    monkeypatch=monkeypatch,
-                                    warmup_shapes=warmup_shapes,
-                                    max_num_seqs=max_num_seqs,
-                                    use_cb=use_cb)
-
-
-def get_cached_api_server(model: str, server_args: list[str],
-                          server_env: dict) -> RemoteOpenAIServer:
-    # Clear other caches first
-    LLM_CACHE.clear()
-    ENGINE_CACHE.clear()
-
-    return API_SERVER_CACHE.get_api_server(
-        model=model,
-        server_args=server_args,
-        server_env=server_env,
-    )
-
-
-def get_cached_engine(model: str, max_model_len: int, max_num_seqs: int,
-                      available_blocks: int, backend: str,
-                      monkeypatch) -> EngineCore:
-    # Clear other caches first
-    LLM_CACHE.clear()
-    API_SERVER_CACHE.clear()
-
-    return ENGINE_CACHE.get_engine(model=model,
-                                   max_model_len=max_model_len,
-                                   max_num_seqs=max_num_seqs,
-                                   available_blocks=available_blocks,
-                                   backend=backend,
-                                   monkeypatch=monkeypatch)
 
 
 # Hugging Face
@@ -382,6 +329,7 @@ def spyre_vllm_embeddings(model: str, prompts: list[str], max_model_len: int,
     # cache
 
     # Clear any cached decoder model
+    from tests.llm_cache import LLM_CACHE  # avoid circular imports
     LLM_CACHE.clear()
 
     vllm_model = LLM(model=model,

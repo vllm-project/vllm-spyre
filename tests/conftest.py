@@ -4,12 +4,14 @@ import random
 
 import pytest
 import torch
-from llm_cache import SortKey, sort_tests_for_llm_caching
-from spyre_util import (clear_llm_caches, get_cached_api_server,
-                        get_spyre_backend_list, get_spyre_model_list,
-                        print_llm_cache_info, skip_unsupported_tp_size)
+from llm_cache import (clear_llm_caches, get_cached_api_server,
+                       print_llm_cache_info)
+from llm_cache_utils import SortKey, sort_tests_for_llm_caching
 from vllm.connections import global_http_connection
 from vllm.distributed import cleanup_dist_env_and_memory
+
+from tests.spyre_util import (get_spyre_backend_list, get_spyre_model_list,
+                              skip_unsupported_tp_size)
 
 # Running with "fork" can lead to hangs/crashes
 # Specifically, our use of transformers to compare results causes an OMP thread

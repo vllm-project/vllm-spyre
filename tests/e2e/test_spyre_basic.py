@@ -4,35 +4,42 @@ Run `python -m pytest tests/e2e/test_spyre_basic.py`.
 """
 
 import pytest
-from llm_cache import DecodeWarmupShapes
 from spyre_util import (check_output_against_hf, create_random_request,
                         generate_spyre_vllm_output, get_chicken_soup_prompts,
-                        skip_unsupported_tp_size)
+                        patch_environment, skip_unsupported_tp_size)
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor
 
+from tests.spyre_util import DecodeWarmupShapes
 from vllm_spyre.v1.core.scheduler import StaticBatchingSpyreScheduler
 
 
 @pytest.mark.full_model
-def test_output(model: str, tp_size: int, backend: str, cb: int,
-                max_num_seqs: int, max_model_len: int,
-                warmup_shapes: DecodeWarmupShapes,
-                monkeypatch: pytest.MonkeyPatch, use_llm_cache) -> None:
-    '''
+def test_output(
+    model: str,
+    tp_size: int,
+    backend: str,
+    cb: int,
+    max_num_seqs: int,
+    max_model_len: int,
+    warmup_shapes: DecodeWarmupShapes,
+    monkeypatch: pytest.MonkeyPatch,
+    use_llm_cache,
+) -> None:
+    """
     The warmup is based on a single shape. After the warmup,
     one request with the provided prompts is input to vLLM.
     The same prompts are also input to HF. The generated output
     including text, token ids, and logprobs, is verified to be
     identical for vLLM and HF.
-    
+
     Configuration for CB - parameters are combinatorial:
         * max_num_seqs: 4
         * tensor parallelism: 1, 2, 4, 8
         * number of prompts: 4 (Chicken soup prompts)
         * max tokens: 20 (same for all the prompts)
-    '''
+    """
 
     skip_unsupported_tp_size(tp_size, backend)
 
@@ -51,7 +58,8 @@ def test_output(model: str, tp_size: int, backend: str, cb: int,
         max_tokens=max_new_tokens,
         temperature=0,
         logprobs=0,  # return logprobs of generated tokens only
-        ignore_eos=True)
+        ignore_eos=True,
+    )
 
     vllm_results = generate_spyre_vllm_output(
         model=model,
@@ -61,22 +69,30 @@ def test_output(model: str, tp_size: int, backend: str, cb: int,
         backend=backend,
         monkeypatch=monkeypatch,
         max_model_len=max_model_len,
-        **kwargs)
+        **kwargs,
+    )
     check_output_against_hf(model, backend, max_new_tokens, vllm_results,
                             prompts)
 
 
-@pytest.mark.parametrize("backend", [
-    pytest.param(
-        "sendnn_decoder", marks=pytest.mark.spyre, id="sendnn_decoder")
-])
-def test_output_sendnn_decoder(model: str, warmup_shapes: DecodeWarmupShapes,
-                               backend: str, monkeypatch: pytest.MonkeyPatch,
-                               use_llm_cache) -> None:
-    '''
+@pytest.mark.parametrize(
+    "backend",
+    [
+        pytest.param(
+            "sendnn_decoder", marks=pytest.mark.spyre, id="sendnn_decoder")
+    ],
+)
+def test_output_sendnn_decoder(
+    model: str,
+    warmup_shapes: DecodeWarmupShapes,
+    backend: str,
+    monkeypatch: pytest.MonkeyPatch,
+    use_llm_cache,
+) -> None:
+    """
     Tests the deprecated sendnn_decoder backend, which should fall-back to
     sendnn
-    '''
+    """
 
     max_new_tokens = warmup_shapes[0][1]
     prompts = get_chicken_soup_prompts(1)
@@ -85,7 +101,8 @@ def test_output_sendnn_decoder(model: str, warmup_shapes: DecodeWarmupShapes,
         max_tokens=max_new_tokens,
         temperature=0,
         logprobs=0,  # return logprobs of generated tokens only
-        ignore_eos=True)
+        ignore_eos=True,
+    )
 
     vllm_results = generate_spyre_vllm_output(
         model=model,
@@ -95,15 +112,23 @@ def test_output_sendnn_decoder(model: str, warmup_shapes: DecodeWarmupShapes,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
         backend=backend,
-        monkeypatch=monkeypatch)
+        monkeypatch=monkeypatch,
+    )
 
     check_output_against_hf(model, backend, max_new_tokens, vllm_results,
                             prompts)
 
 
-def test_batch_handling(model: str, backend: str, cb: int, warmup_shapes,
-                        max_num_seqs: int, max_model_len: int,
-                        monkeypatch: pytest.MonkeyPatch, use_llm_cache):
+def test_batch_handling(
+    model: str,
+    backend: str,
+    cb: int,
+    warmup_shapes,
+    max_num_seqs: int,
+    max_model_len: int,
+    monkeypatch: pytest.MonkeyPatch,
+    use_llm_cache,
+):
     """Test that the spyre worker correctly handles
     continuous batches of requests that
     finish after different numbers of forward passes
@@ -119,19 +144,21 @@ def test_batch_handling(model: str, backend: str, cb: int, warmup_shapes,
     max_new_tokens = [5, 20, 10, 5]
 
     vllm_sampling_params = [
-        SamplingParams(max_tokens=max_new_tokens[i],
-                       min_tokens=max_new_tokens[i],
-                       temperature=0,
-                       ignore_eos=True,
-                       logprobs=0) for i in range(len(max_new_tokens))
+        SamplingParams(
+            max_tokens=max_new_tokens[i],
+            min_tokens=max_new_tokens[i],
+            temperature=0,
+            ignore_eos=True,
+            logprobs=0,
+        ) for i in range(len(max_new_tokens))
     ]
 
-    kwargs = {
+    kwargs = ({
         "max_num_seqs": max_num_seqs,
         "use_cb": True
     } if cb == 1 else {
         "warmup_shapes": warmup_shapes
-    }
+    })
 
     vllm_results = generate_spyre_vllm_output(
         model=model,
@@ -141,7 +168,8 @@ def test_batch_handling(model: str, backend: str, cb: int, warmup_shapes,
         tensor_parallel_size=1,
         backend=backend,
         monkeypatch=monkeypatch,
-        **kwargs)
+        **kwargs,
+    )
 
     check_output_against_hf(model, backend, max_new_tokens, vllm_results,
                             prompts)
@@ -171,10 +199,12 @@ def test_full_batch_scheduling(model: str, backend: str, monkeypatch):
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
 
     # Setup the engine
-    engine_args = EngineArgs(model=model,
-                             tokenizer=model,
-                             max_num_batched_tokens=max_batched_tokens,
-                             max_num_seqs=batch_size)
+    engine_args = EngineArgs(
+        model=model,
+        tokenizer=model,
+        max_num_batched_tokens=max_batched_tokens,
+        max_num_seqs=batch_size,
+    )
     vllm_config = engine_args.create_engine_config()
     executor_class = Executor.get_class(vllm_config)
     engine_core = EngineCore(vllm_config=vllm_config,
@@ -196,3 +226,32 @@ def test_full_batch_scheduling(model: str, backend: str, monkeypatch):
     schedule = scheduler.schedule()
 
     assert len(schedule.scheduled_new_reqs) == batch_size
+
+
+def test_sb_warmup_shape_max_model_len(model: str, backend, warmup_shapes, cb,
+                                       monkeypatch):
+    """Test that makes sure that --max-model-len
+    doesn't affect SB, instead it is picked up from
+    warmup shapes"""
+
+    max_model_len = 64
+    kwargs = ({
+        "use_cb": True,
+        "warmup_shapes": None
+    } if cb == 1 else {
+        "use_cb": False,
+        "warmup_shapes": warmup_shapes,
+    })
+
+    patch_environment(**kwargs, backend=backend, monkeypatch=monkeypatch)
+    vllm_config = EngineArgs(
+        model=model, max_model_len=max_model_len).create_engine_config()
+    model_config = vllm_config.model_config
+
+    if not cb:
+        assert model_config.max_model_len == max([
+            prompt_length + new_tokens
+            for prompt_length, new_tokens, _ in warmup_shapes
+        ])
+    else:
+        assert model_config.max_model_len == max_model_len
