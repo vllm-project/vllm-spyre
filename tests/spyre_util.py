@@ -2,6 +2,7 @@ import inspect
 import math
 import os
 import random
+import time
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -605,6 +606,7 @@ def create_random_request(
             mm_placeholders=None,
             sampling_params=sampling_params,
             eos_token_id=None,
+            arrival_time=time.time(),
             lora_request=None,
             data_parallel_rank=None,
             pooling_params=None,
@@ -621,6 +623,7 @@ def create_random_request(
         multi_modal_placeholders=None,
         sampling_params=sampling_params,
         eos_token_id=None,
+        arrival_time=time.time(),
         lora_request=None,
         pooling_params=None,
         cache_salt=None,
