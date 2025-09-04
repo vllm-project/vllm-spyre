@@ -6,7 +6,6 @@ pytestmark = pytest.mark.full_model
 
 
 @pytest.fixture(scope="function", autouse=True)
-@pytest.mark.parametrize("backend", get_spyre_backend_list())
 def setenv(backend, monkeypatch):
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
 
