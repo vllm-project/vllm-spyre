@@ -112,6 +112,9 @@ def check_scheduler_inference_steps(
         monkeypatch=monkeypatch)
     scheduler: ContinuousBatchingSpyreScheduler = engine_core.scheduler
 
+    # clear the cache of function scheduler.check_batch_tkv_limit()
+    scheduler._cache_check_batch_tkv_limit.clear()
+
     # Override the TKV limit in the scheduler if needed
     if max_batch_tkv_limit >= 0:
         scheduler.max_batch_tkv_limit = max_batch_tkv_limit

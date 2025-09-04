@@ -320,7 +320,8 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         https://github.com/vllm-project/vllm-spyre/pull/363#issuecomment-3173605517
         """
         # checking if cached result can be used
-        outer_key = tuple(running)  # decode batch changes
+        outer_key = tuple(r.request_id
+                          for r in running)  # decode batch changes
         inner_key = (request, max_batch_tkv_limit)  # new request changes
         cache = self._cache_check_batch_tkv_limit
         if (outer_key in cache) and (inner_key in cache[outer_key]):
