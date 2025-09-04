@@ -4,9 +4,8 @@ from typing import Any, Optional, Union
 
 import pytest
 from llm_cache import LLM_CACHE, get_cached_llm
+from spyre_util import DecodeWarmupShapes
 from vllm import LLM, SamplingParams
-
-from tests.spyre_util import DecodeWarmupShapes
 
 
 # vLLM / Spyre
