@@ -1,11 +1,13 @@
 import pytest
+from spyre_util import get_spyre_backend_list
 from vllm import SamplingParams
 
-pytestmark = pytest.mark.full_model
+pytestmark = pytest.mark.basic
 
 
 @pytest.fixture(scope="function", autouse=True)
-def setenv(backend, monkeypatch: pytest.MonkeyPatch):
+@pytest.mark.parametrize("backend", get_spyre_backend_list())
+def setenv(backend, monkeypatch):
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
 
 
