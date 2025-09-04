@@ -1,5 +1,4 @@
 import pytest
-from spyre_util import get_spyre_backend_list
 from vllm import SamplingParams
 
 pytestmark = pytest.mark.full_model
