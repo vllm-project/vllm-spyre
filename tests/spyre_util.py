@@ -354,7 +354,7 @@ def compare_results(
                         print()
                     else:
                         print(f"ERROR (REL_TOL_DIFF = "
-                              "{logprob_rel_diff * 100:.2f}%)")
+                              f"{logprob_rel_diff * 100:.2f}%)")
                         assert DISABLE_ASSERTS or False
                         break
 
