@@ -111,21 +111,15 @@ class SpyrePlatform(Platform):
         if getattr(scheduler_config, "is_multi_step", False):
             raise NotImplementedError
 
-        # Can be simplified after the deprecation of `model_config.task` in
-        # vllm > 0.10.0
-        is_decoder = "generate" in model_config.supported_tasks if (
-            model_config.task == "auto"
-            or model_config.task is None) else model_config.task == "generate"
+        is_decoder = model_config.runner_type == "generate"
 
-        is_pooling = "embed" in model_config.supported_tasks if (
-            model_config.task == "auto"
-            or model_config.task is None) else model_config.task == "embed"
+        is_pooling = model_config.runner_type == "pooling"
 
         if not bool(int(os.getenv("VLLM_USE_V1", "1"))):
             raise ValueError("vllm-spyre is only supported with vLLM v1. "
                              "Please set VLLM_USE_V1=1")
         elif not is_decoder and not is_pooling:
-            raise ValueError("Only the 'generate' and 'embed' tasks are "
+            raise ValueError("Only the 'generate' and 'pooling' runners are "
                              "supported")
 
         if parallel_config.worker_cls == "auto":
@@ -133,6 +127,14 @@ class SpyrePlatform(Platform):
                 "spyre_worker.SpyreWorker"
 
         cls._check_threading_config(parallel_config.world_size)
+
+        # set env vars based on the model
+        if is_decoder:
+            os.environ["FLEX_OVERWRITE_NMB_FRAME"] = "true"
+            os.environ["COMPILATION_MODE"] = "offline_decoder"
+        if is_pooling:
+            os.environ["FLEX_OVERWRITE_NMB_FRAME"] = "false"
+            os.environ["COMPILATION_MODE"] = "offline"
 
         if envs_spyre.VLLM_SPYRE_USE_CB and is_decoder:
             scheduler_config.scheduler_cls = "vllm_spyre.v1.core."\
@@ -200,6 +202,13 @@ class SpyrePlatform(Platform):
         # set env vars for torch_sendnn to consume
         os.environ["VLLM_DT_MAX_CONTEXT_LEN"] = str(
             vllm_config.model_config.max_model_len)
+        if (envs_spyre.VLLM_SPYRE_USE_CB
+                and vllm_config.model_config.max_model_len > 32 * 1024):
+            logger.warning(
+                'Max context length is too big. Currently only 32K (32768) ' \
+                'context length is supported on Spyre for continuous ' \
+                'batching. Results might be off!'
+            )
         # min value 2 needed for VLLM_DT_MAX_BATCH_SIZE (compiler constraint)
         # Note that we can still have decodes of batch size 1 as the env var
         # only concerns the max batch size.

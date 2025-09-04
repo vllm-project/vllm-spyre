@@ -1,36 +1,23 @@
 import openai
 import pytest
-from spyre_util import get_spyre_backend_list, get_spyre_model_list
 
 
-@pytest.mark.parametrize("model", get_spyre_model_list())
-@pytest.mark.parametrize(
-    "tp_size",
-    [
-        pytest.param(1, marks=pytest.mark.basic),
-        pytest.param(2, marks=pytest.mark.multi),
-        pytest.param(4, marks=pytest.mark.multi),
-        pytest.param(8, marks=pytest.mark.multi),
-    ],
-    ids=lambda val: f"TP({val})",
-)
-@pytest.mark.parametrize("backend", get_spyre_backend_list())
-@pytest.mark.parametrize(
-    "warmup_shape",
-    [[
-        (64, 20, 1),
-    ]],
-)
-@pytest.mark.parametrize("cb",
-                         [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
-@pytest.mark.parametrize("max_num_seqs", [2],
-                         ids=lambda val: f"max_num_seqs({val})")
-@pytest.mark.parametrize("max_model_len", [256],
-                         ids=lambda val: f"max_model_len({val})")
+def _check_result(client, model, max_tokens=8, temperature=0.0, n=1) -> None:
+    completion = client.completions.create(
+        model=model,
+        prompt="Hello World!",
+        max_tokens=max_tokens,
+        temperature=temperature,
+        n=n,
+    )
+    assert len(completion.choices) == n
+    assert len(completion.choices[0].text) > 0
+
+
 def test_openai_serving(
     remote_openai_server,
     model,
-    warmup_shape,
+    warmup_shapes,
     backend,
     tp_size,
     cb,
@@ -40,20 +27,9 @@ def test_openai_serving(
     """Test online serving using the `vllm serve` CLI"""
 
     client = remote_openai_server.get_client()
-    completion = client.completions.create(model=model,
-                                           prompt="Hello World!",
-                                           max_tokens=5,
-                                           temperature=0.0)
-    assert len(completion.choices) == 1
-    assert len(completion.choices[0].text) > 0
 
-    completion = client.completions.create(model=model,
-                                           prompt="Hello World!",
-                                           max_tokens=5,
-                                           temperature=1.0,
-                                           n=2)
-    assert len(completion.choices) == 2
-    assert len(completion.choices[0].text) > 0
+    _check_result(client, model, n=1)
+    _check_result(client, model, temperature=1.0, n=2)
 
     # rest are SB tests
     if cb:
@@ -73,8 +49,8 @@ def test_openai_serving(
     # Short prompt under context length but requesting too many tokens for
     # the warmup shape should return an empty result
     try:
-        completion = client.completions.create(model=model,
-                                               prompt="Hello World!",
-                                               max_tokens=25)
+        client.completions.create(model=model,
+                                  prompt="Hello World!",
+                                  max_tokens=25)
     except openai.BadRequestError as e:
         assert "warmup" in str(e)

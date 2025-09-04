@@ -2,7 +2,8 @@ import inspect
 import os
 
 import pytest
-from spyre_util import get_spyre_model_list
+
+from vllm_spyre.compat_utils import dataclass_fields
 
 pytestmark = pytest.mark.compat
 
@@ -31,7 +32,6 @@ def test_vllm_bert_support():
 
 
 @pytest.mark.cpu
-@pytest.mark.parametrize("model", get_spyre_model_list())
 def test_model_config_task(model: str):
 
     from vllm.engine.arg_utils import EngineArgs
@@ -153,3 +153,18 @@ def test_engine_core_add_request():
             "switched to the new definition of EngineCore.add_request()")
         # The compat code introduced in the PR below can now be removed:
         # https://github.com/vllm-project/vllm-spyre/pull/354
+
+
+@pytest.mark.cpu
+def test_mm_inputs():
+
+    from vllm.v1.core.sched.output import NewRequestData
+    has_mm_inputs = 'mm_inputs' in dataclass_fields(NewRequestData)
+
+    if VLLM_VERSION == "vLLM:main":
+        assert not has_mm_inputs
+    elif VLLM_VERSION == "vLLM:lowest":
+        assert has_mm_inputs, ("The lowest supported vLLM version already"
+                               "renamed mm_inputs to mm_kwargs.")
+        # The compat code introduced in the PR below can now be removed:
+        # https://github.com/vllm-project/vllm-spyre/pull/380

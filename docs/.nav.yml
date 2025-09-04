@@ -1,6 +1,7 @@
 nav:
   - Home:
     - vLLM Spyre Plugin: README.md
+    - Roadmap: roadmaps/q3-2025.md
     - Getting Started:
       - Installation: getting_started/installation.md
     - Deploying:
@@ -23,7 +24,7 @@ nav:
           - Output Tests: contributing/continuous_batching/tests/output_tests.md
           - Scheduler Steps Tests: contributing/continuous_batching/tests/scheduler_steps_tests.md
           - Other Tests: contributing/continuous_batching/tests/other_tests.md
-
+      
   - Getting Started:
     - Installation: getting_started/installation.md
   - Deploying:

@@ -6,26 +6,25 @@ Run `python -m pytest tests/e2e/test_spyre_embeddings.py`.
 from functools import partial
 
 import pytest
+from llm_cache import EmbeddingWarmupShapes
 from spyre_util import (compare_embedding_results, get_chicken_soup_prompts,
-                        get_spyre_backend_list, get_spyre_model_list,
-                        patch_warmup_shapes, spyre_vllm_embeddings,
-                        st_embeddings)
+                        get_spyre_model_list, patch_warmup_shapes,
+                        spyre_vllm_embeddings, st_embeddings)
 from vllm import LLM
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list(isEmbeddings=True))
 @pytest.mark.parametrize(
-    "warmup_shape",
+    "warmup_shapes",
     [  # (prompt_length/batch_size)
-        pytest.param((64, 4), marks=pytest.mark.basic),
-        pytest.param((64, 8)),
-        pytest.param((128, 4)),
-        pytest.param((128, 8))
+        pytest.param([(64, 4)], marks=pytest.mark.basic),
+        pytest.param([(64, 8)]),
+        pytest.param([(128, 4)]),
+        pytest.param([(128, 8)])
     ])
-@pytest.mark.parametrize("backend", get_spyre_backend_list())
 def test_output(
     model: str,
-    warmup_shape: tuple[int, int],
+    warmup_shapes: EmbeddingWarmupShapes,
     backend: str,
     monkeypatch,
 ) -> None:
@@ -37,14 +36,13 @@ def test_output(
     '''
 
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
-    patch_warmup_shapes([warmup_shape], monkeypatch)
+    patch_warmup_shapes(warmup_shapes, monkeypatch)
 
     prompts = get_chicken_soup_prompts(1)
 
     vllm_results = spyre_vllm_embeddings(model=model,
                                          prompts=prompts,
                                          max_model_len=256,
-                                         block_size=256,
                                          tensor_parallel_size=1,
                                          backend=backend)
 
@@ -52,24 +50,23 @@ def test_output(
 
     compare_embedding_results(model=model,
                               prompts=prompts,
-                              warmup_shapes=[warmup_shape],
+                              warmup_shapes=warmup_shapes,
                               tensor_parallel_size=1,
                               backend=backend,
                               vllm_results=vllm_results,
                               hf_results=hf_results)
 
 
-@pytest.mark.parametrize("warmup_shape", [
-    (128, 1),
-    (128, 2),
-    (128, 4),
+@pytest.mark.parametrize("warmup_shapes", [
+    [(128, 1)],
+    [(128, 2)],
+    [(128, 4)],
 ])  # (prompt_length/batch_size)
-@pytest.mark.parametrize("backend", get_spyre_backend_list())
 @pytest.mark.parametrize("model", get_spyre_model_list(isEmbeddings=True))
 def test_scheduling_invariance(
     model,
     backend,
-    warmup_shape: tuple[int, int],
+    warmup_shapes: EmbeddingWarmupShapes,
     monkeypatch,
 ) -> None:
     '''
@@ -82,7 +79,7 @@ def test_scheduling_invariance(
     '''
 
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
-    patch_warmup_shapes([warmup_shape], monkeypatch)
+    patch_warmup_shapes(warmup_shapes, monkeypatch)
 
     prompts = get_chicken_soup_prompts(4)
     reference_embeds = st_embeddings(model, prompts)
@@ -91,7 +88,6 @@ def test_scheduling_invariance(
                      task="embed",
                      tokenizer=model,
                      max_model_len=256,
-                     block_size=256,
                      tensor_parallel_size=1)
 
     def batch_embeds(step):
@@ -107,7 +103,7 @@ def test_scheduling_invariance(
     verify_vllm_results = partial(compare_embedding_results,
                                   model=model,
                                   prompts=prompts,
-                                  warmup_shapes=[warmup_shape],
+                                  warmup_shapes=warmup_shapes,
                                   tensor_parallel_size=1,
                                   backend=backend,
                                   hf_results=reference_embeds)

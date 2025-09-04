@@ -153,8 +153,9 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         self.block_size = SpyrePlatform.get_block_size()
         self.max_batch_tkv_limit = os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT",
                                              default='-1')
-        assert self.max_batch_tkv_limit != '-1', "Expecting the env var"
-        "VLLM_DT_MAX_BATCH_TKV_LIMIT to be set in platform.py"
+        assert self.max_batch_tkv_limit != '-1', (
+            "Expecting the env var VLLM_DT_MAX_BATCH_TKV_LIMIT to be set in "
+            "platform.py")
 
     def update_from_output(
         self,
@@ -162,10 +163,9 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         model_runner_output: ModelRunnerOutput,
     ) -> dict[int, EngineCoreOutputs]:
         # Need an instance of CBSpyreModelRunnerOutput which holds the tkv value
-        assert isinstance(
-            model_runner_output, CBSpyreModelRunnerOutput
-        ), "Expecting an instance of CBSpyreModelRunnerOutput"
-        "when doing continuous batching."
+        assert isinstance(model_runner_output, CBSpyreModelRunnerOutput), (
+            "Expecting an instance of CBSpyreModelRunnerOutput when doing "
+            "continuous batching.")
         self.tkv = model_runner_output.tkv
         self.n_free_blocks = model_runner_output.n_free_blocks
         return super(SpyreScheduler,
@@ -318,7 +318,8 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
 
         # Compute token lengths for all running requests (decode batch)
         decode_req_tkvs = [
-            tkv + req.max_tokens - 1 - req.num_computed_tokens
+            tkv + req.max_tokens - 1 -
+            (req.num_computed_tokens - req.num_prompt_tokens)
             for req in self.running
         ]
         # Sort decode requests token lengths in ascending order
