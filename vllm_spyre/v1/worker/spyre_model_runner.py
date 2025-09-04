@@ -5,10 +5,11 @@ from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
-from typing import (TYPE_CHECKING, Generic, Literal, Optional, TypeVar, Union,
-                    cast, get_args)
+from typing import (TYPE_CHECKING, Any, Generic, Literal, Optional, TypeVar,
+                    Union, cast, get_args)
 
 import torch
+import vllm.v1.sample.logits_processor
 from torch import nn
 from transformers import (AutoModel, AutoModelForSequenceClassification,
                           AutoTokenizer)
@@ -305,13 +306,32 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
             rank=self.rank,
         )
 
+    # Compatibility code, remove when no supported version
+    # has init_builtin_logitsprocs any more
+    def _get_builtin_logits_processors(self) -> Any:
+        if hasattr(vllm.v1.sample.logits_processor, "LogitsProcessors"):
+            return vllm.v1.sample.logits_processor.LogitsProcessors(
+                ctor(self.vllm_config, "cpu", False)
+                for ctor in vllm.v1.sample.logits_processor.\
+                    BUILTIN_LOGITS_PROCESSORS)
+        else:
+            return vllm.v1.sample.logits_processor.init_builtin_logitsprocs(
+                pin_memory_available=False,
+                max_num_reqs=self.scheduler_config.max_num_seqs + 1,
+                device="cpu")
+
     def build_input_batch(self) -> SamplingInputBatch:
+        # Define logits processors.
+        # TODO(Max): logits processor list should be extensible via engine
+        # constructor argument; for now the list is fixed to builtin processors
+        logits_processors = self._get_builtin_logits_processors()
         return SamplingInputBatch(
             max_num_reqs=self.scheduler_config.max_num_seqs,
             max_model_len=self.model_config.max_model_len,
             device=self.device,
             pin_memory=self.pin_memory,
             vocab_size=self.model_config.get_vocab_size(),
+            logitsprocs=logits_processors,
         )
 
     @property
@@ -811,7 +831,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             device=self.device,
             pin_memory=self.pin_memory,
             vocab_size=vllm_config.model_config.get_vocab_size(),
-        )
+            logitsprocs=self._get_builtin_logits_processors())
 
     def pre_warmup(self) -> None:
         # Set the number of kv cache blocks to the minimal value of 2 which is

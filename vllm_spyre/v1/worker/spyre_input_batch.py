@@ -5,7 +5,7 @@
 
 from abc import abstractmethod
 from dataclasses import dataclass, field
-from typing import Generic, Optional, TypeVar, cast
+from typing import Any, Generic, Optional, TypeVar, cast
 
 import numpy as np
 import torch
@@ -13,8 +13,7 @@ from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import SamplingParams, SamplingType
 from vllm.v1.pool.metadata import PoolingMetadata
 from vllm.v1.sample.logits_processor import (BatchUpdateBuilder,
-                                             MoveDirectionality,
-                                             init_builtin_logitsprocs)
+                                             MoveDirectionality)
 from vllm.v1.sample.metadata import SamplingMetadata
 
 
@@ -229,6 +228,8 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
         device: torch.device,
         pin_memory: bool,
         vocab_size: int,
+        # Type here is any for compatibility reasons
+        logitsprocs: Any,
     ):
         super().__init__(
             max_num_reqs,
@@ -297,13 +298,7 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
         # updates. Should reset each step.
         self.batch_update_builder = BatchUpdateBuilder()
 
-        # Define logits processors.
-        # TODO(andy): logits processor list should be extensible via engine
-        # constructor argument; for now the list is fixed.
-        self.logitsprocs = init_builtin_logitsprocs(pin_memory_available=False,
-                                                    max_num_reqs=max_num_reqs +
-                                                    1,
-                                                    device=device)
+        self.logitsprocs = logitsprocs
 
         self.has_allowed_token_ids: set[str] = set()
         self.allowed_token_ids_mask: Optional[torch.Tensor] = None
