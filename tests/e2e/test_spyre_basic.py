@@ -7,7 +7,7 @@ import pytest
 from output_util import generate_spyre_vllm_output
 from spyre_util import (DecodeWarmupShapes, check_output_against_hf,
                         create_random_request, get_chicken_soup_prompts,
-                        skip_unsupported_tp_size)
+                        patch_environment, skip_unsupported_tp_size)
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor
@@ -196,3 +196,32 @@ def test_full_batch_scheduling(model: str, backend: str, monkeypatch):
     schedule = scheduler.schedule()
 
     assert len(schedule.scheduled_new_reqs) == batch_size
+
+
+def test_max_model_len_override(model: str, backend, warmup_shapes, cb,
+                                monkeypatch):
+    """Test that makes sure that --max-model-len
+    doesn't affect SB, instead it is picked up from
+    warmup shapes"""
+
+    max_model_len = 64
+    kwargs = ({
+        "use_cb": True,
+        "warmup_shapes": None
+    } if cb == 1 else {
+        "use_cb": False,
+        "warmup_shapes": warmup_shapes,
+    })
+
+    patch_environment(**kwargs, backend=backend, monkeypatch=monkeypatch)
+    vllm_config = EngineArgs(
+        model=model, max_model_len=max_model_len).create_engine_config()
+    model_config = vllm_config.model_config
+
+    if not cb:
+        assert model_config.max_model_len == max([
+            prompt_length + new_tokens
+            for prompt_length, new_tokens, _ in warmup_shapes
+        ])
+    else:
+        assert model_config.max_model_len == max_model_len
