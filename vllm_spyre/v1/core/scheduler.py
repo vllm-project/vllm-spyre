@@ -156,7 +156,8 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         assert self.max_batch_tkv_limit != '-1', (
             "Expecting the env var VLLM_DT_MAX_BATCH_TKV_LIMIT to be set in "
             "platform.py")
-        # outer key: tuple(Request), inner key: (Request, int)
+        # cache for self.check_batch_tkv_limitouter: key: tuple(request_ids),
+        # inner key: (request_id, max_batch_tkv_limit), value: (lower, upper)
         self._cache_check_batch_tkv_limit: dict[tuple, dict[tuple, tuple]] = {}
 
     def update_from_output(
@@ -322,7 +323,8 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         # checking if cached result can be used
         outer_key = tuple(r.request_id
                           for r in running)  # decode batch changes
-        inner_key = (request, max_batch_tkv_limit)  # new request changes
+        inner_key = (request.request_id, max_batch_tkv_limit
+                     )  # new request changes
         cache = self._cache_check_batch_tkv_limit
         if (outer_key in cache) and (inner_key in cache[outer_key]):
             (lower, upper) = cache[outer_key][inner_key]
