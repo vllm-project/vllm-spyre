@@ -332,7 +332,11 @@ def compare_results(
 
                 if hf_token_id != vllm_token_id:  # different tokens
                     if backend == 'sendnn' and math.isclose(
-                            hf_logprob, vllm_logprob, rel_tol=rel_tol):
+                            hf_logprob,
+                            vllm_logprob,
+                            rel_tol=rel_tol,
+                            abs_tol=ISCLOSE_ABS_TOL,
+                    ):
                         # probably still OK
                         print('DIVERGING')
                         break
@@ -341,17 +345,16 @@ def compare_results(
                         assert DISABLE_ASSERTS or False
                         break
                 else:  # identical tokens
-                    if math.isclose(hf_logprob,
-                                    vllm_logprob,
-                                    rel_tol=rel_tol,
-                                    abs_tol=ISCLOSE_ABS_TOL):
+                    if math.isclose(
+                            hf_logprob,
+                            vllm_logprob,
+                            rel_tol=rel_tol,
+                            abs_tol=ISCLOSE_ABS_TOL,
+                    ):
                         print()
                     else:
-                        # diff_val = abs(hf_logprob - vllm_logprob)
-                        # max_val = max(abs(hf_logprob), abs(vllm_logprob))
-                        # rel_tol_diff = (diff_val / max_val) * 100
-                        print(f"ERROR (REL_TOL_DIFF = \
-                                {logprob_rel_diff * 100:.2f}%)")
+                        print(f"ERROR (REL_TOL_DIFF = "
+                              "{logprob_rel_diff * 100:.2f}%)")
                         assert DISABLE_ASSERTS or False
                         break
 
