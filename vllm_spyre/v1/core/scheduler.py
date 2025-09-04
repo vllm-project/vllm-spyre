@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import math
-import time
 import os
+import time
 from collections import deque
 from typing import TYPE_CHECKING
 
