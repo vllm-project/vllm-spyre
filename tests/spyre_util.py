@@ -56,19 +56,15 @@ def patch_warmup_shapes(warmup_shapes: DecodeWarmupShapes
     warmup_prompt_length = [t[0] for t in warmup_shapes]
     warmup_batch_size = [t[-1] for t in warmup_shapes]
 
-    monkeypatch.setenv(
-        "VLLM_SPYRE_WARMUP_PROMPT_LENS",
-        ",".join(str(val) for val in warmup_prompt_length),
-    )
-    monkeypatch.setenv("VLLM_SPYRE_WARMUP_BATCH_SIZES",
-                       ",".join(str(val) for val in warmup_batch_size))
+    monkeypatch.setenv('VLLM_SPYRE_WARMUP_PROMPT_LENS',
+                       ','.join(str(val) for val in warmup_prompt_length))
+    monkeypatch.setenv('VLLM_SPYRE_WARMUP_BATCH_SIZES',
+                       ','.join(str(val) for val in warmup_batch_size))
 
     if all(len(s) == 3 for s in warmup_shapes):
         warmup_new_tokens = [t[1] for t in warmup_shapes]
-        monkeypatch.setenv(
-            "VLLM_SPYRE_WARMUP_NEW_TOKENS",
-            ",".join(str(val) for val in warmup_new_tokens),
-        )
+        monkeypatch.setenv('VLLM_SPYRE_WARMUP_NEW_TOKENS',
+                           ','.join(str(val) for val in warmup_new_tokens))
 
 
 class RemoteOpenAIServer:
@@ -192,12 +188,11 @@ class RemoteOpenAIServer:
 
 # Hugging Face
 def generate_hf_output(
-    model: str,
-    prompts: Union[list[str], list[list[int]]],  # also accept token ids
-    max_new_tokens: Union[int, list[int]],
-    ignore_eos: bool = False,
-    include_prompt: bool = False,
-) -> list[dict[str, Any]]:
+        model: str,
+        prompts: Union[list[str], list[list[int]]],  # also accept token ids
+        max_new_tokens: Union[int, list[int]],
+        ignore_eos: bool = False,
+        include_prompt: bool = False) -> list[dict[str, Any]]:
     """Loads and runs the model on cpu with transformers, caching the results.
     Returns cached results if any are found to avoid overhead."""
 
@@ -213,10 +208,10 @@ def generate_hf_output(
         # Everything hit cache
         return results
 
-    assert os.getenv("GITHUB_ACTIONS", "") != "true", (
-        "HF results cache miss during Github Actions run. "
-        "Please run tests locally with `-m 'cpu'` and check in the changes "
-        "to hf_cache.json")
+    assert os.getenv("GITHUB_ACTIONS", "") != "true", \
+        "HF results cache miss during Github Actions run. " \
+        "Please run tests locally with `-m 'cpu'` and check in the changes " \
+        "to hf_cache.json"
 
     hf_model = AutoModelForCausalLM.from_pretrained(model)
     hf_tokenizer = AutoTokenizer.from_pretrained(model)
@@ -229,16 +224,15 @@ def generate_hf_output(
             # Already have cached result
             continue
 
-        hf_input_tokens = (hf_tokenizer(
-            prompt, return_tensors="pt").input_ids if isinstance(
-                prompt[0], str) else torch.tensor([prompts[prompt_index]]))
+        hf_input_tokens = hf_tokenizer(prompt, return_tensors="pt").input_ids \
+                    if isinstance(prompt[0], str) \
+                    else torch.tensor([prompts[prompt_index]])
         hf_output = hf_model.generate(
             hf_input_tokens,
             do_sample=False,
             max_new_tokens=max_new_tokens[prompt_index],
             return_dict_in_generate=True,
-            output_scores=True,
-        )
+            output_scores=True)
 
         # decode output tokens after first removing input tokens (prompt)
         hf_generated_text = hf_tokenizer.batch_decode(
@@ -248,21 +242,21 @@ def generate_hf_output(
 
         # return HF generated text, tokens, token ids and logprobs
         result = {}
-        result["text"] = hf_generated_text
-        result["token_ids"] = []
-        result["tokens"] = []
-        result["logprobs"] = []
+        result['text'] = hf_generated_text
+        result['token_ids'] = []
+        result['tokens'] = []
+        result['logprobs'] = []
         for tok_index, hf_logprob in enumerate(hf_transition_scores[0]):
             hf_token_id = hf_output.sequences[0][tok_index +
                                                  len(hf_input_tokens[0])]
-            result["token_ids"].append(hf_token_id.item())
-            result["tokens"].append(hf_tokenizer.decode(hf_token_id))
-            result["logprobs"].append(hf_logprob.item())
-        result["token_ids"] = tuple(result["token_ids"])
-        result["tokens"] = tuple(result["tokens"])
-        result["logprobs"] = tuple(result["logprobs"])
+            result['token_ids'].append(hf_token_id.item())
+            result['tokens'].append(hf_tokenizer.decode(hf_token_id))
+            result['logprobs'].append(hf_logprob.item())
+        result['token_ids'] = tuple(result['token_ids'])
+        result['tokens'] = tuple(result['tokens'])
+        result['logprobs'] = tuple(result['logprobs'])
         if include_prompt:
-            result["prompt"] = prompt
+            result['prompt'] = prompt
 
         # Save and cache new result
         results[prompt_index] = result
@@ -302,23 +296,23 @@ def compare_results(
     for prompt_index, (prompt, hf_result, vllm_result) in enumerate(
             zip(prompts, hf_results, vllm_results)):
         if "text" in vllm_result:
-            err_msg = "" if hf_result["text"] == vllm_result[
-                "text"] else "  ERROR"
+            err_msg = '' if hf_result['text'] == vllm_result[
+                'text'] else '  ERROR'
             print(f"\nprompt {prompt_index:3d}:    {repr(prompt):s}")
             print("generated:")
             print(f"        HF:    {repr(hf_result['text']):s}")
             print(f"        vLLM:  {repr(vllm_result['text']):s}{err_msg}")
             print()
 
-        if isinstance(hf_result["token_ids"], list):
-            hf_result["token_ids"] = tuple(hf_result["token_ids"])
+        if isinstance(hf_result['token_ids'], list):
+            hf_result['token_ids'] = tuple(hf_result['token_ids'])
 
-        assert (DISABLE_ASSERTS or backend == "sendnn"
-                or hf_result["token_ids"] == vllm_result["token_ids"]), (
-                    f"Token ids differ: {hf_result['token_ids']} != "
-                    f"{vllm_result['token_ids']}")
+        assert DISABLE_ASSERTS or backend == 'sendnn' or\
+            hf_result['token_ids'] == vllm_result['token_ids'], \
+            f"Token ids differ: {hf_result['token_ids']} != " \
+            f"{vllm_result['token_ids']}"
 
-        if len(hf_result["tokens"]) > 0:
+        if len(hf_result['tokens']) > 0:
             print("   token id. token               logprob      "
                   "   token id. token               logprob")
 
@@ -327,41 +321,37 @@ def compare_results(
 
             for i, (hf_token_id, hf_logprob, vllm_token_id,
                     vllm_logprob) in enumerate(
-                        zip(
-                            hf_result["token_ids"],
-                            hf_result["logprobs"],
-                            vllm_result["token_ids"],
-                            vllm_result["logprobs"],
-                        )):
+                        zip(hf_result['token_ids'], hf_result['logprobs'],
+                            vllm_result['token_ids'],
+                            vllm_result['logprobs'])):
                 logprob_abs_diff = math.fabs(hf_logprob - vllm_logprob)
                 logprob_abs_diff_list.append(logprob_abs_diff)
                 logprob_rel_diff = math.fabs(logprob_abs_diff / hf_logprob)
                 logprob_rel_diff_list.append(logprob_rel_diff)
 
-                hf_token = (repr(hf_result["tokens"][i])
-                            if "tokens" in vllm_result else "-")
-                vllm_token = (repr(vllm_result["tokens"][i])
-                              if "tokens" in vllm_result else "-")
+                hf_token = repr(
+                    hf_result['tokens'][i]) if 'tokens' in vllm_result else '-'
+                vllm_token = repr(vllm_result['tokens']
+                                  [i]) if 'tokens' in vllm_result else '-'
                 print(
                     f"HF: {hf_token_id:8d} {hf_token:14s} {hf_logprob:14f}  "
                     f"vLLM: {vllm_token_id:8d} {vllm_token:14s} "
                     f"{vllm_logprob:14f}  ",
-                    end="",
-                )
+                    end='')
 
-                if backend == "sendnn":
+                if backend == 'sendnn':
                     rel_tol = ISCLOSE_REL_TOL_SPYRE
                 else:
                     rel_tol = ISCLOSE_REL_TOL_CPU
 
                 if hf_token_id != vllm_token_id:  # different tokens
-                    if backend == "sendnn" and math.isclose(
+                    if backend == 'sendnn' and math.isclose(
                             hf_logprob, vllm_logprob, rel_tol=rel_tol):
                         # probably still OK
-                        print("DIVERGING")
+                        print('DIVERGING')
                         break
                     else:
-                        print("ERROR")
+                        print('ERROR')
                         assert DISABLE_ASSERTS or False
                         break
                 else:  # identical tokens
@@ -411,22 +401,18 @@ def st_embeddings(model: str, prompts: list[str]) -> list[dict[str, Any]]:
 
         # return ST generated embeddings
         result = {}
-        result["embeddings"] = embeddings
+        result['embeddings'] = embeddings
         results.append(result)
 
     return results
 
 
 # compare results
-def compare_embedding_results(
-    model: str,
-    prompts: list[str],
-    warmup_shapes: EmbeddingWarmupShapes,
-    tensor_parallel_size: int,
-    backend: str,
-    vllm_results: list[dict[str, Any]],
-    hf_results: list[dict[str, Any]],
-):
+def compare_embedding_results(model: str, prompts: list[str],
+                              warmup_shapes: EmbeddingWarmupShapes,
+                              tensor_parallel_size: int, backend: str,
+                              vllm_results: list[dict[str, Any]],
+                              hf_results: list[dict[str, Any]]):
 
     print(f"\nmodel:         {model:s}")
     print(f"warmup shapes: {warmup_shapes}")
@@ -479,14 +465,19 @@ def get_spyre_backend_list():
 # get model names from env, if not set then use default models for each type.
 # Multiple models can be specified with a comma separated list in
 # VLLM_SPYRE_TEST_MODEL_LIST
-def get_spyre_model_list(isEmbeddings=False):
+def get_spyre_model_list(isEmbeddings=False, isScoring=False):
     user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST")
     if not user_test_model_list:
-        return _default_test_models(isEmbeddings)
+        return _default_test_models(isEmbeddings, isScoring)
 
     # User overridden model list
     spyre_model_dir_path = get_spyre_model_dir_path()
-    marks = [pytest.mark.embedding] if isEmbeddings else [pytest.mark.decoder]
+    if isEmbeddings:
+        marks = [pytest.mark.embedding]
+    elif isScoring:
+        marks = [pytest.mark.scoring]
+    else:
+        marks = [pytest.mark.decoder]
 
     test_model_list = []
     for model in user_test_model_list.split(","):
@@ -496,11 +487,15 @@ def get_spyre_model_list(isEmbeddings=False):
     return test_model_list
 
 
-def _default_test_models(isEmbeddings=False):
+def _default_test_models(isEmbeddings=False, isScoring=False):
     """Return the default set of test models as pytest parameterizations"""
     if isEmbeddings:
         model = "sentence-transformers/all-roberta-large-v1"
         return [pytest.param(model, marks=[pytest.mark.embedding], id=model)]
+
+    if isScoring:
+        model = "cross-encoder/stsb-roberta-large"
+        return [pytest.param(model, marks=[pytest.mark.scoring], id=model)]
 
     # Decoders
     # We run tests for both the full-precision bf16 and fp8-quantized models,
@@ -510,11 +505,9 @@ def _default_test_models(isEmbeddings=False):
     tinygranite_fp8 = "ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8"
     params = [
         pytest.param(tinygranite, marks=[pytest.mark.decoder], id=tinygranite),
-        pytest.param(
-            tinygranite_fp8,
-            marks=[pytest.mark.decoder, pytest.mark.quantized],
-            id=tinygranite_fp8,
-        ),
+        pytest.param(tinygranite_fp8,
+                     marks=[pytest.mark.decoder, pytest.mark.quantized],
+                     id=tinygranite_fp8)
     ]
     return params
 
@@ -557,8 +550,8 @@ def create_seq_prompt(model: str, token_length: int) -> str:
     tokens = tokenizer.encode(text_prompt)[:token_length]
 
     # Assert exact token length
-    assert (len(tokens) == token_length
-            ), f"Token length mismatch: {len(tokens)} != {token_length}"
+    assert len(tokens) == token_length, \
+        f"Token length mismatch: {len(tokens)} != {token_length}"
 
     return tokenizer.decode(tokens)
 
@@ -573,9 +566,8 @@ def create_random_request(
 
     tokenizer = AutoTokenizer.from_pretrained(model)
     if from_model_vocab:
-        assert model is not None, (
-            "Prompt requested to be generated from "
-            "model's vocabulary: need to provide model.")
+        assert model is not None, "Prompt requested to be generated from " \
+        "model's vocabulary: need to provide model."
 
         valid_token_ids = sorted([
             v for v in tokenizer.vocab.values()
@@ -593,7 +585,7 @@ def create_random_request(
                 ), f"need {num_tokens} but got {len(prompt_token_ids)}"
 
     sig = inspect.signature(EngineCore.add_request)
-    inputs_renamed = hasattr(EngineCoreRequest, "mm_kwargs")
+    inputs_renamed = hasattr(EngineCoreRequest, 'mm_kwargs')
     if sig.parameters["request"].annotation == EngineCoreRequest:
         kwargs = {"mm_kwargs" if inputs_renamed else "mm_inputs": None}
         return EngineCoreRequest(
@@ -703,11 +695,11 @@ def get_longer_chicken_soup_prompts(num_prompts: int) -> list[str]:
 
 def generate_cache_for_test_swap_decode_programs_for_cb(
         model: str, prompts: list[str], parent_path: str):
-    """
+    '''
     This function bakes the generation of prompts with long contexts. Which
-    currently are used in the test
-    `test_spyre_cb::test_swap_decode_programs_for_cb`.
-    """
+    currently are used in the test 
+    `test_spyre_cb::test_swap_decode_programs_for_cb`. 
+    '''
 
     # Generate
     assert len(prompts) == 4
@@ -717,15 +709,12 @@ def generate_cache_for_test_swap_decode_programs_for_cb(
     p32k = 32 * 1024
 
     import pickle
-
-    hf_outputs = generate_hf_output(
-        model=model,
-        prompts=prompts[0:2],
-        max_new_tokens=p8k,
-        ignore_eos=True,
-        include_prompt=True,
-    )
-    with open(Path(parent_path) / "prompts_8k_bs2.pickle", "wb") as f:
+    hf_outputs = generate_hf_output(model=model,
+                                    prompts=prompts[0:2],
+                                    max_new_tokens=p8k,
+                                    ignore_eos=True,
+                                    include_prompt=True)
+    with open(Path(parent_path) / 'prompts_8k_bs2.pickle', 'wb') as f:
         f.write(pickle.dumps(hf_outputs))
 
     hf_outputs = generate_hf_output(
@@ -735,7 +724,7 @@ def generate_cache_for_test_swap_decode_programs_for_cb(
         ignore_eos=True,
         include_prompt=True,
     )
-    with open(Path(parent_path) / "prompts_16k_bs1.pickle", "wb") as f:
+    with open(Path(parent_path) / 'prompts_16k_bs1.pickle', 'wb') as f:
         f.write(pickle.dumps(hf_outputs))
 
     hf_outputs = generate_hf_output(
@@ -745,5 +734,5 @@ def generate_cache_for_test_swap_decode_programs_for_cb(
         ignore_eos=True,
         include_prompt=True,
     )
-    with open(Path(parent_path) / "prompts_32k_bs1.pickle", "wb") as f:
+    with open(Path(parent_path) / 'prompts_32k_bs1.pickle', 'wb') as f:
         f.write(pickle.dumps(hf_outputs))
