@@ -9,6 +9,8 @@ from typing import Any, Generic, Optional, TypeVar, cast
 
 import numpy as np
 import torch
+import vllm.v1.sample.logits_processor
+from vllm.config import VllmConfig
 from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import SamplingParams, SamplingType
 from vllm.v1.pool.metadata import PoolingMetadata
@@ -199,6 +201,29 @@ class SamplingRequestState(BaseRequestState):
         return len(self.prompt_token_ids) + len(self.output_token_ids)
 
 
+# Compatibility code, remove when no supported version
+# has init_builtin_logitsprocs any more
+def get_builtin_logits_processors(
+        vllm_config: Optional[VllmConfig] = None) -> Any:
+    if hasattr(vllm.v1.sample.logits_processor, "LogitsProcessors"):
+        if vllm_config is None:
+            return vllm.v1.sample.logits_processor.LogitsProcessors()
+        return vllm.v1.sample.logits_processor.LogitsProcessors(
+            ctor(vllm_config, "cpu", False)
+            for ctor in vllm.v1.sample.logits_processor.\
+                BUILTIN_LOGITS_PROCESSORS)
+    else:
+        if vllm_config is None:
+            return vllm.v1.sample.logits_processor.LogitsProcessorManager(
+                non_argmax_invariant=[],
+                argmax_invariant=[],
+            )
+        return vllm.v1.sample.logits_processor.init_builtin_logitsprocs(
+            pin_memory_available=False,
+            max_num_reqs=vllm_config.scheduler_config.max_num_seqs + 1,
+            device="cpu")
+
+
 class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
     '''
     This class was based on the InputBatch for GPU of vLLM V1.
@@ -229,7 +254,7 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
         pin_memory: bool,
         vocab_size: int,
         # Type here is any for compatibility reasons
-        logitsprocs: Any,
+        logitsprocs: Optional[Any] = None,
     ):
         super().__init__(
             max_num_reqs,
@@ -298,7 +323,7 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
         # updates. Should reset each step.
         self.batch_update_builder = BatchUpdateBuilder()
 
-        self.logitsprocs = logitsprocs
+        self.logitsprocs = logitsprocs or get_builtin_logits_processors()
 
         self.has_allowed_token_ids: set[str] = set()
         self.allowed_token_ids_mask: Optional[torch.Tensor] = None
