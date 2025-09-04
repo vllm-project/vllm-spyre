@@ -25,9 +25,6 @@ DISABLE_ASSERTS = False  # used for debugging
 ISCLOSE_REL_TOL_CPU = 0.35
 ISCLOSE_REL_TOL_SPYRE = 0.35
 
-# TODO: improve this
-ISCLOSE_REL_TOL_QUANTIZATION = 0.451
-
 HF_RESULT_CACHE = HFResultCache()
 LLM_CACHE = LLMCache()
 API_SERVER_CACHE = RemoteOpenAIServerCache()
@@ -331,11 +328,7 @@ def compare_results(
                     f"{vllm_logprob:14f}  ",
                     end='')
 
-                if 'FP8' in model:
-                    # TODO: Improve this. For now our testing model can be
-                    # solved with this logic
-                    rel_tol = ISCLOSE_REL_TOL_QUANTIZATION
-                elif backend == 'sendnn':
+                if backend == 'sendnn':
                     rel_tol = ISCLOSE_REL_TOL_SPYRE
                 else:
                     rel_tol = ISCLOSE_REL_TOL_CPU
