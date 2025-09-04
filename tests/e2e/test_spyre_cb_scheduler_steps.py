@@ -7,8 +7,8 @@ Run `python -m pytest tests/e2e/test_spyre_cb_inference_steps.py`.
 """
 
 import pytest
+from output_util import check_output_against_hf
 from scheduling_utils import check_scheduler_inference_steps
-from spyre_util import check_output_against_hf
 
 
 @pytest.mark.cb
