@@ -103,24 +103,16 @@ class SpyreWorker(WorkerBaseV1):
         # Compatibility code required for vllm == 0.10.0
         # Can be removed for vllm > 0.10.0
         if self.is_pooling:
-            return ["embed"]
+            return ["embed", "score"]
         return []
 
     @property
     def is_pooling(self) -> bool:
-        # Can be simplified after the deprecation of `model_config.task` in
-        # vllm > 0.10.0
-        return "embed" in self.model_config.supported_tasks if (
-            self.model_config.task == "auto" or self.model_config.task
-            is None) else self.model_config.task == "embed"
+        return self.model_config.runner_type == "pooling"
 
     @property
     def is_decoder(self) -> bool:
-        # Can be simplified after the deprecation of `model_config.task` in
-        # vllm > 0.10.0
-        return "generate" in self.model_config.supported_tasks if (
-            self.model_config.task == "auto" or self.model_config.task
-            is None) else self.model_config.task == "generate"
+        return self.model_config.runner_type == "generate"
 
     def get_kv_cache_spec(self) -> KVCacheSpec:
         """Get specifications for KV cache implementation.
