@@ -2,7 +2,7 @@ import pytest
 from spyre_util import get_spyre_backend_list
 from vllm import SamplingParams
 
-pytestmark = pytest.mark.basic
+pytestmark = pytest.mark.full_model
 
 
 @pytest.fixture(scope="function", autouse=True)
