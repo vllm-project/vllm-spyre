@@ -1371,9 +1371,18 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
     def load_model(self, prompt_lens: Iterable[int],
                    num_decode_tokens: Iterable[int]) -> None:
 
-        if self.model_config.task == "embed":
+        task = self.model_config.task
+        if task is None:
+            # Task is being deprecated upstream because the models
+            # support several tasks at once. But for now, here we need
+            # to know the task to load the model with
+            # AutoModelForSequenceClassification
+            task = self.model_config._get_default_pooling_task(
+                self.model_config.architectures)
+
+        if task == "embed":
             self.model = AutoModel.from_pretrained(self.model_config.model)
-        elif self.model_config.task == "classify":
+        elif task == "classify":
             class_model = AutoModelForSequenceClassification.from_pretrained(
                 self.model_config.model)
             if hasattr(class_model, "bert"):
@@ -1388,7 +1397,7 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
                     "Bert or Roberta for sequence classification")
             self.classifier = class_model.classifier
         else:
-            raise ValueError(f"Unsupported task {self.model_config.task}")
+            raise ValueError(f"Unsupported task {task}")
 
         model_class_name = type(self.model).__name__
         self.is_roberta = "roberta" in model_class_name.lower()
@@ -1413,7 +1422,7 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
                     dynamic=False,
                     backend=envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND)
 
-        if self.model_config.task == "classify":
+        if task == "classify":
             tokenizer = AutoTokenizer.from_pretrained(self.model_config.model)
             output = tokenizer(text="foo", text_pair="bar")
             self.use_token_type_ids = "token_type_ids" in output
@@ -1424,13 +1433,13 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
         if hasattr(Pooler, "from_config_with_defaults"):
             # TODO: remove this when we no longer support
             # vllm version v0.9.2
-            if self.model_config.task == "embed":
+            if task == "embed":
                 self.pooler = Pooler.from_config_with_defaults(
                     pooler_config,
                     pooling_type=PoolingType.CLS,
                     normalize=True,
                     softmax=False)
-            elif self.model_config.task == "classify":
+            elif task == "classify":
                 self.pooler = ClassifierPooler(config=self.model_config,
                                                pooler=self._pooler,
                                                classifier=self.classifier)
@@ -1448,10 +1457,10 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
             if 'default_pooling_type' in annotations:
                 extra_args['default_pooling_type'] = PoolingType.CLS
 
-            if self.model_config.task == "embed":
+            if task == "embed":
                 self.pooler = Pooler.for_embed(pooler_config=pooler_config,
                                                **extra_args)
-            elif self.model_config.task == "classify":
+            elif task == "classify":
                 self.pooler = ClassifierPooler(
                     pooling=self._pooler,
                     classifier=self.classifier,
