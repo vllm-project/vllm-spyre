@@ -235,6 +235,20 @@ class SpyrePlatform(Platform):
             "VLLM_DT_MAX_BATCH_TKV_LIMIT found. Using the default value " \
             "(max_model_len * max_batch_size): %d", default_max_batch_tkv_limit)
 
+        # scheduling heuristic: maximal waiting (blocking) time for prefill
+        if envs_spyre.VLLM_SPYRE_MAX_WAITING_TIME_PREFILL == -1:
+            logger.info(
+                "Env var VLLM_SPYRE_MAX_WAITING_TIME_PREFILL determining the "
+                "maximal waiting time for a request unset. Defaulting to -1, "
+                "which is infinite time (no scheduler heuristic at all).")
+        else:
+            logger.info(
+                "Env var VLLM_SPYRE_MAX_WAITING_TIME_PREFILL determining the "
+                "maximal waiting time is set to %s. This means that prefills "
+                "waiting longer than %s seconds will always be prioritized. ",
+                envs_spyre.VLLM_SPYRE_MAX_WAITING_TIME_PREFILL,
+                envs_spyre.VLLM_SPYRE_MAX_WAITING_TIME_PREFILL)
+
     @classmethod
     def use_all_gather(cls) -> bool:
         """
