@@ -47,14 +47,10 @@ async def generate(
 @pytest.mark.parametrize(
     "output_kind", [RequestOutputKind.DELTA, RequestOutputKind.FINAL_ONLY])
 @pytest.mark.asyncio
-async def test_abort(
-    model: str,
-    backend: str,
-    cb: int,
-    warmup_shapes: DecodeWarmupShapes,
-    output_kind: RequestOutputKind,
-    monkeypatch: pytest.MonkeyPatch,
-):
+async def test_abort(model: str, backend: str, cb: int,
+                     warmup_shapes: DecodeWarmupShapes,
+                     output_kind: RequestOutputKind,
+                     monkeypatch: pytest.MonkeyPatch):
     """Test handling of cancelled requests"""
     with monkeypatch.context() as m, ExitStack() as after:
         m.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
@@ -65,18 +61,12 @@ async def test_abort(
             warmup_new_tokens = [t[1] for t in warmup_shapes]
             warmup_batch_size = [t[2] for t in warmup_shapes]
 
-            m.setenv(
-                "VLLM_SPYRE_WARMUP_PROMPT_LENS",
-                ",".join(str(val) for val in warmup_prompt_length),
-            )
-            m.setenv(
-                "VLLM_SPYRE_WARMUP_NEW_TOKENS",
-                ",".join(str(val) for val in warmup_new_tokens),
-            )
-            m.setenv(
-                "VLLM_SPYRE_WARMUP_BATCH_SIZES",
-                ",".join(str(val) for val in warmup_batch_size),
-            )
+            m.setenv('VLLM_SPYRE_WARMUP_PROMPT_LENS',
+                     ','.join(str(val) for val in warmup_prompt_length))
+            m.setenv('VLLM_SPYRE_WARMUP_NEW_TOKENS',
+                     ','.join(str(val) for val in warmup_new_tokens))
+            m.setenv('VLLM_SPYRE_WARMUP_BATCH_SIZES',
+                     ','.join(str(val) for val in warmup_batch_size))
 
         # Async LLM API is a little different between v0 and V1
         engine = AsyncLLM.from_engine_args(

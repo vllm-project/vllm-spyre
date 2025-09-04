@@ -13,21 +13,18 @@ from vllm import SamplingParams
     "warmup_shapes",
     [[(64, 20, 4)], [(64, 20, 4),
                      (128, 20, 2)]])  # (prompt_length/new_tokens/batch_size)
-def test_max_prompt_len_and_new_tokens(
-    model: str,
-    warmup_shapes: DecodeWarmupShapes,
-    backend: str,
-    use_llm_cache,
-    monkeypatch,
-) -> None:
-    """
+def test_max_prompt_len_and_new_tokens(model: str,
+                                       warmup_shapes: DecodeWarmupShapes,
+                                       backend: str, use_llm_cache,
+                                       monkeypatch) -> None:
+    '''
     Simple test that for static batching:
     - prompts cannot exceed the maximum prompt length of all warmup shapes
-    - max_tokens cannot exceed the max new token length of the matching warmup
+    - max_tokens cannot exceed the max new token length of the matching warmup 
         shape
 
     These two cases are combined to reduce the cost of starting each `LLM`
-    """
+    '''
     # monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     # patch_warmup_shapes(warmup_shapes, monkeypatch)
 
@@ -48,11 +45,10 @@ def test_max_prompt_len_and_new_tokens(
 
     # Craft a request with a prompt that is slightly too long for the warmup
     # shape
-    prompt = create_text_prompt(
-        model,
-        min_token_length=max_prompt_length,
-        max_token_length=max_prompt_length + max_new_tokens - 1,
-    )
+    prompt = create_text_prompt(model,
+                                min_token_length=max_prompt_length,
+                                max_token_length=max_prompt_length +
+                                max_new_tokens - 1)
     sampling_params = SamplingParams(max_tokens=1)
 
     with pytest.raises(ValueError, match="warmup"):

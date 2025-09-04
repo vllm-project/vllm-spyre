@@ -31,38 +31,18 @@ def test_compare_graphs_cb(model: str, max_num_seqs: int,
     model_path = get_model_path(model)
 
     inference_py_args = [
-        sys.executable,
-        "scripts/inference.py",
-        "--architecture",
-        "hf_configured",
-        "--model_path",
-        model_path,
-        "--variant",
-        model_path,
-        "--tokenizer",
-        model_path,
-        "--unfuse_weights",
-        "--model_source",
-        "hf",
-        "--device_type",
-        "aiu",
-        "--compile",
-        "--default_dtype",
-        "fp16",
-        "--compile_dynamic",
-        "--min_pad_length",
-        "64",
-        "--max_new_tokens",
-        "5",
+        sys.executable, "scripts/inference.py", "--architecture",
+        "hf_configured", "--model_path", model_path, "--variant", model_path,
+        "--tokenizer", model_path, "--unfuse_weights", "--model_source", "hf",
+        "--device_type", "aiu", "--compile", "--default_dtype", "fp16",
+        "--compile_dynamic", "--min_pad_length", "64", "--max_new_tokens", "5",
         "--batch_size",
-        str(max_num_seqs),
-        "--compile_dynamic_sendnn",
-        "--attention_type=paged",
+        str(max_num_seqs), "--compile_dynamic_sendnn", "--attention_type=paged"
     ]
 
     extra_env = {
         "VLLM_DT_MAX_CONTEXT_LEN": str(max_model_len),
-        "VLLM_DT_MAX_BATCH_SIZE": str(max_num_seqs),
+        "VLLM_DT_MAX_BATCH_SIZE": str(max_num_seqs)
     }
     aftu_graphs = run_inference_py_and_get_graphs(inference_py_args,
                                                   script_dir, extra_env)
@@ -80,8 +60,7 @@ def test_compare_graphs_cb(model: str, max_num_seqs: int,
         max_tokens=max_new_tokens,
         temperature=0,
         logprobs=0,  # return logprobs of generated tokens only
-        ignore_eos=True,
-    )
+        ignore_eos=True)
 
     original_cwd = os.getcwd()
     try:
@@ -89,17 +68,15 @@ def test_compare_graphs_cb(model: str, max_num_seqs: int,
         with tempfile.TemporaryDirectory() as tmpdir:
             os.chdir(tmpdir)
 
-            generate_spyre_vllm_output(
-                model=model,
-                prompts=prompts,
-                max_model_len=max_model_len,
-                sampling_params=vllm_sampling_params,
-                tensor_parallel_size=1,
-                backend="sendnn",
-                max_num_seqs=max_num_seqs,
-                use_cb=True,
-                monkeypatch=monkeypatch,
-            )
+            generate_spyre_vllm_output(model=model,
+                                       prompts=prompts,
+                                       max_model_len=max_model_len,
+                                       sampling_params=vllm_sampling_params,
+                                       tensor_parallel_size=1,
+                                       backend='sendnn',
+                                       max_num_seqs=max_num_seqs,
+                                       use_cb=True,
+                                       monkeypatch=monkeypatch)
 
             vllm_graphs = collect_graph_files(tmpdir)
     finally:
@@ -173,16 +150,14 @@ def test_compare_graphs_static_batching(
         with tempfile.TemporaryDirectory() as tmpdir:
             os.chdir(tmpdir)
 
-            generate_spyre_vllm_output(
-                model=model,
-                prompts=prompts,
-                warmup_shapes=warmup_shapes,
-                max_model_len=2048,
-                sampling_params=vllm_sampling_params,
-                tensor_parallel_size=1,
-                backend="sendnn",
-                monkeypatch=monkeypatch,
-            )
+            generate_spyre_vllm_output(model=model,
+                                       prompts=prompts,
+                                       warmup_shapes=warmup_shapes,
+                                       max_model_len=2048,
+                                       sampling_params=vllm_sampling_params,
+                                       tensor_parallel_size=1,
+                                       backend='sendnn',
+                                       monkeypatch=monkeypatch)
 
             vllm_graphs = collect_graph_files(tmpdir)
     finally:
