@@ -4,10 +4,10 @@ Run `python -m pytest tests/e2e/test_spyre_basic.py`.
 """
 
 import pytest
+from output_util import generate_spyre_vllm_output
 from spyre_util import (DecodeWarmupShapes, check_output_against_hf,
-                        create_random_request, generate_spyre_vllm_output,
-                        get_chicken_soup_prompts, patch_environment,
-                        skip_unsupported_tp_size)
+                        create_random_request, get_chicken_soup_prompts,
+                        patch_environment, skip_unsupported_tp_size)
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor
