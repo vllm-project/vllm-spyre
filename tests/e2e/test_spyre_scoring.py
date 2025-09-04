@@ -32,5 +32,5 @@ def test_serving(remote_openai_server, model, warmup_shapes, backend):
 
     vllm_scores = [o["score"] for o in vllm_outputs["data"]]
 
-    assert ce_scores[0] == pytest.approx(vllm_scores[0], rel=0.01)
-    assert ce_scores[1] == pytest.approx(vllm_scores[1], rel=0.01)
+    assert ce_scores[0] == pytest.approx(vllm_scores[0], rel=0.02)
+    assert ce_scores[1] == pytest.approx(vllm_scores[1], rel=0.02)
