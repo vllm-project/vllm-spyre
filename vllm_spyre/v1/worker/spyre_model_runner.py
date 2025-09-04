@@ -5,16 +5,18 @@ from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
-from typing import (TYPE_CHECKING, Generic, Literal, Optional, TypeVar, cast,
-                    get_args)
+from typing import (TYPE_CHECKING, Generic, Literal, Optional, TypeVar, Union,
+                    cast, get_args)
 
 import torch
 from torch import nn
-from transformers import AutoModel
+from transformers import (AutoModel, AutoModelForSequenceClassification,
+                          AutoTokenizer)
 from vllm.config import DeviceConfig, VllmConfig
 from vllm.forward_context import set_forward_context
 from vllm.logger import init_logger
-from vllm.model_executor.layers.pooler import Pooler, PoolingType
+from vllm.model_executor.layers.pooler import (ClassifierPooler, Pooler,
+                                               PoolingType)
 from vllm.sampling_params import SamplingType
 from vllm.utils import is_pin_memory_available
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
@@ -27,12 +29,9 @@ from vllm_spyre.model_executor.model_loader.spyre import (
 from vllm_spyre.platform import SpyrePlatform
 # yapf conflicts with ruff for this block
 # yapf: disable
-from vllm_spyre.v1.worker.spyre_input_batch import (BaseInputBatch,
-                                                    BaseRequestState,
-                                                    PoolingInputBatch,
-                                                    PoolingRequestState,
-                                                    SamplingInputBatch,
-                                                    SamplingRequestState)
+from vllm_spyre.v1.worker.spyre_input_batch import (
+    BaseInputBatch, BaseRequestState, PoolingInputBatch, PoolingRequestState,
+    SamplingInputBatch, SamplingRequestState, get_builtin_logits_processors)
 
 # yapf: enable
 if TYPE_CHECKING:
@@ -70,6 +69,12 @@ class ModelForwardInputs:
     input_positions: Optional[torch.Tensor] = None
     input_masks: Optional[torch.Tensor] = None
     is_prompt: bool = False
+
+
+@dataclass(frozen=True)
+class PoolingForwardInputs(ModelForwardInputs):
+
+    token_type_ids: Optional[torch.Tensor] = None
 
 
 @dataclass(frozen=True)
@@ -299,12 +304,17 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
         )
 
     def build_input_batch(self) -> SamplingInputBatch:
+        # Define logits processors.
+        # TODO(Max): logits processor list should be extensible via engine
+        # constructor argument; for now the list is fixed to builtin processors
+        logits_processors = get_builtin_logits_processors(self.vllm_config)
         return SamplingInputBatch(
             max_num_reqs=self.scheduler_config.max_num_seqs,
             max_model_len=self.model_config.max_model_len,
             device=self.device,
             pin_memory=self.pin_memory,
             vocab_size=self.model_config.get_vocab_size(),
+            logitsprocs=logits_processors,
         )
 
     @property
@@ -804,8 +814,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             max_model_len=vllm_config.model_config.max_model_len,
             device=self.device,
             pin_memory=self.pin_memory,
-            vocab_size=vllm_config.model_config.get_vocab_size(),
-        )
+            vocab_size=vllm_config.model_config.get_vocab_size())
 
     def pre_warmup(self) -> None:
         # Set the number of kv cache blocks to the minimal value of 2 which is
@@ -886,6 +895,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             tkv_offset = math.ceil(
                 (prompt_len - self.tkv) / self.block_size) * self.block_size
             if tkv_offset > 0:
+                # Note: drawing explaining this optimization in more detail
+                # can be found here (see page 3 in particular):
+                # https://github.com/vllm-project/vllm-spyre/pull/340#issuecomment-3179337304
                 logger.debug("Prefill optimization: Adding %d blocks per " \
                 "sequence in the decode batch to prefill the current " \
                 "sequence.", tkv_offset // self.block_size)
@@ -916,6 +928,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         right_padding_tkv -= n_pad_blocks * self.block_size
         left_padding_tkv = self.tkv - n_pad_blocks * self.block_size
         if n_pad_blocks > 0:
+            # Note: drawing explaining this optimization in more detail can
+            # be found here (see page 2 in particular):
+            # https://github.com/vllm-project/vllm-spyre/pull/340#issuecomment-3179337304
             logger.debug("Prefill reduced by %d blocks due to optimization.",
                          n_pad_blocks)
 
@@ -1106,6 +1121,12 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         return model_inputs
 
     def reduce_left_padding(self) -> None:
+        """ Optimizes the decode batch by removing entire columns that consist 
+        solely of left pads. This reduces unnecessary decode computation. 
+
+        Note: drawing explaining the optimization in more detail uploaded here:
+        https://github.com/vllm-project/vllm-spyre/pull/131#issuecomment-3233440852 
+        """
 
         requests = self.requests.values()
         if len(self.requests) == 0:
@@ -1286,10 +1307,31 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                                       1)  # always 1
 
 
+class PoolerAdapter(torch.nn.Module):
+
+    def __init__(self, pooler: torch.nn.Module):
+        super().__init__()
+        self.pooler = pooler
+
+    def forward(
+        self,
+        hidden_states: Union[torch.Tensor, list[torch.Tensor]],
+        *args,
+    ) -> Union[torch.Tensor, list[torch.Tensor]]:
+        if isinstance(hidden_states, torch.Tensor):
+            return self.pooler(hidden_states.T)
+        else:
+            return [self.pooler(h.T) for h in hidden_states]
+
+
+def _transpose(input: torch.Tensor) -> torch.Tensor:
+    return input.T
+
+
 class SpyrePoolingModelRunner(WarmupShapesMixin,
                               BaseSpyreModelRunner[PoolingInputBatch,
                                                    PoolingRequestState,
-                                                   ModelForwardInputs]):
+                                                   PoolingForwardInputs]):
 
     def __init__(
         self,
@@ -1303,31 +1345,7 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
 
         # position_ids of all the sequences in current batch
         self._position_ids: torch.Tensor = None
-
-        pooler_config = vllm_config.model_config.pooler_config
-        if hasattr(Pooler, "from_config_with_defaults"):
-            # TODO: remove this when we no longer support
-            # vllm version v0.9.2
-            self.pooler = Pooler.from_config_with_defaults(
-                pooler_config,
-                pooling_type=PoolingType.CLS,
-                normalize=True,
-                softmax=False)
-        else:
-            # TODO: remove this when we no longer support vllm version pre this
-            # PR https://github.com/vllm-project/vllm/pull/20538 (post v0.10.0)
-            annotations = inspect.getfullargspec(Pooler.for_embed).annotations
-            extra_args = {}
-            if ('default_normalize' in annotations
-                    and 'default_softmax' in annotations):
-                extra_args.update({
-                    'default_normalize': True,
-                    'default_softmax': False
-                })
-            if 'default_pooling_type' in annotations:
-                extra_args['default_pooling_type'] = PoolingType.CLS
-            self.pooler = Pooler.for_embed(pooler_config=pooler_config,
-                                           **extra_args)
+        self.use_token_type_ids = False
 
     def build_input_batch(self) -> PoolingInputBatch:
         return PoolingInputBatch(
@@ -1340,7 +1358,38 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
 
     def load_model(self, prompt_lens: Iterable[int],
                    num_decode_tokens: Iterable[int]) -> None:
-        self.model = AutoModel.from_pretrained(self.model_config.model)
+
+        task = self.model_config.task
+        if task is None:
+            # Task is being deprecated upstream because the models
+            # support several tasks at once. But for now, here we need
+            # to know the task to load the model with
+            # AutoModelForSequenceClassification
+            task = self.model_config._get_default_pooling_task(
+                self.model_config.architectures)
+
+        if task == "embed":
+            self.model = AutoModel.from_pretrained(self.model_config.model)
+        elif task == "classify":
+            class_model = AutoModelForSequenceClassification.from_pretrained(
+                self.model_config.model)
+            if hasattr(class_model, "bert"):
+                self.model = class_model.bert
+                self._pooler = PoolerAdapter(self.model.pooler)
+            elif hasattr(class_model, "roberta"):
+                self.model = class_model.roberta
+                self._pooler = PoolerAdapter(_transpose)
+            else:
+                raise ValueError(
+                    f"Unsupported model {self.model_config.model}: Expected "
+                    "Bert or Roberta for sequence classification")
+            self.classifier = class_model.classifier
+        else:
+            raise ValueError(f"Unsupported task {task}")
+
+        model_class_name = type(self.model).__name__
+        self.is_roberta = "roberta" in model_class_name.lower()
+
         self.model.eval()
         torch.set_grad_enabled(False)
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in BACKEND_LIST:
@@ -1360,6 +1409,52 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
                     mode="default",
                     dynamic=False,
                     backend=envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND)
+
+        if task == "classify":
+            tokenizer = AutoTokenizer.from_pretrained(self.model_config.model)
+            output = tokenizer(text="foo", text_pair="bar")
+            self.use_token_type_ids = "token_type_ids" in output
+            if self.use_token_type_ids:
+                self.sep_token_id = tokenizer.sep_token_id
+
+        pooler_config = self.model_config.pooler_config
+        if hasattr(Pooler, "from_config_with_defaults"):
+            # TODO: remove this when we no longer support
+            # vllm version v0.9.2
+            if task == "embed":
+                self.pooler = Pooler.from_config_with_defaults(
+                    pooler_config,
+                    pooling_type=PoolingType.CLS,
+                    normalize=True,
+                    softmax=False)
+            elif task == "classify":
+                self.pooler = ClassifierPooler(config=self.model_config,
+                                               pooler=self._pooler,
+                                               classifier=self.classifier)
+        else:
+            # TODO: remove this when we no longer support vllm version pre this
+            # PR https://github.com/vllm-project/vllm/pull/20538 (post v0.10.0)
+            annotations = inspect.getfullargspec(Pooler.for_embed).annotations
+            extra_args = {}
+            if ('default_normalize' in annotations
+                    and 'default_softmax' in annotations):
+                extra_args.update({
+                    'default_normalize': True,
+                    'default_softmax': False
+                })
+            if 'default_pooling_type' in annotations:
+                extra_args['default_pooling_type'] = PoolingType.CLS
+
+            if task == "embed":
+                self.pooler = Pooler.for_embed(pooler_config=pooler_config,
+                                               **extra_args)
+            elif task == "classify":
+                self.pooler = ClassifierPooler(
+                    pooling=self._pooler,
+                    classifier=self.classifier,
+                    act_fn=ClassifierPooler.act_fn_for_cross_encoder(
+                        self.model_config),
+                )
 
     @property
     def vocab_size(self) -> int:
@@ -1388,10 +1483,18 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
                 self.input_batch.remove_request(req_id)
                 self.requests.pop(req_id, None)
 
+    def _token_types(self, input_ids):
+        from vllm.model_executor.models import bert
+        if hasattr(bert, "_decode_token_type_ids"):
+            return bert._decode_token_type_ids(input_ids)
+        else:
+            locs = torch.where(input_ids == self.sep_token_id, 1, 0)
+            return locs.cumsum(dim=1) - locs
+
     def _prepare_prompt(
         self,
         new_requests: list[NewRequestData],
-    ) -> ModelForwardInputs:
+    ) -> PoolingForwardInputs:
         assert len(new_requests) > 0
         input_token_list: list[torch.Tensor] = []
         padded_batch_size, min_pad_length_batch = self._get_padded_batch_size(
@@ -1439,11 +1542,20 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
         input_tokens, position_ids, mask = self.pad_input_ids(
             input_token_list, min_pad_length=min_pad_length_batch)
 
-        model_input = ModelForwardInputs(
+        token_type_ids = None
+        if self.use_token_type_ids:
+            token_type_ids = self._token_types(input_tokens)
+
+        if self.is_roberta:
+            position_ids += self.pad_token_id + 1
+            position_ids *= mask
+
+        model_input = PoolingForwardInputs(
             input_tokens=input_tokens,
             input_positions=position_ids,
             input_masks=mask,
             is_prompt=True,
+            token_type_ids=token_type_ids,
         )
 
         self._mark_input_tensors(model_input)
@@ -1451,7 +1563,7 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
         return model_input
 
     def prepare_model_input(
-            self, scheduler_output: SchedulerOutput) -> ModelForwardInputs:
+            self, scheduler_output: SchedulerOutput) -> PoolingForwardInputs:
 
         # NOTE: We assume that all sequences in the group are all prompts or
         # all decodes.
@@ -1464,12 +1576,15 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
         assert len(scheduler_output.scheduled_cached_reqs.req_ids) == 0
         return self._prepare_prompt(scheduler_output.scheduled_new_reqs)
 
-    def _mark_input_tensors(self, model_input: ModelForwardInputs) -> None:
+    def _mark_input_tensors(self, model_input: PoolingForwardInputs) -> None:
 
         super()._mark_input_tensors(model_input=model_input)
         if not self.warmup_mode:
             # Only mark tensors when we're warming up and compiling the graphs
             return
+        if self.use_token_type_ids:
+            torch._dynamo.mark_static(model_input.token_type_ids, 0)
+            torch._dynamo.mark_static(model_input.token_type_ids, 1)
 
     def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
         return tuple(self.pooler.get_supported_tasks())
@@ -1493,12 +1608,16 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
 
         # Execute the model
         attn_metadata = self.build_attn_metadata(model_input)
+
+        model_kwargs = {}
+        if self.use_token_type_ids:
+            model_kwargs["token_type_ids"] = model_input.token_type_ids
         with set_forward_context(attn_metadata, self.vllm_config):
-            outputs = self.model(
-                input_ids=model_input.input_tokens,
-                # TODO: verify this position id thing
-                #position_ids=model_input.input_positions,
-                attention_mask=model_input.input_masks)
+            outputs = self.model(input_ids=model_input.input_tokens,
+                                 position_ids=model_input.input_positions,
+                                 attention_mask=model_input.input_masks,
+                                 **model_kwargs)
+
             hidden_states = outputs["last_hidden_state"]
 
         # Only perform sampling in the driver worker.
