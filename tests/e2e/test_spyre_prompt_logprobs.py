@@ -2,12 +2,13 @@
 
 Run `python -m pytest tests/e2e/test_spyre_prompt_logprobs.py`.
 """
+
 import math
 
 import pytest
 import torch
 import torch.nn.functional
-from llm_cache_utils import force_engine_shutdown
+from llm_cache_util import force_engine_shutdown
 from spyre_util import get_chicken_soup_prompts, skip_unsupported_tp_size
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, RequestOutput, SamplingParams
@@ -20,10 +21,10 @@ from vllm_spyre.platform import SpyrePlatform
 @pytest.mark.skip
 def test_prompt_logprobs(backend: str, model: str, tp_size: int,
                          monkeypatch: pytest.MonkeyPatch) -> None:
-    '''
+    """
     This test checks the prompt_logprobs output from vllm against a reference
     implementation using huggingface.
-    '''
+    """
     skip_unsupported_tp_size(tp_size, backend)
     if "FP8" in model:
         pytest.skip(reason="Prompt logprobs does not support FP8")
@@ -45,10 +46,12 @@ def test_prompt_logprobs(backend: str, model: str, tp_size: int,
     for prompt, response in zip(prompts, responses):
         actual_logprobs = response.prompt_logprobs
         expected_logprobs = expected_prompt_logprobs[prompt]
-        _compare_prompt_logprobs(expected_logprobs,
-                                 actual_logprobs,
-                                 max_different_tokens=1,
-                                 relative_tolerance=0.15)
+        _compare_prompt_logprobs(
+            expected_logprobs,
+            actual_logprobs,
+            max_different_tokens=1,
+            relative_tolerance=0.15,
+        )
     force_engine_shutdown(llm)
 
 
@@ -120,13 +123,15 @@ def _compare_prompt_logprobs(expected: list, actual: list,
             expected_logprob = expected_dict[token]
 
             # 60% tolerance- pretty big difference in results atm
-            assert math.isclose(expected_logprob["logprob"],
-                                actual_logprob.logprob,
-                                rel_tol=relative_tolerance)
+            assert math.isclose(
+                expected_logprob["logprob"],
+                actual_logprob.logprob,
+                rel_tol=relative_tolerance,
+            )
 
 
 def _get_hf_prompt_logprobs(model_name, prompts, n) -> dict[str, list]:
-    """Get prompt logprobs from HF model directly, including top n candidates 
+    """Get prompt logprobs from HF model directly, including top n candidates
     for each token"""
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForCausalLM.from_pretrained(model_name)

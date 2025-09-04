@@ -6,7 +6,7 @@ import pytest
 import torch
 from llm_cache import (clear_llm_caches, get_cached_api_server,
                        print_llm_cache_info)
-from llm_cache_utils import SortKey, sort_tests_for_llm_caching
+from llm_cache_util import SortKey, sort_tests_for_llm_caching
 from spyre_util import (get_spyre_backend_list, get_spyre_model_list,
                         skip_unsupported_tp_size)
 from vllm.connections import global_http_connection
@@ -20,10 +20,10 @@ os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 
 
 def pytest_generate_tests(metafunc):
-    """This hook is called during the collection phase, 
-    specifically when Pytest encounters a test function that 
-    needs parametrization. It receives a metafunc object, 
-    which provides information about the test function and 
+    """This hook is called during the collection phase,
+    specifically when Pytest encounters a test function that
+    needs parametrization. It receives a metafunc object,
+    which provides information about the test function and
     allows for dynamic parametrization."""
 
     # default parameterizations
@@ -100,8 +100,7 @@ def pytest_generate_tests(metafunc):
         metafunc.parametrize(
             "cb", [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
 
-    if "tp_size" in metafunc.fixturenames and \
-        "tp_size" not in existing_markers:
+    if "tp_size" in metafunc.fixturenames and "tp_size" not in existing_markers:
         metafunc.parametrize(
             "tp_size",
             [
@@ -117,10 +116,10 @@ def pytest_generate_tests(metafunc):
 def _add_param(param_name: str, param_value, metafunc,
                existing_markers) -> None:
     """helper function to parametrize stuff.
-    We make sure to not parametrize something 
+    We make sure to not parametrize something
     if it exists explicitly on the test"""
-    if (param_name in metafunc.fixturenames
-            and param_name not in existing_markers):
+    if param_name in metafunc.fixturenames and \
+        param_name not in existing_markers:
         metafunc.parametrize(
             param_name,
             param_value,
@@ -129,7 +128,7 @@ def _add_param(param_name: str, param_value, metafunc,
 
 
 def pytest_collection_modifyitems(config, items):
-    """ Modify tests at collection time """
+    """Modify tests at collection time"""
     _mark_all_e2e(items)
 
     _skip_quantized_by_default(config, items)
@@ -167,7 +166,7 @@ def _skip_quantized_by_default(config, items):
     if "quantized" in markexpr:
         return  # let pytest handle the collection logic
 
-    skip_mymarker = pytest.mark.skip(reason='quantized not selected')
+    skip_mymarker = pytest.mark.skip(reason="quantized not selected")
     for item in items:
         if "quantized" in item.keywords:
             item.add_marker(skip_mymarker)
@@ -176,7 +175,7 @@ def _skip_quantized_by_default(config, items):
 def _xfail_fp8_on_spyre(items):
     """Set an xfail marker on all tests that run quantized models on Spyre
     hardware.
-    
+
     TODO: Relax this to only "spyre and cb" once static batching is supported
     on spyre.
     """
@@ -259,7 +258,7 @@ def runtime_xfail(request):
     Call runtime_xfail() to mark running test as xfail.
     """
 
-    def _xfail(reason=''):
+    def _xfail(reason=""):
         request.node.add_marker(pytest.mark.xfail(reason=reason))
 
     return _xfail
@@ -267,12 +266,12 @@ def runtime_xfail(request):
 
 @pytest.fixture(scope="function")
 def remote_openai_server(request):
-    """ Fixture to set up a test server."""
+    """Fixture to set up a test server."""
     params = request.node.callspec.params
 
     try:
-        model = params['model']
-        backend = params['backend']
+        model = params["model"]
+        backend = params["backend"]
     except KeyError as e:
         raise pytest.UsageError(
             "Error setting up remote_openai_server params") from e
@@ -283,8 +282,8 @@ def remote_openai_server(request):
     # Add extra server args if present in test
     server_args = ["--quantization", quantization] if quantization else []
 
-    if 'tp_size' in params:
-        tp_size = params['tp_size']
+    if "tp_size" in params:
+        tp_size = params["tp_size"]
         if int(tp_size) > 1:
             # Don't set tp size explicitly if it's 1
             skip_unsupported_tp_size(int(tp_size), backend)
@@ -303,17 +302,17 @@ def remote_openai_server(request):
             str(max_model_len)
         ])
     else:
-        warmup_shapes = params['warmup_shapes']
+        warmup_shapes = params["warmup_shapes"]
         warmup_prompt_length = [t[0] for t in warmup_shapes]
         warmup_new_tokens = [t[1] for t in warmup_shapes]
         warmup_batch_size = [t[2] for t in warmup_shapes]
         env_dict = {
             "VLLM_SPYRE_WARMUP_PROMPT_LENS":
-            ','.join(map(str, warmup_prompt_length)),
+            ",".join(map(str, warmup_prompt_length)),
             "VLLM_SPYRE_WARMUP_NEW_TOKENS":
-            ','.join(map(str, warmup_new_tokens)),
+            ",".join(map(str, warmup_new_tokens)),
             "VLLM_SPYRE_WARMUP_BATCH_SIZES":
-            ','.join(map(str, warmup_batch_size)),
+            ",".join(map(str, warmup_batch_size)),
             "VLLM_SPYRE_DYNAMO_BACKEND":
             backend,
         }
@@ -327,7 +326,7 @@ def remote_openai_server(request):
         pytest.fail(f"Failed to setup server: {e}")
 
 
-@pytest.fixture(scope='session', autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 def teardown_fixture():
     # Session scoped fixture will run once for the entire suite
     yield
@@ -339,7 +338,7 @@ def teardown_fixture():
 
 @pytest.fixture
 def set_random_seed(request):
-    func_hash = hashlib.sha256(request.node.originalname.encode('utf-8'))
+    func_hash = hashlib.sha256(request.node.originalname.encode("utf-8"))
     seed = int(func_hash.hexdigest(), 16)
     random.seed(seed)
     yield

@@ -1,10 +1,10 @@
-"""Contains utilities for caching models (instantiated as vLLM endpoints) 
+"""Contains utilities for caching models (instantiated as vLLM endpoints)
 across test cases, to speed up test runtime."""
 
 from typing import Callable, Generic, Optional, TypeVar
 
 import pytest
-from llm_cache_utils import force_engine_shutdown
+from llm_cache_util import force_engine_shutdown
 from spyre_util import (DecodeWarmupShapes, RemoteOpenAIServer,
                         patch_environment)
 from vllm import LLM, EngineArgs

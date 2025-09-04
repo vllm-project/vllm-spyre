@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from llm_cache_utils import force_engine_shutdown
+from llm_cache_util import force_engine_shutdown
 from openai import BadRequestError
 from output_util import extract_output, generate_spyre_vllm_output
 from spyre_util import (RemoteOpenAIServer, check_output_against_hf,
