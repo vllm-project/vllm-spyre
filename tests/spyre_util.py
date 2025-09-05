@@ -2,32 +2,41 @@ import inspect
 import math
 import os
 import random
+import subprocess
+import sys
+import time
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Optional
 
-import numpy as np
+import openai
 import pytest
-import torch
-from hf_result_cache import HFResultCache
-from llm_cache import (DecodeWarmupShapes, EmbeddingWarmupShapes, EngineCache,
-                       LLMCache, RemoteOpenAIServer, RemoteOpenAIServerCache)
-from sentence_transformers import SentenceTransformer, util
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from vllm import LLM, SamplingParams
+import requests
+from transformers import AutoTokenizer
+from vllm import SamplingParams
+from vllm.entrypoints.openai.cli_args import make_arg_parser
+from vllm.utils import FlexibleArgumentParser, get_open_port
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.request import Request
 
-DISABLE_ASSERTS = False  # used for debugging
+EmbeddingWarmupShapes = list[tuple[int, int]]
+DecodeWarmupShapes = list[tuple[int, int, int]]
 
-# TODO: Needs to be separate for quantized models
-ISCLOSE_REL_TOL_CPU = 0.35
-ISCLOSE_REL_TOL_SPYRE = 0.35
 
-HF_RESULT_CACHE = HFResultCache()
-LLM_CACHE = LLMCache()
-API_SERVER_CACHE = RemoteOpenAIServerCache()
-ENGINE_CACHE = EngineCache()
+def patch_environment(use_cb: bool, warmup_shapes: DecodeWarmupShapes | None,
+                      backend: str, monkeypatch):
+    # Setup the environment correctly for the LLM
+
+    # ---- For static batching ----
+    if warmup_shapes:
+        assert not use_cb, ("Warmup shapes through environment variables have "
+                            "been deprecated in continuous batching")
+
+        patch_warmup_shapes(warmup_shapes, monkeypatch)
+
+    # --------------
+    monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1" if use_cb else "0")
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
 
 
 def patch_warmup_shapes(warmup_shapes: DecodeWarmupShapes
@@ -46,407 +55,123 @@ def patch_warmup_shapes(warmup_shapes: DecodeWarmupShapes
                            ','.join(str(val) for val in warmup_new_tokens))
 
 
-def extract_output(req_output):
-    """Extract text, token_ids, tokens, and logprobs from request output."""
+class RemoteOpenAIServer:
+    """Subprocess wrapper that boots a vllm server with `vllm serve` for testing
+    against"""
 
-    result = {}
-    result['text'] = req_output.outputs[0].text
+    DUMMY_API_KEY = "token-abc123"  # vLLM's OpenAI server does not need API key
 
-    # TODO: Workaround for V1, if request does not fit in a warmup shape
-    # token_ids may be filled with -1.
-    token_ids = [t for t in req_output.outputs[0].token_ids if t >= 0]
-    result['token_ids'] = tuple(token_ids)
-    result['tokens'] = tuple(req_output.outputs[0].logprobs[i][t].decoded_token
-                             for i, t in enumerate(token_ids))
-    result['logprobs'] = tuple(req_output.outputs[0].logprobs[i][t].logprob
-                               for i, t in enumerate(token_ids))
-
-    return result
-
-
-# vLLM / Spyre
-def generate_spyre_vllm_output(
-    model: str,
-    prompts: Union[list[str], list[list[int]]],
-    max_model_len: int,
-    sampling_params: Union[SamplingParams, list[SamplingParams]],
-    tensor_parallel_size: int,
-    backend: str,
-    monkeypatch: pytest.MonkeyPatch,
-    warmup_shapes: DecodeWarmupShapes | None = None,
-    max_num_seqs: Optional[int] = None,
-    use_cb: bool = False,
-) -> list[dict[str, Any]]:
-    # Allows to run multiprocess V1 engine without dumping meaningless logs at
-    # shutdown engine this context.
-    monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
-
-    vllm_model = get_cached_llm(model=model,
-                                max_model_len=max_model_len,
-                                tensor_parallel_size=tensor_parallel_size,
-                                backend=backend,
-                                monkeypatch=monkeypatch,
-                                warmup_shapes=warmup_shapes,
-                                max_num_seqs=max_num_seqs,
-                                use_cb=use_cb)
-
-    vllm_outputs = vllm_model.generate(prompts, sampling_params)
-    results = []
-
-    for req_output in vllm_outputs:
-        result = extract_output(req_output)
-        results.append(result)
-
-    return results
-
-
-def clear_llm_caches():
-    LLM_CACHE.clear()
-    API_SERVER_CACHE.clear()
-    ENGINE_CACHE.clear()
-
-
-def print_llm_cache_info():
-    print("\n----- LLM Cache info ----\n")
-    print(f"vllm.LLM Cache hits: {LLM_CACHE._cache.hits} / "
-          f"misses: {LLM_CACHE._cache.misses}")
-    print(f"Runtime Server Cache hits: {API_SERVER_CACHE._cache.hits} / "
-          f"misses: {API_SERVER_CACHE._cache.misses}")
-    print(f"Engine Core Cache hits: {ENGINE_CACHE._cache.hits} / "
-          f"misses: {ENGINE_CACHE._cache.misses}")
-    print("\n-------------------------\n")
-
-
-def get_cached_llm(
-    model: str,
-    max_model_len: int,
-    tensor_parallel_size: int,
-    backend: str,
-    monkeypatch: pytest.MonkeyPatch,
-    warmup_shapes: DecodeWarmupShapes | None = None,
-    max_num_seqs: Optional[int] = None,
-    use_cb: bool = False,
-) -> LLM:
-    # Clear other caches first
-    API_SERVER_CACHE.clear()
-    ENGINE_CACHE.clear()
-
-    return LLM_CACHE.get_cached_llm(model=model,
-                                    max_model_len=max_model_len,
-                                    tensor_parallel_size=tensor_parallel_size,
-                                    backend=backend,
-                                    monkeypatch=monkeypatch,
-                                    warmup_shapes=warmup_shapes,
-                                    max_num_seqs=max_num_seqs,
-                                    use_cb=use_cb)
-
-
-def get_cached_api_server(model: str, server_args: list[str],
-                          server_env: dict) -> RemoteOpenAIServer:
-    # Clear other caches first
-    LLM_CACHE.clear()
-    ENGINE_CACHE.clear()
-
-    return API_SERVER_CACHE.get_api_server(
-        model=model,
-        server_args=server_args,
-        server_env=server_env,
-    )
-
-
-def get_cached_engine(model: str, max_model_len: int, max_num_seqs: int,
-                      available_blocks: int, backend: str,
-                      monkeypatch) -> EngineCore:
-    # Clear other caches first
-    LLM_CACHE.clear()
-    API_SERVER_CACHE.clear()
-
-    return ENGINE_CACHE.get_engine(model=model,
-                                   max_model_len=max_model_len,
-                                   max_num_seqs=max_num_seqs,
-                                   available_blocks=available_blocks,
-                                   backend=backend,
-                                   monkeypatch=monkeypatch)
-
-
-# Hugging Face
-def generate_hf_output(
+    def __init__(
+        self,
         model: str,
-        prompts: Union[list[str], list[list[int]]],  # also accept token ids
-        max_new_tokens: Union[int, list[int]],
-        ignore_eos: bool = False,
-        include_prompt: bool = False) -> list[dict[str, Any]]:
-    """Loads and runs the model on cpu with transformers, caching the results.
-    Returns cached results if any are found to avoid overhead."""
+        vllm_serve_args: list[str],
+        *,
+        env_dict: Optional[dict[str, str]] = None,
+        seed: Optional[int] = 0,
+        auto_port: bool = True,
+        max_wait_seconds: Optional[float] = None,
+    ) -> None:
+        # NB: This implementation does not ensure that the model is downloaded
+        # before booting the server, it should be used with models already
+        # cached on disk
 
-    if not isinstance(max_new_tokens, list):
-        max_new_tokens = [max_new_tokens] * len(prompts)
+        if auto_port:
+            if "-p" in vllm_serve_args or "--port" in vllm_serve_args:
+                raise ValueError("You have manually specified the port "
+                                 "when `auto_port=True`.")
 
-    results = []
-    for prompt, max_tokens in zip(prompts, max_new_tokens):
-        results.append(
-            HF_RESULT_CACHE.get_cached_result(model, prompt, max_tokens))
+            # Don't mutate the input args
+            vllm_serve_args = vllm_serve_args + [
+                "--port", str(get_open_port())
+            ]
+        if seed is not None:
+            if "--seed" in vllm_serve_args:
+                raise ValueError("You have manually specified the seed "
+                                 f"when `seed={seed}`.")
 
-    if all(results):
-        # Everything hit cache
-        return results
+            vllm_serve_args = vllm_serve_args + ["--seed", str(seed)]
 
-    assert os.getenv("GITHUB_ACTIONS", "") != "true", \
-        "HF results cache miss during Github Actions run. " \
-        "Please run tests locally with `-m 'cpu'` and check in the changes " \
-        "to hf_cache.json"
+        parser = FlexibleArgumentParser(
+            description="vLLM's remote OpenAI server.")
+        parser = make_arg_parser(parser)
+        args = parser.parse_args(["--model", model, *vllm_serve_args])
+        self.host = str(args.host or "localhost")
+        self.port = int(args.port)
 
-    hf_model = AutoModelForCausalLM.from_pretrained(model)
-    hf_tokenizer = AutoTokenizer.from_pretrained(model)
-    if ignore_eos:
-        hf_model.generation_config.eos_token_id = None
+        env = os.environ.copy()
+        if env_dict is not None:
+            env.update(env_dict)
+        self.proc = subprocess.Popen(
+            ["vllm", "serve", model, *vllm_serve_args],
+            env=env,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+        )
+        max_wait_seconds = max_wait_seconds or 600
+        self._wait_for_server(url=self.url_for("health"),
+                              timeout=max_wait_seconds)
 
-    for prompt_index, prompt in enumerate(prompts):
+    def __enter__(self):
+        return self
 
-        if results[prompt_index]:
-            # Already have cached result
-            continue
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.shutdown()
 
-        hf_input_tokens = hf_tokenizer(prompt, return_tensors="pt").input_ids \
-                    if isinstance(prompt[0], str) \
-                    else torch.tensor([prompts[prompt_index]])
-        hf_output = hf_model.generate(
-            hf_input_tokens,
-            do_sample=False,
-            max_new_tokens=max_new_tokens[prompt_index],
-            return_dict_in_generate=True,
-            output_scores=True)
+    def shutdown(self):
+        self.proc.terminate()
+        try:
+            self.proc.wait(8)
+        except subprocess.TimeoutExpired:
+            # force kill if needed
+            self.proc.kill()
 
-        # decode output tokens after first removing input tokens (prompt)
-        hf_generated_text = hf_tokenizer.batch_decode(
-            hf_output.sequences[:, len(hf_input_tokens[0]):])[0]
-        hf_transition_scores = hf_model.compute_transition_scores(
-            hf_output.sequences, hf_output.scores, normalize_logits=True)
+    def _wait_for_server(self, *, url: str, timeout: float):
+        # run health check
+        start = time.time()
+        while True:
+            try:
+                if requests.get(url).status_code == 200:
+                    break
+            except Exception:
+                # this exception can only be raised by requests.get,
+                # which means the server is not ready yet.
+                # the stack trace is not useful, so we suppress it
+                # by using `raise from None`.
+                result = self.proc.poll()
+                if result is not None and result != 0:
+                    raise RuntimeError("Server exited unexpectedly.") from None
 
-        # return HF generated text, tokens, token ids and logprobs
-        result = {}
-        result['text'] = hf_generated_text
-        result['token_ids'] = []
-        result['tokens'] = []
-        result['logprobs'] = []
-        for tok_index, hf_logprob in enumerate(hf_transition_scores[0]):
-            hf_token_id = hf_output.sequences[0][tok_index +
-                                                 len(hf_input_tokens[0])]
-            result['token_ids'].append(hf_token_id.item())
-            result['tokens'].append(hf_tokenizer.decode(hf_token_id))
-            result['logprobs'].append(hf_logprob.item())
-        result['token_ids'] = tuple(result['token_ids'])
-        result['tokens'] = tuple(result['tokens'])
-        result['logprobs'] = tuple(result['logprobs'])
-        if include_prompt:
-            result['prompt'] = prompt
+                time.sleep(0.5)
+                if time.time() - start > timeout:
+                    raise RuntimeError(
+                        "Server failed to start in time.") from None
 
-        # Save and cache new result
-        results[prompt_index] = result
-        HF_RESULT_CACHE.add_to_cache(model, prompt,
-                                     max_new_tokens[prompt_index], result)
+    @property
+    def url_root(self) -> str:
+        return f"http://{self.host}:{self.port}"
 
-    # Write back to the cache
-    HF_RESULT_CACHE.write_cache()
-    return results
+    def url_for(self, *parts: str) -> str:
+        return self.url_root + "/" + "/".join(parts)
 
+    def get_client(self, **kwargs):
+        if "timeout" not in kwargs:
+            kwargs["timeout"] = 600
+        return openai.OpenAI(
+            base_url=self.url_for("v1"),
+            api_key=self.DUMMY_API_KEY,
+            max_retries=0,
+            **kwargs,
+        )
 
-# compare results
-def compare_results(
-    model: str,
-    tensor_parallel_size: int,
-    backend: str,
-    vllm_results: list[dict[str, Any]],
-    hf_results: list[dict[str, Any]],
-    prompts: Optional[list[str]] = None,
-):
-    if prompts is None:
-        prompts = [""] * len(vllm_results)
-
-    print(f"\nmodel:         {model:s}")
-    print(f"tp size:       {tensor_parallel_size}")
-    print(f"backend:       {backend:s}")
-    print(f"\n#prompts:      {len(prompts):d}")
-    print(f"#HF results:   {len(hf_results):d}"
-          f"{'' if len(hf_results) == len(prompts) else '  ERROR':s}")
-    print(f"#vLLM results: {len(vllm_results):d}"
-          f"{'' if len(vllm_results) == len(prompts) else '  ERROR':s}")
-    print()
-
-    assert DISABLE_ASSERTS or len(hf_results) == len(vllm_results)
-    assert DISABLE_ASSERTS or len(hf_results) == len(prompts)
-
-    for prompt_index, (prompt, hf_result, vllm_result) in enumerate(
-            zip(prompts, hf_results, vllm_results)):
-        if "text" in vllm_result:
-            err_msg = '' if hf_result['text'] == vllm_result[
-                'text'] else '  ERROR'
-            print(f"\nprompt {prompt_index:3d}:    {repr(prompt):s}")
-            print("generated:")
-            print(f"        HF:    {repr(hf_result['text']):s}")
-            print(f"        vLLM:  {repr(vllm_result['text']):s}{err_msg}")
-            print()
-
-        if isinstance(hf_result['token_ids'], list):
-            hf_result['token_ids'] = tuple(hf_result['token_ids'])
-
-        assert DISABLE_ASSERTS or backend == 'sendnn' or\
-            hf_result['token_ids'] == vllm_result['token_ids'], \
-            f"Token ids differ: {hf_result['token_ids']} != " \
-            f"{vllm_result['token_ids']}"
-
-        if len(hf_result['tokens']) > 0:
-            print("   token id. token               logprob      "
-                  "   token id. token               logprob")
-
-            logprob_abs_diff_list = []
-            logprob_rel_diff_list = []
-
-            for i, (hf_token_id, hf_logprob, vllm_token_id,
-                    vllm_logprob) in enumerate(
-                        zip(hf_result['token_ids'], hf_result['logprobs'],
-                            vllm_result['token_ids'],
-                            vllm_result['logprobs'])):
-                logprob_abs_diff = math.fabs(hf_logprob - vllm_logprob)
-                logprob_abs_diff_list.append(logprob_abs_diff)
-                logprob_rel_diff = math.fabs(logprob_abs_diff / hf_logprob)
-                logprob_rel_diff_list.append(logprob_rel_diff)
-
-                hf_token = repr(
-                    hf_result['tokens'][i]) if 'tokens' in vllm_result else '-'
-                vllm_token = repr(vllm_result['tokens']
-                                  [i]) if 'tokens' in vllm_result else '-'
-                print(
-                    f"HF: {hf_token_id:8d} {hf_token:14s} {hf_logprob:14f}  "
-                    f"vLLM: {vllm_token_id:8d} {vllm_token:14s} "
-                    f"{vllm_logprob:14f}  ",
-                    end='')
-
-                if backend == 'sendnn':
-                    rel_tol = ISCLOSE_REL_TOL_SPYRE
-                else:
-                    rel_tol = ISCLOSE_REL_TOL_CPU
-
-                if hf_token_id != vllm_token_id:  # different tokens
-                    if backend == 'sendnn' and math.isclose(
-                            hf_logprob, vllm_logprob, rel_tol=rel_tol):
-                        # probably still OK
-                        print('DIVERGING')
-                        break
-                    else:
-                        print('ERROR')
-                        assert DISABLE_ASSERTS or False
-                        break
-                else:  # identical tokens
-                    if math.isclose(hf_logprob, vllm_logprob, rel_tol=rel_tol):
-                        print()
-                    else:
-                        diff_val = abs(hf_logprob - vllm_logprob)
-                        max_val = max(abs(hf_logprob), abs(vllm_logprob))
-                        rel_tol_diff = (diff_val / max_val) * 100
-                        print(f"ERROR (REL_TOL_DIFF = {rel_tol_diff:.2f}%)")
-                        assert DISABLE_ASSERTS or False
-                        break
-
-            print()
-            print("logprob absolute differences: "
-                  f"average={np.mean(logprob_abs_diff_list):f}  "
-                  f"maximum={np.max(logprob_abs_diff_list):f}")
-            print("logprob relative differences: "
-                  f"average={np.mean(logprob_rel_diff_list):f}  "
-                  f"maximum={np.max(logprob_rel_diff_list):f}")
-
-        print()
-
-
-def check_output_against_hf(model, backend, max_new_tokens, vllm_results,
-                            prompts) -> None:
-    hf_outputs = generate_hf_output(
-        model=model,
-        prompts=prompts,
-        max_new_tokens=max_new_tokens,
-        ignore_eos=True,
-    )
-    compare_results(
-        model=model,
-        tensor_parallel_size=1,
-        backend=backend,
-        vllm_results=vllm_results,
-        hf_results=hf_outputs,
-    )
-
-
-# vLLM / Spyre
-def spyre_vllm_embeddings(model: str, prompts: list[str], max_model_len: int,
-                          tensor_parallel_size: int,
-                          backend: str) -> list[dict[str, Any]]:
-    # NB: This doesn't use the same LLM caching as generate_spyre_vllm_output
-    # There aren't as many embedding tests so it's not worth the effort atm to
-    # cache
-
-    # Clear any cached decoder model
-    LLM_CACHE.clear()
-
-    vllm_model = LLM(model=model,
-                     tokenizer=model,
-                     max_model_len=max_model_len,
-                     tensor_parallel_size=tensor_parallel_size)
-
-    vllm_outputs = vllm_model.embed(prompts)
-
-    results = []
-    for req_output in vllm_outputs:
-        result = {}
-        result["embeddings"] = req_output.outputs.embedding
-        results.append(result)
-
-    return results
-
-
-# Hugging Face
-def st_embeddings(model: str, prompts: list[str]) -> list[dict[str, Any]]:
-
-    model = SentenceTransformer(model)
-
-    results = []
-    for prompt in prompts:
-        embeddings = model.encode(prompt)
-
-        # return ST generated embeddings
-        result = {}
-        result['embeddings'] = embeddings
-        results.append(result)
-
-    return results
-
-
-# compare results
-def compare_embedding_results(model: str, prompts: list[str],
-                              warmup_shapes: EmbeddingWarmupShapes,
-                              tensor_parallel_size: int, backend: str,
-                              vllm_results: list[dict[str, Any]],
-                              hf_results: list[dict[str, Any]]):
-
-    print(f"\nmodel:         {model:s}")
-    print(f"warmup shapes: {warmup_shapes}")
-    print(f"tp size:       {tensor_parallel_size}")
-    print(f"backend:       {backend:s}")
-    print(f"\n#prompts:      {len(prompts):d}")
-    print(f"#HF results:   {len(hf_results):d}"
-          f"{'' if len(hf_results) == len(prompts) else '  ERROR':s}")
-    print(f"#vLLM results: {len(vllm_results):d}"
-          f"{'' if len(vllm_results) == len(prompts) else '  ERROR':s}")
-    print()
-
-    assert DISABLE_ASSERTS or len(hf_results) == len(vllm_results)
-    assert DISABLE_ASSERTS or len(hf_results) == len(prompts)
-
-    for hf_result, vllm_result in zip(hf_results, vllm_results):
-
-        sim = util.pytorch_cos_sim(hf_result["embeddings"],
-                                   vllm_result["embeddings"])
-
-        assert math.isclose(sim, 1.0, rel_tol=0.05)
+    def get_async_client(self, **kwargs):
+        if "timeout" not in kwargs:
+            kwargs["timeout"] = 600
+        return openai.AsyncOpenAI(
+            base_url=self.url_for("v1"),
+            api_key=self.DUMMY_API_KEY,
+            max_retries=0,
+            **kwargs,
+        )
 
 
 # get model directory path from env
@@ -704,48 +429,3 @@ def get_longer_chicken_soup_prompts(num_prompts: int) -> list[str]:
         prompts = prompts * (math.ceil(num_prompts / 4))
 
     return prompts[:num_prompts]
-
-
-def generate_cache_for_test_swap_decode_programs_for_cb(
-        model: str, prompts: list[str], parent_path: str):
-    '''
-    This function bakes the generation of prompts with long contexts. Which
-    currently are used in the test 
-    `test_spyre_cb::test_swap_decode_programs_for_cb`. 
-    '''
-
-    # Generate
-    assert len(prompts) == 4
-
-    p8k = 8 * 1024
-    p16k = 16 * 1024
-    p32k = 32 * 1024
-
-    import pickle
-    hf_outputs = generate_hf_output(model=model,
-                                    prompts=prompts[0:2],
-                                    max_new_tokens=p8k,
-                                    ignore_eos=True,
-                                    include_prompt=True)
-    with open(Path(parent_path) / 'prompts_8k_bs2.pickle', 'wb') as f:
-        f.write(pickle.dumps(hf_outputs))
-
-    hf_outputs = generate_hf_output(
-        model=model,
-        prompts=[prompts[2]],
-        max_new_tokens=p16k,
-        ignore_eos=True,
-        include_prompt=True,
-    )
-    with open(Path(parent_path) / 'prompts_16k_bs1.pickle', 'wb') as f:
-        f.write(pickle.dumps(hf_outputs))
-
-    hf_outputs = generate_hf_output(
-        model=model,
-        prompts=[prompts[3]],
-        max_new_tokens=p32k,
-        ignore_eos=True,
-        include_prompt=True,
-    )
-    with open(Path(parent_path) / 'prompts_32k_bs1.pickle', 'wb') as f:
-        f.write(pickle.dumps(hf_outputs))

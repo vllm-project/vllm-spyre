@@ -27,8 +27,11 @@ def stagger_region(limit: int, world_size: int, rank: int):
         logger.info("Stagger Region Enter (Set: %d) of %d", _set + 1,
                     math.ceil(world_size / float(limit)))
     yield {}
-    logger.info("Rank %d Done With Stagger Region", rank)
+
+    # TODO: make sure this isn't called excessively
+
     if limit > 0 and limit < world_size:
+        logger.info("Rank %d Done With Stagger Region", rank)
         for _set in range(math.ceil(world_size / float(limit))):
             if rank >= (_set + 1) * limit:
                 continue

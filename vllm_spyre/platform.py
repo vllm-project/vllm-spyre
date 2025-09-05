@@ -76,6 +76,10 @@ class SpyrePlatform(Platform):
     _num_spyre_blocks_override: int = -1  # override num of KV cache blocks
     _config: VllmConfig = None
 
+    # TODO: see if this needs to be set
+    # See vllm batched_count_greater_than method
+    # simple_compile_backend: str = "eager"
+
     @classproperty
     def device_type(cls):
         # TODO: temporary hack while BertModels
@@ -147,9 +151,7 @@ class SpyrePlatform(Platform):
             # Override --max-num-seqs to the biggest warmup batch size
             # And override --max-model-len to the biggest warmup sequence
             cls._warmup_shapes = None
-            max_model_len = model_config.max_model_len
-            spyre_warmup_shapes = cls.get_warmup_shapes(
-                scheduler_config, max_model_len)
+            spyre_warmup_shapes = cls.get_warmup_shapes(scheduler_config)
             max_batch_size = 0
             max_seq_len = 0
             for shape in spyre_warmup_shapes:
@@ -162,6 +164,10 @@ class SpyrePlatform(Platform):
                 raise ValueError(
                     "Prompt logprobs only supported with batch size 1")
 
+            # verify that warmup shapes are not too large
+            model_config.get_and_verify_max_len(max_model_len=max_seq_len)
+
+            # override stuff
             model_config.max_model_len = max_seq_len
             scheduler_config.max_num_seqs = max_batch_size
 
@@ -273,10 +279,7 @@ class SpyrePlatform(Platform):
         return torch.no_grad()
 
     @classmethod
-    def get_warmup_shapes(
-            cls,
-            scheduler_config,
-            max_model_len: int = sys.maxsize) -> tuple[dict[str, int], ...]:
+    def get_warmup_shapes(cls, scheduler_config) -> tuple[dict[str, int], ...]:
         if cls._warmup_shapes is not None:
             return cls._warmup_shapes
         # load warmup shapes and sort by "speed"
@@ -312,16 +315,6 @@ class SpyrePlatform(Platform):
             } for pl, nt, bs in zip(wup_prompt_lens, wup_new_tokens,
                                     wup_batch_sizes)],
                    key=operator.itemgetter('batch_size', 'prompt_length')))
-
-        for shape in cls._warmup_shapes:
-            max_seq_len = shape["prompt_length"] + shape["new_tokens"]
-            if max_seq_len > max_model_len:
-                raise RuntimeError(
-                    f"Warmup shape [{shape['batch_size']},"
-                    f" {shape['prompt_length']}, {shape['new_tokens']}]"
-                    f" results in a maximum sequence length of "
-                    f"{max_seq_len} which is longer that what the model "
-                    f"supports ({max_model_len})")
         return cls._warmup_shapes
 
     @classmethod
