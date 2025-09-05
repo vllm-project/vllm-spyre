@@ -189,10 +189,13 @@ def compare_results(
                     end="",
                 )
 
+                hf_logprob_exp = math.exp(hf_logprob)
+                vllm_logprob_exp = math.exp(vllm_logprob)
+
                 if hf_token_id != vllm_token_id:  # different tokens
                     if backend == "sendnn" and math.isclose(
-                            math.exp(hf_logprob),
-                            math.exp(vllm_logprob),
+                            hf_logprob_exp,
+                            vllm_logprob_exp,
                             rel_tol=ISCLOSE_REL_TOL,
                     ):
                         # probably still OK
@@ -204,14 +207,19 @@ def compare_results(
                         break
                 else:  # identical tokens
                     if math.isclose(
-                            math.exp(hf_logprob),
-                            math.exp(vllm_logprob),
+                            hf_logprob_exp,
+                            vllm_logprob_exp,
                             rel_tol=ISCLOSE_REL_TOL,
                     ):
                         print()
                     else:
+                        prob_diff = abs(hf_logprob_exp -
+                                        vllm_logprob_exp) / max(
+                                            hf_logprob_exp, vllm_logprob_exp)
                         print(f"ERROR (REL_TOL_DIFF = "
                               f"{logprob_rel_diff * 100:.2f}%)")
+                        print(f"ERROR (prob_diff = "
+                              f"{prob_diff * 100:.2f}%)")
                         assert DISABLE_ASSERTS or False
                         break
 
