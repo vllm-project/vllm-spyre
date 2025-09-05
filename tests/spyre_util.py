@@ -22,6 +22,7 @@ from vllm.v1.request import Request
 DISABLE_ASSERTS = False  # used for debugging
 
 # TODO: Needs to be separate for quantized models
+ISCLOSE_ABS_TOL = 0.0001
 ISCLOSE_REL_TOL_CPU = 0.35
 ISCLOSE_REL_TOL_SPYRE = 0.35
 ISCLOSE_REL_TOL_QUANTIZATION = 0.4
@@ -316,7 +317,9 @@ def compare_results(
                             vllm_result['logprobs'])):
                 logprob_abs_diff = math.fabs(hf_logprob - vllm_logprob)
                 logprob_abs_diff_list.append(logprob_abs_diff)
-                logprob_rel_diff = math.fabs(logprob_abs_diff / hf_logprob)
+                logprob_rel_diff = math.fabs(
+                    logprob_abs_diff /
+                    max(math.fabs(hf_logprob), math.fabs(vllm_logprob)))
                 logprob_rel_diff_list.append(logprob_rel_diff)
 
                 hf_token = repr(
@@ -340,7 +343,11 @@ def compare_results(
 
                 if hf_token_id != vllm_token_id:  # different tokens
                     if backend == 'sendnn' and math.isclose(
-                            hf_logprob, vllm_logprob, rel_tol=rel_tol):
+                            hf_logprob,
+                            vllm_logprob,
+                            rel_tol=rel_tol,
+                            abs_tol=ISCLOSE_ABS_TOL,
+                    ):
                         # probably still OK
                         print('DIVERGING')
                         break
@@ -349,13 +356,16 @@ def compare_results(
                         assert DISABLE_ASSERTS or False
                         break
                 else:  # identical tokens
-                    if math.isclose(hf_logprob, vllm_logprob, rel_tol=rel_tol):
+                    if math.isclose(
+                            hf_logprob,
+                            vllm_logprob,
+                            rel_tol=rel_tol,
+                            abs_tol=ISCLOSE_ABS_TOL,
+                    ):
                         print()
                     else:
-                        diff_val = abs(hf_logprob - vllm_logprob)
-                        max_val = max(abs(hf_logprob), abs(vllm_logprob))
-                        rel_tol_diff = (diff_val / max_val) * 100
-                        print(f"ERROR (REL_TOL_DIFF = {rel_tol_diff:.2f}%)")
+                        print(f"ERROR (REL_TOL_DIFF = "
+                              f"{logprob_rel_diff * 100:.2f}%)")
                         assert DISABLE_ASSERTS or False
                         break
 
