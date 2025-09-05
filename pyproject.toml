@@ -15,7 +15,7 @@ dependencies = [
     "ibm-fms>=1.2.1",
     "vllm>=0.9.2,<=0.10.1.1",
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dynamic = ["version"]
 
 [project.entry-points."vllm.platform_plugins"]
@@ -154,7 +154,7 @@ dev = [
     "pytest-timeout==2.3.1",
     "requests==2.32.3",
     "sentence-transformers==3.4.1",
-    "aiu_fms_testing_utils@git+https://github.com/foundation-model-stack/aiu-fms-testing-utils.git#bd1090ef7aa1323b28587533d29935827b7a6755"
+    "aiu-fms-testing-utils>=0.2.1",
 ]
 lint = [
     "clang-format==18.1.5",
