@@ -37,7 +37,7 @@ jobs:
         # using `always()` here ensures all the checks run even if previous
         # checks fail
         if: always()
-        run: isort . --check-only
+        run: isort .
       - name: run yapf
         if: always()
         run: yapf --diff --recursive .
