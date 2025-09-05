@@ -120,6 +120,8 @@ def check_scheduler_inference_steps(
     scheduler: ContinuousBatchingSpyreScheduler = engine_core.scheduler
 
     tokenizer = get_tokenizer(model)
+    # clear the cache of function scheduler.check_batch_tkv_limit()
+    scheduler._cache_check_batch_tkv_limit.clear()
 
     # Override the TKV limit in the scheduler if needed
     if max_batch_tkv_limit >= 0:
