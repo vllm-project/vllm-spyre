@@ -424,20 +424,28 @@ class SpyreWorker(WorkerBaseV1):
         warmup_tokens_tensor = valid_token_ids_tensor[torch.randint(
             0, len(valid_token_ids_tensor), (3, prompt_len))]
 
-        warmup_req1, warmup_req2, deploy_req = (new_request_data_builder(
-            req_id="warmup-%d" % (i),
-            prompt_token_ids=warmup_tokens_tensor[i].tolist(),
-            sampling_params=SamplingParams(max_tokens=num_decode_tokens),
-            pooling_params=None,
-        ) for i in range(3))
+        # TODO: we need 2 requests for warmup on FP8+CB
+        is_fp8_plus_cb = 'FP8' in self.model_config.model and \
+            envs_spyre.VLLM_SPYRE_USE_CB
+        req_count = 3 if is_fp8_plus_cb else 2
+        requests = [
+            new_request_data_builder(
+                req_id="warmup-%d" % (i),
+                prompt_token_ids=warmup_tokens_tensor[i].tolist(),
+                sampling_params=SamplingParams(max_tokens=num_decode_tokens),
+                pooling_params=None,
+            ) for i in range(req_count)
+        ]
 
+        warmup_requests = requests[:-1]  # first one or two
+        deploy_req = requests[-1]  # Last one
         model_runner.pre_warmup()
 
         with _maybe_warmup_context(envs_spyre.VLLM_SPYRE_MAX_LOAD_PROCESSES,
                                    self.parallel_config.world_size, self.rank):
             # TODO(wallas): I am not sure if really need warmup with at
             # least batch size 2 for quantized model
-            self._dynamic_warmup(requests=[warmup_req1, warmup_req2],
+            self._dynamic_warmup(requests=warmup_requests,
                                  prompt_len=prompt_len,
                                  valid_token_ids_tensor=valid_token_ids_tensor)
 
@@ -622,64 +630,49 @@ class SpyreWorker(WorkerBaseV1):
             _inside_warmup_mode
         ), "it looks like you are outside the warmup context for warmup"
 
-        request0, request1 = requests[0], requests[1]
-        scheduler_output = SchedulerOutput(
-            scheduled_new_reqs=[request0],
-            scheduled_cached_reqs=CachedRequestData.make_empty(),
-            num_scheduled_tokens={request0.req_id: prompt_len},
-            total_num_scheduled_tokens=prompt_len,
-            scheduled_spec_decode_tokens={},
-            scheduled_encoder_inputs={},
-            num_common_prefix_blocks=0,
-            finished_req_ids=set(),
-            free_encoder_input_ids=[],
-            structured_output_request_ids={},
-            grammar_bitmask=None,
-        )
-        logger.info("[WARMUP] Prefill [1/2]...")
+        req_count = len(requests)
+        for idx, req in enumerate(requests):
+            scheduler_output = SchedulerOutput(
+                scheduled_new_reqs=[req],
+                scheduled_cached_reqs=CachedRequestData.make_empty(),
+                num_scheduled_tokens={req.req_id: prompt_len},
+                total_num_scheduled_tokens=prompt_len,
+                scheduled_spec_decode_tokens={},
+                scheduled_encoder_inputs={},
+                num_common_prefix_blocks=0,
+                finished_req_ids=set(),
+                free_encoder_input_ids=[],
+                structured_output_request_ids={},
+                grammar_bitmask=None,
+            )
 
-        self.execute_model(scheduler_output)
+            logger.info("[WARMUP] Prefill [%s/%s]...", idx + 1, req_count)
 
-        scheduler_output = SchedulerOutput(
-            scheduled_new_reqs=[request1],
-            scheduled_cached_reqs=CachedRequestData.make_empty(),
-            num_scheduled_tokens={request1.req_id: prompt_len},
-            total_num_scheduled_tokens=prompt_len,
-            scheduled_spec_decode_tokens={},
-            scheduled_encoder_inputs={},
-            num_common_prefix_blocks=0,
-            finished_req_ids=set(),
-            free_encoder_input_ids=[],
-            structured_output_request_ids={},
-            grammar_bitmask=None,
-        )
-        logger.info("[WARMUP] Prefill [2/2]...")
+            self.execute_model(scheduler_output)
 
-        self.execute_model(scheduler_output)
+
+        random_token_id = \
+            lambda: torch.randint(0, len(valid_token_ids_tensor), (1, )).item()
+
+        # Reduce to accumulate all blocks
+        block_ids : list[int] = \
+            functools.reduce(lambda blocks, req: blocks + req.block_ids,
+                             requests, [])
 
         cached_request_data = CachedRequestData(
-            req_ids=[request0.req_id, request1.req_id],
+            req_ids=[req.req_id for req in requests],
             resumed_from_preemption=False,
-            new_token_ids=[[
-                valid_token_ids_tensor[torch.randint(
-                    0, len(valid_token_ids_tensor), (1, )).item()],
-            ],
-                           [
-                               valid_token_ids_tensor[torch.randint(
-                                   0, len(valid_token_ids_tensor),
-                                   (1, )).item()]
-                           ]],
-            new_block_ids=[request0.block_ids + request1.block_ids],
-            num_computed_tokens=[prompt_len, prompt_len],
+            new_token_ids=[[valid_token_ids_tensor[random_token_id()]]
+                           for _ in requests],
+            new_block_ids=block_ids,
+            num_computed_tokens=[prompt_len for _ in requests],
         )
 
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=[],
             scheduled_cached_reqs=cached_request_data,
-            num_scheduled_tokens={
-                request0.req_id: 1,
-                request1.req_id: 1
-            },
+            num_scheduled_tokens={req.req_id: 1
+                                  for req in requests},
             total_num_scheduled_tokens=1,
             scheduled_spec_decode_tokens={},
             scheduled_encoder_inputs={},
@@ -691,7 +684,7 @@ class SpyreWorker(WorkerBaseV1):
         )
         logger.info("[WARMUP] Decode...")
         self.execute_model(scheduler_output)
-        self._cleanup_model_runner(request=[request0, request1])
+        self._cleanup_model_runner(request=requests)
 
     def _warmup_model_forward_pass(
         self,
