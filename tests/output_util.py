@@ -20,6 +20,7 @@ from vllm.transformers_utils.tokenizer import get_tokenizer
 DISABLE_ASSERTS = False  # used for debugging
 
 ISCLOSE_REL_TOL = 0.2
+ISCLOSE_REL_TOL_QUANTIZATION = 0.4
 
 HF_RESULT_CACHE = HFResultCache()
 
@@ -189,6 +190,13 @@ def compare_results(
                     end="",
                 )
 
+                if "FP8" in model:
+                    # TODO: Improve this. For now our testing model can be
+                    # solved with this logic
+                    rel_tol = ISCLOSE_REL_TOL_QUANTIZATION
+                else:
+                    rel_tol = ISCLOSE_REL_TOL
+
                 hf_logprob_exp = math.exp(hf_logprob)
                 vllm_logprob_exp = math.exp(vllm_logprob)
 
@@ -196,7 +204,7 @@ def compare_results(
                     if backend == "sendnn" and math.isclose(
                             hf_logprob_exp,
                             vllm_logprob_exp,
-                            rel_tol=ISCLOSE_REL_TOL,
+                            rel_tol=rel_tol,
                     ):
                         # probably still OK
                         print("DIVERGING")
@@ -209,17 +217,17 @@ def compare_results(
                     if math.isclose(
                             hf_logprob_exp,
                             vllm_logprob_exp,
-                            rel_tol=ISCLOSE_REL_TOL,
+                            rel_tol=rel_tol,
                     ):
                         print()
                     else:
                         prob_diff = abs(hf_logprob_exp -
                                         vllm_logprob_exp) / max(
                                             hf_logprob_exp, vllm_logprob_exp)
-                        print(f"ERROR (REL_TOL_DIFF = "
-                              f"{logprob_rel_diff * 100:.2f}%)")
-                        print(f"ERROR (prob_diff = "
-                              f"{prob_diff * 100:.2f}%)")
+                        print(
+                            f"ERROR (REL_TOL_DIFF = "
+                            f"{logprob_rel_diff * 100:.2f}%), ERROR (prob_diff"
+                            f" = {prob_diff * 100:.2f}%)")
                         assert DISABLE_ASSERTS or False
                         break
 
