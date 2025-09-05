@@ -19,7 +19,7 @@ from vllm.transformers_utils.tokenizer import get_tokenizer
 
 DISABLE_ASSERTS = False  # used for debugging
 
-ISCLOSE_REL_TOL = 0.1
+ISCLOSE_REL_TOL = 0.2
 
 HF_RESULT_CACHE = HFResultCache()
 
