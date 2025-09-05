@@ -11,7 +11,8 @@ USER root
 
 RUN dnf install -y \
         python3-pip.noarch \
-        python3-wheel.noarch
+        python3-wheel.noarch \
+        git
 
 ##############################################
 # Build stage

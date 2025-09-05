@@ -123,7 +123,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # memory usage.
     # Set to 0 to allow any number of processes
     "VLLM_SPYRE_MAX_LOAD_PROCESSES":
-    lambda: bool(int(os.getenv("VLLM_SPYRE_MAX_LOAD_PROCESSES", "0"))),
+    lambda: int(os.getenv("VLLM_SPYRE_MAX_LOAD_PROCESSES", "0")),
 
     # If set, redirects all stdout and stderr from worker processes to files
     # within this director. This is useful for debugging card-specific errors

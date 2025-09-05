@@ -156,6 +156,9 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         assert self.max_batch_tkv_limit != '-1', (
             "Expecting the env var VLLM_DT_MAX_BATCH_TKV_LIMIT to be set in "
             "platform.py")
+        # cache for self.check_batch_tkv_limit() outer key: tuple(request_ids),
+        # inner key: (request_id, max_batch_tkv_limit), value: (lower, upper)
+        self._cache_check_batch_tkv_limit: dict[tuple, dict[tuple, tuple]] = {}
 
     def update_from_output(
         self,
@@ -257,13 +260,17 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
                      envs_spyre.VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO
                      >= 0) else True
         # check that batch size x tkv is smaller than the max supported number
-        cond7 = self.check_batch_tkv_limit(request=request, tkv=self.tkv)
+        cond7 = lambda: self.check_batch_tkv_limit(request=request,
+                                                   tkv=self.tkv,
+                                                   running=self.running,
+                                                   max_batch_tkv_limit=self.
+                                                   max_batch_tkv_limit)
 
-        if cond1 and cond2 and cond3 and cond4 and cond5 and cond6 and cond7:
+        if cond1 and cond2 and cond3 and cond4 and cond5 and cond6 and cond7():
             return True
 
         # the following conditions must always be true, if not we can exit here
-        if not (cond1 and cond2 and cond4 and cond5 and cond6 and cond7
+        if not (cond1 and cond2 and cond4 and cond5 and cond6 and cond7()
                 ) or not envs_spyre.VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION:
             return False
 
@@ -301,14 +308,18 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
                              >= 0) else True
 
         # check that batch size x tkv is smaller than the max supported number
-        # with updated tkv (cond7)
-        cond7_updated = self.check_batch_tkv_limit(request=request,
-                                                   tkv=tkv_updated)
+        # with updated tkv (cond6) -> only call if the other cond are met
+        cond7_updated = lambda: self.check_batch_tkv_limit(
+            request=request,
+            tkv=tkv_updated,
+            running=self.running,
+            max_batch_tkv_limit=self.max_batch_tkv_limit)
 
         return (cond4_updated and cond5_updated and cond6_updated
-                and cond7_updated)
+                and cond7_updated())
 
-    def check_batch_tkv_limit(self, request, tkv) -> bool:
+    def check_batch_tkv_limit(self, request, tkv, running,
+                              max_batch_tkv_limit) -> bool:
         """
         Check whether adding a new sequence to the decode batch would violate
         Spyre's maximum batch volume constraint.
@@ -330,10 +341,20 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
 
         Note: drawing explaining the algorithm in more detail uploaded here: 
         https://github.com/vllm-project/vllm-spyre/pull/363#issuecomment-3173605517
-        
-        WIP: The result of this check could be cached and reused if both the 
-        decode batch and the new input request are unchanged between calls.
         """
+        # checking if cached result can be used
+        outer_key = tuple(r.request_id
+                          for r in running)  # decode batch changes
+        inner_key = (request.request_id, max_batch_tkv_limit
+                     )  # new request changes
+        cache = self._cache_check_batch_tkv_limit
+        if (outer_key in cache) and (inner_key in cache[outer_key]):
+            (lower, upper) = cache[outer_key][inner_key]
+            if tkv <= lower or tkv >= upper:
+                logger.debug(
+                    "Cache hit function check_batch_tkv_limit: returning %s",
+                    str(tkv <= lower))
+                return tkv <= lower
 
         # Compute the effective token length of the new request
         new_req_tkv = tkv + request.max_tokens - 1
@@ -342,13 +363,13 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         decode_req_tkvs = [
             tkv + req.max_tokens - 1 -
             (req.num_computed_tokens - req.num_prompt_tokens)
-            for req in self.running
+            for req in running
         ]
         # Sort decode requests token lengths in ascending order
         decode_req_tkvs.sort()
 
         # Initialize values
-        batch_size = len(self.running) + 1
+        batch_size = len(running) + 1
         max_batch_tkv = 0
 
         # Try adding the new request to the batch and check the max volume
@@ -363,4 +384,31 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
                 # decrease batch_size by 1 as the current request finished
                 batch_size -= 1
 
-        return max_batch_tkv <= int(self.max_batch_tkv_limit)
+        return_value = max_batch_tkv <= int(max_batch_tkv_limit)
+
+        if outer_key in cache:
+            # decode batch has not changed
+            if inner_key not in cache[outer_key]:
+                # adding new request to present decode batch
+                cache[outer_key][inner_key] = (-math.inf, math.inf)
+        else:
+            # decode batch has changed, empty the cache in place
+            cache.clear()
+            cache[outer_key] = {inner_key: (-math.inf, math.inf)}
+            logger.debug(
+                "Cleared cache of function check_batch_tkv_limit as the " \
+                "decode batch has changed."
+            )
+
+        # update lower bound (of acceptance) and upper bound (of rejection)
+        (lower, upper) = cache[outer_key][inner_key]
+        if return_value:
+            lower = max(lower, tkv)
+        else:
+            upper = min(upper, tkv)
+        assert lower < upper
+        cache[outer_key][inner_key] = (lower, upper)
+        logger.debug("Saved cache of function check_batch_tkv_limit: %s",
+                     self._cache_check_batch_tkv_limit[outer_key][inner_key])
+
+        return return_value
