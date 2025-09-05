@@ -2323,7 +2323,7 @@ def test_scheduler_heuristic_prioritize_decode(model: str, backend: str,
             "n_reserved_blocks": 3,  # prefill (2 blocks) + 3 decodes (1 block)
             "n_used_blocks": 2
         },
-        # request 1 can be prefilled as the number of blocks needed for the
+        # request 1 cannot be prefilled as the number of blocks needed for the
         # prefill (2) is more than VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO (1)
 
         # thus decode sequence 0

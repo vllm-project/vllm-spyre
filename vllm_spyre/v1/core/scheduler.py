@@ -290,6 +290,10 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         cond5_updated = num_blocks_required_updated <= self.n_free_blocks
 
         # check prefill vs decode prioritization with updated tkv
+        # Note: num_fully_padded_blocks is always 0 in this code branch by
+        # construction: if the prompt is bigger than self.tkv, we shift
+        # self.tkv by tkv_offset to just accommodate the new prompt. The
+        # alignment with self.tkv this will require max block_size - 1 pads.
         num_blocks_prefill_updated = math.ceil(tkv_updated / self.block_size)
         cond6_updated = (num_blocks_prefill_updated
                          <= envs_spyre.VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO) if (
