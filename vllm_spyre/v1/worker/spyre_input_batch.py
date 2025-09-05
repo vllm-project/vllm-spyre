@@ -693,6 +693,10 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
     def no_allowed_token_ids(self) -> bool:
         return len(self.has_allowed_token_ids) == 0
 
+    @property
+    def request_indices(self) -> list[int]:
+        return self.req_indices_mask.nonzero().reshape(-1).tolist()
+
 
 @dataclass
 class PoolingRequestState(BaseRequestState):
