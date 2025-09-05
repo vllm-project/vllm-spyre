@@ -1,14 +1,13 @@
 import platform
-
 import yaml
-import vllm_spyre.envs as envs_spyre
 
-from enum import Enum
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from vllm.config import (CacheConfig, ModelConfig, ParallelConfig,
                          SchedulerConfig)
 from vllm.logger import init_logger
+from vllm_spyre import envs as envs_spyre
 
 
 _config_file = Path(__file__).parent / "supported_configurations.yaml"
@@ -28,7 +27,8 @@ class PlatformName(Enum):
 
 @dataclass
 class RuntimeConfiguration:
-    platform: PlatformName = PlatformName.AMD  # TODO: should be torch.device("cpu") or DYNAMO_BACKEND instead?
+    # TODO: ?platform? or use torch.device ("cpu") or DYNAMO_BACKEND instead?
+    platform: PlatformName = PlatformName.AMD
     cb: bool = False
     tp_size: int = 1
     max_model_len: int = 0
@@ -65,7 +65,7 @@ runtime_configs_by_model: dict[str, list[RuntimeConfiguration]] = None
 
 def initialize_supported_configurations_from_file():
     global model_runtime_configs, runtime_configs_by_model
-    with open(_config_file, "r", encoding="utf-8") as f:
+    with open(_config_file, encoding="utf-8") as f:
         yaml_data = yaml.safe_load(f)
         model_runtime_configs = [
             ModelRuntimeConfiguration(**config_dict)
