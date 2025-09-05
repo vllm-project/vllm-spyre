@@ -64,9 +64,7 @@ def _construct_expected_sampling_metadata(
                                          device=device)
 
     batch_update_builder = BatchUpdateBuilder()
-    logitsprocs = get_builtin_logits_processors(pin_memory_available=False,
-                                                max_num_reqs=len(reqs) + 1,
-                                                device=device)
+    logitsprocs = get_builtin_logits_processors(vllm_config=None)
 
     bad_words_token_ids = {}
     for req in reqs:
