@@ -238,8 +238,8 @@ class SpyrePlatform(Platform):
         # compare requested runtime configuration with previously validated ones
         # avoid ImportError: cannot import name 'ModelConfig' from partially
         # initialized module 'vllm.config' (most likely due to circular import)
-        from vllm_spyre.config.runtime_config_validator import \
-            validate_runtime_configuration
+        from vllm_spyre.config.runtime_config_validator import (
+            validate_runtime_configuration)
 
         warmup_shape_tuples = [
             (ws['prompt_length'], ws['new_tokens'], ws['batch_size'])

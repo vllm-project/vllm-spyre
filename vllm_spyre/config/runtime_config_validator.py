@@ -1,14 +1,14 @@
 import platform
-import yaml
-
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+
+import yaml
 from vllm.config import (CacheConfig, ModelConfig, ParallelConfig,
                          SchedulerConfig)
 from vllm.logger import init_logger
-from vllm_spyre import envs as envs_spyre
 
+from vllm_spyre import envs as envs_spyre
 
 _config_file = Path(__file__).parent / "supported_configurations.yaml"
 
