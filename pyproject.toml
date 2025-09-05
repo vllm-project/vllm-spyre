@@ -91,6 +91,15 @@ ignore = [
     "B007",
     # f-string format
     "UP032",
+
+    # TODO: Fix all of these in code instead
+
+    # Type unions
+    "UP007",
+    # Callable
+    "UP035",
+    # Zip
+    "B905",
 ]
 
 [tool.mypy]
