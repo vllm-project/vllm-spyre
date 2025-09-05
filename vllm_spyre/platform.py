@@ -235,6 +235,23 @@ class SpyrePlatform(Platform):
             "VLLM_DT_MAX_BATCH_TKV_LIMIT found. Using the default value " \
             "(max_model_len * max_batch_size): %d", default_max_batch_tkv_limit)
 
+        # compare requested runtime configuration with previously validated ones
+        # avoid ImportError: cannot import name 'ModelConfig' from partially
+        # initialized module 'vllm.config' (most likely due to circular import)
+        from vllm_spyre.config.runtime_config_validator import \
+            validate_runtime_configuration
+
+        warmup_shape_tuples = [
+            (ws['prompt_length'], ws['new_tokens'], ws['batch_size'])
+            for ws in cls._warmup_shapes
+        ] if cls._warmup_shapes and not envs_spyre.VLLM_SPYRE_USE_CB else None
+
+        validate_runtime_configuration(model_config=model_config,
+                                       parallel_config=parallel_config,
+                                       scheduler_config=scheduler_config,
+                                       cache_config=cache_config,
+                                       warmup_shapes=warmup_shape_tuples)
+
     @classmethod
     def use_all_gather(cls) -> bool:
         """
