@@ -40,11 +40,10 @@ class RuntimeConfiguration:
         if isinstance(self.platform, str):
             self.platform = PlatformName(self.platform)
         if self.warmup_shapes is not None:
-            self.warmup_shapes = [
-                (ws[0], ws[1], ws[2])
-                if isinstance(ws, list) else ws
-                for ws in self.warmup_shapes
-            ]
+            self.warmup_shapes = [(ws[0], ws[1], ws[2])
+                                  if isinstance(ws, list) else ws
+                                  for ws in self.warmup_shapes]  # yapf: disable
+
 
 
 @dataclass
@@ -105,8 +104,7 @@ def report_error(msg: str, raise_error: bool = False):
     if raise_error:
         raise ValueError(msg)
     else:
-        # logger.warning(msg) # TODO log
-        print(msg)
+        logger.warning(msg)
 
 
 def validate_runtime_configuration(model_config: ModelConfig,
@@ -125,40 +123,40 @@ def validate_runtime_configuration(model_config: ModelConfig,
 
     use_cb = envs_spyre.VLLM_SPYRE_USE_CB
 
+    # TODO: num_blocks = cpu or gpu blocks?
     requested_config = RuntimeConfiguration(
         platform=get_sys_platform_name(),
         cb=use_cb,
         tp_size=parallel_config.tensor_parallel_size,
         max_model_len=model_config.max_model_len if use_cb else 0,
         max_num_seqs=scheduler_config.max_num_seqs if use_cb else 0,
-        num_blocks=cache_config.num_cpu_blocks or 0,  # TODO: cpu or gpu blocks?
-        warmup_shapes=warmup_shapes if not use_cb else None
-    )
+        num_blocks=cache_config.num_cpu_blocks or 0,
+        warmup_shapes=warmup_shapes if not use_cb else None)
 
     supported_configs = runtime_configs_by_model.get(model_config.model, [])
 
     # Don't use `if requested_configuration not in supported_configurations:...`
     #   since warmup shapes don't compare easy, exclude from dataclass __eq__
     #   use filter and set-compare warmup_shapes separately
-    matching_configs: list[RuntimeConfiguration] = (
-        list(filter(lambda c: c == requested_config, supported_configs)))
+    matching_configs: list[RuntimeConfiguration] = (list(
+        filter(lambda c: c == requested_config, supported_configs)))
 
     if len(matching_configs) == 0:
-        report_error(f"The requested configuration is not supported for"
-                     f" model '{model_config.model}':"
-                     f" {str(requested_config)}",
-                     raise_error)
+        report_error(
+            f"The requested configuration is not supported for"
+            f" model '{model_config.model}':"
+            f" {str(requested_config)}", raise_error)
 
     if len(matching_configs) > 0 and not use_cb:
-        supported_warmup_shapes = set([ws
-                                       for config in matching_configs
-                                       for ws in config.warmup_shapes or []])
+        supported_warmup_shapes = set([
+            ws for config in matching_configs
+            for ws in config.warmup_shapes or []
+        ])
 
         requested_warmup_shapes = set(requested_config.warmup_shapes or [])
 
         if not requested_warmup_shapes.issubset(supported_warmup_shapes):
-            report_error(f"The requested warmup_shapes are not supported"
-                         f" for model '{model_config.model}':"
-                         f" {str(list(requested_warmup_shapes))}",
-                         raise_error)
-
+            report_error(
+                f"The requested warmup_shapes are not supported"
+                f" for model '{model_config.model}':"
+                f" {str(list(requested_warmup_shapes))}", raise_error)
