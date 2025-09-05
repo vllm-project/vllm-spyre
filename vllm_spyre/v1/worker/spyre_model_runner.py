@@ -5,7 +5,8 @@ from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
-from typing import TYPE_CHECKING, Generic, Optional, TypeVar, Union, cast
+from typing import (TYPE_CHECKING, Generic, Literal, Optional, TypeVar, Union,
+                    cast, get_args)
 
 import torch
 from torch import nn
@@ -43,8 +44,20 @@ else:
     NewRequestData = None
     SamplingMetadata = None
 
-from vllm.tasks import SupportedTask
 from vllm.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, ModelRunnerOutput
+
+#############################################################
+# from vllm.tasks import GenerationTask, PoolingTask, SupportedTask
+# TODO: remove when we drop support for 0.10.0
+#############################################################
+GenerationTask = Literal["generate", "transcription"]
+GENERATION_TASKS = get_args(GenerationTask)
+
+PoolingTask = Literal["encode", "embed", "classify", "score"]
+POOLING_TASKS = get_args(PoolingTask)
+
+SupportedTask = Literal[GenerationTask]
+#############################################################
 
 logger = init_logger(__name__)
 
