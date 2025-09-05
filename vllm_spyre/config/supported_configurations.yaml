@@ -47,18 +47,20 @@ runtime_configs:
     ]
   - model: "ibm-granite/granite-3.3-8b-instruct"
     configs: [
-      { platform: "x86_64",   cb: True,  tp_size: 4, max_model_len: 2048, max_num_seqs: 4 },
-      { platform: "x86_64",   cb: True,  tp_size: 4, max_model_len: 4096, max_num_seqs: 4 },
-      { platform: "x86_64",   cb: True,  tp_size: 4, max_model_len: 8192, max_num_seqs: 4 },
+      { platform: "x86_64",  cb: True,  tp_size: 4, max_model_len: 2048, max_num_seqs: 4 },
+      { platform: "x86_64",  cb: True,  tp_size: 4, max_model_len: 4096, max_num_seqs: 4 },
+      { platform: "x86_64",  cb: True,  tp_size: 4, max_model_len: 8192, max_num_seqs: 4 },
       { platform: "s390x",   cb: True,  tp_size: 4, max_model_len: 8192, max_num_seqs: 4 },
-      { platform: "s390x",   cb: False, tp_size: 4, warmup_shapes: [[ 7168, 1024, 1 ]] },
+      { platform: "s390x",   cb: False, tp_size: 4, warmup_shapes: [[7168, 1024,  1]] },
       { platform: "ppc64le", cb: False, tp_size: 1, warmup_shapes: [[2048, 1024, 16]] },
       { platform: "ppc64le", cb: False, tp_size: 4, warmup_shapes: [[2048, 1024, 16]] },
-      { platform: "ppc64le", cb: False, tp_size: 4, warmup_shapes: [[6144, 2048, 1]] },
+      { platform: "ppc64le", cb: False, tp_size: 4, warmup_shapes: [[6144, 2048,  1]] },
       { platform: "ppc64le", cb: True,  tp_size: 1, max_model_len: 3072, max_num_seqs: 16 },
 
+      # CB up to 8k context length, up to max bs 4, on tp=4, precision FP16
+      # Static batching as of today, we support up to 32k context
+
       # Decoders: tested on x86 amd64 with max new tokens=128 (Eval-and-Perf/release_testing)
-      #Configuration
       #Hardware/TP 	     Precision 	Prompt length(input size) 	                Batch Size 	        Notes
       #AIU/TP=[4,8] 	 float16 	[128, 256, 512, 1024, 2048, 4096, 8192] 	[1, 2, 4, 8, 16] 	vLLM batching type: Continuous
       #GPU H100/L40S/[1] float16 	[128, 256, 512, 1024, 2048, 4096, 8192] 	[1, 2, 4, 8, 16] 	vLLM batching type: Continuous
@@ -67,11 +69,11 @@ runtime_configs:
     ]
   - model: "ibm-granite/granite-3.3-8b-instruct-FP8" #  "-FP8" ?
     configs: [
-      #{ platform: "s390x", cb: True,  tp_size: 4, max_model_len: 8192, max_num_seqs: 4 },     # FUTURE
-      #{ platform: "s390x", cb: True,  tp_size: 4, max_model_len: 16384, max_num_seqs: 4 },    # FUTURE
-      #{ platform: "s390x", cb: True,  tp_size: 4, max_model_len: 32768, max_num_seqs: 4 },    # FUTURE
-      #{ platform: "ppc64le", cb: True,  tp_size: 1, max_model_len: 3072, max_num_seqs: 16 },  # FUTURE
-      #{ platform: "ppc64le", cb: True,  tp_size: 4, max_model_len: 8192, max_num_seqs: 4 },   # FUTURE
+      #{ platform: "s390x",   cb: True,  tp_size: 4, max_model_len: 8192,  max_num_seqs: 4 },  # FUTURE
+      #{ platform: "s390x",   cb: True,  tp_size: 4, max_model_len: 16384, max_num_seqs: 4 },  # FUTURE
+      #{ platform: "s390x",   cb: True,  tp_size: 4, max_model_len: 32768, max_num_seqs: 4 },  # FUTURE
+      #{ platform: "ppc64le", cb: True,  tp_size: 1, max_model_len: 3072,  max_num_seqs: 16 }, # FUTURE
+      #{ platform: "ppc64le", cb: True,  tp_size: 4, max_model_len: 8192,  max_num_seqs: 4 },  # FUTURE
       #{ platform: "ppc64le", cb: True,  tp_size: 4, max_model_len: 32768, max_num_seqs: 4 },  # FUTURE
     ]
   - model: "sentence-transformers/all-roberta-large-v1"
