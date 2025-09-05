@@ -24,6 +24,7 @@ DISABLE_ASSERTS = False  # used for debugging
 # TODO: Needs to be separate for quantized models
 ISCLOSE_REL_TOL_CPU = 0.35
 ISCLOSE_REL_TOL_SPYRE = 0.35
+ISCLOSE_REL_TOL_QUANTIZATION = 0.4
 
 HF_RESULT_CACHE = HFResultCache()
 LLM_CACHE = LLMCache()
@@ -330,6 +331,10 @@ def compare_results(
 
                 if backend == 'sendnn':
                     rel_tol = ISCLOSE_REL_TOL_SPYRE
+                elif 'FP8' in model:
+                    # TODO: Improve this. For now our testing model can be
+                    # solved with this logic
+                    rel_tol = ISCLOSE_REL_TOL_QUANTIZATION
                 else:
                     rel_tol = ISCLOSE_REL_TOL_CPU
 
