@@ -4,8 +4,8 @@ Run `python -m pytest tests/e2e/test_spyre_max_prompt_length.py`.
 """
 
 import pytest
-from llm_cache import DecodeWarmupShapes
-from spyre_util import create_text_prompt, get_cached_llm
+from llm_cache import get_cached_llm
+from spyre_util import DecodeWarmupShapes, create_text_prompt
 from vllm import SamplingParams
 
 

@@ -4,7 +4,8 @@ from collections import defaultdict, deque
 from typing import Any
 
 import pytest
-from spyre_util import create_random_request, get_cached_engine
+from llm_cache import get_cached_engine
+from spyre_util import create_random_request
 from vllm import SamplingParams
 from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.v1.engine import EngineCoreRequest
