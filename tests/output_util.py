@@ -19,7 +19,6 @@ from vllm.transformers_utils.tokenizer import get_tokenizer
 
 DISABLE_ASSERTS = False  # used for debugging
 
-ISCLOSE_ABS_TOL = 0.0001
 ISCLOSE_REL_TOL_CPU = 0.35
 ISCLOSE_REL_TOL_SPYRE = 0.35
 ISCLOSE_REL_TOL_QUANTIZATION = 0.4
@@ -206,7 +205,6 @@ def compare_results(
                             hf_logprob,
                             vllm_logprob,
                             rel_tol=rel_tol,
-                            abs_tol=ISCLOSE_ABS_TOL,
                     ):
                         # probably still OK
                         print("DIVERGING")
@@ -220,7 +218,6 @@ def compare_results(
                             hf_logprob,
                             vllm_logprob,
                             rel_tol=rel_tol,
-                            abs_tol=ISCLOSE_ABS_TOL,
                     ):
                         print()
                     else:
