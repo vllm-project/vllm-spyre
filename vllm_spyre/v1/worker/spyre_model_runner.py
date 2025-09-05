@@ -4,7 +4,7 @@ import time
 from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import Iterable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import (TYPE_CHECKING, Generic, Literal, Optional, TypeVar, Union,
                     cast, get_args)
 
@@ -68,7 +68,7 @@ class ModelForwardInputs:
     input_tokens: Optional[torch.Tensor] = None
     input_positions: Optional[torch.Tensor] = None
     input_masks: Optional[torch.Tensor] = None
-    is_prompt: Optional[bool] = None
+    is_prompt: bool = False
 
 
 @dataclass(frozen=True)
@@ -86,6 +86,7 @@ class SamplingForwardInputs(ModelForwardInputs):
     left_padded_prompt_mask: Optional[torch.Tensor] = None
     block_table: Optional[torch.Tensor] = None
     slot_mapping: Optional[torch.Tensor] = None
+    scale_indices: list[int] = field(default_factory=list)
 
 
 @dataclass
@@ -334,7 +335,8 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
         # this is a causal mask for generation
         mask = (mask.unsqueeze(-1) == mask.unsqueeze(-2)).tril()
         mask = torch.where(mask.logical_not(), -torch.inf, 0.0)
-        mask = mask.to(self.model.model.dtype)
+
+        mask = mask.to(self.model.get_mask_dtype())
         position_ids = torch.stack(position_ids_list)
 
         return input_ids, position_ids, mask
@@ -823,12 +825,12 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         n_blocks_warmup = self.model.model.get_num_blocks_available()
         self._set_blocks(num_blocks=n_blocks_warmup)
-        self.model.model._set_past_key_value_states(num_blocks=n_blocks_warmup)
+        self.model.model.set_past_key_value_states(num_blocks=n_blocks_warmup)
 
         # Future code:
 
         # self._set_blocks(num_blocks=2)
-        # self.model.model._set_past_key_value_states(num_blocks=2)
+        # self.model.model.set_past_key_value_states(num_blocks=2)
 
         # mark the num_blocks dimension dynamic for Spyre compiler for warmup
         # only, compiler will return the number of blocks it can accommodate.
@@ -843,7 +845,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # and set it accordingly in the model runner and for the kv cache size
         n_blocks_avail = self.model.model.get_num_blocks_available()
         self._set_blocks(num_blocks=n_blocks_avail)
-        self.model.model._set_past_key_value_states(num_blocks=n_blocks_avail)
+        self.model.model.set_past_key_value_states(num_blocks=n_blocks_avail)
 
     def _set_blocks(self, num_blocks: int) -> None:
         # overwrite num_blocks for testing scheduler constraints
@@ -970,7 +972,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                                          output_token_ids=[],
                                          left_padding=left_padding)
         self.requests[req_id] = req_state
-        self.input_batch.add_request(req_state)
+        prefill_index = self.input_batch.add_request(req_state)
         self.prefill_batch.add_request(req_state)
 
         # Refresh sampling metadata after all request are added to the batch
@@ -1010,7 +1012,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             block_table=block_table,
             slot_mapping=slot_mapping,
             is_prompt=True,
-        )
+            # used only for quantized model
+            scale_indices=[prefill_index])
 
         self._mark_input_tensors(model_inputs)
 
@@ -1111,7 +1114,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             block_table=block_table,
             slot_mapping=slot_mapping,
             is_prompt=False,
-        )
+            scale_indices=self.input_batch.request_indices)
 
         self._mark_input_tensors(model_inputs)
 
@@ -1209,11 +1212,15 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         # TODO: probably we can remove some fields of the model input and
         # update only the SpyreAttentionMetadata
+
         return SpyreAttentionMetadata(
             slot_mapping=model_input.slot_mapping,
             current_tkv_mask=model_input.current_tkv_mask,
             left_padded_prompt_mask=model_input.left_padded_prompt_mask,
-            block_table=model_input.block_table)
+            block_table=model_input.block_table,
+            scale_indices=torch.tensor(model_input.scale_indices,
+                                       dtype=torch.int32),
+            is_prefill=model_input.is_prompt)
 
     def get_sampling_metadata(self, is_prefill: bool) -> SamplingMetadata:
         return self.prefill_batch.sampling_metadata \
