@@ -254,10 +254,10 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         # needed and prefill time is thus proportional to the number of blocks
         num_blocks_prefill = math.ceil(
             self.tkv / self.block_size) - num_fully_padded_blocks
-        # VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO is -1 if no heuristic is enforced
-        cond6 = (num_blocks_prefill
-                 <= envs_spyre.VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO) if (
-                     envs_spyre.VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO
+        # if VLLM_SPYRE_N_TOKENS_PREFILL_PRIO is -1 -> no heuristic is enforced
+        cond6 = (num_blocks_prefill * self.block_size
+                 <= envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO) if (
+                     envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO
                      >= 0) else True
         # check that batch size x tkv is smaller than the max supported number
         cond7 = lambda: self.check_batch_tkv_limit(request=request,
@@ -302,9 +302,9 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         # self.tkv by tkv_offset to just accommodate the new prompt. The
         # alignment with self.tkv this will require max block_size - 1 pads.
         num_blocks_prefill_updated = math.ceil(tkv_updated / self.block_size)
-        cond6_updated = (num_blocks_prefill_updated
-                         <= envs_spyre.VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO) if (
-                             envs_spyre.VLLM_SPYRE_N_BLOCKS_PREFILL_PRIO
+        cond6_updated = (num_blocks_prefill_updated * self.block_size
+                         <= envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO) if (
+                             envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO
                              >= 0) else True
 
         # check that batch size x tkv is smaller than the max supported number
