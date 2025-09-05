@@ -184,7 +184,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         base scheduler but are restored after.
         """
         # unlock the current decode batch if no requests are in running queue
-        if len(self.running) == 0:
+        if len(self.running) == 0 and self.batch_is_locked:
             self.batch_is_locked = False
             logger.debug("Unlocking the current decode batch as no requests "
                          "are in running queue")
