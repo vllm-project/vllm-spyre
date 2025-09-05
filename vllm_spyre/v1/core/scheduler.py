@@ -245,8 +245,9 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             if waiting_time > envs_spyre.VLLM_SPYRE_MAX_WAITING_TIME_PREFILL:
                 self.batch_is_locked = True
                 logger.debug("Request %s waited longer (%ds) than " \
-                "VLLM_SPYRE_MAX_WAITING_TIME_PREFILL (%ds): locking current" \
-                " decode batch and schedule this request afterwards.",
+                "VLLM_SPYRE_MAX_WAITING_TIME_PREFILL (%ds): locking current " \
+                "decode batch and schedule this request either as part of " \
+                "the current batch or in an exclusive subsequent new batch.",
                 request.request_id, waiting_time,
                 envs_spyre.VLLM_SPYRE_MAX_WAITING_TIME_PREFILL
                 )
