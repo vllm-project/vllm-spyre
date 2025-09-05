@@ -13,7 +13,7 @@ from vllm_spyre import envs as envs_spyre
 _config_file = Path(__file__).parent / "supported_configurations.yaml"
 
 logger = init_logger(__name__)
-logger.info(f"Running on '{platform.machine()}'")
+logger.info("Running on '%s'", platform.machine())
 
 WarmupShapes = list[tuple[int, int, int]] | list[list[int]]
 
@@ -50,7 +50,7 @@ class RuntimeConfiguration:
 @dataclass
 class ModelRuntimeConfiguration:
     model: str
-    configs: list[dict | RuntimeConfiguration]
+    configs: list[RuntimeConfiguration]
 
     def __post_init__(self):
         self.configs = [
