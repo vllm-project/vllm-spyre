@@ -19,9 +19,7 @@ from vllm.transformers_utils.tokenizer import get_tokenizer
 
 DISABLE_ASSERTS = False  # used for debugging
 
-ISCLOSE_REL_TOL_CPU = 0.35
-ISCLOSE_REL_TOL_SPYRE = 0.35
-ISCLOSE_REL_TOL_QUANTIZATION = 0.4
+ISCLOSE_REL_TOL = 0.1
 
 HF_RESULT_CACHE = HFResultCache()
 
@@ -191,20 +189,20 @@ def compare_results(
                     end="",
                 )
 
-                if backend == "sendnn":
-                    rel_tol = ISCLOSE_REL_TOL_SPYRE
-                elif "FP8" in model:
-                    # TODO: Improve this. For now our testing model can be
-                    # solved with this logic
-                    rel_tol = ISCLOSE_REL_TOL_QUANTIZATION
-                else:
-                    rel_tol = ISCLOSE_REL_TOL_CPU
+                # if backend == "sendnn":
+                #     rel_tol = ISCLOSE_REL_TOL_SPYRE
+                # elif "FP8" in model:
+                #     # TODO: Improve this. For now our testing model can be
+                #     # solved with this logic
+                #     rel_tol = ISCLOSE_REL_TOL_QUANTIZATION
+                # else:
+                #     rel_tol = ISCLOSE_REL_TOL_CPU
 
                 if hf_token_id != vllm_token_id:  # different tokens
                     if backend == "sendnn" and math.isclose(
-                            hf_logprob,
-                            vllm_logprob,
-                            rel_tol=rel_tol,
+                            math.exp(hf_logprob),
+                            math.exp(vllm_logprob),
+                            rel_tol=ISCLOSE_REL_TOL,
                     ):
                         # probably still OK
                         print("DIVERGING")
@@ -215,9 +213,9 @@ def compare_results(
                         break
                 else:  # identical tokens
                     if math.isclose(
-                            hf_logprob,
-                            vllm_logprob,
-                            rel_tol=rel_tol,
+                            math.exp(hf_logprob),
+                            math.exp(vllm_logprob),
+                            rel_tol=ISCLOSE_REL_TOL,
                     ):
                         print()
                     else:
