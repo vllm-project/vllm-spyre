@@ -13,13 +13,13 @@ from vllm_spyre import envs as envs_spyre
 _config_file = Path(__file__).parent / "supported_configurations.yaml"
 
 logger = init_logger(__name__)
-logger.setLevel(f"Running on '{platform.machine()}'")
+logger.info(f"Running on '{platform.machine()}'")
 
 WarmupShapes = list[tuple[int, int, int]] | list[list[int]]
 
 
 class PlatformName(Enum):
-    AMD = "amd64"
+    AMD = "x86_64"
     ARM = "arm64"
     ZOS = "s390x"
     POWER = "ppc64le"
@@ -34,14 +34,15 @@ class RuntimeConfiguration:
     max_model_len: int = 0
     max_num_seqs: int = 0
     num_blocks: int = 0
-    warmup_shapes: WarmupShapes = field(compare=False, default=None)
+    warmup_shapes: WarmupShapes | None = field(compare=False, default=None)
 
     def __post_init__(self):
         if isinstance(self.platform, str):
             self.platform = PlatformName(self.platform)
         if self.warmup_shapes is not None:
             self.warmup_shapes = [
-                tuple(ws) if isinstance(ws, list) else ws
+                (ws[0], ws[1], ws[2])
+                if isinstance(ws, list) else ws
                 for ws in self.warmup_shapes
             ]
 
@@ -49,7 +50,7 @@ class RuntimeConfiguration:
 @dataclass
 class ModelRuntimeConfiguration:
     model: str
-    configs: [dict | RuntimeConfiguration]
+    configs: list[dict | RuntimeConfiguration]
 
     def __post_init__(self):
         self.configs = [
@@ -58,9 +59,9 @@ class ModelRuntimeConfiguration:
         ]
 
 
-model_runtime_configs: list[ModelRuntimeConfiguration] = None
+model_runtime_configs: list[ModelRuntimeConfiguration] | None = None
 
-runtime_configs_by_model: dict[str, list[RuntimeConfiguration]] = None
+runtime_configs_by_model: dict[str, list[RuntimeConfiguration]]
 
 
 def initialize_supported_configurations_from_file():
@@ -79,10 +80,10 @@ def initialize_supported_configurations_from_file():
 
 def get_sys_platform_name() -> PlatformName:
     machine = platform.machine()
-    # TODO: remove hack: arm64 is amd64 for local testing?
+    # TODO: remove hack: arm64 is x86_64 for local testing?
     #   should we use machine/arch, or torch.device("cpu"), or dynamo backend?
     if machine == "arm64":
-        machine = "amd64"  # "x86_64"
+        machine = "x86_64"  # "amd64"
     return PlatformName(machine)
 
 
@@ -112,7 +113,7 @@ def validate_runtime_configuration(model_config: ModelConfig,
                                    parallel_config: ParallelConfig,
                                    scheduler_config: SchedulerConfig,
                                    cache_config: CacheConfig,
-                                   warmup_shapes: WarmupShapes = None,
+                                   warmup_shapes: WarmupShapes | None = None,
                                    raise_error: bool = False):
     global model_runtime_configs
     if model_runtime_configs is None:
@@ -134,7 +135,7 @@ def validate_runtime_configuration(model_config: ModelConfig,
         warmup_shapes=warmup_shapes if not use_cb else None
     )
 
-    supported_configs = runtime_configs_by_model.get(model_config.model, None)
+    supported_configs = runtime_configs_by_model.get(model_config.model, [])
 
     # Don't use `if requested_configuration not in supported_configurations:...`
     #   since warmup shapes don't compare easy, exclude from dataclass __eq__
@@ -149,11 +150,11 @@ def validate_runtime_configuration(model_config: ModelConfig,
                      raise_error)
 
     if len(matching_configs) > 0 and not use_cb:
-        supported_warmup_shapes = set([ws_tuple
+        supported_warmup_shapes = set([ws
                                        for config in matching_configs
-                                       for ws_tuple in config.warmup_shapes])
+                                       for ws in config.warmup_shapes or []])
 
-        requested_warmup_shapes = set(requested_config.warmup_shapes)
+        requested_warmup_shapes = set(requested_config.warmup_shapes or [])
 
         if not requested_warmup_shapes.issubset(supported_warmup_shapes):
             report_error(f"The requested warmup_shapes are not supported"
