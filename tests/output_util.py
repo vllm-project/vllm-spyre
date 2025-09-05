@@ -189,15 +189,6 @@ def compare_results(
                     end="",
                 )
 
-                # if backend == "sendnn":
-                #     rel_tol = ISCLOSE_REL_TOL_SPYRE
-                # elif "FP8" in model:
-                #     # TODO: Improve this. For now our testing model can be
-                #     # solved with this logic
-                #     rel_tol = ISCLOSE_REL_TOL_QUANTIZATION
-                # else:
-                #     rel_tol = ISCLOSE_REL_TOL_CPU
-
                 if hf_token_id != vllm_token_id:  # different tokens
                     if backend == "sendnn" and math.isclose(
                             math.exp(hf_logprob),
