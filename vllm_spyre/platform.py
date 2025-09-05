@@ -76,6 +76,10 @@ class SpyrePlatform(Platform):
     _num_spyre_blocks_override: int = -1  # override num of KV cache blocks
     _config: VllmConfig = None
 
+    # TODO: see if this needs to be set
+    # See vllm batched_count_greater_than method
+    # simple_compile_backend: str = "eager"
+
     @classproperty
     def device_type(cls):
         # TODO: temporary hack while BertModels
