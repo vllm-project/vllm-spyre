@@ -342,7 +342,10 @@ def compare_results(
                     if math.isclose(hf_logprob, vllm_logprob, rel_tol=rel_tol):
                         print()
                     else:
-                        print('ERROR')
+                        diff_val = abs(hf_logprob - vllm_logprob)
+                        max_val = max(abs(hf_logprob), abs(vllm_logprob))
+                        rel_tol_diff = (diff_val / max_val) * 100
+                        print(f"ERROR (REL_TOL_DIFF = {rel_tol_diff:.2f}%)")
                         assert DISABLE_ASSERTS or False
                         break
 
