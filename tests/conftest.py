@@ -4,10 +4,11 @@ import random
 
 import pytest
 import torch
-from llm_cache import SortKey, sort_tests_for_llm_caching
-from spyre_util import (clear_llm_caches, get_cached_api_server,
-                        get_spyre_backend_list, get_spyre_model_list,
-                        print_llm_cache_info, skip_unsupported_tp_size)
+from llm_cache import (clear_llm_caches, get_cached_api_server,
+                       print_llm_cache_info)
+from llm_cache_util import SortKey, sort_tests_for_llm_caching
+from spyre_util import (get_spyre_backend_list, get_spyre_model_list,
+                        skip_unsupported_tp_size)
 from vllm.connections import global_http_connection
 from vllm.distributed import cleanup_dist_env_and_memory
 
@@ -135,8 +136,6 @@ def pytest_collection_modifyitems(config, items):
 
     _xfail_fp8_on_spyre(items)
 
-    _skip_all_cb_and_fp8_tests(items)
-
     _skip_unsupported_compiler_tests(config, items)
 
     sort_tests_for_llm_caching(items)
@@ -185,18 +184,6 @@ def _xfail_fp8_on_spyre(items):
     for item in items:
         if "quantized" in item.keywords and "spyre" in item.keywords:
             item.add_marker(xfail_marker)
-
-
-def _skip_all_cb_and_fp8_tests(items):
-    """Skip all tests that run fp8 with continuous batching.
-    This can be relaxed once the TODOs to implement fp8 paged attention are
-    resolved.
-    """
-    skip_marker = pytest.mark.skip(
-        reason="FP8 is not supported with continuous batching yet")
-    for item in items:
-        if "quantized" in item.keywords and "cb" in item.keywords:
-            item.add_marker(skip_marker)
 
 
 def _skip_unsupported_compiler_tests(config, items):

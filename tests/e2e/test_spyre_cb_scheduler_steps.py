@@ -7,11 +7,12 @@ Run `python -m pytest tests/e2e/test_spyre_cb_inference_steps.py`.
 """
 
 import pytest
+from output_util import check_output_against_hf
 from scheduling_utils import check_scheduler_inference_steps
-from spyre_util import check_output_against_hf
 
 
 @pytest.mark.cb
+@pytest.mark.full_model
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [192])
@@ -172,6 +173,7 @@ def test_prompts_aligned_with_tkv_boundaries(model: str, backend: str,
 
 
 @pytest.mark.cb
+@pytest.mark.full_model
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [128])
@@ -328,6 +330,7 @@ def test_prompts_misaligned_with_tkv_boundaries(
 
 
 @pytest.mark.cb
+@pytest.mark.full_model
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [128])
@@ -473,6 +476,7 @@ def test_two_sequences_finish_same_time_as_new_arrive(
 
 
 @pytest.mark.cb
+@pytest.mark.full_model
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [3])
 @pytest.mark.parametrize("max_model_len", [192])
@@ -655,6 +659,7 @@ def test_new_sequence_joins_during_decode(model: str, backend: str,
 
 
 @pytest.mark.cb
+@pytest.mark.full_model
 @pytest.mark.parametrize("prefill_optimization", [True, False])
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [2])
@@ -877,6 +882,7 @@ def test_prompt_too_long_for_current_tkv(model: str, backend: str,
 
 
 @pytest.mark.cb
+@pytest.mark.full_model
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len",
@@ -1045,6 +1051,7 @@ def test_prefill_optimization_tkv_too_big(model: str, backend: str,
 
 
 @pytest.mark.cb
+@pytest.mark.full_model
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [128])
@@ -1182,6 +1189,7 @@ def test_prefill_optimization_use_more_than_available_blocks(
 
 
 @pytest.mark.cb
+@pytest.mark.full_model
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [128])
@@ -1351,6 +1359,7 @@ def test_requested_tokens_not_fitting_remaining_space(
 
 
 @pytest.mark.cb
+@pytest.mark.full_model
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [4])
 @pytest.mark.parametrize("max_model_len", [128])
@@ -1489,6 +1498,7 @@ def test_requests_use_all_available_blocks(model: str, backend: str,
 
 
 @pytest.mark.cb
+@pytest.mark.full_model
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [4])
 @pytest.mark.parametrize("max_model_len", [128])
@@ -1653,6 +1663,7 @@ def test_requests_use_more_than_available_blocks(
 
 
 @pytest.mark.cb
+@pytest.mark.full_model
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [192])
 @pytest.mark.parametrize("available_blocks", [16])  # no restriction
@@ -1783,6 +1794,7 @@ def test_requests_use_full_batch_tkv_limit(model: str, backend: str,
 
 
 @pytest.mark.cb
+@pytest.mark.full_model
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [192])
 @pytest.mark.parametrize("available_blocks", [16])  # no restriction
@@ -1923,6 +1935,7 @@ def test_requests_exceed_batch_tkv_limit(model: str, backend: str,
 
 
 @pytest.mark.cb
+@pytest.mark.full_model
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [192])
 @pytest.mark.parametrize("available_blocks", [16])  # no restriction
@@ -2033,6 +2046,7 @@ def test_requests_use_full_batch_tkv_limit_prefill_opt(
 
 
 @pytest.mark.cb
+@pytest.mark.full_model
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [192])
 @pytest.mark.parametrize("available_blocks", [16])  # no restriction

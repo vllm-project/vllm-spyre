@@ -72,22 +72,6 @@ def test_has_tasks():
 
 
 @pytest.mark.cpu
-def test_pooler_from_config():
-
-    from vllm.model_executor.layers.pooler import Pooler
-    has_from_config = hasattr(Pooler, "from_config_with_defaults")
-
-    if VLLM_VERSION == "vLLM:main":
-        assert not has_from_config
-    elif VLLM_VERSION == "vLLM:lowest":
-        assert has_from_config, (
-            "The lowest supported vLLM version already"
-            "switched to the new definition of runners and task.")
-        # The compat code introduced in the PR below can now be removed:
-        # https://github.com/vllm-project/vllm-spyre/pull/338
-
-
-@pytest.mark.cpu
 def test_pooler_default_args():
 
     from vllm.model_executor.layers.pooler import Pooler

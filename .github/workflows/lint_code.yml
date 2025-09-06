@@ -34,10 +34,9 @@ jobs:
           echo "::add-matcher::.github/workflows/matchers/ruff.json"
           ruff check --output-format github .
       - name: Run isort
-        # using `always()` here ensures all the checks run even if previous
-        # checks fail
+        # `if: always()` ensures all checks run even if previous checks fail
         if: always()
-        run: isort . --check-only
+        run: isort . --check --diff
       - name: run yapf
         if: always()
         run: yapf --diff --recursive .

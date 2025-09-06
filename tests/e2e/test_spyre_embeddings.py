@@ -6,10 +6,10 @@ Run `python -m pytest tests/e2e/test_spyre_embeddings.py`.
 from functools import partial
 
 import pytest
-from llm_cache import EmbeddingWarmupShapes
-from spyre_util import (compare_embedding_results, get_chicken_soup_prompts,
-                        get_spyre_model_list, patch_warmup_shapes,
-                        spyre_vllm_embeddings, st_embeddings)
+from output_util import (compare_embedding_results, spyre_vllm_embeddings,
+                         st_embeddings)
+from spyre_util import (EmbeddingWarmupShapes, get_chicken_soup_prompts,
+                        get_spyre_model_list, patch_warmup_shapes)
 from vllm import LLM
 
 

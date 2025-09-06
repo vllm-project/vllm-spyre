@@ -7,7 +7,7 @@ import math
 import pytest
 import torch
 import torch.nn.functional
-from llm_cache import force_engine_shutdown
+from llm_cache_util import force_engine_shutdown
 from spyre_util import get_chicken_soup_prompts, skip_unsupported_tp_size
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, RequestOutput, SamplingParams
