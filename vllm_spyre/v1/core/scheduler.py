@@ -2,6 +2,7 @@
 
 import math
 import os
+import time
 from collections import deque
 from typing import TYPE_CHECKING
 
@@ -159,6 +160,9 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         # cache for self.check_batch_tkv_limit() outer key: tuple(request_ids),
         # inner key: (request_id, max_batch_tkv_limit), value: (lower, upper)
         self._cache_check_batch_tkv_limit: dict[tuple, dict[tuple, tuple]] = {}
+        # if batch_is_locked: finish current decode batch to serve a request
+        # that waited for longer than VLLM_SPYRE_MAX_WAITING_TIME_PREFILL
+        self.batch_is_locked = False
 
     def update_from_output(
         self,
@@ -182,6 +186,11 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         To avoid additional specialization, some requests are held back from the
         base scheduler but are restored after.
         """
+        # unlock the current decode batch if no requests are in running queue
+        if len(self.running) == 0 and self.batch_is_locked:
+            self.batch_is_locked = False
+            logger.debug("Unlocking the current decode batch as no requests "
+                         "are in running queue")
         # First purge the full waiting queue into our holdback queue, preserving
         # priority
         while self.waiting:
@@ -189,7 +198,8 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
 
         # Check if new requests can be scheduled.
         while self.holdback_queue:
-            if self.can_schedule(self.holdback_queue[0]):
+            if not self.batch_is_locked and self.can_schedule(
+                    self.holdback_queue[0]):
                 # Add request to the waiting queue
                 self.waiting.append(self.holdback_queue.popleft())
             else:
@@ -228,6 +238,19 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         # which can always be scheduled
         if len(self.running) + len(self.waiting) == 0:
             return True
+
+        # scheduling heuristic: maximal waiting (blocking) time for prefill
+        if envs_spyre.VLLM_SPYRE_MAX_WAITING_TIME_PREFILL > 0:
+            waiting_time = (time.time() - request.arrival_time)
+            if waiting_time > envs_spyre.VLLM_SPYRE_MAX_WAITING_TIME_PREFILL:
+                self.batch_is_locked = True
+                logger.debug("Request %s waited longer (%ds) than " \
+                "VLLM_SPYRE_MAX_WAITING_TIME_PREFILL (%ds): locking current " \
+                "decode batch and schedule this request either as part of " \
+                "the current batch or in an exclusive subsequent new batch.",
+                request.request_id, waiting_time,
+                envs_spyre.VLLM_SPYRE_MAX_WAITING_TIME_PREFILL
+                )
 
         # check that there is space in the current decode batch
         cond1 = len(self.running) + len(
