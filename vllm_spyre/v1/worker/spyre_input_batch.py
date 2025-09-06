@@ -419,7 +419,8 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
         params = request.sampling_params  # TODO add pooling params
         tmp_dense = self.num_reqs - 1
         self.batch_update_builder.added.append(
-            (tmp_dense, params, request.output_token_ids))
+            (tmp_dense, params, request.prompt_token_ids,
+             request.output_token_ids))
 
         while tmp_dense > dense_index:
             self.batch_update_builder.moved.append(
@@ -692,6 +693,10 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
     @property
     def no_allowed_token_ids(self) -> bool:
         return len(self.has_allowed_token_ids) == 0
+
+    @property
+    def request_indices(self) -> list[int]:
+        return self.req_indices_mask.nonzero().reshape(-1).tolist()
 
 
 @dataclass

@@ -5,8 +5,8 @@ Run `python -m pytest tests/e2e/test_stagger_spyre_basic.py`.
 """
 
 import pytest
-from spyre_util import (check_output_against_hf, generate_spyre_vllm_output,
-                        get_chicken_soup_prompts, skip_unsupported_tp_size)
+from output_util import check_output_against_hf, generate_spyre_vllm_output
+from spyre_util import get_chicken_soup_prompts, skip_unsupported_tp_size
 from vllm import SamplingParams
 
 
