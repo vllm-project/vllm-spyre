@@ -169,3 +169,18 @@ def test_init_builtin_logitsprocs():
             "refactored init_builtin_logitsprocs.")
         # The compat code introduced in the PR below can now be removed:
         # https://github.com/vllm-project/vllm-spyre/pull/443
+
+
+@pytest.mark.cpu
+def test_init_distributed_environment():
+    """Tests whether vllm's init_distributed_environment
+    has the custom timeout argument"""
+    from vllm.distributed import init_distributed_environment
+
+    annotations = inspect.getfullargspec(
+        init_distributed_environment).annotations
+
+    if VLLM_VERSION == "vLLM:default":
+        assert 'timeout' \
+                not in annotations, ("we should remove compat code which is now"
+                " part of released vllm version")
