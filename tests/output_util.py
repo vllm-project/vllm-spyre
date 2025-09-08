@@ -19,8 +19,8 @@ from vllm.transformers_utils.tokenizer import get_tokenizer
 
 DISABLE_ASSERTS = False  # used for debugging
 
-ISCLOSE_REL_TOL = 0.2
-ISCLOSE_REL_TOL_QUANTIZATION = 0.4
+ISCLOSE_ABS_TOL = 0.04
+ISCLOSE_ABS_TOL_QUANTIZATION = 0.08
 
 HF_RESULT_CACHE = HFResultCache()
 
@@ -193,18 +193,18 @@ def compare_results(
                 if "FP8" in model:
                     # TODO: Improve this. For now our testing model can be
                     # solved with this logic
-                    rel_tol = ISCLOSE_REL_TOL_QUANTIZATION
+                    abs_tol = ISCLOSE_ABS_TOL_QUANTIZATION
                 else:
-                    rel_tol = ISCLOSE_REL_TOL
+                    abs_tol = ISCLOSE_ABS_TOL
 
-                hf_logprob_exp = math.exp(hf_logprob)
-                vllm_logprob_exp = math.exp(vllm_logprob)
+                hf_token_prob = math.exp(hf_logprob)
+                vllm_token_prob = math.exp(vllm_logprob)
 
                 if hf_token_id != vllm_token_id:  # different tokens
                     if backend == "sendnn" and math.isclose(
-                            hf_logprob_exp,
-                            vllm_logprob_exp,
-                            rel_tol=rel_tol,
+                            hf_token_prob,
+                            vllm_token_prob,
+                            abs_tol=abs_tol,
                     ):
                         # probably still OK
                         print("DIVERGING")
@@ -215,19 +215,15 @@ def compare_results(
                         break
                 else:  # identical tokens
                     if math.isclose(
-                            hf_logprob_exp,
-                            vllm_logprob_exp,
-                            rel_tol=rel_tol,
+                            hf_token_prob,
+                            vllm_token_prob,
+                            abs_tol=abs_tol,
                     ):
                         print()
                     else:
-                        prob_diff = abs(hf_logprob_exp -
-                                        vllm_logprob_exp) / max(
-                                            hf_logprob_exp, vllm_logprob_exp)
-                        print(
-                            f"ERROR (REL_TOL_DIFF = "
-                            f"{logprob_rel_diff * 100:.2f}%), ERROR (prob_diff"
-                            f" = {prob_diff * 100:.2f}%)")
+                        prob_diff = abs(hf_token_prob - vllm_token_prob)
+                        print(f"ERROR (prob_diff"
+                              f" = {prob_diff * 100:.2f}%)")
                         assert DISABLE_ASSERTS or False
                         break
 
