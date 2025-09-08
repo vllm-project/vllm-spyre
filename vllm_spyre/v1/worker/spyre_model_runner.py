@@ -48,7 +48,7 @@ from vllm.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, ModelRunnerOutput
 
 #############################################################
 # from vllm.tasks import GenerationTask, PoolingTask, SupportedTask
-# TODO: remove when we have this in vllm/tasks.py
+# TODO: remove when we drop support for 0.10.0
 #############################################################
 GenerationTask = Literal["generate", "transcription"]
 GENERATION_TASKS = get_args(GenerationTask)
@@ -1248,7 +1248,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
     def prepare_model_input(
             self, scheduler_output: SchedulerOutput) -> SamplingForwardInputs:
 
-        # remove left padding if applicable before next prefil/decode step
+        # remove left padding if applicable before next prefill/decode step
         self.reduce_left_padding()
 
         return super().prepare_model_input(scheduler_output)
@@ -1418,43 +1418,30 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
                 self.sep_token_id = tokenizer.sep_token_id
 
         pooler_config = self.model_config.pooler_config
-        if hasattr(Pooler, "from_config_with_defaults"):
-            # TODO: remove this when we no longer support
-            # vllm version v0.9.2
-            if task == "embed":
-                self.pooler = Pooler.from_config_with_defaults(
-                    pooler_config,
-                    pooling_type=PoolingType.CLS,
-                    normalize=True,
-                    softmax=False)
-            elif task == "classify":
-                self.pooler = ClassifierPooler(config=self.model_config,
-                                               pooler=self._pooler,
-                                               classifier=self.classifier)
-        else:
-            # TODO: remove this when we no longer support vllm version pre this
-            # PR https://github.com/vllm-project/vllm/pull/20538 (post v0.10.0)
-            annotations = inspect.getfullargspec(Pooler.for_embed).annotations
-            extra_args = {}
-            if ('default_normalize' in annotations
-                    and 'default_softmax' in annotations):
-                extra_args.update({
-                    'default_normalize': True,
-                    'default_softmax': False
-                })
-            if 'default_pooling_type' in annotations:
-                extra_args['default_pooling_type'] = PoolingType.CLS
 
-            if task == "embed":
-                self.pooler = Pooler.for_embed(pooler_config=pooler_config,
-                                               **extra_args)
-            elif task == "classify":
-                self.pooler = ClassifierPooler(
-                    pooling=self._pooler,
-                    classifier=self.classifier,
-                    act_fn=ClassifierPooler.act_fn_for_cross_encoder(
-                        self.model_config),
-                )
+        # TODO: remove this when we no longer support vllm version pre this
+        # PR https://github.com/vllm-project/vllm/pull/20538 (post v0.10.0)
+        annotations = inspect.getfullargspec(Pooler.for_embed).annotations
+        extra_args = {}
+        if ('default_normalize' in annotations
+                and 'default_softmax' in annotations):
+            extra_args.update({
+                'default_normalize': True,
+                'default_softmax': False
+            })
+        if 'default_pooling_type' in annotations:
+            extra_args['default_pooling_type'] = PoolingType.CLS
+
+        if task == "embed":
+            self.pooler = Pooler.for_embed(pooler_config=pooler_config,
+                                           **extra_args)
+        elif task == "classify":
+            self.pooler = ClassifierPooler(
+                pooling=self._pooler,
+                classifier=self.classifier,
+                act_fn=ClassifierPooler.act_fn_for_cross_encoder(
+                    self.model_config),
+            )
 
     @property
     def vocab_size(self) -> int:
