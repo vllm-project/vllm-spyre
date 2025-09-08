@@ -7,6 +7,7 @@ import platform
 import signal
 import sys
 import time
+from datetime import timedelta
 from pathlib import Path
 from typing import Optional, Union, cast
 
@@ -322,11 +323,24 @@ class SpyreWorker(WorkerBaseV1):
 
         if not self._env_initialized:
 
+            backend = "gloo"
+            init_method = "env://"
+
+            # TODO: temporary fix until we have
+            # timeout in vllm's init_distributed_environment
+            torch.distributed.init_process_group(
+                backend=backend,
+                init_method=init_method,
+                world_size=self.parallel_config.world_size,
+                rank=self.rank,
+                timeout=timedelta(
+                    minutes=envs_spyre.VLLM_SPYRE_GLOO_TIMEOUT_MINUTES))
+
             init_distributed_environment(
                 world_size=self.parallel_config.world_size,
                 rank=self.rank,
-                distributed_init_method="env://",
-                backend="gloo",
+                distributed_init_method=init_method,
+                backend=backend,
             )
 
             if self.parallel_config.world_size > 1:
