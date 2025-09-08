@@ -107,6 +107,12 @@ environment_variables: dict[str, Callable[[], Any]] = {
     lambda: bool(int(os.getenv("VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION", "0"))
                  ),
 
+    # scheduling heuristic: prefill vs decode prioritization
+    # Prefills using up to VLLM_SPYRE_N_TOKENS_PREFILL_PRIO tokens will always
+    # be prioritized. If limit is exceeded, decodes are prioritized.
+    "VLLM_SPYRE_N_TOKENS_PREFILL_PRIO":
+    lambda: int(os.getenv("VLLM_SPYRE_N_TOKENS_PREFILL_PRIO", "-1")),
+
     # scheduling heuristic: maximal waiting (blocking) time for prefill
     # Prefills waiting longer than VLLM_SPYRE_MAX_WAITING_TIME_PREFILL
     # seconds will have priority after the current decode batch has finished.

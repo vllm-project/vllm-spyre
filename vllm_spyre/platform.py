@@ -241,6 +241,20 @@ class SpyrePlatform(Platform):
             "VLLM_DT_MAX_BATCH_TKV_LIMIT found. Using the default value " \
             "(max_model_len * max_batch_size): %d", default_max_batch_tkv_limit)
 
+        # scheduling heuristic: prefill vs decode prioritization
+        if envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO == -1:
+            logger.info(
+                "Env var VLLM_SPYRE_N_TOKENS_PREFILL_PRIO for prefill/decode "
+                "balancing unset. Defaulting to -1, which always prioritizes "
+                "prefills (no scheduler heuristic/ balancing at all).")
+        else:
+            logger.info(
+                "Env var VLLM_SPYRE_N_TOKENS_PREFILL_PRIO for prefill/decode "
+                "balancing is set to %s. This means that prefills using up to "
+                " %s tokens will always be prioritized over decodes.",
+                envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO,
+                envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO)
+
         # scheduling heuristic: maximal waiting (blocking) time for prefill
         if envs_spyre.VLLM_SPYRE_MAX_WAITING_TIME_PREFILL == -1:
             logger.info(
