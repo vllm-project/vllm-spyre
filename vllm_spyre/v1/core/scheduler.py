@@ -240,17 +240,16 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             return True
 
         # scheduling heuristic: maximal waiting (blocking) time for prefill
-        if envs_spyre.VLLM_SPYRE_MAX_WAITING_TIME_PREFILL > 0:
-            waiting_time = (time.time() - request.arrival_time)
-            if waiting_time > envs_spyre.VLLM_SPYRE_MAX_WAITING_TIME_PREFILL:
-                self.batch_is_locked = True
-                logger.debug("Request %s waited longer (%ds) than " \
-                "VLLM_SPYRE_MAX_WAITING_TIME_PREFILL (%ds): locking current " \
-                "decode batch and schedule this request either as part of " \
-                "the current batch or in an exclusive subsequent new batch.",
-                request.request_id, waiting_time,
-                envs_spyre.VLLM_SPYRE_MAX_WAITING_TIME_PREFILL
-                )
+        waiting_time = (time.time() - request.arrival_time)
+        if waiting_time > envs_spyre.VLLM_SPYRE_MAX_WAITING_TIME_PREFILL:
+            self.batch_is_locked = True
+            logger.debug("Request %s waited longer (%ss) than " \
+            "VLLM_SPYRE_MAX_WAITING_TIME_PREFILL (%ss): locking current " \
+            "decode batch and schedule this request either as part of " \
+            "the current batch or in an exclusive subsequent new batch.",
+            request.request_id, round(waiting_time, 2),
+            envs_spyre.VLLM_SPYRE_MAX_WAITING_TIME_PREFILL
+            )
 
         # check that there is space in the current decode batch
         cond1 = len(self.running) + len(

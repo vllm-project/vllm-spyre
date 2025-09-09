@@ -117,7 +117,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Prefills waiting longer than VLLM_SPYRE_MAX_WAITING_TIME_PREFILL
     # seconds will have priority after the current decode batch has finished.
     "VLLM_SPYRE_MAX_WAITING_TIME_PREFILL":
-    lambda: int(os.getenv("VLLM_SPYRE_MAX_WAITING_TIME_PREFILL", "-1")),
+    lambda: float(os.getenv("VLLM_SPYRE_MAX_WAITING_TIME_PREFILL", "inf")),
 
     # Allow vllm-spyre to update env vars related to multi-threading (eg. OMP)
     # based on the detected CPU cores and server configuration
