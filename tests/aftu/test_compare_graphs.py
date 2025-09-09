@@ -17,6 +17,7 @@ from vllm import SamplingParams
 
 
 @pytest.mark.spyre
+@pytest.mark.cb
 def test_compare_graphs_cb(model: str, max_num_seqs: int,
                            monkeypatch: pytest.MonkeyPatch, use_llm_cache):
     """Test that the spyre worker correctly outputs
