@@ -480,7 +480,7 @@ def test_two_sequences_finish_same_time_as_new_arrive(
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [3])
 @pytest.mark.parametrize("max_model_len", [192])
-@pytest.mark.parametrize("available_blocks", [16])  # no restriction
+@pytest.mark.parametrize("available_blocks", [18])  # no restriction
 def test_new_sequence_joins_during_decode(model: str, backend: str,
                                           monkeypatch: pytest.MonkeyPatch,
                                           set_random_seed, max_num_seqs: int,
