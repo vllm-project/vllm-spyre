@@ -240,7 +240,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             return True
 
         # scheduling heuristic: maximal waiting (blocking) time for prefill
-        waiting_time = (time.time() - request.arrival_time)
+        waiting_time = (time.monotonic() - request.arrival_time)
         if waiting_time > envs_spyre.VLLM_SPYRE_MAX_WAITING_TIME_PREFILL:
             self.batch_is_locked = True
             logger.debug("Request %s waited longer (%ss) than " \
