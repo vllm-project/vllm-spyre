@@ -198,8 +198,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
 
         # Check if new requests can be scheduled.
         while self.holdback_queue:
-            if not self.batch_is_locked and self.can_schedule(
-                    self.holdback_queue[0]):
+            if self.can_schedule(self.holdback_queue[0]):
                 # Add request to the waiting queue
                 self.waiting.append(self.holdback_queue.popleft())
             else:
@@ -233,6 +232,12 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
     def can_schedule(self, request) -> bool:
         max_prompt_batch_size = 1
         max_context_len = self.scheduler_config.max_model_len
+
+        # if the batch is locked by a request which has been waiting for
+        # longer then VLLM_SPYRE_MAX_WAITING_TIME_PREFILL, we cannot
+        # schedule the current sequence until we have served this request
+        if self.batch_is_locked:
+            return False
 
         # running and waiting queues are both empty -> start a new batch
         # which can always be scheduled
