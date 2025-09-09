@@ -389,7 +389,9 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                 and self.parallel_config.world_size == 4):
             # hard coded value for tensor parallel size 4 with the below model
             # https://huggingface.co/ibm-granite/granite-3.3-8b-instruct
-            NUM_BLOCKS_SPYRE = 2080
+
+            # num_blocks_spyre must be multiple of max_batch_size
+            NUM_BLOCKS_SPYRE = max_batch_size * (2080 // max_batch_size)
             logger.info(
                 "Model %s and tensor parallel "
                 "size %d detected. Using NUM_BLOCKS_SPYRE = %d",
@@ -417,6 +419,9 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                         num_blocks_spyre * block_size)
             logger.info("Maximum concurrency for %s tokens per request: %.2fx",
                         str(max_model_len), max_concurrency_spyre)
+
+            assert num_blocks_spyre % max_batch_size == 0, \
+                "num_blocks_spyre must be multiple of max_batch_size"
             return num_blocks_spyre
         else:  # dynamo backend 'eager'
             # for debugging purposes we also put the spyre value here for cpu
