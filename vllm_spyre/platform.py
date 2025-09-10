@@ -255,6 +255,20 @@ class SpyrePlatform(Platform):
                 envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO,
                 envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO)
 
+        # scheduling heuristic: maximal waiting (blocking) time for prefill
+        if math.isinf(envs_spyre.VLLM_SPYRE_MAX_WAITING_TIME_SECONDS):
+            logger.info(
+                "Env var VLLM_SPYRE_MAX_WAITING_TIME_SECONDS determining the "
+                "maximal waiting time for a request unset. Defaulting to inf, "
+                "which is infinite time (no scheduler heuristic at all).")
+        else:
+            logger.info(
+                "Env var VLLM_SPYRE_MAX_WAITING_TIME_SECONDS determining the "
+                "maximal waiting time is set to %ss. This means that prefills "
+                "waiting longer than %s seconds will always be prioritized. ",
+                envs_spyre.VLLM_SPYRE_MAX_WAITING_TIME_SECONDS,
+                envs_spyre.VLLM_SPYRE_MAX_WAITING_TIME_SECONDS)
+
     @classmethod
     def use_all_gather(cls) -> bool:
         """
