@@ -258,5 +258,95 @@
                 }
             }
         }
+    },
+    "JackFram/llama-160m": {
+        "null": {
+            "Below is an instruction that describes a task. Write a response that appropriately completes the request. Be polite in your response to the user.\n\n### Instruction:\nProvide a list of instructions for preparing chicken soup.\n\n### Response:": {
+                "20": {
+                    "text": "Provide a list of instructions for preparing chicken soup.\nProvide a list of",
+                    "token_ids": [ 9133, 680, 263, 1051, 310, 11994, 363, 10223, 292, 521, 21475, 22300, 29889, 13, 1184, 29894, 680, 263, 1051, 310 ],
+                    "tokens": [ "Prov", "ide", "a", "list", "of", "instructions", "for", "prepar", "ing", "ch", "icken", "soup", ".", "\n", "Pro", "v", "ide", "a", "list", "of" ],
+                    "logprobs": [ -1.9676533937454224, -0.040433239191770554, -0.5089076161384583, -0.20296713709831238, -0.0020171310752630234, -0.08453259617090225, -0.03589482977986336, -0.07238690555095673, -0.0007784912013448775, -0.2117452770471573, -0.006608536001294851, -0.019976265728473663, -0.032455988228321075, -0.13490621745586395, -1.6157575845718384, -0.027694132179021835, -0.019534585997462273, -0.3970077931880951, -0.08640026301145554, -0.001720973290503025 ]
+                },
+                "5": {
+                    "text": "Provide a list of",
+                    "token_ids": [ 9133, 680, 263, 1051, 310 ],
+                    "tokens": [ "Prov", "ide", "a", "list", "of" ],
+                    "logprobs": [ -1.9676533937454224, -0.040433239191770554, -0.5089076161384583, -0.20296713709831238, -0.0020171310752630234 ]
+                },
+                "6": {
+                    "text": "Provide a list of instructions",
+                    "token_ids": [ 9133, 680, 263, 1051, 310, 11994 ],
+                    "tokens": [ "Prov", "ide", "a", "list", "of", "instructions" ],
+                    "logprobs": [ -1.9676533937454224, -0.040433239191770554, -0.5089076161384583, -0.20296713709831238, -0.0020171310752630234, -0.08453259617090225 ]
+                },
+                "1": {
+                    "text": "Prov",
+                    "token_ids": [ 9133 ],
+                    "tokens": [ "Prov" ],
+                    "logprobs": [ -1.9676533937454224 ]
+                }
+            },
+            "Below is an instruction that describes a task. Write a response that appropriately completes the request. Be polite in your response to the user.\n\n### Instruction:\nProvide me a list of things that I can do with my new found wealth.\n\n### Response:": {
+                "20": {
+                    "text": "I want to buy a house.\n### Response: I want to buy a house.\n",
+                    "token_ids": [ 306, 864, 304, 15649, 263, 3699, 29889, 13, 2277, 29937, 13291, 29901, 306, 864, 304, 15649, 263, 3699, 29889, 13 ],
+                    "tokens": [ "I", "want", "to", "buy", "a", "house", ".", "\n", "##", "#", "Response", ":", "I", "want", "to", "buy", "a", "house", ".", "\n" ],
+                    "logprobs": [ -1.3475680351257324, -1.7368229627609253, -0.22189192473888397, -2.6323986053466797, -0.8735487461090088, -1.2113405466079712, -0.5731942653656006, -0.11853964626789093, -1.3035356998443604, -0.0031280419789254665, -0.3427324593067169, -0.01311203557997942, -0.31673598289489746, -0.18097282946109772, -0.04263797029852867, -0.8929606676101685, -0.11564749479293823, -0.6950970888137817, -0.05442484840750694, -0.0729050487279892 ]
+                },
+                "6": {
+                    "text": "I want to buy a house",
+                    "token_ids": [ 306, 864, 304, 15649, 263, 3699 ],
+                    "tokens": [ "I", "want", "to", "buy", "a", "house" ],
+                    "logprobs": [ -1.3475680351257324, -1.7368229627609253, -0.22189192473888397, -2.6323986053466797, -0.8735487461090088, -1.2113405466079712 ]
+                }
+            },
+            "Below is an instruction that describes a task. Write a response that appropriately completes the request. Be polite in your response to the user.\n\n### Instruction:\nhow do I add multiple new columns in m for power query or                 power bi?\n\n### Response:": {
+                "20": {
+                    "text": "How do I add multiple new columns in m for power query or                 power bi?\nI have",
+                    "token_ids": [ 1128, 437, 306, 788, 2999, 716, 4341, 297, 286, 363, 3081, 2346, 470, 462, 3081, 4768, 29973, 13, 29902, 505 ],
+                    "tokens": [ "How", "do", "I", "add", "multiple", "new", "columns", "in", "m", "for", "power", "query", "or", "               ", "power", "bi", "?", "\n", "I", "have" ],
+                    "logprobs": [ -2.065593957901001, -0.5818334817886353, -0.10467303544282913, -0.5874689817428589, -0.17804735898971558, -0.08541624993085861, -0.04755059629678726, -0.01371249184012413, -0.17736373841762543, -0.01853116974234581, -0.007231844589114189, -0.00978341419249773, -0.07222023606300354, -0.45288902521133423, -0.012942596338689327, -0.08836681395769119, -0.019914798438549042, -0.1413283497095108, -1.8851993083953857, -1.6479275226593018 ]
+                },
+                "10": {
+                    "text": "How do I add multiple new columns in m for",
+                    "token_ids": [ 1128, 437, 306, 788, 2999, 716, 4341, 297, 286, 363 ],
+                    "tokens": [ "How", "do", "I", "add", "multiple", "new", "columns", "in", "m", "for" ],
+                    "logprobs": [ -2.065593957901001, -0.5818334817886353, -0.10467303544282913, -0.5874689817428589, -0.17804735898971558, -0.08541624993085861, -0.04755059629678726, -0.01371249184012413, -0.17736373841762543, -0.01853116974234581 ]
+                },
+                "6": {
+                    "text": "How do I add multiple new",
+                    "token_ids": [ 1128, 437, 306, 788, 2999, 716 ],
+                    "tokens": [ "How", "do", "I", "add", "multiple", "new" ],
+                    "logprobs": [ -2.065593957901001, -0.5818334817886353, -0.10467303544282913, -0.5874689817428589, -0.17804735898971558, -0.08541624993085861 ]
+                }
+            },
+            "Below is an instruction that describes a task. Write a response that appropriately completes the request. Be polite in your response to the user.\n\n### Instruction:\nConvert char to string in Java.\n\n### Response:": {
+                "20": {
+                    "text": "\"Hello, welcome to the Java community!\n### Response: \"Hello, welcome to the",
+                    "token_ids": [ 376, 10994, 29892, 12853, 304, 278, 3355, 7881, 29991, 13, 2277, 29937, 13291, 29901, 376, 10994, 29892, 12853, 304, 278 ],
+                    "tokens": [ "\"", "Hello", ",", "welcome", "to", "the", "Java", "community", "!", "\n", "##", "#", "Response", ":", "\"", "Hello", ",", "welcome", "to", "the" ],
+                    "logprobs": [ -1.5613254308700562, -1.955716848373413, -0.5875644683837891, -2.0813889503479004, -0.3190162479877472, -1.1618010997772217, -1.512880802154541, -1.3871744871139526, -1.1971948146820068, -1.1658179759979248, -1.2232213020324707, -0.03654704615473747, -0.34305673837661743, -0.027859004214406013, -0.03719998896121979, -0.5646359324455261, -0.024805627763271332, -0.12805573642253876, -0.023057445883750916, -0.08187234401702881 ]
+                },
+                "5": {
+                    "text": "\"Hello, welcome to",
+                    "token_ids": [ 376, 10994, 29892, 12853, 304 ],
+                    "tokens": [ "\"", "Hello", ",", "welcome", "to" ],
+                    "logprobs": [ -1.5613254308700562, -1.955716848373413, -0.5875644683837891, -2.0813889503479004, -0.3190162479877472 ]
+                },
+                "1": {
+                    "text": "\"",
+                    "token_ids": [ 376 ],
+                    "tokens": [ "\"" ],
+                    "logprobs": [ -1.5613254308700562 ]
+                },
+                "6": {
+                    "text": "\"Hello, welcome to the",
+                    "token_ids": [ 376, 10994, 29892, 12853, 304, 278 ],
+                    "tokens": [ "\"", "Hello", ",", "welcome", "to", "the" ],
+                    "logprobs": [ -1.5613254308700562, -1.955716848373413, -0.5875644683837891, -2.0813889503479004, -0.3190162479877472, -1.1618010997772217 ]
+                }
+            }
+        }
     }
 }

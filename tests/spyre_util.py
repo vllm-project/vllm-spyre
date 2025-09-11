@@ -83,7 +83,8 @@ class RemoteOpenAIServer:
         # before booting the server, it should be used with models already
         # cached on disk
         if isinstance(model, ModelInfo):
-            vllm_serve_args = vllm_serve_args + ["--revision", model.revision]
+            if model.revision is not None:
+                vllm_serve_args = vllm_serve_args + ["--revision", model.revision]
             model_name = model.name
         else:
             model_name = model
