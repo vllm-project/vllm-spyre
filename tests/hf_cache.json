@@ -260,7 +260,7 @@
         }
     },
     "JackFram/llama-160m": {
-        "null": {
+        "no-revision": {
             "Below is an instruction that describes a task. Write a response that appropriately completes the request. Be polite in your response to the user.\n\n### Instruction:\nProvide a list of instructions for preparing chicken soup.\n\n### Response:": {
                 "20": {
                     "text": "Provide a list of instructions for preparing chicken soup.\nProvide a list of",

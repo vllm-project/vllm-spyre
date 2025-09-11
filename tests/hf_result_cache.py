@@ -15,6 +15,7 @@ class HFResultCache:
     This cache can be (re)populated by running all tests and committing the
     changes to the .json file.
     """
+    NO_REVISION_KEY = "no-revision"
 
     def __init__(self):
         """
@@ -58,10 +59,11 @@ class HFResultCache:
         max_tokens = str(max_tokens)
 
         if isinstance(model, ModelInfo):
-            revision = model.revision
+            revision = model.revision if model.revision \
+                else self.NO_REVISION_KEY
             model_name = model.name
         else:
-            revision = "no-revision"
+            revision = self.NO_REVISION_KEY
             model_name = model
 
         return self.cached_results.get(model_name,
@@ -81,10 +83,11 @@ class HFResultCache:
         max_tokens = str(max_tokens)
 
         if isinstance(model, ModelInfo):
-            revision = model.revision
+            revision = model.revision if model.revision \
+                else self.NO_REVISION_KEY
             model_name = model.name
         else:
-            revision = "no-revision"
+            revision = self.NO_REVISION_KEY
             model_name = model
 
         self.cached_results.setdefault(model_name, {}).setdefault(
