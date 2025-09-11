@@ -72,7 +72,7 @@ async def test_abort(model: ModelInfo, backend: str, cb: int,
         engine = AsyncLLM.from_engine_args(
             AsyncEngineArgs(model=model.name,
                             tokenizer=model.name,
-                            max_model_len=128,
+                            max_model_len=256,
                             max_num_seqs=4,
                             revision=model.revision))
         has_unfinished_requests = \
