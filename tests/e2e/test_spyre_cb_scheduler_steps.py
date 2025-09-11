@@ -9,16 +9,15 @@ Run `python -m pytest tests/e2e/test_spyre_cb_inference_steps.py`.
 import pytest
 from output_util import check_output_against_hf
 from scheduling_utils import check_scheduler_inference_steps
-
-from tests.spyre_util import ModelInfo
+from spyre_util import ModelInfo
 
 
 @pytest.mark.cb
 @pytest.mark.full_model
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [2])
-@pytest.mark.parametrize("max_model_len", [192])
-@pytest.mark.parametrize("available_blocks", [16])  # no restriction
+@pytest.mark.parametrize("max_model_len", [256])
+@pytest.mark.parametrize("available_blocks", [None])
 def test_prompts_aligned_with_tkv_boundaries(model: ModelInfo, backend: str,
                                              monkeypatch: pytest.MonkeyPatch,
                                              set_random_seed: None,
@@ -178,8 +177,8 @@ def test_prompts_aligned_with_tkv_boundaries(model: ModelInfo, backend: str,
 @pytest.mark.full_model
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [2])
-@pytest.mark.parametrize("max_model_len", [128])
-@pytest.mark.parametrize("available_blocks", [8])  # no restriction
+@pytest.mark.parametrize("max_model_len", [256])
+@pytest.mark.parametrize("available_blocks", [None])
 def test_prompts_misaligned_with_tkv_boundaries(
         model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
         set_random_seed: None, max_num_seqs: int, max_model_len: int,
@@ -336,7 +335,7 @@ def test_prompts_misaligned_with_tkv_boundaries(
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [128])
-@pytest.mark.parametrize("available_blocks", [8])  # no restriction
+@pytest.mark.parametrize("available_blocks", [None])
 def test_two_sequences_finish_same_time_as_new_arrive(
         model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
         set_random_seed, max_num_seqs: int, max_model_len: int,
@@ -482,7 +481,9 @@ def test_two_sequences_finish_same_time_as_new_arrive(
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [3])
 @pytest.mark.parametrize("max_model_len", [192])
-@pytest.mark.parametrize("available_blocks", [18])  # no restriction
+@pytest.mark.parametrize(
+    "available_blocks",
+    [12])  # specific value required to pass compilation with this config
 def test_new_sequence_joins_during_decode(model: ModelInfo, backend: str,
                                           monkeypatch: pytest.MonkeyPatch,
                                           set_random_seed, max_num_seqs: int,
@@ -666,7 +667,7 @@ def test_new_sequence_joins_during_decode(model: ModelInfo, backend: str,
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [192])
-@pytest.mark.parametrize("available_blocks", [16])  # no restriction
+@pytest.mark.parametrize("available_blocks", [None])
 def test_prompt_too_long_for_current_tkv(model: ModelInfo, backend: str,
                                          prefill_optimization: bool,
                                          monkeypatch: pytest.MonkeyPatch,
@@ -889,7 +890,7 @@ def test_prompt_too_long_for_current_tkv(model: ModelInfo, backend: str,
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len",
                          [192])  # restricted to violate scheduler condition
-@pytest.mark.parametrize("available_blocks", [16])  # no restriction
+@pytest.mark.parametrize("available_blocks", [None])
 def test_prefill_optimization_tkv_too_big(model: ModelInfo, backend: str,
                                           monkeypatch: pytest.MonkeyPatch,
                                           set_random_seed, max_num_seqs: int,
@@ -1195,7 +1196,7 @@ def test_prefill_optimization_use_more_than_available_blocks(
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [128])
-@pytest.mark.parametrize("available_blocks", [8])  # no restriction
+@pytest.mark.parametrize("available_blocks", [None])
 def test_requested_tokens_not_fitting_remaining_space(
         model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
         set_random_seed, max_num_seqs: int, max_model_len: int,
@@ -1668,7 +1669,7 @@ def test_requests_use_more_than_available_blocks(
 @pytest.mark.full_model
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [192])
-@pytest.mark.parametrize("available_blocks", [16])  # no restriction
+@pytest.mark.parametrize("available_blocks", [None])
 def test_requests_use_full_batch_tkv_limit(model: ModelInfo, backend: str,
                                            monkeypatch: pytest.MonkeyPatch,
                                            set_random_seed, max_num_seqs: int,
@@ -1799,7 +1800,7 @@ def test_requests_use_full_batch_tkv_limit(model: ModelInfo, backend: str,
 @pytest.mark.full_model
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [192])
-@pytest.mark.parametrize("available_blocks", [16])  # no restriction
+@pytest.mark.parametrize("available_blocks", [None])
 def test_requests_exceed_batch_tkv_limit(model: ModelInfo, backend: str,
                                          monkeypatch: pytest.MonkeyPatch,
                                          set_random_seed, max_num_seqs: int,
@@ -1940,7 +1941,7 @@ def test_requests_exceed_batch_tkv_limit(model: ModelInfo, backend: str,
 @pytest.mark.full_model
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [192])
-@pytest.mark.parametrize("available_blocks", [16])  # no restriction
+@pytest.mark.parametrize("available_blocks", [None])
 def test_requests_use_full_batch_tkv_limit_prefill_opt(
         model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
         set_random_seed, max_num_seqs: int, max_model_len: int,
@@ -2051,7 +2052,7 @@ def test_requests_use_full_batch_tkv_limit_prefill_opt(
 @pytest.mark.full_model
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [192])
-@pytest.mark.parametrize("available_blocks", [16])  # no restriction
+@pytest.mark.parametrize("available_blocks", [None])
 def test_requests_exceed_batch_tkv_limit_prefill_opt(
         model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
         set_random_seed, max_num_seqs: int, max_model_len: int,
@@ -2175,7 +2176,7 @@ def test_requests_exceed_batch_tkv_limit_prefill_opt(
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [128])
-@pytest.mark.parametrize("available_blocks", [16])  # no restriction
+@pytest.mark.parametrize("available_blocks", [None])
 def test_scheduler_heuristic_prioritize_prefill(
         model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
         set_random_seed, max_num_seqs: int, max_model_len: int,
@@ -2292,7 +2293,7 @@ def test_scheduler_heuristic_prioritize_prefill(
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [192])
-@pytest.mark.parametrize("available_blocks", [16])  # no restriction
+@pytest.mark.parametrize("available_blocks", [None])
 def test_scheduler_heuristic_prioritize_decode(model: ModelInfo, backend: str,
                                                monkeypatch: pytest.MonkeyPatch,
                                                set_random_seed,

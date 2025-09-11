@@ -206,9 +206,10 @@ class SortKey(NamedTuple):
     def _get_num_blocks(item) -> int:
         if "available_blocks" in item.callspec.params:
             blocks = item.callspec.params["available_blocks"]
-            SortKey._assert_param(isinstance(blocks, int),
-                                  "available_blocks must be an int.", item)
-            return blocks
+            SortKey._assert_param(isinstance(blocks, int | None),
+                                  "available_blocks must be an optional int.",
+                                  item)
+            return blocks if blocks is not None else 0
         # Most tests don't use this param
         return 0
 

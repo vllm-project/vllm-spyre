@@ -177,22 +177,43 @@ class EngineCache:
             revision = None
             model_name = model
 
+        # 🌶️🌶️🌶️
+        # Messing with the blocks and context length by either:
+        # - setting context < 256 tokens
+        # - setting available blocks != (context * batch size // 64)
+        # can cause compilation failures on spyre hardware.
+
+        # So we first create the engine and compile with valid configs,
+        # then adjust these limits in the engine's scheduler for tests.
+
         # Setup the engine
         engine_args = EngineArgs(
             model=model_name,
             tokenizer=model_name,
-            max_model_len=max_model_len,
+            max_model_len=max(max_model_len, 256),
             max_num_seqs=max_num_seqs,
-            num_gpu_blocks_override=available_blocks,
+            num_gpu_blocks_override=None,
             revision=revision,
         )
         vllm_config = engine_args.create_engine_config()
         executor_class = Executor.get_class(vllm_config)
+
+        engine_core = EngineCore(vllm_config=vllm_config,
+                                 executor_class=executor_class,
+                                 log_stats=False)
+
+        engine_core.scheduler.scheduler_config.max_model_len = max_model_len
+
+        if available_blocks is not None:
+            worker = engine_core.model_executor.driver_worker.worker
+            # NB: We cannot create extra blocks after compilation
+            assert worker.model_runner.n_blocks >= available_blocks, \
+                "Cannot set available_blocks > (context * batch size // 64)"
+            worker.model_runner.n_blocks = available_blocks
+
         return self._cache.set(
             runtime_config,
-            EngineCore(vllm_config=vllm_config,
-                       executor_class=executor_class,
-                       log_stats=False),
+            engine_core,
         )
 
     def clear(self) -> None:
