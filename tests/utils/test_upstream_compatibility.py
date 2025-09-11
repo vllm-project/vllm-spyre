@@ -2,6 +2,7 @@ import inspect
 import os
 
 import pytest
+from spyre_util import ModelInfo
 
 from vllm_spyre.compat_utils import dataclass_fields
 
@@ -32,11 +33,12 @@ def test_vllm_bert_support():
 
 
 @pytest.mark.cpu
-def test_model_config_task(model: str):
+def test_model_config_task(model: ModelInfo):
 
     from vllm.engine.arg_utils import EngineArgs
 
-    vllm_config = EngineArgs(model=model).create_engine_config()
+    vllm_config = EngineArgs(model=model.name,
+                             revision=model.revision).create_engine_config()
     model_config = vllm_config.model_config
 
     task = getattr(model_config, "task", None)

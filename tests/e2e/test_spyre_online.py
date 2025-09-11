@@ -27,6 +27,7 @@ def test_openai_serving(
     """Test online serving using the `vllm serve` CLI"""
 
     client = remote_openai_server.get_client()
+    model = model.name
 
     _check_result(client, model, n=1)
     _check_result(client, model, temperature=1.0, n=2)

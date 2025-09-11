@@ -27,7 +27,7 @@ def test_serving(remote_openai_server, model, warmup_shapes, backend):
                                      "text_2": [docs[0], docs[1]]
                                  }).json()
 
-    ce_model = CrossEncoder(model)
+    ce_model = CrossEncoder(model.name, revision=model.revision)
     ce_scores = ce_model.predict([(query, docs[0]), (query, docs[1])])
 
     vllm_scores = [o["score"] for o in vllm_outputs["data"]]
