@@ -12,7 +12,7 @@ from llm_cache_util import force_engine_shutdown
 from openai import BadRequestError
 from output_util import (check_output_against_hf, compare_results,
                          extract_output, generate_spyre_vllm_output)
-from spyre_util import (RemoteOpenAIServer, create_seq_prompt,
+from spyre_util import (ModelInfo, RemoteOpenAIServer, create_seq_prompt,
                         get_chicken_soup_prompts, skip_unsupported_tp_size)
 from vllm import LLM, SamplingParams
 
@@ -20,7 +20,7 @@ from vllm import LLM, SamplingParams
 @pytest.mark.cb
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
-def test_cb_max_tokens(model: str, backend: str, max_model_len: int,
+def test_cb_max_tokens(model: ModelInfo, backend: str, max_model_len: int,
                        max_num_seqs: int, monkeypatch: pytest.MonkeyPatch,
                        use_llm_cache):
     """Test that continuous batches of requests that
@@ -52,7 +52,7 @@ def test_cb_max_tokens(model: str, backend: str, max_model_len: int,
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 def test_api_cb_rejects_oversized_request(
     remote_openai_server: RemoteOpenAIServer,
-    model: str,
+    model: ModelInfo,
     backend: str,
     cb: bool,
     max_model_len: int,
@@ -79,7 +79,7 @@ def test_api_cb_rejects_oversized_request(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 def test_api_cb_generates_correct_max_tokens(
     remote_openai_server: RemoteOpenAIServer,
-    model: str,
+    model: ModelInfo,
     backend: str,
     cb: bool,
     max_model_len: int,
@@ -110,7 +110,7 @@ def test_api_cb_generates_correct_max_tokens(
     ids=lambda val: f"TP({val})",
 )
 def test_long_context_batches(
-    model: str,
+    model: ModelInfo,
     backend: str,
     tp_size: int,
     monkeypatch: pytest.MonkeyPatch,
@@ -136,13 +136,12 @@ def test_long_context_batches(
         (2, 9000),
     ]
 
-    vllm_model = LLM(
-        model=model,
-        tokenizer=model,
-        max_model_len=max_model_len,
-        max_num_seqs=max_num_seqs,
-        tensor_parallel_size=tp_size,
-    )
+    vllm_model = LLM(model=model.name,
+                     tokenizer=model.name,
+                     max_model_len=max_model_len,
+                     max_num_seqs=max_num_seqs,
+                     tensor_parallel_size=tp_size,
+                     revision=model.revision)
 
     sampling_params = SamplingParams(
         max_tokens=max_tokens,

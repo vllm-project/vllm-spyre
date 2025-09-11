@@ -5,7 +5,7 @@ from typing import Callable, Generic, Optional, TypeVar
 
 import pytest
 from llm_cache_util import force_engine_shutdown
-from spyre_util import (DecodeWarmupShapes, RemoteOpenAIServer,
+from spyre_util import (DecodeWarmupShapes, ModelInfo, RemoteOpenAIServer,
                         patch_environment)
 from vllm import LLM, EngineArgs
 from vllm.v1.engine.core import EngineCore
@@ -78,7 +78,7 @@ class LLMCache:
 
     def get_cached_llm(
         self,
-        model: str,
+        model: str | ModelInfo,
         max_model_len: int,
         tensor_parallel_size: int,
         backend: str,
@@ -114,14 +114,22 @@ class LLMCache:
             return maybe_llm
         self.clear()
 
+        if isinstance(model, ModelInfo):
+            revision = model.revision
+            model_name = model.name
+        else:
+            revision = None
+            model_name = model
+
         return self._cache.set(
             runtime_config,
             LLM(
-                model=model,
-                tokenizer=model,
+                model=model_name,
+                tokenizer=model_name,
                 max_model_len=max_model_len,
                 max_num_seqs=max_num_seqs,
                 tensor_parallel_size=tensor_parallel_size,
+                revision=revision,
             ),
         )
 
@@ -137,7 +145,7 @@ class EngineCache:
 
     def get_engine(
         self,
-        model: str,
+        model: str | ModelInfo,
         max_model_len: int,
         max_num_seqs: int,
         available_blocks: int,
@@ -162,13 +170,21 @@ class EngineCache:
             return maybe_engine
         self.clear()
 
+        if isinstance(model, ModelInfo):
+            revision = model.revision
+            model_name = model.name
+        else:
+            revision = None
+            model_name = model
+
         # Setup the engine
         engine_args = EngineArgs(
-            model=model,
-            tokenizer=model,
+            model=model_name,
+            tokenizer=model_name,
             max_model_len=max_model_len,
             max_num_seqs=max_num_seqs,
             num_gpu_blocks_override=available_blocks,
+            revision=revision,
         )
         vllm_config = engine_args.create_engine_config()
         executor_class = Executor.get_class(vllm_config)
@@ -189,7 +205,7 @@ class RemoteOpenAIServerCache:
         self._cache: ModelCache[RemoteOpenAIServer] = ModelCache[
             RemoteOpenAIServer]()
 
-    def get_api_server(self, model: str, server_args: list[str],
+    def get_api_server(self, model: str | ModelInfo, server_args: list[str],
                        server_env: dict) -> RemoteOpenAIServer:
         """Get or create a new OpenAI server for a given model. and config"""
         runtime_config = {
@@ -221,7 +237,7 @@ ENGINE_CACHE = EngineCache()
 
 
 def get_cached_llm(
-    model: str,
+    model: str | ModelInfo,
     max_model_len: int,
     tensor_parallel_size: int,
     backend: str,
