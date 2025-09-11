@@ -688,7 +688,7 @@ class StaticBatchingFmsModel(FmsModelBase):
         **extra_kwargs,
     ) -> torch.Tensor:
         # specify attention type for static batching
-        extra_kwargs['attn_name'] = "sdpa_causal"
+        extra_kwargs['attn_name'] = self.attention_name
 
         if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
             # In order to calculate prompt logprobs, we have to return the
