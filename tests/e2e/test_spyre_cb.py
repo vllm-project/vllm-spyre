@@ -67,7 +67,7 @@ def test_api_cb_rejects_oversized_request(
     with pytest.raises(BadRequestError,
                        match="This model's maximum context length is"):
         client.completions.create(
-            model=model,
+            model=model.name,
             prompt=overflow_prompt,
             max_tokens=max_tokens,
         )
@@ -90,7 +90,7 @@ def test_api_cb_generates_correct_max_tokens(
     client = remote_openai_server.get_client()
     max_tokens = 10
 
-    response = client.completions.create(model=model,
+    response = client.completions.create(model=model.name,
                                          prompt=get_chicken_soup_prompts(1),
                                          max_tokens=max_tokens,
                                          temperature=0)
@@ -151,7 +151,7 @@ def test_long_context_batches(
     )
 
     for batch_size, token_len in batch_token_pairs:
-        prompt = create_seq_prompt(model, token_length=token_len)
+        prompt = create_seq_prompt(model.name, token_length=token_len)
         prompts = [prompt] * batch_size
 
         vllm_outputs = vllm_model.generate(prompts, sampling_params)
