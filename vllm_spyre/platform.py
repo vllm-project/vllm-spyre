@@ -1,5 +1,7 @@
 import inspect
+import json
 import sys
+from pathlib import Path
 
 # When running this plugin on a Mac, we assume it's for local development
 # purposes. However, due to a compatibility issue with vLLM, which overrides
@@ -254,6 +256,8 @@ class SpyrePlatform(Platform):
                 " %s tokens will always be prioritized over decodes.",
                 envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO,
                 envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO)
+
+        cls._handle_disable_compilation(vllm_config, is_decoder)
 
     @classmethod
     def use_all_gather(cls) -> bool:
@@ -520,3 +524,153 @@ class SpyrePlatform(Platform):
                 max_new_tokens = max(max_new_tokens, shape['new_tokens'])
 
         return max_new_tokens
+
+    @classmethod
+    def _handle_disable_compilation(cls, vllm_config: VllmConfig,
+                                    is_decoder: bool):
+        """
+        For decoder models we want to respect the `DISABLE_COMPILATION`
+        environment variable, which disallows torch_sendnn from compiling new
+        graphs and only allows it to load pre-compiled graphs.
+        In order to do this, we must load up some config from the torch_sendnn
+        cache and check to make sure that the current vllm config matches,
+        otherwise the cached artifacts cannot be used.
+
+        For encoder models, we do not allow disabling compilation.
+        """
+        disable_compilation_env_var = "DISABLE_COMPILATION"
+
+        disable_flag = os.getenv(disable_compilation_env_var, None)
+        if disable_flag is None or not bool(int(disable_flag)):
+            # Not set, or set to "0". Nothing to do
+            return
+
+        # If this isn't a decoder model, re-enable compilation
+        if not is_decoder:
+            logger.info("Unsetting %s because %s is not a decoder model",
+                        disable_compilation_env_var,
+                        vllm_config.model_config.model)
+            os.environ[disable_compilation_env_var] = "0"
+            return
+
+        # If the user asked to disable compilation, then we need to enforce that
+        # they setup their cache
+        torch_cache_dir = os.getenv("TORCH_SENDNN_CACHE_DIR", None)
+        torch_cache_enabled = bool(
+            int(os.getenv("TORCH_SENDNN_CACHE_ENABLE", "0")))
+
+        if not torch_cache_dir or not torch_cache_enabled:
+            raise ValueError(
+                "DISABLE_COMPILATION=1 requires setting TORCH_SENDNN_CACHE_DIR "
+                "to a valid path and setting TORCH_SENDNN_CACHE_ENABLE=1")
+
+        compilation_config_path = Path(
+            torch_cache_dir) / "models_config.log.json"
+        if not compilation_config_path.exists():
+            raise ValueError(
+                f"DISABLE_COMPILATION=1 was set, but no pre-compiled model "
+                f"config was found in the TORCH_SENDNN_CACHE_DIR: "
+                f"{str(compilation_config_path)} does not exist")
+
+        if not compilation_config_path.is_file():
+            raise ValueError(
+                f"DISABLE_COMPILATION=1 was set, but the pre-compiled model "
+                f"config is not a file: {str(compilation_config_path)}")
+
+        with open(compilation_config_path) as f:
+            try:
+                compilation_config = json.load(f)
+            except json.JSONDecodeError as e:
+                raise ValueError(
+                    f"Precompiled model config {str(compilation_config_path)} "
+                    "was not valid json") from e
+
+        # Validate configurations
+        vllm_configs = compilation_config["data"]
+
+        # vllm-spyre version
+        # (This only exists if the package is built, and not if vllm_spyre is
+        # running from source)
+        try:
+            from vllm_spyre._version import version as vllm_spyre_version
+            if compilation_config["vllm_spyre_version"] != vllm_spyre_version:
+                raise ValueError(
+                    f"Model was compiled on vllm-spyre "
+                    f"{compilation_config['vllm_spyre_version']} but the "
+                    f"current vllm_spyre version is {vllm_spyre_version}")
+        except ImportError:
+            logger.warning(
+                "Cannot validate vllm_spyre version against pre-compiled model "
+                "config")
+
+        # model
+        model_name = vllm_configs["MODEL_NAME"]
+        if vllm_config.model_config.model != model_name:
+            # We don't have a way to easily ensure that the compiled model is
+            # the same as the one that the user is loading. We can only warn
+            # here if the names do not match.
+            logger.warning(
+                "Configured model name is %s but the pre-compiled model config "
+                "has name %s. Please ensure this is the correct model",
+                vllm_config.model_config.model, model_name)
+
+        # TP size
+        tp_size = vllm_configs["NUM_AIUS"]
+        if vllm_config.parallel_config.tensor_parallel_size != tp_size:
+            raise ValueError(
+                f"Configured TP size "
+                f"{vllm_config.parallel_config.tensor_parallel_size} does not "
+                "match precompiled tp size {tp_size}")
+
+        if "VLLM_SPYRE_WARMUP_PROMPT_LENS" in vllm_configs:
+            if envs_spyre.VLLM_SPYRE_USE_CB:
+                raise ValueError(
+                    "Model is pre-compiled for static batching but continuous "
+                    "batching mode is enabled.")
+
+            get_list = lambda x: [int(i) for i in x.split(",")]
+
+            prompt_lens = get_list(
+                vllm_configs["VLLM_SPYRE_WARMUP_PROMPT_LENS"])
+            new_tokens = get_list(vllm_configs["VLLM_SPYRE_WARMUP_NEW_TOKENS"])
+            batch_sizes = get_list(
+                vllm_configs["VLLM_SPYRE_WARMUP_BATCH_SIZES"])
+
+            if prompt_lens != envs_spyre.VLLM_SPYRE_WARMUP_PROMPT_LENS:
+                raise ValueError(
+                    f"Model is pre-compiled for prompt lengths {prompt_lens} "
+                    "but vllm was configured with "
+                    f"{envs_spyre.VLLM_SPYRE_WARMUP_PROMPT_LENS}.")
+
+            if new_tokens != envs_spyre.VLLM_SPYRE_WARMUP_NEW_TOKENS:
+                raise ValueError(
+                    f"Model is pre-compiled for {new_tokens} new tokens but "
+                    f"vllm was configured with "
+                    f"{envs_spyre.VLLM_SPYRE_WARMUP_NEW_TOKENS}.")
+
+            if batch_sizes != envs_spyre.VLLM_SPYRE_WARMUP_BATCH_SIZES:
+                raise ValueError(
+                    f"Model is pre-compiled for batch sizes {batch_sizes} but "
+                    f"vllm was configured with "
+                    f"{envs_spyre.VLLM_SPYRE_WARMUP_BATCH_SIZES}.")
+
+        else:
+            if not envs_spyre.VLLM_SPYRE_USE_CB:
+                raise ValueError(
+                    "Model is pre-compiled for continuous batching but static "
+                    "batching mode is enabled")
+
+            context_len = vllm_configs["VLLM_DT_MAX_CONTEXT_LEN"]
+            batch_size = vllm_configs["VLLM_DT_MAX_BATCH_SIZE"]
+
+            if context_len != vllm_config.model_config.max_model_len:
+                raise ValueError(
+                    f"Model is pre-compiled for context length {context_len} "
+                    f"but vllm was configured with context length "
+                    f"{vllm_config.model_config.max_model_len}.")
+
+            if batch_size != vllm_config.scheduler_config.max_num_seqs:
+                raise ValueError(
+                    f"Model is pre-compiled for batch size {batch_size} but "
+                    f"vllm was configured with batch size "
+                    f"{vllm_config.scheduler_config.max_num_seqs}.")
