@@ -197,13 +197,21 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             self.holdback_queue.append(self.waiting.popleft())
 
         # Check if new requests can be scheduled.
-        while self.holdback_queue:
-            if self.can_schedule(self.holdback_queue[0]):
-                # Add request to the waiting queue
-                self.waiting.append(self.holdback_queue.popleft())
-            else:
-                # Otherwise, we simply stop here so that the scheduler
-                # can work with the batch we have
+        n_req_waiting = len(self.holdback_queue)
+        idx_offset = 0
+        for idx in range(n_req_waiting):
+            idx_updated = idx - idx_offset
+            if self.can_schedule(self.holdback_queue[idx_updated]):
+                # Add request to the waiting queue: no deque.pop(idx)...
+                self.waiting.append(self.holdback_queue[idx_updated])
+                del self.holdback_queue[idx_updated]
+                idx_offset += 1
+
+            # if the batch is locked because (at least) the request at the head
+            # of the holdback_queue has been waiting for longer than
+            # VLLM_SPYRE_MAX_WAITING_TIME_SECONDS, we do not allow any other
+            # request to be scheduled except the request at the queue head
+            if self.batch_is_locked and idx == 0:
                 break
 
         # Schedule Prefill and Decode separately
@@ -232,12 +240,6 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
     def can_schedule(self, request) -> bool:
         max_prompt_batch_size = 1
         max_context_len = self.scheduler_config.max_model_len
-
-        # if the batch is locked by a request which has been waiting for
-        # longer then VLLM_SPYRE_MAX_WAITING_TIME_SECONDS, we cannot
-        # schedule the current sequence until we have served this request
-        if self.batch_is_locked:
-            return False
 
         # running and waiting queues are both empty -> start a new batch
         # which can always be scheduled
