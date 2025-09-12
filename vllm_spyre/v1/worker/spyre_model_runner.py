@@ -1324,6 +1324,21 @@ class PoolerAdapter(torch.nn.Module):
             return [self.pooler(h.T) for h in hidden_states]
 
 
+class ClassifierAdapter(torch.nn.Module):
+
+    def __init__(self, classifier: torch.nn.Module):
+        super().__init__()
+        self.classifier = classifier
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+    ) -> torch.Tensor:
+        if hidden_states.ndim == 2:
+            hidden_states = hidden_states.unsqueeze(dim=0)
+        return self.classifier(hidden_states)
+
+
 def _transpose(input: torch.Tensor) -> torch.Tensor:
     return input.T
 
@@ -1438,7 +1453,7 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
         elif task == "classify":
             self.pooler = ClassifierPooler(
                 pooling=self._pooler,
-                classifier=self.classifier,
+                classifier=ClassifierAdapter(self.classifier),
                 act_fn=ClassifierPooler.act_fn_for_cross_encoder(
                     self.model_config),
             )
