@@ -6,10 +6,11 @@ Run `python -m pytest tests/e2e/test_spyre_embeddings.py`.
 from functools import partial
 
 import pytest
-from llm_cache import EmbeddingWarmupShapes
-from spyre_util import (compare_embedding_results, get_chicken_soup_prompts,
-                        get_spyre_model_list, patch_warmup_shapes,
-                        spyre_vllm_embeddings, st_embeddings)
+from output_util import (compare_embedding_results, spyre_vllm_embeddings,
+                         st_embeddings)
+from spyre_util import (EmbeddingWarmupShapes, ModelInfo,
+                        get_chicken_soup_prompts, get_spyre_model_list,
+                        patch_warmup_shapes)
 from vllm import LLM
 
 
@@ -23,7 +24,7 @@ from vllm import LLM
         pytest.param([(128, 8)])
     ])
 def test_output(
-    model: str,
+    model: ModelInfo,
     warmup_shapes: EmbeddingWarmupShapes,
     backend: str,
     monkeypatch,
@@ -64,7 +65,7 @@ def test_output(
 ])  # (prompt_length/batch_size)
 @pytest.mark.parametrize("model", get_spyre_model_list(isEmbeddings=True))
 def test_scheduling_invariance(
-    model,
+    model: ModelInfo,
     backend,
     warmup_shapes: EmbeddingWarmupShapes,
     monkeypatch,
@@ -84,11 +85,12 @@ def test_scheduling_invariance(
     prompts = get_chicken_soup_prompts(4)
     reference_embeds = st_embeddings(model, prompts)
 
-    vllm_model = LLM(model=model,
+    vllm_model = LLM(model=model.name,
                      task="embed",
-                     tokenizer=model,
+                     tokenizer=model.name,
                      max_model_len=256,
-                     tensor_parallel_size=1)
+                     tensor_parallel_size=1,
+                     revision=model.revision)
 
     def batch_embeds(step):
         vllm_outputs = []

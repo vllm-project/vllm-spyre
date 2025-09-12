@@ -4,8 +4,10 @@ from collections import defaultdict, deque
 from typing import Any
 
 import pytest
-from spyre_util import create_random_request, get_cached_engine
+from llm_cache import get_cached_engine
+from spyre_util import ModelInfo, create_random_request
 from vllm import SamplingParams
+from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
 
@@ -35,7 +37,7 @@ def augment_checked_steps(
 
 
 def check_scheduler_inference_steps(
-    model: str,
+    model: ModelInfo,
     backend: str,
     monkeypatch: pytest.MonkeyPatch,
     seqs_max_tokens: list[int],
@@ -79,7 +81,12 @@ def check_scheduler_inference_steps(
             "List of checked steps needs to be of increasing order of step")
     # ------
 
-    collected_outputs = defaultdict(lambda: {"token_ids": [], "logprobs": []})
+    collected_outputs = defaultdict(lambda: {
+        "token_ids": [],
+        "logprobs": [],
+        "text": "",
+        "tokens": []
+    })
     generated_prompts = []
 
     # Create random requests of specified lengths and max_tokens
@@ -98,8 +105,9 @@ def check_scheduler_inference_steps(
         request = create_random_request(request_id=i,
                                         num_tokens=prompt_length,
                                         sampling_params=sampling_params,
-                                        model=model)
+                                        model=model.name)
         requests.append((add_step, request))
+        # NOTE: It is going to be decoded later
         generated_prompts.append(request.prompt_token_ids)
 
     # Setup the engine
@@ -111,6 +119,10 @@ def check_scheduler_inference_steps(
         backend=backend,
         monkeypatch=monkeypatch)
     scheduler: ContinuousBatchingSpyreScheduler = engine_core.scheduler
+
+    tokenizer = get_tokenizer(model.name, revision=model.revision)
+    # clear the cache of function scheduler.check_batch_tkv_limit()
+    scheduler._cache_check_batch_tkv_limit.clear()
 
     # Override the TKV limit in the scheduler if needed
     if max_batch_tkv_limit >= 0:
@@ -212,7 +224,12 @@ def check_scheduler_inference_steps(
                 new_token_ids[0])
             collected_outputs[output.request_id]["logprobs"].append(
                 new_logprobs[0][0])
+            collected_outputs[output.request_id]["tokens"].append(
+                tokenizer.decode(new_token_ids[0]))
 
+    for k in collected_outputs:
+        collected_outputs[k]['text'] = tokenizer.decode(
+            collected_outputs[k]['token_ids'])
     output_keys = sorted(int(k) for k in collected_outputs)
     assert (DISABLE_ASSERTS
             or output_keys[0] == 0 and output_keys[-1] == len(output_keys) - 1)

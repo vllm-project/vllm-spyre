@@ -3,6 +3,8 @@ import os
 import re
 from pathlib import Path
 
+from spyre_util import ModelInfo
+
 
 class HFResultCache:
     """
@@ -13,6 +15,7 @@ class HFResultCache:
     This cache can be (re)populated by running all tests and committing the
     changes to the .json file.
     """
+    NO_REVISION_KEY = "no-revision"
 
     def __init__(self):
         """
@@ -45,8 +48,8 @@ class HFResultCache:
                 f.write(json_string)
             self.dirty = False
 
-    def get_cached_result(self, model: str, prompt: str | list[int],
-                          max_tokens: int) -> dict:
+    def get_cached_result(self, model: str | ModelInfo,
+                          prompt: str | list[int], max_tokens: int) -> dict:
         """
         Retrieve a cached result for the given model, prompt, and max_tokens.
         Returns an empty dictionary if no cache entry is found.
@@ -55,10 +58,20 @@ class HFResultCache:
             prompt = self._token_ids_to_string(prompt)
         max_tokens = str(max_tokens)
 
-        return self.cached_results.get(model, {}).get(prompt,
-                                                      {}).get(max_tokens, {})
+        if isinstance(model, ModelInfo):
+            revision = model.revision if model.revision \
+                else self.NO_REVISION_KEY
+            model_name = model.name
+        else:
+            revision = self.NO_REVISION_KEY
+            model_name = model
 
-    def add_to_cache(self, model: str, prompt: str | list[int],
+        return self.cached_results.get(model_name,
+                                       {}).get(revision,
+                                               {}).get(prompt,
+                                                       {}).get(max_tokens, {})
+
+    def add_to_cache(self, model: str | ModelInfo, prompt: str | list[int],
                      max_tokens: int, result: dict):
         """
         Add a new result to the cache for the given model, prompt, and
@@ -69,9 +82,17 @@ class HFResultCache:
             prompt = self._token_ids_to_string(prompt)
         max_tokens = str(max_tokens)
 
-        self.cached_results.setdefault(model,
-                                       {}).setdefault(prompt, {}).setdefault(
-                                           max_tokens, result)
+        if isinstance(model, ModelInfo):
+            revision = model.revision if model.revision \
+                else self.NO_REVISION_KEY
+            model_name = model.name
+        else:
+            revision = self.NO_REVISION_KEY
+            model_name = model
+
+        self.cached_results.setdefault(model_name, {}).setdefault(
+            revision, {}).setdefault(prompt,
+                                     {}).setdefault(max_tokens, result)
         self.dirty = True
 
     def _token_ids_to_string(self, token_ids: list[int]) -> str:

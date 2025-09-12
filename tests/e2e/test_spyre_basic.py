@@ -4,9 +4,9 @@ Run `python -m pytest tests/e2e/test_spyre_basic.py`.
 """
 
 import pytest
-from llm_cache import DecodeWarmupShapes
-from spyre_util import (check_output_against_hf, create_random_request,
-                        generate_spyre_vllm_output, get_chicken_soup_prompts,
+from output_util import check_output_against_hf, generate_spyre_vllm_output
+from spyre_util import (DecodeWarmupShapes, ModelInfo, create_random_request,
+                        get_chicken_soup_prompts, patch_environment,
                         skip_unsupported_tp_size)
 from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine.core import EngineCore
@@ -16,7 +16,7 @@ from vllm_spyre.v1.core.scheduler import StaticBatchingSpyreScheduler
 
 
 @pytest.mark.full_model
-def test_output(model: str, tp_size: int, backend: str, cb: int,
+def test_output(model: ModelInfo, tp_size: int, backend: str, cb: int,
                 max_num_seqs: int, max_model_len: int,
                 warmup_shapes: DecodeWarmupShapes,
                 monkeypatch: pytest.MonkeyPatch, use_llm_cache) -> None:
@@ -70,8 +70,9 @@ def test_output(model: str, tp_size: int, backend: str, cb: int,
     pytest.param(
         "sendnn_decoder", marks=pytest.mark.spyre, id="sendnn_decoder")
 ])
-def test_output_sendnn_decoder(model: str, warmup_shapes: DecodeWarmupShapes,
-                               backend: str, monkeypatch: pytest.MonkeyPatch,
+def test_output_sendnn_decoder(model: ModelInfo,
+                               warmup_shapes: DecodeWarmupShapes, backend: str,
+                               monkeypatch: pytest.MonkeyPatch,
                                use_llm_cache) -> None:
     '''
     Tests the deprecated sendnn_decoder backend, which should fall-back to
@@ -101,7 +102,7 @@ def test_output_sendnn_decoder(model: str, warmup_shapes: DecodeWarmupShapes,
                             prompts)
 
 
-def test_batch_handling(model: str, backend: str, cb: int, warmup_shapes,
+def test_batch_handling(model: ModelInfo, backend: str, cb: int, warmup_shapes,
                         max_num_seqs: int, max_model_len: int,
                         monkeypatch: pytest.MonkeyPatch, use_llm_cache):
     """Test that the spyre worker correctly handles
@@ -147,7 +148,7 @@ def test_batch_handling(model: str, backend: str, cb: int, warmup_shapes,
                             prompts)
 
 
-def test_full_batch_scheduling(model: str, backend: str, monkeypatch):
+def test_full_batch_scheduling(model: ModelInfo, backend: str, monkeypatch):
     """Test that we can schedule a full batch of prompts."""
 
     # We need to ensure here that the max number of tokens in a full batch
@@ -171,10 +172,11 @@ def test_full_batch_scheduling(model: str, backend: str, monkeypatch):
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
 
     # Setup the engine
-    engine_args = EngineArgs(model=model,
-                             tokenizer=model,
+    engine_args = EngineArgs(model=model.name,
+                             tokenizer=model.name,
                              max_num_batched_tokens=max_batched_tokens,
-                             max_num_seqs=batch_size)
+                             max_num_seqs=batch_size,
+                             revision=model.revision)
     vllm_config = engine_args.create_engine_config()
     executor_class = Executor.get_class(vllm_config)
     engine_core = EngineCore(vllm_config=vllm_config,
@@ -191,8 +193,37 @@ def test_full_batch_scheduling(model: str, backend: str, monkeypatch):
                 request_id=i,
                 num_tokens=max_batched_tokens,
                 sampling_params=vllm_sampling_params,
-                model=model,
+                model=model.name,
             ))
     schedule = scheduler.schedule()
 
     assert len(schedule.scheduled_new_reqs) == batch_size
+
+
+def test_max_model_len_override(model: ModelInfo, backend, warmup_shapes, cb,
+                                monkeypatch):
+    """Test that makes sure that --max-model-len
+    doesn't affect SB, instead it is picked up from
+    warmup shapes"""
+
+    max_model_len = 64
+    kwargs = ({
+        "use_cb": True,
+        "warmup_shapes": None
+    } if cb == 1 else {
+        "use_cb": False,
+        "warmup_shapes": warmup_shapes,
+    })
+
+    patch_environment(**kwargs, backend=backend, monkeypatch=monkeypatch)
+    vllm_config = EngineArgs(
+        model=model.name, max_model_len=max_model_len).create_engine_config()
+    model_config = vllm_config.model_config
+
+    if not cb:
+        assert model_config.max_model_len == max([
+            prompt_length + new_tokens
+            for prompt_length, new_tokens, _ in warmup_shapes
+        ])
+    else:
+        assert model_config.max_model_len == max_model_len

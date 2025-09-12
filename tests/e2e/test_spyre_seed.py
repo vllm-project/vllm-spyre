@@ -6,17 +6,17 @@ Run `python -m pytest tests/e2e/test_spyre_seed.py`.
 import math
 
 import pytest
-from llm_cache import DecodeWarmupShapes
-from spyre_util import generate_spyre_vllm_output, get_chicken_soup_prompts
+from output_util import generate_spyre_vllm_output
+from spyre_util import DecodeWarmupShapes, ModelInfo, get_chicken_soup_prompts
 from vllm import SamplingParams
 
 
 @pytest.mark.parametrize("temperature", [0.1, 1.0])
 @pytest.mark.parametrize("seed", [42])
-def test_seed(model: str, temperature: float, seed: int, max_model_len: int,
-              max_num_seqs: int, warmup_shapes: DecodeWarmupShapes,
-              backend: str, cb: int, monkeypatch: pytest.MonkeyPatch,
-              use_llm_cache) -> None:
+def test_seed(model: ModelInfo, temperature: float, seed: int,
+              max_model_len: int, max_num_seqs: int,
+              warmup_shapes: DecodeWarmupShapes, backend: str, cb: int,
+              monkeypatch: pytest.MonkeyPatch, use_llm_cache) -> None:
     '''
     The warmup is based on a single shape. After the warmup,
     output is generated for one request with 5 identical prompts

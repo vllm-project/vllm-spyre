@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     VLLM_SPYRE_UPDATE_THREAD_CONFIG: bool = True
     VLLM_SPYRE_MAX_LOAD_PROCESSES: int = 0
     VLLM_SPYRE_WORKER_LOG_REDIRECT_DIR: str = ""
+    VLLM_SPYRE_GLOO_TIMEOUT_MINUTES: int = 60
 
 logger = init_logger(__name__)
 
@@ -107,6 +108,12 @@ environment_variables: dict[str, Callable[[], Any]] = {
     lambda: bool(int(os.getenv("VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION", "0"))
                  ),
 
+    # scheduling heuristic: prefill vs decode prioritization
+    # Prefills using up to VLLM_SPYRE_N_TOKENS_PREFILL_PRIO tokens will always
+    # be prioritized. If limit is exceeded, decodes are prioritized.
+    "VLLM_SPYRE_N_TOKENS_PREFILL_PRIO":
+    lambda: int(os.getenv("VLLM_SPYRE_N_TOKENS_PREFILL_PRIO", "-1")),
+
     # Allow vllm-spyre to update env vars related to multi-threading (eg. OMP)
     # based on the detected CPU cores and server configuration
     "VLLM_SPYRE_UPDATE_THREAD_CONFIG":
@@ -117,7 +124,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # memory usage.
     # Set to 0 to allow any number of processes
     "VLLM_SPYRE_MAX_LOAD_PROCESSES":
-    lambda: bool(int(os.getenv("VLLM_SPYRE_MAX_LOAD_PROCESSES", "0"))),
+    lambda: int(os.getenv("VLLM_SPYRE_MAX_LOAD_PROCESSES", "0")),
 
     # If set, redirects all stdout and stderr from worker processes to files
     # within this director. This is useful for debugging card-specific errors
@@ -125,6 +132,11 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # This removes all output from stdout and stderr for the worker processes.
     "VLLM_SPYRE_WORKER_LOG_REDIRECT_DIR":
     lambda: os.getenv("VLLM_SPYRE_WORKER_LOG_REDIRECT_DIR", ""),
+
+    # If set, overrides the default (30 minutes) timeout for
+    #  torch.distributed.init_process_group
+    "VLLM_SPYRE_GLOO_TIMEOUT_MINUTES":
+    lambda: int(os.getenv("VLLM_SPYRE_GLOO_TIMEOUT_MINUTES", "60"))
 }
 # --8<-- [end:env-vars-definition]
 

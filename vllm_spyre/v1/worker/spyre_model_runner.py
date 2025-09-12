@@ -4,7 +4,7 @@ import time
 from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import Iterable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import (TYPE_CHECKING, Generic, Literal, Optional, TypeVar, Union,
                     cast, get_args)
 
@@ -29,12 +29,9 @@ from vllm_spyre.model_executor.model_loader.spyre import (
 from vllm_spyre.platform import SpyrePlatform
 # yapf conflicts with ruff for this block
 # yapf: disable
-from vllm_spyre.v1.worker.spyre_input_batch import (BaseInputBatch,
-                                                    BaseRequestState,
-                                                    PoolingInputBatch,
-                                                    PoolingRequestState,
-                                                    SamplingInputBatch,
-                                                    SamplingRequestState)
+from vllm_spyre.v1.worker.spyre_input_batch import (
+    BaseInputBatch, BaseRequestState, PoolingInputBatch, PoolingRequestState,
+    SamplingInputBatch, SamplingRequestState, get_builtin_logits_processors)
 
 # yapf: enable
 if TYPE_CHECKING:
@@ -51,7 +48,7 @@ from vllm.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, ModelRunnerOutput
 
 #############################################################
 # from vllm.tasks import GenerationTask, PoolingTask, SupportedTask
-# TODO: remove when we have this in vllm/tasks.py
+# TODO: remove when we drop support for 0.10.0
 #############################################################
 GenerationTask = Literal["generate", "transcription"]
 GENERATION_TASKS = get_args(GenerationTask)
@@ -71,7 +68,7 @@ class ModelForwardInputs:
     input_tokens: Optional[torch.Tensor] = None
     input_positions: Optional[torch.Tensor] = None
     input_masks: Optional[torch.Tensor] = None
-    is_prompt: Optional[bool] = None
+    is_prompt: bool = False
 
 
 @dataclass(frozen=True)
@@ -89,6 +86,7 @@ class SamplingForwardInputs(ModelForwardInputs):
     left_padded_prompt_mask: Optional[torch.Tensor] = None
     block_table: Optional[torch.Tensor] = None
     slot_mapping: Optional[torch.Tensor] = None
+    scale_indices: list[int] = field(default_factory=list)
 
 
 @dataclass
@@ -306,12 +304,17 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
         )
 
     def build_input_batch(self) -> SamplingInputBatch:
+        # Define logits processors.
+        # TODO(Max): logits processor list should be extensible via engine
+        # constructor argument; for now the list is fixed to builtin processors
+        logits_processors = get_builtin_logits_processors(self.vllm_config)
         return SamplingInputBatch(
             max_num_reqs=self.scheduler_config.max_num_seqs,
             max_model_len=self.model_config.max_model_len,
             device=self.device,
             pin_memory=self.pin_memory,
             vocab_size=self.model_config.get_vocab_size(),
+            logitsprocs=logits_processors,
         )
 
     @property
@@ -332,7 +335,8 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
         # this is a causal mask for generation
         mask = (mask.unsqueeze(-1) == mask.unsqueeze(-2)).tril()
         mask = torch.where(mask.logical_not(), -torch.inf, 0.0)
-        mask = mask.to(self.model.model.dtype)
+
+        mask = mask.to(self.model.get_mask_dtype())
         position_ids = torch.stack(position_ids_list)
 
         return input_ids, position_ids, mask
@@ -810,8 +814,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             max_model_len=vllm_config.model_config.max_model_len,
             device=self.device,
             pin_memory=self.pin_memory,
-            vocab_size=vllm_config.model_config.get_vocab_size(),
-        )
+            vocab_size=vllm_config.model_config.get_vocab_size())
 
     def pre_warmup(self) -> None:
         # Set the number of kv cache blocks to the minimal value of 2 which is
@@ -822,12 +825,12 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         n_blocks_warmup = self.model.model.get_num_blocks_available()
         self._set_blocks(num_blocks=n_blocks_warmup)
-        self.model.model._set_past_key_value_states(num_blocks=n_blocks_warmup)
+        self.model.model.set_past_key_value_states(num_blocks=n_blocks_warmup)
 
         # Future code:
 
         # self._set_blocks(num_blocks=2)
-        # self.model.model._set_past_key_value_states(num_blocks=2)
+        # self.model.model.set_past_key_value_states(num_blocks=2)
 
         # mark the num_blocks dimension dynamic for Spyre compiler for warmup
         # only, compiler will return the number of blocks it can accommodate.
@@ -842,7 +845,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # and set it accordingly in the model runner and for the kv cache size
         n_blocks_avail = self.model.model.get_num_blocks_available()
         self._set_blocks(num_blocks=n_blocks_avail)
-        self.model.model._set_past_key_value_states(num_blocks=n_blocks_avail)
+        self.model.model.set_past_key_value_states(num_blocks=n_blocks_avail)
 
     def _set_blocks(self, num_blocks: int) -> None:
         # overwrite num_blocks for testing scheduler constraints
@@ -969,7 +972,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                                          output_token_ids=[],
                                          left_padding=left_padding)
         self.requests[req_id] = req_state
-        self.input_batch.add_request(req_state)
+        prefill_index = self.input_batch.add_request(req_state)
         self.prefill_batch.add_request(req_state)
 
         # Refresh sampling metadata after all request are added to the batch
@@ -1009,7 +1012,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             block_table=block_table,
             slot_mapping=slot_mapping,
             is_prompt=True,
-        )
+            # used only for quantized model
+            scale_indices=[prefill_index])
 
         self._mark_input_tensors(model_inputs)
 
@@ -1110,7 +1114,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             block_table=block_table,
             slot_mapping=slot_mapping,
             is_prompt=False,
-        )
+            scale_indices=self.input_batch.request_indices)
 
         self._mark_input_tensors(model_inputs)
 
@@ -1208,11 +1212,15 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         # TODO: probably we can remove some fields of the model input and
         # update only the SpyreAttentionMetadata
+
         return SpyreAttentionMetadata(
             slot_mapping=model_input.slot_mapping,
             current_tkv_mask=model_input.current_tkv_mask,
             left_padded_prompt_mask=model_input.left_padded_prompt_mask,
-            block_table=model_input.block_table)
+            block_table=model_input.block_table,
+            scale_indices=torch.tensor(model_input.scale_indices,
+                                       dtype=torch.int32),
+            is_prefill=model_input.is_prompt)
 
     def get_sampling_metadata(self, is_prefill: bool) -> SamplingMetadata:
         return self.prefill_batch.sampling_metadata \
@@ -1240,7 +1248,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
     def prepare_model_input(
             self, scheduler_output: SchedulerOutput) -> SamplingForwardInputs:
 
-        # remove left padding if applicable before next prefil/decode step
+        # remove left padding if applicable before next prefill/decode step
         self.reduce_left_padding()
 
         return super().prepare_model_input(scheduler_output)
@@ -1351,9 +1359,18 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
     def load_model(self, prompt_lens: Iterable[int],
                    num_decode_tokens: Iterable[int]) -> None:
 
-        if self.model_config.task == "embed":
+        task = self.model_config.task
+        if task is None:
+            # Task is being deprecated upstream because the models
+            # support several tasks at once. But for now, here we need
+            # to know the task to load the model with
+            # AutoModelForSequenceClassification
+            task = self.model_config._get_default_pooling_task(
+                self.model_config.architectures)
+
+        if task == "embed":
             self.model = AutoModel.from_pretrained(self.model_config.model)
-        elif self.model_config.task == "classify":
+        elif task == "classify":
             class_model = AutoModelForSequenceClassification.from_pretrained(
                 self.model_config.model)
             if hasattr(class_model, "bert"):
@@ -1368,7 +1385,7 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
                     "Bert or Roberta for sequence classification")
             self.classifier = class_model.classifier
         else:
-            raise ValueError(f"Unsupported task {self.model_config.task}")
+            raise ValueError(f"Unsupported task {task}")
 
         model_class_name = type(self.model).__name__
         self.is_roberta = "roberta" in model_class_name.lower()
@@ -1393,7 +1410,7 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
                     dynamic=False,
                     backend=envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND)
 
-        if self.model_config.task == "classify":
+        if task == "classify":
             tokenizer = AutoTokenizer.from_pretrained(self.model_config.model)
             output = tokenizer(text="foo", text_pair="bar")
             self.use_token_type_ids = "token_type_ids" in output
@@ -1401,43 +1418,30 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
                 self.sep_token_id = tokenizer.sep_token_id
 
         pooler_config = self.model_config.pooler_config
-        if hasattr(Pooler, "from_config_with_defaults"):
-            # TODO: remove this when we no longer support
-            # vllm version v0.9.2
-            if self.model_config.task == "embed":
-                self.pooler = Pooler.from_config_with_defaults(
-                    pooler_config,
-                    pooling_type=PoolingType.CLS,
-                    normalize=True,
-                    softmax=False)
-            elif self.model_config.task == "classify":
-                self.pooler = ClassifierPooler(config=self.model_config,
-                                               pooler=self._pooler,
-                                               classifier=self.classifier)
-        else:
-            # TODO: remove this when we no longer support vllm version pre this
-            # PR https://github.com/vllm-project/vllm/pull/20538 (post v0.10.0)
-            annotations = inspect.getfullargspec(Pooler.for_embed).annotations
-            extra_args = {}
-            if ('default_normalize' in annotations
-                    and 'default_softmax' in annotations):
-                extra_args.update({
-                    'default_normalize': True,
-                    'default_softmax': False
-                })
-            if 'default_pooling_type' in annotations:
-                extra_args['default_pooling_type'] = PoolingType.CLS
 
-            if self.model_config.task == "embed":
-                self.pooler = Pooler.for_embed(pooler_config=pooler_config,
-                                               **extra_args)
-            elif self.model_config.task == "classify":
-                self.pooler = ClassifierPooler(
-                    pooling=self._pooler,
-                    classifier=self.classifier,
-                    act_fn=ClassifierPooler.act_fn_for_cross_encoder(
-                        self.model_config),
-                )
+        # TODO: remove this when we no longer support vllm version pre this
+        # PR https://github.com/vllm-project/vllm/pull/20538 (post v0.10.0)
+        annotations = inspect.getfullargspec(Pooler.for_embed).annotations
+        extra_args = {}
+        if ('default_normalize' in annotations
+                and 'default_softmax' in annotations):
+            extra_args.update({
+                'default_normalize': True,
+                'default_softmax': False
+            })
+        if 'default_pooling_type' in annotations:
+            extra_args['default_pooling_type'] = PoolingType.CLS
+
+        if task == "embed":
+            self.pooler = Pooler.for_embed(pooler_config=pooler_config,
+                                           **extra_args)
+        elif task == "classify":
+            self.pooler = ClassifierPooler(
+                pooling=self._pooler,
+                classifier=self.classifier,
+                act_fn=ClassifierPooler.act_fn_for_cross_encoder(
+                    self.model_config),
+            )
 
     @property
     def vocab_size(self) -> int:

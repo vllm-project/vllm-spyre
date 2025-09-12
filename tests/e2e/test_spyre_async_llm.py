@@ -2,8 +2,7 @@ import asyncio
 from contextlib import ExitStack
 
 import pytest
-from llm_cache import DecodeWarmupShapes
-from spyre_util import get_chicken_soup_prompts
+from spyre_util import DecodeWarmupShapes, ModelInfo, get_chicken_soup_prompts
 from vllm import PromptType, SamplingParams
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
@@ -48,7 +47,7 @@ async def generate(
 @pytest.mark.parametrize(
     "output_kind", [RequestOutputKind.DELTA, RequestOutputKind.FINAL_ONLY])
 @pytest.mark.asyncio
-async def test_abort(model: str, backend: str, cb: int,
+async def test_abort(model: ModelInfo, backend: str, cb: int,
                      warmup_shapes: DecodeWarmupShapes,
                      output_kind: RequestOutputKind,
                      monkeypatch: pytest.MonkeyPatch):
@@ -71,12 +70,11 @@ async def test_abort(model: str, backend: str, cb: int,
 
         # Async LLM API is a little different between v0 and V1
         engine = AsyncLLM.from_engine_args(
-            AsyncEngineArgs(
-                model=model,
-                tokenizer=model,
-                max_model_len=128,
-                max_num_seqs=4,
-            ))
+            AsyncEngineArgs(model=model.name,
+                            tokenizer=model.name,
+                            max_model_len=256,
+                            max_num_seqs=4,
+                            revision=model.revision))
         has_unfinished_requests = \
             engine.output_processor.has_unfinished_requests
         after.callback(engine.shutdown)

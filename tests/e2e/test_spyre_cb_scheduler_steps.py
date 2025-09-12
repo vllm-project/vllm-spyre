@@ -7,16 +7,18 @@ Run `python -m pytest tests/e2e/test_spyre_cb_inference_steps.py`.
 """
 
 import pytest
+from output_util import check_output_against_hf
 from scheduling_utils import check_scheduler_inference_steps
-from spyre_util import check_output_against_hf
+from spyre_util import ModelInfo
 
 
 @pytest.mark.cb
+@pytest.mark.full_model
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [2])
-@pytest.mark.parametrize("max_model_len", [192])
-@pytest.mark.parametrize("available_blocks", [16])  # no restriction
-def test_prompts_aligned_with_tkv_boundaries(model: str, backend: str,
+@pytest.mark.parametrize("max_model_len", [256])
+@pytest.mark.parametrize("available_blocks", [None])
+def test_prompts_aligned_with_tkv_boundaries(model: ModelInfo, backend: str,
                                              monkeypatch: pytest.MonkeyPatch,
                                              set_random_seed: None,
                                              max_num_seqs: int,
@@ -172,12 +174,13 @@ def test_prompts_aligned_with_tkv_boundaries(model: str, backend: str,
 
 
 @pytest.mark.cb
+@pytest.mark.full_model
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [2])
-@pytest.mark.parametrize("max_model_len", [128])
-@pytest.mark.parametrize("available_blocks", [8])  # no restriction
+@pytest.mark.parametrize("max_model_len", [256])
+@pytest.mark.parametrize("available_blocks", [None])
 def test_prompts_misaligned_with_tkv_boundaries(
-        model: str, backend: str, monkeypatch: pytest.MonkeyPatch,
+        model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
         set_random_seed: None, max_num_seqs: int, max_model_len: int,
         available_blocks: int):
     """ Scenario where it happens that some sequence gets scheduled in a way 
@@ -328,12 +331,13 @@ def test_prompts_misaligned_with_tkv_boundaries(
 
 
 @pytest.mark.cb
+@pytest.mark.full_model
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [128])
-@pytest.mark.parametrize("available_blocks", [8])  # no restriction
+@pytest.mark.parametrize("available_blocks", [None])
 def test_two_sequences_finish_same_time_as_new_arrive(
-        model: str, backend: str, monkeypatch: pytest.MonkeyPatch,
+        model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
         set_random_seed, max_num_seqs: int, max_model_len: int,
         available_blocks: int):
     """ 2-cases-in-1: (1) Two sequences finish at the same time and (2) a new
@@ -473,11 +477,14 @@ def test_two_sequences_finish_same_time_as_new_arrive(
 
 
 @pytest.mark.cb
+@pytest.mark.full_model
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [3])
 @pytest.mark.parametrize("max_model_len", [192])
-@pytest.mark.parametrize("available_blocks", [16])  # no restriction
-def test_new_sequence_joins_during_decode(model: str, backend: str,
+@pytest.mark.parametrize(
+    "available_blocks",
+    [12])  # specific value required to pass compilation with this config
+def test_new_sequence_joins_during_decode(model: ModelInfo, backend: str,
                                           monkeypatch: pytest.MonkeyPatch,
                                           set_random_seed, max_num_seqs: int,
                                           max_model_len: int,
@@ -612,7 +619,7 @@ def test_new_sequence_joins_during_decode(model: str, backend: str,
             "n_used_blocks": 5  # 2 blocks extended, one for each sequence
         },
         {
-            # Sequences 1 and 2 finish at step 70
+            # Sequences 1 and 2 finish at step 69
             # (start step + 2 prefills + 36 decodes - 1) = 32 + 2 + 36 - 1 = 69
             # (start step + 1 prefills + 3 decodes - 1) = 67 + 1 + 2 - 1 = 69
             "step": 69,
@@ -655,12 +662,13 @@ def test_new_sequence_joins_during_decode(model: str, backend: str,
 
 
 @pytest.mark.cb
+@pytest.mark.full_model
 @pytest.mark.parametrize("prefill_optimization", [True, False])
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [192])
-@pytest.mark.parametrize("available_blocks", [16])  # no restriction
-def test_prompt_too_long_for_current_tkv(model: str, backend: str,
+@pytest.mark.parametrize("available_blocks", [None])
+def test_prompt_too_long_for_current_tkv(model: ModelInfo, backend: str,
                                          prefill_optimization: bool,
                                          monkeypatch: pytest.MonkeyPatch,
                                          set_random_seed, max_num_seqs: int,
@@ -877,12 +885,13 @@ def test_prompt_too_long_for_current_tkv(model: str, backend: str,
 
 
 @pytest.mark.cb
+@pytest.mark.full_model
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len",
                          [192])  # restricted to violate scheduler condition
-@pytest.mark.parametrize("available_blocks", [16])  # no restriction
-def test_prefill_optimization_tkv_too_big(model: str, backend: str,
+@pytest.mark.parametrize("available_blocks", [None])
+def test_prefill_optimization_tkv_too_big(model: ModelInfo, backend: str,
                                           monkeypatch: pytest.MonkeyPatch,
                                           set_random_seed, max_num_seqs: int,
                                           max_model_len: int,
@@ -1045,6 +1054,7 @@ def test_prefill_optimization_tkv_too_big(model: str, backend: str,
 
 
 @pytest.mark.cb
+@pytest.mark.full_model
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [128])
@@ -1052,7 +1062,7 @@ def test_prefill_optimization_tkv_too_big(model: str, backend: str,
 # at least 5 blocks would be required
 @pytest.mark.parametrize("available_blocks", [4])
 def test_prefill_optimization_use_more_than_available_blocks(
-        model: str, backend: str, monkeypatch: pytest.MonkeyPatch,
+        model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
         set_random_seed, max_num_seqs: int, max_model_len: int,
         available_blocks: int):
     """ Scenario where the requested prompt is too long for current tkv value
@@ -1182,12 +1192,13 @@ def test_prefill_optimization_use_more_than_available_blocks(
 
 
 @pytest.mark.cb
+@pytest.mark.full_model
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [128])
-@pytest.mark.parametrize("available_blocks", [8])  # no restriction
+@pytest.mark.parametrize("available_blocks", [None])
 def test_requested_tokens_not_fitting_remaining_space(
-        model: str, backend: str, monkeypatch: pytest.MonkeyPatch,
+        model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
         set_random_seed, max_num_seqs: int, max_model_len: int,
         available_blocks: int):
     """ Scenario where the request goes beyond max_model_len and needs to wait
@@ -1351,11 +1362,12 @@ def test_requested_tokens_not_fitting_remaining_space(
 
 
 @pytest.mark.cb
+@pytest.mark.full_model
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [4])
 @pytest.mark.parametrize("max_model_len", [128])
 @pytest.mark.parametrize("available_blocks", [8])
-def test_requests_use_all_available_blocks(model: str, backend: str,
+def test_requests_use_all_available_blocks(model: ModelInfo, backend: str,
                                            monkeypatch: pytest.MonkeyPatch,
                                            set_random_seed, max_num_seqs: int,
                                            max_model_len: int,
@@ -1372,7 +1384,7 @@ def test_requests_use_all_available_blocks(model: str, backend: str,
         * available_blocks: 8
     """
     seqs_max_tokens = [3, 3, 3, 3]  # 2 decodes into a new block per sequence
-    prompts_lengths = [10, 10, 10, 10]  # 1 block for prefil per sequence
+    prompts_lengths = [10, 10, 10, 10]  # 1 block for prefill per sequence
     steps_add_reqs = [0, 0, 0, 0]
     # total number of blocks needed if scheduled together : 4 * (1 + 1) = 8
 
@@ -1446,7 +1458,7 @@ def test_requests_use_all_available_blocks(model: str, backend: str,
         },
         {
             # Decode sequences 0, 1, 2, 3
-            # all sequences finish at step 8
+            # all sequences finish at step 6
             # total blocks in use: 8
             "step": 6,
             "tkv": 66,
@@ -1489,12 +1501,13 @@ def test_requests_use_all_available_blocks(model: str, backend: str,
 
 
 @pytest.mark.cb
+@pytest.mark.full_model
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [4])
 @pytest.mark.parametrize("max_model_len", [128])
 @pytest.mark.parametrize("available_blocks", [4])
 def test_requests_use_more_than_available_blocks(
-        model: str, backend: str, monkeypatch: pytest.MonkeyPatch,
+        model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
         set_random_seed, max_num_seqs: int, max_model_len: int,
         available_blocks: int):
     """ Scenario where some request need to wait because of the number of 
@@ -1511,7 +1524,7 @@ def test_requests_use_more_than_available_blocks(
     """
 
     seqs_max_tokens = [3, 3, 3, 3]  # 2 decodes into a new block per sequence
-    prompts_lengths = [10, 10, 10, 10]  # 1 block for prefil per sequence
+    prompts_lengths = [10, 10, 10, 10]  # 1 block for prefill per sequence
     steps_add_reqs = [0, 0, 0, 0]
     # total number of blocks needed if scheduled together : 4 * (1 + 1) = 8
 
@@ -1653,10 +1666,11 @@ def test_requests_use_more_than_available_blocks(
 
 
 @pytest.mark.cb
+@pytest.mark.full_model
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [192])
-@pytest.mark.parametrize("available_blocks", [16])  # no restriction
-def test_requests_use_full_batch_tkv_limit(model: str, backend: str,
+@pytest.mark.parametrize("available_blocks", [None])
+def test_requests_use_full_batch_tkv_limit(model: ModelInfo, backend: str,
                                            monkeypatch: pytest.MonkeyPatch,
                                            set_random_seed, max_num_seqs: int,
                                            max_model_len: int,
@@ -1783,10 +1797,11 @@ def test_requests_use_full_batch_tkv_limit(model: str, backend: str,
 
 
 @pytest.mark.cb
+@pytest.mark.full_model
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [192])
-@pytest.mark.parametrize("available_blocks", [16])  # no restriction
-def test_requests_exceed_batch_tkv_limit(model: str, backend: str,
+@pytest.mark.parametrize("available_blocks", [None])
+def test_requests_exceed_batch_tkv_limit(model: ModelInfo, backend: str,
                                          monkeypatch: pytest.MonkeyPatch,
                                          set_random_seed, max_num_seqs: int,
                                          max_model_len: int,
@@ -1923,11 +1938,12 @@ def test_requests_exceed_batch_tkv_limit(model: str, backend: str,
 
 
 @pytest.mark.cb
+@pytest.mark.full_model
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [192])
-@pytest.mark.parametrize("available_blocks", [16])  # no restriction
+@pytest.mark.parametrize("available_blocks", [None])
 def test_requests_use_full_batch_tkv_limit_prefill_opt(
-        model: str, backend: str, monkeypatch: pytest.MonkeyPatch,
+        model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
         set_random_seed, max_num_seqs: int, max_model_len: int,
         available_blocks: int):
     """ Scenario where all requests can be scheduled right away as the
@@ -2033,11 +2049,12 @@ def test_requests_use_full_batch_tkv_limit_prefill_opt(
 
 
 @pytest.mark.cb
+@pytest.mark.full_model
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [192])
-@pytest.mark.parametrize("available_blocks", [16])  # no restriction
+@pytest.mark.parametrize("available_blocks", [None])
 def test_requests_exceed_batch_tkv_limit_prefill_opt(
-        model: str, backend: str, monkeypatch: pytest.MonkeyPatch,
+        model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
         set_random_seed, max_num_seqs: int, max_model_len: int,
         available_blocks: int):
     """ Scenario where a request cannot be scheduled right away as the
@@ -2148,6 +2165,268 @@ def test_requests_exceed_batch_tkv_limit_prefill_opt(
         max_model_len=max_model_len,
         available_blocks=available_blocks,
         max_batch_tkv_limit=max_batch_tkv_limit,
+        use_cb=True,
+    )
+
+    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                            prompts)
+
+
+@pytest.mark.cb
+# These values are all parameterized for test sorting
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_model_len", [128])
+@pytest.mark.parametrize("available_blocks", [None])
+def test_scheduler_heuristic_prioritize_prefill(
+        model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
+        set_random_seed, max_num_seqs: int, max_model_len: int,
+        available_blocks: int):
+    """ Scenario where the prefill is prioritized over the decode as the
+    number of prefill tokens is less then or equal to the threshold 
+    VLLM_SPYRE_N_TOKENS_PREFILL_PRIO. 
+    
+    Configuration:
+        * max_num_seqs: 2
+        * number of prompts: 2
+            * 0: len = 10, max tokens = 3, step joining = 0
+            * 1: len = 10, max tokens = 3, step joining = 0
+        * available_blocks: 16
+    """
+    # prioritizing prefills over decodes up to 1 block (64 tokens)
+    monkeypatch.setenv('VLLM_SPYRE_N_TOKENS_PREFILL_PRIO', '64')
+
+    seqs_max_tokens = [3, 3]  # 2 decodes into a new block per sequence
+    prompts_lengths = [10, 10]  # 1 block for prefill per sequence
+    steps_add_reqs = [0, 0]
+    # total number of blocks needed if scheduled together : 2 * (1 + 1) = 4
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0", "1"],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+        {
+            # Prefill sequence 0
+            # total blocks in use: 1
+            "step": 1,
+            "tkv": 64,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 2,  # prefill (1 block) + 3 decodes (1 block)
+            "n_used_blocks": 1
+        },
+        # request 1 can be prefilled as the number of prefill tokens (64)
+        # is <= to the threshold VLLM_SPYRE_N_TOKENS_PREFILL_PRIO (64)
+        {
+            # Prefill sequence 1
+            # total blocks in use: 2
+            "step": 2,
+            "tkv": 64,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 4,  # prefill (1 block) + 3 decodes (1 block)
+            "n_used_blocks": 2
+        },
+        {
+            # Decode sequences 0 and 1
+            # total blocks in use: 4
+            "step": 3,
+            "tkv": 65,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 4
+        },
+        {
+            # Decode sequences 0 and 1
+            # all sequences finish at step 4
+            # total blocks in use: 4
+            "step": 4,
+            "tkv": 66,
+            "waiting": [],
+            "running": [],
+            "request_outputs": ["1", "0"],
+            "finished_requests": ["1", "0"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 4
+        },
+        {
+            # Tkv should be cleared one step later
+            # total blocks in use: 4 - 4 = 0
+            "step": 5,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+    ]
+
+    cb_outputs, prompts = check_scheduler_inference_steps(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        seqs_max_tokens=seqs_max_tokens,
+        prompts_lengths=prompts_lengths,
+        steps_add_reqs=steps_add_reqs,
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
+        available_blocks=available_blocks,
+        use_cb=True,
+    )
+
+    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
+                            prompts)
+
+
+@pytest.mark.cb
+# These values are all parameterized for test sorting
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_model_len", [192])
+@pytest.mark.parametrize("available_blocks", [None])
+def test_scheduler_heuristic_prioritize_decode(model: ModelInfo, backend: str,
+                                               monkeypatch: pytest.MonkeyPatch,
+                                               set_random_seed,
+                                               max_num_seqs: int,
+                                               max_model_len: int,
+                                               available_blocks: int):
+    """ Scenario where the decode is prioritized over the prefill 
+    as the number of prefill tokens exceeds the threshold 
+    VLLM_SPYRE_N_TOKENS_PREFILL_PRIO.
+    
+    Configuration:
+        * max_num_seqs: 2
+        * number of prompts: 2
+            * 0: len = 70, max tokens = 3, step joining = 0
+            * 1: len = 70, max tokens = 3, step joining = 0
+        * available_blocks: 16
+    """
+    # prioritizing prefills over decodes up to 1 block (64 tokens)
+    monkeypatch.setenv('VLLM_SPYRE_N_TOKENS_PREFILL_PRIO', '64')
+
+    seqs_max_tokens = [3, 3]  # 2 decodes into a new block per sequence
+    prompts_lengths = [70, 70]  # 2 blocks for prefill per sequence
+    steps_add_reqs = [0, 0]
+    # total number of blocks needed if scheduled together : 2 * (2 + 1) = 6
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0", "1"],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+        {
+            # Prefill sequence 0
+            # total blocks in use: 2
+            "step": 1,
+            "tkv": 128,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 3,  # prefill (2 blocks) + 3 decodes (1 block)
+            "n_used_blocks": 2
+        },
+        # request 1 cannot be prefilled as the number of prefill tokens (128)
+        # is more than the threshold VLLM_SPYRE_N_TOKENS_PREFILL_PRIO (64)
+
+        # thus decode sequence 0
+        {
+            # Decode sequence 0
+            # total blocks in use: 3
+            "step": 2,
+            "tkv": 129,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 3,
+            "n_used_blocks": 3
+        },
+        {
+            # Decode sequence 0
+            # Sequence 0 finishes at step 3
+            # total blocks in use: 3
+            "step": 3,
+            "tkv": 130,
+            "waiting": ["1"],
+            "running": [],
+            "request_outputs": ["0"],
+            "finished_requests": ["0"],
+            "n_reserved_blocks": 3,
+            "n_used_blocks": 3
+        },
+        {
+            # Prefill sequence 1
+            # total blocks in use: 2
+            "step": 4,
+            "tkv": 128,
+            "waiting": [],
+            "running": ["1"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 3,  # prefill (2 blocks) + 3 decodes (1 block)
+            "n_used_blocks": 2  # 3 - 3 + 2
+        },
+        {
+            # Decode sequence 1
+            # total blocks in use: 3
+            "step": 5,
+            "tkv": 129,
+            "waiting": [],
+            "running": ["1"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 3,
+            "n_used_blocks": 3
+        },
+        {
+            # Decode sequence 1
+            # Sequence 1 finishes at step 6
+            # total blocks in use: 3
+            "step": 6,
+            "tkv": 130,
+            "waiting": [],
+            "running": [],
+            "request_outputs": ["1"],
+            "finished_requests": ["1"],
+            "n_reserved_blocks": 3,
+            "n_used_blocks": 3
+        },
+        {
+            # Tkv should be cleared one step later
+            # total blocks in use: 3 - 3 = 0
+            "step": 7,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+    ]
+
+    cb_outputs, prompts = check_scheduler_inference_steps(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        seqs_max_tokens=seqs_max_tokens,
+        prompts_lengths=prompts_lengths,
+        steps_add_reqs=steps_add_reqs,
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
+        available_blocks=available_blocks,
         use_cb=True,
     )
 

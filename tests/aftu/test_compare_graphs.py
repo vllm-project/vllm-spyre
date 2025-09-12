@@ -11,13 +11,14 @@ import pytest
 from graph_compare_utils import (collect_graph_files, compare_graphs,
                                  get_aftu_script_dir, get_model_path,
                                  run_inference_py_and_get_graphs)
-from llm_cache import DecodeWarmupShapes
-from spyre_util import generate_spyre_vllm_output, get_chicken_soup_prompts
+from output_util import generate_spyre_vllm_output
+from spyre_util import DecodeWarmupShapes, ModelInfo, get_chicken_soup_prompts
 from vllm import SamplingParams
 
 
 @pytest.mark.spyre
-def test_compare_graphs_cb(model: str, max_num_seqs: int,
+@pytest.mark.cb
+def test_compare_graphs_cb(model: ModelInfo, max_num_seqs: int,
                            monkeypatch: pytest.MonkeyPatch, use_llm_cache):
     """Test that the spyre worker correctly outputs
     continuous batches of requests by comparing to HF"""
@@ -42,7 +43,8 @@ def test_compare_graphs_cb(model: str, max_num_seqs: int,
 
     extra_env = {
         "VLLM_DT_MAX_CONTEXT_LEN": str(max_model_len),
-        "VLLM_DT_MAX_BATCH_SIZE": str(max_num_seqs)
+        "VLLM_DT_MAX_BATCH_SIZE": str(max_num_seqs),
+        "VLLM_DT_MAX_BATCH_TKV_LIMIT": str(1024 * 128)
     }
     aftu_graphs = run_inference_py_and_get_graphs(inference_py_args,
                                                   script_dir, extra_env)
@@ -90,7 +92,7 @@ def test_compare_graphs_cb(model: str, max_num_seqs: int,
 @pytest.mark.parametrize(
     "warmup_shapes", [[(64, 4, 4)]])  # (prompt_length/new_tokens/batch_size)
 def test_compare_graphs_static_batching(
-        model: str, warmup_shapes: DecodeWarmupShapes,
+        model: ModelInfo, warmup_shapes: DecodeWarmupShapes,
         monkeypatch: pytest.MonkeyPatch) -> None:
 
     # AFTU

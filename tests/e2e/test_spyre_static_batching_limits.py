@@ -4,8 +4,8 @@ Run `python -m pytest tests/e2e/test_spyre_max_prompt_length.py`.
 """
 
 import pytest
-from llm_cache import DecodeWarmupShapes
-from spyre_util import create_text_prompt, get_cached_llm
+from llm_cache import get_cached_llm
+from spyre_util import DecodeWarmupShapes, ModelInfo, create_text_prompt
 from vllm import SamplingParams
 
 
@@ -13,7 +13,7 @@ from vllm import SamplingParams
     "warmup_shapes",
     [[(64, 20, 4)], [(64, 20, 4),
                      (128, 20, 2)]])  # (prompt_length/new_tokens/batch_size)
-def test_max_prompt_len_and_new_tokens(model: str,
+def test_max_prompt_len_and_new_tokens(model: ModelInfo,
                                        warmup_shapes: DecodeWarmupShapes,
                                        backend: str, use_llm_cache,
                                        monkeypatch) -> None:
@@ -45,7 +45,7 @@ def test_max_prompt_len_and_new_tokens(model: str,
 
     # Craft a request with a prompt that is slightly too long for the warmup
     # shape
-    prompt = create_text_prompt(model,
+    prompt = create_text_prompt(model.name,
                                 min_token_length=max_prompt_length,
                                 max_token_length=max_prompt_length +
                                 max_new_tokens - 1)

@@ -7,7 +7,7 @@ import math
 import pytest
 import torch
 import torch.nn.functional
-from llm_cache import force_engine_shutdown
+from llm_cache_util import force_engine_shutdown
 from spyre_util import get_chicken_soup_prompts, skip_unsupported_tp_size
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, RequestOutput, SamplingParams
@@ -73,7 +73,7 @@ def test_prompt_logprobs_not_supported_with_cb(
     monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
 
     with pytest.raises(ValueError, match="continuous batching"):
-        VllmConfig(model_config=ModelConfig(model=model, task="generate"))
+        VllmConfig(model_config=ModelConfig(model=model.name, task="generate"))
 
 
 @pytest.mark.cpu
@@ -85,7 +85,7 @@ def test_prompt_logprobs_on_single_requests_only(
     monkeypatch.setenv("VLLM_SPYRE_WARMUP_BATCH_SIZES", "2")
 
     with pytest.raises(ValueError, match="batch size 1"):
-        VllmConfig(model_config=ModelConfig(model=model, task="generate"))
+        VllmConfig(model_config=ModelConfig(model=model.name, task="generate"))
 
 
 def _compare_prompt_logprobs(expected: list, actual: list,

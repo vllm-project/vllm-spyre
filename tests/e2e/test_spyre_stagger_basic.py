@@ -5,18 +5,19 @@ Run `python -m pytest tests/e2e/test_stagger_spyre_basic.py`.
 """
 
 import pytest
-from spyre_util import (check_output_against_hf, generate_spyre_vllm_output,
-                        get_chicken_soup_prompts, skip_unsupported_tp_size)
+from output_util import check_output_against_hf, generate_spyre_vllm_output
+from spyre_util import (ModelInfo, get_chicken_soup_prompts,
+                        skip_unsupported_tp_size)
 from vllm import SamplingParams
 
 
-def test_stagger_output(model: str, tp_size: int, backend: str, cb: int,
+def test_stagger_output(model: ModelInfo, tp_size: int, backend: str, cb: int,
                         max_num_seqs: int, max_model_len: int, warmup_shapes,
                         monkeypatch: pytest.MonkeyPatch,
                         use_llm_cache) -> None:
     '''
     This test verifies that generated output is still correct
-    when stagget mode is enabled.
+    when stagger mode is enabled.
     VLLM_SPYRE_MAX_LOAD_PROCESSES is set to 1, allowing
     only a single worker to load or compile the model at
     a time.

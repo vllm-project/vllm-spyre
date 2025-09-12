@@ -2,6 +2,7 @@ import inspect
 import os
 
 import pytest
+from spyre_util import ModelInfo
 
 from vllm_spyre.compat_utils import dataclass_fields
 
@@ -32,11 +33,12 @@ def test_vllm_bert_support():
 
 
 @pytest.mark.cpu
-def test_model_config_task(model: str):
+def test_model_config_task(model: ModelInfo):
 
     from vllm.engine.arg_utils import EngineArgs
 
-    vllm_config = EngineArgs(model=model).create_engine_config()
+    vllm_config = EngineArgs(model=model.name,
+                             revision=model.revision).create_engine_config()
     model_config = vllm_config.model_config
 
     task = getattr(model_config, "task", None)
@@ -65,22 +67,6 @@ def test_has_tasks():
         assert has_tasks
     elif VLLM_VERSION == "vLLM:lowest":
         assert not has_tasks, (
-            "The lowest supported vLLM version already"
-            "switched to the new definition of runners and task.")
-        # The compat code introduced in the PR below can now be removed:
-        # https://github.com/vllm-project/vllm-spyre/pull/338
-
-
-@pytest.mark.cpu
-def test_pooler_from_config():
-
-    from vllm.model_executor.layers.pooler import Pooler
-    has_from_config = hasattr(Pooler, "from_config_with_defaults")
-
-    if VLLM_VERSION == "vLLM:main":
-        assert not has_from_config
-    elif VLLM_VERSION == "vLLM:lowest":
-        assert has_from_config, (
             "The lowest supported vLLM version already"
             "switched to the new definition of runners and task.")
         # The compat code introduced in the PR below can now be removed:
@@ -168,3 +154,35 @@ def test_mm_inputs():
                                "renamed mm_inputs to mm_kwargs.")
         # The compat code introduced in the PR below can now be removed:
         # https://github.com/vllm-project/vllm-spyre/pull/380
+
+
+@pytest.mark.cpu
+def test_init_builtin_logitsprocs():
+
+    import vllm.v1.sample.logits_processor
+    has_init_builtin_logitsprocs = hasattr(vllm.v1.sample.logits_processor,
+                                           "init_builtin_logitsprocs")
+
+    if VLLM_VERSION == "vLLM:main":
+        assert not has_init_builtin_logitsprocs
+    elif VLLM_VERSION == "vLLM:lowest":
+        assert has_init_builtin_logitsprocs, (
+            "The lowest supported vLLM version already"
+            "refactored init_builtin_logitsprocs.")
+        # The compat code introduced in the PR below can now be removed:
+        # https://github.com/vllm-project/vllm-spyre/pull/443
+
+
+@pytest.mark.cpu
+def test_init_distributed_environment():
+    """Tests whether vllm's init_distributed_environment
+    has the custom timeout argument"""
+    from vllm.distributed import init_distributed_environment
+
+    annotations = inspect.getfullargspec(
+        init_distributed_environment).annotations
+
+    if VLLM_VERSION == "vLLM:lowest":
+        assert 'timeout' \
+                not in annotations, ("we should remove compat code which is now"
+                " part of released vllm version")
