@@ -114,6 +114,12 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "VLLM_SPYRE_N_TOKENS_PREFILL_PRIO":
     lambda: int(os.getenv("VLLM_SPYRE_N_TOKENS_PREFILL_PRIO", "-1")),
 
+    # scheduling heuristic: maximal waiting (blocking) time for prefill
+    # Prefills waiting longer than VLLM_SPYRE_MAX_WAITING_TIME_SECONDS
+    # seconds will have priority after the current decode batch has finished.
+    "VLLM_SPYRE_MAX_WAITING_TIME_SECONDS":
+    lambda: float(os.getenv("VLLM_SPYRE_MAX_WAITING_TIME_SECONDS", "inf")),
+
     # Allow vllm-spyre to update env vars related to multi-threading (eg. OMP)
     # based on the detected CPU cores and server configuration
     "VLLM_SPYRE_UPDATE_THREAD_CONFIG":
