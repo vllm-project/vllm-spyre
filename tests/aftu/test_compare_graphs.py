@@ -8,6 +8,7 @@ import sys
 import tempfile
 
 import pytest
+import torch
 from graph_compare_utils import (collect_graph_files, compare_graphs,
                                  get_aftu_script_dir, get_model_path,
                                  run_inference_py_and_get_graphs)
@@ -15,11 +16,26 @@ from output_util import generate_spyre_vllm_output
 from spyre_util import DecodeWarmupShapes, ModelInfo, get_chicken_soup_prompts
 from vllm import SamplingParams
 
+from vllm_spyre.model_executor.model_loader.spyre import SpyreCausalLM
+
+
+# TODO: AFTU uses float32 for mask, while we use float16, which
+# can generates different graphs. For now, until AFTU does not change
+# this, we can just mock this method to match with AFTU behavior.
+# NOTE: we need to set VLLM_ENABLE_V1_MULTIPROCESSING=0 otherwise this
+# mock will not propagate to the child process of the model runner
+@pytest.fixture(autouse=True)
+def mock_get_mask_dtype(mocker):
+
+    mocker.patch.object(SpyreCausalLM,
+                        "get_mask_dtype",
+                        return_value=torch.float32)
+
 
 @pytest.mark.spyre
 @pytest.mark.cb
 def test_compare_graphs_cb(model: ModelInfo, max_num_seqs: int,
-                           monkeypatch: pytest.MonkeyPatch, use_llm_cache):
+                           monkeypatch: pytest.MonkeyPatch):
     """Test that the spyre worker correctly outputs
     continuous batches of requests by comparing to HF"""
 
@@ -29,16 +45,19 @@ def test_compare_graphs_cb(model: ModelInfo, max_num_seqs: int,
         pytest.skip("aiu-fms-testing-utils is required "
                     "and is not installed to run this test")
     max_model_len = 256
+
     model_path = get_model_path(model)
 
+    attn_type = 'paged_fp8' if 'FP8' in model.name \
+        else 'paged'
     inference_py_args = [
         sys.executable, "scripts/inference.py", "--architecture",
-        "hf_configured", "--model_path", model_path, "--variant", model_path,
-        "--tokenizer", model_path, "--unfuse_weights", "--model_source", "hf",
-        "--device_type", "aiu", "--compile", "--default_dtype", "fp16",
-        "--compile_dynamic", "--min_pad_length", "64", "--max_new_tokens", "5",
-        "--batch_size",
-        str(max_num_seqs), "--compile_dynamic_sendnn", "--attention_type=paged"
+        "hf_pretrained", "--model_path", model_path, "--tokenizer", model_path,
+        "--unfuse_weights", "--device_type", "aiu", "--compile",
+        "--cast_bf16_to_fp16", "--compile_dynamic", "--min_pad_length", "64",
+        "--max_new_tokens", "5", "--batch_size",
+        str(max_num_seqs), "--compile_dynamic_sendnn", "--attention_type",
+        attn_type
     ]
 
     extra_env = {
@@ -55,9 +74,13 @@ def test_compare_graphs_cb(model: ModelInfo, max_num_seqs: int,
 
     max_new_tokens = 20
 
-    monkeypatch.setenv("DEE_DUMP_GRAPHS", "vllm_static")
+    monkeypatch.setenv("DEE_DUMP_GRAPHS", "vllm_cb")
     # Disable cache to produce the graphs
     monkeypatch.setenv("TORCH_SENDNN_CACHE_ENABLE", "0")
+
+    # need for the mocker
+    monkeypatch.setenv('VLLM_ENABLE_V1_MULTIPROCESSING', 0)
+
     vllm_sampling_params = SamplingParams(
         max_tokens=max_new_tokens,
         temperature=0,
@@ -100,34 +123,20 @@ def test_compare_graphs_static_batching(
     if script_dir is None:
         pytest.skip("aiu-fms-testing-utils is required "
                     "and is not installed to run this test")
+
+    attn_type = 'math_fp8' if 'FP8' in model.name \
+        else 'sdpa'
+
     model_path = get_model_path(model)
 
     inference_py_args = [
-        sys.executable,
-        "scripts/inference.py",
-        "--architecture",
-        "hf_configured",
-        "--model_path",
-        model_path,
-        "--variant",
-        model_path,
-        "--tokenizer",
-        model_path,
-        "--unfuse_weights",
-        "--model_source",
-        "hf",
-        "--device_type",
-        "aiu",
-        "--compile",
-        "--default_dtype",
-        "fp16",
-        "--compile_dynamic",
-        "--fixed_prompt_length",
-        str(warmup_shapes[0][0]),
-        "--max_new_tokens",
-        str(warmup_shapes[0][1]),
-        "--batch_size",
-        str(warmup_shapes[0][2]),
+        sys.executable, "scripts/inference.py", "--architecture",
+        "hf_pretrained", "--model_path", model_path, "--tokenizer", model_path,
+        "--unfuse_weights", "--device_type", "aiu", "--compile",
+        "--cast_bf16_to_fp16", "--compile_dynamic", "--fixed_prompt_length",
+        str(warmup_shapes[0][0]), "--max_new_tokens",
+        str(warmup_shapes[0][1]), "--batch_size",
+        str(warmup_shapes[0][2]), "--attention_type", attn_type
     ]
 
     aftu_graphs = run_inference_py_and_get_graphs(inference_py_args,
@@ -141,6 +150,8 @@ def test_compare_graphs_static_batching(
     monkeypatch.setenv("DEE_DUMP_GRAPHS", "vllm_static")
     # Disable cache to produce the graphs
     monkeypatch.setenv("TORCH_SENDNN_CACHE_ENABLE", "0")
+    # needed for the mocker
+    monkeypatch.setenv('VLLM_ENABLE_V1_MULTIPROCESSING', 0)
     vllm_sampling_params = SamplingParams(max_tokens=max_new_tokens,
                                           temperature=0,
                                           logprobs=0,
