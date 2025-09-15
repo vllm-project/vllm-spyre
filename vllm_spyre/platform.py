@@ -540,9 +540,8 @@ class SpyrePlatform(Platform):
         """
         disable_compilation_env_var = "DISABLE_COMPILATION"
 
-        disable_flag = os.getenv(disable_compilation_env_var, None)
-        if disable_flag is None or not bool(int(disable_flag)):
-            # Not set, or set to "0". Nothing to do
+        disable_flag = os.getenv(disable_compilation_env_var, "").lower()
+        if disable_flag not in ("1", "true"):
             return
 
         # If this isn't a decoder model, re-enable compilation
