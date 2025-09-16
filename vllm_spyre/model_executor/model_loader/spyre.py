@@ -696,9 +696,9 @@ class StaticBatchingFmsModel(FmsModelBase):
             # In order to calculate prompt logprobs, we have to return the
             # hidden states from the whole prompt. The static graphs need to be
             # compiled with this set one way or the other.
-            only_last_token = False
+            last_n_tokens = input_ids.shape[1]
         else:
-            only_last_token = True
+            last_n_tokens = 1
 
         output = self.model(
             input_ids,
@@ -706,11 +706,14 @@ class StaticBatchingFmsModel(FmsModelBase):
             mask=mask,
             past_key_value_states=self.past_key_value_states,
             use_cache=use_cache,
-            only_last_token=only_last_token,
+            last_n_tokens=last_n_tokens,
             **extra_kwargs,
         )
 
         logits, self.past_key_value_states = output
+
+        if not envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
+            logits = logits.squeeze(1)
 
         return logits
 
