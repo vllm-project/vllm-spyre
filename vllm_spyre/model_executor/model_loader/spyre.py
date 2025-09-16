@@ -110,13 +110,12 @@ class SpyreCausalLM(nn.Module):
             position_ids=positions,
             mask=masks,
             use_cache=True,
+            is_prompt=is_prompt,
             **extra_kwargs,
         )
 
         if envs_spyre.VLLM_SPYRE_USE_CB:
             if is_prompt and self.n_pads_right > 0:
-                # assert that indeed received the last block of logits
-                assert logits.shape[1] == SpyrePlatform.get_block_size()
                 # get last token before the right padding
                 logits = logits[self.indices, -self.n_pads_right - 1, :]
             else:
@@ -498,6 +497,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         position_ids: torch.Tensor,
         mask: torch.Tensor,
         use_cache: bool,
+        is_prompt: bool,
         **extra_kwargs,
     ) -> torch.Tensor:
 
@@ -529,7 +529,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             mask=mask,
             past_key_value_states=self.past_key_value_states,
             use_cache=use_cache,
-            last_n_tokens=SpyrePlatform.get_block_size(),
+            last_n_tokens=SpyrePlatform.get_block_size() if is_prompt else 1,
             current_tkv_mask=attn_metadata.current_tkv_mask,
             left_padded_prompt_mask=attn_metadata.left_padded_prompt_mask,
             block_table=attn_metadata.block_table,
@@ -538,6 +538,10 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         )
 
         logits, self.past_key_value_states = output
+
+        if is_prompt:
+            # assert that indeed received the last block of logits
+            assert logits.shape[1] == SpyrePlatform.get_block_size()
 
         if self.is_fp8_model:
             # update scale for kv_cache after execute model
