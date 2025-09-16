@@ -1,4 +1,5 @@
 import inspect
+import json
 import math
 import os
 import random
@@ -429,3 +430,10 @@ def get_longer_chicken_soup_prompts(num_prompts: int) -> list[str]:
         prompts = prompts * (math.ceil(num_prompts / 4))
 
     return prompts[:num_prompts]
+
+
+def write_sample_model_config(tmp_path, data):
+    """Helper to write a sample models_config.log.json in tmp_path."""
+    config_path = tmp_path / "models_config.log.json"
+    config_path.write_text(json.dumps(data))
+    return config_path
