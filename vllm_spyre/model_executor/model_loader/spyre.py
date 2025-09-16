@@ -115,6 +115,8 @@ class SpyreCausalLM(nn.Module):
 
         if envs_spyre.VLLM_SPYRE_USE_CB:
             if is_prompt and self.n_pads_right > 0:
+                # assert that indeed received the last block of logits
+                assert logits.shape[1] == SpyrePlatform.get_block_size()
                 # get last token before the right padding
                 logits = logits[self.indices, -self.n_pads_right - 1, :]
             else:
