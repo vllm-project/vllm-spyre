@@ -3,8 +3,9 @@ from llm_cache import get_cached_llm
 from spyre_util import ModelInfo
 from vllm import SamplingParams
 
+pytestmark = [pytest.mark.spyre, pytest.mark.full_model]
 
-@pytest.mark.full_model
+
 def test_spyre_batch1_temperature(model: ModelInfo, backend, monkeypatch,
                                   use_llm_cache, warmup_shapes):
 
