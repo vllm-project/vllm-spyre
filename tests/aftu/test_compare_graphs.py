@@ -24,7 +24,6 @@ from vllm_spyre.model_executor.model_loader.spyre import SpyreCausalLM
 # this, we can just mock this method to match with AFTU behavior.
 # NOTE: we need to set VLLM_ENABLE_V1_MULTIPROCESSING=0 otherwise this
 # mock will not propagate to the child process of the model runner
-@pytest.fixture(autouse=True)
 def mock_get_mask_dtype(mocker):
 
     mocker.patch.object(SpyreCausalLM,
@@ -35,7 +34,7 @@ def mock_get_mask_dtype(mocker):
 @pytest.mark.spyre
 @pytest.mark.cb
 def test_compare_graphs_cb(model: ModelInfo, max_num_seqs: int,
-                           monkeypatch: pytest.MonkeyPatch):
+                           monkeypatch: pytest.MonkeyPatch, mocker):
     """Test that the spyre worker correctly outputs
     continuous batches of requests by comparing to HF"""
 
@@ -48,8 +47,14 @@ def test_compare_graphs_cb(model: ModelInfo, max_num_seqs: int,
 
     model_path = get_model_path(model)
 
-    attn_type = 'paged_fp8' if 'FP8' in model.name \
+    is_quantized = 'FP8' in model.name
+
+    attn_type = 'paged_fp8' if is_quantized \
         else 'paged'
+
+    if is_quantized:
+        mock_get_mask_dtype(mocker)
+
     inference_py_args = [
         sys.executable, "scripts/inference.py", "--architecture",
         "hf_pretrained", "--model_path", model_path, "--tokenizer", model_path,
@@ -59,6 +64,9 @@ def test_compare_graphs_cb(model: ModelInfo, max_num_seqs: int,
         str(max_num_seqs), "--compile_dynamic_sendnn", "--attention_type",
         attn_type
     ]
+
+    if not is_quantized:
+        inference_py_args += ["--default_dtype", "fp16"]
 
     extra_env = {
         "VLLM_DT_MAX_CONTEXT_LEN": str(max_model_len),
@@ -114,9 +122,10 @@ def test_compare_graphs_cb(model: ModelInfo, max_num_seqs: int,
 @pytest.mark.spyre
 @pytest.mark.parametrize(
     "warmup_shapes", [[(64, 4, 4)]])  # (prompt_length/new_tokens/batch_size)
-def test_compare_graphs_static_batching(
-        model: ModelInfo, warmup_shapes: DecodeWarmupShapes,
-        monkeypatch: pytest.MonkeyPatch) -> None:
+def test_compare_graphs_static_batching(model: ModelInfo,
+                                        warmup_shapes: DecodeWarmupShapes,
+                                        monkeypatch: pytest.MonkeyPatch,
+                                        mocker) -> None:
 
     # AFTU
     script_dir = get_aftu_script_dir()
@@ -124,8 +133,13 @@ def test_compare_graphs_static_batching(
         pytest.skip("aiu-fms-testing-utils is required "
                     "and is not installed to run this test")
 
-    attn_type = 'math_fp8' if 'FP8' in model.name \
+    is_quantized = 'FP8' in model.name
+
+    attn_type = 'math_fp8' if is_quantized \
         else 'sdpa'
+
+    if is_quantized:
+        mock_get_mask_dtype(mocker)
 
     model_path = get_model_path(model)
 
@@ -138,6 +152,9 @@ def test_compare_graphs_static_batching(
         str(warmup_shapes[0][1]), "--batch_size",
         str(warmup_shapes[0][2]), "--attention_type", attn_type
     ]
+
+    if not is_quantized:
+        inference_py_args += ["--default_dtype", "fp16"]
 
     aftu_graphs = run_inference_py_and_get_graphs(inference_py_args,
                                                   script_dir)
