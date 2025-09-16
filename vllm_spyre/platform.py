@@ -115,65 +115,68 @@ class SpyrePlatform(Platform):
         if getattr(scheduler_config, "is_multi_step", False):
             raise NotImplementedError
 
-        is_decoder = model_config.runner_type == "generate"
+        if model_config is not None:
+            is_decoder = model_config.runner_type == "generate"
 
-        is_pooling = model_config.runner_type == "pooling"
+            is_pooling = model_config.runner_type == "pooling"
 
-        if not bool(int(os.getenv("VLLM_USE_V1", "1"))):
-            raise ValueError("vllm-spyre is only supported with vLLM v1. "
-                             "Please set VLLM_USE_V1=1")
-        elif not is_decoder and not is_pooling:
-            raise ValueError("Only the 'generate' and 'pooling' runners are "
-                             "supported")
-
-        if parallel_config.worker_cls == "auto":
-            parallel_config.worker_cls = "vllm_spyre.v1.worker."\
-                "spyre_worker.SpyreWorker"
-
-        cls._check_threading_config(parallel_config.world_size)
-
-        # set env vars based on the model
-        if is_decoder:
-            os.environ["FLEX_OVERWRITE_NMB_FRAME"] = "true"
-            os.environ["COMPILATION_MODE"] = "offline_decoder"
-        if is_pooling:
-            os.environ["FLEX_OVERWRITE_NMB_FRAME"] = "false"
-            os.environ["COMPILATION_MODE"] = "offline"
-
-        if envs_spyre.VLLM_SPYRE_USE_CB and is_decoder:
-            scheduler_config.scheduler_cls = "vllm_spyre.v1.core."\
-                "scheduler.ContinuousBatchingSpyreScheduler"
-            if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
-                raise ValueError("Prompt logprobs not supported with " \
-                "continuous batching")
-        else:
-            # Static batching or embedding model.
-            # Override --max-num-seqs to the biggest warmup batch size
-            # And override --max-model-len to the biggest warmup sequence
-            cls._warmup_shapes = None
-            spyre_warmup_shapes = cls.get_warmup_shapes(scheduler_config)
-            max_batch_size = 0
-            max_seq_len = 0
-            for shape in spyre_warmup_shapes:
-                max_batch_size = max(max_batch_size, shape["batch_size"])
-                max_seq_len = max(max_seq_len,
-                                  shape["prompt_length"] + shape["new_tokens"])
-
-            if (envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS
-                    and max_batch_size > 1):
+            if not bool(int(os.getenv("VLLM_USE_V1", "1"))):
+                raise ValueError("vllm-spyre is only supported with vLLM v1. "
+                                 "Please set VLLM_USE_V1=1")
+            elif not is_decoder and not is_pooling:
                 raise ValueError(
-                    "Prompt logprobs only supported with batch size 1")
+                    "Only the 'generate' and 'pooling' runners are "
+                    "supported")
 
-            # verify that warmup shapes are not too large
-            model_config.get_and_verify_max_len(max_model_len=max_seq_len)
+            if parallel_config.worker_cls == "auto":
+                parallel_config.worker_cls = "vllm_spyre.v1.worker."\
+                    "spyre_worker.SpyreWorker"
 
-            # override stuff
-            model_config.max_model_len = max_seq_len
-            scheduler_config.max_num_seqs = max_batch_size
+            cls._check_threading_config(parallel_config.world_size)
 
-            scheduler_config.scheduler_cls = (
-                    "vllm_spyre.v1.core.scheduler."\
-                        "StaticBatchingSpyreScheduler")
+            # set env vars based on the model
+            if is_decoder:
+                os.environ["FLEX_OVERWRITE_NMB_FRAME"] = "true"
+                os.environ["COMPILATION_MODE"] = "offline_decoder"
+            if is_pooling:
+                os.environ["FLEX_OVERWRITE_NMB_FRAME"] = "false"
+                os.environ["COMPILATION_MODE"] = "offline"
+
+            if envs_spyre.VLLM_SPYRE_USE_CB and is_decoder:
+                scheduler_config.scheduler_cls = "vllm_spyre.v1.core."\
+                    "scheduler.ContinuousBatchingSpyreScheduler"
+                if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
+                    raise ValueError("Prompt logprobs not supported with " \
+                    "continuous batching")
+            else:
+                # Static batching or embedding model.
+                # Override --max-num-seqs to the biggest warmup batch size
+                # And override --max-model-len to the biggest warmup sequence
+                cls._warmup_shapes = None
+                spyre_warmup_shapes = cls.get_warmup_shapes(scheduler_config)
+                max_batch_size = 0
+                max_seq_len = 0
+                for shape in spyre_warmup_shapes:
+                    max_batch_size = max(max_batch_size, shape["batch_size"])
+                    max_seq_len = max(
+                        max_seq_len,
+                        shape["prompt_length"] + shape["new_tokens"])
+
+                if (envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS
+                        and max_batch_size > 1):
+                    raise ValueError(
+                        "Prompt logprobs only supported with batch size 1")
+
+                # verify that warmup shapes are not too large
+                model_config.get_and_verify_max_len(max_model_len=max_seq_len)
+
+                # override stuff
+                model_config.max_model_len = max_seq_len
+                scheduler_config.max_num_seqs = max_batch_size
+
+                scheduler_config.scheduler_cls = (
+                        "vllm_spyre.v1.core.scheduler."\
+                            "StaticBatchingSpyreScheduler")
 
         # To disable any paged attention ops in the base scheduler, we:
         # - Set the block size (in tokens) to the maximum sequence length
@@ -193,53 +196,59 @@ class SpyrePlatform(Platform):
             cache_config.num_gpu_blocks_override = \
                 scheduler_config.max_num_seqs * 2
 
-            cache_config.block_size = model_config.max_model_len
-            scheduler_config.max_num_batched_tokens = (
-                model_config.max_model_len * scheduler_config.max_num_seqs)
+            if model_config is not None:
+                cache_config.block_size = model_config.max_model_len
+                scheduler_config.max_num_batched_tokens = (
+                    model_config.max_model_len * scheduler_config.max_num_seqs)
 
-        logger.info(
-            "Overriding configurations based on warmup shapes. "
-            "max_model_len=%d, max_num_seqs=%d, block_size=%d, "
-            "num_gpu_blocks_override=%d, max_num_batched_tokens=%d",
-            model_config.max_model_len, scheduler_config.max_num_seqs,
-            cache_config.block_size, cache_config.num_gpu_blocks_override,
-            scheduler_config.max_num_batched_tokens)
+                logger.info(
+                    "Overriding configurations based on warmup shapes. "
+                    "max_model_len=%d, max_num_seqs=%d, block_size=%d, "
+                    "num_gpu_blocks_override=%d, max_num_batched_tokens=%d",
+                    model_config.max_model_len, scheduler_config.max_num_seqs,
+                    cache_config.block_size,
+                    cache_config.num_gpu_blocks_override,
+                    scheduler_config.max_num_batched_tokens)
 
         # set env vars for torch_sendnn to consume
-        os.environ["VLLM_DT_MAX_CONTEXT_LEN"] = str(
-            vllm_config.model_config.max_model_len)
-        if (envs_spyre.VLLM_SPYRE_USE_CB
-                and vllm_config.model_config.max_model_len > 32 * 1024):
-            logger.warning(
-                'Max context length is too big. Currently only 32K (32768) ' \
-                'context length is supported on Spyre for continuous ' \
-                'batching. Results might be off!'
-            )
+        if model_config is not None:
+            os.environ["VLLM_DT_MAX_CONTEXT_LEN"] = str(
+                model_config.max_model_len)
+            if (envs_spyre.VLLM_SPYRE_USE_CB
+                    and model_config.max_model_len > 32 * 1024):
+                logger.warning(
+                    'Max context length is too big. Currently only 32K (32768)'\
+                    ' context length is supported on Spyre for continuous ' \
+                    'batching. Results might be off!'
+                )
         # min value 2 needed for VLLM_DT_MAX_BATCH_SIZE (compiler constraint)
         # Note that we can still have decodes of batch size 1 as the env var
         # only concerns the max batch size.
-        os.environ["VLLM_DT_MAX_BATCH_SIZE"] = str(
-            max(vllm_config.scheduler_config.max_num_seqs, 2))
+        if scheduler_config is not None:
+            os.environ["VLLM_DT_MAX_BATCH_SIZE"] = str(
+                max(scheduler_config.max_num_seqs, 2))
 
-        # max product of batch size x tkv supported by the Spyre compiler
-        if ('granite-3.3-8b-instruct' in model_config.model
-                and parallel_config.world_size == 4):
-            # hard coded value for tensor parallel size 4 with the below model
-            # https://huggingface.co/ibm-granite/granite-3.3-8b-instruct
-            os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(128 * 1024)
-            logger.info("Model granite-3.3-8b-instruct and tensor parallel " \
-            "size 4 detected. Using VLLM_DT_MAX_BATCH_TKV_LIMIT = %d",
-            128 * 1024)
-        else:
-            # default value for any other model/ tensor parallel size
-            default_max_batch_tkv_limit = \
-                vllm_config.model_config.max_model_len * \
-                vllm_config.scheduler_config.max_num_seqs
-            os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(
-                default_max_batch_tkv_limit)
-            logger.info("No model / tensor parallel size specific value for " \
-            "VLLM_DT_MAX_BATCH_TKV_LIMIT found. Using the default value " \
-            "(max_model_len * max_batch_size): %d", default_max_batch_tkv_limit)
+        if model_config is not None and scheduler_config is not None:
+            # max product of batch size x tkv supported by the Spyre compiler
+            if ('granite-3.3-8b-instruct' in model_config.model
+                    and parallel_config.world_size == 4):
+                # hard coded value for tensor parallel size 4 with below model
+                # https://huggingface.co/ibm-granite/granite-3.3-8b-instruct
+                os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(128 * 1024)
+                logger.info("Model granite-3.3-8b-instruct and tensor parallel"\
+                " size 4 detected. Using VLLM_DT_MAX_BATCH_TKV_LIMIT = %d",
+                128 * 1024)
+            else:
+                # default value for any other model/ tensor parallel size
+                default_max_batch_tkv_limit = \
+                    model_config.max_model_len * \
+                    scheduler_config.max_num_seqs
+                os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(
+                    default_max_batch_tkv_limit)
+                logger.info("No model / tensor parallel size specific value " \
+                " for VLLM_DT_MAX_BATCH_TKV_LIMIT found. Using the default " \
+                "value (max_model_len * max_batch_size): %d", \
+                    default_max_batch_tkv_limit)
 
         # scheduling heuristic: prefill vs decode prioritization
         if envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO == -1:
@@ -328,6 +337,13 @@ class SpyrePlatform(Platform):
         model configuration.
         """
         return True
+
+    @classmethod
+    def support_hybrid_kv_cache(cls) -> bool:
+        """
+        Returns if the hybrid kv cache is supported by the current platform.
+        """
+        return False
 
     @classmethod
     def validate_request(

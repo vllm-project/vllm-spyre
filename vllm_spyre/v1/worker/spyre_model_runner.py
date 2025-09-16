@@ -558,7 +558,6 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
             req_ids=list(req_id_to_index.keys()),
             req_id_to_index=req_id_to_index,
             sampled_token_ids=output.sampled_token_ids.tolist(),
-            spec_token_ids=None,
             logprobs=(output.logprobs_tensors.tolists()
                       if output.logprobs_tensors else None),
             prompt_logprobs_dict=prompt_logprobs_dicts,
