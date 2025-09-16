@@ -1,19 +1,22 @@
 import pytest
-from vllm import LLM, SamplingParams
+from llm_cache import get_cached_llm
+from spyre_util import ModelInfo
+from vllm import SamplingParams
 
 
-@pytest.fixture(scope="function", autouse=True)
-def setenv(backend, monkeypatch):
-    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+@pytest.mark.full_model
+def test_spyre_batch1_temperature(model: ModelInfo, backend, monkeypatch,
+                                  use_llm_cache, warmup_shapes):
 
+    spyre_model = get_cached_llm(
+        model=model,
+        max_model_len=128,
+        tensor_parallel_size=1,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        warmup_shapes=warmup_shapes,
+    )
 
-@pytest.fixture(scope="module")
-def spyre_model():
-    return LLM("ibm-granite/granite-3.3-8b-instruct")
-
-
-def test_spyre_batch1_temperature(spyre_model, setenv, monkeypatch,
-                                  use_llm_cache):
     prompt = "The capital of the United Kingdom is"
     params1 = SamplingParams(temperature=0.0, seed=8780, max_tokens=20)
     params2 = SamplingParams(temperature=0.5, seed=8780, max_tokens=20)
@@ -27,8 +30,18 @@ def test_spyre_batch1_temperature(spyre_model, setenv, monkeypatch,
     assert output2.outputs[0].text != output3.outputs[0].text
 
 
-def test_spyre_batch1_max_tokens(spyre_model, setenv, monkeypatch,
-                                 use_llm_cache):
+def test_spyre_batch1_max_tokens(model: ModelInfo, backend, monkeypatch,
+                                 use_llm_cache, warmup_shapes):
+
+    spyre_model = get_cached_llm(
+        model=model,
+        max_model_len=128,
+        tensor_parallel_size=1,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        warmup_shapes=warmup_shapes,
+    )
+
     prompt = "Count to twenty"
     params1 = SamplingParams(temperature=0, seed=8780, max_tokens=15)
     params2 = SamplingParams(temperature=0, seed=8780)
@@ -40,8 +53,16 @@ def test_spyre_batch1_max_tokens(spyre_model, setenv, monkeypatch,
     assert len(output2.outputs[0].token_ids) > 15
 
 
-def test_spyre_batch1_stop_sequence(spyre_model, setenv, monkeypatch,
-                                    use_llm_cache):
+def test_spyre_batch1_stop_sequence(model: ModelInfo, backend, monkeypatch,
+                                    use_llm_cache, warmup_shapes):
+    spyre_model = get_cached_llm(
+        model=model,
+        max_model_len=128,
+        tensor_parallel_size=1,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        warmup_shapes=warmup_shapes,
+    )
     tokenizer = spyre_model.get_tokenizer()
     stop_str = "train"
     stop_word_id = tokenizer.encode(stop_str)
@@ -63,8 +84,16 @@ def test_spyre_batch1_stop_sequence(spyre_model, setenv, monkeypatch,
     assert output2.outputs[0].finish_reason != 'stop'
 
 
-def test_spyre_batch1_presence_penalty(spyre_model, setenv, monkeypatch,
-                                       use_llm_cache):
+def test_spyre_batch1_presence_penalty(model: ModelInfo, backend, monkeypatch,
+                                       use_llm_cache, warmup_shapes):
+    spyre_model = get_cached_llm(
+        model=model,
+        max_model_len=128,
+        tensor_parallel_size=1,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        warmup_shapes=warmup_shapes,
+    )
     prompt = "REPEAT OVER AND OVER AGAIN THE MINIMUM \
               TIMES POSSIBLE: one one one one one"
 
@@ -87,14 +116,30 @@ def test_spyre_batch1_presence_penalty(spyre_model, setenv, monkeypatch,
                               no_penalty.outputs[0].text.lower().count(word)
 
 
-def test_spyre_batch1_frequency_penalty(spyre_model, setenv, monkeypatch,
-                                        use_llm_cache):
+def test_spyre_batch1_frequency_penalty(model: ModelInfo, backend, monkeypatch,
+                                        use_llm_cache, warmup_shapes):
+    spyre_model = get_cached_llm(
+        model=model,
+        max_model_len=128,
+        tensor_parallel_size=1,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        warmup_shapes=warmup_shapes,
+    )
+    tokenizer = spyre_model.get_tokenizer()
 
     prompt = 'repeat the word hi ten times:'
     word = " hi"
+    word_id = tokenizer.encode(word)
 
-    param1 = SamplingParams(frequency_penalty=2.0, seed=8780, max_tokens=20)
-    param2 = SamplingParams(frequency_penalty=-2.0, seed=8780, max_tokens=20)
+    param1 = SamplingParams(frequency_penalty=2.0,
+                            seed=8780,
+                            logit_bias={word_id[0]: 5},
+                            max_tokens=20)
+    param2 = SamplingParams(frequency_penalty=-2.0,
+                            seed=8780,
+                            logit_bias={word_id[0]: 5},
+                            max_tokens=20)
 
     output = spyre_model.generate(prompt, param1)[0]
     no_penalty = spyre_model.generate(prompt, param2)[0]
@@ -104,8 +149,16 @@ def test_spyre_batch1_frequency_penalty(spyre_model, setenv, monkeypatch,
     assert output.outputs[0].text.lower().count(word) < word_count
 
 
-def test_spyre_batch1_n_generations(spyre_model, setenv, monkeypatch,
-                                    use_llm_cache):
+def test_spyre_batch1_n_generations(model: ModelInfo, backend, monkeypatch,
+                                    use_llm_cache, warmup_shapes):
+    spyre_model = get_cached_llm(
+        model=model,
+        max_model_len=128,
+        tensor_parallel_size=1,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        warmup_shapes=warmup_shapes,
+    )
     prompt = "The three most popular sports in the world are: "
 
     params = SamplingParams(n=3, seed=8780, max_tokens=20)
@@ -117,7 +170,16 @@ def test_spyre_batch1_n_generations(spyre_model, setenv, monkeypatch,
     assert output.outputs[1].text != output.outputs[2].text
 
 
-def test_spyre_batch1_top_p(spyre_model, setenv, monkeypatch, use_llm_cache):
+def test_spyre_batch1_top_p(model: ModelInfo, backend, monkeypatch,
+                            use_llm_cache, warmup_shapes):
+    spyre_model = get_cached_llm(
+        model=model,
+        max_model_len=128,
+        tensor_parallel_size=1,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        warmup_shapes=warmup_shapes,
+    )
     prompt = "The first three letters of the alphabet are"
     params1 = SamplingParams(top_p=0.01,
                              seed=8780,
@@ -132,7 +194,16 @@ def test_spyre_batch1_top_p(spyre_model, setenv, monkeypatch, use_llm_cache):
     assert output1.outputs[0].text != output2.outputs[0].text
 
 
-def test_spyre_batch1_top_k(spyre_model, setenv, monkeypatch, use_llm_cache):
+def test_spyre_batch1_top_k(model: ModelInfo, backend, monkeypatch,
+                            use_llm_cache, warmup_shapes):
+    spyre_model = get_cached_llm(
+        model=model,
+        max_model_len=128,
+        tensor_parallel_size=1,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        warmup_shapes=warmup_shapes,
+    )
     prompt = "The opposite of hot is"
     params1 = SamplingParams(top_k=1, seed=42, max_tokens=5)
     params2 = SamplingParams(seed=42, max_tokens=5)
@@ -144,8 +215,16 @@ def test_spyre_batch1_top_k(spyre_model, setenv, monkeypatch, use_llm_cache):
     assert output1.outputs[0].text != output2.outputs[0].text
 
 
-def test_spyre_batch1_logit_bias(spyre_model, setenv, monkeypatch,
-                                 use_llm_cache):
+def test_spyre_batch1_logit_bias(model: ModelInfo, backend, monkeypatch,
+                                 use_llm_cache, warmup_shapes):
+    spyre_model = get_cached_llm(
+        model=model,
+        max_model_len=128,
+        tensor_parallel_size=1,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        warmup_shapes=warmup_shapes,
+    )
     tokenizer = spyre_model.get_tokenizer()
     banned_word = "train"
     forced_word = "plane"
@@ -175,8 +254,16 @@ def test_spyre_batch1_logit_bias(spyre_model, setenv, monkeypatch,
     assert output1.outputs[0].text != output2.outputs[0].text
 
 
-def test_spyre_batch1_min_tokens(spyre_model, setenv, monkeypatch,
-                                 use_llm_cache):
+def test_spyre_batch1_min_tokens(model: ModelInfo, backend, monkeypatch,
+                                 use_llm_cache, warmup_shapes):
+    spyre_model = get_cached_llm(
+        model=model,
+        max_model_len=128,
+        tensor_parallel_size=1,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        warmup_shapes=warmup_shapes,
+    )
     prompt = "What is the capital of the USA?"
     tokenizer = spyre_model.get_tokenizer()
     eos_id = tokenizer.eos_token_id
@@ -194,8 +281,16 @@ def test_spyre_batch1_min_tokens(spyre_model, setenv, monkeypatch,
     assert len(output2.outputs[0].token_ids) < 19
 
 
-def test_spyre_batch1_ignore_eos(spyre_model, setenv, monkeypatch,
-                                 use_llm_cache):
+def test_spyre_batch1_ignore_eos(model: ModelInfo, backend, monkeypatch,
+                                 use_llm_cache, warmup_shapes):
+    spyre_model = get_cached_llm(
+        model=model,
+        max_model_len=128,
+        tensor_parallel_size=1,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        warmup_shapes=warmup_shapes,
+    )
     tokenizer = spyre_model.get_tokenizer()
     eos_id = tokenizer.eos_token_id
     prompt = "This is the end of the story"
@@ -220,7 +315,16 @@ def test_spyre_batch1_ignore_eos(spyre_model, setenv, monkeypatch,
     assert output2.outputs[0].finish_reason != 'length'
 
 
-def test_spyre_batch1_min_p(spyre_model, setenv, monkeypatch, use_llm_cache):
+def test_spyre_batch1_min_p(model: ModelInfo, backend, monkeypatch,
+                            use_llm_cache, warmup_shapes):
+    spyre_model = get_cached_llm(
+        model=model,
+        max_model_len=128,
+        tensor_parallel_size=1,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        warmup_shapes=warmup_shapes,
+    )
     prompt = "The opposite of black is"
     params1 = SamplingParams(min_p=0.5, seed=8780, temperature=2, max_tokens=5)
     params2 = SamplingParams(temperature=2, seed=8780, max_tokens=5)
@@ -232,8 +336,16 @@ def test_spyre_batch1_min_p(spyre_model, setenv, monkeypatch, use_llm_cache):
     assert output1.outputs[0].text != output2.outputs[0].text
 
 
-def test_spyre_batch1_bad_words(spyre_model, setenv, monkeypatch,
-                                use_llm_cache):
+def test_spyre_batch1_bad_words(model: ModelInfo, backend, monkeypatch,
+                                use_llm_cache, warmup_shapes):
+    spyre_model = get_cached_llm(
+        model=model,
+        max_model_len=128,
+        tensor_parallel_size=1,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        warmup_shapes=warmup_shapes,
+    )
     prompt = "The capital of France is"
     params1 = SamplingParams(max_tokens=5,
                              temperature=0,
@@ -249,8 +361,16 @@ def test_spyre_batch1_bad_words(spyre_model, setenv, monkeypatch,
     assert output1.outputs[0].text != output2.outputs[0].text
 
 
-def test_spyre_batch1_detokenize(spyre_model, setenv, monkeypatch,
-                                 use_llm_cache):
+def test_spyre_batch1_detokenize(model: ModelInfo, backend, monkeypatch,
+                                 use_llm_cache, warmup_shapes):
+    spyre_model = get_cached_llm(
+        model=model,
+        max_model_len=128,
+        tensor_parallel_size=1,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        warmup_shapes=warmup_shapes,
+    )
     prompt = "Hello, world!"
     params = SamplingParams(max_tokens=5,
                             seed=8780,
@@ -262,8 +382,16 @@ def test_spyre_batch1_detokenize(spyre_model, setenv, monkeypatch,
     assert len(output.outputs[0].token_ids) > 0
 
 
-def test_spyre_batch1_logprobs(spyre_model, setenv, monkeypatch,
-                               use_llm_cache):
+def test_spyre_batch1_logprobs(model: ModelInfo, backend, monkeypatch,
+                               use_llm_cache, warmup_shapes):
+    spyre_model = get_cached_llm(
+        model=model,
+        max_model_len=128,
+        tensor_parallel_size=1,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        warmup_shapes=warmup_shapes,
+    )
     num_logprobs = 5
     prompt = "The sky is"
     params = SamplingParams(max_tokens=5,
