@@ -13,6 +13,7 @@ from graph_compare_utils import (collect_graph_files, compare_graphs,
                                  get_aftu_script_dir, get_model_path,
                                  run_inference_py_and_get_graphs)
 from output_util import generate_spyre_vllm_output
+from pytest_mock.plugin import MockerFixture
 from spyre_util import DecodeWarmupShapes, ModelInfo, get_chicken_soup_prompts
 from vllm import SamplingParams
 
@@ -24,7 +25,7 @@ from vllm_spyre.model_executor.model_loader.spyre import SpyreCausalLM
 # this, we can just mock this method to match with AFTU behavior.
 # NOTE: we need to set VLLM_ENABLE_V1_MULTIPROCESSING=0 otherwise this
 # mock will not propagate to the child process of the model runner
-def mock_get_mask_dtype(mocker):
+def mock_get_mask_dtype(mocker: MockerFixture):
 
     mocker.patch.object(SpyreCausalLM,
                         "get_mask_dtype",
@@ -34,7 +35,8 @@ def mock_get_mask_dtype(mocker):
 @pytest.mark.spyre
 @pytest.mark.cb
 def test_compare_graphs_cb(model: ModelInfo, max_num_seqs: int,
-                           monkeypatch: pytest.MonkeyPatch, mocker):
+                           monkeypatch: pytest.MonkeyPatch,
+                           mocker: MockerFixture):
     """Test that the spyre worker correctly outputs
     continuous batches of requests by comparing to HF"""
 
@@ -125,7 +127,7 @@ def test_compare_graphs_cb(model: ModelInfo, max_num_seqs: int,
 def test_compare_graphs_static_batching(model: ModelInfo,
                                         warmup_shapes: DecodeWarmupShapes,
                                         monkeypatch: pytest.MonkeyPatch,
-                                        mocker) -> None:
+                                        mocker: MockerFixture) -> None:
 
     # AFTU
     script_dir = get_aftu_script_dir()
@@ -164,7 +166,7 @@ def test_compare_graphs_static_batching(model: ModelInfo,
 
     max_new_tokens = warmup_shapes[0][1]
 
-    monkeypatch.setenv("DEE_DUMP_GRAPHS", "vllm_static")
+    monkeypatch.setenv("DEE_DUMP_GRAPHS", "vllm_sb")
     # Disable cache to produce the graphs
     monkeypatch.setenv("TORCH_SENDNN_CACHE_ENABLE", "0")
     # needed for the mocker
