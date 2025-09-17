@@ -24,7 +24,7 @@ def test_handle_disable_compilation(monkeypatch, tmp_path, batch_type):
             "vllm_spyre_version": "0.8.0",
             "data": {
                 "MODEL_NAME": "/models/granite-3.3-8b-instruct-FP8",
-                "NUM_AIUS": 4,
+                "NUM_AIUS": 2,
                 "VLLM_SPYRE_WARMUP_PROMPT_LENS": "128",
                 "VLLM_SPYRE_WARMUP_NEW_TOKENS": "128",
                 "VLLM_SPYRE_WARMUP_BATCH_SIZES": "1",
@@ -37,7 +37,7 @@ def test_handle_disable_compilation(monkeypatch, tmp_path, batch_type):
             "vllm_spyre_version": "0.8.0",
             "data": {
                 "MODEL_NAME": "/models/granite-3.3-8b-instruct-FP8",
-                "NUM_AIUS": 4,
+                "NUM_AIUS": 2,
                 "VLLM_DT_MAX_CONTEXT_LEN": 256,
                 "VLLM_DT_MAX_BATCH_SIZE": 2
             },
@@ -52,7 +52,7 @@ def test_handle_disable_compilation(monkeypatch, tmp_path, batch_type):
     dummy_vllm_config = VllmConfig(
         model_config=ModelConfig(model="JackFram/llama-160m",
                                  max_model_len=256),
-        parallel_config=ParallelConfig(tensor_parallel_size=4),
+        parallel_config=ParallelConfig(tensor_parallel_size=2),
         scheduler_config=SchedulerConfig(max_num_seqs=2))
 
     SpyrePlatform._handle_disable_compilation(dummy_vllm_config,
