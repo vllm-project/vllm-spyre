@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 import pytest
 from llm_cache import get_cached_llm
 from spyre_util import ModelInfo
@@ -64,18 +66,11 @@ def test_spyre_batch1_stop_sequence(model: ModelInfo, backend, monkeypatch,
         monkeypatch=monkeypatch,
         warmup_shapes=warmup_shapes,
     )
-    tokenizer = spyre_model.get_tokenizer()
     stop_str = "train"
-    stop_word_id = tokenizer.encode(stop_str)
     prompt = "The best way to travel from Paris to Berlim is by "
 
-    params1 = SamplingParams(stop=[stop_str],
-                             max_tokens=20,
-                             seed=8780,
-                             logit_bias={stop_word_id[0]: 100})
-    params2 = SamplingParams(max_tokens=20,
-                             seed=8780,
-                             logit_bias={stop_word_id[0]: 100})
+    params1 = SamplingParams(stop=[stop_str], max_tokens=20, seed=8780)
+    params2 = SamplingParams(max_tokens=20, seed=8780)
 
     output1 = spyre_model.generate(prompt, params1)[0]
     output2 = spyre_model.generate(prompt, params2)[0]
@@ -83,6 +78,14 @@ def test_spyre_batch1_stop_sequence(model: ModelInfo, backend, monkeypatch,
     assert stop_str not in output1.outputs[0].text
     assert output1.outputs[0].finish_reason == 'stop'
     assert output2.outputs[0].finish_reason != 'stop'
+
+
+def max_repetitions(output):
+    histo = defaultdict(int)
+    for token in output.outputs[0].token_ids:
+        histo[token] += 1
+
+    return max(histo.values())
 
 
 def test_spyre_batch1_presence_penalty(model: ModelInfo, backend, monkeypatch,
@@ -95,26 +98,20 @@ def test_spyre_batch1_presence_penalty(model: ModelInfo, backend, monkeypatch,
         monkeypatch=monkeypatch,
         warmup_shapes=warmup_shapes,
     )
-    prompt = "REPEAT OVER AND OVER AGAIN THE MINIMUM \
-              TIMES POSSIBLE: one one one one one"
+    prompt = "REPEAT OVER AND OVER AGAIN THE MINIMUM "\
+             "TIMES POSSIBLE: one one one one one"
 
-    word = " one"
-    tokenizer = spyre_model.get_tokenizer()
-    word_id = tokenizer.encode(" one")
-    param1 = SamplingParams(presence_penalty=2.0,
-                            seed=8780,
-                            logit_bias={word_id[0]: 1},
-                            max_tokens=20)
-    param2 = SamplingParams(presence_penalty=-2.0,
-                            seed=8780,
-                            logit_bias={word_id[0]: 1},
-                            max_tokens=20)
+    param1 = SamplingParams(presence_penalty=2.0, seed=8780, max_tokens=20)
+    param2 = SamplingParams(presence_penalty=-2.0, seed=8780, max_tokens=20)
 
     with_penalty = spyre_model.generate(prompt, param1)[0]
     no_penalty = spyre_model.generate(prompt, param2)[0]
 
-    assert with_penalty.outputs[0].text.lower().count(word) < \
-                              no_penalty.outputs[0].text.lower().count(word)
+    with_penalty_max = max_repetitions(with_penalty)
+    no_penalty_max = max_repetitions(no_penalty)
+
+    assert no_penalty_max > 1
+    assert no_penalty_max > with_penalty_max
 
 
 def test_spyre_batch1_frequency_penalty(model: ModelInfo, backend, monkeypatch,
@@ -127,27 +124,19 @@ def test_spyre_batch1_frequency_penalty(model: ModelInfo, backend, monkeypatch,
         monkeypatch=monkeypatch,
         warmup_shapes=warmup_shapes,
     )
-    tokenizer = spyre_model.get_tokenizer()
 
     prompt = 'repeat the word hi ten times:'
-    word = " hi"
-    word_id = tokenizer.encode(word)
 
-    param1 = SamplingParams(frequency_penalty=2.0,
-                            seed=8780,
-                            logit_bias={word_id[0]: 5},
-                            max_tokens=20)
-    param2 = SamplingParams(frequency_penalty=-2.0,
-                            seed=8780,
-                            logit_bias={word_id[0]: 5},
-                            max_tokens=20)
+    param1 = SamplingParams(frequency_penalty=2.0, seed=8780, max_tokens=20)
+    param2 = SamplingParams(frequency_penalty=-2.0, seed=8780, max_tokens=20)
 
-    output = spyre_model.generate(prompt, param1)[0]
+    with_penalty = spyre_model.generate(prompt, param1)[0]
     no_penalty = spyre_model.generate(prompt, param2)[0]
 
-    word_count = no_penalty.outputs[0].text.lower().count(word)
-
-    assert output.outputs[0].text.lower().count(word) < word_count
+    with_penalty_max = max_repetitions(with_penalty)
+    no_penalty_max = max_repetitions(no_penalty)
+    assert no_penalty_max > 1
+    assert no_penalty_max > with_penalty_max
 
 
 def test_spyre_batch1_n_generations(model: ModelInfo, backend, monkeypatch,
@@ -171,6 +160,16 @@ def test_spyre_batch1_n_generations(model: ModelInfo, backend, monkeypatch,
     assert output.outputs[1].text != output.outputs[2].text
 
 
+def token_diversity(spyre_model, prompt, params, n_experiments):
+
+    tokens = []
+    for i in range(n_experiments):
+        output = spyre_model.generate(prompt, params)[0]
+        tokens.extend(output.outputs[0].token_ids)
+
+    return len(set(tokens))
+
+
 def test_spyre_batch1_top_p(model: ModelInfo, backend, monkeypatch,
                             use_llm_cache, warmup_shapes):
     spyre_model = get_cached_llm(
@@ -182,17 +181,12 @@ def test_spyre_batch1_top_p(model: ModelInfo, backend, monkeypatch,
         warmup_shapes=warmup_shapes,
     )
     prompt = "The first three letters of the alphabet are"
-    params1 = SamplingParams(top_p=0.01,
-                             seed=8780,
-                             temperature=1,
-                             max_tokens=10)
-    params2 = SamplingParams(temperature=1, seed=8780, max_tokens=10)
+    params1 = SamplingParams(top_p=0.01, temperature=1, max_tokens=10)
+    params2 = SamplingParams(temperature=1, max_tokens=10)
 
-    output1 = spyre_model.generate(prompt, params1)[0]
-    output2 = spyre_model.generate(prompt, params2)[0]
-
-    assert "A, B, and C" in output1.outputs[0].text
-    assert output1.outputs[0].text != output2.outputs[0].text
+    token_div1 = token_diversity(spyre_model, prompt, params1, 10)
+    token_div2 = token_diversity(spyre_model, prompt, params2, 10)
+    assert token_div1 < token_div2
 
 
 def test_spyre_batch1_top_k(model: ModelInfo, backend, monkeypatch,
@@ -206,14 +200,12 @@ def test_spyre_batch1_top_k(model: ModelInfo, backend, monkeypatch,
         warmup_shapes=warmup_shapes,
     )
     prompt = "The opposite of hot is"
-    params1 = SamplingParams(top_k=1, seed=42, max_tokens=5)
-    params2 = SamplingParams(seed=42, max_tokens=5)
+    params1 = SamplingParams(temperature=1, top_k=1, max_tokens=5)
+    params2 = SamplingParams(temperature=1, max_tokens=5)
 
-    output1 = spyre_model.generate(prompt, params1)[0]
-    output2 = spyre_model.generate(prompt, params2)[0]
-
-    assert "cold" in output1.outputs[0].text.lower()
-    assert output1.outputs[0].text != output2.outputs[0].text
+    token_div1 = token_diversity(spyre_model, prompt, params1, 10)
+    token_div2 = token_diversity(spyre_model, prompt, params2, 10)
+    assert token_div1 < token_div2
 
 
 def test_spyre_batch1_logit_bias(model: ModelInfo, backend, monkeypatch,
@@ -327,14 +319,13 @@ def test_spyre_batch1_min_p(model: ModelInfo, backend, monkeypatch,
         warmup_shapes=warmup_shapes,
     )
     prompt = "The opposite of black is"
-    params1 = SamplingParams(min_p=0.5, seed=8780, temperature=2, max_tokens=5)
-    params2 = SamplingParams(temperature=2, seed=8780, max_tokens=5)
+    params1 = SamplingParams(min_p=0.5, temperature=1, max_tokens=5)
+    params2 = SamplingParams(temperature=1, max_tokens=5)
 
-    output1 = spyre_model.generate(prompt, params1)[0]
-    output2 = spyre_model.generate(prompt, params2)[0]
+    token_div1 = token_diversity(spyre_model, prompt, params1, 10)
+    token_div2 = token_diversity(spyre_model, prompt, params2, 10)
 
-    assert "white" in output1.outputs[0].text.lower()
-    assert output1.outputs[0].text != output2.outputs[0].text
+    assert token_div1 < token_div2
 
 
 def test_spyre_batch1_bad_words(model: ModelInfo, backend, monkeypatch,
