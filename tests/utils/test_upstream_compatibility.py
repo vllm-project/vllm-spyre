@@ -11,25 +11,6 @@ VLLM_VERSION = os.getenv("TEST_VLLM_VERSION", "default")
 
 
 @pytest.mark.cpu
-def test_has_tasks():
-
-    try:
-        from vllm import tasks  # noqa
-        has_tasks = True
-    except Exception:
-        has_tasks = False
-
-    if VLLM_VERSION == "vLLM:main":
-        assert has_tasks
-    elif VLLM_VERSION == "vLLM:lowest":
-        assert not has_tasks, (
-            "The lowest supported vLLM version already"
-            "switched to the new definition of runners and task.")
-        # The compat code introduced in the PR below can now be removed:
-        # https://github.com/vllm-project/vllm-spyre/pull/338
-
-
-@pytest.mark.cpu
 def test_pooler_default_args():
 
     from vllm.model_executor.layers.pooler import Pooler
