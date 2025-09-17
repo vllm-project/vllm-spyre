@@ -1451,12 +1451,13 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
                 self.pooler = Pooler.for_embed(pooler_config=pooler_config,
                                                **extra_args)
         elif task == "classify":
-            self.pooler = ClassifierPooler(
-                pooling=self._pooler,
-                classifier=ClassifierAdapter(self.classifier),
-                act_fn=ClassifierPooler.act_fn_for_cross_encoder(
-                    self.model_config),
-            )
+            with set_current_vllm_config(self.vllm_config):
+                self.pooler = ClassifierPooler(
+                    pooling=self._pooler,
+                    classifier=ClassifierAdapter(self.classifier),
+                    act_fn=ClassifierPooler.act_fn_for_cross_encoder(
+                        self.model_config),
+                )
 
     @property
     def vocab_size(self) -> int:
