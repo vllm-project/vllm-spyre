@@ -16,6 +16,9 @@ def test_handle_disable_compilation(monkeypatch, tmp_path, batch_type):
     monkeypatch.setattr("vllm_spyre._version.version", "0.8.0")
 
     if batch_type == "sb":
+        monkeypatch.setenv("VLLM_SPYRE_WARMUP_PROMPT_LENS", "128")
+        monkeypatch.setenv("VLLM_SPYRE_WARMUP_NEW_TOKENS", "128")
+        monkeypatch.setenv("VLLM_SPYRE_WARMUP_BATCH_SIZES", "1")
         monkeypatch.setenv("VLLM_SPYRE_USE_CB", "0")
         sample_model_config = {
             "vllm_spyre_version": "0.8.0",
@@ -27,9 +30,6 @@ def test_handle_disable_compilation(monkeypatch, tmp_path, batch_type):
                 "VLLM_SPYRE_WARMUP_BATCH_SIZES": "1",
             },
         }
-        monkeypatch.setenv("VLLM_SPYRE_WARMUP_PROMPT_LENS", "128")
-        monkeypatch.setenv("VLLM_SPYRE_WARMUP_NEW_TOKENS", "128")
-        monkeypatch.setenv("VLLM_SPYRE_WARMUP_BATCH_SIZES", "1")
 
     else:
         monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
@@ -51,7 +51,7 @@ def test_handle_disable_compilation(monkeypatch, tmp_path, batch_type):
 
     dummy_vllm_config = VllmConfig(
         model_config=ModelConfig(
-            model="ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8",
+            model="ibm-ai-platform/micro-g3.3-8b-instruct-1b",
             max_model_len=256),
         parallel_config=ParallelConfig(tensor_parallel_size=4),
         scheduler_config=SchedulerConfig(max_num_seqs=2))
