@@ -696,13 +696,10 @@ class StaticBatchingFmsModel(FmsModelBase):
         # specify attention type for static batching
         extra_kwargs['attn_name'] = self.attention_name
 
-        if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
-            # In order to calculate prompt logprobs, we have to return the
-            # hidden states from the whole prompt. The static graphs need to be
-            # compiled with this set one way or the other.
-            last_n_tokens = input_ids.shape[1]
-        else:
-            last_n_tokens = 1
+        # In order to calculate prompt logprobs, we have to return the
+        # hidden states from the whole prompt. The static graphs need to be
+        # compiled with this set one way or the other.
+        last_n_tokens = 0 if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS else 1
 
         output = self.model(
             input_ids,
