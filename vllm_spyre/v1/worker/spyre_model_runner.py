@@ -1,4 +1,3 @@
-import inspect
 import math
 import time
 from abc import ABC, abstractmethod
@@ -14,8 +13,7 @@ from transformers import (AutoModel, AutoModelForSequenceClassification,
 from vllm.config import DeviceConfig, VllmConfig
 from vllm.forward_context import set_forward_context
 from vllm.logger import init_logger
-from vllm.model_executor.layers.pooler import (ClassifierPooler, Pooler,
-                                               PoolingType)
+from vllm.model_executor.layers.pooler import ClassifierPooler, Pooler
 from vllm.sampling_params import SamplingType
 from vllm.utils import is_pin_memory_available
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
@@ -1421,22 +1419,8 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
 
         pooler_config = self.model_config.pooler_config
 
-        # TODO: remove this when we no longer support vllm version pre this
-        # PR https://github.com/vllm-project/vllm/pull/20538 (post v0.10.0)
-        annotations = inspect.getfullargspec(Pooler.for_embed).annotations
-        extra_args = {}
-        if ('default_normalize' in annotations
-                and 'default_softmax' in annotations):
-            extra_args.update({
-                'default_normalize': True,
-                'default_softmax': False
-            })
-        if 'default_pooling_type' in annotations:
-            extra_args['default_pooling_type'] = PoolingType.CLS
-
         if task == "embed":
-            self.pooler = Pooler.for_embed(pooler_config=pooler_config,
-                                           **extra_args)
+            self.pooler = Pooler.for_embed(pooler_config=pooler_config)
         elif task == "classify":
             self.pooler = ClassifierPooler(
                 pooling=self._pooler,

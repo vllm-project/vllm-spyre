@@ -11,40 +11,6 @@ VLLM_VERSION = os.getenv("TEST_VLLM_VERSION", "default")
 
 
 @pytest.mark.cpu
-def test_pooler_default_args():
-
-    from vllm.model_executor.layers.pooler import Pooler
-    has_from_config = hasattr(Pooler, "from_config_with_defaults")
-
-    if not has_from_config:
-        annotations = inspect.getfullargspec(Pooler.for_embed).annotations
-        if VLLM_VERSION == "vLLM:main":
-            assert 'default_normalize' not in annotations
-            assert 'default_softmax' not in annotations
-        elif VLLM_VERSION == "vLLM:lowest":
-            assert 'default_normalize' in annotations
-            assert 'default_softmax' in annotations
-            # The compat code introduced in the PR below can now be removed:
-            # https://github.com/vllm-project/vllm-spyre/pull/361
-
-
-@pytest.mark.cpu
-def test_pooler_default_pooling_type():
-
-    from vllm.model_executor.layers.pooler import Pooler
-    has_from_config = hasattr(Pooler, "from_config_with_defaults")
-
-    if not has_from_config:
-        annotations = inspect.getfullargspec(Pooler.for_embed).annotations
-        if VLLM_VERSION == "vLLM:main":
-            assert 'default_pooling_type' not in annotations
-        elif VLLM_VERSION == "vLLM:lowest":
-            assert 'default_pooling_type' in annotations
-            # The compat code introduced in the PR below can now be removed:
-            # https://github.com/vllm-project/vllm-spyre/pull/374
-
-
-@pytest.mark.cpu
 def test_multi_step_scheduling():
 
     from vllm.config import SchedulerConfig
