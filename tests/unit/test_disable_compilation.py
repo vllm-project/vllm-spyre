@@ -51,7 +51,7 @@ def test_handle_disable_compilation(monkeypatch, tmp_path, batch_type):
 
     dummy_vllm_config = VllmConfig(
         model_config=ModelConfig(
-            model="ibm-ai-platform/micro-g3.3-8b-instruct-1b",
+            model="JackFram/llama-160m",
             max_model_len=256),
         parallel_config=ParallelConfig(tensor_parallel_size=4),
         scheduler_config=SchedulerConfig(max_num_seqs=2))
