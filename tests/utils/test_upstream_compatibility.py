@@ -11,21 +11,6 @@ VLLM_VERSION = os.getenv("TEST_VLLM_VERSION", "default")
 
 
 @pytest.mark.cpu
-def test_multi_step_scheduling():
-
-    from vllm.config import SchedulerConfig
-    has_multi_step = hasattr(SchedulerConfig, "is_multi_step")
-
-    if VLLM_VERSION == "vLLM:main":
-        assert not has_multi_step
-    elif VLLM_VERSION == "vLLM:lowest":
-        assert has_multi_step, ("The lowest supported vLLM version already"
-                                "removed multi-step scheduling.")
-        # The compat code introduced in the PR below can now be removed:
-        # https://github.com/vllm-project/vllm-spyre/pull/374
-
-
-@pytest.mark.cpu
 def test_engine_core_add_request():
 
     from vllm.v1.engine import EngineCoreRequest

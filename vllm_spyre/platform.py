@@ -79,9 +79,6 @@ class SpyrePlatform(Platform):
         model_config = vllm_config.model_config
         cache_config = vllm_config.cache_config
 
-        if getattr(scheduler_config, "is_multi_step", False):
-            raise NotImplementedError
-
         is_decoder = model_config.runner_type == "generate"
 
         is_pooling = model_config.runner_type == "pooling"
