@@ -43,6 +43,13 @@ THREADING_ENVS = [
 ]
 
 
+# Add comment
+class _StreamPlaceholder:
+
+    def __init__(self):
+        self.synchronize = lambda: None
+
+
 class classproperty:
 
     def __init__(self, func):
@@ -79,6 +86,9 @@ class SpyrePlatform(Platform):
     # TODO: see if this needs to be set
     # See vllm batched_count_greater_than method
     # simple_compile_backend: str = "eager"
+
+    # ADD COMMENT
+    current_stream = lambda _: _StreamPlaceholder()
 
     @classproperty
     def device_type(cls):
