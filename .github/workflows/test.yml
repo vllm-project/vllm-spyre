@@ -63,7 +63,6 @@ jobs:
           - name: "worker and utils"
             markers: "not e2e"
             flags: "--timeout=300"
-            hf_models: "JackFram/llama-160m"
           - name: "compatibility"
             markers: "compat"
             flags: "--timeout=300"
