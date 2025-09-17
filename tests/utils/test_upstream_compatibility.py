@@ -2,35 +2,12 @@ import inspect
 import os
 
 import pytest
-from spyre_util import ModelInfo
 
 from vllm_spyre.compat_utils import dataclass_fields
 
 pytestmark = pytest.mark.compat
 
 VLLM_VERSION = os.getenv("TEST_VLLM_VERSION", "default")
-
-
-@pytest.mark.cpu
-def test_model_config_task(model: ModelInfo):
-
-    from vllm.engine.arg_utils import EngineArgs
-
-    vllm_config = EngineArgs(model=model.name,
-                             revision=model.revision).create_engine_config()
-    model_config = vllm_config.model_config
-
-    task = getattr(model_config, "task", None)
-
-    if VLLM_VERSION == "vLLM:main":
-        assert task is None
-    elif VLLM_VERSION == "vLLM:lowest":
-        assert task is not None, (
-            "The lowest supported vLLM version already"
-            "switched to the new definition of runners and task.")
-        # The compat code introduced in the PRs below can now be removed:
-        # https://github.com/vllm-project/vllm-spyre/pull/341
-        # https://github.com/vllm-project/vllm-spyre/pull/352
 
 
 @pytest.mark.cpu
