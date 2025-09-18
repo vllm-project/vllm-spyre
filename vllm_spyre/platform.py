@@ -110,6 +110,10 @@ class SpyrePlatform(Platform):
             if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
                 raise ValueError("Prompt logprobs not supported with " \
                 "continuous batching")
+            if (vllm_config.model_config.quantization
+                    and vllm_config.scheduler_config.max_num_seqs == 1):
+                raise ValueError(
+                    "Batch size 1 not supported for fp8 continuous batching.")
         else:
             # Static batching or embedding model.
             # Override --max-num-seqs to the biggest warmup batch size

@@ -55,6 +55,7 @@ def patch_warmup_shapes(warmup_shapes: DecodeWarmupShapes
 class ModelInfo(NamedTuple):
     name: str
     revision: str | None = None
+    is_quantized: bool = False
 
     def __str__(self):
         return f"ModelInfo({self.name}@{self.revision})"
@@ -267,7 +268,8 @@ def _default_test_models(isEmbeddings=False, isScoring=False):
         revision="6e9c6465a9d7e5e9fa35004a29f0c90befa7d23f")
     tinygranite_fp8 = ModelInfo(
         name="ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8",
-        revision="0dff8bacb968836dbbc7c2895c6d9ead0a05dc9e")
+        revision="0dff8bacb968836dbbc7c2895c6d9ead0a05dc9e",
+        is_quantized=True)
     params = [
         pytest.param(tinygranite,
                      marks=[pytest.mark.decoder],
