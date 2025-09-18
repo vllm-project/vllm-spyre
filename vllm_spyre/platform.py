@@ -564,7 +564,7 @@ class SpyrePlatform(Platform):
                 "to a valid path and setting TORCH_SENDNN_CACHE_ENABLE=1")
 
         compilation_config_path = Path(
-            torch_cache_dir) / "models_config.log.json"
+            torch_cache_dir) / "model_compile.log.json"
         if not compilation_config_path.exists():
             raise ValueError(
                 f"DISABLE_COMPILATION=1 was set, but no pre-compiled model "
