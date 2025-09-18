@@ -199,9 +199,6 @@ jobs:
               "ibm-ai-platform/micro-g3.3-8b-instruct-1b"*)
                 download_tinygranite "$model" &
                 ;;
-              "JackFram/llama-160m")
-                download_tinyllama "$model" &
-                ;;
               "sentence-transformers/all-roberta-large-v1")
                 download_roberta_large "$model" &
                 ;;
@@ -230,7 +227,6 @@ jobs:
           MASTER_PORT: 12355
           MASTER_ADDR: localhost
           DISTRIBUTED_STRATEGY_IGNORE_MODULES: WordEmbedding
-          VLLM_SPYRE_TEST_MODEL_LIST: "${{ matrix.test_suite.name == 'static batching' && 'JackFram/llama-160m' || '' }}"
           HF_HUB_OFFLINE: 1
         run: |
           # Delete the source code so we can ensure we're testing the installed
