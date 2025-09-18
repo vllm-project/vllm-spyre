@@ -49,12 +49,10 @@ def test_compare_graphs_cb(model: ModelInfo, max_num_seqs: int,
 
     model_path = get_model_path(model)
 
-    is_quantized = 'FP8' in model.name
-
-    attn_type = 'paged_fp8' if is_quantized \
+    attn_type = 'paged_fp8' if model.is_quantized \
         else 'paged'
 
-    if is_quantized:
+    if model.is_quantized:
         mock_get_mask_dtype(mocker)
 
     inference_py_args = [
@@ -67,7 +65,7 @@ def test_compare_graphs_cb(model: ModelInfo, max_num_seqs: int,
         attn_type
     ]
 
-    if not is_quantized:
+    if not model.is_quantized:
         inference_py_args += ["--default_dtype", "fp16"]
 
     extra_env = {
@@ -135,12 +133,10 @@ def test_compare_graphs_static_batching(model: ModelInfo,
         pytest.skip("aiu-fms-testing-utils is required "
                     "and is not installed to run this test")
 
-    is_quantized = 'FP8' in model.name
-
-    attn_type = 'math_fp8' if is_quantized \
+    attn_type = 'math_fp8' if model.is_quantized \
         else 'sdpa'
 
-    if is_quantized:
+    if model.is_quantized:
         mock_get_mask_dtype(mocker)
 
     model_path = get_model_path(model)
@@ -155,7 +151,7 @@ def test_compare_graphs_static_batching(model: ModelInfo,
         str(warmup_shapes[0][2]), "--attention_type", attn_type
     ]
 
-    if not is_quantized:
+    if not model.is_quantized:
         inference_py_args += ["--default_dtype", "fp16"]
 
     aftu_graphs = run_inference_py_and_get_graphs(inference_py_args,
