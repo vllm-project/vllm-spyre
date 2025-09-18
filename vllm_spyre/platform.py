@@ -43,6 +43,13 @@ THREADING_ENVS = [
 ]
 
 
+# Add comment
+class _StreamPlaceholder:
+
+    def __init__(self):
+        self.synchronize = lambda: None
+
+
 class classproperty:
 
     def __init__(self, func):
@@ -80,6 +87,9 @@ class SpyrePlatform(Platform):
     # See vllm batched_count_greater_than method
     # simple_compile_backend: str = "eager"
 
+    # ADD COMMENT
+    current_stream = lambda _: _StreamPlaceholder()
+
     @classproperty
     def device_type(cls):
         # TODO: temporary hack while BertModels
@@ -106,6 +116,12 @@ class SpyrePlatform(Platform):
 
     @classmethod
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:
+
+        # in case vllm passes a default vllm_config to us
+        # add some more comments as to why this needed
+        if vllm_config.model_config is None:
+            return
+
         cls._config = vllm_config
         parallel_config = vllm_config.parallel_config
         scheduler_config = vllm_config.scheduler_config

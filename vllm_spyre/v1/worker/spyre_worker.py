@@ -476,7 +476,7 @@ class SpyreWorker(WorkerBaseV1):
             scheduled_encoder_inputs={},
             num_common_prefix_blocks=0,
             finished_req_ids=set(),
-            free_encoder_input_ids=[],
+            free_encoder_mm_hashes=[],
             structured_output_request_ids={},
             grammar_bitmask=None,
         )
@@ -508,7 +508,7 @@ class SpyreWorker(WorkerBaseV1):
             num_common_prefix_blocks=0,
             # The requests to be removed
             finished_req_ids=set([r.req_id for r in request]),
-            free_encoder_input_ids=[],
+            free_encoder_mm_hashes=[],
             structured_output_request_ids={},
             grammar_bitmask=None,
         )
@@ -590,7 +590,7 @@ class SpyreWorker(WorkerBaseV1):
             scheduled_encoder_inputs={},
             num_common_prefix_blocks=0,
             finished_req_ids=set(),
-            free_encoder_input_ids=[],
+            free_encoder_mm_hashes=[],
             structured_output_request_ids={},
             grammar_bitmask=None,
         )
@@ -655,7 +655,7 @@ class SpyreWorker(WorkerBaseV1):
                 scheduled_encoder_inputs={},
                 num_common_prefix_blocks=0,
                 finished_req_ids=set(),
-                free_encoder_input_ids=[],
+                free_encoder_mm_hashes=[],
                 structured_output_request_ids={},
                 grammar_bitmask=None,
             )
@@ -692,7 +692,7 @@ class SpyreWorker(WorkerBaseV1):
             scheduled_encoder_inputs={},
             num_common_prefix_blocks=0,
             finished_req_ids=set(),
-            free_encoder_input_ids=[],
+            free_encoder_mm_hashes=[],
             structured_output_request_ids={},
             grammar_bitmask=None,
         )

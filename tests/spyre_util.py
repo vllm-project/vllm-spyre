@@ -372,14 +372,12 @@ def create_random_request(
             cache_salt=None,
             **kwargs,
         )
-    kwargs = {
-        "multi_modal_kwargs" if inputs_renamed else "multi_modal_inputs": None
-    }
+    kwargs = {}
+    if inputs_renamed:
+        kwargs = {"multi_modal_kwargs"}
     return Request(
         request_id=str(request_id),
         prompt_token_ids=prompt_token_ids,
-        multi_modal_hashes=None,
-        multi_modal_placeholders=None,
         sampling_params=sampling_params,
         eos_token_id=None,
         arrival_time=0,
