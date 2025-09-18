@@ -201,27 +201,14 @@ class SamplingRequestState(BaseRequestState):
         return len(self.prompt_token_ids) + len(self.output_token_ids)
 
 
-# Compatibility code, remove when no supported version
-# has init_builtin_logitsprocs any more
 def get_builtin_logits_processors(
         vllm_config: Optional[VllmConfig] = None) -> Any:
-    if hasattr(vllm.v1.sample.logits_processor, "LogitsProcessors"):
-        if vllm_config is None:
-            return vllm.v1.sample.logits_processor.LogitsProcessors()
-        return vllm.v1.sample.logits_processor.LogitsProcessors(
-            ctor(vllm_config, "cpu", False)
-            for ctor in vllm.v1.sample.logits_processor.\
-                BUILTIN_LOGITS_PROCESSORS)
-    else:
-        if vllm_config is None:
-            return vllm.v1.sample.logits_processor.LogitsProcessorManager(
-                non_argmax_invariant=[],
-                argmax_invariant=[],
-            )
-        return vllm.v1.sample.logits_processor.init_builtin_logitsprocs(
-            pin_memory_available=False,
-            max_num_reqs=vllm_config.scheduler_config.max_num_seqs + 1,
-            device="cpu")
+    if vllm_config is None:
+        return vllm.v1.sample.logits_processor.LogitsProcessors()
+    return vllm.v1.sample.logits_processor.LogitsProcessors(
+        ctor(vllm_config, "cpu", False)
+        for ctor in vllm.v1.sample.logits_processor.\
+            BUILTIN_LOGITS_PROCESSORS)
 
 
 class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):

@@ -100,13 +100,6 @@ class SpyreWorker(WorkerBaseV1):
     """A worker class that executes the model on a group of Spyre cores.
     """
 
-    def get_supported_pooling_tasks(self):
-        # Compatibility code required for vllm == 0.10.0
-        # Can be removed for vllm > 0.10.0
-        if self.is_pooling:
-            return ["embed", "score"]
-        return []
-
     @property
     def is_pooling(self) -> bool:
         return self.model_config.runner_type == "pooling"
