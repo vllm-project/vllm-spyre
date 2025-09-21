@@ -44,6 +44,9 @@ THREADING_ENVS = [
     "MKL_NUM_THREADS",
 ]
 
+PRE_COMPILE_MODEL_CONFIG_FILENAME = "model_compile.log.json"
+PRE_COMPILE_MODEL_CATALOG_FILENAME = "catalog.json"
+
 
 class classproperty:
 
@@ -274,7 +277,7 @@ class SpyrePlatform(Platform):
     @classmethod
     def inference_mode(cls):
         """
-        Spyre does not support `torch.inference_mode`. 
+        Spyre does not support `torch.inference_mode`.
         This allows to fall back to `torch.no_grad` when inference mode is set.
         """
         return torch.no_grad()
@@ -564,112 +567,148 @@ class SpyrePlatform(Platform):
                 "to a valid path and setting TORCH_SENDNN_CACHE_ENABLE=1")
 
         compilation_config_path = Path(
-            torch_cache_dir) / "model_compile.log.json"
-        if not compilation_config_path.exists():
+            torch_cache_dir) / PRE_COMPILE_MODEL_CONFIG_FILENAME
+        compilation_catalog_path = Path(
+            torch_cache_dir) / PRE_COMPILE_MODEL_CATALOG_FILENAME
+
+        if not compilation_catalog_path.exists() or not compilation_config_path.exists():
             raise ValueError(
                 f"DISABLE_COMPILATION=1 was set, but no pre-compiled model "
                 f"config was found in the TORCH_SENDNN_CACHE_DIR: "
-                f"{str(compilation_config_path)} does not exist")
+                f"{str(compilation_config_path)} or {str(compilation_catalog_path)} does not exist")
 
-        if not compilation_config_path.is_file():
+        if not compilation_catalog_path.is_file() or not compilation_config_path.is_file():
             raise ValueError(
                 f"DISABLE_COMPILATION=1 was set, but the pre-compiled model "
-                f"config is not a file: {str(compilation_config_path)}")
+                f"config is not a file")
 
-        with open(compilation_config_path) as f:
+        matching_config = None
+
+        # Note: In below implementation, we don't tell user exactly what's wrong, but we do "warn" them about
+        # mismatch and provide the list of supported configuration along with what they have given us.
+        if compilation_catalog_path.is_file():
+            with open(compilation_catalog_path) as f:
+                try:
+                    pre_compile_catalog = json.load(f)
+                except json.JSONDecodeError as e:
+                    raise ValueError(
+                        f"Precompiled catalog file {str(compilation_catalog_path)} is not a valid JSON file") from e
+            match_result = cls.__match_from_pre_compile_catalog(pre_compile_catalog, vllm_config)
+
+            if match_result == -1:
+                # No match found
+                logger.warning(
+                    "Provided vllm configuration doesn't match any of the pre-compiled model"
+                    f"configurations. Catalog: \n{str(compilation_catalog_path)}\n vlllm_config: \n{str(vllm_config)}")
+
+                # Return with warning
+                return
+            else:
+                matching_config = pre_compile_catalog[match_result]
+
+        elif compilation_config_path.is_file():
+            with open(compilation_config_path) as f:
+                try:
+                    compilation_config = json.load(f)
+                except json.JSONDecodeError as e:
+                    raise ValueError(
+                        f"Precompiled model config {str(compilation_config_path)} "
+                        "was not valid json") from e
+            match_result = cls.__match_from_model_config_file(compilation_config, vllm_config)
+            if not match_result:
+                logger.warning("Provided vllm configuration doesn't match any of the pre-compiled model")
+                # Return with warning
+                return
+            else:
+                matching_config = compilation_config
+
+        if matching_config:
+            # Check vllm_spyre version
             try:
-                compilation_config = json.load(f)
-            except json.JSONDecodeError as e:
-                raise ValueError(
-                    f"Precompiled model config {str(compilation_config_path)} "
-                    "was not valid json") from e
+                from vllm_spyre._version import version as vllm_spyre_version
+                if matching_config["vllm_spyre_version"] != vllm_spyre_version:
+                    # Can be converted to ValueError if we want to be strict with checking
+                    logger.warning(
+                        f"Model was compiled on vllm-spyre "
+                        f"{matching_config['vllm_spyre_version']} but the "
+                        f"current vllm_spyre version is {vllm_spyre_version}")
+            except ImportError:
+                logger.warning(
+                    "Cannot validate vllm_spyre version against pre-compiled model "
+                    "config")
+
+            # Check model name
+            model_name = matching_config["MODEL_NAME"]
+
+            if vllm_config.model_config.model != model_name:
+                # We don't have a way to easily ensure that the compiled model is
+                # the same as the one that the user is loading. We can only warn
+                # here if the names do not match.
+                logger.warning(
+                    "Configured model name is %s but the pre-compiled model config "
+                    "has name %s. Please ensure this is the correct model",
+                    vllm_config.model_config.model, model_name)
+
+    @classmethod
+    def __match_from_pre_compile_catalog(cls, pre_compile_catalog: dict, vllm_config: VllmConfig) -> int:
+        """Function to find the pre-compile model configuration that matches the provided
+        vllm_config.
+        """
+
+        # Iterate through catalog file to find if any configuration matches, otherwise, return False
+        for idx, config in enumerate(pre_compile_catalog):
+            # Compare each key-value pair with values in vllm_config
+            match_result = cls.__match_from_model_config_file(config, vllm_config)
+            if match_result:
+               return idx
+        return -1
+
+    @classmethod
+    def __match_from_model_config_file(cls,
+                                       compilation_config: dict,
+                                       vllm_config: VllmConfig) -> bool:
+        """Function to validate if vllm configuration provided matches pre-compile model configuration
+        """
 
         # Validate configurations
         vllm_configs = compilation_config["data"]
 
-        # vllm-spyre version
-        # (This only exists if the package is built, and not if vllm_spyre is
-        # running from source)
-        try:
-            from vllm_spyre._version import version as vllm_spyre_version
-            if compilation_config["vllm_spyre_version"] != vllm_spyre_version:
-                raise ValueError(
-                    f"Model was compiled on vllm-spyre "
-                    f"{compilation_config['vllm_spyre_version']} but the "
-                    f"current vllm_spyre version is {vllm_spyre_version}")
-        except ImportError:
-            logger.warning(
-                "Cannot validate vllm_spyre version against pre-compiled model "
-                "config")
-
-        # model
-        model_name = vllm_configs["MODEL_NAME"]
-        if vllm_config.model_config.model != model_name:
-            # We don't have a way to easily ensure that the compiled model is
-            # the same as the one that the user is loading. We can only warn
-            # here if the names do not match.
-            logger.warning(
-                "Configured model name is %s but the pre-compiled model config "
-                "has name %s. Please ensure this is the correct model",
-                vllm_config.model_config.model, model_name)
-
         # TP size
         tp_size = vllm_configs["NUM_AIUS"]
         if vllm_config.parallel_config.tensor_parallel_size != tp_size:
-            raise ValueError(
-                f"Configured TP size "
-                f"{vllm_config.parallel_config.tensor_parallel_size} does not "
-                "match precompiled tp size {tp_size}")
+            return False
 
         if "VLLM_SPYRE_WARMUP_PROMPT_LENS" in vllm_configs:
             if envs_spyre.VLLM_SPYRE_USE_CB:
-                raise ValueError(
-                    "Model is pre-compiled for static batching but continuous "
-                    "batching mode is enabled.")
+                return False
+            else:
+                get_list = lambda x: [int(i) for i in x.split(",")]
 
-            get_list = lambda x: [int(i) for i in x.split(",")]
+                prompt_lens = get_list(
+                    vllm_configs["VLLM_SPYRE_WARMUP_PROMPT_LENS"])
+                new_tokens = get_list(vllm_configs["VLLM_SPYRE_WARMUP_NEW_TOKENS"])
+                batch_sizes = get_list(
+                    vllm_configs["VLLM_SPYRE_WARMUP_BATCH_SIZES"])
 
-            prompt_lens = get_list(
-                vllm_configs["VLLM_SPYRE_WARMUP_PROMPT_LENS"])
-            new_tokens = get_list(vllm_configs["VLLM_SPYRE_WARMUP_NEW_TOKENS"])
-            batch_sizes = get_list(
-                vllm_configs["VLLM_SPYRE_WARMUP_BATCH_SIZES"])
+                if prompt_lens != envs_spyre.VLLM_SPYRE_WARMUP_PROMPT_LENS:
+                    return False
 
-            if prompt_lens != envs_spyre.VLLM_SPYRE_WARMUP_PROMPT_LENS:
-                raise ValueError(
-                    f"Model is pre-compiled for prompt lengths {prompt_lens} "
-                    "but vllm was configured with "
-                    f"{envs_spyre.VLLM_SPYRE_WARMUP_PROMPT_LENS}.")
+                if new_tokens != envs_spyre.VLLM_SPYRE_WARMUP_NEW_TOKENS:
+                    return False
 
-            if new_tokens != envs_spyre.VLLM_SPYRE_WARMUP_NEW_TOKENS:
-                raise ValueError(
-                    f"Model is pre-compiled for {new_tokens} new tokens but "
-                    f"vllm was configured with "
-                    f"{envs_spyre.VLLM_SPYRE_WARMUP_NEW_TOKENS}.")
-
-            if batch_sizes != envs_spyre.VLLM_SPYRE_WARMUP_BATCH_SIZES:
-                raise ValueError(
-                    f"Model is pre-compiled for batch sizes {batch_sizes} but "
-                    f"vllm was configured with "
-                    f"{envs_spyre.VLLM_SPYRE_WARMUP_BATCH_SIZES}.")
-
+                if batch_sizes != envs_spyre.VLLM_SPYRE_WARMUP_BATCH_SIZES:
+                    return False
         else:
             if not envs_spyre.VLLM_SPYRE_USE_CB:
-                raise ValueError(
-                    "Model is pre-compiled for continuous batching but static "
-                    "batching mode is enabled")
+                return False
 
             context_len = vllm_configs["VLLM_DT_MAX_CONTEXT_LEN"]
             batch_size = vllm_configs["VLLM_DT_MAX_BATCH_SIZE"]
 
             if context_len != vllm_config.model_config.max_model_len:
-                raise ValueError(
-                    f"Model is pre-compiled for context length {context_len} "
-                    f"but vllm was configured with context length "
-                    f"{vllm_config.model_config.max_model_len}.")
+                return False
 
             if batch_size != vllm_config.scheduler_config.max_num_seqs:
-                raise ValueError(
-                    f"Model is pre-compiled for batch size {batch_size} but "
-                    f"vllm was configured with batch size "
-                    f"{vllm_config.scheduler_config.max_num_seqs}.")
+                return False
+
+        return True
