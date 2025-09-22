@@ -37,7 +37,11 @@ class SpyreScheduler(Scheduler):
         # scheduler does not see them. This lets us ensure that the set of
         # requests scheduled have at least one common warmup shape.
         self.holdback_queue: deque[Request] = deque()
-
+        
+        # To avoid ITL peaks, consecutive prefills are interleaved with a decode
+        # step. At any given step, a prefill is prevented if the previous step
+        # was already a prefill.
+        self.previous_step_was_prefill: bool = False
 
 class StaticBatchingSpyreScheduler(SpyreScheduler):
     """ Support of static batching """
@@ -200,12 +204,14 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         # Schedule Prefill and Decode separately
         if len(self.waiting) > 0:
             # For prefill, hide current decodes from the scheduler
+            self.previous_step_was_prefill = True
             running_holdback = self.running
             self.running = []
             logger.debug(
                 "Scheduling a prefill step of %d requests, holding back %d "
                 "requests", len(self.waiting), len(self.holdback_queue))
         else:
+            self.previous_step_was_prefill = False
             running_holdback = []
             logger.debug("Scheduling a decode step of %d requests",
                          len(self.running))
@@ -223,6 +229,10 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
     def can_schedule(self, request) -> bool:
         max_prompt_batch_size = 1
         max_context_len = self.scheduler_config.max_model_len
+        
+        # two consecutive prefill steps are now allowed
+        if self.previous_step_was_prefill:
+            return False
 
         # running and waiting queues are both empty -> start a new batch
         # which can always be scheduled
