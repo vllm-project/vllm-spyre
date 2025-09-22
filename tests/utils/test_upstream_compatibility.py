@@ -30,11 +30,13 @@ def test_request():
     annotations = inspect.getfullargspec(Request).annotations
 
     if VLLM_VERSION == "vLLM:main":
+        assert 'multi_modal_kwargs' not in annotations
         assert 'multi_modal_hashes' not in annotations
         assert 'multi_modal_placeholders' not in annotations
     elif VLLM_VERSION == "vLLM:lowest":
         assert 'multi_modal_hashes' in annotations
-        assert 'multi_modal_placeholders' not in annotations
+        assert 'multi_modal_placeholders' in annotations
+        assert 'multi_modal_placeholders' in annotations
         # The compat code introduced in the PR below can now be removed:
         # https://github.com/vllm-project/vllm-spyre/pull/463
 

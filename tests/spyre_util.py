@@ -360,7 +360,14 @@ def create_random_request(
     if ('multi_modal_hashes' in annotations):
         extra_args.update({
             'multi_modal_hashes': None,
+        })
+    if ('multi_modal_placeholders' in annotations):
+        extra_args.update({
             'multi_modal_placeholders': None,
+        })
+    if ('multi_modal_kwargs' in annotations):
+        extra_args.update({
+            'multi_modal_kwargs': None,
         })
 
     return Request(request_id=str(request_id),
@@ -371,7 +378,6 @@ def create_random_request(
                    lora_request=None,
                    pooling_params=None,
                    cache_salt=None,
-                   multi_modal_kwargs=None,
                    **extra_args)
 
 
