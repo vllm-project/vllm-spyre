@@ -203,15 +203,16 @@ class SamplingRequestState(BaseRequestState):
 
 # Compatibility code, remove when no supported version
 # has init_builtin_logitsprocs any more
-def get_builtin_logits_processors(
-        vllm_config: Optional[VllmConfig] = None) -> Any:
+def get_builtin_logits_processors(vllm_config: Optional[VllmConfig] = None,
+                                  device: Optional[str] = None,
+                                  pin_memory: Optional[bool] = None) -> Any:
     if hasattr(vllm.v1.sample.logits_processor, "LogitsProcessors"):
         if vllm_config is None:
             return vllm.v1.sample.logits_processor.LogitsProcessors()
-        return vllm.v1.sample.logits_processor.LogitsProcessors(
-            ctor(vllm_config, "cpu", False)
-            for ctor in vllm.v1.sample.logits_processor.\
-                BUILTIN_LOGITS_PROCESSORS)
+
+        from vllm.v1.sample.logits_processor import build_logitsprocs
+        return build_logitsprocs(vllm_config, device, pin_memory, False,
+                                 vllm_config.model_config.logits_processors)
     else:
         if vllm_config is None:
             return vllm.v1.sample.logits_processor.LogitsProcessorManager(
