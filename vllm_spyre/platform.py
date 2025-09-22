@@ -42,13 +42,6 @@ THREADING_ENVS = [
 ]
 
 
-# Add comment
-class _StreamPlaceholder:
-
-    def __init__(self):
-        self.synchronize = lambda: None
-
-
 class SpyrePlatform(Platform):
     _enum = PlatformEnum.OOT
 
@@ -67,9 +60,6 @@ class SpyrePlatform(Platform):
     # See vllm batched_count_greater_than method
     # simple_compile_backend: str = "eager"
 
-    # ADD COMMENT
-    current_stream = lambda _: _StreamPlaceholder()
-
     @classmethod
     def get_device_name(cls, device_id: int = 0) -> str:
         return "spyre"
@@ -84,8 +74,10 @@ class SpyrePlatform(Platform):
     @classmethod
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:
 
-        # in case vllm passes a default vllm_config to us
-        # add some more comments as to why this needed
+        # In case vllm passes a default vllm_config to us.
+        # This happens when get_current_vllm_config is called
+        # without actualling setting the vllm config through
+        # set_current_vllm_config
         if vllm_config.model_config is None:
             return
 
