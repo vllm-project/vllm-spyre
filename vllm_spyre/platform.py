@@ -16,7 +16,7 @@ if sys.platform.startswith("darwin"):
 import math
 import operator
 import os
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Union
 
 import torch
 from vllm.inputs import ProcessorInputs, PromptType
@@ -76,7 +76,7 @@ class SpyrePlatform(Platform):
     # compressed-tensors supported by
     # https://github.com/foundation-model-stack/fms-model-optimizer/blob/main/fms_mo/aiu_addons/__init__.py
     supported_quantization: list[str] = ["gptq", "compressed-tensors"]
-    _warmup_shapes: Optional[tuple[dict[str, int], ...]] = None
+    _warmup_shapes: tuple[dict[str, int], ...] | None = None
     _block_size: int = 64  # hardcoded Spyre constraint for now
     _num_spyre_blocks_override: int = -1  # override num of KV cache blocks
     _config: VllmConfig = None
@@ -103,7 +103,7 @@ class SpyrePlatform(Platform):
         return "spyre"
 
     @classmethod
-    def is_async_output_supported(cls, enforce_eager: Optional[bool]) -> bool:
+    def is_async_output_supported(cls, enforce_eager: bool | None) -> bool:
         """
         Check if the current platform supports async output.
         """
@@ -341,7 +341,7 @@ class SpyrePlatform(Platform):
         cls,
         prompt: PromptType,
         params: Union[SamplingParams, PoolingParams],
-        processed_inputs: Optional[ProcessorInputs] = None,
+        processed_inputs: ProcessorInputs | None = None,
     ) -> None:
         """Raises if this request is unsupported on this platform"""
         if isinstance(params, PoolingParams):
@@ -438,7 +438,7 @@ class SpyrePlatform(Platform):
             ' '.join([f"{env}={value}" for env, value in env_map.items()]))
 
         # Try to determine the CPU time/cores that we are allocated
-        cpu_count: Optional[float] = None
+        cpu_count: float | None = None
         detection_message = ""
         try:
             # try to query cgroup CPU limits
@@ -571,35 +571,45 @@ class SpyrePlatform(Platform):
         compilation_catalog_path = Path(
             torch_cache_dir) / PRE_COMPILE_MODEL_CATALOG_FILENAME
 
-        if not compilation_catalog_path.exists() or not compilation_config_path.exists():
+        if not compilation_catalog_path.exists() or \
+            not compilation_config_path.exists():
             raise ValueError(
                 f"DISABLE_COMPILATION=1 was set, but no pre-compiled model "
                 f"config was found in the TORCH_SENDNN_CACHE_DIR: "
-                f"{str(compilation_config_path)} or {str(compilation_catalog_path)} does not exist")
+                f"{str(compilation_config_path)} or"
+                f"{str(compilation_catalog_path)} does not exist")
 
-        if not compilation_catalog_path.is_file() or not compilation_config_path.is_file():
+        if not compilation_catalog_path.is_file() or \
+            not compilation_config_path.is_file():
             raise ValueError(
-                f"DISABLE_COMPILATION=1 was set, but the pre-compiled model "
-                f"config is not a file")
+                "DISABLE_COMPILATION=1 was set, but the pre-compiled model "
+                "config is not a file")
 
         matching_config = None
 
-        # Note: In below implementation, we don't tell user exactly what's wrong, but we do "warn" them about
-        # mismatch and provide the list of supported configuration along with what they have given us.
+        # Note: In below implementation we don't tell user exactly what's wrong
+        # but we do "warn" them about mismatch and provide the list of supported
+        # configuration along with what they have given us.
         if compilation_catalog_path.is_file():
             with open(compilation_catalog_path) as f:
                 try:
                     pre_compile_catalog = json.load(f)
                 except json.JSONDecodeError as e:
                     raise ValueError(
-                        f"Precompiled catalog file {str(compilation_catalog_path)} is not a valid JSON file") from e
-            match_result = cls.__match_from_pre_compile_catalog(pre_compile_catalog, vllm_config)
+                        f"Precompiled catalog {str(compilation_catalog_path)}"
+                         " is not a valid JSON file") from e
+            match_result = cls.__match_from_pre_compile_catalog(
+                pre_compile_catalog,
+                vllm_config
+            )
 
             if match_result == -1:
                 # No match found
                 logger.warning(
-                    "Provided vllm configuration doesn't match any of the pre-compiled model"
-                    f"configurations. Catalog: \n{str(compilation_catalog_path)}\n vlllm_config: \n{str(vllm_config)}")
+                    "Provided vllm configuration doesn't match any of the "
+                    "pre-compiled model configurations. Catalog: \n%s\n "
+                    "vlllm_config: \n%s",
+                    str(compilation_catalog_path), str(vllm_config))
 
                 # Return with warning
                 return
@@ -612,11 +622,17 @@ class SpyrePlatform(Platform):
                     compilation_config = json.load(f)
                 except json.JSONDecodeError as e:
                     raise ValueError(
-                        f"Precompiled model config {str(compilation_config_path)} "
-                        "was not valid json") from e
-            match_result = cls.__match_from_model_config_file(compilation_config, vllm_config)
+                        "Precompiled model config "
+                        f"{str(compilation_config_path)} was "
+                        "not valid json") from e
+            match_result = cls.__match_from_model_config_file(
+                compilation_config,
+                vllm_config
+            )
             if not match_result:
-                logger.warning("Provided vllm configuration doesn't match any of the pre-compiled model")
+                logger.warning(
+                    "Provided vllm configuration doesn't match any of the "
+                    "pre-compiled model")
                 # Return with warning
                 return
             else:
@@ -627,38 +643,46 @@ class SpyrePlatform(Platform):
             try:
                 from vllm_spyre._version import version as vllm_spyre_version
                 if matching_config["vllm_spyre_version"] != vllm_spyre_version:
-                    # Can be converted to ValueError if we want to be strict with checking
+                    # Can be converted to ValueError if we want to be strict
+                    # with checking
                     logger.warning(
-                        f"Model was compiled on vllm-spyre "
-                        f"{matching_config['vllm_spyre_version']} but the "
-                        f"current vllm_spyre version is {vllm_spyre_version}")
+                        "Model was compiled on vllm-spyre "
+                        "%s but the current vllm_spyre version is %s",
+                        matching_config['vllm_spyre_version'],
+                        vllm_spyre_version)
             except ImportError:
                 logger.warning(
-                    "Cannot validate vllm_spyre version against pre-compiled model "
-                    "config")
+                    "Cannot validate vllm_spyre version against pre-compiled "
+                    "model config")
 
             # Check model name
             model_name = matching_config["MODEL_NAME"]
 
             if vllm_config.model_config.model != model_name:
-                # We don't have a way to easily ensure that the compiled model is
-                # the same as the one that the user is loading. We can only warn
-                # here if the names do not match.
+                # We don't have a way to easily ensure that the compiled model
+                # is the same as the one that the user is loading. We can only
+                # warn here if the names do not match.
                 logger.warning(
-                    "Configured model name is %s but the pre-compiled model config "
-                    "has name %s. Please ensure this is the correct model",
+                    "Configured model name is %s but the pre-compiled model "
+                    "config has name %s. Please ensure this is the correct "
+                    "model",
                     vllm_config.model_config.model, model_name)
 
     @classmethod
-    def __match_from_pre_compile_catalog(cls, pre_compile_catalog: dict, vllm_config: VllmConfig) -> int:
-        """Function to find the pre-compile model configuration that matches the provided
-        vllm_config.
+    def __match_from_pre_compile_catalog(
+        cls, pre_compile_catalog: dict, vllm_config: VllmConfig) -> int:
+        """Function to find the pre-compile model configuration that matches
+        the provided vllm_config.
         """
 
-        # Iterate through catalog file to find if any configuration matches, otherwise, return False
+        # Iterate through catalog file to find if any configuration matches,
+        # otherwise, return False
         for idx, config in enumerate(pre_compile_catalog):
             # Compare each key-value pair with values in vllm_config
-            match_result = cls.__match_from_model_config_file(config, vllm_config)
+            match_result = cls.__match_from_model_config_file(
+                config,
+                vllm_config
+            )
             if match_result:
                return idx
         return -1
@@ -667,7 +691,8 @@ class SpyrePlatform(Platform):
     def __match_from_model_config_file(cls,
                                        compilation_config: dict,
                                        vllm_config: VllmConfig) -> bool:
-        """Function to validate if vllm configuration provided matches pre-compile model configuration
+        """Function to validate if vllm configuration provided matches
+        pre-compile model configuration
         """
 
         # Validate configurations
@@ -686,7 +711,9 @@ class SpyrePlatform(Platform):
 
                 prompt_lens = get_list(
                     vllm_configs["VLLM_SPYRE_WARMUP_PROMPT_LENS"])
-                new_tokens = get_list(vllm_configs["VLLM_SPYRE_WARMUP_NEW_TOKENS"])
+                new_tokens = get_list(
+                    vllm_configs["VLLM_SPYRE_WARMUP_NEW_TOKENS"]
+                )
                 batch_sizes = get_list(
                     vllm_configs["VLLM_SPYRE_WARMUP_BATCH_SIZES"])
 
