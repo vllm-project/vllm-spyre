@@ -1,4 +1,3 @@
-import inspect
 import sys
 
 # When running this plugin on a Mac, we assume it's for local development
@@ -50,31 +49,12 @@ class _StreamPlaceholder:
         self.synchronize = lambda: None
 
 
-class classproperty:
-
-    def __init__(self, func):
-        self.func = func
-
-    def __get__(self, instance, owner):
-        return self.func(owner)
-
-
-@property  # type: ignore
-def is_v1_compatible(self) -> bool:
-    architectures = getattr(self.hf_config, "architectures", [])
-    patterns = ["Bert", "Roberta"]
-    if any(pat in arch for arch in architectures for pat in patterns):
-        return True
-    import vllm.model_executor.models as me_models
-    return me_models.ModelRegistry.is_v1_compatible(architectures)
-
-
 class SpyrePlatform(Platform):
     _enum = PlatformEnum.OOT
 
     # "spyre" device_name no longer worked due to https://github.com/vllm-project/vllm/pull/16464
     device_name: str = "cpu"
-    _device_type: str = "cpu"
+    device_type: str = "cpu"
     # compressed-tensors supported by
     # https://github.com/foundation-model-stack/fms-model-optimizer/blob/main/fms_mo/aiu_addons/__init__.py
     supported_quantization: list[str] = ["gptq", "compressed-tensors"]
@@ -89,19 +69,6 @@ class SpyrePlatform(Platform):
 
     # ADD COMMENT
     current_stream = lambda _: _StreamPlaceholder()
-
-    @classproperty
-    def device_type(cls):
-        # TODO: temporary hack while BertModels
-        # inherit SupportsV0Only in vllm upstream.
-        import vllm.model_executor.models as me_models
-        from vllm.config import ModelConfig
-
-        # no need to patch after the model_config change
-        if 'model_config' not in \
-                inspect.getfullargspec(me_models.ModelRegistry.is_v1_compatible).args:
-            ModelConfig.is_v1_compatible = is_v1_compatible
-        return cls._device_type
 
     @classmethod
     def get_device_name(cls, device_id: int = 0) -> str:
@@ -127,9 +94,6 @@ class SpyrePlatform(Platform):
         scheduler_config = vllm_config.scheduler_config
         model_config = vllm_config.model_config
         cache_config = vllm_config.cache_config
-
-        if getattr(scheduler_config, "is_multi_step", False):
-            raise NotImplementedError
 
         is_decoder = model_config.runner_type == "generate"
 
@@ -162,6 +126,10 @@ class SpyrePlatform(Platform):
             if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
                 raise ValueError("Prompt logprobs not supported with " \
                 "continuous batching")
+            if (vllm_config.model_config.quantization
+                    and vllm_config.scheduler_config.max_num_seqs == 1):
+                raise ValueError(
+                    "Batch size 1 not supported for fp8 continuous batching.")
         else:
             # Static batching or embedding model.
             # Override --max-num-seqs to the biggest warmup batch size

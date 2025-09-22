@@ -1,4 +1,3 @@
-import inspect
 import math
 import os
 import random
@@ -15,8 +14,6 @@ from transformers import AutoTokenizer
 from vllm import SamplingParams
 from vllm.entrypoints.openai.cli_args import make_arg_parser
 from vllm.utils import FlexibleArgumentParser, get_open_port
-from vllm.v1.engine import EngineCoreRequest
-from vllm.v1.engine.core import EngineCore
 from vllm.v1.request import Request
 
 EmbeddingWarmupShapes = list[tuple[int, int]]
@@ -58,6 +55,7 @@ def patch_warmup_shapes(warmup_shapes: DecodeWarmupShapes
 class ModelInfo(NamedTuple):
     name: str
     revision: str | None = None
+    is_quantized: bool = False
 
     def __str__(self):
         return f"ModelInfo({self.name}@{self.revision})"
@@ -270,7 +268,8 @@ def _default_test_models(isEmbeddings=False, isScoring=False):
         revision="6e9c6465a9d7e5e9fa35004a29f0c90befa7d23f")
     tinygranite_fp8 = ModelInfo(
         name="ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8",
-        revision="0dff8bacb968836dbbc7c2895c6d9ead0a05dc9e")
+        revision="0dff8bacb968836dbbc7c2895c6d9ead0a05dc9e",
+        is_quantized=True)
     params = [
         pytest.param(tinygranite,
                      marks=[pytest.mark.decoder],
@@ -332,7 +331,7 @@ def create_random_request(
     sampling_params: SamplingParams,
     from_model_vocab: bool = False,
     model: Optional[str] = None,
-) -> Request | EngineCoreRequest:
+) -> Request:
 
     tokenizer = AutoTokenizer.from_pretrained(model)
     if from_model_vocab:
@@ -354,27 +353,6 @@ def create_random_request(
         assert (len(prompt_token_ids) == num_tokens
                 ), f"need {num_tokens} but got {len(prompt_token_ids)}"
 
-    sig = inspect.signature(EngineCore.add_request)
-    inputs_renamed = hasattr(EngineCoreRequest, 'mm_kwargs')
-    if sig.parameters["request"].annotation == EngineCoreRequest:
-        kwargs = {"mm_kwargs" if inputs_renamed else "mm_inputs": None}
-        return EngineCoreRequest(
-            request_id=str(request_id),
-            prompt_token_ids=prompt_token_ids,
-            mm_hashes=None,
-            mm_placeholders=None,
-            sampling_params=sampling_params,
-            eos_token_id=None,
-            arrival_time=0,
-            lora_request=None,
-            data_parallel_rank=None,
-            pooling_params=None,
-            cache_salt=None,
-            **kwargs,
-        )
-    kwargs = {}
-    if inputs_renamed:
-        kwargs = {"multi_modal_kwargs"}
     return Request(
         request_id=str(request_id),
         prompt_token_ids=prompt_token_ids,
@@ -384,7 +362,7 @@ def create_random_request(
         lora_request=None,
         pooling_params=None,
         cache_salt=None,
-        **kwargs,
+        multi_modal_kwargs=None,
     )
 
 
