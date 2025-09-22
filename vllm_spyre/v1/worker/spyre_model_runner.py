@@ -1,12 +1,10 @@
-import inspect
 import math
 import time
 from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
-from typing import (TYPE_CHECKING, Generic, Literal, Optional, TypeVar, Union,
-                    cast, get_args)
+from typing import TYPE_CHECKING, Generic, Optional, TypeVar, Union, cast
 
 import torch
 from torch import nn
@@ -15,12 +13,12 @@ from transformers import (AutoModel, AutoModelForSequenceClassification,
 from vllm.config import DeviceConfig, VllmConfig
 from vllm.forward_context import set_forward_context
 from vllm.logger import init_logger
-from vllm.model_executor.layers.pooler import (ClassifierPooler, Pooler,
-                                               PoolingType)
+from vllm.model_executor.layers.pooler import ClassifierPooler, Pooler
 from vllm.sampling_params import SamplingType
 from vllm.utils import is_pin_memory_available
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.outputs import LogprobsTensors, SamplerOutput
+from vllm.v1.sample.logits_processor import build_logitsprocs
 
 import vllm_spyre.envs as envs_spyre
 import vllm_spyre.utils as utils_spyre
@@ -29,9 +27,12 @@ from vllm_spyre.model_executor.model_loader.spyre import (
 from vllm_spyre.platform import SpyrePlatform
 # yapf conflicts with ruff for this block
 # yapf: disable
-from vllm_spyre.v1.worker.spyre_input_batch import (
-    BaseInputBatch, BaseRequestState, PoolingInputBatch, PoolingRequestState,
-    SamplingInputBatch, SamplingRequestState, get_builtin_logits_processors)
+from vllm_spyre.v1.worker.spyre_input_batch import (BaseInputBatch,
+                                                    BaseRequestState,
+                                                    PoolingInputBatch,
+                                                    PoolingRequestState,
+                                                    SamplingInputBatch,
+                                                    SamplingRequestState)
 
 # yapf: enable
 if TYPE_CHECKING:
@@ -44,20 +45,8 @@ else:
     NewRequestData = None
     SamplingMetadata = None
 
+from vllm.tasks import SupportedTask
 from vllm.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, ModelRunnerOutput
-
-#############################################################
-# from vllm.tasks import GenerationTask, PoolingTask, SupportedTask
-# TODO: remove when we drop support for 0.10.0
-#############################################################
-GenerationTask = Literal["generate", "transcription"]
-GENERATION_TASKS = get_args(GenerationTask)
-
-PoolingTask = Literal["encode", "embed", "classify", "score"]
-POOLING_TASKS = get_args(PoolingTask)
-
-SupportedTask = Literal[GenerationTask]
-#############################################################
 
 logger = init_logger(__name__)
 
@@ -306,10 +295,13 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
     def build_input_batch(self) -> SamplingInputBatch:
         # Define logits processors.
 
+        custom_logitsprocs = self.vllm_config.model_config.logits_processors
         logits_processors = \
-            get_builtin_logits_processors(vllm_config=self.vllm_config,
-                                          device=self.device,
-                                          pin_memory=self.pin_memory)
+            build_logitsprocs(vllm_config=self.vllm_config,
+                              device=self.device,
+                              is_pin_memory=self.pin_memory,
+                              is_pooling_model=False,
+                              custom_logitsprocs=custom_logitsprocs)
 
         return SamplingInputBatch(
             max_num_reqs=self.scheduler_config.max_num_seqs,
@@ -1437,22 +1429,8 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
 
         pooler_config = self.model_config.pooler_config
 
-        # TODO: remove this when we no longer support vllm version pre this
-        # PR https://github.com/vllm-project/vllm/pull/20538 (post v0.10.0)
-        annotations = inspect.getfullargspec(Pooler.for_embed).annotations
-        extra_args = {}
-        if ('default_normalize' in annotations
-                and 'default_softmax' in annotations):
-            extra_args.update({
-                'default_normalize': True,
-                'default_softmax': False
-            })
-        if 'default_pooling_type' in annotations:
-            extra_args['default_pooling_type'] = PoolingType.CLS
-
         if task == "embed":
-            self.pooler = Pooler.for_embed(pooler_config=pooler_config,
-                                           **extra_args)
+            self.pooler = Pooler.for_embed(pooler_config=pooler_config)
         elif task == "classify":
             self.pooler = ClassifierPooler(
                 pooling=self._pooler,
