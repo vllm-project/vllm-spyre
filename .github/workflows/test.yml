@@ -72,7 +72,7 @@ jobs:
         include:
           - vllm_version:
               name: "vLLM:lowest"
-              repo: "git+https://github.com/vllm-project/vllm --tag v0.10.0"
+              repo: "git+https://github.com/vllm-project/vllm --tag v0.10.1.1"
             test_suite:
               name: "backward compat"
               markers: "compat or (cpu and basic)"
