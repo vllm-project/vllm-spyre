@@ -255,9 +255,8 @@ class SpyrePlatform(Platform):
                 envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO,
                 envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO)
 
-        # compare requested runtime configuration with previously validated ones
-        # avoid ImportError: cannot import name 'ModelConfig' from partially
-        # initialized module 'vllm.config' (most likely due to circular import)
+        # Compare requested runtime configuration with supported configurations
+        # Don't use top-level import to avoid circular import error
         from vllm_spyre.config.runtime_config_validator import (
             validate_runtime_configuration)
 
@@ -266,11 +265,12 @@ class SpyrePlatform(Platform):
             for ws in cls._warmup_shapes
         ] if cls._warmup_shapes and not envs_spyre.VLLM_SPYRE_USE_CB else None
 
-        validate_runtime_configuration(model_config=model_config,
-                                       parallel_config=parallel_config,
-                                       scheduler_config=scheduler_config,
-                                       cache_config=cache_config,
-                                       warmup_shapes=warmup_shape_tuples)
+        validate_runtime_configuration(
+            model=model_config.model,
+            tp_size=parallel_config.tensor_parallel_size,
+            max_model_len=model_config.max_model_len,
+            max_num_seqs=scheduler_config.max_num_seqs,
+            warmup_shapes=warmup_shape_tuples)
 
     @classmethod
     def use_all_gather(cls) -> bool:
