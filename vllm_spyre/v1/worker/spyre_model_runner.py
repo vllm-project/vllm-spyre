@@ -9,6 +9,7 @@ from typing import (TYPE_CHECKING, Generic, Literal, Optional, TypeVar, Union,
                     cast, get_args)
 
 import torch
+import vllm.v1.sample.logits_processor
 from torch import nn
 from transformers import (AutoModel, AutoModelForSequenceClassification,
                           AutoTokenizer)
@@ -305,9 +306,17 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
 
     def build_input_batch(self) -> SamplingInputBatch:
         # Define logits processors.
-        # TODO(Max): logits processor list should be extensible via engine
-        # constructor argument; for now the list is fixed to builtin processors
-        logits_processors = get_builtin_logits_processors(self.vllm_config)
+
+        # TODO: compatibility code, remove it when it's not needed anymore
+        if hasattr(vllm.v1.sample.logits_processor, "LogitsProcessors"):
+            from vllm.v1.sample.logits_processor import build_logitsprocs
+
+            logits_processors = build_logitsprocs(
+                self.vllm_config, self.device, self.pin_memory, False,
+                self.vllm_config.model_config.logits_processors)
+        else:
+            logits_processors = get_builtin_logits_processors(self.vllm_config)
+
         return SamplingInputBatch(
             max_num_reqs=self.scheduler_config.max_num_seqs,
             max_model_len=self.model_config.max_model_len,
