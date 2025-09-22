@@ -45,7 +45,7 @@ THREADING_ENVS = [
 ]
 
 PRE_COMPILE_MODEL_CONFIG_FILENAME = "model_compile.log.json"
-PRE_COMPILE_MODEL_CATALOG_FILENAME = "catalog.json"
+PRE_COMPILE_MODEL_CATALOG_FILENAME = "pre_compiled_catalog.json"
 
 
 class classproperty:
