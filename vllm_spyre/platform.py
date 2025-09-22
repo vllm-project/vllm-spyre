@@ -42,8 +42,7 @@ THREADING_ENVS = [
 ]
 
 
-# Needed by vllm/model_executor/layers/pooler.py:562: in forward
-# return build_output(pooled_data)
+# Needed by vllm/model_executor/layers/pooler.py:562
 # Copied from vllm/utils/__init__.py
 class _StreamPlaceholder:
 
@@ -69,8 +68,7 @@ class SpyrePlatform(Platform):
     # See vllm batched_count_greater_than method
     # simple_compile_backend: str = "eager"
 
-    # Needed by vllm/model_executor/layers/pooler.py:562: in forward
-    # return build_output(pooled_data)
+    # Needed by vllm/model_executor/layers/pooler.py:562
     current_stream = lambda _: _StreamPlaceholder()
 
     @classmethod
