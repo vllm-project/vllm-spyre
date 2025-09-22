@@ -42,6 +42,15 @@ THREADING_ENVS = [
 ]
 
 
+# Needed by vllm/model_executor/layers/pooler.py:562: in forward
+# return build_output(pooled_data)
+# Copied from vllm/utils/__init__.py
+class _StreamPlaceholder:
+
+    def __init__(self):
+        self.synchronize = lambda: None
+
+
 class SpyrePlatform(Platform):
     _enum = PlatformEnum.OOT
 
@@ -59,6 +68,10 @@ class SpyrePlatform(Platform):
     # TODO: see if this needs to be set
     # See vllm batched_count_greater_than method
     # simple_compile_backend: str = "eager"
+
+    # Needed by vllm/model_executor/layers/pooler.py:562: in forward
+    # return build_output(pooled_data)
+    current_stream = lambda _: _StreamPlaceholder()
 
     @classmethod
     def get_device_name(cls, device_id: int = 0) -> str:
