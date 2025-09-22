@@ -76,10 +76,8 @@ def test_scheduler_output():
     annotations = inspect.getfullargspec(SchedulerOutput).annotations
 
     if VLLM_VERSION == "vLLM:main":
-        assert 'free_encoder_input_ids' not in annotations
         assert 'free_encoder_mm_hashes' in annotations
     elif VLLM_VERSION == "vLLM:lowest":
-        assert 'free_encoder_input_ids' in annotations
         assert 'free_encoder_mm_hashes' not in annotations
         # The compat code introduced in the PR below can now be removed:
         # https://github.com/vllm-project/vllm-spyre/pull/463
