@@ -134,7 +134,7 @@ def test_long_context_batches(
         (8, 3000),
         (4, 5000),
         (2, 9000),
-        (1, 17000),        
+        (1, 17000),
     ]
 
     vllm_model = LLM(model=model.name,
