@@ -198,6 +198,14 @@ class SpyrePlatform(Platform):
             logger.info("Model granite-3.3-8b-instruct and tensor parallel " \
             "size 4 detected. Using VLLM_DT_MAX_BATCH_TKV_LIMIT = %d",
             128 * 1024)
+
+            # If no HDMA p2psize override was specified, set 256MB
+            if not os.getenv("FLEX_HDMA_P2PSIZE", None):
+                os.environ["FLEX_HDMA_P2PSIZE"] = str(1024 * 1024 * 256)
+                logger.info(
+                    "Model granite-3.3-8b-instruct and tensor parallel size 4 "
+                    "detected. Using FLEX_HDMA_P2PSIZE = %d",
+                    1024 * 1024 * 256)
         else:
             # default value for any other model/ tensor parallel size
             default_max_batch_tkv_limit = \
