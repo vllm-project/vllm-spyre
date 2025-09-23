@@ -87,7 +87,7 @@ class SpyrePlatform(Platform):
 
         # In case vllm passes a default vllm_config to us.
         # This happens when get_current_vllm_config is called
-        # without actualling setting the vllm config through
+        # without setting the vllm config through
         # set_current_vllm_config
         if vllm_config.model_config is None:
             return
