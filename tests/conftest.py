@@ -192,12 +192,12 @@ def _skip_unsupported_compiler_tests(config, items):
     """
 
     markexpr = config.option.markexpr
-    if "compiler_support_16k" in markexpr:
+    if "compiler_support_32k" in markexpr:
         return  # let pytest handle the collection logic
 
     skip_marker = pytest.mark.skip(reason="Needs compiler changes")
     for item in items:
-        if "spyre" in item.keywords and "compiler_support_16k" in item.keywords:
+        if "spyre" in item.keywords and "compiler_support_32k" in item.keywords:
             item.add_marker(skip_marker)
 
 
