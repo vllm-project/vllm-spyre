@@ -211,7 +211,6 @@ def test_swap_decode_programs_for_cb(
     backend = 'sendnn'
     max_num_seqs = 32
 
-    # TODO: change to 32K later
     max_model_len = 32 * 1024  # 32K
 
     skip_unsupported_tp_size(tp_size, backend)
