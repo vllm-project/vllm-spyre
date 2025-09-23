@@ -3,13 +3,18 @@ from spyre_util import write_sample_model_config
 from vllm.config import (ModelConfig, ParallelConfig, SchedulerConfig,
                          VllmConfig)
 
-from vllm_spyre.platform import SpyrePlatform
+from vllm_spyre.platform import (
+    SpyrePlatform,
+    PRE_COMPILE_MODEL_CATALOG_FILENAME
+)
 
 
 @pytest.mark.parametrize("batch_type", ["sb", "cb"])
 def test_handle_disable_compilation(monkeypatch, tmp_path, batch_type):
     """
     Test _handle_disable_compilation for static and continuous batching.
+    Note: since the validation here is only giving warning in case of mismatch,
+    these tests will only fail if there is a bug in the logic
     """
 
     # Patch version to avoid test failures around version mismatch
@@ -44,6 +49,85 @@ def test_handle_disable_compilation(monkeypatch, tmp_path, batch_type):
         }
 
     write_sample_model_config(tmp_path, sample_model_config)
+
+    monkeypatch.setenv("DISABLE_COMPILATION", "true")
+    monkeypatch.setenv("TORCH_SENDNN_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("TORCH_SENDNN_CACHE_ENABLE", "1")
+
+    dummy_vllm_config = VllmConfig(
+        model_config=ModelConfig(
+            model="ibm-ai-platform/micro-g3.3-8b-instruct-1b",
+            max_model_len=256),
+        parallel_config=ParallelConfig(tensor_parallel_size=2),
+        scheduler_config=SchedulerConfig(max_num_seqs=2))
+
+    SpyrePlatform._handle_disable_compilation(dummy_vllm_config,
+                                              is_decoder=True)
+
+
+
+
+@pytest.mark.parametrize("batch_type", ["sb", "cb"])
+def test_handle_disable_compilation_catalog(monkeypatch, tmp_path, batch_type):
+    """
+    Test _handle_disable_compilation for static and continuous batching.
+    Note: since the validation here is only giving warning in case of mismatch,
+    these tests will only fail if there is a bug in the logic
+    """
+
+    # Patch version to avoid test failures around version mismatch
+    monkeypatch.setattr("vllm_spyre._version.version", "0.8.0")
+
+    if batch_type == "sb":
+        monkeypatch.setenv("VLLM_SPYRE_WARMUP_PROMPT_LENS", "128")
+        monkeypatch.setenv("VLLM_SPYRE_WARMUP_NEW_TOKENS", "128")
+        monkeypatch.setenv("VLLM_SPYRE_WARMUP_BATCH_SIZES", "1")
+        monkeypatch.setenv("VLLM_SPYRE_USE_CB", "0")
+        sample_model_config1 = {
+            "vllm_spyre_version": "0.8.0",
+            "data": {
+                "MODEL_NAME": "/models/granite-3.3-8b-instruct-FP8",
+                "NUM_AIUS": 2,
+                "VLLM_SPYRE_WARMUP_PROMPT_LENS": "128",
+                "VLLM_SPYRE_WARMUP_NEW_TOKENS": "128",
+                "VLLM_SPYRE_WARMUP_BATCH_SIZES": "1",
+            },
+        }
+        sample_model_config2 = {
+            "vllm_spyre_version": "0.8.0",
+            "data": {
+                "MODEL_NAME": "/models/granite-3.3-8b-instruct-FP8",
+                "NUM_AIUS": 2,
+                "VLLM_SPYRE_WARMUP_PROMPT_LENS": "256",
+                "VLLM_SPYRE_WARMUP_NEW_TOKENS": "256",
+                "VLLM_SPYRE_WARMUP_BATCH_SIZES": "1",
+            },
+        }
+
+    else:
+        monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
+        sample_model_config1 = {
+            "vllm_spyre_version": "0.8.0",
+            "data": {
+                "MODEL_NAME": "/models/granite-3.3-8b-instruct-FP8",
+                "NUM_AIUS": 2,
+                "VLLM_DT_MAX_CONTEXT_LEN": 256,
+                "VLLM_DT_MAX_BATCH_SIZE": 2
+            },
+        }
+        sample_model_config2 = {
+            "vllm_spyre_version": "0.8.0",
+            "data": {
+                "MODEL_NAME": "/models/granite-3.3-8b-instruct-FP8",
+                "NUM_AIUS": 2,
+                "VLLM_DT_MAX_CONTEXT_LEN": 512,
+                "VLLM_DT_MAX_BATCH_SIZE": 2
+            },
+        }
+
+    sample_model_config = [sample_model_config1, sample_model_config2]
+
+    write_sample_model_config(tmp_path, sample_model_config, filename=PRE_COMPILE_MODEL_CATALOG_FILENAME)
 
     monkeypatch.setenv("DISABLE_COMPILATION", "true")
     monkeypatch.setenv("TORCH_SENDNN_CACHE_DIR", str(tmp_path))

@@ -45,7 +45,7 @@ THREADING_ENVS = [
 ]
 
 PRE_COMPILE_MODEL_CONFIG_FILENAME = "model_compile.log.json"
-PRE_COMPILE_MODEL_CATALOG_FILENAME = "pre_compiled_catalog.json"
+PRE_COMPILE_MODEL_CATALOG_FILENAME = "pre_compiled_cache_catalog.json"
 
 
 class classproperty:
@@ -571,7 +571,7 @@ class SpyrePlatform(Platform):
         compilation_catalog_path = Path(
             torch_cache_dir) / PRE_COMPILE_MODEL_CATALOG_FILENAME
 
-        if not compilation_catalog_path.exists() or \
+        if not compilation_catalog_path.exists() and \
             not compilation_config_path.exists():
             raise ValueError(
                 f"DISABLE_COMPILATION=1 was set, but no pre-compiled model "
@@ -579,7 +579,7 @@ class SpyrePlatform(Platform):
                 f"{str(compilation_config_path)} or"
                 f"{str(compilation_catalog_path)} does not exist")
 
-        if not compilation_catalog_path.is_file() or \
+        if not compilation_catalog_path.is_file() and \
             not compilation_config_path.is_file():
             raise ValueError(
                 "DISABLE_COMPILATION=1 was set, but the pre-compiled model "
@@ -656,7 +656,7 @@ class SpyrePlatform(Platform):
                     "model config")
 
             # Check model name
-            model_name = matching_config["MODEL_NAME"]
+            model_name = matching_config["data"]["MODEL_NAME"]
 
             if vllm_config.model_config.model != model_name:
                 # We don't have a way to easily ensure that the compiled model
