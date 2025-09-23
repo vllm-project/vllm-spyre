@@ -148,5 +148,9 @@ def __getattr__(name: str):
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
+def __setattr__(name: str, value: str):
+    os.environ[name] = value
+
+
 def __dir__():
     return list(environment_variables.keys())
