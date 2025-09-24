@@ -127,7 +127,11 @@ def test_handle_disable_compilation_catalog(monkeypatch, tmp_path, batch_type):
 
     sample_model_config = [sample_model_config1, sample_model_config2]
 
-    write_sample_model_config(tmp_path, sample_model_config, filename=PRE_COMPILE_MODEL_CATALOG_FILENAME)
+    write_sample_model_config(
+        tmp_path,
+        sample_model_config,
+        filename=PRE_COMPILE_MODEL_CATALOG_FILENAME
+    )
 
     monkeypatch.setenv("DISABLE_COMPILATION", "true")
     monkeypatch.setenv("TORCH_SENDNN_CACHE_DIR", str(tmp_path))
