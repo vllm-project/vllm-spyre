@@ -47,6 +47,14 @@ PRE_COMPILE_MODEL_CONFIG_FILENAME = "model_compile.log.json"
 PRE_COMPILE_MODEL_CATALOG_FILENAME = "pre_compiled_cache_catalog.json"
 
 
+# Needed by vllm/model_executor/layers/pooler.py:562
+# Copied from vllm/utils/__init__.py
+class _StreamPlaceholder:
+
+    def __init__(self):
+        self.synchronize = lambda: None
+
+
 class SpyrePlatform(Platform):
     _enum = PlatformEnum.OOT
 
@@ -65,6 +73,9 @@ class SpyrePlatform(Platform):
     # See vllm batched_count_greater_than method
     # simple_compile_backend: str = "eager"
 
+    # Needed by vllm/model_executor/layers/pooler.py:562
+    current_stream = lambda _: _StreamPlaceholder()
+
     @classmethod
     def get_device_name(cls, device_id: int = 0) -> str:
         return "spyre"
@@ -78,6 +89,14 @@ class SpyrePlatform(Platform):
 
     @classmethod
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:
+
+        # In case vllm passes a default vllm_config to us.
+        # This happens when get_current_vllm_config is called
+        # without setting the vllm config through
+        # set_current_vllm_config
+        if vllm_config.model_config is None:
+            return
+
         cls._config = vllm_config
         parallel_config = vllm_config.parallel_config
         scheduler_config = vllm_config.scheduler_config
