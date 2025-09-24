@@ -45,6 +45,7 @@ THREADING_ENVS = [
 
 PRE_COMPILE_MODEL_CONFIG_FILENAME = "model_compile.log.json"
 PRE_COMPILE_MODEL_CATALOG_FILENAME = "pre_compiled_cache_catalog.json"
+DISABLE_COMPILATION_ENV_VAR = "DISABLE_COMPILATION"
 
 
 # Needed by vllm/model_executor/layers/pooler.py:562
@@ -527,7 +528,7 @@ class SpyrePlatform(Platform):
     def _handle_disable_compilation(cls, vllm_config: VllmConfig,
                                     is_decoder: bool):
         """
-        For decoder models we want to respect the `DISABLE_COMPILATION`
+        For decoder models we want to respect the `REQUIRE_PRECOMPILED_DECODERS`
         environment variable, which disallows torch_sendnn from compiling new
         graphs and only allows it to load pre-compiled graphs.
         In order to do this, we must load up some config from the torch_sendnn
@@ -536,18 +537,18 @@ class SpyrePlatform(Platform):
 
         For encoder models, we do not allow disabling compilation.
         """
-        disable_compilation_env_var = "DISABLE_COMPILATION"
+        req_precompiled_decoder_env_var = "REQUIRE_PRECOMPILED_DECODERS"
 
-        disable_flag = os.getenv(disable_compilation_env_var, "").lower()
+        disable_flag = os.getenv(req_precompiled_decoder_env_var, "").lower()
         if disable_flag not in ("1", "true"):
             return
 
         # If this isn't a decoder model, re-enable compilation
         if not is_decoder:
             logger.info("Unsetting %s because %s is not a decoder model",
-                        disable_compilation_env_var,
+                        DISABLE_COMPILATION_ENV_VAR,
                         vllm_config.model_config.model)
-            os.environ[disable_compilation_env_var] = "0"
+            os.environ[DISABLE_COMPILATION_ENV_VAR] = "false"
             return
 
         # If the user asked to disable compilation, then we need to enforce that
