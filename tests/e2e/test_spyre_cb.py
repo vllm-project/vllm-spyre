@@ -123,7 +123,7 @@ def test_long_context_batches(
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
-    max_model_len = 16384
+    max_model_len = 32768
     max_num_seqs = 32
     max_tokens = 10
 
@@ -134,6 +134,7 @@ def test_long_context_batches(
         (8, 3000),
         (4, 5000),
         (2, 9000),
+        (1, 17000),
     ]
 
     vllm_model = LLM(model=model.name,
