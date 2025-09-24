@@ -42,7 +42,7 @@ jobs:
             repo: "git+https://github.com/vllm-project/vllm --branch main"
         test_suite:
           - name: "static batching"
-            markers: "cpu and decoder and not cb"
+            markers: "cpu and decoder and not cb and not other_e2e"
             flags: "--timeout=300"
             hf_models: "JackFram/llama-160m"
           - name: "fp8"
@@ -66,10 +66,13 @@ jobs:
           - name: "compatibility"
             markers: "compat"
             flags: "--timeout=300"
+          - name: "other e2e"
+            markers: "cpu and other_e2e"
+            flags: "--timeout=300"
         include:
           - vllm_version:
               name: "vLLM:lowest"
-              repo: "git+https://github.com/vllm-project/vllm --tag v0.10.0"
+              repo: "git+https://github.com/vllm-project/vllm --tag v0.10.1.1"
             test_suite:
               name: "backward compat"
               markers: "compat or (cpu and basic)"
