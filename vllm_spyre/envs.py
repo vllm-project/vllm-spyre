@@ -24,7 +24,6 @@ if TYPE_CHECKING:
     VLLM_SPYRE_GLOO_TIMEOUT_MINUTES: int = 60
     VLLM_SPYRE_EXIT_ON_UNSUPPORTED_RUNTIME_CONFIG: bool = False
 
-
 logger = init_logger(__name__)
 
 
