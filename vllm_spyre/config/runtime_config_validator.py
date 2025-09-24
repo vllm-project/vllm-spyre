@@ -60,7 +60,7 @@ def initialize_supported_configurations(yaml_data: list[dict[str, Any]]):
     ]
     ignored_models = {mrc.model for mrc in model_runtime_configs if mrc.ignore}
     runtime_configs_by_model = {
-        mrc.model: mrc.configs
+        mrc.model: mrc.configs or []
         for mrc in model_runtime_configs if not mrc.ignore
     }
 
