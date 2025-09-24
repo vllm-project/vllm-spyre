@@ -19,6 +19,7 @@ from vllm.sampling_params import SamplingType
 from vllm.utils import is_pin_memory_available
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.outputs import LogprobsTensors, SamplerOutput
+from vllm.v1.pool.metadata import PoolingMetadata
 from vllm.v1.sample.logits_processor import build_logitsprocs
 
 import vllm_spyre.envs as envs_spyre
@@ -1319,10 +1320,12 @@ class PoolerAdapter(torch.nn.Module):
     def forward(
         self,
         hidden_states: Union[torch.Tensor, list[torch.Tensor]],
-        *args,
+        pooling_metadata: PoolingMetadata,
     ) -> Union[torch.Tensor, list[torch.Tensor]]:
         if isinstance(hidden_states, torch.Tensor):
-            return self.pooler(hidden_states.T)
+            split_states = torch.split(hidden_states,
+                                       pooling_metadata.prompt_lens.tolist())
+            return [self.pooler(h.T) for h in split_states]
         else:
             return [self.pooler(h.T) for h in hidden_states]
 
