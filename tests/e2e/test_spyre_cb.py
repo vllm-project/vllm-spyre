@@ -201,8 +201,6 @@ def test_swap_decode_programs_for_cb(
     -  4 prompts with max_new_tokens @ 4k
     -  2 prompts with max_new_tokens @ 8k
     -  1 prompt  with max_new_tokens @ 16k
-    
-    TODO:
     -  1 prompt  with max_new_tokens @ 32k
     
     '''
