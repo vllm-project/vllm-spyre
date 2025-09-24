@@ -9,6 +9,7 @@ from os import path
 from subprocess import PIPE, STDOUT, CalledProcessError, TimeoutExpired, run
 from typing import Optional
 
+from spyre_util import ModelInfo
 from vllm.model_executor.model_loader.weight_utils import (
     download_weights_from_hf)
 
@@ -157,14 +158,13 @@ def run_inference_py_and_get_graphs(
     return aftu_graphs
 
 
-def get_model_path(model_name_or_path):
-    is_local = os.path.isdir(model_name_or_path)
-    model_path = model_name_or_path
-    # Get location of model from HF cache.
-    if not is_local:
-        model_path = download_weights_from_hf(
-            model_name_or_path=model_path,
-            cache_dir=None,
-            allow_patterns=["*.safetensors", "*.bin", "*.pt"])
+def get_model_path(model: ModelInfo):
+    if os.path.isdir(model.name):
+        return model.name
 
-    return model_path
+    # Get location of model from HF cache.
+    return download_weights_from_hf(
+        model_name_or_path=model.name,
+        cache_dir=None,
+        allow_patterns=["*.safetensors", "*.bin", "*.pt"],
+        revision=model.revision)

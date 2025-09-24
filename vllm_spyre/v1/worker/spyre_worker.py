@@ -7,6 +7,7 @@ import platform
 import signal
 import sys
 import time
+from datetime import timedelta
 from pathlib import Path
 from typing import Optional, Union, cast
 
@@ -98,13 +99,6 @@ def _maybe_warmup_context(limit: int, world_size: int, rank: int):
 class SpyreWorker(WorkerBaseV1):
     """A worker class that executes the model on a group of Spyre cores.
     """
-
-    def get_supported_pooling_tasks(self):
-        # Compatibility code required for vllm == 0.10.0
-        # Can be removed for vllm > 0.10.0
-        if self.is_pooling:
-            return ["embed", "score"]
-        return []
 
     @property
     def is_pooling(self) -> bool:
@@ -322,11 +316,24 @@ class SpyreWorker(WorkerBaseV1):
 
         if not self._env_initialized:
 
+            backend = "gloo"
+            init_method = "env://"
+
+            # TODO: temporary fix until we have
+            # timeout in vllm's init_distributed_environment
+            torch.distributed.init_process_group(
+                backend=backend,
+                init_method=init_method,
+                world_size=self.parallel_config.world_size,
+                rank=self.rank,
+                timeout=timedelta(
+                    minutes=envs_spyre.VLLM_SPYRE_GLOO_TIMEOUT_MINUTES))
+
             init_distributed_environment(
                 world_size=self.parallel_config.world_size,
                 rank=self.rank,
-                distributed_init_method="env://",
-                backend="gloo",
+                distributed_init_method=init_method,
+                backend=backend,
             )
 
             if self.parallel_config.world_size > 1:

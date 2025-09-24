@@ -12,23 +12,22 @@ import torch
 from hf_result_cache import HFResultCache
 from llm_cache import LLM_CACHE, get_cached_llm
 from sentence_transformers import SentenceTransformer, util
-from spyre_util import DecodeWarmupShapes, EmbeddingWarmupShapes
+from spyre_util import DecodeWarmupShapes, EmbeddingWarmupShapes, ModelInfo
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, SamplingParams
 from vllm.transformers_utils.tokenizer import get_tokenizer
 
 DISABLE_ASSERTS = False  # used for debugging
 
-ISCLOSE_REL_TOL_CPU = 0.35
-ISCLOSE_REL_TOL_SPYRE = 0.35
-ISCLOSE_REL_TOL_QUANTIZATION = 0.4
+ISCLOSE_ABS_TOL = 0.08
+ISCLOSE_ABS_TOL_QUANTIZATION = 0.125
 
 HF_RESULT_CACHE = HFResultCache()
 
 
 # Hugging Face
 def generate_hf_output(
-    model: str,
+    model: str | ModelInfo,
     prompts: Union[list[str], list[list[int]]],  # also accept token ids
     max_new_tokens: Union[int, list[int]],
     ignore_eos: bool = False,
@@ -36,6 +35,13 @@ def generate_hf_output(
 ) -> list[dict[str, Any]]:
     """Loads and runs the model on cpu with transformers, caching the results.
     Returns cached results if any are found to avoid overhead."""
+
+    if isinstance(model, ModelInfo):
+        revision = model.revision
+        model_name = model.name
+    else:
+        revision = None
+        model_name = model
 
     if not isinstance(max_new_tokens, list):
         max_new_tokens = [max_new_tokens] * len(prompts)
@@ -54,8 +60,9 @@ def generate_hf_output(
         "Please run tests locally with `-m 'cpu'` and check in the changes "
         "to hf_cache.json")
 
-    hf_model = AutoModelForCausalLM.from_pretrained(model)
-    hf_tokenizer = AutoTokenizer.from_pretrained(model)
+    hf_model = AutoModelForCausalLM.from_pretrained(model_name,
+                                                    revision=revision)
+    hf_tokenizer = AutoTokenizer.from_pretrained(model_name, revision=revision)
     if ignore_eos:
         hf_model.generation_config.eos_token_id = None
 
@@ -112,13 +119,18 @@ def generate_hf_output(
 
 # compare results
 def compare_results(
-    model: str,
+    model: str | ModelInfo,
     tensor_parallel_size: int,
     backend: str,
     vllm_results: list[dict[str, Any]],
     hf_results: list[dict[str, Any]],
     prompts: Optional[list[str]] = None,
 ):
+    revision = None
+    if isinstance(model, ModelInfo):
+        revision = model.revision
+        model = model.name
+
     if prompts is None:
         prompts = [""] * len(vllm_results)
 
@@ -128,7 +140,8 @@ def compare_results(
         prompt = prompts[idx]
         if not all(isinstance(t, int) for t in prompt):
             continue
-        tokenizer = get_tokenizer(model) if tokenizer is None else tokenizer
+        tokenizer = get_tokenizer(
+            model, revision=revision) if tokenizer is None else tokenizer
         prompts[idx] = tokenizer.decode(prompt)
 
     print(f"\nmodel:         {model:s}")
@@ -191,20 +204,21 @@ def compare_results(
                     end="",
                 )
 
-                if backend == "sendnn":
-                    rel_tol = ISCLOSE_REL_TOL_SPYRE
-                elif "FP8" in model:
+                if "FP8" in model:
                     # TODO: Improve this. For now our testing model can be
                     # solved with this logic
-                    rel_tol = ISCLOSE_REL_TOL_QUANTIZATION
+                    abs_tol = ISCLOSE_ABS_TOL_QUANTIZATION
                 else:
-                    rel_tol = ISCLOSE_REL_TOL_CPU
+                    abs_tol = ISCLOSE_ABS_TOL
+
+                hf_token_prob = math.exp(hf_logprob)
+                vllm_token_prob = math.exp(vllm_logprob)
 
                 if hf_token_id != vllm_token_id:  # different tokens
                     if backend == "sendnn" and math.isclose(
-                            hf_logprob,
-                            vllm_logprob,
-                            rel_tol=rel_tol,
+                            hf_token_prob,
+                            vllm_token_prob,
+                            abs_tol=abs_tol,
                     ):
                         # probably still OK
                         print("DIVERGING")
@@ -215,14 +229,15 @@ def compare_results(
                         break
                 else:  # identical tokens
                     if math.isclose(
-                            hf_logprob,
-                            vllm_logprob,
-                            rel_tol=rel_tol,
+                            hf_token_prob,
+                            vllm_token_prob,
+                            abs_tol=abs_tol,
                     ):
                         print()
                     else:
-                        print(f"ERROR (REL_TOL_DIFF = "
-                              f"{logprob_rel_diff * 100:.2f}%)")
+                        prob_diff = abs(hf_token_prob - vllm_token_prob)
+                        print(f"ERROR (prob_diff"
+                              f" = {prob_diff * 100:.2f}%)")
                         assert DISABLE_ASSERTS or False
                         break
 
@@ -245,8 +260,8 @@ def compare_results(
         print()
 
 
-def check_output_against_hf(model, backend, max_new_tokens, vllm_results,
-                            prompts) -> None:
+def check_output_against_hf(model: str | ModelInfo, backend, max_new_tokens,
+                            vllm_results, prompts) -> None:
     hf_outputs = generate_hf_output(
         model=model,
         prompts=prompts,
@@ -262,9 +277,12 @@ def check_output_against_hf(model, backend, max_new_tokens, vllm_results,
 
 
 # Hugging Face
-def st_embeddings(model: str, prompts: list[str]) -> list[dict[str, Any]]:
-
-    model = SentenceTransformer(model)
+def st_embeddings(model: str | ModelInfo,
+                  prompts: list[str]) -> list[dict[str, Any]]:
+    if isinstance(model, ModelInfo):
+        model = SentenceTransformer(model.name, revision=model.revision)
+    else:
+        model = SentenceTransformer(model)
 
     results = []
     for prompt in prompts:
@@ -280,7 +298,7 @@ def st_embeddings(model: str, prompts: list[str]) -> list[dict[str, Any]]:
 
 # compare results
 def compare_embedding_results(
-    model: str,
+    model: str | ModelInfo,
     prompts: list[str],
     warmup_shapes: EmbeddingWarmupShapes,
     tensor_parallel_size: int,
@@ -289,7 +307,7 @@ def compare_embedding_results(
     hf_results: list[dict[str, Any]],
 ):
 
-    print(f"\nmodel:         {model:s}")
+    print(f"\nmodel:         {model}")
     print(f"warmup shapes: {warmup_shapes}")
     print(f"tp size:       {tensor_parallel_size}")
     print(f"backend:       {backend:s}")
@@ -313,7 +331,7 @@ def compare_embedding_results(
 
 # vLLM / Spyre
 def spyre_vllm_embeddings(
-    model: str,
+    model: str | ModelInfo,
     prompts: list[str],
     max_model_len: int,
     tensor_parallel_size: int,
@@ -326,11 +344,19 @@ def spyre_vllm_embeddings(
     # Clear any cached decoder model
     LLM_CACHE.clear()
 
+    if isinstance(model, ModelInfo):
+        revision = model.revision
+        model_name = model.name
+    else:
+        revision = None
+        model_name = model
+
     vllm_model = LLM(
-        model=model,
-        tokenizer=model,
+        model=model_name,
+        tokenizer=model_name,
         max_model_len=max_model_len,
         tensor_parallel_size=tensor_parallel_size,
+        revision=revision,
     )
 
     vllm_outputs = vllm_model.embed(prompts)
@@ -346,7 +372,7 @@ def spyre_vllm_embeddings(
 
 # vLLM / Spyre
 def generate_spyre_vllm_output(
-    model: str,
+    model: str | ModelInfo,
     prompts: Union[list[str], list[list[int]]],
     max_model_len: int,
     sampling_params: Union[SamplingParams, list[SamplingParams]],
@@ -403,7 +429,7 @@ def extract_output(req_output):
 
 
 def generate_cache_for_test_swap_decode_programs_for_cb(
-        model: str, prompts: list[str], parent_path: str):
+        model: str | ModelInfo, prompts: list[str], parent_path: str):
     """
     This function bakes the generation of prompts with long contexts. Which
     currently are used in the test

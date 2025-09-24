@@ -2,7 +2,7 @@
 
 from typing import NamedTuple
 
-from spyre_util import DecodeWarmupShapes
+from spyre_util import DecodeWarmupShapes, ModelInfo
 from vllm import LLM
 
 
@@ -182,7 +182,7 @@ class SortKey(NamedTuple):
         params = item.callspec.params
         for key in MODEL_KEYS:
             if key in params:
-                SortKey._assert_param(isinstance(params[key], str),
+                SortKey._assert_param(isinstance(params[key], str | ModelInfo),
                                       "model must be a string", item)
                 return params[key]
         # No assumption about default model, we likely don't need an llm if this
@@ -206,9 +206,10 @@ class SortKey(NamedTuple):
     def _get_num_blocks(item) -> int:
         if "available_blocks" in item.callspec.params:
             blocks = item.callspec.params["available_blocks"]
-            SortKey._assert_param(isinstance(blocks, int),
-                                  "available_blocks must be an int.", item)
-            return blocks
+            SortKey._assert_param(isinstance(blocks, int | None),
+                                  "available_blocks must be an optional int.",
+                                  item)
+            return blocks if blocks is not None else 0
         # Most tests don't use this param
         return 0
 

@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 from llm_cache import get_cached_engine
-from spyre_util import create_random_request
+from spyre_util import ModelInfo, create_random_request
 from vllm import SamplingParams
 from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.v1.engine import EngineCoreRequest
@@ -37,7 +37,7 @@ def augment_checked_steps(
 
 
 def check_scheduler_inference_steps(
-    model: str,
+    model: ModelInfo,
     backend: str,
     monkeypatch: pytest.MonkeyPatch,
     seqs_max_tokens: list[int],
@@ -105,7 +105,7 @@ def check_scheduler_inference_steps(
         request = create_random_request(request_id=i,
                                         num_tokens=prompt_length,
                                         sampling_params=sampling_params,
-                                        model=model)
+                                        model=model.name)
         requests.append((add_step, request))
         # NOTE: It is going to be decoded later
         generated_prompts.append(request.prompt_token_ids)
@@ -120,7 +120,7 @@ def check_scheduler_inference_steps(
         monkeypatch=monkeypatch)
     scheduler: ContinuousBatchingSpyreScheduler = engine_core.scheduler
 
-    tokenizer = get_tokenizer(model)
+    tokenizer = get_tokenizer(model.name, revision=model.revision)
     # clear the cache of function scheduler.check_batch_tkv_limit()
     scheduler._cache_check_batch_tkv_limit.clear()
 

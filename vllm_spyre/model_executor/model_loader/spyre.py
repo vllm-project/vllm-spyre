@@ -72,6 +72,10 @@ class SpyreCausalLM(nn.Module):
         # number of right pads (relevant for continuous batching only)
         self.n_pads_right = 0
 
+        self._mask_dtype = torch.float16 if \
+            envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn" \
+            else torch.float32
+
         # FMS Model
         if envs_spyre.VLLM_SPYRE_USE_CB:
             self.model = ContinuousBatchingFmsModel(model_config,
@@ -143,9 +147,7 @@ class SpyreCausalLM(nn.Module):
         return next_tokens
 
     def get_mask_dtype(self) -> torch.dtype:
-        return torch.float16 if \
-            envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn" \
-            else torch.float32
+        return self._mask_dtype
 
 
 class FmsModelBase(nn.Module):
@@ -389,7 +391,9 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                 and self.parallel_config.world_size == 4):
             # hard coded value for tensor parallel size 4 with the below model
             # https://huggingface.co/ibm-granite/granite-3.3-8b-instruct
-            NUM_BLOCKS_SPYRE = 2080
+
+            # num_blocks_spyre must be multiple of max_batch_size
+            NUM_BLOCKS_SPYRE = max_batch_size * (2080 // max_batch_size)
             logger.info(
                 "Model %s and tensor parallel "
                 "size %d detected. Using NUM_BLOCKS_SPYRE = %d",
@@ -417,6 +421,9 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                         num_blocks_spyre * block_size)
             logger.info("Maximum concurrency for %s tokens per request: %.2fx",
                         str(max_model_len), max_concurrency_spyre)
+
+            assert num_blocks_spyre % max_batch_size == 0, \
+                "num_blocks_spyre must be multiple of max_batch_size"
             return num_blocks_spyre
         else:  # dynamo backend 'eager'
             # for debugging purposes we also put the spyre value here for cpu
@@ -683,7 +690,7 @@ class StaticBatchingFmsModel(FmsModelBase):
         **extra_kwargs,
     ) -> torch.Tensor:
         # specify attention type for static batching
-        extra_kwargs['attn_name'] = "sdpa_causal"
+        extra_kwargs['attn_name'] = self.attention_name
 
         if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
             # In order to calculate prompt logprobs, we have to return the

@@ -13,13 +13,13 @@ def test_get_spyre_model_list(monkeypatch):
         m.setenv("VLLM_SPYRE_TEST_MODEL_LIST", "llama-194m, " \
                  "all-roberta-large-v1")
         model_list = get_spyre_model_list()
-        assert model_list[0].values[0] == "models/llama-194m"
-        assert model_list[1].values[0] == "models/all-roberta-large-v1"
+        assert model_list[0].values[0].name == "models/llama-194m"
+        assert model_list[1].values[0].name == "models/all-roberta-large-v1"
 
     with monkeypatch.context() as m:
         m.setenv("VLLM_SPYRE_TEST_MODEL_DIR", "")
         m.setenv("VLLM_SPYRE_TEST_MODEL_LIST", "llama-194m, " \
             "all-roberta-large-v1")
         model_list = get_spyre_model_list()
-        assert model_list[0].values[0] == "llama-194m"
-        assert model_list[1].values[0] == "all-roberta-large-v1"
+        assert model_list[0].values[0].name == "llama-194m"
+        assert model_list[1].values[0].name == "all-roberta-large-v1"

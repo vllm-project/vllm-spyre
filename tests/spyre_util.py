@@ -1,4 +1,3 @@
-import inspect
 import math
 import os
 import random
@@ -6,7 +5,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Optional
+from typing import NamedTuple, Optional
 
 import openai
 import pytest
@@ -15,8 +14,6 @@ from transformers import AutoTokenizer
 from vllm import SamplingParams
 from vllm.entrypoints.openai.cli_args import make_arg_parser
 from vllm.utils import FlexibleArgumentParser, get_open_port
-from vllm.v1.engine import EngineCoreRequest
-from vllm.v1.engine.core import EngineCore
 from vllm.v1.request import Request
 
 EmbeddingWarmupShapes = list[tuple[int, int]]
@@ -55,6 +52,15 @@ def patch_warmup_shapes(warmup_shapes: DecodeWarmupShapes
                            ','.join(str(val) for val in warmup_new_tokens))
 
 
+class ModelInfo(NamedTuple):
+    name: str
+    revision: str | None = None
+    is_quantized: bool = False
+
+    def __str__(self):
+        return f"ModelInfo({self.name}@{self.revision})"
+
+
 class RemoteOpenAIServer:
     """Subprocess wrapper that boots a vllm server with `vllm serve` for testing
     against"""
@@ -63,7 +69,7 @@ class RemoteOpenAIServer:
 
     def __init__(
         self,
-        model: str,
+        model: str | ModelInfo,
         vllm_serve_args: list[str],
         *,
         env_dict: Optional[dict[str, str]] = None,
@@ -74,6 +80,14 @@ class RemoteOpenAIServer:
         # NB: This implementation does not ensure that the model is downloaded
         # before booting the server, it should be used with models already
         # cached on disk
+        if isinstance(model, ModelInfo):
+            if model.revision is not None:
+                vllm_serve_args = vllm_serve_args + [
+                    "--revision", model.revision
+                ]
+            model_name = model.name
+        else:
+            model_name = model
 
         if auto_port:
             if "-p" in vllm_serve_args or "--port" in vllm_serve_args:
@@ -94,7 +108,7 @@ class RemoteOpenAIServer:
         parser = FlexibleArgumentParser(
             description="vLLM's remote OpenAI server.")
         parser = make_arg_parser(parser)
-        args = parser.parse_args(["--model", model, *vllm_serve_args])
+        args = parser.parse_args(["--model", model_name, *vllm_serve_args])
         self.host = str(args.host or "localhost")
         self.port = int(args.port)
 
@@ -102,7 +116,7 @@ class RemoteOpenAIServer:
         if env_dict is not None:
             env.update(env_dict)
         self.proc = subprocess.Popen(
-            ["vllm", "serve", model, *vllm_serve_args],
+            ["vllm", "serve", model_name, *vllm_serve_args],
             env=env,
             stdout=sys.stdout,
             stderr=sys.stderr,
@@ -204,6 +218,8 @@ def get_spyre_backend_list():
 # Multiple models can be specified with a comma separated list in
 # VLLM_SPYRE_TEST_MODEL_LIST
 def get_spyre_model_list(isEmbeddings=False, isScoring=False):
+    """Returns a list of pytest.params. The values are NamedTuples with a name
+    and revision field."""
     user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST")
     if not user_test_model_list:
         return _default_test_models(isEmbeddings, isScoring)
@@ -221,31 +237,46 @@ def get_spyre_model_list(isEmbeddings=False, isScoring=False):
     for model in user_test_model_list.split(","):
         model_path = str(spyre_model_dir_path / model.strip())
         test_model_list.append(
-            pytest.param(model_path, marks=marks, id=model.strip()))
+            pytest.param(ModelInfo(name=model_path),
+                         marks=marks,
+                         id=model.strip()))
     return test_model_list
 
 
 def _default_test_models(isEmbeddings=False, isScoring=False):
     """Return the default set of test models as pytest parameterizations"""
     if isEmbeddings:
-        model = "sentence-transformers/all-roberta-large-v1"
-        return [pytest.param(model, marks=[pytest.mark.embedding], id=model)]
+        model = ModelInfo(name="sentence-transformers/all-roberta-large-v1",
+                          revision="cf74d8acd4f198de950bf004b262e6accfed5d2c")
+        return [
+            pytest.param(model, marks=[pytest.mark.embedding], id=model.name)
+        ]
 
     if isScoring:
-        model = "cross-encoder/stsb-roberta-large"
-        return [pytest.param(model, marks=[pytest.mark.scoring], id=model)]
+        model = ModelInfo(name="cross-encoder/stsb-roberta-large",
+                          revision="2b12c2c0088918e76151fd5937b7bba986ef1f98")
+        return [
+            pytest.param(model, marks=[pytest.mark.scoring], id=model.name)
+        ]
 
     # Decoders
     # We run tests for both the full-precision bf16 and fp8-quantized models,
     # but by default the `pytest.mark.quantized` marker is de-selected unless
     # the test command includes `-m quantized`.
-    tinygranite = "ibm-ai-platform/micro-g3.3-8b-instruct-1b"
-    tinygranite_fp8 = "ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8"
+    tinygranite = ModelInfo(
+        name="ibm-ai-platform/micro-g3.3-8b-instruct-1b",
+        revision="6e9c6465a9d7e5e9fa35004a29f0c90befa7d23f")
+    tinygranite_fp8 = ModelInfo(
+        name="ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8",
+        revision="0dff8bacb968836dbbc7c2895c6d9ead0a05dc9e",
+        is_quantized=True)
     params = [
-        pytest.param(tinygranite, marks=[pytest.mark.decoder], id=tinygranite),
+        pytest.param(tinygranite,
+                     marks=[pytest.mark.decoder],
+                     id=tinygranite.name),
         pytest.param(tinygranite_fp8,
                      marks=[pytest.mark.decoder, pytest.mark.quantized],
-                     id=tinygranite_fp8)
+                     id=tinygranite_fp8.name)
     ]
     return params
 
@@ -300,7 +331,7 @@ def create_random_request(
     sampling_params: SamplingParams,
     from_model_vocab: bool = False,
     model: Optional[str] = None,
-) -> Request | EngineCoreRequest:
+) -> Request:
 
     tokenizer = AutoTokenizer.from_pretrained(model)
     if from_model_vocab:
@@ -322,27 +353,6 @@ def create_random_request(
         assert (len(prompt_token_ids) == num_tokens
                 ), f"need {num_tokens} but got {len(prompt_token_ids)}"
 
-    sig = inspect.signature(EngineCore.add_request)
-    inputs_renamed = hasattr(EngineCoreRequest, 'mm_kwargs')
-    if sig.parameters["request"].annotation == EngineCoreRequest:
-        kwargs = {"mm_kwargs" if inputs_renamed else "mm_inputs": None}
-        return EngineCoreRequest(
-            request_id=str(request_id),
-            prompt_token_ids=prompt_token_ids,
-            mm_hashes=None,
-            mm_placeholders=None,
-            sampling_params=sampling_params,
-            eos_token_id=None,
-            arrival_time=0,
-            lora_request=None,
-            data_parallel_rank=None,
-            pooling_params=None,
-            cache_salt=None,
-            **kwargs,
-        )
-    kwargs = {
-        "multi_modal_kwargs" if inputs_renamed else "multi_modal_inputs": None
-    }
     return Request(
         request_id=str(request_id),
         prompt_token_ids=prompt_token_ids,
@@ -354,7 +364,7 @@ def create_random_request(
         lora_request=None,
         pooling_params=None,
         cache_salt=None,
-        **kwargs,
+        multi_modal_kwargs=None,
     )
 
 

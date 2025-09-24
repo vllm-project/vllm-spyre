@@ -21,7 +21,9 @@ if TYPE_CHECKING:
     VLLM_SPYRE_UPDATE_THREAD_CONFIG: bool = True
     VLLM_SPYRE_MAX_LOAD_PROCESSES: int = 0
     VLLM_SPYRE_WORKER_LOG_REDIRECT_DIR: str = ""
+    VLLM_SPYRE_GLOO_TIMEOUT_MINUTES: int = 60
     VLLM_SPYRE_EXIT_ON_UNSUPPORTED_RUNTIME_CONFIG: bool = False
+
 
 logger = init_logger(__name__)
 
@@ -133,11 +135,16 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "VLLM_SPYRE_WORKER_LOG_REDIRECT_DIR":
     lambda: os.getenv("VLLM_SPYRE_WORKER_LOG_REDIRECT_DIR", ""),
 
+    # If set, overrides the default (30 minutes) timeout for
+    #  torch.distributed.init_process_group
+    "VLLM_SPYRE_GLOO_TIMEOUT_MINUTES":
+    lambda: int(os.getenv("VLLM_SPYRE_GLOO_TIMEOUT_MINUTES", "60")),
+
     # If set, raise an exception if the runtime config is unsupported.
     # Otherwise, log a warning.
     "VLLM_SPYRE_EXIT_ON_UNSUPPORTED_RUNTIME_CONFIG":
     lambda: bool(
-        int(os.getenv("VLLM_SPYRE_EXIT_ON_UNSUPPORTED_RUNTIME_CONFIG", "0"))),
+        int(os.getenv("VLLM_SPYRE_EXIT_ON_UNSUPPORTED_RUNTIME_CONFIG", "0")))
 }
 # --8<-- [end:env-vars-definition]
 
