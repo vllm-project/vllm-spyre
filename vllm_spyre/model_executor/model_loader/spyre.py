@@ -72,6 +72,10 @@ class SpyreCausalLM(nn.Module):
         # number of right pads (relevant for continuous batching only)
         self.n_pads_right = 0
 
+        self._mask_dtype = torch.float16 if \
+            envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn" \
+            else torch.float32
+
         # FMS Model
         if envs_spyre.VLLM_SPYRE_USE_CB:
             self.model = ContinuousBatchingFmsModel(model_config,
@@ -144,9 +148,7 @@ class SpyreCausalLM(nn.Module):
         return next_tokens
 
     def get_mask_dtype(self) -> torch.dtype:
-        return torch.float16 if \
-            envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn" \
-            else torch.float32
+        return self._mask_dtype
 
 
 class FmsModelBase(nn.Module):
