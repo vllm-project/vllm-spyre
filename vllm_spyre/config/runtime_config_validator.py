@@ -85,8 +85,9 @@ def validate_runtime_configuration(
         warmup_shapes: WarmupShapes | None = None) -> bool:
     # we only validate runtime configurations when running on Spyre cards
     if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn":
-        logger.info("Model and runtime configuration validation bypassed for"
-                    " backend '%s'", envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND)
+        logger.info(
+            "Model and runtime configuration validation bypassed for"
+            " backend '%s'", envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND)
         return True
 
     global model_runtime_configs
@@ -127,6 +128,7 @@ def validate_runtime_configuration(
                      f" model '{model}': {str(requested_config)}")
         return False
     else:
-        logger.info("The requested configuration is supported for"
-                    " model '{%s}': %s", model, str(requested_config))
+        logger.info(
+            "The requested configuration is supported for"
+            " model '%s': %s", model, str(requested_config))
         return True
