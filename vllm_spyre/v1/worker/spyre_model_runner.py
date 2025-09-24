@@ -19,6 +19,7 @@ from vllm.sampling_params import SamplingType
 from vllm.utils import is_pin_memory_available
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.outputs import LogprobsTensors, SamplerOutput
+from vllm.v1.sample.logits_processor import build_logitsprocs
 
 import vllm_spyre.envs as envs_spyre
 import vllm_spyre.utils as utils_spyre
@@ -27,9 +28,12 @@ from vllm_spyre.model_executor.model_loader.spyre import (
 from vllm_spyre.platform import SpyrePlatform
 # yapf conflicts with ruff for this block
 # yapf: disable
-from vllm_spyre.v1.worker.spyre_input_batch import (
-    BaseInputBatch, BaseRequestState, PoolingInputBatch, PoolingRequestState,
-    SamplingInputBatch, SamplingRequestState, get_builtin_logits_processors)
+from vllm_spyre.v1.worker.spyre_input_batch import (BaseInputBatch,
+                                                    BaseRequestState,
+                                                    PoolingInputBatch,
+                                                    PoolingRequestState,
+                                                    SamplingInputBatch,
+                                                    SamplingRequestState)
 
 # yapf: enable
 if TYPE_CHECKING:
@@ -291,9 +295,15 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
 
     def build_input_batch(self) -> SamplingInputBatch:
         # Define logits processors.
-        # TODO(Max): logits processor list should be extensible via engine
-        # constructor argument; for now the list is fixed to builtin processors
-        logits_processors = get_builtin_logits_processors(self.vllm_config)
+
+        custom_logitsprocs = self.vllm_config.model_config.logits_processors
+        logits_processors = \
+            build_logitsprocs(vllm_config=self.vllm_config,
+                              device=self.device,
+                              is_pin_memory=self.pin_memory,
+                              is_pooling_model=False,
+                              custom_logitsprocs=custom_logitsprocs)
+
         return SamplingInputBatch(
             max_num_reqs=self.scheduler_config.max_num_seqs,
             max_model_len=self.model_config.max_model_len,
