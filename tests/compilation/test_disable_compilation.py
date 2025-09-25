@@ -1,13 +1,11 @@
 import pytest
-from spyre_util import DecodeWarmupShapes, patch_warmup_shapes, write_sample_model_config
+from spyre_util import (DecodeWarmupShapes, patch_warmup_shapes,
+                        write_sample_model_config)
 from vllm.config import (ModelConfig, ParallelConfig, SchedulerConfig,
                          VllmConfig)
 
-from vllm_spyre.compilation_utils import (
-    PRE_COMPILE_MODEL_CATALOG_FILENAME,
-    handle_disable_compilation
-)
-
+from vllm_spyre.compilation_utils import (PRE_COMPILE_MODEL_CATALOG_FILENAME,
+                                          handle_disable_compilation)
 
 
 @pytest.mark.parametrize("batch_type", ["sb", "cb"])

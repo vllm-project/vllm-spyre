@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING
 
 # Third Party
 from vllm.logger import init_logger
@@ -9,13 +9,11 @@ from vllm.logger import init_logger
 # Local
 import vllm_spyre.envs as envs_spyre
 
-
 if TYPE_CHECKING:
     from vllm.config import ModelConfig, VllmConfig
 else:
     ModelConfig = None
     VllmConfig = None
-
 
 logger = init_logger(__name__)
 
@@ -23,8 +21,8 @@ PRE_COMPILE_MODEL_CONFIG_FILENAME = "model_compile.log.json"
 PRE_COMPILE_MODEL_CATALOG_FILENAME = "pre_compiled_cache_catalog.json"
 DISABLE_COMPILATION_ENV_VAR = "DISABLE_COMPILATION"
 
-def handle_disable_compilation(vllm_config: VllmConfig,
-                                is_decoder: bool):
+
+def handle_disable_compilation(vllm_config: VllmConfig, is_decoder: bool):
     """
     For decoder models we want to respect the `REQUIRE_PRECOMPILED_DECODERS`
     environment variable, which disallows torch_sendnn from compiling new
@@ -52,10 +50,11 @@ def handle_disable_compilation(vllm_config: VllmConfig,
     # If the user asked to disable compilation, then we need to enforce that
     # they setup their cache
     torch_cache_dir = os.getenv("TORCH_SENDNN_CACHE_DIR", None)
-    torch_cache_enabled = bool(
-        int(os.getenv("TORCH_SENDNN_CACHE_ENABLE", "0")))
+    torch_cache_enabled = bool(int(os.getenv("TORCH_SENDNN_CACHE_ENABLE",
+                                             "0")))
 
-    if not torch_cache_dir or not torch_cache_enabled or not os.path.isdir(torch_cache_dir):
+    if not torch_cache_dir or not torch_cache_enabled or not os.path.isdir(
+            torch_cache_dir):
         raise ValueError(
             f"{req_precompiled_decoder_env_var}=1 requires setting"
             " TORCH_SENDNN_CACHE_DIR to a valid path and setting " \
@@ -93,8 +92,8 @@ def handle_disable_compilation(vllm_config: VllmConfig,
                 raise ValueError(
                     f"Precompiled catalog {str(compilation_catalog_path)}"
                     " is not a valid JSON file") from e
-        match_result = match_from_pre_compile_catalog(
-            pre_compile_catalog, vllm_config)
+        match_result = match_from_pre_compile_catalog(pre_compile_catalog,
+                                                      vllm_config)
 
         if match_result == -1:
             # No match found
@@ -115,10 +114,10 @@ def handle_disable_compilation(vllm_config: VllmConfig,
                 compilation_config = json.load(f)
             except json.JSONDecodeError as e:
                 raise ValueError("Precompiled model config "
-                                    f"{str(compilation_config_path)} was "
-                                    "not valid json") from e
-        match_result = match_from_model_config_file(
-            compilation_config, vllm_config)
+                                 f"{str(compilation_config_path)} was "
+                                 "not valid json") from e
+        match_result = match_from_model_config_file(compilation_config,
+                                                    vllm_config)
         if not match_result:
             logger.warning(
                 "Provided vllm configuration doesn't match any of the "
@@ -138,8 +137,7 @@ def handle_disable_compilation(vllm_config: VllmConfig,
                 logger.warning(
                     "Model was compiled on vllm-spyre "
                     "%s but the current vllm_spyre version is %s",
-                    matching_config['vllm_spyre_version'],
-                    vllm_spyre_version)
+                    matching_config['vllm_spyre_version'], vllm_spyre_version)
         except ImportError:
             logger.warning(
                 "Cannot validate vllm_spyre version against pre-compiled "
@@ -157,8 +155,9 @@ def handle_disable_compilation(vllm_config: VllmConfig,
                 "config has name %s. Please ensure this is the correct "
                 "model", vllm_config.model_config.model, model_name)
 
+
 def match_from_pre_compile_catalog(pre_compile_catalog: dict,
-                                        vllm_config: VllmConfig) -> int:
+                                   vllm_config: VllmConfig) -> int:
     """Function to find the pre-compile model configuration that matches
     the provided vllm_config.
     """
@@ -167,14 +166,14 @@ def match_from_pre_compile_catalog(pre_compile_catalog: dict,
     # otherwise, return False
     for idx, config in enumerate(pre_compile_catalog):
         # Compare each key-value pair with values in vllm_config
-        match_result = match_from_model_config_file(
-            config, vllm_config)
+        match_result = match_from_model_config_file(config, vllm_config)
         if match_result:
             return idx
     return -1
 
+
 def match_from_model_config_file(compilation_config: dict,
-                                    vllm_config: VllmConfig) -> bool:
+                                 vllm_config: VllmConfig) -> bool:
     """Function to validate if vllm configuration provided matches
     pre-compile model configuration
     """
@@ -195,8 +194,7 @@ def match_from_model_config_file(compilation_config: dict,
 
             prompt_lens = get_list(
                 vllm_configs["VLLM_SPYRE_WARMUP_PROMPT_LENS"])
-            new_tokens = get_list(
-                vllm_configs["VLLM_SPYRE_WARMUP_NEW_TOKENS"])
+            new_tokens = get_list(vllm_configs["VLLM_SPYRE_WARMUP_NEW_TOKENS"])
             batch_sizes = get_list(
                 vllm_configs["VLLM_SPYRE_WARMUP_BATCH_SIZES"])
 
