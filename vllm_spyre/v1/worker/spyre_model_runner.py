@@ -1384,11 +1384,9 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
             if hasattr(class_model, "bert"):
                 self.model = class_model.bert
                 self._pooler = PoolerAdapter(self.model.pooler)
-                self.model.pooler = None
             elif hasattr(class_model, "roberta"):
                 self.model = class_model.roberta
                 self._pooler = PoolerAdapter(_cls)
-                self.model.pooler = None
             else:
                 raise ValueError(
                     f"Unsupported model {self.model_config.model}: Expected "
@@ -1396,6 +1394,11 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
             self.classifier = class_model.classifier
         else:
             raise ValueError(f"Unsupported task {task}")
+
+        # Disable pooler because in transformers it's
+        # always run even tough we don't use the outputs
+        # directly.
+        self.model.pooler = None
 
         model_class_name = type(self.model).__name__
         self.is_roberta = "roberta" in model_class_name.lower()
