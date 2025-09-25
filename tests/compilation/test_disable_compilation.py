@@ -51,6 +51,10 @@ def test_handle_disable_compilation(monkeypatch, tmp_path, batch_type):
     monkeypatch.setenv("VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS", "1")
     monkeypatch.setenv("TORCH_SENDNN_CACHE_DIR", str(tmp_path))
     monkeypatch.setenv("TORCH_SENDNN_CACHE_ENABLE", "1")
+    # We are trying to register the DISABLE_COMPILATION env variable with
+    # monkeypath so that it resets the value to its previous state after the
+    # test as a cleanup
+    monkeypatch.setenv("DISABLE_COMPILATION", "")
 
     vllm_config = VllmConfig(
         model_config=ModelConfig(
@@ -62,6 +66,7 @@ def test_handle_disable_compilation(monkeypatch, tmp_path, batch_type):
     handle_disable_compilation(vllm_config, is_decoder=True)
 
     assert "DISABLE_COMPILATION" in os.environ
+    assert os.getenv("DISABLE_COMPILATION") == "true"
 
 
 @pytest.mark.parametrize("batch_type", ["sb", "cb"])
@@ -131,6 +136,10 @@ def test_handle_disable_compilation_catalog(monkeypatch, tmp_path, batch_type):
     monkeypatch.setenv("VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS", "1")
     monkeypatch.setenv("TORCH_SENDNN_CACHE_DIR", str(tmp_path))
     monkeypatch.setenv("TORCH_SENDNN_CACHE_ENABLE", "1")
+    # We are trying to register the DISABLE_COMPILATION env variable with
+    # monkeypath so that it resets the value to its previous state after the
+    # test as a cleanup
+    monkeypatch.setenv("DISABLE_COMPILATION", "")
 
     vllm_config = VllmConfig(
         model_config=ModelConfig(
@@ -142,3 +151,4 @@ def test_handle_disable_compilation_catalog(monkeypatch, tmp_path, batch_type):
     handle_disable_compilation(vllm_config, is_decoder=True)
 
     assert "DISABLE_COMPILATION" in os.environ
+    assert os.getenv("DISABLE_COMPILATION") == "true"
