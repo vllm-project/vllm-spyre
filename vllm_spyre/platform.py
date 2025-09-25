@@ -604,7 +604,7 @@ class SpyrePlatform(Platform):
                 logger.warning(
                     "Provided vllm configuration doesn't match any of the "
                     "pre-compiled model configurations. Catalog: \n%s\n "
-                    "vlllm_config: \n%s",
+                    "vllm_config: \n%s",
                     str(compilation_catalog_path), str(vllm_config))
 
                 # Return with warning
