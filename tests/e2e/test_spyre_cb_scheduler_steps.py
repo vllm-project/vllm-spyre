@@ -686,8 +686,8 @@ def test_prompt_too_long_for_current_tkv(model: ModelInfo, backend: str,
             * 1: len = 70, max tokens = 4, step joining = 0
     """
 
-    monkeypatch.setenv('VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION',
-                       '1' if prefill_optimization else '0')
+    if not prefill_optimization:
+        monkeypatch.setenv('VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION', '0')
 
     seqs_max_tokens = [10, 4]
     prompts_lengths = [49, 70]
@@ -913,8 +913,6 @@ def test_prefill_optimization_tkv_too_big(model: ModelInfo, backend: str,
             * 1: len = 70, max tokens = 50, step joining = 0
     """
 
-    monkeypatch.setenv('VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION', '1')
-
     seqs_max_tokens = [67, 50]
     prompts_lengths = [49, 70]
     steps_add_reqs = [0, 0]
@@ -1083,8 +1081,6 @@ def test_prefill_optimization_use_more_than_available_blocks(
             * 1: len = 70, max tokens = 4, step joining = 0
         * available_blocks: 4
     """
-
-    monkeypatch.setenv('VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION', '1')
 
     seqs_max_tokens = [10, 4]
     prompts_lengths = [49, 70]
@@ -1670,11 +1666,10 @@ def test_requests_use_more_than_available_blocks(
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [192])
 @pytest.mark.parametrize("available_blocks", [None])
-def test_requests_use_full_batch_tkv_limit(model: ModelInfo, backend: str,
-                                           monkeypatch: pytest.MonkeyPatch,
-                                           set_random_seed, max_num_seqs: int,
-                                           max_model_len: int,
-                                           available_blocks: int):
+def test_requests_use_full_batch_tkv_limit_no_prefill_opt(
+        model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
+        set_random_seed, max_num_seqs: int, max_model_len: int,
+        available_blocks: int):
     """ Scenario where all requests can be scheduled right away as the
     max batch x tkv limit, e.g the volumetric limit, is just high enough
     
@@ -1803,11 +1798,10 @@ def test_requests_use_full_batch_tkv_limit(model: ModelInfo, backend: str,
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [192])
 @pytest.mark.parametrize("available_blocks", [None])
-def test_requests_exceed_batch_tkv_limit(model: ModelInfo, backend: str,
-                                         monkeypatch: pytest.MonkeyPatch,
-                                         set_random_seed, max_num_seqs: int,
-                                         max_model_len: int,
-                                         available_blocks: int):
+def test_requests_exceed_batch_tkv_limit_no_prefill_opt(
+        model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
+        set_random_seed, max_num_seqs: int, max_model_len: int,
+        available_blocks: int):
     """ Scenario where a request cannot be scheduled right away as the
     max batch x tkv limit, e.g the volumetric limit, is exceeded
     
@@ -1946,14 +1940,15 @@ def test_requests_exceed_batch_tkv_limit(model: ModelInfo, backend: str,
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [192])
 @pytest.mark.parametrize("available_blocks", [None])
-def test_requests_use_full_batch_tkv_limit_prefill_opt(
-        model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
-        set_random_seed, max_num_seqs: int, max_model_len: int,
-        available_blocks: int):
+def test_requests_use_full_batch_tkv_limit(model: ModelInfo, backend: str,
+                                           monkeypatch: pytest.MonkeyPatch,
+                                           set_random_seed, max_num_seqs: int,
+                                           max_model_len: int,
+                                           available_blocks: int):
     """ Scenario where all requests can be scheduled right away as the
     max batch x tkv limit, e.g the volumetric limit, is just high enough
     with the prefill optimization enabled. Note that this test is about 
-    cond6_updated whereas test_requests_use_full_batch_tkv_limit
+    cond6_updated whereas test_requests_use_full_batch_tkv_limit_no_prefill_opt
     was testing cond6 (without VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION)
     
     Configuration:
@@ -1962,7 +1957,6 @@ def test_requests_use_full_batch_tkv_limit_prefill_opt(
             * 1: len = 64, max tokens = 2, step joining = 0
             * 2: len = 65, max tokens = 2, step joining = 0
     """
-    monkeypatch.setenv('VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION', '1')
 
     seqs_max_tokens = [2, 2]
     prompts_lengths = [64, 65]
@@ -2057,14 +2051,15 @@ def test_requests_use_full_batch_tkv_limit_prefill_opt(
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [192])
 @pytest.mark.parametrize("available_blocks", [None])
-def test_requests_exceed_batch_tkv_limit_prefill_opt(
-        model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
-        set_random_seed, max_num_seqs: int, max_model_len: int,
-        available_blocks: int):
+def test_requests_exceed_batch_tkv_limit(model: ModelInfo, backend: str,
+                                         monkeypatch: pytest.MonkeyPatch,
+                                         set_random_seed, max_num_seqs: int,
+                                         max_model_len: int,
+                                         available_blocks: int):
     """ Scenario where a request cannot be scheduled right away as the
     max batch x tkv limit, e.g the volumetric limit, is exceeded
     with the prefill optimization enabled. Note that this test is about 
-    cond6_updated whereas test_requests_exceed_batch_tkv_limit
+    cond6_updated whereas test_requests_exceed_batch_tkv_limit_no_prefill_opt
     was testing cond6 (without VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION)
     
     Configuration:
@@ -2073,7 +2068,6 @@ def test_requests_exceed_batch_tkv_limit_prefill_opt(
             * 1: len = 64, max tokens = 2, step joining = 0
             * 2: len = 65, max tokens = 2, step joining = 0
     """
-    monkeypatch.setenv('VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION', '1')
 
     seqs_max_tokens = [2, 2]
     prompts_lengths = [64, 65]
