@@ -197,14 +197,12 @@ def get_spyre_model_dir_path() -> Path:
     return Path(model_dir_path)
 
 
-# get model backends from env or default to all and add pytest markers
+# add pytest markers to supported different backends
 def get_spyre_backend_list():
-    user_backend_list = os.environ.get("VLLM_SPYRE_TEST_BACKEND_LIST",
-                                       "eager,inductor,sendnn")
+    backend_list = ["eager", "inductor", "sendnn"]
 
     backends = []
-    for backend in user_backend_list.split(","):
-        backend = backend.strip()
+    for backend in backend_list:
         marks = []
         if backend == "eager":
             marks = [pytest.mark.cpu]
