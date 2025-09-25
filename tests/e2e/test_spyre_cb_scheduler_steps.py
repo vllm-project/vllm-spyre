@@ -686,8 +686,8 @@ def test_prompt_too_long_for_current_tkv(model: ModelInfo, backend: str,
             * 1: len = 70, max tokens = 4, step joining = 0
     """
 
-    if prefill_optimization:
-        monkeypatch.setenv('VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION', '1')
+    monkeypatch.setenv('VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION',
+                       '1' if prefill_optimization else '0')
 
     seqs_max_tokens = [10, 4]
     prompts_lengths = [49, 70]
@@ -1685,6 +1685,8 @@ def test_requests_use_full_batch_tkv_limit(model: ModelInfo, backend: str,
             * 2: len = 10, max tokens = 4, step joining = 0
     """
 
+    monkeypatch.setenv('VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION', '0')
+
     seqs_max_tokens = [3, 4]
     prompts_lengths = [74, 10]
     steps_add_reqs = [0, 0]
@@ -1815,6 +1817,8 @@ def test_requests_exceed_batch_tkv_limit(model: ModelInfo, backend: str,
             * 1: len = 74, max tokens = 3, step joining = 0
             * 2: len = 10, max tokens = 4, step joining = 0
     """
+
+    monkeypatch.setenv('VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION', '0')
 
     seqs_max_tokens = [3, 4]
     prompts_lengths = [74, 10]
