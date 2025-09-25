@@ -1,10 +1,13 @@
 import pytest
-from spyre_util import write_sample_model_config
+from spyre_util import DecodeWarmupShapes, patch_warmup_shapes, write_sample_model_config
 from vllm.config import (ModelConfig, ParallelConfig, SchedulerConfig,
                          VllmConfig)
 
-from vllm_spyre.platform import (PRE_COMPILE_MODEL_CATALOG_FILENAME,
-                                 SpyrePlatform)
+from vllm_spyre.compilation_utils import (
+    PRE_COMPILE_MODEL_CATALOG_FILENAME,
+    handle_disable_compilation
+)
+
 
 
 @pytest.mark.parametrize("batch_type", ["sb", "cb"])
@@ -19,10 +22,7 @@ def test_handle_disable_compilation(monkeypatch, tmp_path, batch_type):
     monkeypatch.setattr("vllm_spyre._version.version", "0.8.0")
 
     if batch_type == "sb":
-        monkeypatch.setenv("VLLM_SPYRE_WARMUP_PROMPT_LENS", "128")
-        monkeypatch.setenv("VLLM_SPYRE_WARMUP_NEW_TOKENS", "128")
-        monkeypatch.setenv("VLLM_SPYRE_WARMUP_BATCH_SIZES", "1")
-        monkeypatch.setenv("VLLM_SPYRE_USE_CB", "0")
+        patch_warmup_shapes(DecodeWarmupShapes([(128, 128, 1)]), monkeypatch)
         sample_model_config = {
             "vllm_spyre_version": "0.8.0",
             "data": {
@@ -59,7 +59,7 @@ def test_handle_disable_compilation(monkeypatch, tmp_path, batch_type):
         parallel_config=ParallelConfig(tensor_parallel_size=2),
         scheduler_config=SchedulerConfig(max_num_seqs=2))
 
-    SpyrePlatform._handle_disable_compilation(vllm_config, is_decoder=True)
+    handle_disable_compilation(vllm_config, is_decoder=True)
 
 
 @pytest.mark.parametrize("batch_type", ["sb", "cb"])
@@ -137,4 +137,4 @@ def test_handle_disable_compilation_catalog(monkeypatch, tmp_path, batch_type):
         parallel_config=ParallelConfig(tensor_parallel_size=2),
         scheduler_config=SchedulerConfig(max_num_seqs=2))
 
-    SpyrePlatform._handle_disable_compilation(vllm_config, is_decoder=True)
+    handle_disable_compilation(vllm_config, is_decoder=True)
