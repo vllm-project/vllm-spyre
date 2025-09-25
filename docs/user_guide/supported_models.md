@@ -15,7 +15,7 @@ the listed configurations.
 
 ### Granite-3.3-8b-instruct (Precision: 16 bit)
 
-- **Static Batching**:
+**_Static Batching:_**
 
 | Platform  | AIUs | Prompt Length | New Tokens | Batch Size | Use Case |
 |-----------|------|---------------|------------|------------|----------|
@@ -23,7 +23,7 @@ the listed configurations.
 | `ppc64le` | 4    | 6144          | 2048       | 1          | RAG      |
 | `s390x`   | 4    | 7168          | 1024       | 1          | RAG      |
 
-- **Continuous Batching**:
+**_Continuous Batching:_**
 
 | Platform  | AIUs | Context Length | Batch Size | Comments         |
 |-----------|------|----------------|------------|------------------|
@@ -42,7 +42,7 @@ the listed configurations.
 
 ### Granite-3.3-8b-instruct-FP8 (Precision: 8 bit)
 
-- **Continuous Batching**:
+**_Continuous Batching:_**
 
 | Platform | AIUs | Context Length | Batch Size | FLEX Device |
 |----------|------|----------------|------------|-------------|
