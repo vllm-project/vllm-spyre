@@ -69,6 +69,9 @@ jobs:
           - name: "other e2e"
             markers: "cpu and other_e2e"
             flags: "--timeout=300"
+          - name: "precompilation"
+            markers: "precompilation"
+            flags: "--timeout=300"
         include:
           - vllm_version:
               name: "vLLM:lowest"
@@ -177,7 +180,7 @@ jobs:
           # Be careful when adding models to the cache here, as the GHA cache is limited to 10 GB.
           # If a new model is added here, a new hash key is generated. The previous cache blob can then
           # be removed by an admin or can be left to expire after 7 days.
-          
+
           download_tinygranite() {
             python -c "from transformers import pipeline, AutoTokenizer; pipeline('text-generation', model='$1'); tokenizer=AutoTokenizer.from_pretrained('$1')"
           }
@@ -241,9 +244,9 @@ jobs:
           # wheel
           rm -fr vllm_spyre
           # We activate .venv manually and run pytest directly instead of using
-          # `uv run`, to avoid having `uv run` re-sync any dependencies or 
+          # `uv run`, to avoid having `uv run` re-sync any dependencies or
           # re-install the vllm_sypre package from source
           source .venv/bin/activate
-       
+
           python3 -m pytest ${{ matrix.test_suite.flags }} \
             tests -v -m "${{ matrix.test_suite.markers }}"

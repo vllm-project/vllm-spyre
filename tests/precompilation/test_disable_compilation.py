@@ -10,6 +10,7 @@ from vllm_spyre.compilation_utils import (PRE_COMPILE_MODEL_CATALOG_FILENAME,
                                           handle_disable_compilation)
 
 
+@pytest.mark.precompilation
 @pytest.mark.parametrize("batch_type", ["sb", "cb"])
 def test_handle_disable_compilation(monkeypatch, tmp_path, batch_type):
     """
@@ -69,6 +70,7 @@ def test_handle_disable_compilation(monkeypatch, tmp_path, batch_type):
     assert os.getenv("DISABLE_COMPILATION") == "true"
 
 
+@pytest.mark.precompilation
 @pytest.mark.parametrize("batch_type", ["sb", "cb"])
 def test_handle_disable_compilation_catalog(monkeypatch, tmp_path, batch_type):
     """
