@@ -8,12 +8,12 @@ The vLLM Spyre plugin relies on model code implemented by the [Foundation Model 
 | LLaMA        | ✅        |
 | RoBERTa      | ✅        |
 
-# Configurations for Pre-compiled Models
+## Configurations for Pre-compiled Models
 
 The following pre-compiled models have been verified to run on vLLM Spyre with
 the listed configurations.
 
-## Granite-3.3-8b-instruct (Precision: 16 bit)
+### Granite-3.3-8b-instruct (Precision: 16 bit)
 
 - **Static Batching**:
 
@@ -40,7 +40,7 @@ the listed configurations.
 | `s390x`   | 4    | 8192           | 4          |                  |
 | `s390x`   | 4    | 8192           | 4          | `FLEX_DEVICE=PF` |
 
-## Granite-3.3-8b-instruct-FP8 (Precision: 8 bit)
+### Granite-3.3-8b-instruct-FP8 (Precision: 8 bit)
 
 - **Continuous Batching**:
 
