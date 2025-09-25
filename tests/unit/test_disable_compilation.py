@@ -3,10 +3,8 @@ from spyre_util import write_sample_model_config
 from vllm.config import (ModelConfig, ParallelConfig, SchedulerConfig,
                          VllmConfig)
 
-from vllm_spyre.platform import (
-    SpyrePlatform,
-    PRE_COMPILE_MODEL_CATALOG_FILENAME
-)
+from vllm_spyre.platform import (PRE_COMPILE_MODEL_CATALOG_FILENAME,
+                                 SpyrePlatform)
 
 
 @pytest.mark.parametrize("batch_type", ["sb", "cb"])
@@ -61,10 +59,7 @@ def test_handle_disable_compilation(monkeypatch, tmp_path, batch_type):
         parallel_config=ParallelConfig(tensor_parallel_size=2),
         scheduler_config=SchedulerConfig(max_num_seqs=2))
 
-    SpyrePlatform._handle_disable_compilation(vllm_config,
-                                              is_decoder=True)
-
-
+    SpyrePlatform._handle_disable_compilation(vllm_config, is_decoder=True)
 
 
 @pytest.mark.parametrize("batch_type", ["sb", "cb"])
@@ -127,11 +122,9 @@ def test_handle_disable_compilation_catalog(monkeypatch, tmp_path, batch_type):
 
     sample_model_config = [sample_model_config1, sample_model_config2]
 
-    write_sample_model_config(
-        tmp_path,
-        sample_model_config,
-        filename=PRE_COMPILE_MODEL_CATALOG_FILENAME
-    )
+    write_sample_model_config(tmp_path,
+                              sample_model_config,
+                              filename=PRE_COMPILE_MODEL_CATALOG_FILENAME)
 
     monkeypatch.setenv("DISABLE_COMPILATION", "true")
     monkeypatch.setenv("TORCH_SENDNN_CACHE_DIR", str(tmp_path))
@@ -144,5 +137,4 @@ def test_handle_disable_compilation_catalog(monkeypatch, tmp_path, batch_type):
         parallel_config=ParallelConfig(tensor_parallel_size=2),
         scheduler_config=SchedulerConfig(max_num_seqs=2))
 
-    SpyrePlatform._handle_disable_compilation(vllm_config,
-                                              is_decoder=True)
+    SpyrePlatform._handle_disable_compilation(vllm_config, is_decoder=True)

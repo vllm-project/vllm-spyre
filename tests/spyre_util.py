@@ -455,8 +455,9 @@ def get_longer_chicken_soup_prompts(num_prompts: int) -> list[str]:
     return prompts[:num_prompts]
 
 
-def write_sample_model_config(
-        tmp_path, data, filename="model_compile.log.json"):
+def write_sample_model_config(tmp_path,
+                              data,
+                              filename="model_compile.log.json"):
     """Helper to write a sample model_compile.log.json in tmp_path."""
     config_path = tmp_path / filename
     config_path.write_text(json.dumps(data))

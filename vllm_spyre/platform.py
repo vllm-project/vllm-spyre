@@ -594,19 +594,17 @@ class SpyrePlatform(Platform):
                 except json.JSONDecodeError as e:
                     raise ValueError(
                         f"Precompiled catalog {str(compilation_catalog_path)}"
-                         " is not a valid JSON file") from e
+                        " is not a valid JSON file") from e
             match_result = cls.__match_from_pre_compile_catalog(
-                pre_compile_catalog,
-                vllm_config
-            )
+                pre_compile_catalog, vllm_config)
 
             if match_result == -1:
                 # No match found
                 logger.warning(
                     "Provided vllm configuration doesn't match any of the "
                     "pre-compiled model configurations. Catalog: \n%s\n "
-                    "vllm_config: \n%s",
-                    str(compilation_catalog_path), str(vllm_config))
+                    "vllm_config: \n%s", str(compilation_catalog_path),
+                    str(vllm_config))
 
                 # Return with warning
                 return
@@ -618,14 +616,11 @@ class SpyrePlatform(Platform):
                 try:
                     compilation_config = json.load(f)
                 except json.JSONDecodeError as e:
-                    raise ValueError(
-                        "Precompiled model config "
-                        f"{str(compilation_config_path)} was "
-                        "not valid json") from e
+                    raise ValueError("Precompiled model config "
+                                     f"{str(compilation_config_path)} was "
+                                     "not valid json") from e
             match_result = cls.__match_from_model_config_file(
-                compilation_config,
-                vllm_config
-            )
+                compilation_config, vllm_config)
             if not match_result:
                 logger.warning(
                     "Provided vllm configuration doesn't match any of the "
@@ -662,12 +657,11 @@ class SpyrePlatform(Platform):
                 logger.warning(
                     "Configured model name is %s but the pre-compiled model "
                     "config has name %s. Please ensure this is the correct "
-                    "model",
-                    vllm_config.model_config.model, model_name)
+                    "model", vllm_config.model_config.model, model_name)
 
     @classmethod
-    def __match_from_pre_compile_catalog(
-        cls, pre_compile_catalog: dict, vllm_config: VllmConfig) -> int:
+    def __match_from_pre_compile_catalog(cls, pre_compile_catalog: dict,
+                                         vllm_config: VllmConfig) -> int:
         """Function to find the pre-compile model configuration that matches
         the provided vllm_config.
         """
@@ -677,16 +671,13 @@ class SpyrePlatform(Platform):
         for idx, config in enumerate(pre_compile_catalog):
             # Compare each key-value pair with values in vllm_config
             match_result = cls.__match_from_model_config_file(
-                config,
-                vllm_config
-            )
+                config, vllm_config)
             if match_result:
-               return idx
+                return idx
         return -1
 
     @classmethod
-    def __match_from_model_config_file(cls,
-                                       compilation_config: dict,
+    def __match_from_model_config_file(cls, compilation_config: dict,
                                        vllm_config: VllmConfig) -> bool:
         """Function to validate if vllm configuration provided matches
         pre-compile model configuration
@@ -709,8 +700,7 @@ class SpyrePlatform(Platform):
                 prompt_lens = get_list(
                     vllm_configs["VLLM_SPYRE_WARMUP_PROMPT_LENS"])
                 new_tokens = get_list(
-                    vllm_configs["VLLM_SPYRE_WARMUP_NEW_TOKENS"]
-                )
+                    vllm_configs["VLLM_SPYRE_WARMUP_NEW_TOKENS"])
                 batch_sizes = get_list(
                     vllm_configs["VLLM_SPYRE_WARMUP_BATCH_SIZES"])
 
