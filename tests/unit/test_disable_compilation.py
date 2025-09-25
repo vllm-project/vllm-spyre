@@ -54,14 +54,14 @@ def test_handle_disable_compilation(monkeypatch, tmp_path, batch_type):
     monkeypatch.setenv("TORCH_SENDNN_CACHE_DIR", str(tmp_path))
     monkeypatch.setenv("TORCH_SENDNN_CACHE_ENABLE", "1")
 
-    dummy_vllm_config = VllmConfig(
+    vllm_config = VllmConfig(
         model_config=ModelConfig(
             model="ibm-ai-platform/micro-g3.3-8b-instruct-1b",
             max_model_len=256),
         parallel_config=ParallelConfig(tensor_parallel_size=2),
         scheduler_config=SchedulerConfig(max_num_seqs=2))
 
-    SpyrePlatform._handle_disable_compilation(dummy_vllm_config,
+    SpyrePlatform._handle_disable_compilation(vllm_config,
                                               is_decoder=True)
 
 
@@ -137,12 +137,12 @@ def test_handle_disable_compilation_catalog(monkeypatch, tmp_path, batch_type):
     monkeypatch.setenv("TORCH_SENDNN_CACHE_DIR", str(tmp_path))
     monkeypatch.setenv("TORCH_SENDNN_CACHE_ENABLE", "1")
 
-    dummy_vllm_config = VllmConfig(
+    vllm_config = VllmConfig(
         model_config=ModelConfig(
             model="ibm-ai-platform/micro-g3.3-8b-instruct-1b",
             max_model_len=256),
         parallel_config=ParallelConfig(tensor_parallel_size=2),
         scheduler_config=SchedulerConfig(max_num_seqs=2))
 
-    SpyrePlatform._handle_disable_compilation(dummy_vllm_config,
+    SpyrePlatform._handle_disable_compilation(vllm_config,
                                               is_decoder=True)

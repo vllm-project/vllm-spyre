@@ -559,8 +559,9 @@ class SpyrePlatform(Platform):
 
         if not torch_cache_dir or not torch_cache_enabled:
             raise ValueError(
-                "DISABLE_COMPILATION=1 requires setting TORCH_SENDNN_CACHE_DIR "
-                "to a valid path and setting TORCH_SENDNN_CACHE_ENABLE=1")
+                f"{req_precompiled_decoder_env_var}=1 requires setting"
+                " TORCH_SENDNN_CACHE_DIR to a valid path and setting " \
+                "TORCH_SENDNN_CACHE_ENABLE=1")
 
         compilation_config_path = Path(
             torch_cache_dir) / PRE_COMPILE_MODEL_CONFIG_FILENAME
@@ -570,16 +571,16 @@ class SpyrePlatform(Platform):
         if not compilation_catalog_path.exists() and \
             not compilation_config_path.exists():
             raise ValueError(
-                f"DISABLE_COMPILATION=1 was set, but no pre-compiled model "
-                f"config was found in the TORCH_SENDNN_CACHE_DIR: "
-                f"{str(compilation_config_path)} or"
+                f"{req_precompiled_decoder_env_var}=1 was set, but no "
+                f"pre-compiled model config was found in the "
+                f"TORCH_SENDNN_CACHE_DIR: {str(compilation_config_path)} or"
                 f"{str(compilation_catalog_path)} does not exist")
 
         if not compilation_catalog_path.is_file() and \
             not compilation_config_path.is_file():
             raise ValueError(
-                "DISABLE_COMPILATION=1 was set, but the pre-compiled model "
-                "config is not a file")
+                "{req_precompiled_decoder_env_var}=1 was set, but the "
+                "pre-compiled model config is not a file")
 
         matching_config = None
 
