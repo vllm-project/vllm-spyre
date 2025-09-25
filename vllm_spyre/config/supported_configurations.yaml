@@ -1,8 +1,8 @@
 # --8<-- [start:supported-model-runtime-configurations]
 
-# Supported model runtime configurations:
-#  - cb: True: continuous batching mode; False: static batching mode
-#  - tp_size: [1|2|4|8|16] tensor parallel size
+# Parameters:
+#  - cb: True, for continuous batching; False, for static batching mode
+#  - tp_size: tensor parallel size
 #  - max_model_len: context length (prompt_length + max_new_tokens)
 #  - max_num_seqs: number of sequences in a batch (per instance)
 #  - warmup_shapes: [(fixed_prompt_length, max_new_tokens, batch_size)]
