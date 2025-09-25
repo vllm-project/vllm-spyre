@@ -1,3 +1,5 @@
+import os
+
 import pytest
 from spyre_util import (DecodeWarmupShapes, patch_warmup_shapes,
                         write_sample_model_config)
@@ -46,7 +48,7 @@ def test_handle_disable_compilation(monkeypatch, tmp_path, batch_type):
 
     write_sample_model_config(tmp_path, sample_model_config)
 
-    monkeypatch.setenv("DISABLE_COMPILATION", "true")
+    monkeypatch.setenv("VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS", "1")
     monkeypatch.setenv("TORCH_SENDNN_CACHE_DIR", str(tmp_path))
     monkeypatch.setenv("TORCH_SENDNN_CACHE_ENABLE", "1")
 
@@ -58,6 +60,8 @@ def test_handle_disable_compilation(monkeypatch, tmp_path, batch_type):
         scheduler_config=SchedulerConfig(max_num_seqs=2))
 
     handle_disable_compilation(vllm_config, is_decoder=True)
+
+    assert "DISABLE_COMPILATION" in os.environ
 
 
 @pytest.mark.parametrize("batch_type", ["sb", "cb"])
@@ -124,7 +128,7 @@ def test_handle_disable_compilation_catalog(monkeypatch, tmp_path, batch_type):
                               sample_model_config,
                               filename=PRE_COMPILE_MODEL_CATALOG_FILENAME)
 
-    monkeypatch.setenv("DISABLE_COMPILATION", "true")
+    monkeypatch.setenv("VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS", "1")
     monkeypatch.setenv("TORCH_SENDNN_CACHE_DIR", str(tmp_path))
     monkeypatch.setenv("TORCH_SENDNN_CACHE_ENABLE", "1")
 
@@ -136,3 +140,5 @@ def test_handle_disable_compilation_catalog(monkeypatch, tmp_path, batch_type):
         scheduler_config=SchedulerConfig(max_num_seqs=2))
 
     handle_disable_compilation(vllm_config, is_decoder=True)
+
+    assert "DISABLE_COMPILATION" in os.environ
