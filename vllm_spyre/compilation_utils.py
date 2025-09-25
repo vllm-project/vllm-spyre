@@ -39,13 +39,13 @@ def handle_disable_compilation(vllm_config: VllmConfig, is_decoder: bool):
     if not envs_spyre.VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS:
         return
 
-    # If this isn't a decoder model, re-enable compilation
     if not is_decoder:
-        logger.info("Unsetting %s because %s is not a decoder model",
-                    DISABLE_COMPILATION_ENV_VAR,
-                    vllm_config.model_config.model)
-        os.environ[DISABLE_COMPILATION_ENV_VAR] = "false"
         return
+
+    # If this isn't a decoder model, re-enable compilation
+    logger.info("Setting %s because %s is not a decoder model",
+                DISABLE_COMPILATION_ENV_VAR, vllm_config.model_config.model)
+    os.environ[DISABLE_COMPILATION_ENV_VAR] = "true"
 
     # If the user asked to disable compilation, then we need to enforce that
     # they setup their cache
@@ -98,6 +98,7 @@ def handle_disable_compilation(vllm_config: VllmConfig, is_decoder: bool):
         if match_result == -1:
             # No match found
             logger.warning(
+                "[PRECOMPILED_WARN]-" \
                 "Provided vllm configuration doesn't match any of the "
                 "pre-compiled model configurations. Catalog: \n%s\n "
                 "vllm_config: \n%s", str(compilation_catalog_path),
@@ -120,6 +121,7 @@ def handle_disable_compilation(vllm_config: VllmConfig, is_decoder: bool):
                                                     vllm_config)
         if not match_result:
             logger.warning(
+                "[PRECOMPILED_WARN]-"
                 "Provided vllm configuration doesn't match any of the "
                 "pre-compiled model")
             # Return with warning
@@ -135,6 +137,7 @@ def handle_disable_compilation(vllm_config: VllmConfig, is_decoder: bool):
                 # Can be converted to ValueError if we want to be strict
                 # with checking
                 logger.warning(
+                    "[PRECOMPILED_WARN]-"
                     "Model was compiled on vllm-spyre "
                     "%s but the current vllm_spyre version is %s",
                     matching_config['vllm_spyre_version'], vllm_spyre_version)

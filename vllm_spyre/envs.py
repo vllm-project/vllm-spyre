@@ -142,7 +142,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # If set, this will require use of pre-compiled models and
     # disable compilation for decoders
     "VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS":
-    lambda: bool(os.getenv("VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS", "0"))
+    lambda: bool(int(os.getenv("VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS", "0")))
 }
 # --8<-- [end:env-vars-definition]
 
