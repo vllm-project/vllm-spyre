@@ -13,7 +13,7 @@ if sys.platform.startswith("darwin"):
 import math
 import operator
 import os
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Union
 
 import torch
 from vllm.inputs import ProcessorInputs, PromptType
@@ -29,6 +29,7 @@ else:
 from vllm.platforms import Platform, PlatformEnum
 
 import vllm_spyre.envs as envs_spyre
+from vllm_spyre.compilation_utils import handle_disable_compilation
 
 logger = init_logger(__name__)
 
@@ -59,7 +60,7 @@ class SpyrePlatform(Platform):
     # compressed-tensors supported by
     # https://github.com/foundation-model-stack/fms-model-optimizer/blob/main/fms_mo/aiu_addons/__init__.py
     supported_quantization: list[str] = ["gptq", "compressed-tensors"]
-    _warmup_shapes: Optional[tuple[dict[str, int], ...]] = None
+    _warmup_shapes: tuple[dict[str, int], ...] | None = None
     _block_size: int = 64  # hardcoded Spyre constraint for now
     _num_spyre_blocks_override: int = -1  # override num of KV cache blocks
     _config: VllmConfig = None
@@ -76,7 +77,7 @@ class SpyrePlatform(Platform):
         return "spyre"
 
     @classmethod
-    def is_async_output_supported(cls, enforce_eager: Optional[bool]) -> bool:
+    def is_async_output_supported(cls, enforce_eager: bool | None) -> bool:
         """
         Check if the current platform supports async output.
         """
@@ -250,6 +251,8 @@ class SpyrePlatform(Platform):
                 envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO,
                 envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO)
 
+        handle_disable_compilation(vllm_config, is_decoder)
+
     @classmethod
     def use_all_gather(cls) -> bool:
         """
@@ -265,7 +268,7 @@ class SpyrePlatform(Platform):
     @classmethod
     def inference_mode(cls):
         """
-        Spyre does not support `torch.inference_mode`. 
+        Spyre does not support `torch.inference_mode`.
         This allows to fall back to `torch.no_grad` when inference mode is set.
         """
         return torch.no_grad()
@@ -329,7 +332,7 @@ class SpyrePlatform(Platform):
         cls,
         prompt: PromptType,
         params: Union[SamplingParams, PoolingParams],
-        processed_inputs: Optional[ProcessorInputs] = None,
+        processed_inputs: ProcessorInputs | None = None,
     ) -> None:
         """Raises if this request is unsupported on this platform"""
         if isinstance(params, PoolingParams):
@@ -426,7 +429,7 @@ class SpyrePlatform(Platform):
             ' '.join([f"{env}={value}" for env, value in env_map.items()]))
 
         # Try to determine the CPU time/cores that we are allocated
-        cpu_count: Optional[float] = None
+        cpu_count: float | None = None
         detection_message = ""
         try:
             # try to query cgroup CPU limits
