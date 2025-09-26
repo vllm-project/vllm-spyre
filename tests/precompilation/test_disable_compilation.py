@@ -1,3 +1,4 @@
+import logging
 import os
 
 import pytest
@@ -6,8 +7,7 @@ from spyre_util import (DecodeWarmupShapes, patch_warmup_shapes,
 from vllm.config import (ModelConfig, ParallelConfig, SchedulerConfig,
                          VllmConfig)
 
-from vllm_spyre.compilation_utils import (PRE_COMPILE_MODEL_CATALOG_FILENAME,
-                                          handle_disable_compilation)
+from vllm_spyre.compilation_utils import PRE_COMPILE_MODEL_CATALOG_FILENAME
 
 
 @pytest.mark.precompilation
@@ -58,18 +58,17 @@ def test_handle_disable_compilation(caplog_vllm_spyre, monkeypatch, tmp_path,
     # test as a cleanup
     monkeypatch.setenv("DISABLE_COMPILATION", "")
 
-    vllm_config = VllmConfig(
-        model_config=ModelConfig(
+    with caplog_vllm_spyre.at_level(logging.INFO):
+        _ = VllmConfig(model_config=ModelConfig(
             model="ibm-ai-platform/micro-g3.3-8b-instruct-1b",
             max_model_len=256),
-        parallel_config=ParallelConfig(tensor_parallel_size=2),
-        scheduler_config=SchedulerConfig(max_num_seqs=2))
-
-    handle_disable_compilation(vllm_config, is_decoder=True)
+                       parallel_config=ParallelConfig(tensor_parallel_size=2),
+                       scheduler_config=SchedulerConfig(max_num_seqs=2))
+        assert "[PRECOMPILED_WARN]-Setting DISABLE_COMPILATION" \
+            in caplog_vllm_spyre.text
 
     assert "DISABLE_COMPILATION" in os.environ
     assert os.getenv("DISABLE_COMPILATION") == "true"
-    assert "[PRECOMPILED_WARN]" in caplog_vllm_spyre.text
 
 
 @pytest.mark.precompilation
@@ -146,18 +145,18 @@ def test_handle_disable_compilation_catalog(caplog_vllm_spyre, monkeypatch,
     # test as a cleanup
     monkeypatch.setenv("DISABLE_COMPILATION", "")
 
-    vllm_config = VllmConfig(
-        model_config=ModelConfig(
+    with caplog_vllm_spyre.at_level(logging.INFO):
+        _ = VllmConfig(model_config=ModelConfig(
             model="ibm-ai-platform/micro-g3.3-8b-instruct-1b",
             max_model_len=256),
-        parallel_config=ParallelConfig(tensor_parallel_size=2),
-        scheduler_config=SchedulerConfig(max_num_seqs=2))
+                       parallel_config=ParallelConfig(tensor_parallel_size=2),
+                       scheduler_config=SchedulerConfig(max_num_seqs=2))
 
-    handle_disable_compilation(vllm_config, is_decoder=True)
+        assert "[PRECOMPILED_WARN]-Setting DISABLE_COMPILATION" \
+            in caplog_vllm_spyre.text
 
     assert "DISABLE_COMPILATION" in os.environ
     assert os.getenv("DISABLE_COMPILATION") == "true"
-    assert "[PRECOMPILED_WARN]" in caplog_vllm_spyre.text
 
 
 @pytest.mark.precompilation
@@ -233,17 +232,15 @@ def test_catalog_config_mismatch(caplog_vllm_spyre, monkeypatch, tmp_path,
     # test as a cleanup
     monkeypatch.setenv("DISABLE_COMPILATION", "")
 
-    vllm_config = VllmConfig(
-        model_config=ModelConfig(
+    with caplog_vllm_spyre.at_level(logging.WARNING):
+        _ = VllmConfig(model_config=ModelConfig(
             model="ibm-ai-platform/micro-g3.3-8b-instruct-1b",
             max_model_len=64),
-        parallel_config=ParallelConfig(tensor_parallel_size=2),
-        scheduler_config=SchedulerConfig(max_num_seqs=2))
-
-    handle_disable_compilation(vllm_config, is_decoder=True)
+                       parallel_config=ParallelConfig(tensor_parallel_size=2),
+                       scheduler_config=SchedulerConfig(max_num_seqs=2))
+        assert "[PRECOMPILED_WARN]" in caplog_vllm_spyre.text
+        assert "doesn't match any of the pre-compiled model " \
+        "configurations. Catalog:" in caplog_vllm_spyre.text
 
     assert "DISABLE_COMPILATION" in os.environ
     assert os.getenv("DISABLE_COMPILATION") == "true"
-    assert "[PRECOMPILED_WARN]" in caplog_vllm_spyre.text
-    assert "doesn't match any of the pre-compiled model " \
-        "configurations. Catalog:" in caplog_vllm_spyre.text
