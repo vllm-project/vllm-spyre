@@ -10,6 +10,7 @@ from vllm.v1.sample.logits_processor import (BatchUpdate, LogitsProcessor,
 
 import json
 
+
 class GoldenTokenInjectorState:
 
     def __init__(self, input_dict: dict):
@@ -74,16 +75,18 @@ class GoldenTokenInjector(LogitsProcessor):
         for req_idx, injector in self.injectors.items():
 
             if False:
-            # print(f"Golden token injection for request idx '{req_idx}'"\
+                # print(f"Golden token injection for request idx '{req_idx}'"\
                 #       f" at index '{injector.current_token_idx}':")
 
                 expected_token_id = injector.expected_token_ids[
                     injector.current_token_idx]
                 token_id = torch.argmax(logits[req_idx], dim=-1)
-                
+
                 token = json.dumps(self.tokenizer.decode([token_id]))
-                expected_token = json.dumps(self.tokenizer.decode([expected_token_id]))
-                print(f" {req_idx}/{injector.current_token_idx} '{token}' - {token_id} -> "
+                expected_token = json.dumps(
+                    self.tokenizer.decode([expected_token_id]))
+                print(
+                    f" {req_idx}/{injector.current_token_idx} '{token}' - {token_id} -> "
                     f"'{expected_token}' - {expected_token_id} ")
                 injector.current_token_idx += 1
                 continue

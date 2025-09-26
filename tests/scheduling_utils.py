@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 from llm_cache import get_cached_engine
+from output_util import (generate_hf_output, compare_results)
 from spyre_util import ModelInfo, create_random_request
 from vllm import SamplingParams
 from vllm.transformers_utils.tokenizer import get_tokenizer
@@ -124,17 +125,27 @@ def check_scheduler_inference_steps(
                                                    seqs_max_tokens,
                                                    prompts_lengths)
 
-    if hf_results:
-        # inject expectation
-        for req, hf in zip(requests, hf_results):
-            req[1].sampling_params.extra_args = {
-                "golden_token_injector": {
-                    "expected_token_ids": hf['token_ids'],
-                    "expected_logprobs": hf['logprobs'],
-                    "error_threshold": 0.08,
-                }
-            }
-            
+    prompts, requests = generate_prompts(model, steps_add_reqs,
+                                         seqs_max_tokens, prompts_lengths)
+
+    hf_results = generate_hf_output(
+        model=model,
+        prompts=prompts,
+        max_new_tokens=seqs_max_tokens,
+        ignore_eos=True,
+    )
+
+    # if hf_results:
+    #     # inject expectation
+    #     for req, hf in zip(requests, hf_results):
+    #         req[1].sampling_params.extra_args = {
+    #             "golden_token_injector": {
+    #                 "expected_token_ids": hf['token_ids'],
+    #                 "expected_logprobs": hf['logprobs'],
+    #                 "error_threshold": 0.08,
+    #             }
+    #         }
+
     # Setup the engine
     engine_core: EngineCore = get_cached_engine(
         model=model,
@@ -260,12 +271,18 @@ def check_scheduler_inference_steps(
             or output_keys[0] == 0 and output_keys[-1] == len(output_keys) - 1)
 
     # convert dict of dicts to ordered list and make values immutable
-    collected_outputs_new = []
+    vllm_results = []
     for k in output_keys:
         output = collected_outputs[str(k)]
         for k, list_values in output.items():
             if isinstance(list_values, list):
                 output[k] = tuple(list_values)
-        collected_outputs_new.append(output)
+        vllm_results.append(output)
 
-    return collected_outputs_new, generated_prompts
+    compare_results(model=model,
+                    tensor_parallel_size=1,
+                    backend=backend,
+                    vllm_results=vllm_results,
+                    hf_results=hf_results,
+                    prompts=prompts)
+    return None, None
