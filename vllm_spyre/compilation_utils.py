@@ -24,14 +24,14 @@ DISABLE_COMPILATION_ENV_VAR = "DISABLE_COMPILATION"
 
 def handle_disable_compilation(vllm_config: VllmConfig, is_decoder: bool):
     """
-    For decoder models we want to respect the `REQUIRE_PRECOMPILED_DECODERS`
-    environment variable, which disallows torch_sendnn from compiling new
-    graphs and only allows it to load pre-compiled graphs.
+    The `DISABLE_COMPILATION` environment variable disallows torch_sendnn from
+    compiling new graphs forcing it to load from the cache. Enabling
+    `VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS` will force DISABLE_COMPILATION
+    for decoder models and require pre-compiled models.
+
     In order to do this, we must load up some config from the torch_sendnn
     cache and check to make sure that the current vllm config matches,
     otherwise the cached artifacts cannot be used.
-
-    For encoder models, we do not allow disabling compilation.
     """
 
     req_precompiled_decoder_env_var = "VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS"
