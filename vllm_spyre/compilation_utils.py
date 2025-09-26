@@ -49,8 +49,8 @@ def handle_disable_compilation(vllm_config: VllmConfig, is_decoder: bool):
         DISABLE_COMPILATION_ENV_VAR, vllm_config.model_config.model)
     os.environ[DISABLE_COMPILATION_ENV_VAR] = "true"
 
-    # If the user asked to disable compilation, then we need to enforce that
-    # they setup their cache
+    # If the user has set req_precompiled_decoder_env_var,
+    # then we need to enforce that they setup their cache
     torch_cache_dir = os.getenv("TORCH_SENDNN_CACHE_DIR", None)
     torch_cache_enabled = bool(int(os.getenv("TORCH_SENDNN_CACHE_ENABLE",
                                              "0")))
