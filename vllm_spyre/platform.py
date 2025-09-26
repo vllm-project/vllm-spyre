@@ -456,7 +456,8 @@ class SpyrePlatform(Platform):
                 )
 
             for env in THREADING_ENVS:
-                os.environ[env] = str(cpus_per_worker)
+                if not os.environ.get(env):
+                    os.environ[env] = str(cpus_per_worker)
 
             logger.info(
                 "%s for %d workers. Since VLLM_SPYRE_UPDATE_THREAD_CONFIG is "
