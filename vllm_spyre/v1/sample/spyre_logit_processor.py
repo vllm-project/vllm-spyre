@@ -53,7 +53,10 @@ class LogitProcessorWrapper(LogitsProcessor):
                 for _ in range(batch_size)
         ]
 
-        self._is_argmax_invariant = self.logitprocs[0].is_argmax_invariant()
+        self._is_argmax_invariant : bool = \
+            self.logitprocs[0].is_argmax_invariant()
+        
+        self._prefill_index : Optional[int] = None
 
     def is_argmax_invariant(self) -> bool:
         """Never impacts greedy sampling"""
@@ -85,8 +88,17 @@ class LogitProcessorWrapper(LogitsProcessor):
 
     def apply(self, logits: torch.Tensor) -> torch.Tensor:
 
+        if self._prefill_index is not None:
+            logits = self.logitprocs[self._prefill_index].apply(logits)
+            self._prefill_index = None
+            return logits
+        
         batch_size = logits.shape[0]
         for i in range(batch_size):
             logits[i] = self.logitprocs[i].apply(logits[i].unsqueeze(0))
 
         return logits
+    
+    def set_prefill_index(self, idx : int) -> None:
+        self._prefill_index = idx
+        

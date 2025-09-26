@@ -16,6 +16,7 @@ from vllm.v1.pool.metadata import PoolingMetadata
 from vllm.v1.sample.logits_processor import (BatchUpdateBuilder,
                                              LogitsProcessors,
                                              MoveDirectionality)
+from vllm_spyre.v1.sample.spyre_logit_processor import LogitProcessorWrapper
 from vllm.v1.sample.metadata import SamplingMetadata
 
 
@@ -230,8 +231,7 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
         device: torch.device,
         pin_memory: bool,
         vocab_size: int,
-        # Type here is any for compatibility reasons
-        logitsprocs: Optional[LogitsProcessors] = None,
+        logitsprocs: Optional[LogitsProcessors] = None
     ):
 
         super().__init__(
@@ -302,6 +302,10 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
         self.batch_update_builder = BatchUpdateBuilder()
 
         self.logitsprocs = logitsprocs or LogitsProcessors()
+        self.logitsprocs_wrappers = [l for l \
+            in self.logitsprocs.all if isinstance(l, LogitProcessorWrapper)
+        ]
+        
 
         self.has_allowed_token_ids: set[str] = set()
         self.allowed_token_ids_mask: Optional[torch.Tensor] = None

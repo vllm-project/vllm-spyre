@@ -979,6 +979,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.requests[req_id] = req_state
         prefill_index = self.input_batch.add_request(req_state)
         self.prefill_batch.add_request(req_state)
+        
+        # set prefill index for logits processor
+        for logitsproc in self.input_batch.logitsprocs_wrappers:
+            logitsproc.set_prefill_index(prefill_index)
 
         # Refresh sampling metadata after all request are added to the batch
         self.input_batch.refresh_metadata()
@@ -1007,6 +1011,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         left_padded_prompt_mask = None
         # block table is stored in self.req_ids2blocks (only passed for decode)
         block_table = None
+        
 
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
@@ -1228,8 +1233,14 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             is_prefill=model_input.is_prompt)
 
     def get_sampling_metadata(self, is_prefill: bool) -> SamplingMetadata:
-        return self.prefill_batch.sampling_metadata \
-            if is_prefill else self.input_batch.sampling_metadata
+        
+        if is_prefill:
+            sampling_data = self.prefill_batch.sampling_metadata
+            sampling_data.logitsprocs = self.input_batch.logitsprocs
+            return sampling_data
+        else:
+            return self.input_batch.sampling_metadata
+            
 
     def get_req_id_to_index(self, is_prefill: bool) -> dict[str, int]:
         req_id_to_index = self.prefill_batch.get_unpadded_output_indices() \
