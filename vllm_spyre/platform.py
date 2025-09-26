@@ -494,9 +494,9 @@ class SpyrePlatform(Platform):
         if envs_spyre.VLLM_SPYRE_UPDATE_THREAD_CONFIG:
             if cpus_per_worker is None:
                 raise RuntimeError(
-                    f"{failed_detection_message} Use "
-                    "VLLM_SPYRE_UPDATE_THREAD_CONFIG=0 and configure manually."
-                )
+                    f"{failed_detection_message} Set VLLM_SPYRE_NUM_CPUS or "
+                    "use VLLM_SPYRE_UPDATE_THREAD_CONFIG=0 and configure "
+                    "manually.")
 
             for env in THREADING_ENVS:
                 os.environ[env] = str(cpus_per_worker)
