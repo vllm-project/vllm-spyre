@@ -457,6 +457,19 @@ class SpyrePlatform(Platform):
                     "Error parsing /sys/fs/cgroup/cpu.max to get CPU info",
                     exc_info=e)
 
+            # try psutil to get physical core count
+            if cpu_count is None:
+                try:
+                    import psutil
+                    cpu_count = float(psutil.cpu_count(logical=False))
+                    detection_message = \
+                        f"Detected {cpu_count} CPUs from " \
+                         "psutil.cpu_count(logical=False)"
+                except ImportError:
+                    pass
+                except Exception as e:
+                    logger.debug("Error using psutil", exc_info=e)
+
             # could try `nproc` here, but it is affected by
             # OMP_NUM_THREADS itself
 
