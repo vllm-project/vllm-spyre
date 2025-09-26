@@ -11,6 +11,8 @@ from vllm import LLM, EngineArgs
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor
 
+from golden_token_injector import GoldenTokenInjector
+
 T = TypeVar("T")
 
 ## class definitions ##########################################
@@ -194,7 +196,8 @@ class EngineCache:
             max_num_seqs=max_num_seqs,
             num_gpu_blocks_override=None,
             revision=revision,
-        )
+            # We always include it, but does not means we always use it
+            logits_processors=[GoldenTokenInjector])
         vllm_config = engine_args.create_engine_config()
         executor_class = Executor.get_class(vllm_config)
 

@@ -7,8 +7,9 @@ Run `python -m pytest tests/e2e/test_spyre_cb_inference_steps.py`.
 """
 
 import pytest
-from output_util import check_output_against_hf
-from scheduling_utils import check_scheduler_inference_steps
+from output_util import (check_output_against_hf, generate_hf_output, 
+                         compare_results)
+from scheduling_utils import check_scheduler_inference_steps, generate_prompts
 from spyre_util import ModelInfo
 
 
@@ -1343,7 +1344,25 @@ def test_requested_tokens_not_fitting_remaining_space(
         },
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    # hf_results = generate_hf_output(
+    #     model=model,
+    #     prompts=prompts,
+    #     max_new_tokens=seqs_max_tokens,
+    #     ignore_eos=True,
+    # )
+    
+    prompts, requests = generate_prompts(model, steps_add_reqs,
+                                                seqs_max_tokens,
+                                                prompts_lengths)
+    
+    hf_results = generate_hf_output(
+        model=model,
+        prompts=prompts,
+        max_new_tokens=seqs_max_tokens,
+        ignore_eos=True,
+    )
+    
+    vllm_results, prompts = check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -1354,11 +1373,18 @@ def test_requested_tokens_not_fitting_remaining_space(
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
+        hf_results=hf_results,
         use_cb=True,
     )
 
-    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-                            prompts)
+    
+
+    compare_results(model=model,
+                    tensor_parallel_size=1,
+                    backend=backend,
+                    vllm_results=vllm_results,
+                    hf_results=hf_results,
+                    prompts=prompts)
 
 
 @pytest.mark.cb

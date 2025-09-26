@@ -10,7 +10,6 @@ from vllm import SamplingParams
 from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
-
 from vllm_spyre.v1.core.scheduler import ContinuousBatchingSpyreScheduler
 
 DISABLE_ASSERTS = False  # used for debugging
@@ -36,6 +35,38 @@ def augment_checked_steps(
     return all_checked_steps
 
 
+def generate_prompts(
+    model: ModelInfo,
+    steps_add_reqs: list[int],
+    seqs_max_tokens: list[int],
+    prompts_lengths: list[int],
+):
+    generated_prompts = []
+
+    # Create random requests of specified lengths and max_tokens
+    # Need to do before setting up the vLLM engine, otherwise test random seed
+    # will be overridden
+    sorted_reqs_params = zip(steps_add_reqs, seqs_max_tokens, prompts_lengths)
+    requests: deque[tuple[int, EngineCoreRequest]] = deque()
+    for i, (add_step, max_tokens,
+            prompt_length) in enumerate(sorted_reqs_params):
+        # ignoring eos because we want to force the decoding to finish
+        # after max_tokens exactly
+        sampling_params = SamplingParams(max_tokens=max_tokens,
+                                         temperature=0.0,
+                                         logprobs=0,
+                                         ignore_eos=True)
+        request = create_random_request(request_id=i,
+                                        num_tokens=prompt_length,
+                                        sampling_params=sampling_params,
+                                        model=model.name)
+        requests.append((add_step, request))
+        # NOTE: It is going to be decoded later
+        generated_prompts.append(request.prompt_token_ids)
+
+    return generated_prompts, requests
+
+
 def check_scheduler_inference_steps(
     model: ModelInfo,
     backend: str,
@@ -48,6 +79,7 @@ def check_scheduler_inference_steps(
     max_model_len: int,
     available_blocks: int,
     max_batch_tkv_limit: int = -1,
+    hf_results=None,  # Used to use golden token injection
     use_cb: bool = True,
 ):
     """
@@ -87,29 +119,22 @@ def check_scheduler_inference_steps(
         "text": "",
         "tokens": []
     })
-    generated_prompts = []
 
-    # Create random requests of specified lengths and max_tokens
-    # Need to do before setting up the vLLM engine, otherwise test random seed
-    # will be overridden
-    sorted_reqs_params = zip(steps_add_reqs, seqs_max_tokens, prompts_lengths)
-    requests: deque[tuple[int, EngineCoreRequest]] = deque()
-    for i, (add_step, max_tokens,
-            prompt_length) in enumerate(sorted_reqs_params):
-        # ignoring eos because we want to force the decoding to finish
-        # after max_tokens exactly
-        sampling_params = SamplingParams(max_tokens=max_tokens,
-                                         temperature=0.0,
-                                         logprobs=0,
-                                         ignore_eos=True)
-        request = create_random_request(request_id=i,
-                                        num_tokens=prompt_length,
-                                        sampling_params=sampling_params,
-                                        model=model.name)
-        requests.append((add_step, request))
-        # NOTE: It is going to be decoded later
-        generated_prompts.append(request.prompt_token_ids)
+    generated_prompts, requests = generate_prompts(model, steps_add_reqs,
+                                                   seqs_max_tokens,
+                                                   prompts_lengths)
 
+    if hf_results:
+        # inject expectation
+        for req, hf in zip(requests, hf_results):
+            req[1].sampling_params.extra_args = {
+                "golden_token_injector": {
+                    "expected_token_ids": hf['token_ids'],
+                    "expected_logprobs": hf['logprobs'],
+                    "error_threshold": 0.08,
+                }
+            }
+            
     # Setup the engine
     engine_core: EngineCore = get_cached_engine(
         model=model,
