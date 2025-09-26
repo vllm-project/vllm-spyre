@@ -146,10 +146,9 @@ class SpyrePlatform(Platform):
                 max_seq_len = max(max_seq_len,
                                   shape["prompt_length"] + shape["new_tokens"])
 
-            if (envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS
-                    and max_batch_size > 1):
-                raise ValueError(
-                    "Prompt logprobs only supported with batch size 1")
+            if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
+                raise ValueError("Prompt logprobs not supported with " \
+                "static batching")
 
             # verify that warmup shapes are not too large
             model_config.get_and_verify_max_len(max_model_len=max_seq_len)
