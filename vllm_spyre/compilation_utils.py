@@ -42,10 +42,10 @@ def handle_disable_compilation(vllm_config: VllmConfig, is_decoder: bool):
     if not is_decoder:
         return
 
-    # If this isn't a decoder model, re-enable compilation
+    # If this is a decoder model, disable compilation
     logger.info(
         "[PRECOMPILED_WARN]"
-        "-Setting %s because %s is not a decoder model",
+        "-Setting %s because %s is a decoder model",
         DISABLE_COMPILATION_ENV_VAR, vllm_config.model_config.model)
     os.environ[DISABLE_COMPILATION_ENV_VAR] = "true"
 
