@@ -8,8 +8,6 @@ from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.v1.sample.logits_processor import (BatchUpdate, LogitsProcessor,
                                              MoveDirectionality)
 
-import json
-
 
 class GoldenTokenInjectorState:
 
@@ -74,25 +72,9 @@ class GoldenTokenInjector(LogitsProcessor):
 
         for req_idx, injector in self.injectors.items():
 
-            if False:
-                # print(f"Golden token injection for request idx '{req_idx}'"\
-                #       f" at index '{injector.current_token_idx}':")
-
-                expected_token_id = injector.expected_token_ids[
-                    injector.current_token_idx]
-                token_id = torch.argmax(logits[req_idx], dim=-1)
-
-                token = json.dumps(self.tokenizer.decode([token_id]))
-                expected_token = json.dumps(
-                    self.tokenizer.decode([expected_token_id]))
-                print(
-                    f" {req_idx}/{injector.current_token_idx} '{token}' - {token_id} -> "
-                    f"'{expected_token}' - {expected_token_id} ")
-                injector.current_token_idx += 1
-                continue
-            # There was an error already for inject tokens for this request
-            # skip until the end.
             if injector.has_error:
+                # There was an error already for inject tokens for this
+                # request skip until the end.
                 continue
 
             expected_token_id = injector.expected_token_ids[

@@ -5,12 +5,13 @@ from typing import Any
 
 import pytest
 from llm_cache import get_cached_engine
-from output_util import (generate_hf_output, compare_results)
+from output_util import compare_results, generate_hf_output
 from spyre_util import ModelInfo, create_random_request
 from vllm import SamplingParams
 from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
+
 from vllm_spyre.v1.core.scheduler import ContinuousBatchingSpyreScheduler
 
 DISABLE_ASSERTS = False  # used for debugging
@@ -135,16 +136,16 @@ def check_scheduler_inference_steps(
         ignore_eos=True,
     )
 
-    # if hf_results:
-    #     # inject expectation
-    #     for req, hf in zip(requests, hf_results):
-    #         req[1].sampling_params.extra_args = {
-    #             "golden_token_injector": {
-    #                 "expected_token_ids": hf['token_ids'],
-    #                 "expected_logprobs": hf['logprobs'],
-    #                 "error_threshold": 0.08,
-    #             }
-    #         }
+    if hf_results:
+        # inject expectation
+        for req, hf in zip(requests, hf_results):
+            req[1].sampling_params.extra_args = {
+                "golden_token_injector": {
+                    "expected_token_ids": hf['token_ids'],
+                    "expected_logprobs": hf['logprobs'],
+                    "error_threshold": 0.08,
+                }
+            }
 
     # Setup the engine
     engine_core: EngineCore = get_cached_engine(

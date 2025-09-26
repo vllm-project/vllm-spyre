@@ -7,9 +7,7 @@ Run `python -m pytest tests/e2e/test_spyre_cb_inference_steps.py`.
 """
 
 import pytest
-from output_util import (check_output_against_hf, generate_hf_output,
-                         compare_results)
-from scheduling_utils import check_scheduler_inference_steps, generate_prompts
+from scheduling_utils import check_scheduler_inference_steps
 from spyre_util import ModelInfo
 
 
@@ -171,10 +169,6 @@ def test_prompts_aligned_with_tkv_boundaries(model: ModelInfo, backend: str,
     )
 
 
-#    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-#                            prompts)
-
-
 @pytest.mark.cb
 @pytest.mark.full_model
 # These values are all parameterized for test sorting
@@ -329,10 +323,6 @@ def test_prompts_misaligned_with_tkv_boundaries(
     )
 
 
-#    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-#                            prompts)
-
-
 @pytest.mark.cb
 @pytest.mark.full_model
 # These values are all parameterized for test sorting
@@ -475,10 +465,6 @@ def test_two_sequences_finish_same_time_as_new_arrive(
         available_blocks=available_blocks,
         use_cb=True,
     )
-
-
-#    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-#                            prompts)
 
 
 @pytest.mark.cb
@@ -661,10 +647,6 @@ def test_new_sequence_joins_during_decode(model: ModelInfo, backend: str,
         available_blocks=available_blocks,
         use_cb=True,
     )
-
-
-#    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-#                            prompts)
 
 
 @pytest.mark.cb
@@ -887,10 +869,6 @@ def test_prompt_too_long_for_current_tkv(model: ModelInfo, backend: str,
     )
 
 
-#    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-#                            prompts)
-
-
 @pytest.mark.cb
 @pytest.mark.full_model
 # These values are all parameterized for test sorting
@@ -1057,10 +1035,6 @@ def test_prefill_optimization_tkv_too_big(model: ModelInfo, backend: str,
     )
 
 
-#    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-#                            prompts)
-
-
 @pytest.mark.cb
 @pytest.mark.full_model
 # These values are all parameterized for test sorting
@@ -1194,10 +1168,6 @@ def test_prefill_optimization_use_more_than_available_blocks(
         available_blocks=available_blocks,
         use_cb=True,
     )
-
-
-#    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-#                            prompts)
 
 
 @pytest.mark.cb
@@ -1352,25 +1322,6 @@ def test_requested_tokens_not_fitting_remaining_space(
         },
     ]
 
-    # hf_results = generate_hf_output(
-    #     model=model,
-    #     prompts=prompts,
-    #     max_new_tokens=seqs_max_tokens,
-    #     ignore_eos=True,
-    # )
-
-    # prompts, requests = generate_prompts(model, steps_add_reqs,
-    #                                             seqs_max_tokens,
-    #                                             prompts_lengths)
-
-    # hf_results = generate_hf_output(
-    #     model=model,
-    #     prompts=prompts,
-    #     max_new_tokens=seqs_max_tokens,
-    #     ignore_eos=True,
-    # )
-
-    # vllm_results, prompts =
     check_scheduler_inference_steps(
         model=model,
         backend=backend,
@@ -1384,13 +1335,6 @@ def test_requested_tokens_not_fitting_remaining_space(
         available_blocks=available_blocks,
         use_cb=True,
     )
-
-    # compare_results(model=model,
-    #                 tensor_parallel_size=1,
-    #                 backend=backend,
-    #                 vllm_results=vllm_results,
-    #                 hf_results=hf_results,
-    #                 prompts=prompts)
 
 
 @pytest.mark.cb
@@ -1694,10 +1638,6 @@ def test_requests_use_more_than_available_blocks(
     )
 
 
-#    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-#                            prompts)
-
-
 @pytest.mark.cb
 @pytest.mark.full_model
 @pytest.mark.parametrize("max_num_seqs", [2])
@@ -1824,10 +1764,6 @@ def test_requests_use_full_batch_tkv_limit(model: ModelInfo, backend: str,
         max_batch_tkv_limit=max_batch_tkv_limit,
         use_cb=True,
     )
-
-
-#    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-#                            prompts)
 
 
 @pytest.mark.cb
@@ -1968,10 +1904,6 @@ def test_requests_exceed_batch_tkv_limit(model: ModelInfo, backend: str,
     )
 
 
-#    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-#                            prompts)
-
-
 @pytest.mark.cb
 @pytest.mark.full_model
 @pytest.mark.parametrize("max_num_seqs", [2])
@@ -2078,10 +2010,6 @@ def test_requests_use_full_batch_tkv_limit_prefill_opt(
         max_batch_tkv_limit=max_batch_tkv_limit,
         use_cb=True,
     )
-
-
-#    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-#                            prompts)
 
 
 @pytest.mark.cb
@@ -2205,10 +2133,6 @@ def test_requests_exceed_batch_tkv_limit_prefill_opt(
     )
 
 
-#    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-#                            prompts)
-
-
 @pytest.mark.cb
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [2])
@@ -2321,10 +2245,6 @@ def test_scheduler_heuristic_prioritize_prefill(
         available_blocks=available_blocks,
         use_cb=True,
     )
-
-
-#    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-#                            prompts)
 
 
 @pytest.mark.cb
@@ -2467,7 +2387,3 @@ def test_scheduler_heuristic_prioritize_decode(model: ModelInfo, backend: str,
         available_blocks=available_blocks,
         use_cb=True,
     )
-
-
-#    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-#                            prompts)

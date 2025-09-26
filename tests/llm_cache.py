@@ -4,14 +4,13 @@ across test cases, to speed up test runtime."""
 from typing import Callable, Generic, Optional, TypeVar
 
 import pytest
+from golden_token_injector import GoldenTokenInjector
 from llm_cache_util import force_engine_shutdown
 from spyre_util import (DecodeWarmupShapes, ModelInfo, RemoteOpenAIServer,
                         patch_environment)
 from vllm import LLM, EngineArgs
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor
-
-from golden_token_injector import GoldenTokenInjector
 
 T = TypeVar("T")
 
