@@ -11,6 +11,8 @@ if TYPE_CHECKING:
     VLLM_SPYRE_USE_CB: bool = False
     VLLM_SPYRE_PERF_METRIC_LOGGING_ENABLED: int = 0
     VLLM_SPYRE_PERF_METRIC_LOGGING_DIR: str = "/tmp"
+    VLLM_SPYRE_CB_SCHEDULER_LOGGING_ENABLED: int = 0
+    VLLM_SPYRE_CB_SCHEDULER_LOGGING_DIR: str = "/tmp"
     VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER: bool = False
     # Prompt logprobs are behind a flag because they're only supported for
     # static batching and require passing back the hidden states for the full
@@ -87,6 +89,16 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # logs are written to /tmp.
     "VLLM_SPYRE_PERF_METRIC_LOGGING_DIR":
     lambda: os.getenv("VLLM_SPYRE_PERF_METRIC_LOGGING_DIR", "/tmp"),
+
+    # Enable performance metric logging. This captures startup information
+    # such as warmup times, and loading times. It is turned off by default.
+    "VLLM_SPYRE_CB_SCHEDULER_LOGGING_ENABLED":
+    lambda: int(os.getenv("VLLM_SPYRE_CB_SCHEDULER_LOGGING_ENABLED", 0)),
+
+    # Directory to write performance metric logging files. By default,
+    # logs are written to /tmp.
+    "VLLM_SPYRE_CB_SCHEDULER_LOGGING_DIR":
+    lambda: os.getenv("VLLM_SPYRE_CB_SCHEDULER_LOGGING_DIR", "/tmp"),
 
     # If set, override the signal handler for vllm-spyre on
     # vLLM V1 + torch_sendnn backend to be able to gracefully

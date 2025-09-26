@@ -31,7 +31,7 @@ from vllm.v1.worker.worker_base import WorkerBase as WorkerBaseV1
 from vllm.worker.worker_base import WorkerBase
 
 import vllm_spyre.envs as envs_spyre
-import vllm_spyre.perf_metrics as perf_metrics
+import vllm_spyre.logging.perf_metrics as perf_metrics
 import vllm_spyre.utils as utils_spyre
 from vllm_spyre.compat_utils import dataclass_fields
 from vllm_spyre.model_executor.model_loader import spyre_setup
