@@ -137,8 +137,8 @@ class GoldenTokenInjector(LogitsProcessor):
 
             token = self.tokenizer.decode([token_id])
             expected_token = self.tokenizer.decode([expected_token_id])
-            print(f"'{token}' {prob.item() * 100} -> "
-                  f"'{expected_token}' {expected_logprob * 100}%")
+            print(f"'{token}' {prob.item() * 100:.2f}% -> "
+                  f"'{expected_token}' {expected_prob * 100:.2f}%")
             injector.current_token_idx += 1
 
         return logits

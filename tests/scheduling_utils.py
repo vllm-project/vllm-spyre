@@ -5,7 +5,8 @@ from typing import Any
 
 import pytest
 from llm_cache import get_cached_engine
-from output_util import compare_results, generate_hf_output
+from output_util import (ISCLOSE_ABS_TOL, ISCLOSE_ABS_TOL_QUANTIZATION,
+                         compare_results, generate_hf_output)
 from spyre_util import ModelInfo, create_random_request
 from vllm import SamplingParams
 from vllm.transformers_utils.tokenizer import get_tokenizer
@@ -81,7 +82,6 @@ def check_scheduler_inference_steps(
     max_model_len: int,
     available_blocks: int,
     max_batch_tkv_limit: int = -1,
-    hf_results=None,  # Used to use golden token injection
     use_cb: bool = True,
 ):
     """
@@ -136,16 +136,18 @@ def check_scheduler_inference_steps(
         ignore_eos=True,
     )
 
-    if hf_results:
-        # inject expectation
-        for req, hf in zip(requests, hf_results):
-            req[1].sampling_params.extra_args = {
-                "golden_token_injector": {
-                    "expected_token_ids": hf['token_ids'],
-                    "expected_logprobs": hf['logprobs'],
-                    "error_threshold": 0.08,
-                }
+    abs_tol = ISCLOSE_ABS_TOL_QUANTIZATION if model.is_quantized \
+         else ISCLOSE_ABS_TOL
+    # inject expectation.
+    # json is fine to transfer between vllm subprocesses using pickle
+    for req, hf in zip(requests, hf_results):
+        req[1].sampling_params.extra_args = {
+            "golden_token_injector": {
+                "expected_token_ids": hf['token_ids'],
+                "expected_logprobs": hf['logprobs'],
+                "error_threshold": abs_tol,
             }
+        }
 
     # Setup the engine
     engine_core: EngineCore = get_cached_engine(
