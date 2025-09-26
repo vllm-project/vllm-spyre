@@ -1,14 +1,14 @@
 import itertools
-import torch
 from typing import Optional, Sequence, Union
 
+import torch
 from vllm.config import VllmConfig
 from vllm.logger import init_logger
-from vllm.v1.sample.logits_processor import (BatchUpdate, LogitsProcessor)
+from vllm.v1.sample.logits_processor import (BUILTIN_LOGITS_PROCESSORS,
+                                             STR_POOLING_REJECTS_LOGITSPROCS,
+                                             BatchUpdate, LogitsProcessor,
+                                             _load_custom_logitsprocs)
 from vllm.v1.sample.logits_processor.state import LogitsProcessors
-from vllm.v1.sample.logits_processor import (_load_custom_logitsprocs,
-                                             BUILTIN_LOGITS_PROCESSORS,
-                                             STR_POOLING_REJECTS_LOGITSPROCS)
 
 logger = init_logger(__name__)
 
@@ -55,8 +55,8 @@ class LogitProcessorWrapper(LogitsProcessor):
 
         self._is_argmax_invariant : bool = \
             self.logitprocs[0].is_argmax_invariant()
-        
-        self._prefill_index : Optional[int] = None
+
+        self._prefill_index: Optional[int] = None
 
     def is_argmax_invariant(self) -> bool:
         """Never impacts greedy sampling"""
@@ -92,13 +92,12 @@ class LogitProcessorWrapper(LogitsProcessor):
             logits = self.logitprocs[self._prefill_index].apply(logits)
             self._prefill_index = None
             return logits
-        
+
         batch_size = logits.shape[0]
         for i in range(batch_size):
             logits[i] = self.logitprocs[i].apply(logits[i].unsqueeze(0))
 
         return logits
-    
-    def set_prefill_index(self, idx : int) -> None:
+
+    def set_prefill_index(self, idx: int) -> None:
         self._prefill_index = idx
-        

@@ -979,7 +979,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.requests[req_id] = req_state
         prefill_index = self.input_batch.add_request(req_state)
         self.prefill_batch.add_request(req_state)
-        
+
         # set prefill index for logits processor
         for logitsproc in self.input_batch.logitsprocs_wrappers:
             logitsproc.set_prefill_index(prefill_index)
@@ -1011,7 +1011,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         left_padded_prompt_mask = None
         # block table is stored in self.req_ids2blocks (only passed for decode)
         block_table = None
-        
 
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
@@ -1233,14 +1232,13 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             is_prefill=model_input.is_prompt)
 
     def get_sampling_metadata(self, is_prefill: bool) -> SamplingMetadata:
-        
+
         if is_prefill:
             sampling_data = self.prefill_batch.sampling_metadata
             sampling_data.logitsprocs = self.input_batch.logitsprocs
             return sampling_data
         else:
             return self.input_batch.sampling_metadata
-            
 
     def get_req_id_to_index(self, is_prefill: bool) -> dict[str, int]:
         req_id_to_index = self.prefill_batch.get_unpadded_output_indices() \
@@ -1328,25 +1326,13 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         custom_logitsprocs = self.vllm_config.model_config.logits_processors
 
         batch_size = self.scheduler_config.max_num_seqs
-        # TODO: temp forcing wrapper logits processor
-        if True or custom_logitsprocs is not None and len(
-                custom_logitsprocs) > 0:
-            logits_processors = \
-                build_logitsprocs_for_cb(vllm_config=self.vllm_config,
-                                device=self.device,
-                                is_pin_memory=self.pin_memory,
-                                is_pooling_model=False,
-                                custom_logitsprocs=custom_logitsprocs,
-                                batch_size=batch_size)
-
-        else:
-            # No need to overirde logits processors
-            logits_processors = \
-                build_logitsprocs(vllm_config=self.vllm_config,
-                                device=self.device,
-                                is_pin_memory=self.pin_memory,
-                                is_pooling_model=False,
-                              custom_logitsprocs=[])
+        logits_processors = \
+            build_logitsprocs_for_cb(vllm_config=self.vllm_config,
+                            device=self.device,
+                            is_pin_memory=self.pin_memory,
+                            is_pooling_model=False,
+                            custom_logitsprocs=custom_logitsprocs,
+                            batch_size=batch_size)
 
         return SamplingInputBatch(
             max_num_reqs=batch_size,
