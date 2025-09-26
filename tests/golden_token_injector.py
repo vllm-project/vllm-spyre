@@ -73,7 +73,7 @@ class GoldenTokenInjector(LogitsProcessor):
 
         for req_idx, injector in self.injectors.items():
 
-            if True:
+            if False:
             # print(f"Golden token injection for request idx '{req_idx}'"\
                 #       f" at index '{injector.current_token_idx}':")
 
