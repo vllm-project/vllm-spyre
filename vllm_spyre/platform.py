@@ -432,33 +432,40 @@ class SpyrePlatform(Platform):
         # Try to determine the CPU time/cores that we are allocated
         cpu_count: float | None = None
         detection_message = ""
-        try:
-            # try to query cgroup CPU limits
-            with open('/sys/fs/cgroup/cpu.max') as f:
-                quota_str, period_str = f.read().strip().split()
 
-            if quota_str != 'max':
-                quota = int(quota_str)
-                period = int(period_str)
-                cpu_count = quota / period
-                detection_message = f"Detected cgroup CPU limit of {cpu_count}"
+        if (num_cpu := envs_spyre.VLLM_SPYRE_NUM_CPUS) > 0:
+            cpu_count = num_cpu
+            detection_message = f"VLLM_SPYRE_NUM_CPUS is set to {cpu_count}"
+        else:
+            try:
+                # try to query cgroup CPU limits
+                with open('/sys/fs/cgroup/cpu.max') as f:
+                    quota_str, period_str = f.read().strip().split()
 
-        except FileNotFoundError:
-            # file may not exist if not running under cgroups v2
-            pass
-        except Exception as e:
-            logger.debug(
-                "Error parsing /sys/fs/cgroup/cpu.max to get CPU info",
-                exc_info=e)
+                if quota_str != 'max':
+                    quota = int(quota_str)
+                    period = int(period_str)
+                    cpu_count = quota / period
+                    detection_message = \
+                        f"Detected cgroup CPU limit of {cpu_count}"
 
-        # could try `nproc` here, but it is affected by
-        # OMP_NUM_THREADS itself
+            except FileNotFoundError:
+                # file may not exist if not running under cgroups v2
+                pass
+            except Exception as e:
+                logger.debug(
+                    "Error parsing /sys/fs/cgroup/cpu.max to get CPU info",
+                    exc_info=e)
 
-        # try os.cpu_count() to get node CPU count
-        if cpu_count is None and (cpu_count_res := os.cpu_count()) is not None:
-            cpu_count = float(cpu_count_res)
-            detection_message = \
-                f"Detected {cpu_count} CPUs from `os.cpu_count()`"
+            # could try `nproc` here, but it is affected by
+            # OMP_NUM_THREADS itself
+
+            # try os.cpu_count() to get node CPU count
+            if cpu_count is None and (cpu_count_res :=
+                                      os.cpu_count()) is not None:
+                cpu_count = float(cpu_count_res)
+                detection_message = \
+                    f"Detected {cpu_count} CPUs from `os.cpu_count()`"
 
         # NOTE: math.ceil can output a number for each worker that sums
         # to a total greater than cpu_count.
