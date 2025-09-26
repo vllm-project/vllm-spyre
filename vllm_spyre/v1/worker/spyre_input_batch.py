@@ -524,10 +524,10 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
         tmp_dense = dense_index
         self.batch_update_builder.removed_append(tmp_dense)
 
-        while tmp_dense < self._num_requests + 1:
+        end_dense_idx = min(self._num_requests+1, self.max_num_reqs-1)
+        for tmp_dense in range(tmp_dense, end_dense_idx):
             self.batch_update_builder.moved.append(
-                (tmp_dense, tmp_dense + 1, MoveDirectionality.SWAP))
-            tmp_dense = tmp_dense + 1
+                (tmp_dense, tmp_dense + 1, MoveDirectionality.UNIDIRECTIONAL))
 
         # Remove the references
         self.req_output_token_ids.pop(dense_index)

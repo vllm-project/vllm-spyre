@@ -82,7 +82,7 @@ class LogitProcessorWrapper(LogitsProcessor):
             self.logitprocs[index].update_state(
                 BatchUpdate(batch_size=1, removed=[0], moved=[], added=[]))
 
-        for adx, bdx, direction in batch_update.moved:
+        for adx, bdx, _ in batch_update.moved:
             self.logitprocs[adx], self.logitprocs[bdx] = \
                 self.logitprocs[bdx], self.logitprocs[adx]
 
