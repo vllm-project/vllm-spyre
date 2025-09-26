@@ -23,6 +23,7 @@ configurations.
 | Granite-3.3-8b |  `ppc64le` | 4    | 2048          | 1024       | 16         | AIU docs                    |
 | Granite-3.3-8b |  `ppc64le` | 4    | 6144          | 2048       | 1          | AIU docs                    |
 | Granite-3.3-8b |  `s390x`   | 4    | 7168          | 1024       | 1          | AIU docs                    |
+| Granite-3.3-8b |  `s390x`   | 4    | 7168          | 1024       | 4          | PELE (Joe 9/26)             |
 
 **_Continuous Batching:_**
 
@@ -30,14 +31,15 @@ configurations.
 |----------------------|-----------|------|----------------|------------|-----------------------------|
 | Granite-3.3-8b       | `amd64`   | 4    | 8192           | 4          | AIU docs - remove?          |
 | Granite-3.3-8b       | `amd64`   | 4    | 16384          | 4          | AIU docs - remove?          |
-| Granite-3.3-8b       | `ppc64le` | 1    | 3072           | 16         | Gaurav 9/3 - remove?        |
+| Granite-3.3-8b       | `ppc64le` | 1    | 3072           | 16         | PELE (Gaurav 9/3, Joe 9/26) |
 | Granite-3.3-8b       | `s390x`   | 1    | 3072           | 16         | PELE                        |
 | Granite-3.3-8b       | `s390x`   | 1    | 8192           | 4          | AIU docs - remove?          |
 | Granite-3.3-8b       | `s390x`   | 2    | 8192           | 4          | AIU docs - remove?          |
-| Granite-3.3-8b       | `s390x`   | 4    | 16384          | 4          | AIU docs - remove?          |
 | Granite-3.3-8b       | `s390x`   | 4    | 8192           | 4          | AIU docs - remove?          |
-| Granite-3.3-8b       | `s390x`   | 4    | 32768          | 32         | PELE                        |
+| Granite-3.3-8b       | `s390x`   | 4    | 16384          | 4          | AIU docs - remove?          |
+| Granite-3.3-8b       | `s390x`   | 4    | 32768          | 32         | PELE (Joe 9/26)             |
 | Granite-3.3-8b (FP8) | `amd64`   | 4    | 16384          | 4          | AIU docs - remove?          |
+| Granite-3.3-8b (FP8) | `ppc64le` | 1    | 3072           | 16         | PELE (Joe 9/26)             |
 | Granite-3.3-8b (FP8) | `s390x`   | 1    | 4096           | 32         | PELE                        |
 | Granite-3.3-8b (FP8) | `s390x`   | 1    | 8192           | 16         | PELE                        |
 | Granite-3.3-8b (FP8) | `s390x`   | 1    | 16384          | 8          | PELE                        |
@@ -45,6 +47,8 @@ configurations.
 | Granite-3.3-8b (FP8) | `s390x`   | 1    | 32768          | 32         | PELE                        |
 | Granite-3.3-8b (FP8) | `s390x`   | 4    | 8192           | 4          | AIU docs - remove?          |
 | Granite-3.3-8b (FP8) | `s390x`   | 4    | 16384          | 4          | AIU docs - remove?          |
+| Granite-3.3-8b (FP8) | `s390x`   | 4    | 32768          | 32         | PELE (Joe 9/26)             |
+
 
 ### Encoder Models
 
