@@ -53,8 +53,8 @@ def test_handle_disable_compilation(caplog_vllm_spyre, monkeypatch, tmp_path,
     monkeypatch.setenv("VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS", "1")
     monkeypatch.setenv("TORCH_SENDNN_CACHE_DIR", str(tmp_path))
     monkeypatch.setenv("TORCH_SENDNN_CACHE_ENABLE", "1")
-    # We are trying to register the DISABLE_COMPILATION env variable with
-    # monkeypath so that it resets the value to its previous state after the
+    # Register the DISABLE_COMPILATION env variable with monkeypath so that
+    # it resets the value to its previous state after the
     # test as a cleanup
     monkeypatch.setenv("DISABLE_COMPILATION", "")
 
@@ -64,7 +64,7 @@ def test_handle_disable_compilation(caplog_vllm_spyre, monkeypatch, tmp_path,
             max_model_len=256),
                        parallel_config=ParallelConfig(tensor_parallel_size=2),
                        scheduler_config=SchedulerConfig(max_num_seqs=2))
-        assert "[PRECOMPILED_WARN]-Setting DISABLE_COMPILATION" \
+        assert "[PRECOMPILED_WARN] Setting DISABLE_COMPILATION" \
             in caplog_vllm_spyre.text
 
     assert "DISABLE_COMPILATION" in os.environ
@@ -140,8 +140,8 @@ def test_handle_disable_compilation_catalog(caplog_vllm_spyre, monkeypatch,
     monkeypatch.setenv("VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS", "1")
     monkeypatch.setenv("TORCH_SENDNN_CACHE_DIR", str(tmp_path))
     monkeypatch.setenv("TORCH_SENDNN_CACHE_ENABLE", "1")
-    # We are trying to register the DISABLE_COMPILATION env variable with
-    # monkeypath so that it resets the value to its previous state after the
+    # Register the DISABLE_COMPILATION env variable with monkeypath so that
+    # it resets the value to its previous state after the
     # test as a cleanup
     monkeypatch.setenv("DISABLE_COMPILATION", "")
 
@@ -152,7 +152,7 @@ def test_handle_disable_compilation_catalog(caplog_vllm_spyre, monkeypatch,
                        parallel_config=ParallelConfig(tensor_parallel_size=2),
                        scheduler_config=SchedulerConfig(max_num_seqs=2))
 
-        assert "[PRECOMPILED_WARN]-Setting DISABLE_COMPILATION" \
+        assert "[PRECOMPILED_WARN] Setting DISABLE_COMPILATION" \
             in caplog_vllm_spyre.text
 
     assert "DISABLE_COMPILATION" in os.environ

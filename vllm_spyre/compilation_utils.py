@@ -44,7 +44,7 @@ def handle_disable_compilation(vllm_config: VllmConfig, is_decoder: bool):
 
     # If this is a decoder model, disable compilation
     logger.info(
-        "[PRECOMPILED_WARN]-"
+        "[PRECOMPILED_WARN] "
         "Setting %s because %s is a decoder model",
         DISABLE_COMPILATION_ENV_VAR, vllm_config.model_config.model)
     os.environ[DISABLE_COMPILATION_ENV_VAR] = "true"
@@ -100,7 +100,7 @@ def handle_disable_compilation(vllm_config: VllmConfig, is_decoder: bool):
         if match_result == -1:
             # No match found
             logger.warning(
-                "[PRECOMPILED_WARN]-" \
+                "[PRECOMPILED_WARN] " \
                 "Provided vllm configuration doesn't match any of the "
                 "pre-compiled model configurations. Catalog: \n%s\n "
                 "vllm_config: \n%s", str(compilation_catalog_path),
@@ -123,7 +123,7 @@ def handle_disable_compilation(vllm_config: VllmConfig, is_decoder: bool):
                                                     vllm_config)
         if not match_result:
             logger.warning(
-                "[PRECOMPILED_WARN]-"
+                "[PRECOMPILED_WARN] "
                 "Provided vllm configuration doesn't match any of the "
                 "pre-compiled model")
             # Return with warning
@@ -139,7 +139,7 @@ def handle_disable_compilation(vllm_config: VllmConfig, is_decoder: bool):
                 # Can be converted to ValueError if we want to be strict
                 # with checking
                 logger.warning(
-                    "[PRECOMPILED_WARN]-"
+                    "[PRECOMPILED_WARN] "
                     "Model was compiled on vllm-spyre "
                     "%s but the current vllm_spyre version is %s",
                     matching_config['vllm_spyre_version'], vllm_spyre_version)
@@ -156,7 +156,7 @@ def handle_disable_compilation(vllm_config: VllmConfig, is_decoder: bool):
             # is the same as the one that the user is loading. We can only
             # warn here if the names do not match.
             logger.warning(
-                "[PRECOMPILED_WARN]-"
+                "[PRECOMPILED_WARN] "
                 "Configured model name is %s but the pre-compiled model "
                 "config has name %s. Please ensure this is the correct "
                 "model", vllm_config.model_config.model, model_name)
