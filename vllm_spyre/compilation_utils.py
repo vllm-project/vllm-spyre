@@ -43,8 +43,10 @@ def handle_disable_compilation(vllm_config: VllmConfig, is_decoder: bool):
         return
 
     # If this isn't a decoder model, re-enable compilation
-    logger.info("Setting %s because %s is not a decoder model",
-                DISABLE_COMPILATION_ENV_VAR, vllm_config.model_config.model)
+    logger.info(
+        "[PRECOMPILED_WARN]"
+        "-Setting %s because %s is not a decoder model",
+        DISABLE_COMPILATION_ENV_VAR, vllm_config.model_config.model)
     os.environ[DISABLE_COMPILATION_ENV_VAR] = "true"
 
     # If the user asked to disable compilation, then we need to enforce that
@@ -154,6 +156,7 @@ def handle_disable_compilation(vllm_config: VllmConfig, is_decoder: bool):
             # is the same as the one that the user is loading. We can only
             # warn here if the names do not match.
             logger.warning(
+                "[PRECOMPILED_WARN]-"
                 "Configured model name is %s but the pre-compiled model "
                 "config has name %s. Please ensure this is the correct "
                 "model", vllm_config.model_config.model, model_name)
