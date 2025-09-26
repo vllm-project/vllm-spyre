@@ -227,8 +227,8 @@ def test_catalog_config_mismatch(caplog_vllm_spyre, monkeypatch, tmp_path,
     monkeypatch.setenv("VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS", "1")
     monkeypatch.setenv("TORCH_SENDNN_CACHE_DIR", str(tmp_path))
     monkeypatch.setenv("TORCH_SENDNN_CACHE_ENABLE", "1")
-    # We are trying to register the DISABLE_COMPILATION env variable with
-    # monkeypatch so that it resets the value to its previous state after the
+    # Register the DISABLE_COMPILATION env variable with monkeypatch so that
+    # it resets the value to its previous state after the
     # test as a cleanup
     monkeypatch.setenv("DISABLE_COMPILATION", "")
 
