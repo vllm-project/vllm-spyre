@@ -95,9 +95,9 @@ environment_variables: dict[str, Callable[[], Any]] = {
     lambda: bool(int(os.getenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1"))),
 
     # If set, enables the `prompt_logprobs` sampling parameter.
-    # By default, prompt_logprobs aren't supported
+    # Currently, prompt_logprobs aren't supported
     "VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS":
-    lambda: bool(int(os.getenv("VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS", "0"))),
+    lambda: False,
 
     # If set, enables the joining of a new sequence even if its prompt length
     # is exceeding the tkv of the current decode batch. As this shifts all the

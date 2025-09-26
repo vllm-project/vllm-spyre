@@ -146,9 +146,10 @@ class SpyrePlatform(Platform):
                 max_seq_len = max(max_seq_len,
                                   shape["prompt_length"] + shape["new_tokens"])
 
-            if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
-                raise ValueError("Prompt logprobs not supported with " \
-                "static batching")
+            if (envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS
+                    and max_batch_size > 1):
+                raise ValueError(
+                    "Prompt logprobs only supported with batch size 1")
 
             # verify that warmup shapes are not too large
             model_config.get_and_verify_max_len(max_model_len=max_seq_len)
@@ -335,10 +336,11 @@ class SpyrePlatform(Platform):
             # Only validating generation requests for now
             return None
 
+        # Note: Currently prompt logprobs are not supported, therefore
+        # envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS is hardcoded to False
         if (params.prompt_logprobs is not None
                 and not envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS):
-            raise ValueError("Prompt logprobs must be enabled with "
-                             "`VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS=1`")
+            raise ValueError("Prompt logprobs are currently not supported.")
 
         if isinstance(prompt, dict) and "prompt_token_ids" in prompt:
             prompt_len = len(prompt["prompt_token_ids"])
