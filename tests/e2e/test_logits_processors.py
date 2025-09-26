@@ -115,7 +115,7 @@ def test_cb_logits_processor(model: ModelInfo, backend, monkeypatch,
             nonlocal spy_outputs
             for i in range(batch_size):
                 params = self.req_info[i]
-                token_id = logits.argmax(-1).reshape(-1).item()
+                token_id = logits[i].argmax(-1).reshape(-1).item()
                 spy_outputs[params.max_tokens].append(token_id)
             return logits
 
