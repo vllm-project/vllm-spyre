@@ -451,7 +451,6 @@ def test_two_sequences_finish_same_time_as_new_arrive(
         },
     ]
 
-    #cb_outputs, prompts =
     check_scheduler_inference_steps(
         model=model,
         backend=backend,
@@ -1471,9 +1470,6 @@ def test_requests_use_all_available_blocks(model: ModelInfo, backend: str,
         available_blocks=available_blocks,
         use_cb=True,
     )
-
-    # check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-    #                         prompts)
 
 
 @pytest.mark.cb
