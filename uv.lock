@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.12' and sys_platform == 'darwin'",
@@ -957,13 +957,13 @@ wheels = [
 
 [[package]]
 name = "ibm-fms"
-version = "1.2.1"
+version = "1.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "torch", marker = "sys_platform == 'never'" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/81/88/b0a5c0c9259868b00d823d569a19e0b44ccec76087e4676f655e92c41776/ibm_fms-1.2.1-py3-none-any.whl", hash = "sha256:f151717788d7c8d4d6ddbbf85f6687887f64ce2823926832a877016a6fd72849", size = 179297, upload-time = "2025-08-07T15:18:12.315Z" },
+    { url = "https://files.pythonhosted.org/packages/30/12/5528237efc16dd77f794eedb2214b4a2692746b1a8115ca493e3132a8e35/ibm_fms-1.4.0-py3-none-any.whl", hash = "sha256:a7dc7d3488136d3e2bce1d78bb985f41e5ebaca8ae718dac8ac19b9fa9c5bdf5", size = 189645, upload-time = "2025-09-27T00:27:11.882Z" },
 ]
 
 [[package]]
@@ -3794,6 +3794,7 @@ lint = [
 requires-dist = [
     { name = "fms-model-optimizer", extras = ["fp8"], specifier = ">=0.6.0" },
     { name = "ibm-fms", specifier = ">=1.2.1" },
+    { name = "pytest-mock", specifier = ">=3.15.0" },
     { name = "vllm", specifier = ">=0.10.1.1,<=0.10.2" },
 ]
 
