@@ -65,9 +65,9 @@ class SpyrePlatform(Platform):
     _num_spyre_blocks_override: int = -1  # override num of KV cache blocks
     _config: VllmConfig = None
 
-    # TODO: see if this needs to be set
+    # Backend for dynamic compilation ops
     # See vllm batched_count_greater_than method
-    # simple_compile_backend: str = "eager"
+    simple_compile_backend: str = envs_spyre.VLLM_SPYRE_SIMPLE_COMPILE_BACKEND
 
     # Needed by vllm/model_executor/layers/pooler.py:562
     current_stream = lambda _: _StreamPlaceholder()
