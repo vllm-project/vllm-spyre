@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     VLLM_SPYRE_MAX_LOAD_PROCESSES: int = 0
     VLLM_SPYRE_WORKER_LOG_REDIRECT_DIR: str = ""
     VLLM_SPYRE_GLOO_TIMEOUT_MINUTES: int = 60
+    VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS: bool = False
 
 logger = init_logger(__name__)
 
@@ -136,7 +137,13 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # If set, overrides the default (30 minutes) timeout for
     #  torch.distributed.init_process_group
     "VLLM_SPYRE_GLOO_TIMEOUT_MINUTES":
-    lambda: int(os.getenv("VLLM_SPYRE_GLOO_TIMEOUT_MINUTES", "60"))
+    lambda: int(os.getenv("VLLM_SPYRE_GLOO_TIMEOUT_MINUTES", "60")),
+
+    # If set, this will require use of pre-compiled models and
+    # disable compilation for decoders
+    "VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS":
+    lambda: bool(int(os.getenv("VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS", "0"))
+                 )
 }
 # --8<-- [end:env-vars-definition]
 
