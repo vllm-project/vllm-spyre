@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     VLLM_SPYRE_WORKER_LOG_REDIRECT_DIR: str = ""
     VLLM_SPYRE_GLOO_TIMEOUT_MINUTES: int = 60
     VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS: bool = False
+    VLLM_SPYRE_SIMPLE_COMPILE_BACKEND: str = "eager"
 
 logger = init_logger(__name__)
 
@@ -143,7 +144,14 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # disable compilation for decoders
     "VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS":
     lambda: bool(int(os.getenv("VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS", "0"))
-                 )
+                 ),
+
+    # Simple compile backend for some dynamically compiled operations, like
+    # gathering logprobs in the sampler.
+    # Defaults to eager, iductor can be used if python headers and a compiler
+    # are available.
+    "VLLM_SPYRE_SIMPLE_COMPILE_BACKEND":
+    lambda: os.getenv("VLLM_SPYRE_SIMPLE_COMPILE_BACKEND", "eager"),
 }
 # --8<-- [end:env-vars-definition]
 
