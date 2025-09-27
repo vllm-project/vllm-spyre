@@ -104,10 +104,9 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # If set, enables the joining of a new sequence even if its prompt length
     # is exceeding the tkv of the current decode batch. As this shifts all the
     # sequences in the decode batch to the right (increasing the tkv), there is
-    # also a potential performance decrease coming with this. The switch allows
-    # to test the feature on realistic workloads before enabling it by default.
+    # also a potential performance decrease coming with this.
     "VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION":
-    lambda: bool(int(os.getenv("VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION", "0"))
+    lambda: bool(int(os.getenv("VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION", "1"))
                  ),
 
     # scheduling heuristic: prefill vs decode prioritization
