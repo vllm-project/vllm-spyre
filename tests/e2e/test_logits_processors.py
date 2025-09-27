@@ -9,7 +9,8 @@ from vllm.v1.sample.logits_processor import BatchUpdate, LogitsProcessor
 
 
 def test_custom_logits_processor(model: ModelInfo, backend, monkeypatch,
-                                 max_num_seqs, max_model_len, warmup_shapes, cb):
+                                 max_num_seqs, max_model_len, warmup_shapes,
+                                 cb):
     '''
     Simple test to check if custom logits processors are being registered 
     '''
