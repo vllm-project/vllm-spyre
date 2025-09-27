@@ -339,10 +339,11 @@ class SpyrePlatform(Platform):
             # Only validating generation requests for now
             return None
 
+        # Note: Currently prompt logprobs are not supported, therefore
+        # envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS is hardcoded to False
         if (params.prompt_logprobs is not None
                 and not envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS):
-            raise ValueError("Prompt logprobs must be enabled with "
-                             "`VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS=1`")
+            raise ValueError("Prompt logprobs are currently not supported.")
 
         if isinstance(prompt, dict) and "prompt_token_ids" in prompt:
             prompt_len = len(prompt["prompt_token_ids"])
