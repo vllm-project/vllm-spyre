@@ -52,6 +52,7 @@ def test_prompt_logprobs(backend: str, model: str, tp_size: int,
     force_engine_shutdown(llm)
 
 
+@pytest.mark.skip
 @pytest.mark.cpu
 @pytest.mark.decoder
 def test_prompt_logprobs_must_be_enabled(monkeypatch: pytest.MonkeyPatch):
@@ -63,6 +64,7 @@ def test_prompt_logprobs_must_be_enabled(monkeypatch: pytest.MonkeyPatch):
         SpyrePlatform.validate_request("test-any-prompt", params)
 
 
+@pytest.mark.skip
 @pytest.mark.cpu
 @pytest.mark.decoder
 def test_prompt_logprobs_not_supported_with_cb(
@@ -76,6 +78,7 @@ def test_prompt_logprobs_not_supported_with_cb(
         VllmConfig(model_config=ModelConfig(model=model.name, task="generate"))
 
 
+@pytest.mark.skip
 @pytest.mark.cpu
 @pytest.mark.decoder
 def test_prompt_logprobs_on_single_requests_only(

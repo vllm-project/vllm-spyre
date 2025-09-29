@@ -72,6 +72,10 @@ class SpyreCausalLM(nn.Module):
         # number of right pads (relevant for continuous batching only)
         self.n_pads_right = 0
 
+        self._mask_dtype = torch.float16 if \
+            envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn" \
+            else torch.float32
+
         # FMS Model
         if envs_spyre.VLLM_SPYRE_USE_CB:
             self.model = ContinuousBatchingFmsModel(model_config,
@@ -110,6 +114,7 @@ class SpyreCausalLM(nn.Module):
             position_ids=positions,
             mask=masks,
             use_cache=True,
+            is_prompt=is_prompt,
             **extra_kwargs,
         )
 
@@ -143,9 +148,7 @@ class SpyreCausalLM(nn.Module):
         return next_tokens
 
     def get_mask_dtype(self) -> torch.dtype:
-        return torch.float16 if \
-            envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn" \
-            else torch.float32
+        return self._mask_dtype
 
 
 class FmsModelBase(nn.Module):
@@ -496,6 +499,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         position_ids: torch.Tensor,
         mask: torch.Tensor,
         use_cache: bool,
+        is_prompt: bool,
         **extra_kwargs,
     ) -> torch.Tensor:
 
@@ -527,7 +531,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             mask=mask,
             past_key_value_states=self.past_key_value_states,
             use_cache=use_cache,
-            only_last_token=False,
+            last_n_tokens=SpyrePlatform.get_block_size() if is_prompt else 1,
             current_tkv_mask=attn_metadata.current_tkv_mask,
             left_padded_prompt_mask=attn_metadata.left_padded_prompt_mask,
             block_table=attn_metadata.block_table,
@@ -536,6 +540,10 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         )
 
         logits, self.past_key_value_states = output
+
+        if is_prompt:
+            # assert that indeed received the last block of logits
+            assert logits.shape[1] == SpyrePlatform.get_block_size()
 
         if self.is_fp8_model:
             # update scale for kv_cache after execute model
@@ -690,13 +698,10 @@ class StaticBatchingFmsModel(FmsModelBase):
         # specify attention type for static batching
         extra_kwargs['attn_name'] = self.attention_name
 
-        if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
-            # In order to calculate prompt logprobs, we have to return the
-            # hidden states from the whole prompt. The static graphs need to be
-            # compiled with this set one way or the other.
-            only_last_token = False
-        else:
-            only_last_token = True
+        # In order to calculate prompt logprobs, we have to return the
+        # hidden states from the whole prompt. The static graphs need to be
+        # compiled with this set one way or the other.
+        last_n_tokens = 0 if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS else 1
 
         output = self.model(
             input_ids,
@@ -704,11 +709,14 @@ class StaticBatchingFmsModel(FmsModelBase):
             mask=mask,
             past_key_value_states=self.past_key_value_states,
             use_cache=use_cache,
-            only_last_token=only_last_token,
+            last_n_tokens=last_n_tokens,
             **extra_kwargs,
         )
 
         logits, self.past_key_value_states = output
+
+        if not envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
+            logits = logits.squeeze(1)
 
         return logits
 

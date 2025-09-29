@@ -1,4 +1,3 @@
-import inspect
 import sys
 
 # When running this plugin on a Mac, we assume it's for local development
@@ -14,7 +13,7 @@ if sys.platform.startswith("darwin"):
 import math
 import operator
 import os
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Union
 
 import torch
 from vllm.inputs import ProcessorInputs, PromptType
@@ -30,6 +29,7 @@ else:
 from vllm.platforms import Platform, PlatformEnum
 
 import vllm_spyre.envs as envs_spyre
+from vllm_spyre.compilation_utils import handle_disable_compilation
 
 logger = init_logger(__name__)
 
@@ -43,23 +43,12 @@ THREADING_ENVS = [
 ]
 
 
-class classproperty:
+# Needed by vllm/model_executor/layers/pooler.py:562
+# Copied from vllm/utils/__init__.py
+class _StreamPlaceholder:
 
-    def __init__(self, func):
-        self.func = func
-
-    def __get__(self, instance, owner):
-        return self.func(owner)
-
-
-@property  # type: ignore
-def is_v1_compatible(self) -> bool:
-    architectures = getattr(self.hf_config, "architectures", [])
-    patterns = ["Bert", "Roberta"]
-    if any(pat in arch for arch in architectures for pat in patterns):
-        return True
-    import vllm.model_executor.models as me_models
-    return me_models.ModelRegistry.is_v1_compatible(architectures)
+    def __init__(self):
+        self.synchronize = lambda: None
 
 
 class SpyrePlatform(Platform):
@@ -67,38 +56,28 @@ class SpyrePlatform(Platform):
 
     # "spyre" device_name no longer worked due to https://github.com/vllm-project/vllm/pull/16464
     device_name: str = "cpu"
-    _device_type: str = "cpu"
+    device_type: str = "cpu"
     # compressed-tensors supported by
     # https://github.com/foundation-model-stack/fms-model-optimizer/blob/main/fms_mo/aiu_addons/__init__.py
     supported_quantization: list[str] = ["gptq", "compressed-tensors"]
-    _warmup_shapes: Optional[tuple[dict[str, int], ...]] = None
+    _warmup_shapes: tuple[dict[str, int], ...] | None = None
     _block_size: int = 64  # hardcoded Spyre constraint for now
     _num_spyre_blocks_override: int = -1  # override num of KV cache blocks
     _config: VllmConfig = None
 
-    # TODO: see if this needs to be set
+    # Backend for dynamic compilation ops
     # See vllm batched_count_greater_than method
-    # simple_compile_backend: str = "eager"
+    simple_compile_backend: str = envs_spyre.VLLM_SPYRE_SIMPLE_COMPILE_BACKEND
 
-    @classproperty
-    def device_type(cls):
-        # TODO: temporary hack while BertModels
-        # inherit SupportsV0Only in vllm upstream.
-        import vllm.model_executor.models as me_models
-        from vllm.config import ModelConfig
-
-        # no need to patch after the model_config change
-        if 'model_config' not in \
-                inspect.getfullargspec(me_models.ModelRegistry.is_v1_compatible).args:
-            ModelConfig.is_v1_compatible = is_v1_compatible
-        return cls._device_type
+    # Needed by vllm/model_executor/layers/pooler.py:562
+    current_stream = lambda _: _StreamPlaceholder()
 
     @classmethod
     def get_device_name(cls, device_id: int = 0) -> str:
         return "spyre"
 
     @classmethod
-    def is_async_output_supported(cls, enforce_eager: Optional[bool]) -> bool:
+    def is_async_output_supported(cls, enforce_eager: bool | None) -> bool:
         """
         Check if the current platform supports async output.
         """
@@ -106,14 +85,19 @@ class SpyrePlatform(Platform):
 
     @classmethod
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:
+
+        # In case vllm passes a default vllm_config to us.
+        # This happens when get_current_vllm_config is called
+        # without setting the vllm config through
+        # set_current_vllm_config
+        if vllm_config.model_config is None:
+            return
+
         cls._config = vllm_config
         parallel_config = vllm_config.parallel_config
         scheduler_config = vllm_config.scheduler_config
         model_config = vllm_config.model_config
         cache_config = vllm_config.cache_config
-
-        if getattr(scheduler_config, "is_multi_step", False):
-            raise NotImplementedError
 
         is_decoder = model_config.runner_type == "generate"
 
@@ -146,6 +130,10 @@ class SpyrePlatform(Platform):
             if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
                 raise ValueError("Prompt logprobs not supported with " \
                 "continuous batching")
+            if (vllm_config.model_config.quantization
+                    and vllm_config.scheduler_config.max_num_seqs == 1):
+                raise ValueError(
+                    "Batch size 1 not supported for fp8 continuous batching.")
         else:
             # Static batching or embedding model.
             # Override --max-num-seqs to the biggest warmup batch size
@@ -230,6 +218,14 @@ class SpyrePlatform(Platform):
             logger.info("Model granite-3.3-8b-instruct and tensor parallel " \
             "size 4 detected. Using VLLM_DT_MAX_BATCH_TKV_LIMIT = %d",
             128 * 1024)
+
+            # If no HDMA p2psize override was specified, set 256MB
+            if not os.getenv("FLEX_HDMA_P2PSIZE", None):
+                os.environ["FLEX_HDMA_P2PSIZE"] = str(1024 * 1024 * 256)
+                logger.info(
+                    "Model granite-3.3-8b-instruct and tensor parallel size 4 "
+                    "detected. Using FLEX_HDMA_P2PSIZE = %d",
+                    1024 * 1024 * 256)
         else:
             # default value for any other model/ tensor parallel size
             default_max_batch_tkv_limit = \
@@ -255,6 +251,8 @@ class SpyrePlatform(Platform):
                 envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO,
                 envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO)
 
+        handle_disable_compilation(vllm_config, is_decoder)
+
     @classmethod
     def use_all_gather(cls) -> bool:
         """
@@ -270,7 +268,7 @@ class SpyrePlatform(Platform):
     @classmethod
     def inference_mode(cls):
         """
-        Spyre does not support `torch.inference_mode`. 
+        Spyre does not support `torch.inference_mode`.
         This allows to fall back to `torch.no_grad` when inference mode is set.
         """
         return torch.no_grad()
@@ -334,17 +332,18 @@ class SpyrePlatform(Platform):
         cls,
         prompt: PromptType,
         params: Union[SamplingParams, PoolingParams],
-        processed_inputs: Optional[ProcessorInputs] = None,
+        processed_inputs: ProcessorInputs | None = None,
     ) -> None:
         """Raises if this request is unsupported on this platform"""
         if isinstance(params, PoolingParams):
             # Only validating generation requests for now
             return None
 
+        # Note: Currently prompt logprobs are not supported, therefore
+        # envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS is hardcoded to False
         if (params.prompt_logprobs is not None
                 and not envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS):
-            raise ValueError("Prompt logprobs must be enabled with "
-                             "`VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS=1`")
+            raise ValueError("Prompt logprobs are currently not supported.")
 
         if isinstance(prompt, dict) and "prompt_token_ids" in prompt:
             prompt_len = len(prompt["prompt_token_ids"])
@@ -431,7 +430,7 @@ class SpyrePlatform(Platform):
             ' '.join([f"{env}={value}" for env, value in env_map.items()]))
 
         # Try to determine the CPU time/cores that we are allocated
-        cpu_count: Optional[float] = None
+        cpu_count: float | None = None
         detection_message = ""
         try:
             # try to query cgroup CPU limits
