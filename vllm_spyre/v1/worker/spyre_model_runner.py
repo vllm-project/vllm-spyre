@@ -27,7 +27,8 @@ import vllm_spyre.utils as utils_spyre
 from vllm_spyre.model_executor.model_loader.spyre import (
     BACKEND_LIST, SpyreAttentionMetadata, SpyreCausalLM)
 from vllm_spyre.platform import SpyrePlatform
-from vllm_spyre.v1.sample.spyre_logit_processor import build_logitsprocs_for_cb
+from vllm_spyre.v1.sample.spyre_logits_processor import \
+    build_logitsprocs_for_cb
 # yapf conflicts with ruff for this block
 # yapf: disable
 from vllm_spyre.v1.worker.spyre_input_batch import (BaseInputBatch,
