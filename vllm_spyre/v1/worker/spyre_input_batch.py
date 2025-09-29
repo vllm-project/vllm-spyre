@@ -18,7 +18,7 @@ from vllm.v1.sample.logits_processor import (BatchUpdateBuilder,
                                              MoveDirectionality)
 from vllm.v1.sample.metadata import SamplingMetadata
 
-from vllm_spyre.v1.sample.spyre_logit_processor import LogitProcessorWrapper
+from vllm_spyre.v1.sample.spyre_logits_processor import LogitProcessorWrapper
 
 
 @dataclass
