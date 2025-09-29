@@ -22,6 +22,8 @@ if TYPE_CHECKING:
     VLLM_SPYRE_MAX_LOAD_PROCESSES: int = 0
     VLLM_SPYRE_WORKER_LOG_REDIRECT_DIR: str = ""
     VLLM_SPYRE_GLOO_TIMEOUT_MINUTES: int = 60
+    VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS: bool = False
+    VLLM_SPYRE_SIMPLE_COMPILE_BACKEND: str = "eager"
     VLLM_SPYRE_EXIT_ON_UNSUPPORTED_RUNTIME_CONFIG: bool = False
 
 logger = init_logger(__name__)
@@ -96,17 +98,16 @@ environment_variables: dict[str, Callable[[], Any]] = {
     lambda: bool(int(os.getenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1"))),
 
     # If set, enables the `prompt_logprobs` sampling parameter.
-    # By default, prompt_logprobs aren't supported
+    # Currently, prompt_logprobs aren't supported
     "VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS":
-    lambda: bool(int(os.getenv("VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS", "0"))),
+    lambda: False,
 
     # If set, enables the joining of a new sequence even if its prompt length
     # is exceeding the tkv of the current decode batch. As this shifts all the
     # sequences in the decode batch to the right (increasing the tkv), there is
-    # also a potential performance decrease coming with this. The switch allows
-    # to test the feature on realistic workloads before enabling it by default.
+    # also a potential performance decrease coming with this.
     "VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION":
-    lambda: bool(int(os.getenv("VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION", "0"))
+    lambda: bool(int(os.getenv("VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION", "1"))
                  ),
 
     # scheduling heuristic: prefill vs decode prioritization
@@ -138,6 +139,19 @@ environment_variables: dict[str, Callable[[], Any]] = {
     #  torch.distributed.init_process_group
     "VLLM_SPYRE_GLOO_TIMEOUT_MINUTES":
     lambda: int(os.getenv("VLLM_SPYRE_GLOO_TIMEOUT_MINUTES", "60")),
+
+    # If set, this will require use of pre-compiled models and
+    # disable compilation for decoders
+    "VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS":
+    lambda: bool(int(os.getenv("VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS", "0"))
+                 ),
+
+    # Simple compile backend for some dynamically compiled operations, like
+    # gathering logprobs in the sampler.
+    # Defaults to eager, iductor can be used if python headers and a compiler
+    # are available.
+    "VLLM_SPYRE_SIMPLE_COMPILE_BACKEND":
+    lambda: os.getenv("VLLM_SPYRE_SIMPLE_COMPILE_BACKEND", "eager"),
 
     # If set, raise an exception if the runtime config is unsupported.
     # Otherwise, log a warning.

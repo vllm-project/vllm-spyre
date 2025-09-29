@@ -1,6 +1,7 @@
 """A Spyre worker class."""
 import contextlib
 import functools
+import inspect
 import json
 import os
 import platform
@@ -469,10 +470,9 @@ class SpyreWorker(WorkerBaseV1):
             scheduled_encoder_inputs={},
             num_common_prefix_blocks=0,
             finished_req_ids=set(),
-            free_encoder_input_ids=[],
             structured_output_request_ids={},
             grammar_bitmask=None,
-        )
+            **_get_extra_args())
         logger.info("[WARMUP] Deploying to device...")
         self.execute_model(scheduler_output)
         self._cleanup_model_runner(request=[deploy_req])
@@ -501,10 +501,9 @@ class SpyreWorker(WorkerBaseV1):
             num_common_prefix_blocks=0,
             # The requests to be removed
             finished_req_ids=set([r.req_id for r in request]),
-            free_encoder_input_ids=[],
             structured_output_request_ids={},
             grammar_bitmask=None,
-        )
+            **_get_extra_args())
         self.execute_model(scheduler_output)
         # satisfy mypy
         model_runner: ContinuousBatchingSpyreModelRunner = \
@@ -583,10 +582,9 @@ class SpyreWorker(WorkerBaseV1):
             scheduled_encoder_inputs={},
             num_common_prefix_blocks=0,
             finished_req_ids=set(),
-            free_encoder_input_ids=[],
             structured_output_request_ids={},
             grammar_bitmask=None,
-        )
+            **_get_extra_args())
 
         # First full forward pass
         logger.info("[WARMUP] Compiling graphs...")
@@ -648,10 +646,9 @@ class SpyreWorker(WorkerBaseV1):
                 scheduled_encoder_inputs={},
                 num_common_prefix_blocks=0,
                 finished_req_ids=set(),
-                free_encoder_input_ids=[],
                 structured_output_request_ids={},
                 grammar_bitmask=None,
-            )
+                **_get_extra_args())
 
             logger.info("[WARMUP] Prefill [%s/%s]...", idx + 1, req_count)
 
@@ -685,10 +682,9 @@ class SpyreWorker(WorkerBaseV1):
             scheduled_encoder_inputs={},
             num_common_prefix_blocks=0,
             finished_req_ids=set(),
-            free_encoder_input_ids=[],
             structured_output_request_ids={},
             grammar_bitmask=None,
-        )
+            **_get_extra_args())
         logger.info("[WARMUP] Decode...")
         self.execute_model(scheduler_output)
         self._cleanup_model_runner(request=requests)
@@ -761,3 +757,17 @@ def maybe_override_signals_handler():
 
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
+
+
+# temporary backward compat code for 0.10.1.1
+def _get_extra_args() -> dict:
+    annotations = inspect.getfullargspec(SchedulerOutput).annotations
+    extra_args = {}  # type: ignore
+    if ('free_encoder_input_ids' in annotations):
+        extra_args.update({
+            'free_encoder_input_ids': [],
+        })
+    else:
+        extra_args.update({"free_encoder_mm_hashes": []})
+
+    return extra_args

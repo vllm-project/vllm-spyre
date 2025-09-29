@@ -40,9 +40,14 @@ export VLLM_SPYRE_WARMUP_NEW_TOKENS=1024,256
 ### Continuous Batching
 
 !!! attention
-    Continuous batching is not currently supported on IBM Spyre Accelerators. A CPU-only implementation is available by setting `VLLM_SPYRE_DYNAMO_BACKEND=eager`. Continuous batching can be enabled with `VLLM_SPYRE_USE_CB=1`.
+    Continuous batching can be enabled with `VLLM_SPYRE_USE_CB=1`.
 
 Continuous batching works much more like other accelerator implementations on vLLM. Requests can be continually appended to a running batch, and requests that finish generating can be evicted from the batch to make room for more requests. Neither chunked prefill nor prefix caching are currently supported though, so when a request is added to the running batch it must first be paused for a full prefill of the incoming prompt.
+
+Unlike static batching, no warmup shapes need to be provided for continuous batching. While the user does not have to specify the prompt lengths (see `VLLM_SPYRE_WARMUP_PROMPT_LENS` for static batching), the vLLM arguments `max_num_seqs` and `max_tokens` can be used to control the maximum batch size and the upper limit on the number of generated tokens (analogous to `VLLM_SPYRE_WARMUP_BATCH_SIZES` and `VLLM_SPYRE_WARMUP_NEW_TOKENS` for static batching).
+
+!!! attention
+    Currently the maximal context length for which continuous batching is supported on IBM Spyre Accelerators is 32K (32,768). Therefore the length of the submitted prompts plus the number of requested output tokens should be less than 32K. We strongly recommend not setting the `max_tokens` too high, such that prompt lengths plus output tokens are well below 32K. Otherwise there is a risk of performance degradation due to scheduling constraints.
 
 ## Caching Compiled Graphs
 
