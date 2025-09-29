@@ -191,7 +191,7 @@ class EngineCache:
             model=model_name,
             tokenizer=model_name,
             max_model_len=max(max_model_len, 256),
-            max_num_seqs=max_num_seqs,
+            max_num_seqs=max(max_num_seqs, 4),
             num_gpu_blocks_override=None,
             revision=revision,
         )
@@ -203,6 +203,7 @@ class EngineCache:
                                  log_stats=False)
 
         engine_core.scheduler.scheduler_config.max_model_len = max_model_len
+        engine_core.scheduler.scheduler_config.max_num_seqs = max_num_seqs
 
         if available_blocks is not None:
             worker = engine_core.model_executor.driver_worker.worker
