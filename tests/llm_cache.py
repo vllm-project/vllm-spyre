@@ -187,11 +187,14 @@ class EngineCache:
         # then adjust these limits in the engine's scheduler for tests.
 
         # Setup the engine
+        # round max_num_seqs (batch size) to the next power of two for 
+        # Spyre compilation
+        max_num_seqs_compiled =  1 << (max_num_seqs - 1).bit_length()
         engine_args = EngineArgs(
             model=model_name,
             tokenizer=model_name,
             max_model_len=max(max_model_len, 256),
-            max_num_seqs=max(max_num_seqs, 4),
+            max_num_seqs=max_num_seqs_compiled,
             num_gpu_blocks_override=None,
             revision=revision,
         )
