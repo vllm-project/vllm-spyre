@@ -189,7 +189,7 @@ class EngineCache:
         # Setup the engine
         # round max_num_seqs (batch size) to the next power of two for 
         # Spyre compilation
-        max_num_seqs_compiled =  1 << (max_num_seqs - 1).bit_length()
+        max_num_seqs_compiled = 1 << (max_num_seqs - 1).bit_length()
         engine_args = EngineArgs(
             model=model_name,
             tokenizer=model_name,
