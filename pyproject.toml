@@ -12,7 +12,7 @@ readme = "README.md"
 license = {text = "Apache 2"}
 dependencies = [
     "fms-model-optimizer[fp8]>=0.6.0",
-    "ibm-fms>=1.2.1",
+    "ibm-fms>=1.4.0",
     "vllm>=0.10.1.1,<=0.10.2",
     "pytest-mock>=3.15.0",
 ]
