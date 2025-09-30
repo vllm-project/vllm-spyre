@@ -12,6 +12,7 @@ from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request
 
 import vllm_spyre.envs as envs_spyre
+import vllm_spyre.logging.cb_scheduler as scheduler_logger
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import CBSpyreModelRunnerOutput
 
@@ -159,6 +160,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         # cache for self.check_batch_tkv_limit() outer key: tuple(request_ids),
         # inner key: (request_id, max_batch_tkv_limit), value: (lower, upper)
         self._cache_check_batch_tkv_limit: dict[tuple, dict[tuple, tuple]] = {}
+        self.cb_steps_logger = scheduler_logger.create_cb_scheduler_logger()
 
     def update_from_output(
         self,
@@ -171,6 +173,8 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             "continuous batching.")
         self.tkv = model_runner_output.tkv
         self.n_free_blocks = model_runner_output.n_free_blocks
+        self.cb_steps_logger.log(self.waiting, self.running, self.tkv,
+                                 self.n_free_blocks)
         return super(SpyreScheduler,
                      self).update_from_output(scheduler_output,
                                               model_runner_output)
