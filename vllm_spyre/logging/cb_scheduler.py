@@ -57,11 +57,11 @@ class CBSchedulerLogger(CBSchedulerLoggerBase):
         data["n_free_blocks"] = n_free_blocks
         # waiting list
         data["waiting"] = {}
-        data["waiting"]["ids"] = [w.request_id for w in waiting]
-        data["waiting"]["arrival_times"] = [w.arrival_time for w in waiting]
+        data["waiting"]["id"] = [w.request_id for w in waiting]
+        data["waiting"]["arrival_time"] = [w.arrival_time for w in waiting]
         # running list
         data["running"] = {}
-        data["running"]["ids"] = [r.request_id for r in running]
+        data["running"]["id"] = [r.request_id for r in running]
         data["running"]["arrival_time"] = [r.arrival_time for r in running]
         data["running"]["prompt_len"] = [
             len(r.prompt_token_ids or []) for r in running
