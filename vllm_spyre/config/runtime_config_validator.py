@@ -14,7 +14,7 @@ logger = init_logger(__name__)
 WarmupShapes = list[tuple[int, int, int]] | list[list[int]]
 
 
-@dataclass
+@dataclass(order=True)
 class RuntimeConfiguration:
     cb: bool = False
     tp_size: int = 1
@@ -138,6 +138,6 @@ def validate_runtime_configuration(
 def is_requested_config_supported(
         requested_config: RuntimeConfiguration,
         supported_config: RuntimeConfiguration) -> bool:
-    return supported_config == requested_config and set(
+    return requested_config <= supported_config and set(
         requested_config.warmup_shapes or []).issubset(
             set(supported_config.warmup_shapes or []))

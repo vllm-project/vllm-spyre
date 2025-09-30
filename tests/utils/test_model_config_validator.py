@@ -102,13 +102,13 @@ def test_model_runtime_configurations(monkeypatch, caplog):
     test_configs = yaml.safe_load("""
     - model: "test/model"
       configs: [
-        { cb: False, tp_size: 1, warmup_shapes: [[64, 20, 4], [128, 20, 2]] },
-        { cb: False, tp_size: 1, warmup_shapes: [[256, 20, 1]] },
-        { cb: False, tp_size: 2, warmup_shapes: [[64, 20, 4]] },
         { cb: True,  tp_size: 1, max_model_len: 1024, max_num_seqs: 16 },
         { cb: True,  tp_size: 4, max_model_len: 2048, max_num_seqs: 8 },
         { cb: True,  tp_size: 4, max_model_len: 4096, max_num_seqs: 4 },
         { cb: True,  tp_size: 4, max_model_len: 8192, max_num_seqs: 2 },
+        { cb: False, tp_size: 1, warmup_shapes: [[64, 20, 4], [128, 20, 2]] },
+        { cb: False, tp_size: 1, warmup_shapes: [[256, 20, 1]] },
+        { cb: False, tp_size: 2, warmup_shapes: [[64, 20, 4]] },
       ]
     """)
     runtime_config_validator.initialize_supported_configurations(test_configs)
@@ -120,7 +120,10 @@ def test_model_runtime_configurations(monkeypatch, caplog):
         m.setenv("VLLM_SPYRE_USE_CB", "1")
         assert validate("test/model", 4, 2048, 8)
         assert not validate("model/test", 4, 2048, 8)
-        assert not validate("test/model", 4, 2049, 8)
+        # assert that individual values of a requested config can be less than
+        # the upper bound of a supported config
+        assert validate("test/model", 4, 1024, 8)
+        assert validate("test/model", 4, 2048, 4)
 
     with monkeypatch.context() as m:
         m.setenv("VLLM_SPYRE_DYNAMO_BACKEND", "sendnn")
