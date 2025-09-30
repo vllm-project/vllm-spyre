@@ -27,6 +27,7 @@ logger = init_logger(__name__)
 
 _cache: dict[str, Any] = {}
 
+
 def override(name: str, value: str) -> None:
     if name not in environment_variables:
         raise ValueError(f"The variable {name} is not a known \
@@ -152,7 +153,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
 def __getattr__(name: str):
     if name in _cache:
         return _cache[name]
-    
+
     # caching and lazy evaluation of environment variables
     if name in environment_variables:
         value = environment_variables[name]()
