@@ -8,9 +8,9 @@ from typing import Any
 import vllm_spyre.envs as envs
 
 
-def create_cb_scheduler_logger():
+def create_cb_scheduler_logger(max_model_len: int, max_num_seqs: int):
     if envs.VLLM_SPYRE_CB_SCHEDULER_LOGGING_ENABLED == 1:
-        return CBSchedulerLogger()
+        return CBSchedulerLogger(max_model_len, max_num_seqs)
     return CBSchedulerLoggerBase()
 
 
@@ -31,12 +31,20 @@ class CBSchedulerLoggerBase:
 class CBSchedulerLogger(CBSchedulerLoggerBase):
     """ A continuous batching logging object"""
 
-    def __init__(self):
+    def __init__(self, max_model_len: int, max_num_seqs: int):
         super().__init__()
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.log_path = os.path.join(
             envs.VLLM_SPYRE_CB_SCHEDULER_LOGGING_DIR,
             f"cb_scheduler_logging_{timestamp}.jsonl")
+
+        first_line = {
+            "max_model_len": max_model_len,
+            "max_num_seqs": max_num_seqs
+        }
+        json_data_line = json.dumps(first_line)
+        with open(self.log_path, "a") as f:
+            f.write(json_data_line + "\n")
 
     def log(self, waiting: list[Any], running: list[Any], tkv: int,
             n_free_blocks: int):
