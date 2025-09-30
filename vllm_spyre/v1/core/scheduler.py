@@ -162,7 +162,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         self._cache_check_batch_tkv_limit: dict[tuple, dict[tuple, tuple]] = {}
         self._cb_steps_logger = scheduler_logger.create_cb_scheduler_logger(
             self.scheduler_config.max_model_len,
-            self.scheduler_config.max_num_seqs)
+            self.scheduler_config.max_num_seqs, self.block_size)
 
     def update_from_output(
         self,

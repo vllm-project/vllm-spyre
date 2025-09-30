@@ -8,9 +8,10 @@ from typing import Any
 import vllm_spyre.envs as envs
 
 
-def create_cb_scheduler_logger(max_model_len: int, max_num_seqs: int):
+def create_cb_scheduler_logger(max_model_len: int, max_num_seqs: int,
+                               block_size: int):
     if envs.VLLM_SPYRE_CB_SCHEDULER_LOGGING_ENABLED == 1:
-        return CBSchedulerLogger(max_model_len, max_num_seqs)
+        return CBSchedulerLogger(max_model_len, max_num_seqs, block_size)
     return CBSchedulerLoggerBase()
 
 
@@ -31,7 +32,7 @@ class CBSchedulerLoggerBase:
 class CBSchedulerLogger(CBSchedulerLoggerBase):
     """ A continuous batching logging object"""
 
-    def __init__(self, max_model_len: int, max_num_seqs: int):
+    def __init__(self, max_model_len: int, max_num_seqs: int, block_size: int):
         super().__init__()
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.log_path = os.path.join(
@@ -40,7 +41,8 @@ class CBSchedulerLogger(CBSchedulerLoggerBase):
 
         first_line = {
             "max_model_len": max_model_len,
-            "max_num_seqs": max_num_seqs
+            "max_num_seqs": max_num_seqs,
+            "block_size": block_size
         }
         json_data_line = json.dumps(first_line)
         with open(self.log_path, "a") as f:
@@ -48,17 +50,15 @@ class CBSchedulerLogger(CBSchedulerLoggerBase):
 
     def log(self, waiting: list[Any], running: list[Any], tkv: int,
             n_free_blocks: int):
-        data = {}
+        data: dict[str, Any] = {}
         # metadata
         data["logging_time"] = time.time()
         data["tkv"] = tkv
         data["n_free_blocks"] = n_free_blocks
-
         # waiting list
         data["waiting"] = {}
         data["waiting"]["ids"] = [w.request_id for w in waiting]
         data["waiting"]["arrival_times"] = [w.arrival_time for w in waiting]
-
         # running list
         data["running"] = {}
         data["running"]["ids"] = [r.request_id for r in running]
