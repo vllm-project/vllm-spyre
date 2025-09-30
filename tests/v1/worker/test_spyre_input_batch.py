@@ -36,6 +36,10 @@ def _remove_requests(input_batch: SamplingInputBatch, batch_size: int,
     for index in req_indices_to_remove:
         input_batch.remove_request(reqs[index].req_id)
         req_ids_to_remove.add(reqs[index].req_id)
+
+    # assert that all indices to remove are unique
+    removed = input_batch.batch_update_builder.removed
+    assert len(set(removed)) == len(removed), "Duplicate removed indices"
     return req_ids_to_remove
 
 
