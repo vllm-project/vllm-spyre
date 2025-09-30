@@ -32,9 +32,14 @@ def override(name: str, value: str) -> None:
     if name not in environment_variables:
         raise ValueError(f"The variable {name} is not a known \
                          setting and cannot be overridden")
+    original_value = os.environ.get(name)
     os.environ[name] = value
-    parsed_value = environment_variables[name]()
-    _cache[name] = parsed_value
+    try:
+        parsed_value = environment_variables[name]()
+        _cache[name] = parsed_value
+    # Changes back avoid polluting the global environment
+    finally:
+        os.environ[name] = original_value
 
 
 def _backend_backwards_compat() -> str:
