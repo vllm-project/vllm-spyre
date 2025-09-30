@@ -136,6 +136,11 @@ def test_model_runtime_configurations(monkeypatch, caplog):
         assert validate("test/model",
                         1,
                         warmup_shapes=[[128, 20, 2], [64, 20, 4]])
+        assert validate("test/model", 1, warmup_shapes=[[128, 19, 2]])
+        assert validate("test/model", 2, warmup_shapes=[[64, 19, 4]])
+        assert validate("test/model", 2, warmup_shapes=[[64, 19, 2]])
+        assert not validate(
+            "test/model", 2, warmup_shapes=[[64, 20, 4], [128, 20, 2]])
         assert not validate("test/model",
                             1,
                             warmup_shapes=[[64, 20, 4], [128, 20, 2],

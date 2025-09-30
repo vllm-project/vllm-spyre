@@ -11,6 +11,7 @@ _config_file = Path(__file__).parent / "supported_configurations.yaml"
 
 logger = init_logger(__name__)
 
+# warmup_shape = [prompt_length, new_tokens, batch_size]
 WarmupShapes = list[tuple[int, int, int]] | list[list[int]]
 
 
@@ -71,6 +72,10 @@ def initialize_supported_configurations_from_file():
 
 
 def report_error(msg: str):
+    """
+    Log a warning message of raise an error if the environment variable
+    VLLM_SPYRE_EXIT_ON_UNSUPPORTED_RUNTIME_CONFIG is set.
+    """
     if envs_spyre.VLLM_SPYRE_EXIT_ON_UNSUPPORTED_RUNTIME_CONFIG:
         raise ValueError(msg)
     else:
@@ -83,6 +88,10 @@ def validate_runtime_configuration(
         max_model_len: int = 0,
         max_num_seqs: int = 0,
         warmup_shapes: WarmupShapes | None = None) -> bool:
+    """
+    Verify if the requested model and configuration is supported by comparing
+    the requested configuration to all the supported configurations.
+    """
     # we only validate runtime configurations when running on Spyre cards
     if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn":
         logger.info(
@@ -113,9 +122,6 @@ def validate_runtime_configuration(
 
     supported_configs = runtime_configs_by_model.get(model, [])
 
-    # Don't use `if requested_configuration not in supported_configurations:...`
-    # since warmup shapes don't compare easily, exclude from dataclass __eq__
-    # Instead, use filter here and do a set-compare for warmup_shapes separately
     matching_configs: list[RuntimeConfiguration] = list(
         filter(
             lambda supported_config: is_requested_config_supported(
@@ -138,6 +144,57 @@ def validate_runtime_configuration(
 def is_requested_config_supported(
         requested_config: RuntimeConfiguration,
         supported_config: RuntimeConfiguration) -> bool:
-    return requested_config <= supported_config and set(
-        requested_config.warmup_shapes or []).issubset(
-            set(supported_config.warmup_shapes or []))
+    """
+    Check if the requested configuration is supported by comparing the requested
+    configuration to all the supported configurations.
+    """
+    # Don't use `if requested_configuration not in supported_configurations:...`
+    # since warmup shapes don't compare easily (excluded from dataclass __eq__)
+    # Instead, use filter here and do a set-compare for warmup_shapes separately
+    return (requested_config.cb == supported_config.cb
+            and requested_config <= supported_config
+            and (requested_config.cb or is_warmup_shapes_supported(
+                requested_config, supported_config)))
+
+
+def is_warmup_shapes_supported(requested_config: RuntimeConfiguration,
+                               supported_config: RuntimeConfiguration) -> bool:
+    """
+    Check if the requested warmup_shapes are a subset of the supported
+    warmup_shapes. If a singular warmup_shape is requested, check
+    if its context length is less than or equal to the context length of a
+    supported warmup_shapes with the same (or larger) batch size.
+    """
+    requested_shapes = set(requested_config.warmup_shapes or [])
+    supported_shapes = set(supported_config.warmup_shapes or [])
+    return (requested_shapes.issubset(supported_shapes)
+            or is_context_length_supported(requested_shapes, supported_shapes))
+
+
+def is_context_length_supported(requested_shapes: WarmupShapes,
+                                supported_shapes: WarmupShapes) -> bool:
+    """
+    If a singular warmup_shape is requested, check if it's context length is
+    less than or equal to the context length for any of the supported
+    warmup_shapes with the same batch size (or larger supported batch size).
+    (context length = prompt_length + new_tokens)
+    """
+    if len(requested_shapes) > 1:
+        return False
+    request_batch_size = list(requested_shapes)[0][2]
+    supported_shapes_with_matching_batch_size = [
+        ws for ws in supported_shapes if request_batch_size <= ws[2]
+    ]
+    return (
+        len(supported_shapes_with_matching_batch_size) > 0 and
+        (get_max_model_length(requested_shapes)
+         <= get_max_model_length(supported_shapes_with_matching_batch_size)))
+
+
+def get_max_model_length(warmup_shapes: WarmupShapes) -> int:
+    """
+    Return the maximum model length from the given warmup shapes.
+    """
+    # max_model_len = prompt_length + new_tokens
+    # warmup_shape = [prompt_length, new_tokens, batch_size]
+    return max([ws[0] + ws[1] for ws in warmup_shapes or []])
