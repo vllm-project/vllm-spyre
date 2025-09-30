@@ -80,6 +80,7 @@ def test_model_runtime_configurations_file_is_valid(monkeypatch, caplog):
             for c in mrc.configs:
                 assert c.tp_size in [1, 2, 4, 8, 16, 32]
                 if c.cb:
+                    assert c.warmup_shapes is None
                     assert c.max_model_len % 64 == 0
                     assert c.max_model_len <= 32 * 1024
                     assert c.max_num_seqs <= 16
@@ -88,7 +89,7 @@ def test_model_runtime_configurations_file_is_valid(monkeypatch, caplog):
                     for ws in c.warmup_shapes:
                         assert ws[0] % 64 == 0
                         assert ws[0] <= 32 * 1024
-                        assert ws[2] in [1, 2, 4, 8, 16]
+                        assert ws[2] in [1, 2, 4, 8, 16, 32]
 
 
 @pytest.mark.utils

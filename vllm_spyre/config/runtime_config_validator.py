@@ -116,12 +116,13 @@ def validate_runtime_configuration(
     # Don't use `if requested_configuration not in supported_configurations:...`
     # since warmup shapes don't compare easily, exclude from dataclass __eq__
     # Instead, use filter here and do a set-compare for warmup_shapes separately
-    matching_configs: list[RuntimeConfiguration] = (list(
+    matching_configs: list[RuntimeConfiguration] = list(
         filter(
-            lambda supported_config: supported_config == requested_config and
-            set(requested_config.warmup_shapes or []).issubset(
-                set(supported_config.warmup_shapes or [])),
-            supported_configs)))
+            lambda supported_config: is_requested_config_supported(
+                requested_config=requested_config,
+                supported_config=supported_config),
+            supported_configs,
+        ))
 
     if len(matching_configs) == 0:
         report_error(f"The requested configuration is not supported for"
@@ -132,3 +133,11 @@ def validate_runtime_configuration(
             "The requested configuration is supported for"
             " model '%s': %s", model, str(requested_config))
         return True
+
+
+def is_requested_config_supported(
+        requested_config: RuntimeConfiguration,
+        supported_config: RuntimeConfiguration) -> bool:
+    return supported_config == requested_config and set(
+        requested_config.warmup_shapes or []).issubset(
+            set(supported_config.warmup_shapes or []))
