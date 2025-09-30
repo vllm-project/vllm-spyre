@@ -388,7 +388,7 @@ class SpyreWorker(WorkerBaseV1):
                     "Pooling models only support Static " \
                     "Batching. Using VLLM_SPYRE_USE_CB=0"
                 )
-                envs_spyre.__setattr__("VLLM_SPYRE_USE_CB", "0")
+                envs_spyre.override("VLLM_SPYRE_USE_CB", "0")
             # unused for continuous batching: set here to use same API
             wup_prompt_lens, wup_new_tokens = (0, ), (0, )
         else:
