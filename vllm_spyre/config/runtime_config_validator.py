@@ -165,9 +165,9 @@ def is_warmup_shapes_supported(requested_config: RuntimeConfiguration,
     if its context length is less than or equal to the context length of a
     supported warmup_shapes with the same (or larger) batch size.
     """
-    requested_shapes = set(requested_config.warmup_shapes or [])
-    supported_shapes = set(supported_config.warmup_shapes or [])
-    return (requested_shapes.issubset(supported_shapes)
+    requested_shapes = requested_config.warmup_shapes or []
+    supported_shapes = supported_config.warmup_shapes or []
+    return (set(requested_shapes).issubset(set(supported_shapes))
             or is_context_length_supported(requested_shapes, supported_shapes))
 
 
@@ -181,10 +181,11 @@ def is_context_length_supported(requested_shapes: WarmupShapes,
     """
     if len(requested_shapes) > 1:
         return False
-    request_batch_size = list(requested_shapes)[0][2]
-    supported_shapes_with_matching_batch_size = [
-        ws for ws in supported_shapes if request_batch_size <= ws[2]
-    ]
+    request_batch_size = requested_shapes[0][2]
+    supported_shapes_with_matching_batch_size = [(ws[0], ws[1], ws[2])
+                                                 for ws in supported_shapes
+                                                 if request_batch_size <= ws[2]
+                                                 ]
     return (
         len(supported_shapes_with_matching_batch_size) > 0 and
         (get_max_model_length(requested_shapes)
