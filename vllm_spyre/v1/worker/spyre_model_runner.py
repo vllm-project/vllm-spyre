@@ -192,7 +192,8 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT,
             # workflow works for nested tensor, this can probably be removed
             padded_input_ids_list.append(torch.cat((pads, input_ids_i)))
             mask_list.append(torch.cat((torch.zeros_like(pads), non_pads)))
-            position_ids_list.append(torch.cat((torch.zeros_like(pads), pos_ids_seq)))
+            position_ids_list.append(
+                torch.cat((torch.zeros_like(pads), pos_ids_seq)))
 
         return padded_input_ids_list, mask_list, position_ids_list
 
