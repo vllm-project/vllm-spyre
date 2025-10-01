@@ -470,8 +470,6 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                              dtype=self.dtype))
                 for _ in range(self.kv_cache_specs['num_layers'])
             ]
-            print('vllm p kv', self.past_key_value_states[0][0].shape)
-            # torch.Size([128, 64, 8, 64])
         else:
             from fms_mo.aiu_addons.fp8.fp8_utils import ScaledTensor
             batch_size = max(2, self.scheduler_config.max_num_seqs)
