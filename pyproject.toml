@@ -54,7 +54,6 @@ override-dependencies = [
     # Skip packages only on s390x, expected to be pre-installed
     "vllm ; platform_machine != 's390x'",
     "ray; platform_machine != 's390x'",
-    "ray[default]; platform_machine != 's390x'",
     "llvmlite; platform_machine != 's390x'",
     "pyarrow; platform_machine != 's390x'",
 ]
