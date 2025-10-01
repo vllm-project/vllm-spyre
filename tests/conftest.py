@@ -132,10 +132,6 @@ def pytest_collection_modifyitems(config, items):
     """ Modify tests at collection time """
     _mark_all_e2e(items)
 
-    _skip_quantized_by_default(config, items)
-
-    _xfail_fp8_on_spyre(items)
-
     _skip_unsupported_compiler_tests(config, items)
 
     sort_tests_for_llm_caching(items)
@@ -152,38 +148,6 @@ def _mark_all_e2e(items):
     for item in items:
         if "e2e" in str(item.nodeid):
             item.add_marker(pytest.mark.e2e)
-
-
-def _skip_quantized_by_default(config, items):
-    """Skip tests marked with `quantized` unless the `-m` flag includes it
-    Ref: https://stackoverflow.com/questions/56374588/how-can-i-ensure-tests-with-a-marker-are-only-run-if-explicitly-asked-in-pytest
-
-    This will skip the quantized tests at runtime, but they will still show up
-    as collected when running pytest --collect-only.
-    """
-    markexpr = config.option.markexpr
-    if "quantized" in markexpr:
-        return  # let pytest handle the collection logic
-
-    skip_mymarker = pytest.mark.skip(reason='quantized not selected')
-    for item in items:
-        if "quantized" in item.keywords:
-            item.add_marker(skip_mymarker)
-
-
-def _xfail_fp8_on_spyre(items):
-    """Set an xfail marker on all tests that run quantized models on Spyre
-    hardware.
-
-    TODO: Relax this to only "spyre and cb" once static batching is supported
-    on spyre.
-    """
-
-    xfail_marker = pytest.mark.xfail(
-        reason="fp8 is not yet supported on Spyre")
-    for item in items:
-        if "quantized" in item.keywords and "spyre" in item.keywords:
-            item.add_marker(xfail_marker)
 
 
 def _skip_unsupported_compiler_tests(config, items):
