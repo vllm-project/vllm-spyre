@@ -359,8 +359,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                 self.config.num_attention_heads
 
             # *** ALERT *** Granite 2b hack for AIU Compiler
-            if (self.config.model_type == 'granitemoehybrid'
-                    and self.kv_cache_specs['head_dim'] < 128):
+            if self.kv_cache_specs['head_dim'] < 128:
                 self.kv_cache_specs['head_dim'] = 128 // self.kv_cache_specs[
                     'head_dim'] * self.kv_cache_specs['head_dim']
 
@@ -471,6 +470,8 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                              dtype=self.dtype))
                 for _ in range(self.kv_cache_specs['num_layers'])
             ]
+            print('vllm p kv', self.past_key_value_states[0][0].shape)
+            # torch.Size([128, 64, 8, 64])
         else:
             from fms_mo.aiu_addons.fp8.fp8_utils import ScaledTensor
             batch_size = max(2, self.scheduler_config.max_num_seqs)
