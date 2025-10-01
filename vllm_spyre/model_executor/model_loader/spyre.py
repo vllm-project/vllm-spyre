@@ -353,10 +353,17 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         self.kv_cache_specs['num_kv_heads'] = model_config.get_num_kv_heads(
             parallel_config)
 
-        if self.config.model_type in {'llama', 'granite'}:
+        if self.config.model_type in {'llama', 'granite', 'granitemoehybrid'}:
             self.kv_cache_specs['num_layers'] = self.config.num_hidden_layers
             self.kv_cache_specs['head_dim'] = self.config.hidden_size // \
                 self.config.num_attention_heads
+
+            # *** ALERT *** Granite 2b hack for AIU Compiler
+            if self.config.model_type == 'granitemoehybrid' and self.kv_cache_specs[
+                    'head_dim'] < 128:
+                self.kv_cache_specs['head_dim'] = 128 // self.kv_cache_specs[
+                    'head_dim'] * self.kv_cache_specs['head_dim']
+
         elif self.config.model_type == 'gpt_bigcode':
             self.kv_cache_specs['num_layers'] = self.config.n_layer
             self.kv_cache_specs[
