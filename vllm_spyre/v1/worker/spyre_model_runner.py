@@ -27,6 +27,8 @@ import vllm_spyre.utils as utils_spyre
 from vllm_spyre.model_executor.model_loader.spyre import (
     BACKEND_LIST, SpyreAttentionMetadata, SpyreCausalLM)
 from vllm_spyre.platform import SpyrePlatform
+from vllm_spyre.v1.sample.spyre_logits_processor import (
+    build_logitsprocs_for_cb)
 # yapf conflicts with ruff for this block
 # yapf: disable
 from vllm_spyre.v1.worker.spyre_input_batch import (BaseInputBatch,
@@ -979,6 +981,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         prefill_index = self.input_batch.add_request(req_state)
         self.prefill_batch.add_request(req_state)
 
+        # set prefill index for logits processor
+        for logitsproc in self.input_batch.logitsprocs_wrappers:
+            logitsproc.set_prefill_index(prefill_index)
+
         # Refresh sampling metadata after all request are added to the batch
         self.input_batch.refresh_metadata()
         self.prefill_batch.refresh_metadata()
@@ -1227,8 +1233,13 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             is_prefill=model_input.is_prompt)
 
     def get_sampling_metadata(self, is_prefill: bool) -> SamplingMetadata:
-        return self.prefill_batch.sampling_metadata \
-            if is_prefill else self.input_batch.sampling_metadata
+
+        if is_prefill:
+            sampling_data = self.prefill_batch.sampling_metadata
+            sampling_data.logitsprocs = self.input_batch.logitsprocs
+            return sampling_data
+        else:
+            return self.input_batch.sampling_metadata
 
     def get_req_id_to_index(self, is_prefill: bool) -> dict[str, int]:
         req_id_to_index = self.prefill_batch.get_unpadded_output_indices() \
@@ -1309,6 +1320,29 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             torch._dynamo.mark_static(model_input.slot_mapping, 1)  # always 1
             torch._dynamo.mark_static(model_input.input_positions,
                                       1)  # always 1
+
+    def build_input_batch(self) -> SamplingInputBatch:
+        # Define logits processors.
+
+        custom_logitsprocs = self.vllm_config.model_config.logits_processors
+
+        batch_size = self.scheduler_config.max_num_seqs
+        logits_processors = \
+            build_logitsprocs_for_cb(vllm_config=self.vllm_config,
+                            device=self.device,
+                            is_pin_memory=self.pin_memory,
+                            is_pooling_model=False,
+                            custom_logitsprocs=custom_logitsprocs,
+                            batch_size=batch_size)
+
+        return SamplingInputBatch(
+            max_num_reqs=batch_size,
+            max_model_len=self.model_config.max_model_len,
+            device=self.device,
+            pin_memory=self.pin_memory,
+            vocab_size=self.model_config.get_vocab_size(),
+            logitsprocs=logits_processors,
+        )
 
 
 class PoolerAdapter(torch.nn.Module):
