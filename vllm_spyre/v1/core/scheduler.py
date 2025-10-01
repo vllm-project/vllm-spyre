@@ -33,11 +33,6 @@ class SpyreScheduler(Scheduler):
         # Initialize vLLM scheduler
         super().__init__(*args, **kwargs)
 
-        # Requests are temporarily moved to this queue so that the base
-        # scheduler does not see them. This lets us ensure that the set of
-        # requests scheduled have at least one common warmup shape.
-        self.holdback_queue: deque[Request] = deque()
-
 
 class StaticBatchingSpyreScheduler(SpyreScheduler):
     """ Support of static batching """
@@ -55,9 +50,12 @@ class StaticBatchingSpyreScheduler(SpyreScheduler):
         """This override adds constraints and then delegates most of the work
         to the base scheduler"""
         # First purge the full waiting queue into our holdback queue, preserving
-        # priority
+        # priority, so that the base scheduler does not see them.
+        # This lets us ensure that the set of requests scheduled have at least
+        # one common warmup shape.
+        holdback_queue: deque[Request] = deque()
         while self.waiting:
-            self.holdback_queue.append(self.waiting.popleft())
+            holdback_queue.append(self.waiting.popleft())
 
         # store requests which don't fit the warmup shapes of the current batch
         skip_queue: deque[Request] = deque()
@@ -70,8 +68,8 @@ class StaticBatchingSpyreScheduler(SpyreScheduler):
             # Make a copy of the warmup shapes
             available_warmup_shapes = list(self.spyre_warmup_shapes)
 
-            while self.holdback_queue:
-                request = self.holdback_queue[0]
+            while holdback_queue:
+                request = holdback_queue[0]
 
                 # prune the possible shapes to only those that fit this request
                 # and the growing batch size
@@ -83,7 +81,7 @@ class StaticBatchingSpyreScheduler(SpyreScheduler):
                 if len(available_warmup_shapes) > 0:
                     # There is still at least one valid shape, so add to the
                     # waiting queue
-                    self.waiting.append(self.holdback_queue.popleft())
+                    self.waiting.append(holdback_queue.popleft())
                     # remember the available warmup shapes of the current batch
                     last_available_warmup_shapes = available_warmup_shapes
                 else:
@@ -97,14 +95,14 @@ class StaticBatchingSpyreScheduler(SpyreScheduler):
                     # request does not fit, skip it and try with the next
                     if len(self.waiting) < max_batch:
                         available_warmup_shapes = last_available_warmup_shapes
-                        skip_queue.append(self.holdback_queue.popleft())
+                        skip_queue.append(holdback_queue.popleft())
                     else:
                         # If the batch is full, we exit the loop here
                         break
 
             logger.debug(
                 "Scheduling a new batch of %d requests, holding back %d "
-                "requests", len(self.waiting), len(self.holdback_queue))
+                "requests", len(self.waiting), len(holdback_queue))
         else:
             logger.debug("Scheduling a running batch of %d requests",
                          len(self.running))
@@ -117,8 +115,8 @@ class StaticBatchingSpyreScheduler(SpyreScheduler):
         while skip_queue:
             self.waiting.append(skip_queue.popleft())
 
-        while self.holdback_queue:
-            self.waiting.append(self.holdback_queue.popleft())
+        while holdback_queue:
+            self.waiting.append(holdback_queue.popleft())
 
         return outputs
 
@@ -183,15 +181,16 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         base scheduler but are restored after.
         """
         # First purge the full waiting queue into our holdback queue, preserving
-        # priority
+        # priority, so that the base scheduler does not see them.
+        holdback_queue: deque[Request] = deque()
         while self.waiting:
-            self.holdback_queue.append(self.waiting.popleft())
+            holdback_queue.append(self.waiting.popleft())
 
         # Check if new requests can be scheduled.
-        while self.holdback_queue:
-            if self.can_schedule(self.holdback_queue[0]):
+        while holdback_queue:
+            if self.can_schedule(holdback_queue[0]):
                 # Add request to the waiting queue
-                self.waiting.append(self.holdback_queue.popleft())
+                self.waiting.append(holdback_queue.popleft())
             else:
                 # Otherwise, we simply stop here so that the scheduler
                 # can work with the batch we have
@@ -204,7 +203,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             self.running = []
             logger.debug(
                 "Scheduling a prefill step of %d requests, holding back %d "
-                "requests", len(self.waiting), len(self.holdback_queue))
+                "requests", len(self.waiting), len(holdback_queue))
         else:
             running_holdback = []
             logger.debug("Scheduling a decode step of %d requests",
@@ -215,8 +214,8 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
 
         # restore holdbacks after running the base scheduler
         self.running = self.running + running_holdback
-        while self.holdback_queue:
-            self.waiting.append(self.holdback_queue.popleft())
+        while holdback_queue:
+            self.waiting.append(holdback_queue.popleft())
 
         return outputs
 
