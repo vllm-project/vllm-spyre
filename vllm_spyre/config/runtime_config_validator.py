@@ -71,17 +71,6 @@ def initialize_supported_configurations_from_file():
     initialize_supported_configurations(yaml_data)
 
 
-def report_error(msg: str):
-    """
-    Log a warning message of raise an error if the environment variable
-    VLLM_SPYRE_EXIT_ON_UNSUPPORTED_RUNTIME_CONFIG is set.
-    """
-    if envs_spyre.VLLM_SPYRE_EXIT_ON_UNSUPPORTED_RUNTIME_CONFIG:
-        raise ValueError(msg)
-    else:
-        logger.warning(msg)
-
-
 def validate_runtime_configuration(
         model: str,
         tp_size: int = 0,
@@ -108,7 +97,7 @@ def validate_runtime_configuration(
         return True
 
     if model not in runtime_configs_by_model:
-        report_error(f"Model '{model}' is not supported")
+        logger.warning("Model '%s' is not supported", model)
         return False
 
     use_cb = envs_spyre.VLLM_SPYRE_USE_CB
@@ -131,8 +120,9 @@ def validate_runtime_configuration(
         ))
 
     if len(matching_configs) == 0:
-        report_error(f"The requested configuration is not supported for"
-                     f" model '{model}': {str(requested_config)}")
+        logger.warning(
+            "The requested configuration is not supported for"
+            " model '%s': %s", model, str(requested_config))
         return False
     else:
         logger.info(

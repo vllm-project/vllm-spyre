@@ -48,22 +48,6 @@ def test_model_not_supported(monkeypatch, caplog):
 
 @pytest.mark.utils
 @pytest.mark.cpu
-def test_exit_on_validation_error(monkeypatch, caplog):
-    """
-    If VLLM_SPYRE_EXIT_ON_UNSUPPORTED_RUNTIME_CONFIG is set, then model runtime
-    configuration validation should exit with a ValueError.
-    """
-    setup_log_capture(caplog, level=logging.INFO)
-    with monkeypatch.context() as m:
-        m.setenv("VLLM_SPYRE_DYNAMO_BACKEND", "sendnn")
-        m.setenv("VLLM_SPYRE_EXIT_ON_UNSUPPORTED_RUNTIME_CONFIG", "1")
-        with pytest.raises(ValueError) as error:
-            validate("test/model")
-        assert "Model 'test/model' is not supported" in str(error.value)
-
-
-@pytest.mark.utils
-@pytest.mark.cpu
 def test_model_runtime_configurations_file_is_valid(monkeypatch, caplog):
     """
     Validate that prompts are multiples of 64

@@ -24,7 +24,6 @@ if TYPE_CHECKING:
     VLLM_SPYRE_GLOO_TIMEOUT_MINUTES: int = 60
     VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS: bool = False
     VLLM_SPYRE_SIMPLE_COMPILE_BACKEND: str = "eager"
-    VLLM_SPYRE_EXIT_ON_UNSUPPORTED_RUNTIME_CONFIG: bool = False
 
 logger = init_logger(__name__)
 
@@ -152,12 +151,6 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # are available.
     "VLLM_SPYRE_SIMPLE_COMPILE_BACKEND":
     lambda: os.getenv("VLLM_SPYRE_SIMPLE_COMPILE_BACKEND", "eager"),
-
-    # If set, raise an exception if the runtime config is unsupported.
-    # Otherwise, log a warning.
-    "VLLM_SPYRE_EXIT_ON_UNSUPPORTED_RUNTIME_CONFIG":
-    lambda: bool(
-        int(os.getenv("VLLM_SPYRE_EXIT_ON_UNSUPPORTED_RUNTIME_CONFIG", "0")))
 }
 # --8<-- [end:env-vars-definition]
 
