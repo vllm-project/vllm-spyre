@@ -359,8 +359,8 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                 self.config.num_attention_heads
 
             # *** ALERT *** Granite 2b hack for AIU Compiler
-            if self.config.model_type == 'granitemoehybrid' and self.kv_cache_specs[
-                    'head_dim'] < 128:
+            if (self.config.model_type == 'granitemoehybrid'
+                    and self.kv_cache_specs['head_dim'] < 128):
                 self.kv_cache_specs['head_dim'] = 128 // self.kv_cache_specs[
                     'head_dim'] * self.kv_cache_specs['head_dim']
 
