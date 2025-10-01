@@ -55,7 +55,7 @@ def test_custom_logits_processor(model: ModelInfo, backend, monkeypatch,
 
 
 def test_cb_logits_processor(model: ModelInfo, backend, monkeypatch,
-                             warmup_shapes, cb):
+                             warmup_shapes, max_model_len, cb):
     '''
     Test if the state of logits for CB are correct due to the switch of
     prefill/decode in a step engine. The LLM is initialized with bs=2,
@@ -125,7 +125,7 @@ def test_cb_logits_processor(model: ModelInfo, backend, monkeypatch,
 
     spyre_model = LLM(model=model.name,
                       revision=model.revision,
-                      max_model_len=128,
+                      max_model_len=max_model_len,
                       max_num_seqs=2,
                       logits_processors=[SpyLogitsProcessor])
     prompt = ["Hello Logits Processors"] * 3

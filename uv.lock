@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.12'",
@@ -3864,7 +3864,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "aiu-fms-testing-utils", specifier = ">=0.2.3" },
+    { name = "aiu-fms-testing-utils", specifier = ">=0.4.0" },
     { name = "pytest", specifier = "==8.3.4" },
     { name = "pytest-asyncio", specifier = ">=1.0.0" },
     { name = "pytest-forked", specifier = ">=1.6.0" },
