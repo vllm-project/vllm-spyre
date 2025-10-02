@@ -526,17 +526,19 @@ class SpyrePlatform(Platform):
             return
 
         if not os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", None):
-            os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(128 * 1024)
+            tkv_128k = 128 * 1024
+            os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(tkv_128k)
             logger.info("Model granite-3.3-8b-instruct and tensor parallel " \
             "size 4 detected. Using VLLM_DT_MAX_BATCH_TKV_LIMIT = %d",
-            128 * 1024)
+            tkv_128k)
 
         # If no HDMA p2psize override was specified, set 256MB
         if not os.getenv("FLEX_HDMA_P2PSIZE", None):
-            os.environ["FLEX_HDMA_P2PSIZE"] = str(1024 * 1024 * 256)
+            p2psize_256m = 256 * 1024 * 1024
+            os.environ["FLEX_HDMA_P2PSIZE"] = str(p2psize_256m)
             logger.info(
                 "Model granite-3.3-8b-instruct and tensor parallel size 4 "
-                "detected. Using FLEX_HDMA_P2PSIZE = %d", 1024 * 1024 * 256)
+                "detected. Using FLEX_HDMA_P2PSIZE = %d", p2psize_256m)
 
     @classmethod
     def is_granite_33_8b(cls, model_config: ModelConfig):
