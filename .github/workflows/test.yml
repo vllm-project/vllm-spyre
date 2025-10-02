@@ -7,10 +7,10 @@ on:
   pull_request:
     # add labeled and unlabeled to the default types (runs when label is added)
     types: [opened, synchronize, reopened, labeled, unlabeled, auto_merge_enabled]
-#    branches: [main]
+    branches: [main]
 
   push:
-#    branches: [main]
+    branches: [main]
 
   workflow_dispatch:
 
@@ -21,6 +21,8 @@ env:
   VLLM_PLUGINS: "spyre"
   HF_HUB_CACHE: "${{ github.workspace }}/.cache/huggingface/hub"
   DEFAULT_HF_MODEL: "ibm-ai-platform/micro-g3.3-8b-instruct-1b"
+#  DEFAULT_HF_MODEL_REV: "6e9c6465a9d7e5e9fa35004a29f0c90befa7d23f"
+#  DEFAULT_HF_MODEL_REV: "2714578f54cfb744ece40df9326ee0b47e879e03"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -44,19 +46,19 @@ jobs:
           - name: "static batching"
             markers: "cpu and decoder and not cb and not other_e2e"
             flags: "--timeout=300"
-            hf_models: "JackFram/llama-160m"
+            hf_model: "JackFram/llama-160m"
           - name: "fp8"
             markers: "cpu and quantized and multi"
             flags: "--timeout=600 -k 'basic and test_output' --durations=0"
-            hf_models: "ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8"
+            hf_model: "ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8"
           - name: "embedding"
             markers: "cpu and embedding"
             flags: "--timeout=300"
-            hf_models: "sentence-transformers/all-roberta-large-v1"
+            hf_model: "sentence-transformers/all-roberta-large-v1"
           - name: "scoring"
             markers: "cpu and scoring"
             flags: "--timeout=300"
-            hf_models: "cross-encoder/stsb-roberta-large"
+            hf_model: "cross-encoder/stsb-roberta-large"
           - name: "continuous batching"
             markers: "cpu and cb"
             flags: "--timeout=300  --durations=0 -s"
@@ -80,7 +82,7 @@ jobs:
               name: "backward compat"
               markers: "compat or (cpu and basic)"
               flags: "--timeout=300"
-              hf_models: "micro-g3.3_roberta-large"
+              hf_model_2: "sentence-transformers/all-roberta-large-v1"
             os: "ubuntu-latest"
             python_version: "3.12"
         # Exclude vLLM:main if PR does NOT have "ready" label AND auto-merge is not enabled
@@ -150,19 +152,28 @@ jobs:
           # overwritten.
           uv pip install -v .
 
-      # Standardize model name for cache keys
-      - name: Standardize HF model name
+      - name: "Standardize HF model names for caching"
         id: standardize-names
         run: |
-          model="${{ matrix.test_suite.hf_models || env.DEFAULT_HF_MODEL }}"
-          if [[ "$model" == "micro-g3.3_roberta-large" ]]; then
-            echo "model_key=micro-g3.3_roberta-large" >> "$GITHUB_ENV"
-            echo "model_path=${HF_HUB_CACHE}" >> "$GITHUB_ENV"
+          if [[ -n "${{ matrix.test_suite.hf_model }}" ]]; then
+            model="${{ matrix.test_suite.hf_model }}"
+            revision="${{ matrix.test_suite.hf_model_rev }}"
           else
-            # replace / with --
-            safe_name="${model//\//--}"
-            echo "model_key=$safe_name" >> "$GITHUB_ENV"
-            echo "model_path=${HF_HUB_CACHE}/models--$safe_name" >> "$GITHUB_ENV"
+            model="${{ env.DEFAULT_HF_MODEL }}"
+            revision="${{ env.DEFAULT_HF_MODEL_REV }}"
+          fi
+          # replace '/' with '--'
+          safe_name="${model//\//--}"
+          echo "model_key=${safe_name}_${revision}" >> "$GITHUB_ENV"
+          echo "model_path=${HF_HUB_CACHE}/models--$safe_name" >> "$GITHUB_ENV"
+          
+          if [[ -n "${{ matrix.test_suite.hf_model_2 }}" ]]; then
+            model_2="${{ matrix.test_suite.hf_model_2 }}"
+            revision_2="${{ matrix.test_suite.hf_model_2_rev}}"
+            # replace '/' with '--'
+            safe_name_2="${model_2//\//--}"
+            echo "model_key_2=${safe_name_2}_${revision_2}" >> "$GITHUB_ENV"
+            echo "model_path_2=${HF_HUB_CACHE}/models--${safe_name_2}" >> "$GITHUB_ENV"
           fi
 
       - name: "Restore HF models cache"
@@ -173,55 +184,68 @@ jobs:
           path: ${{ env.model_path }}
           key: ${{ runner.os }}-hf-model-${{ env.model_key }}
 
-      - name: "Download HF models"
-        if: ( steps.changed-src-files.outputs.any_changed == 'true' && steps.cache_restore.outputs.cache-hit == 'true' )
-        run: |
-          # We are caching HF models (HF_HUB_CACHE) for reliability rather than speed, since HF downloads are flaky for concurrent jobs.
-          # Be careful when adding models to the cache here, as the GHA cache is limited to 10 GB.
-          # If a new model is added here, a new hash key is generated. The previous cache blob can then
-          # be removed by an admin or can be left to expire after 7 days.
+      - name: "Restore HF models cache for additional model"
+        id: cache_restore_2
+        if: ( steps.changed-src-files.outputs.any_changed == 'true' && matrix.test_suite.hf_model_2 )
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.model_path_2 }}
+          key: ${{ runner.os }}-hf-model-${{ env.model_key_2 }}
 
-          download_tinygranite() {
-            python -c "from transformers import pipeline; pipeline('text-generation', model='$1', revision='2714578f54cfb744ece40df9326ee0b47e879e03');"
+      - name: "Download HF models"
+        if: ( steps.changed-src-files.outputs.any_changed == 'true' && (steps.cache_restore.outputs.cache-hit != 'true' || steps.cache_restore_2.outputs.cache-hit != 'true'))
+        run: |
+          # We are caching HF models (HF_HUB_CACHE) for reliability rather than
+          # speed, since HF downloads are flaky for concurrent jobs.
+          # Be careful when adding models to the cache here, as the GHA cache is
+          # limited to 10 GB.
+          # If a new model is added here, a new hash key is generated. The
+          # previous cache blob can then be removed by an admin or can be left
+          # to expire after 7 days.
+
+          download_granite_or_llama() {
+            python -c "from transformers import pipeline; pipeline('text-generation', model='$1', revision='${2:-main}');"
           }
           download_roberta_large() {
-            python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('$1')"
+            python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('$1', revision='${2:-main}')"
           }
-          # tinyllama used for static batching tests because static batching is _too slow_
-          download_tinyllama() {
-            python -c "from transformers import pipeline; pipeline('text-generation', model='$1')"
-          }
-
-          hf_models="${{ matrix.test_suite.hf_models || env.DEFAULT_HF_MODEL }}"
-
-          if [[ "$hf_models" == "micro-g3.3_roberta-large" ]]; then
-            models=("ibm-ai-platform/micro-g3.3-8b-instruct-1b" "sentence-transformers/all-roberta-large-v1")
-          else
-            models=("$hf_models")
-          fi
-
-          for model in "${models[@]}"; do
-            echo "Downloading $model ..."
+          download_model_with_revision() {
+            model="$1"
+            revision="$2"
+            echo "Downloading '$model' with revision '$2' ..."
             case "$model" in
               "ibm-ai-platform/micro-g3.3-8b-instruct-1b"*)
-                download_tinygranite "$model" &
+                download_granite_or_llama "$model" $revision
                 ;;
               "JackFram/llama-160m")
-                download_tinyllama "$model" &
+                download_granite_or_llama "$model" $revision
                 ;;
               "sentence-transformers/all-roberta-large-v1")
-                download_roberta_large "$model" &
+                download_roberta_large "$model" $revision
                 ;;
               "cross-encoder/stsb-roberta-large")
-                download_roberta_large "$model" &
+                download_roberta_large "$model" $revision
                 ;;
               *)
                 echo "No download method found for: $model";
                 exit 1
                 ;;
             esac
-          done
+          }
+          if [[ -n "${{ matrix.test_suite.hf_model }}" ]]; then
+            hf_model="${{ matrix.test_suite.hf_model }}"
+            hf_revision="${{ matrix.test_suite.hf_model_rev }}"
+          else
+            hf_model="${{ env.DEFAULT_HF_MODEL }}"
+            hf_revision="${{ env.DEFAULT_HF_MODEL_REV }}"
+          fi
+          hf_model_2="${{ matrix.test_suite.hf_model_2 }}"
+          hf_revision_2="${{ matrix.test_suite.hf_model_2_rev }}"
 
+          download_model_with_revision "$hf_model" $hf_revision &
+          if [[ -n "$hf_model_2" ]]; then
+            download_model_with_revision "$hf_model_2" $hf_revision_2 &
+          fi
           wait
 
       - name: "Save HF models cache"
@@ -230,6 +254,13 @@ jobs:
         with:
           path: ${{ env.model_path }}
           key: ${{ runner.os }}-hf-model-${{ env.model_key }}
+
+      - name: "Save HF models cache for additional model"
+        if: ( steps.changed-src-files.outputs.any_changed == 'true' && matrix.test_suite.hf_model_2 && github.event_name != 'pull_request' && steps.cache_restore_2.outputs.cache-hit != 'true' )
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.model_path_2 }}
+          key: ${{ runner.os }}-hf-model-${{ env.model_key_2 }}
 
       - name: "Run tests"
         if: steps.changed-src-files.outputs.any_changed == 'true'
