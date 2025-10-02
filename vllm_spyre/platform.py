@@ -211,7 +211,7 @@ class SpyrePlatform(Platform):
             max(vllm_config.scheduler_config.max_num_seqs, 2))
 
         # Hardcode some things for granite-3.3-8b-instruct
-        cls.configure_granite_33_8b(vllm_config.model_config)
+        cls.configure_granite_33_8b(vllm_config)
 
         # max product of batch size x tkv supported by the Spyre compiler
         default_max_batch_tkv_limit = \
