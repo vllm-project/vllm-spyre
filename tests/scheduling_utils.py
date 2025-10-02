@@ -140,12 +140,13 @@ def check_scheduler_inference_steps(
          else ISCLOSE_ABS_TOL
     # inject expectation.
     # json is fine to transfer between vllm subprocesses using pickle
-    for req, hf in zip(requests, hf_results):
+    for idx, (req, hf) in enumerate(zip(requests, hf_results)):
         req[1].sampling_params.extra_args = {
             "golden_token_injector": {
                 "expected_token_ids": hf['token_ids'],
                 "expected_logprobs": hf['logprobs'],
                 "error_threshold": abs_tol,
+                "label": f"#{idx}"
             }
         }
 

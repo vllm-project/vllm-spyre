@@ -9,12 +9,25 @@ from vllm.v1.sample.logits_processor import (BatchUpdate, LogitsProcessor,
                                              MoveDirectionality)
 
 
-class GoldenTokenInjectorState:
+class ExpectationState:
+    '''This class controls the state of the generation.'''
 
     def __init__(self, input_dict: dict):
-        self.expected_token_ids = input_dict["expected_token_ids"]
-        self.expected_logprobs = input_dict["expected_logprobs"]
-        self.error_threshold = input_dict["error_threshold"]
+
+        # Expected token id
+        self.token_ids: list[int] = input_dict["expected_token_ids"]
+        # Expected logprob
+        self.logprobs: list[float] = input_dict["expected_logprobs"]
+        # Acceptable threshold to keep the injection. If it is over the
+        # threshold, we stop the injection to give feedback at the
+        # end of the generation that this token is diverge too much.
+        self.threshold: float = input_dict["error_threshold"]
+        # Used to identify the request, ideally it would be the request id.
+        # However we might not have that yet, therefore we have the
+        # opportunity to add a more human friendly label.
+        # It is used to log which requests are being injected with
+        # the golden token.
+        self.label: Optional[str] = input_dict.get("label")
 
         self.current_token_idx = 0
         self.has_error = False
@@ -25,9 +38,11 @@ class GoldenTokenInjector(LogitsProcessor):
 
     def __init__(self, vllm_config: VllmConfig, device: torch.device,
                  is_pin_memory: bool):
-        self.injectors: dict[int, GoldenTokenInjectorState] = {}
+        self.req_states: dict[int, ExpectationState] = {}
         # NOTE: This logit processor hold a tokenizer for each instance.
-        # for couple requests that does not
+        # for couple requests that does not have too much impact.
+        # But since this is used mostly for validation, it would be fine
+        # to keep them.
         self.tokenizer = get_tokenizer(vllm_config.model_config.tokenizer)
 
     def is_argmax_invariant(self) -> bool:
@@ -46,44 +61,46 @@ class GoldenTokenInjector(LogitsProcessor):
             if params.extra_args and (
                     injector_dict :=
                     params.extra_args.get("golden_token_injector")):
-                self.injectors[index] = GoldenTokenInjectorState(injector_dict)
+                self.req_states[index] = ExpectationState(injector_dict)
 
-        if self.injectors:
-            # Process removed requests.
-            for index in batch_update.removed:
-                self.injectors.pop(index, None)
+        if not self.req_states:
+            return
 
-            # Process moved requests, unidirectional move (a->b) and swap
-            # (a<->b)
-            for adx, bdx, direct in batch_update.moved:
-                a_val = self.injectors.pop(adx, None)
-                b_val = self.injectors.pop(bdx, None)
-                if a_val is not None:
-                    self.injectors[bdx] = a_val
-                if direct == MoveDirectionality.SWAP and b_val is not None:
-                    self.injectors[adx] = b_val
+        # Process removed requests.
+        for index in batch_update.removed:
+            self.req_states.pop(index, None)
+
+        # Process moved requests, unidirectional move (a->b) and swap
+        # (a<->b)
+        for adx, bdx, direct in batch_update.moved:
+            a_val = self.req_states.pop(adx, None)
+            b_val = self.req_states.pop(bdx, None)
+            if a_val is not None:
+                self.req_states[bdx] = a_val
+            if direct == MoveDirectionality.SWAP and b_val is not None:
+                self.req_states[adx] = b_val
 
     def apply(self, logits: torch.Tensor) -> torch.Tensor:
-        if not self.injectors:
+        if not self.req_states:
             return logits
 
         # Calculate logprobs for the current model execution
         logprobs = F.log_softmax(logits, dim=-1)
 
-        for req_idx, injector in self.injectors.items():
+        for req_idx, expectation in self.req_states.items():
 
-            if injector.has_error:
+            if expectation.has_error:
                 # There was an error already for inject tokens for this
-                # request skip until the end.
+                # request, skip until the end of its generation.
                 continue
 
-            expected_token_id = injector.expected_token_ids[
-                injector.current_token_idx]
+            expected_token_id = expectation.token_ids[
+                expectation.current_token_idx]
             token_id = torch.argmax(logits[req_idx], dim=-1)
 
             if expected_token_id == token_id:
                 # Expectation is met, nothing to do.
-                injector.current_token_idx += 1
+                expectation.current_token_idx += 1
                 continue
 
             # Get the logprob for the expected token
@@ -91,19 +108,26 @@ class GoldenTokenInjector(LogitsProcessor):
             prob = torch.exp(lp)
 
             expected_logprob = \
-                injector.expected_logprobs[injector.current_token_idx]
+                expectation.logprobs[expectation.current_token_idx]
             expected_prob = math.exp(expected_logprob)
 
-            if not math.isclose(expected_prob,
-                                prob.item(),
-                                abs_tol=injector.error_threshold):
+            # Label to identify request, if the label was set in the state,
+            # use it, otherwise it will be the index of the request in the
+            # batch
+
+            label = f"'{expectation.label}'" if expectation.label is not None \
+                else f"idx '{req_idx}'"
+
+            # We'll inject only if the error is below the threshold
+            if not math.isclose(
+                    expected_prob, prob.item(), abs_tol=expectation.threshold):
                 err = abs(expected_prob - prob.item())
 
                 print("Token probability is out of the acceptable threshold "
-                      f"{err} > {injector.error_threshold} at request "
-                      f"'{req_idx}' token idx '{injector.current_token_idx}'."
+                      f"{err} > {expectation.threshold} at request "
+                      f"'{label}' token idx '{expectation.current_token_idx}'."
                       "Token injection will be skipped")
-                injector.has_error = True
+                expectation.has_error = True
                 continue
 
             full_prob = torch.ones(1, dtype=prob.dtype)  # 100%
@@ -126,19 +150,20 @@ class GoldenTokenInjector(LogitsProcessor):
                       f"({lp.item()} < {other_logprobs.item()}), this "
                       "suggests that the generation diverged too much "
                       "from the expectation.")
-                injector.has_error = True
+                expectation.has_error = True
                 continue
 
             logits[req_idx] = other_logprobs
             logits[req_idx][expected_token_id] = lp
 
-            print(f"Golden token injection for request idx '{req_idx}'"\
-                  f" at index '{injector.current_token_idx}':")
-
+            # Decode the tokens for better human readability
             token = self.tokenizer.decode([token_id])
             expected_token = self.tokenizer.decode([expected_token_id])
+
+            print(f"Golden token injection for request {label}"\
+                  f" at token index '{expectation.current_token_idx}':")
             print(f"'{token}' {prob.item() * 100:.2f}% -> "
                   f"'{expected_token}' {expected_prob * 100:.2f}%")
-            injector.current_token_idx += 1
+            expectation.current_token_idx += 1
 
         return logits
