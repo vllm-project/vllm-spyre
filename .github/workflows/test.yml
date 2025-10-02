@@ -174,8 +174,8 @@ jobs:
             revision_2="${{ matrix.test_suite.hf_model_2_rev}}"
             # replace '/' with '--'
             safe_name_2="${model_2//\//--}"
-            echo "model_key_2=${safe_name_2}_${revision_2}" >> "$GITHUB_ENV"
-            echo "model_path_2=${HF_HUB_CACHE}/models--${safe_name_2}" >> "$GITHUB_ENV"
+            echo "model_2_key=${safe_name_2}_${revision_2}" >> "$GITHUB_ENV"
+            echo "model_2_path=${HF_HUB_CACHE}/models--${safe_name_2}" >> "$GITHUB_ENV"
           fi
 
       - name: "Restore HF models cache"
@@ -191,8 +191,8 @@ jobs:
         if: ( steps.changed-src-files.outputs.any_changed == 'true' && matrix.test_suite.hf_model_2 )
         uses: actions/cache/restore@v4
         with:
-          path: ${{ env.model_path_2 }}
-          key: ${{ runner.os }}-hf-model-${{ env.model_key_2 }}
+          path: ${{ env.model_2_path }}
+          key: ${{ runner.os }}-hf-model-${{ env.model_2_key }}
 
       - name: "Download HF models"
         if: ( steps.changed-src-files.outputs.any_changed == 'true' && (steps.cache_restore.outputs.cache-hit != 'true' || steps.cache_restore_2.outputs.cache-hit != 'true'))
@@ -206,27 +206,27 @@ jobs:
           # to expire after 7 days.
 
           download_granite_or_llama() {
-            python -c "from transformers import pipeline; pipeline('text-generation', model='$1', revision='${2:-main}');"
+            python -c "from transformers import pipeline; pipeline('text-generation', model='$1', revision='$2');"
           }
           download_roberta_large() {
-            python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('$1', revision='${2:-main}')"
+            python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('$1', revision='$2')"
           }
           download_model_with_revision() {
             model="$1"
-            revision="$2"
-            echo "Downloading '$model' with revision '$2' ..."
+            revision="${2:-main}"
+            echo "Downloading '$model' with revision '$revision' ..."
             case "$model" in
               "ibm-ai-platform/micro-g3.3-8b-instruct-1b"*)
-                download_granite_or_llama "$model" $revision
+                download_granite_or_llama "$model" "$revision"
                 ;;
               "JackFram/llama-160m")
-                download_granite_or_llama "$model" $revision
+                download_granite_or_llama "$model" "$revision"
                 ;;
               "sentence-transformers/all-roberta-large-v1")
-                download_roberta_large "$model" $revision
+                download_roberta_large "$model" "$revision"
                 ;;
               "cross-encoder/stsb-roberta-large")
-                download_roberta_large "$model" $revision
+                download_roberta_large "$model" "$revision"
                 ;;
               *)
                 echo "No download method found for: $model";
@@ -244,9 +244,9 @@ jobs:
           hf_model_2="${{ matrix.test_suite.hf_model_2 }}"
           hf_revision_2="${{ matrix.test_suite.hf_model_2_rev }}"
 
-          download_model_with_revision "$hf_model" $hf_revision &
+          download_model_with_revision "$hf_model" "${hf_revision:-main}" &
           if [[ -n "$hf_model_2" ]]; then
-            download_model_with_revision "$hf_model_2" $hf_revision_2 &
+            download_model_with_revision "$hf_model_2" "${hf_revision_2:-main}" &
           fi
           wait
 
@@ -261,8 +261,8 @@ jobs:
         if: ( steps.changed-src-files.outputs.any_changed == 'true' && matrix.test_suite.hf_model_2 && github.event_name != 'pull_request' && steps.cache_restore_2.outputs.cache-hit != 'true' )
         uses: actions/cache/save@v4
         with:
-          path: ${{ env.model_path_2 }}
-          key: ${{ runner.os }}-hf-model-${{ env.model_key_2 }}
+          path: ${{ env.model_2_path }}
+          key: ${{ runner.os }}-hf-model-${{ env.model_2_key }}
 
       - name: "Run tests"
         if: steps.changed-src-files.outputs.any_changed == 'true'
