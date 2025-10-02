@@ -22,7 +22,7 @@ env:
   HF_HUB_CACHE: "${{ github.workspace }}/.cache/huggingface/hub"
   DEFAULT_HF_MODEL: "ibm-ai-platform/micro-g3.3-8b-instruct-1b"
 #  DEFAULT_HF_MODEL_REV: "6e9c6465a9d7e5e9fa35004a29f0c90befa7d23f"
-#  DEFAULT_HF_MODEL_REV: "2714578f54cfb744ece40df9326ee0b47e879e03"
+  DEFAULT_HF_MODEL_REV: "2714578f54cfb744ece40df9326ee0b47e879e03"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -51,6 +51,7 @@ jobs:
             markers: "cpu and quantized and multi"
             flags: "--timeout=600 -k 'basic and test_output' --durations=0"
             hf_model: "ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8"
+            hf_model_rev: "main"
           - name: "embedding"
             markers: "cpu and embedding"
             flags: "--timeout=300"
@@ -83,6 +84,7 @@ jobs:
               markers: "compat or (cpu and basic)"
               flags: "--timeout=300"
               hf_model_2: "sentence-transformers/all-roberta-large-v1"
+              hf_model_2_rev: "main"
             os: "ubuntu-latest"
             python_version: "3.12"
         # Exclude vLLM:main if PR does NOT have "ready" label AND auto-merge is not enabled
