@@ -122,10 +122,6 @@ def check_scheduler_inference_steps(
         "tokens": []
     })
 
-    generated_prompts, requests = generate_prompts(model, steps_add_reqs,
-                                                   seqs_max_tokens,
-                                                   prompts_lengths)
-
     prompts, requests = generate_prompts(model, steps_add_reqs,
                                          seqs_max_tokens, prompts_lengths)
 
@@ -289,4 +285,3 @@ def check_scheduler_inference_steps(
                     vllm_results=vllm_results,
                     hf_results=hf_results,
                     prompts=prompts)
-    return None, None

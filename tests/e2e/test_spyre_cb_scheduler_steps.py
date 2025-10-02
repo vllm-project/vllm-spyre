@@ -154,7 +154,7 @@ def test_prompts_aligned_with_tkv_boundaries(model: ModelInfo, backend: str,
         },
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -308,7 +308,7 @@ def test_prompts_misaligned_with_tkv_boundaries(
         },
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -633,7 +633,7 @@ def test_new_sequence_joins_during_decode(model: ModelInfo, backend: str,
         }
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -852,7 +852,7 @@ def test_prompt_too_long_for_current_tkv(model: ModelInfo, backend: str,
         },
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -1019,7 +1019,7 @@ def test_prefill_optimization_tkv_too_big(model: ModelInfo, backend: str,
         },
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -1154,7 +1154,7 @@ def test_prefill_optimization_use_more_than_available_blocks(
         },
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -1457,7 +1457,7 @@ def test_requests_use_all_available_blocks(model: ModelInfo, backend: str,
         },
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -1619,7 +1619,7 @@ def test_requests_use_more_than_available_blocks(
         },
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -1747,7 +1747,7 @@ def test_requests_use_full_batch_tkv_limit_no_prefill_opt(
         },
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -1886,7 +1886,7 @@ def test_requests_exceed_batch_tkv_limit_no_prefill_opt(
         },
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -1995,7 +1995,7 @@ def test_requests_use_full_batch_tkv_limit_prefill_opt(
         },
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -2117,7 +2117,7 @@ def test_requests_exceed_batch_tkv_limit_prefill_opt(
         },
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -2232,7 +2232,7 @@ def test_scheduler_heuristic_prioritize_prefill(
         },
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -2374,7 +2374,7 @@ def test_scheduler_heuristic_prioritize_decode(model: ModelInfo, backend: str,
         },
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
