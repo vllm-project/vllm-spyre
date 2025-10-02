@@ -167,7 +167,7 @@ jobs:
 
       - name: "Restore HF models cache"
         id: cache_restore
-        if: "!contains(env.model_key, 'micro')"
+        if: "!contains(env.model_key, 'micro')"  # <------    TODO: revert this condition! --------
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.model_path }}
@@ -183,6 +183,9 @@ jobs:
 
           download_tinygranite() {
             python -c "from transformers import pipeline; pipeline('text-generation', model='$1', revision='2714578f54cfb744ece40df9326ee0b47e879e03');"
+          }
+          download_tinygranite_FP8() {
+            python -c "from transformers import pipeline; pipeline('text-generation', model='$1');"
           }
           download_roberta_large() {
             python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('$1')"
@@ -203,8 +206,11 @@ jobs:
           for model in "${models[@]}"; do
             echo "Downloading $model ..."
             case "$model" in
-              "ibm-ai-platform/micro-g3.3-8b-instruct-1b"*)
+              "ibm-ai-platform/micro-g3.3-8b-instruct-1b")
                 download_tinygranite "$model" &
+                ;;
+              "ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8")
+                download_tinygranite_FP8 "$model" &
                 ;;
               "JackFram/llama-160m")
                 download_tinyllama "$model" &
