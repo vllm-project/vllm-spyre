@@ -167,7 +167,7 @@ jobs:
 
       - name: "Restore HF models cache"
         id: cache_restore
-        if: ! contains(env.model_key, 'micro')
+        if: "!contains(env.model_key, 'micro')"
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.model_path }}
