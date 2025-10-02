@@ -63,7 +63,6 @@ class SpyrePlatform(Platform):
     supported_quantization: list[str] = ["gptq", "compressed-tensors"]
     _warmup_shapes: tuple[dict[str, int], ...] | None = None
     _block_size: int = 64  # hardcoded Spyre constraint for now
-    _num_spyre_blocks_override: int = -1  # override num of KV cache blocks
     _config: VllmConfig = None
 
     # Backend for dynamic compilation ops
@@ -168,20 +167,10 @@ class SpyrePlatform(Platform):
         # - Set the block size (in tokens) to the maximum sequence length
         #       so that the scheduler thinks an entire sequence will fit in
         #       one single block.
-        # - Set the number of blocks to the maximum number of sequences, so
-        #       the scheduler always thinks there's a block available
         # - Set `max_num_batched_tokens` to the size of a full batch of full
         #       length requests, so that the scheduler will always have token
         #       budget available to schedule a full batch
         if cache_config is not None:
-            # overriding number of available Spyre blocks if not None
-            if cache_config.num_gpu_blocks_override:
-                cls._num_spyre_blocks_override = \
-                    cache_config.num_gpu_blocks_override
-            # The V1 scheduler actually needs 2 blocks for each sequence...
-            cache_config.num_gpu_blocks_override = \
-                scheduler_config.max_num_seqs * 2
-
             cache_config.block_size = model_config.max_model_len
             scheduler_config.max_num_batched_tokens = (
                 model_config.max_model_len * scheduler_config.max_num_seqs)
@@ -189,9 +178,8 @@ class SpyrePlatform(Platform):
         logger.info(
             "Overriding configurations based on warmup shapes. "
             "max_model_len=%d, max_num_seqs=%d, block_size=%d, "
-            "num_gpu_blocks_override=%d, max_num_batched_tokens=%d",
-            model_config.max_model_len, scheduler_config.max_num_seqs,
-            cache_config.block_size, cache_config.num_gpu_blocks_override,
+            "max_num_batched_tokens=%d", model_config.max_model_len,
+            scheduler_config.max_num_seqs, cache_config.block_size,
             scheduler_config.max_num_batched_tokens)
 
         # set env vars for torch_sendnn to consume
@@ -211,13 +199,15 @@ class SpyrePlatform(Platform):
             max(vllm_config.scheduler_config.max_num_seqs, 2))
 
         # Hardcode some things for granite-3.3-8b-instruct
-        cls.configure_granite_33_8b(vllm_config)
+        if cls.is_granite_3_8b(vllm_config.model_config):
+            cls.configure_granite_3_8b(vllm_config)
 
-        # max product of batch size x tkv supported by the Spyre compiler
-        default_max_batch_tkv_limit = \
-            vllm_config.model_config.max_model_len * \
-            vllm_config.scheduler_config.max_num_seqs
         if not os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", None):
+            # max product of batch size x tkv supported by the Spyre compiler
+            default_max_batch_tkv_limit = \
+                vllm_config.model_config.max_model_len * \
+                vllm_config.scheduler_config.max_num_seqs
+
             os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(
                 default_max_batch_tkv_limit)
             logger.info("No model / tensor parallel size specific value for " \
@@ -302,10 +292,6 @@ class SpyrePlatform(Platform):
     @classmethod
     def get_block_size(cls) -> int:
         return cls._block_size
-
-    @classmethod
-    def get_num_spyre_blocks_override(cls) -> int:
-        return cls._num_spyre_blocks_override
 
     @classmethod
     def supports_v1(cls, model_config: ModelConfig) -> bool:
@@ -508,40 +494,61 @@ class SpyrePlatform(Platform):
         return max_new_tokens
 
     @classmethod
-    def configure_granite_33_8b(cls, vllm_config: VllmConfig):
+    def configure_granite_3_8b(cls, vllm_config: VllmConfig):
         """
         Configure hard coded values for the model
         https://huggingface.co/ibm-granite/granite-3.3-8b-instruct
         """
-
-        model_config = vllm_config.model_config
         parallel_config = vllm_config.parallel_config
-
-        if not cls.is_granite_33_8b(model_config):
-            # Not granite
-            return
 
         if parallel_config.world_size != 4:
             # only override configs for TP=4
             return
 
+        tkv_128k = 128 * 1024
         if not os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", None):
-            tkv_128k = 128 * 1024
             os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(tkv_128k)
             logger.info("Model granite-3.3-8b-instruct and tensor parallel " \
             "size 4 detected. Using VLLM_DT_MAX_BATCH_TKV_LIMIT = %d",
             tkv_128k)
+        else:
+            logger.warning(
+                "VLLM_DT_MAX_BATCH_TKV_LIMIT was set to %d, not "
+                "overriding to the granite-3.3-8b-instruct default of %d",
+                os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"), tkv_128k)
 
         # If no HDMA p2psize override was specified, set 256MB
+        p2psize_256m = 256 * 1024 * 1024
         if not os.getenv("FLEX_HDMA_P2PSIZE", None):
-            p2psize_256m = 256 * 1024 * 1024
             os.environ["FLEX_HDMA_P2PSIZE"] = str(p2psize_256m)
             logger.info(
                 "Model granite-3.3-8b-instruct and tensor parallel size 4 "
                 "detected. Using FLEX_HDMA_P2PSIZE = %d", p2psize_256m)
+        else:
+            logger.warning(
+                "FLEX_HDMA_P2PSIZE was set to %d, not using the "
+                "granite-3.3-8b-instruct default of %d",
+                os.getenv("FLEX_HDMA_P2PSIZE", None), p2psize_256m)
+
+        # Override the total number of KV cache blocks based on what we know
+        # will fit. (Unless user already set `--num-gpu-blocks-override`)
+        # TODO: remove this once we have correct free memory info available
+        blocks_override = 2080
+        if vllm_config.cache_config.num_gpu_blocks_override is not None:
+            vllm_config.cache_config.num_gpu_blocks_override = blocks_override
+            logger.info(
+                "Model granite-3.3-8b-instruct and tensor parallel size 4 "
+                "detected. Overriding available KV Cache blocks t0 %d",
+                blocks_override)
+        else:
+            logger.warning(
+                "--num-gpu-blocks-override was set to %d, not using the "
+                "granite-3.3-8b-instruct default of %d",
+                vllm_config.cache_config.num_gpu_blocks_override,
+                blocks_override)
 
     @classmethod
-    def is_granite_33_8b(cls, model_config: ModelConfig):
+    def is_granite_3_8b(cls, model_config: ModelConfig):
         """Returns true if we have a model that looks like
         ibm-granite/granite-3.3-8b-instruct"""
         if not isinstance(model_config.hf_config, GraniteConfig):
