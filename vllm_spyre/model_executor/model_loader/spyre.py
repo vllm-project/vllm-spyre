@@ -388,7 +388,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
 
         # TODO: replace the hard coded NUM_BLOCKS_SPYRE by calling a function
         # in torch_sendnn which returns the value set by the Spyre compiler.
-        if ('granite-3.3-8b-instruct' in self.model_config.model
+        if (SpyrePlatform.is_granite_33_8b(self.model_config)
                 and self.parallel_config.world_size == 4):
             # hard coded value for tensor parallel size 4 with the below model
             # https://huggingface.co/ibm-granite/granite-3.3-8b-instruct

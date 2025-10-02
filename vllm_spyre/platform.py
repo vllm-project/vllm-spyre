@@ -16,6 +16,7 @@ import os
 from typing import TYPE_CHECKING, Union
 
 import torch
+from transformers.models.granite import GraniteConfig
 from vllm.inputs import ProcessorInputs, PromptType
 from vllm.logger import init_logger
 from vllm.pooling_params import PoolingParams
@@ -209,28 +210,14 @@ class SpyrePlatform(Platform):
         os.environ["VLLM_DT_MAX_BATCH_SIZE"] = str(
             max(vllm_config.scheduler_config.max_num_seqs, 2))
 
-        # max product of batch size x tkv supported by the Spyre compiler
-        if ('granite-3.3-8b-instruct' in model_config.model
-                and parallel_config.world_size == 4):
-            # hard coded value for tensor parallel size 4 with the below model
-            # https://huggingface.co/ibm-granite/granite-3.3-8b-instruct
-            os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(128 * 1024)
-            logger.info("Model granite-3.3-8b-instruct and tensor parallel " \
-            "size 4 detected. Using VLLM_DT_MAX_BATCH_TKV_LIMIT = %d",
-            128 * 1024)
+        # Hardcode some things for granite-3.3-8b-instruct
+        cls.configure_granite_33_8b(vllm_config.model_config)
 
-            # If no HDMA p2psize override was specified, set 256MB
-            if not os.getenv("FLEX_HDMA_P2PSIZE", None):
-                os.environ["FLEX_HDMA_P2PSIZE"] = str(1024 * 1024 * 256)
-                logger.info(
-                    "Model granite-3.3-8b-instruct and tensor parallel size 4 "
-                    "detected. Using FLEX_HDMA_P2PSIZE = %d",
-                    1024 * 1024 * 256)
-        else:
-            # default value for any other model/ tensor parallel size
-            default_max_batch_tkv_limit = \
-                vllm_config.model_config.max_model_len * \
-                vllm_config.scheduler_config.max_num_seqs
+        # max product of batch size x tkv supported by the Spyre compiler
+        default_max_batch_tkv_limit = \
+            vllm_config.model_config.max_model_len * \
+            vllm_config.scheduler_config.max_num_seqs
+        if not os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", None):
             os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(
                 default_max_batch_tkv_limit)
             logger.info("No model / tensor parallel size specific value for " \
@@ -519,3 +506,49 @@ class SpyrePlatform(Platform):
                 max_new_tokens = max(max_new_tokens, shape['new_tokens'])
 
         return max_new_tokens
+
+    @classmethod
+    def configure_granite_33_8b(cls, vllm_config: VllmConfig):
+        """
+        Configure hard coded values for the model
+        https://huggingface.co/ibm-granite/granite-3.3-8b-instruct
+        """
+
+        model_config = vllm_config.model_config
+        parallel_config = vllm_config.parallel_config
+
+        if not cls.is_granite_33_8b(model_config):
+            # Not granite
+            return
+
+        if parallel_config.world_size != 4:
+            # only override configs for TP=4
+            return
+
+        if not os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", None):
+            os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(128 * 1024)
+            logger.info("Model granite-3.3-8b-instruct and tensor parallel " \
+            "size 4 detected. Using VLLM_DT_MAX_BATCH_TKV_LIMIT = %d",
+            128 * 1024)
+
+        # If no HDMA p2psize override was specified, set 256MB
+        if not os.getenv("FLEX_HDMA_P2PSIZE", None):
+            os.environ["FLEX_HDMA_P2PSIZE"] = str(1024 * 1024 * 256)
+            logger.info(
+                "Model granite-3.3-8b-instruct and tensor parallel size 4 "
+                "detected. Using FLEX_HDMA_P2PSIZE = %d", 1024 * 1024 * 256)
+
+    @classmethod
+    def is_granite_33_8b(cls, model_config: ModelConfig):
+        """Returns true if we have a model that looks like
+        ibm-granite/granite-3.3-8b-instruct"""
+        if not isinstance(model_config.hf_config, GraniteConfig):
+            # Not granite at all
+            return False
+
+        return (model_config.hf_config.num_hidden_layers == 40
+                and model_config.hf_config.max_position_embeddings == 131072
+                and model_config.hf_config.hidden_size == 4096
+                and model_config.hf_config.vocab_size == 49159
+                and model_config.hf_config.num_key_value_heads == 8
+                and model_config.hf_config.num_attention_heads == 32)
