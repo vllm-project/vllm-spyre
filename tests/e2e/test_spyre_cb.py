@@ -151,7 +151,7 @@ def test_long_context_batches(
     )
 
     for batch_size, token_len in batch_token_pairs:
-        prompt = create_seq_prompt(model.name, token_length=token_len)
+        prompt = create_seq_prompt(model, token_length=token_len)
         prompts = [prompt] * batch_size
 
         vllm_outputs = vllm_model.generate(prompts, sampling_params)

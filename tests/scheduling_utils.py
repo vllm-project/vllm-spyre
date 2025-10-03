@@ -105,7 +105,7 @@ def check_scheduler_inference_steps(
         request = create_random_request(request_id=i,
                                         num_tokens=prompt_length,
                                         sampling_params=sampling_params,
-                                        model=model.name)
+                                        model=model)
         requests.append((add_step, request))
         # NOTE: It is going to be decoded later
         generated_prompts.append(request.prompt_token_ids)
