@@ -534,7 +534,7 @@ class SpyrePlatform(Platform):
             tkv_128k)
         else:
             logger.warning(
-                "VLLM_DT_MAX_BATCH_TKV_LIMIT was set to %d, not "
+                "VLLM_DT_MAX_BATCH_TKV_LIMIT was set to %s, not "
                 "overriding to the granite-3.3-8b-instruct default of %d",
                 os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"), tkv_128k)
 

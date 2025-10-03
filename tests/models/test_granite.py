@@ -1,5 +1,7 @@
 """Tests for model-specific overrides for granite"""
+import os
 from pathlib import Path
+from unittest import mock
 
 import pytest
 from vllm.config import ModelConfig, ParallelConfig, VllmConfig
@@ -28,10 +30,15 @@ def test_granite_3_8b_detection():
 def test_granite_3_8b_overrides():
     """Check that the correct values are overridden for g3.3 8b"""
 
-    tp4_config = ParallelConfig(tensor_parallel_size=4)
+    # Must ensure no env vars have been overridden before testing
+    with mock.patch.dict(os.environ, clear=True):
+        tp4_config = ParallelConfig(tensor_parallel_size=4)
 
-    granite_3_8b_config = VllmConfig(model_config=ModelConfig(
-        model=str(FIXTURES_PATH / "granite-3.3-8b-instruct-config-only")),
-                                     parallel_config=tp4_config)
+        granite_3_8b_config = VllmConfig(model_config=ModelConfig(
+            model=str(FIXTURES_PATH / "granite-3.3-8b-instruct-config-only")),
+                                         parallel_config=tp4_config)
 
-    assert granite_3_8b_config.cache_config.num_gpu_blocks_override == 2080
+        assert granite_3_8b_config.cache_config.num_gpu_blocks_override == 2080
+
+        assert int(os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT")) == 128 * 1024
+        assert int(os.getenv("FLEX_HDMA_P2PSIZE")) == 256 * 1024 * 1024
