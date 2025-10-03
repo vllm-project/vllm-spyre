@@ -54,8 +54,7 @@ def test_custom_logits_processor(model: ModelInfo, backend, monkeypatch,
     assert has_invoked_logits_processor
 
 
-def test_cb_logits_processor(model: ModelInfo, backend, monkeypatch,
-                             warmup_shapes, max_model_len, cb):
+def test_cb_logits_processor(model: ModelInfo, backend, monkeypatch, max_model_len):
     '''
     Test if the state of logits for CB are correct due to the switch of
     prefill/decode in a step engine. The LLM is initialized with bs=2,
