@@ -60,8 +60,8 @@ jobs:
           - name: "continuous batching"
             markers: "cpu and cb and not quantized"
             flags: "--timeout=300  --durations=0 -s"
-          - name: "worker and utils and not quantized"
-            markers: "not e2e"
+          - name: "worker and utils"
+            markers: "not e2e and not quantized"
             flags: "--timeout=300"
           - name: "compatibility"
             markers: "compat"
@@ -69,8 +69,8 @@ jobs:
           - name: "other e2e"
             markers: "cpu and other_e2e and not quantized"
             flags: "--timeout=300"
-          - name: "precompilation and not quantized"
-            markers: "precompilation"
+          - name: "precompilation"
+            markers: "precompilation and not quantized"
             flags: "--timeout=300"
         include:
           - vllm_version:
