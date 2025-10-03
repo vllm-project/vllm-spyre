@@ -555,7 +555,7 @@ class SpyrePlatform(Platform):
         # will fit. (Unless user already set `--num-gpu-blocks-override`)
         # TODO: remove this once we have correct free memory info available
         blocks_override = 2080
-        if vllm_config.cache_config.num_gpu_blocks_override is not None:
+        if vllm_config.cache_config.num_gpu_blocks_override is None:
             vllm_config.cache_config.num_gpu_blocks_override = blocks_override
             logger.info(
                 "Model granite-3.3-8b-instruct and tensor parallel size 4 "
