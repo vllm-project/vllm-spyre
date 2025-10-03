@@ -57,8 +57,6 @@ class SpyreCausalLM(nn.Module):
         rank: int,
     ) -> None:
         super().__init__()
-        self.vllm_config = vllm_config
-
         self.logits_processor = LogitsProcessor(
             vllm_config.model_config.hf_config.vocab_size,
             logits_as_input=True)
@@ -163,7 +161,6 @@ class FmsModelBase(nn.Module):
 
         # Actual FMS model
         self.model: nn.Module
-        self.vllm_config = vllm_config
         self.model_config = vllm_config.model_config
         self.parallel_config = vllm_config.parallel_config
         self.cache_config = vllm_config.cache_config
