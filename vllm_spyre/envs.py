@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     VLLM_SPYRE_GLOO_TIMEOUT_MINUTES: int = 60
     VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS: bool = False
     VLLM_SPYRE_SIMPLE_COMPILE_BACKEND: str = "eager"
+    VLLM_SPYRE_NUM_CPUS: int = 0
 
 logger = init_logger(__name__)
 
@@ -151,6 +152,12 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # are available.
     "VLLM_SPYRE_SIMPLE_COMPILE_BACKEND":
     lambda: os.getenv("VLLM_SPYRE_SIMPLE_COMPILE_BACKEND", "eager"),
+
+    # Configures the number of CPUs used when determining multi-threading
+    # configurations
+    # Set to 0 to have vllm-spyre attempt to detect the CPU count
+    "VLLM_SPYRE_NUM_CPUS":
+    lambda: int(os.getenv("VLLM_SPYRE_NUM_CPUS", "0")),
 }
 # --8<-- [end:env-vars-definition]
 
