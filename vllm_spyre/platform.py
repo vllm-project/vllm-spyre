@@ -527,7 +527,7 @@ class SpyrePlatform(Platform):
             return
 
         tkv_128k = 128 * 1024
-        if not os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", None):
+        if not os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"):
             os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(tkv_128k)
             logger.info("Model granite-3.3-8b-instruct and tensor parallel " \
             "size 4 detected. Using VLLM_DT_MAX_BATCH_TKV_LIMIT = %d",
@@ -540,7 +540,7 @@ class SpyrePlatform(Platform):
 
         # If no HDMA p2psize override was specified, set 256MB
         p2psize_256m = 256 * 1024 * 1024
-        if not os.getenv("FLEX_HDMA_P2PSIZE", None):
+        if not os.getenv("FLEX_HDMA_P2PSIZE"):
             os.environ["FLEX_HDMA_P2PSIZE"] = str(p2psize_256m)
             logger.info(
                 "Model granite-3.3-8b-instruct and tensor parallel size 4 "
@@ -549,7 +549,7 @@ class SpyrePlatform(Platform):
             logger.warning(
                 "FLEX_HDMA_P2PSIZE was set to %s, not using the "
                 "granite-3.3-8b-instruct default of %d",
-                os.getenv("FLEX_HDMA_P2PSIZE", None), p2psize_256m)
+                os.getenv("FLEX_HDMA_P2PSIZE"), p2psize_256m)
 
         # Override the total number of KV cache blocks based on what we know
         # will fit. (Unless user already set `--num-gpu-blocks-override`)
