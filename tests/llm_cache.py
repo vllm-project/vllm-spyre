@@ -4,6 +4,7 @@ across test cases, to speed up test runtime."""
 from typing import Callable, Generic, Optional, TypeVar
 
 import pytest
+from golden_token_injector import GoldenTokenInjector
 from llm_cache_util import force_engine_shutdown
 from spyre_util import (DecodeWarmupShapes, ModelInfo, RemoteOpenAIServer,
                         patch_environment)
@@ -198,7 +199,8 @@ class EngineCache:
             max_num_seqs=max_num_seqs_compiled,
             num_gpu_blocks_override=None,
             revision=revision,
-        )
+            # We always include it, but does not means we always use it
+            logits_processors=[GoldenTokenInjector])
         vllm_config = engine_args.create_engine_config()
         executor_class = Executor.get_class(vllm_config)
 
