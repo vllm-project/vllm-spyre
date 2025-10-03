@@ -185,7 +185,7 @@ def test_full_batch_scheduling(model: ModelInfo, backend: str, monkeypatch):
                 request_id=i,
                 num_tokens=max_batched_tokens,
                 sampling_params=vllm_sampling_params,
-                model=model.name,
+                model=model,
             ))
     schedule = scheduler.schedule()
 
