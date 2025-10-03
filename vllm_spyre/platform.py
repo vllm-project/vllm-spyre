@@ -202,7 +202,7 @@ class SpyrePlatform(Platform):
         if cls.is_granite_3_8b(vllm_config.model_config):
             cls.configure_granite_3_8b(vllm_config)
 
-        if not os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", None):
+        if not os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"):
             # max product of batch size x tkv supported by the Spyre compiler
             default_max_batch_tkv_limit = \
                 vllm_config.model_config.max_model_len * \
