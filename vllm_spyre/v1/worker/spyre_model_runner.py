@@ -288,9 +288,7 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
         max_pad_length = max(prompt_lens)
         max_decode_length = max(num_decode_tokens)
         self.model = SpyreCausalLM(
-            self.model_config,
-            parallel_config=self.parallel_config,
-            scheduler_config=self.scheduler_config,
+            vllm_config=self.vllm_config,
             max_prompt_length=max_pad_length,
             max_decode_length=max_decode_length,
             rank=self.rank,
@@ -829,7 +827,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # Note: Until this feature is supported by the compiler we have to set:
         # n_blocks_warmup = n_blocks_avail
 
-        n_blocks_warmup = self.model.model.get_num_blocks_available()
+        n_blocks_warmup = self.get_total_spyre_blocks()
         self._set_blocks(num_blocks=n_blocks_warmup)
         self.model.model.set_past_key_value_states(num_blocks=n_blocks_warmup)
 
@@ -849,22 +847,54 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         super().complete_warmup()
         # get the number or pages from the actual Spyre card after the warmup
         # and set it accordingly in the model runner and for the kv cache size
-        n_blocks_avail = self.model.model.get_num_blocks_available()
+        n_blocks_avail = self.get_total_spyre_blocks()
         self._set_blocks(num_blocks=n_blocks_avail)
         self.model.model.set_past_key_value_states(num_blocks=n_blocks_avail)
 
     def _set_blocks(self, num_blocks: int) -> None:
-        # overwrite num_blocks for testing scheduler constraints
-        num_blocks_override = SpyrePlatform.get_num_spyre_blocks_override()
-        if num_blocks_override > 0:
-            logger.info(
-                "[WARMUP] Overriding number of KV cache blocks on "
-                "Spyre/CPU to %d.", num_blocks_override)
-            num_blocks = num_blocks_override
-
         # set number of available blocks and populate block_pool
         self.n_blocks = num_blocks
         self.block_pool = deque([i for i in range(self.n_blocks)])
+
+    def get_total_spyre_blocks(self) -> int:
+        """Returns the total number of KV cache blocks available for spyre.
+        This currently returns the number of blocks required for a full-sized
+        batch, which may be greater than the available memory.
+
+        Until a correct available memory api is available, the number of blocks
+        must be overridden with a known good value via
+        cache_config.num_gpu_blocks_override
+        """
+        max_batch_size = self.scheduler_config.max_num_seqs
+        max_model_len = self.scheduler_config.max_model_len
+        block_size = SpyrePlatform.get_block_size()
+        min_req_num_blocks = max_model_len // block_size
+
+        blocks_override = self.cache_config.num_gpu_blocks_override
+        if blocks_override is not None and blocks_override > 0:
+            num_blocks = blocks_override
+        else:
+            num_blocks = max_batch_size * min_req_num_blocks
+
+        # Total number of blocks needs to be a multiple of the batch size
+        # (spyre constraint) so round it down
+        num_blocks = max_batch_size * (num_blocks // max_batch_size)
+
+        if num_blocks < min_req_num_blocks:
+            raise ValueError(
+                f"Number of pages available on Spyre {num_blocks} is not "
+                f"enough to serve the current model (need at least "
+                f"{min_req_num_blocks} pages).")
+
+        max_concurrency = num_blocks * block_size / max_model_len
+        backend = "Spyre" if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == 'sendnn' \
+            else "CPU"
+        logger.info("%s KV cache size: %s tokens", backend,
+                    num_blocks * block_size)
+        logger.info("Maximum concurrency for %s tokens per request: %.2fx",
+                    str(max_model_len), max_concurrency)
+
+        return num_blocks
 
     def update_states(self, scheduler_output):
 
