@@ -105,7 +105,7 @@ class GoldenTokenInjector(LogitsProcessor):
 
             # Get the logprob for the expected token
             lp = logprobs[req_idx][expected_token_id].reshape(-1)
-            prob = torch.exp(lp)
+            prob = torch.exp(lp).item()
 
             expected_logprob = \
                 expectation.logprobs[expectation.current_token_idx]
@@ -120,8 +120,8 @@ class GoldenTokenInjector(LogitsProcessor):
 
             # We'll inject only if the error is below the threshold
             if not math.isclose(
-                    expected_prob, prob.item(), abs_tol=expectation.threshold):
-                err = abs(expected_prob - prob.item())
+                    expected_prob, prob, abs_tol=expectation.threshold):
+                err = abs(expected_prob - prob)
 
                 print("Token probability is out of the acceptable threshold "
                       f"{err} > {expectation.threshold} at request "
@@ -130,7 +130,7 @@ class GoldenTokenInjector(LogitsProcessor):
                 expectation.has_error = True
                 continue
 
-            full_prob = torch.ones(1, dtype=prob.dtype)  # 100%
+            full_prob = torch.ones(1, dtype=logprobs.dtype)  # 100%
 
             # Keep the same logprob for the expected token and
             # redistribute evenly the probability among the other
@@ -159,11 +159,13 @@ class GoldenTokenInjector(LogitsProcessor):
             # Decode the tokens for better human readability
             token = self.tokenizer.decode([token_id])
             expected_token = self.tokenizer.decode([expected_token_id])
+            old_prob = logprobs[req_idx][token_id].exp().item()
 
             print(f"Golden token injection for request {label}"\
                   f" at token index '{expectation.current_token_idx}':")
-            print(f"'{token}' {prob.item() * 100:.2f}% -> "
-                  f"'{expected_token}' {expected_prob * 100:.2f}%")
+            print(f"'{token}' ({old_prob * 100:.2f}%) replaced by"
+                  f" '{expected_token}' ({prob * 100:.2f}%);"
+                  f" baseline: ({expected_prob * 100:.2f}%)")
             expectation.current_token_idx += 1
 
         return logits
