@@ -199,6 +199,53 @@ def test_full_batch_scheduling(model: ModelInfo, backend: str, monkeypatch):
 
     assert len(schedule.scheduled_new_reqs) == batch_size
 
+def test_full_continuous_batch_scheduling(model: ModelInfo, backend: str, max_num_seqs: int, max_model_len: int, monkeypatch):
+    """Test that for continuous batching, we can schedule a set of requests that
+    perfectly fill the batch"""
+    
+    # set batching config
+    monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
+
+    # Setup the engine
+    engine_args = EngineArgs(model=model.name,
+                             tokenizer=model.name,
+                             max_num_seqs=max_num_seqs,
+                             revision=model.revision,
+                             max_model_len=max_model_len)
+    
+    vllm_config = engine_args.create_engine_config()
+    executor_class = Executor.get_class(vllm_config)
+    engine_core = EngineCore(vllm_config=vllm_config,
+                             executor_class=executor_class,
+                             log_stats=False)
+
+    # Add a full batch of requests to the engine
+    # Requests must be full-length: prompt_len + max_tokens = max_model_len
+    vllm_sampling_params = SamplingParams(max_tokens=168,
+                                          temperature=0,
+                                          logprobs=0)
+    for i in range(max_num_seqs):
+        engine_core.add_request(
+            create_random_request(
+                request_id=i,
+                num_tokens=max_model_len-vllm_sampling_params.max_tokens,
+                sampling_params=vllm_sampling_params,
+                model=model.name,
+            ))
+        
+    # Run until finished.
+    # This should take a number of steps equal to:
+    # max_num_seqs + max_tokens
+    # (1 step for each prefill and one for each decode token)
+
+    running = True
+    num_steps = 0
+    while running:
+        _, running = engine_core.step()
+        num_steps += 1
+
+    assert num_steps <= max_num_seqs + vllm_sampling_params.max_tokens
+
 
 def test_max_model_len_override(model: ModelInfo, backend, warmup_shapes, cb,
                                 monkeypatch):
