@@ -175,8 +175,8 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             "continuous batching.")
         self.tkv = model_runner_output.tkv
         self.n_free_blocks = model_runner_output.n_free_blocks
-        self._cb_steps_logger.log(self.waiting, self.running, self.tkv,
-                                  self.n_free_blocks)
+        self._cb_steps_logger.log(model_runner_output, self.waiting,
+                                  self.running, self.tkv, self.n_free_blocks)
         return super(SpyreScheduler,
                      self).update_from_output(scheduler_output,
                                               model_runner_output)

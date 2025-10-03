@@ -5,6 +5,8 @@ import time
 from datetime import datetime
 from typing import Any
 
+from vllm.v1.outputs import ModelRunnerOutput
+
 import vllm_spyre.envs as envs
 
 
@@ -24,8 +26,8 @@ class CBSchedulerLoggerBase:
     def __del__(self):
         pass
 
-    def log(self, waiting: list[Any], running: list[Any], tkv: int,
-            n_free_blocks: int):
+    def log(self, model_runner_output: ModelRunnerOutput, waiting: list[Any],
+            running: list[Any], tkv: int, n_free_blocks: int):
         pass
 
 
@@ -48,8 +50,8 @@ class CBSchedulerLogger(CBSchedulerLoggerBase):
         with open(self.log_path, "a") as f:
             f.write(json_data_line + "\n")
 
-    def log(self, waiting: list[Any], running: list[Any], tkv: int,
-            n_free_blocks: int):
+    def log(self, model_runner_output: ModelRunnerOutput, waiting: list[Any],
+            running: list[Any], tkv: int, n_free_blocks: int):
         data: dict[str, Any] = {}
         # metadata
         data["logging_time"] = time.time()
@@ -67,6 +69,17 @@ class CBSchedulerLogger(CBSchedulerLoggerBase):
             len(r.prompt_token_ids or []) for r in running
         ]
         data["running"]["max_tokens"] = [r.max_tokens for r in running]
+        data["running"]["decoded_tokens"] = [
+            r.num_output_tokens for r in running
+        ]
+
+        # also consider output tokens that were just computed
+        req_to_index = model_runner_output.req_id_to_index
+        for req in model_runner_output.req_ids:
+            step_num_output_tokens = len(
+                model_runner_output.sampled_token_ids[req_to_index[req]])
+            index = data["running"]["id"].index(req)
+            data["running"]["decoded_tokens"][index] += step_num_output_tokens
 
         json_data_line = json.dumps(data)
         with open(self.log_path, "a") as f:
