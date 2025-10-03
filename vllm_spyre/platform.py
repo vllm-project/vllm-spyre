@@ -547,7 +547,7 @@ class SpyrePlatform(Platform):
                 "detected. Using FLEX_HDMA_P2PSIZE = %d", p2psize_256m)
         else:
             logger.warning(
-                "FLEX_HDMA_P2PSIZE was set to %d, not using the "
+                "FLEX_HDMA_P2PSIZE was set to %s, not using the "
                 "granite-3.3-8b-instruct default of %d",
                 os.getenv("FLEX_HDMA_P2PSIZE", None), p2psize_256m)
 
