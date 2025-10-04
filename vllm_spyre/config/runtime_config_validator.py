@@ -71,6 +71,46 @@ def initialize_supported_configurations_from_file():
     initialize_supported_configurations(yaml_data)
 
 
+def verify_config_parameters(c: RuntimeConfiguration) -> bool:
+    found_invalid_parameters = False
+
+    def verify(msg: str, is_valid: bool):
+        nonlocal found_invalid_parameters
+        if not is_valid:
+            found_invalid_parameters = True
+            logger.warning(msg)
+
+    def is_power_of_2(n: int) -> bool:
+        return (n > 0) and (n & (n - 1) == 0)
+
+    verify(f"'tensor_parallel_size' must be a power of 2, found {c.tp_size}",
+           is_power_of_2(c.tp_size))
+
+    if c.cb:
+        verify("'warmup_shapes' are not used for continuous batching",
+               c.warmup_shapes is None)
+        verify(
+            f"'max_model_len' must be a multiple of 64,"
+            f" found {c.max_model_len}", c.max_model_len % 64 == 0)
+        verify(
+            f"'max_num_seqs' must be a power of 2,"
+            f" found {c.max_num_seqs}", is_power_of_2(c.max_num_seqs))
+    else:
+        verify("at least one 'warmup_shapes' required for static batching",
+               c.warmup_shapes is not None and len(c.warmup_shapes) > 0)
+
+        for i, ws in enumerate(c.warmup_shapes or []):
+            # warmup_shape = [prompt_length, new_tokens, batch_size]
+            verify(
+                f"'prompt_length' must be a multiple of 64, found {ws[0]}"
+                f" in warmup_shapes[{i}]", ws[0] % 64 == 0)
+            verify(
+                f"'batch_size' must be a power of 2, found {ws[2]}"
+                f" in warmup_shapes[{i}]", is_power_of_2(ws[2]))
+
+    return not found_invalid_parameters
+
+
 def validate_runtime_configuration(
         model: str,
         tp_size: int = 0,
@@ -108,6 +148,9 @@ def validate_runtime_configuration(
         max_model_len=max_model_len if use_cb else 0,
         max_num_seqs=max_num_seqs if use_cb else 0,
         warmup_shapes=warmup_shapes if not use_cb else None)
+
+    if not verify_config_parameters(requested_config):
+        return False
 
     supported_configs = runtime_configs_by_model.get(model, [])
 
@@ -151,9 +194,8 @@ def is_warmup_shapes_supported(requested_config: RuntimeConfiguration,
                                supported_config: RuntimeConfiguration) -> bool:
     """
     Check if the requested warmup_shapes are a subset of the supported
-    warmup_shapes. If a singular warmup_shape is requested, check
-    if its context length is less than or equal to the context length of a
-    supported warmup_shapes with the same (or larger) batch size.
+    warmup_shapes. If a single warmup_shape is requested, validate its context
+    length.
     """
     requested_shapes = requested_config.warmup_shapes or []
     supported_shapes = supported_config.warmup_shapes or []
@@ -164,13 +206,17 @@ def is_warmup_shapes_supported(requested_config: RuntimeConfiguration,
 def is_context_length_supported(requested_shapes: WarmupShapes,
                                 supported_shapes: WarmupShapes) -> bool:
     """
-    If a singular warmup_shape is requested, check if it's context length is
-    less than or equal to the context length for any of the supported
-    warmup_shapes with the same batch size (or larger supported batch size).
+    If a single warmup_shape is requested, check if its context length is
+    less than or equal to the context length of any supported warmup_shape
+    with the same or larger batch size.
     (context length = prompt_length + new_tokens)
     """
+    # TODO: what if more than one warmup shape is requested?
+    #  - largest must match, all must match?
+    #  - group by batch size?
     if len(requested_shapes) > 1:
         return False
+    # warmup_shape = [prompt_length, new_tokens, batch_size]
     request_batch_size = requested_shapes[0][2]
     supported_shapes_with_matching_batch_size = [(ws[0], ws[1], ws[2])
                                                  for ws in supported_shapes

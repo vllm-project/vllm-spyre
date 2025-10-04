@@ -104,25 +104,37 @@ def test_model_runtime_configurations(monkeypatch, caplog):
         m.setenv("VLLM_SPYRE_USE_CB", "1")
         assert validate("test/model", 4, 2048, 8)
         assert not validate("model/test", 4, 2048, 8)
-        # assert that individual values of a requested config can be less than
+        # validate that individual values of a requested config can be less than
         # the upper bound of a supported config
         assert validate("test/model", 4, 1024, 8)
         assert validate("test/model", 4, 2048, 4)
+        # validate that config parameters adhere to restrictions (n*64, 2^n)
+        assert not validate("test/model", 3, 1024, 8)
+        assert not validate("test/model", 4, 2047, 4)
+        assert not validate("test/model", 4, 2048, 3)
 
     with monkeypatch.context() as m:
         m.setenv("VLLM_SPYRE_DYNAMO_BACKEND", "sendnn")
         m.setenv("VLLM_SPYRE_USE_CB", "0")
         assert validate("test/model", 1, warmup_shapes=[[64, 20, 4]])
         assert validate("test/model", 1, warmup_shapes=[[128, 20, 2]])
+        # validate that warmup_shape values adhere to restrictions (n*64, 2^n)
+        assert not validate("test/model", 1, warmup_shapes=[[63, 20, 4]])
+        assert not validate("test/model", 1, warmup_shapes=[[64, 20, 3]])
+        # validate that the sequence of warmup_shapes does not matter
         assert validate("test/model",
                         1,
                         warmup_shapes=[[64, 20, 4], [128, 20, 2]])
         assert validate("test/model",
                         1,
                         warmup_shapes=[[128, 20, 2], [64, 20, 4]])
+        # validate that individual components of a warmup_shapes can be less
+        # than the upper bound of a supported config
         assert validate("test/model", 1, warmup_shapes=[[128, 19, 2]])
         assert validate("test/model", 2, warmup_shapes=[[64, 19, 4]])
         assert validate("test/model", 2, warmup_shapes=[[64, 19, 2]])
+        # validate that config parameters do not exceed upper bounds
+        assert not validate("test/model", 1, warmup_shapes=[[128, 20, 4]])
         assert not validate(
             "test/model", 2, warmup_shapes=[[64, 20, 4], [128, 20, 2]])
         assert not validate("test/model",
