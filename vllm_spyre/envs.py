@@ -46,6 +46,10 @@ def override(name: str, value: str) -> None:
             os.environ[name] = original_value
 
 
+def clear_env_cache():
+    _cache.clear()
+
+
 def _backend_backwards_compat() -> str:
     val = os.getenv("VLLM_SPYRE_DYNAMO_BACKEND", "sendnn")
     if val == "sendnn_decoder":

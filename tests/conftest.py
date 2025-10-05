@@ -12,6 +12,8 @@ from spyre_util import (get_spyre_backend_list, get_spyre_model_list,
 from vllm.connections import global_http_connection
 from vllm.distributed import cleanup_dist_env_and_memory
 
+from vllm_spyre import envs
+
 # Running with "fork" can lead to hangs/crashes
 # Specifically, our use of transformers to compare results causes an OMP thread
 # pool to be created, which is then lost when the next test launches vLLM and
@@ -310,3 +312,8 @@ def caplog_vllm_spyre(temporary_enable_log_propagate, caplog):
     # To capture vllm-spyre log, we should enable propagate=True temporarily
     # because caplog depends on logs propagated to the root logger.
     yield caplog
+
+
+@pytest.fixture(scope="function", autouse=True)
+def clear_env_cache():
+    envs.clear_env_cache()
