@@ -1,5 +1,6 @@
 from typing import Optional
 
+import pytest
 import torch
 from llm_cache import patch_environment
 from spyre_util import ModelInfo
@@ -54,6 +55,7 @@ def test_custom_logits_processor(model: ModelInfo, backend, monkeypatch,
     assert has_invoked_logits_processor
 
 
+@pytest.mark.cb
 def test_cb_logits_processor(model: ModelInfo, backend, monkeypatch,
                              max_model_len):
     '''
