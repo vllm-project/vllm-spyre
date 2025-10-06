@@ -1,5 +1,6 @@
 from typing import Optional
 
+import pytest
 import torch
 from llm_cache import patch_environment
 from spyre_util import ModelInfo
@@ -54,8 +55,9 @@ def test_custom_logits_processor(model: ModelInfo, backend, monkeypatch,
     assert has_invoked_logits_processor
 
 
+@pytest.mark.cb
 def test_cb_logits_processor(model: ModelInfo, backend, monkeypatch,
-                             warmup_shapes, max_model_len, cb):
+                             max_model_len):
     '''
     Test if the state of logits for CB are correct due to the switch of
     prefill/decode in a step engine. The LLM is initialized with bs=2,
