@@ -10,24 +10,30 @@ from vllm.v1.sample.logits_processor import (BatchUpdate, LogitsProcessor,
 
 
 class ExpectationState:
-    '''This class controls the state of the generation.'''
+    '''
+    This class controls the state of the generation.
+    Args:
+        expected_token_ids: Expected tokens ids
+        expected_logprobs: Expected logprobs
+        error_threshold: Acceptable threshold to keep the injection. If it is 
+            over the threshold, we stop the injection and give feedback at the
+            end of the generation that this token is diverging too much.
+        label: Used to identify the request, ideally it would be the request 
+            id. However we might not have that yet, therefore we have the
+            opportunity to add a more human friendly label. It is used to log 
+            which requests are being injected with the golden token.
+    '''
 
-    def __init__(self, input_dict: dict):
+    def __init__(self,
+                 expected_token_ids: list[int],
+                 expected_logprobs: list[float],
+                 error_threshold: float,
+                 label: Optional[str] = None):
 
-        # Expected token id
-        self.token_ids: list[int] = input_dict["expected_token_ids"]
-        # Expected logprob
-        self.logprobs: list[float] = input_dict["expected_logprobs"]
-        # Acceptable threshold to keep the injection. If it is over the
-        # threshold, we stop the injection to give feedback at the
-        # end of the generation that this token is diverge too much.
-        self.threshold: float = input_dict["error_threshold"]
-        # Used to identify the request, ideally it would be the request id.
-        # However we might not have that yet, therefore we have the
-        # opportunity to add a more human friendly label.
-        # It is used to log which requests are being injected with
-        # the golden token.
-        self.label: Optional[str] = input_dict.get("label")
+        self.token_ids: list[int] = expected_token_ids
+        self.logprobs: list[float] = expected_logprobs
+        self.threshold: float = error_threshold
+        self.label: Optional[str] = label
 
         self.current_token_idx = 0
         self.has_error = False
@@ -61,7 +67,7 @@ class GoldenTokenInjector(LogitsProcessor):
             if params.extra_args and (
                     injector_dict :=
                     params.extra_args.get("golden_token_injector")):
-                self.req_states[index] = ExpectationState(injector_dict)
+                self.req_states[index] = ExpectationState(**injector_dict)
 
         if not self.req_states:
             return
