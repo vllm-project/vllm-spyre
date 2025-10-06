@@ -122,7 +122,6 @@ class SpyreWorker(WorkerBaseV1):
 
     def compile_or_warm_up_model(self) -> None:
         """Prepare model for execution through compilation/warmup."""
-
         if envs_spyre.VLLM_SPYRE_USE_CB:
             self._warmup_spyre_dynamic_size(self.restricted_tokens)
             return
@@ -394,6 +393,12 @@ class SpyreWorker(WorkerBaseV1):
         load_model_start_t = time.time()
 
         if envs_spyre.VLLM_SPYRE_USE_CB:
+            if self.is_pooling:
+                logger.warning(
+                    "Pooling models only support Static " \
+                    "Batching. Using VLLM_SPYRE_USE_CB=0"
+                )
+                envs_spyre.override("VLLM_SPYRE_USE_CB", "0")
             # unused for continuous batching: set here to use same API
             wup_prompt_lens, wup_new_tokens = (0, ), (0, )
         else:

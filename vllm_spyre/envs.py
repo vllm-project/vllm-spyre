@@ -28,6 +28,27 @@ if TYPE_CHECKING:
 
 logger = init_logger(__name__)
 
+_cache: dict[str, Any] = {}
+
+
+def override(name: str, value: str) -> None:
+    if name not in environment_variables:
+        raise ValueError(f"The variable {name} is not a known \
+                         setting and cannot be overridden")
+    original_value = os.environ.get(name)
+    os.environ[name] = value
+    try:
+        parsed_value = environment_variables[name]()
+        _cache[name] = parsed_value
+    # Changes back avoid polluting the global environment
+    finally:
+        if original_value is not None:
+            os.environ[name] = original_value
+
+
+def clear_env_cache():
+    _cache.clear()
+
 
 def _backend_backwards_compat() -> str:
     val = os.getenv("VLLM_SPYRE_DYNAMO_BACKEND", "sendnn")
@@ -163,9 +184,14 @@ environment_variables: dict[str, Callable[[], Any]] = {
 
 
 def __getattr__(name: str):
-    # lazy evaluation of environment variables
+    if name in _cache:
+        return _cache[name]
+
+    # caching and lazy evaluation of environment variables
     if name in environment_variables:
-        return environment_variables[name]()
+        value = environment_variables[name]()
+        _cache[name] = value
+        return value
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
