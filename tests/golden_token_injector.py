@@ -135,7 +135,7 @@ class GoldenTokenInjector(LogitsProcessor):
             # Keep the same logprob for the expected token and
             # redistribute evenly the probability among the other
             # token ids.
-            # NOTE: se are setting logprobs to the logits, if we recalculate
+            # NOTE: we are setting logprobs to the logits, if we recalculate
             # the softmax again over this distribution we shall find the same
             # values, but with some minimal difference. The intention is
             # inject the golden token but preserving the original logprob.
