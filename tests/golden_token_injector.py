@@ -124,9 +124,9 @@ class GoldenTokenInjector(LogitsProcessor):
                 err = abs(expected_prob - prob)
 
                 print("Token probability is out of the acceptable threshold "
-                      f"{err} > {expectation.threshold} at request "
-                      f"'{label}' token idx '{expectation.current_token_idx}'."
-                      "Token injection will be skipped")
+                      f"{err:.2f} > {expectation.threshold:.2f} at request "
+                      f"{label} token idx '{expectation.current_token_idx}'."
+                      " Token injection will be skipped.")
                 expectation.has_error = True
                 continue
 
