@@ -46,12 +46,8 @@ def pytest_generate_tests(metafunc):
         # When -m full_model is called, all tests tagged with
         # full_model mark will be injected with these custom values
         if metafunc.definition.get_closest_marker("full_model"):
-            _add_param(
-                "model",
-                ["ibm-granite/granite-3.3-8b-instruct"],
-                metafunc,
-                existing_markers,
-            )
+            _add_param("model", get_spyre_model_list(full_size_models=True),
+                       metafunc, existing_markers)
             _add_param(
                 "backend",
                 ["sendnn"],
