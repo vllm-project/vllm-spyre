@@ -180,7 +180,7 @@ class EngineCache:
 
         # 🌶️🌶️🌶️
         # Messing with the blocks and context length by either:
-        # - setting context < 256 tokens
+        # - setting context < 512 tokens
         # - setting available blocks != (context * batch size // 64)
         # can cause compilation failures on spyre hardware.
 
@@ -195,7 +195,7 @@ class EngineCache:
         engine_args = EngineArgs(
             model=model_name,
             tokenizer=model_name,
-            max_model_len=max(max_model_len, 256),
+            max_model_len=max(max_model_len, 512),
             max_num_seqs=max_num_seqs_compiled,
             num_gpu_blocks_override=None,
             revision=revision,
