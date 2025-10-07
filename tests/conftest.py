@@ -31,7 +31,7 @@ def pytest_generate_tests(metafunc):
     # default parameterizations
     default_warmup_shape = [[(64, 20, 4)]]
     default_max_num_seqs = [4]
-    default_max_model_len = [256]
+    default_max_model_len = [512]
 
     existing_markers = [
         marker.name if marker.name != "parametrize" else marker.args[0]
