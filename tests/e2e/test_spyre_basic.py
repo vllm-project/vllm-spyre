@@ -4,7 +4,7 @@ Run `python -m pytest tests/e2e/test_spyre_basic.py`.
 """
 
 import pytest
-from output_util import check_output_against_hf, generate_spyre_vllm_output
+from output_util import check_output_against_hf, generate_spyre_vllm_output, validate_vllm_vs_hf_output
 from spyre_util import (DecodeWarmupShapes, ModelInfo, create_random_request,
                         get_chicken_soup_prompts, patch_environment,
                         skip_unsupported_tp_size)
@@ -53,17 +53,26 @@ def test_output(model: ModelInfo, tp_size: int, backend: str, cb: int,
         logprobs=0,  # return logprobs of generated tokens only
         ignore_eos=True)
 
-    vllm_results = generate_spyre_vllm_output(
-        model=model,
+    validate_vllm_vs_hf_output(model=model,
         prompts=prompts,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=tp_size,
         backend=backend,
         monkeypatch=monkeypatch,
         max_model_len=max_model_len,
+        max_new_tokens=max_new_tokens,
         **kwargs)
-    check_output_against_hf(model, backend, max_new_tokens, vllm_results,
-                            prompts)
+    # vllm_results = generate_spyre_vllm_output(
+    #     model=model,
+    #     prompts=prompts,
+    #     sampling_params=vllm_sampling_params,
+    #     tensor_parallel_size=tp_size,
+    #     backend=backend,
+    #     monkeypatch=monkeypatch,
+    #     max_model_len=max_model_len,
+    #     **kwargs)
+    # check_output_against_hf(model, backend, max_new_tokens, vllm_results,
+    #                         prompts)
 
 
 @pytest.mark.parametrize("backend", [
