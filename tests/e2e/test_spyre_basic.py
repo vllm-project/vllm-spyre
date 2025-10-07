@@ -4,7 +4,7 @@ Run `python -m pytest tests/e2e/test_spyre_basic.py`.
 """
 
 import pytest
-from output_util import check_output_against_hf, generate_spyre_vllm_output, validate_vllm_vs_hf_output
+from output_util import validate_vllm_vs_hf_output
 from spyre_util import (DecodeWarmupShapes, ModelInfo, create_random_request,
                         get_chicken_soup_prompts, patch_environment,
                         skip_unsupported_tp_size)
@@ -54,25 +54,14 @@ def test_output(model: ModelInfo, tp_size: int, backend: str, cb: int,
         ignore_eos=True)
 
     validate_vllm_vs_hf_output(model=model,
-        prompts=prompts,
-        sampling_params=vllm_sampling_params,
-        tensor_parallel_size=tp_size,
-        backend=backend,
-        monkeypatch=monkeypatch,
-        max_model_len=max_model_len,
-        max_new_tokens=max_new_tokens,
-        **kwargs)
-    # vllm_results = generate_spyre_vllm_output(
-    #     model=model,
-    #     prompts=prompts,
-    #     sampling_params=vllm_sampling_params,
-    #     tensor_parallel_size=tp_size,
-    #     backend=backend,
-    #     monkeypatch=monkeypatch,
-    #     max_model_len=max_model_len,
-    #     **kwargs)
-    # check_output_against_hf(model, backend, max_new_tokens, vllm_results,
-    #                         prompts)
+                               prompts=prompts,
+                               sampling_params=vllm_sampling_params,
+                               tensor_parallel_size=tp_size,
+                               backend=backend,
+                               monkeypatch=monkeypatch,
+                               max_model_len=max_model_len,
+                               max_new_tokens=max_new_tokens,
+                               **kwargs)
 
 
 @pytest.mark.parametrize("backend", [
@@ -97,18 +86,15 @@ def test_output_sendnn_decoder(model: ModelInfo,
         logprobs=0,  # return logprobs of generated tokens only
         ignore_eos=True)
 
-    vllm_results = generate_spyre_vllm_output(
-        model=model,
-        prompts=prompts,
-        warmup_shapes=warmup_shapes,
-        max_model_len=2048,
-        sampling_params=vllm_sampling_params,
-        tensor_parallel_size=1,
-        backend=backend,
-        monkeypatch=monkeypatch)
-
-    check_output_against_hf(model, backend, max_new_tokens, vllm_results,
-                            prompts)
+    validate_vllm_vs_hf_output(model=model,
+                               prompts=prompts,
+                               warmup_shapes=warmup_shapes,
+                               max_model_len=2048,
+                               sampling_params=vllm_sampling_params,
+                               tensor_parallel_size=1,
+                               backend=backend,
+                               monkeypatch=monkeypatch,
+                               max_new_tokens=max_new_tokens)
 
 
 def test_batch_handling(model: ModelInfo, backend: str, cb: int, warmup_shapes,
@@ -143,18 +129,15 @@ def test_batch_handling(model: ModelInfo, backend: str, cb: int, warmup_shapes,
         "warmup_shapes": warmup_shapes
     }
 
-    vllm_results = generate_spyre_vllm_output(
-        model=model,
-        prompts=prompts,
-        max_model_len=256,
-        sampling_params=vllm_sampling_params,
-        tensor_parallel_size=1,
-        backend=backend,
-        monkeypatch=monkeypatch,
-        **kwargs)
-
-    check_output_against_hf(model, backend, max_new_tokens, vllm_results,
-                            prompts)
+    validate_vllm_vs_hf_output(model=model,
+                               prompts=prompts,
+                               max_model_len=256,
+                               sampling_params=vllm_sampling_params,
+                               tensor_parallel_size=1,
+                               backend=backend,
+                               monkeypatch=monkeypatch,
+                               max_new_tokens=max_new_tokens,
+                               **kwargs)
 
 
 def test_full_batch_scheduling(model: ModelInfo, backend: str, monkeypatch):
