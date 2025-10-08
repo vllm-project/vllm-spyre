@@ -181,7 +181,7 @@ class EngineCache:
 
         # Register golden token injector if not disabled
         disable_golden_token = \
-            bool(int(os.getenv("VLLM_SPYRE_TEST_DISABLE_GOLDEN_TOKEN")))
+            bool(int(os.getenv("VLLM_SPYRE_TEST_DISABLE_GOLDEN_TOKEN", "0")))
         logits_processors = [] if disable_golden_token else \
             [GoldenTokenInjector]
 
