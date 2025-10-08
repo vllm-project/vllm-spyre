@@ -131,7 +131,7 @@ def test_batch_handling(model: ModelInfo, backend: str, cb: int, warmup_shapes,
 
     validate_vllm_vs_hf_output(model=model,
                                prompts=prompts,
-                               max_model_len=256,
+                               max_model_len=max_model_len,
                                sampling_params=vllm_sampling_params,
                                tensor_parallel_size=1,
                                backend=backend,
