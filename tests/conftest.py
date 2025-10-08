@@ -12,6 +12,8 @@ from spyre_util import (get_spyre_backend_list, get_spyre_model_list,
 from vllm.connections import global_http_connection
 from vllm.distributed import cleanup_dist_env_and_memory
 
+from vllm_spyre import envs
+
 # Running with "fork" can lead to hangs/crashes
 # Specifically, our use of transformers to compare results causes an OMP thread
 # pool to be created, which is then lost when the next test launches vLLM and
@@ -29,7 +31,7 @@ def pytest_generate_tests(metafunc):
     # default parameterizations
     default_warmup_shape = [[(64, 20, 4)]]
     default_max_num_seqs = [4]
-    default_max_model_len = [256]
+    default_max_model_len = [512]
 
     existing_markers = [
         marker.name if marker.name != "parametrize" else marker.args[0]
@@ -44,12 +46,8 @@ def pytest_generate_tests(metafunc):
         # When -m full_model is called, all tests tagged with
         # full_model mark will be injected with these custom values
         if metafunc.definition.get_closest_marker("full_model"):
-            _add_param(
-                "model",
-                ["ibm-granite/granite-3.3-8b-instruct"],
-                metafunc,
-                existing_markers,
-            )
+            _add_param("model", get_spyre_model_list(full_size_models=True),
+                       metafunc, existing_markers)
             _add_param(
                 "backend",
                 ["sendnn"],
@@ -132,10 +130,6 @@ def pytest_collection_modifyitems(config, items):
     """ Modify tests at collection time """
     _mark_all_e2e(items)
 
-    _skip_quantized_by_default(config, items)
-
-    _xfail_fp8_on_spyre(items)
-
     _skip_unsupported_compiler_tests(config, items)
 
     sort_tests_for_llm_caching(items)
@@ -152,38 +146,6 @@ def _mark_all_e2e(items):
     for item in items:
         if "e2e" in str(item.nodeid):
             item.add_marker(pytest.mark.e2e)
-
-
-def _skip_quantized_by_default(config, items):
-    """Skip tests marked with `quantized` unless the `-m` flag includes it
-    Ref: https://stackoverflow.com/questions/56374588/how-can-i-ensure-tests-with-a-marker-are-only-run-if-explicitly-asked-in-pytest
-
-    This will skip the quantized tests at runtime, but they will still show up
-    as collected when running pytest --collect-only.
-    """
-    markexpr = config.option.markexpr
-    if "quantized" in markexpr:
-        return  # let pytest handle the collection logic
-
-    skip_mymarker = pytest.mark.skip(reason='quantized not selected')
-    for item in items:
-        if "quantized" in item.keywords:
-            item.add_marker(skip_mymarker)
-
-
-def _xfail_fp8_on_spyre(items):
-    """Set an xfail marker on all tests that run quantized models on Spyre
-    hardware.
-
-    TODO: Relax this to only "spyre and cb" once static batching is supported
-    on spyre.
-    """
-
-    xfail_marker = pytest.mark.xfail(
-        reason="fp8 is not yet supported on Spyre")
-    for item in items:
-        if "quantized" in item.keywords and "spyre" in item.keywords:
-            item.add_marker(xfail_marker)
 
 
 def _skip_unsupported_compiler_tests(config, items):
@@ -346,3 +308,8 @@ def caplog_vllm_spyre(temporary_enable_log_propagate, caplog):
     # To capture vllm-spyre log, we should enable propagate=True temporarily
     # because caplog depends on logs propagated to the root logger.
     yield caplog
+
+
+@pytest.fixture(scope="function", autouse=True)
+def clear_env_cache():
+    envs.clear_env_cache()

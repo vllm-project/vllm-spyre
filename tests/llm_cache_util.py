@@ -183,8 +183,12 @@ class SortKey(NamedTuple):
         for key in MODEL_KEYS:
             if key in params:
                 SortKey._assert_param(isinstance(params[key], str | ModelInfo),
-                                      "model must be a string", item)
-                return params[key]
+                                      "model must be a string or ModelInfo",
+                                      item)
+                model_or_info = params[key]
+                if isinstance(model_or_info, ModelInfo):
+                    return model_or_info.name
+                return model_or_info
         # No assumption about default model, we likely don't need an llm if this
         # isn't set
         return ""

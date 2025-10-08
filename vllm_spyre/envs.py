@@ -23,9 +23,31 @@ if TYPE_CHECKING:
     VLLM_SPYRE_WORKER_LOG_REDIRECT_DIR: str = ""
     VLLM_SPYRE_GLOO_TIMEOUT_MINUTES: int = 60
     VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS: bool = False
-    VLLM_SPYRE_SIMPLE_COMPILE_BACKEND: str = "eager"
+    VLLM_SPYRE_SIMPLE_COMPILE_BACKEND: str = "inductor"
+    VLLM_SPYRE_NUM_CPUS: int = 0
 
 logger = init_logger(__name__)
+
+_cache: dict[str, Any] = {}
+
+
+def override(name: str, value: str) -> None:
+    if name not in environment_variables:
+        raise ValueError(f"The variable {name} is not a known \
+                         setting and cannot be overridden")
+    original_value = os.environ.get(name)
+    os.environ[name] = value
+    try:
+        parsed_value = environment_variables[name]()
+        _cache[name] = parsed_value
+    # Changes back avoid polluting the global environment
+    finally:
+        if original_value is not None:
+            os.environ[name] = original_value
+
+
+def clear_env_cache():
+    _cache.clear()
 
 
 def _backend_backwards_compat() -> str:
@@ -150,15 +172,26 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Defaults to eager, iductor can be used if python headers and a compiler
     # are available.
     "VLLM_SPYRE_SIMPLE_COMPILE_BACKEND":
-    lambda: os.getenv("VLLM_SPYRE_SIMPLE_COMPILE_BACKEND", "eager"),
+    lambda: os.getenv("VLLM_SPYRE_SIMPLE_COMPILE_BACKEND", "inductor"),
+
+    # Configures the number of CPUs used when determining multi-threading
+    # configurations
+    # Set to 0 to have vllm-spyre attempt to detect the CPU count
+    "VLLM_SPYRE_NUM_CPUS":
+    lambda: int(os.getenv("VLLM_SPYRE_NUM_CPUS", "0")),
 }
 # --8<-- [end:env-vars-definition]
 
 
 def __getattr__(name: str):
-    # lazy evaluation of environment variables
+    if name in _cache:
+        return _cache[name]
+
+    # caching and lazy evaluation of environment variables
     if name in environment_variables:
-        return environment_variables[name]()
+        value = environment_variables[name]()
+        _cache[name] = value
+        return value
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 

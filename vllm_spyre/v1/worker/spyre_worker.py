@@ -122,7 +122,6 @@ class SpyreWorker(WorkerBaseV1):
 
     def compile_or_warm_up_model(self) -> None:
         """Prepare model for execution through compilation/warmup."""
-
         if envs_spyre.VLLM_SPYRE_USE_CB:
             self._warmup_spyre_dynamic_size(self.restricted_tokens)
             return
@@ -181,16 +180,25 @@ class SpyreWorker(WorkerBaseV1):
         The number of device blocks (called "gpu blocks" in most places) can
         also be overridden by `--num-gpu-blocks-override`, which is set under
         `vllm_config.cache_config.num_gpu_blocks_override`.
+
+        🌶️🌶️🌶️ The result from this method _only_ applies to the KV Cache
+        management in vLLM's core scheduler. This does _not_ apply to the KV
+        cache management handled directly by the vllm-spyre worker and model
+        runner. We return a minimal value here to make the vllm scheduler happy.
         """
-        # Currently we override vllm_config.cache_config.num_gpu_blocks_override
-        # in platform.py, so this value is only used by vllm to check that the
-        # number of gpu blocks will fit in available memory.
-        # Since we also return dummy values for the kv cache spec, this check is
-        # meaningless and we can just return a large value to ensure vllm does
-        # not raise a validation error.
-        # TODO: Return the real available device memory when we implement real
-        # kv-caching.
-        return 1 << 64
+        # The fake kv_cache config specified by the model runner sets 4 bytes
+        # per token.
+        accurate_fake_kv_cache_size = (4 *
+                                       self.scheduler_config.max_model_len *
+                                       self.scheduler_config.max_num_seqs)
+
+        # The vLLM scheduler reserves a null block in its kv-cache, so we need
+        # at least one more block to allow for proper scheduling. We double
+        # the cache size here to ensure that the vllm scheduler always has
+        # blocks available. This causes the log message from vLLM about it's
+        # KV cache capacity to be double the log message from vllm-spyre.
+        # This can probably be fixed in a nicer way.
+        return 2 * accurate_fake_kv_cache_size
 
     def initialize_from_config(self,
                                kv_cache_configs: list[KVCacheConfig]) -> None:
@@ -385,6 +393,12 @@ class SpyreWorker(WorkerBaseV1):
         load_model_start_t = time.time()
 
         if envs_spyre.VLLM_SPYRE_USE_CB:
+            if self.is_pooling:
+                logger.warning(
+                    "Pooling models only support Static " \
+                    "Batching. Using VLLM_SPYRE_USE_CB=0"
+                )
+                envs_spyre.override("VLLM_SPYRE_USE_CB", "0")
             # unused for continuous batching: set here to use same API
             wup_prompt_lens, wup_new_tokens = (0, ), (0, )
         else:

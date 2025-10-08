@@ -217,12 +217,14 @@ def get_spyre_backend_list():
 # get model names from env, if not set then use default models for each type.
 # Multiple models can be specified with a comma separated list in
 # VLLM_SPYRE_TEST_MODEL_LIST
-def get_spyre_model_list(isEmbeddings=False, isScoring=False):
+def get_spyre_model_list(isEmbeddings=False,
+                         isScoring=False,
+                         full_size_models=False):
     """Returns a list of pytest.params. The values are NamedTuples with a name
     and revision field."""
     user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST")
     if not user_test_model_list:
-        return _default_test_models(isEmbeddings, isScoring)
+        return _default_test_models(isEmbeddings, isScoring, full_size_models)
 
     # User overridden model list
     spyre_model_dir_path = get_spyre_model_dir_path()
@@ -243,7 +245,9 @@ def get_spyre_model_list(isEmbeddings=False, isScoring=False):
     return test_model_list
 
 
-def _default_test_models(isEmbeddings=False, isScoring=False):
+def _default_test_models(isEmbeddings=False,
+                         isScoring=False,
+                         full_size_models=False):
     """Return the default set of test models as pytest parameterizations"""
     if isEmbeddings:
         model = ModelInfo(name="sentence-transformers/all-roberta-large-v1",
@@ -263,20 +267,30 @@ def _default_test_models(isEmbeddings=False, isScoring=False):
     # We run tests for both the full-precision bf16 and fp8-quantized models,
     # but by default the `pytest.mark.quantized` marker is de-selected unless
     # the test command includes `-m quantized`.
-    tinygranite = ModelInfo(
-        name="ibm-ai-platform/micro-g3.3-8b-instruct-1b",
-        revision="6e9c6465a9d7e5e9fa35004a29f0c90befa7d23f")
-    tinygranite_fp8 = ModelInfo(
-        name="ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8",
-        revision="0dff8bacb968836dbbc7c2895c6d9ead0a05dc9e",
-        is_quantized=True)
+    if not full_size_models:
+        tinygranite = ModelInfo(
+            name="ibm-ai-platform/micro-g3.3-8b-instruct-1b",
+            revision="6e9c6465a9d7e5e9fa35004a29f0c90befa7d23f")
+        tinygranite_fp8 = ModelInfo(
+            name="ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8",
+            revision="0dff8bacb968836dbbc7c2895c6d9ead0a05dc9e",
+            is_quantized=True)
+        params = [
+            pytest.param(tinygranite,
+                         marks=[pytest.mark.decoder],
+                         id=tinygranite.name),
+            pytest.param(tinygranite_fp8,
+                         marks=[pytest.mark.decoder, pytest.mark.quantized],
+                         id=tinygranite_fp8.name)
+        ]
+        return params
+
+    # Full sized decoders
+    # The granite 8b fp8 model is not publicly available yet
+    granite = ModelInfo(name="ibm-granite/granite-3.3-8b-instruct",
+                        revision="51dd4bc2ade4059a6bd87649d68aa11e4fb2529b")
     params = [
-        pytest.param(tinygranite,
-                     marks=[pytest.mark.decoder],
-                     id=tinygranite.name),
-        pytest.param(tinygranite_fp8,
-                     marks=[pytest.mark.decoder, pytest.mark.quantized],
-                     id=tinygranite_fp8.name)
+        pytest.param(granite, marks=[pytest.mark.decoder], id=granite.name),
     ]
     return params
 

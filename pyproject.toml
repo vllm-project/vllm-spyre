@@ -12,7 +12,7 @@ readme = "README.md"
 license = {text = "Apache 2"}
 dependencies = [
     "fms-model-optimizer[fp8]>=0.6.0",
-    "ibm-fms>=1.2.1",
+    "ibm-fms>=1.4.0,<2.0",
     "vllm>=0.10.1.1,<=0.10.2",
     "pytest-mock>=3.15.0",
 ]
@@ -50,6 +50,12 @@ override-dependencies = [
     "torchaudio; sys_platform == 'never'",
     "torchvision; sys_platform == 'never'",
     "triton; sys_platform == 'never'",
+    
+    # Skip packages only on s390x, expected to be pre-installed
+    "vllm ; platform_machine != 's390x'",
+    "ray; platform_machine != 's390x'",
+    "llvmlite; platform_machine != 's390x'",
+    "pyarrow; platform_machine != 's390x'",
 ]
 # fms-mo doesn't support python 3.9, so don't have UV try to resolve it
 environments = [
@@ -164,7 +170,7 @@ dev = [
     "pytest-timeout==2.3.1",
     "requests==2.32.3",
     "sentence-transformers==3.4.1",
-    "aiu-fms-testing-utils>=0.2.3",
+    "aiu-fms-testing-utils>=0.4.0",
 ]
 lint = [
     "clang-format==18.1.5",
