@@ -34,7 +34,7 @@ def test_max_prompt_len_and_new_tokens(model: ModelInfo,
 
     llm = get_cached_llm(
         model=model,
-        max_model_len=256,
+        max_model_len=256,  # unused
         tensor_parallel_size=1,
         backend=backend,
         monkeypatch=monkeypatch,
