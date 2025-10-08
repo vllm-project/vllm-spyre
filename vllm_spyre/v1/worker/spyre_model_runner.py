@@ -394,7 +394,10 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
             for req_id in scheduler_output.finished_req_ids:
                 self.input_batch.remove_request(req_id)
                 self.requests.pop(req_id, None)
-            self.input_batch.refresh_metadata()
+                # TODO: Processing multiple removals at once can break alignment
+                # of logitprocs. Refactor so that we can batch removals to the
+                # `input_batch`
+                self.input_batch.refresh_metadata()
 
     def _get_prompt_logprobs_dict(
         self,
