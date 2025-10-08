@@ -497,16 +497,11 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
     def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
         tasks = list[SupportedTask]()
 
-        if hasattr(self.model_config, "supported_tasks"):
-            ## Temporary backwards compatibility for 0.10.2
-            if "generate" in self.model_config.supported_tasks:
-                tasks.extend(["generate"])
-        else:
-            # vLLM models have methods available like `is_text_generation_model`
-            # We don't use vLLM modeling code though :(
-            # Default: assume text generation supported.
-            # TODO: Actually detect what the model supports
-            tasks.append("generate")
+        # vLLM models have methods available like `is_text_generation_model`
+        # We don't use vLLM modeling code though :(
+        # Default: assume text generation supported.
+        # TODO: Actually detect what the model supports
+        tasks.append("generate")
 
         return tuple(tasks)
 

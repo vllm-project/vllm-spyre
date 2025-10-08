@@ -1,7 +1,6 @@
 import os
 
 import pytest
-from vllm.config import ModelConfig
 from vllm.v1.core.sched.output import NewRequestData
 from vllm.v1.kv_cache_interface import FullAttentionSpec
 
@@ -34,9 +33,3 @@ def test_use_mla():
     if VLLM_VERSION == "vLLM:lowest":
         # Can remove backwards compatibility for use_mla
         assert "use_mla" in dataclass_fields(FullAttentionSpec)
-
-
-def test_supported_tasks():
-    if VLLM_VERSION == "vLLM:lowest":
-        # Can remove backwards compatibility for model_config.supported_tasks
-        assert "supported_tasks" in dataclass_fields(ModelConfig)
