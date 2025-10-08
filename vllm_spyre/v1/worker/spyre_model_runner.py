@@ -220,6 +220,7 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT,
         block_size = self.vllm_config.cache_config.block_size
 
         if "use_mla" in dataclass_fields(FullAttentionSpec):
+            ## Temporary backwards compatibility for 0.10.2
             kwargs = {"use_mla": False}
         else:
             kwargs = {}
@@ -497,7 +498,7 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
         tasks = list[SupportedTask]()
 
         if hasattr(self.model_config, "supported_tasks"):
-            # Pre 0.11.0 code path
+            ## Temporary backwards compatibility for 0.10.2
             if "generate" in self.model_config.supported_tasks:
                 tasks.extend(["generate"])
         else:

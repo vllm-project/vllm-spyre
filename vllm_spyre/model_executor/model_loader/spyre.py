@@ -61,7 +61,13 @@ class SpyreCausalLM(nn.Module):
         self.logits_processor = LogitsProcessor(
             vllm_config.model_config.hf_config.vocab_size,
             logits_as_input=True)
-        self.sampler = Sampler()
+
+        try:
+            ## Temporary backwards compatibility for 0.10.2
+            from vllm.model_executor.layers.sampler import get_sampler
+            self.sampler = get_sampler()
+        except (ImportError, ModuleNotFoundError):
+            self.sampler = Sampler()
 
         # boolean tensor of length batch size with indices:
         # True for unfinished sequences and

@@ -59,16 +59,16 @@ def new_request_data_builder(
         "num_computed_tokens": 0,
         "lora_request": None,
     }
-    if 'mm_inputs' in dataclass_fields(NewRequestData):
-        kwargs["mm_inputs"] = []
-    elif 'mm_kwargs' in dataclass_fields(NewRequestData):
-        kwargs["mm_kwargs"] = []
 
+    ## Temporary backwards compatibility for 0.10.2
+    if 'mm_kwargs' in dataclass_fields(NewRequestData):
+        kwargs["mm_kwargs"] = []
     if 'mm_hashes' in dataclass_fields(NewRequestData):
         kwargs["mm_hashes"] = []
     if 'mm_positions' in dataclass_fields(NewRequestData):
         kwargs["mm_positions"] = []
 
+    # Newly required in 0.11.0
     if "mm_features" in dataclass_fields(NewRequestData):
         kwargs["mm_features"] = []
 
