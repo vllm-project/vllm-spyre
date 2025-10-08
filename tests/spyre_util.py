@@ -1,4 +1,3 @@
-import inspect
 import json
 import math
 import os
@@ -367,22 +366,6 @@ def create_random_request(
         assert (len(prompt_token_ids) == num_tokens
                 ), f"need {num_tokens} but got {len(prompt_token_ids)}"
 
-    # temporary backward compat code for 0.10.1.1
-    annotations = inspect.getfullargspec(Request).annotations
-    extra_args = {}  # noqa
-    if ('multi_modal_hashes' in annotations):
-        extra_args.update({
-            'multi_modal_hashes': None,
-        })
-    if ('multi_modal_placeholders' in annotations):
-        extra_args.update({
-            'multi_modal_placeholders': None,
-        })
-    if ('multi_modal_kwargs' in annotations):
-        extra_args.update({
-            'multi_modal_kwargs': None,
-        })
-
     return Request(request_id=str(request_id),
                    prompt_token_ids=prompt_token_ids,
                    sampling_params=sampling_params,
@@ -390,8 +373,7 @@ def create_random_request(
                    arrival_time=0,
                    lora_request=None,
                    pooling_params=None,
-                   cache_salt=None,
-                   **extra_args)
+                   cache_salt=None)
 
 
 def skip_unsupported_tp_size(size: int, backend: str):

@@ -1,4 +1,3 @@
-import inspect
 import math
 import time
 from abc import ABC, abstractmethod
@@ -568,14 +567,6 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
         if not self.is_driver_worker:
             return EMPTY_MODEL_RUNNER_OUTPUT
 
-        # temporary backward compat code for 0.10.1.1
-        annotations = inspect.getfullargspec(ModelRunnerOutput).annotations
-        extra_args = {}  # type: ignore
-        if ('spec_token_ids' in annotations):
-            extra_args.update({
-                'spec_token_ids': None,
-            })
-
         model_output = ModelRunnerOutput(
             req_ids=list(req_id_to_index.keys()),
             req_id_to_index=req_id_to_index,
@@ -583,8 +574,7 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
             logprobs=(output.logprobs_tensors.tolists()
                       if output.logprobs_tensors else None),
             prompt_logprobs_dict=prompt_logprobs_dicts,
-            pooler_output=[],
-            **extra_args)
+            pooler_output=[])
 
         return model_output
 
@@ -1725,12 +1715,10 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
 
         pooling_metadata = self.input_batch.make_pooling_metadata()
 
-        # temporary backward compat code for 0.10.1.1
-        if getattr(pooling_metadata, "build_pooling_cursor", False):
-            ## No partial prefill, hence we can use the prompt lens here
-            pooling_metadata.build_pooling_cursor(
-                num_scheduled_tokens=pooling_metadata.prompt_lens,
-                device=self.device)
+        ## No partial prefill, hence we can use the prompt lens here
+        pooling_metadata.build_pooling_cursor(
+            num_scheduled_tokens=pooling_metadata.prompt_lens,
+            device=self.device)
 
         # prepare unpadded output for the pooler
         hidden_state_list: list[torch.Tensor] = []
@@ -1748,20 +1736,11 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
         for raw_output in raw_pooler_output:
             pooler_output.append(raw_output.data.to("cpu"))
 
-        # temporary backward compat code for 0.10.1.1
-        annotations = inspect.getfullargspec(ModelRunnerOutput).annotations
-        extra_args = {}  # type: ignore
-        if ('spec_token_ids' in annotations):
-            extra_args.update({
-                'spec_token_ids': None,
-            })
-
         model_output = ModelRunnerOutput(
             req_ids=self.input_batch.requests_ids,
             req_id_to_index=self.input_batch.req_id_to_index,
             sampled_token_ids=[],
             logprobs=None,
             prompt_logprobs_dict={},
-            pooler_output=pooler_output,
-            **extra_args)
+            pooler_output=pooler_output)
         return model_output

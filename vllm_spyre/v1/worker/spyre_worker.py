@@ -1,7 +1,6 @@
 """A Spyre worker class."""
 import contextlib
 import functools
-import inspect
 import json
 import os
 import platform
@@ -335,22 +334,13 @@ class SpyreWorker(WorkerBaseV1):
             backend = "gloo"
             init_method = "env://"
 
-            # TODO: temporary fix until we have
-            # timeout in vllm's init_distributed_environment
-            torch.distributed.init_process_group(
-                backend=backend,
-                init_method=init_method,
-                world_size=self.parallel_config.world_size,
-                rank=self.rank,
-                timeout=timedelta(
-                    minutes=envs_spyre.VLLM_SPYRE_GLOO_TIMEOUT_MINUTES))
-
             init_distributed_environment(
                 world_size=self.parallel_config.world_size,
                 rank=self.rank,
                 distributed_init_method=init_method,
                 backend=backend,
-            )
+                timeout=timedelta(
+                    minutes=envs_spyre.VLLM_SPYRE_GLOO_TIMEOUT_MINUTES))
 
             if self.parallel_config.world_size > 1:
                 self.init_distributed_environment()
@@ -780,15 +770,7 @@ def maybe_override_signals_handler():
     signal.signal(signal.SIGINT, signal_handler)
 
 
-# temporary backward compat code for 0.10.1.1
 def _get_extra_args() -> dict:
-    annotations = inspect.getfullargspec(SchedulerOutput).annotations
-    extra_args = {}  # type: ignore
-    if ('free_encoder_input_ids' in annotations):
-        extra_args.update({
-            'free_encoder_input_ids': [],
-        })
-    else:
-        extra_args.update({"free_encoder_mm_hashes": []})
-
-    return extra_args
+    """Add any required backwards compatibility code for constructing
+    SchedulerOutputs here"""
+    return {}
