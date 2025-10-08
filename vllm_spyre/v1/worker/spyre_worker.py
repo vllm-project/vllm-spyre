@@ -773,4 +773,6 @@ def maybe_override_signals_handler():
 def _get_extra_args() -> dict:
     """Add any required backwards compatibility code for constructing
     SchedulerOutputs here"""
-    return {}
+    extra_args = {}
+    extra_args.update({"free_encoder_mm_hashes": []})
+    return extra_args
