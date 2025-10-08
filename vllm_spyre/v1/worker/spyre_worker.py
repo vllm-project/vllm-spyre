@@ -54,8 +54,6 @@ def new_request_data_builder(
     kwargs = {
         "req_id": req_id,
         "prompt_token_ids": prompt_token_ids,
-        "mm_hashes": [],
-        "mm_positions": [],
         "sampling_params": sampling_params,
         "pooling_params": pooling_params,
         "block_ids": [0],  # not actually used
@@ -64,8 +62,17 @@ def new_request_data_builder(
     }
     if 'mm_inputs' in dataclass_fields(NewRequestData):
         kwargs["mm_inputs"] = []
-    else:
+    elif 'mm_kwargs' in dataclass_fields(NewRequestData):
         kwargs["mm_kwargs"] = []
+
+    if 'mm_hashes' in dataclass_fields(NewRequestData):
+        kwargs["mm_hashes"] = []
+    if 'mm_positions' in dataclass_fields(NewRequestData):
+        kwargs["mm_positions"] = []
+
+    if "mm_features" in dataclass_fields(NewRequestData):
+        kwargs["mm_features"] = []
+
     return NewRequestData(**kwargs)
 
 

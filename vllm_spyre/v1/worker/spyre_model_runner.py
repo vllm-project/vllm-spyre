@@ -24,6 +24,7 @@ from vllm.v1.sample.logits_processor import build_logitsprocs
 
 import vllm_spyre.envs as envs_spyre
 import vllm_spyre.utils as utils_spyre
+from vllm_spyre.compat_utils import dataclass_fields
 from vllm_spyre.model_executor.model_loader.spyre import (
     BACKEND_LIST, SpyreAttentionMetadata, SpyreCausalLM)
 from vllm_spyre.platform import SpyrePlatform
@@ -219,11 +220,16 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT,
         # We do at least use the real size from the cache config.
         block_size = self.vllm_config.cache_config.block_size
 
+        if "use_mla" in dataclass_fields(FullAttentionSpec):
+            kwargs = {"use_mla": False}
+        else:
+            kwargs = {}
+
         attn_spec = FullAttentionSpec(block_size=block_size,
                                       num_kv_heads=1,
                                       head_size=1,
                                       dtype=torch.float16,
-                                      use_mla=False)
+                                      **kwargs)
         return {"foo": attn_spec}
 
     def complete_warmup(self):
@@ -491,8 +497,16 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
     def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
         tasks = list[SupportedTask]()
 
-        if "generate" in self.model_config.supported_tasks:
-            tasks.extend(["generate"])
+        if hasattr(self.model_config, "supported_tasks"):
+            # Pre 0.11.0 code path
+            if "generate" in self.model_config.supported_tasks:
+                tasks.extend(["generate"])
+        else:
+            # vLLM models have methods available like `is_text_generation_model`
+            # We don't use vLLM modeling code though :(
+            # Default: assume text generation supported.
+            # TODO: Actually detect what the model supports
+            tasks.append("generate")
 
         return tuple(tasks)
 

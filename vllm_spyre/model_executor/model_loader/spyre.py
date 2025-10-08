@@ -13,10 +13,11 @@ from vllm.config import ModelConfig, VllmConfig
 from vllm.forward_context import get_forward_context
 from vllm.logger import init_logger
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
-from vllm.model_executor.layers.sampler import SamplerOutput, get_sampler
 from vllm.model_executor.model_loader.weight_utils import (
     download_weights_from_hf)
-from vllm.model_executor.sampling_metadata import SamplingMetadata
+from vllm.v1.outputs import SamplerOutput
+from vllm.v1.sample.metadata import SamplingMetadata
+from vllm.v1.sample.sampler import Sampler
 
 import vllm_spyre.envs as envs_spyre
 import vllm_spyre.utils as utils_spyre
@@ -60,7 +61,7 @@ class SpyreCausalLM(nn.Module):
         self.logits_processor = LogitsProcessor(
             vllm_config.model_config.hf_config.vocab_size,
             logits_as_input=True)
-        self.sampler = get_sampler()
+        self.sampler = Sampler()
 
         # boolean tensor of length batch size with indices:
         # True for unfinished sequences and
