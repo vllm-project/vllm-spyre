@@ -344,10 +344,13 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             'num_kv_heads'] = self.model_config.get_num_kv_heads(
                 self.parallel_config)
 
-        if self.config.model_type in {'llama', 'granite'}:
+        if self.config.model_type in {'llama', 'granite', 'granitemoehybrid'}:
             self.kv_cache_specs['num_layers'] = self.config.num_hidden_layers
-            self.kv_cache_specs['head_dim'] = self.config.hidden_size // \
-                self.config.num_attention_heads
+            if 'granite' in self.config.model_type:
+                self.kv_cache_specs['head_dim'] = self.model.config.head_dim
+            else:
+                self.kv_cache_specs['head_dim'] = self.config.hidden_size // \
+                    self.config.num_attention_heads
         elif self.config.model_type == 'gpt_bigcode':
             self.kv_cache_specs['num_layers'] = self.config.n_layer
             self.kv_cache_specs[
