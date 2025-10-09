@@ -1,4 +1,3 @@
-import inspect
 import math
 import time
 from abc import ABC, abstractmethod
@@ -24,6 +23,7 @@ from vllm.v1.sample.logits_processor import build_logitsprocs
 
 import vllm_spyre.envs as envs_spyre
 import vllm_spyre.utils as utils_spyre
+from vllm_spyre.compat_utils import dataclass_fields
 from vllm_spyre.model_executor.model_loader.spyre import (
     BACKEND_LIST, SpyreAttentionMetadata, SpyreCausalLM)
 from vllm_spyre.platform import SpyrePlatform
@@ -219,11 +219,17 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT,
         # We do at least use the real size from the cache config.
         block_size = self.vllm_config.cache_config.block_size
 
+        if "use_mla" in dataclass_fields(FullAttentionSpec):
+            ## Temporary backwards compatibility for 0.10.2
+            kwargs = {"use_mla": False}
+        else:
+            kwargs = {}
+
         attn_spec = FullAttentionSpec(block_size=block_size,
                                       num_kv_heads=1,
                                       head_size=1,
                                       dtype=torch.float16,
-                                      use_mla=False)
+                                      **kwargs)
         return {"foo": attn_spec}
 
     def complete_warmup(self):
@@ -491,8 +497,11 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
     def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
         tasks = list[SupportedTask]()
 
-        if "generate" in self.model_config.supported_tasks:
-            tasks.extend(["generate"])
+        # vLLM models have methods available like `is_text_generation_model`
+        # We don't use vLLM modeling code though :(
+        # Default: assume text generation supported.
+        # TODO: Actually detect what the model supports
+        tasks.append("generate")
 
         return tuple(tasks)
 
@@ -554,14 +563,6 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
         if not self.is_driver_worker:
             return EMPTY_MODEL_RUNNER_OUTPUT
 
-        # temporary backward compat code for 0.10.1.1
-        annotations = inspect.getfullargspec(ModelRunnerOutput).annotations
-        extra_args = {}  # type: ignore
-        if ('spec_token_ids' in annotations):
-            extra_args.update({
-                'spec_token_ids': None,
-            })
-
         model_output = ModelRunnerOutput(
             req_ids=list(req_id_to_index.keys()),
             req_id_to_index=req_id_to_index,
@@ -569,8 +570,7 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
             logprobs=(output.logprobs_tensors.tolists()
                       if output.logprobs_tensors else None),
             prompt_logprobs_dict=prompt_logprobs_dicts,
-            pooler_output=[],
-            **extra_args)
+            pooler_output=[])
 
         return model_output
 
@@ -1711,12 +1711,10 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
 
         pooling_metadata = self.input_batch.make_pooling_metadata()
 
-        # temporary backward compat code for 0.10.1.1
-        if getattr(pooling_metadata, "build_pooling_cursor", False):
-            ## No partial prefill, hence we can use the prompt lens here
-            pooling_metadata.build_pooling_cursor(
-                num_scheduled_tokens=pooling_metadata.prompt_lens,
-                device=self.device)
+        ## No partial prefill, hence we can use the prompt lens here
+        pooling_metadata.build_pooling_cursor(
+            num_scheduled_tokens=pooling_metadata.prompt_lens,
+            device=self.device)
 
         # prepare unpadded output for the pooler
         hidden_state_list: list[torch.Tensor] = []
@@ -1734,20 +1732,11 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
         for raw_output in raw_pooler_output:
             pooler_output.append(raw_output.data.to("cpu"))
 
-        # temporary backward compat code for 0.10.1.1
-        annotations = inspect.getfullargspec(ModelRunnerOutput).annotations
-        extra_args = {}  # type: ignore
-        if ('spec_token_ids' in annotations):
-            extra_args.update({
-                'spec_token_ids': None,
-            })
-
         model_output = ModelRunnerOutput(
             req_ids=self.input_batch.requests_ids,
             req_id_to_index=self.input_batch.req_id_to_index,
             sampled_token_ids=[],
             logprobs=None,
             prompt_logprobs_dict={},
-            pooler_output=pooler_output,
-            **extra_args)
+            pooler_output=pooler_output)
         return model_output
