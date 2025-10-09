@@ -204,36 +204,7 @@ jobs:
           # If a new model is added here, a new hash key is generated. The
           # previous cache blob can then be removed by an admin or can be left
           # to expire after 7 days.
-
-          download_granite_or_llama() {
-            python -c "from transformers import pipeline; pipeline('text-generation', model='$1', revision='$2');"
-          }
-          download_roberta_large() {
-            python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('$1', revision='$2')"
-          }
-          download_model_with_revision() {
-            model="$1"
-            revision="${2:-main}"
-            echo "Downloading '$model' with revision '$revision' ..."
-            case "$model" in
-              "ibm-ai-platform/micro-g3.3-8b-instruct-1b"*)
-                download_granite_or_llama "$model" "$revision"
-                ;;
-              "JackFram/llama-160m")
-                download_granite_or_llama "$model" "$revision"
-                ;;
-              "sentence-transformers/all-roberta-large-v1")
-                download_roberta_large "$model" "$revision"
-                ;;
-              "cross-encoder/stsb-roberta-large")
-                download_roberta_large "$model" "$revision"
-                ;;
-              *)
-                echo "No download method found for: $model";
-                exit 1
-                ;;
-            esac
-          }
+          
           if [[ -n "${{ matrix.test_suite.hf_model }}" ]]; then
             hf_model="${{ matrix.test_suite.hf_model }}"
             hf_revision="${{ matrix.test_suite.hf_model_rev }}"
@@ -244,10 +215,12 @@ jobs:
           hf_model_2="${{ matrix.test_suite.hf_model_2 }}"
           hf_revision_2="${{ matrix.test_suite.hf_model_2_rev }}"
 
-          download_model_with_revision "$hf_model" "${hf_revision:-main}" &
+          python3 tools/download_model.py -m "$hf_model" "${hf_revision:-main}" &
+
           if [[ -n "$hf_model_2" ]]; then
-            download_model_with_revision "$hf_model_2" "${hf_revision_2:-main}" &
+            python3 tools/download_model.py -m "$hf_model_2" "${hf_revision_2:-main}" &
           fi
+          
           wait
 
       - name: "Save HF models cache"
