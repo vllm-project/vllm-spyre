@@ -186,4 +186,8 @@ def patch_async_llm_stat_loggers():
         original_init(self, *args, **kwargs)
 
     async_llm.StatLoggerManager.__init__ = new_init
-    llm_engine.StatLoggerManager.__init__ = new_init
+    if hasattr(llm_engine, "StatLoggerManager"):
+        ## 0.10.2 backwards compatibility
+        # Once the lower bound is past that, remove the if check but keep this
+        # line. The `llm_engine` package uses StatLoggerManagers on 0.11.0+
+        llm_engine.StatLoggerManager.__init__ = new_init
