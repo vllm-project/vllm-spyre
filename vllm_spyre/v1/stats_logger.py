@@ -35,8 +35,6 @@ class PerfRecord:
 class FileStatLogger(StatLoggerBase):
 
     def __init__(self, vllm_config: VllmConfig, engine_index=0):
-        super().__init__(vllm_config, engine_index)
-
         self.enabled = (envs_spyre.VLLM_SPYRE_PERF_METRIC_LOGGING_ENABLED
                         and envs_spyre.VLLM_SPYRE_USE_CB)
 
@@ -62,7 +60,7 @@ class FileStatLogger(StatLoggerBase):
 
         self._prefill_tuples: list[tuple[float, float]] = []
         self._max_batch_size = vllm_config.scheduler_config.max_num_seqs
-        self._last_ts = 0
+        self._last_ts: float = 0
 
     def record(self,
                scheduler_stats: Optional[SchedulerStats],
@@ -108,7 +106,7 @@ class FileStatLogger(StatLoggerBase):
             f.write("\n".join(records_to_write) + "\n")
 
     def log_engine_initialized(self):
-        return super().log_engine_initialized()
+        pass
 
     def _save_prefill_time(self, iteration_stats: IterationStats):
         """If this iteration was a prefill, then save the a tuple of the current
@@ -139,7 +137,7 @@ class FileStatLogger(StatLoggerBase):
             self, finished_request: FinishedRequestStats) -> float:
         """Returns a lower bound estimate on the time (in ms) that this request
         was interrupted for other requests to prefill to join the batch"""
-        estimated_prefill_interrupt = 0
+        estimated_prefill_interrupt: float = 0
 
         # NB: use current time instead of iteration timestamp to ensure that we
         # exclude current request's prefill
@@ -154,7 +152,7 @@ class FileStatLogger(StatLoggerBase):
         return estimated_prefill_interrupt
 
 
-def file_stat_logger_factory(config: VllmConfig | None,
+def file_stat_logger_factory(config: VllmConfig,
                              engine_index=0) -> FileStatLogger:
     """Factory method accepted by vllm engine initializers"""
     return FileStatLogger(config, engine_index)
