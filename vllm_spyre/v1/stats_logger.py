@@ -60,7 +60,7 @@ class FileStatLogger(StatLoggerBase):
 
         self.iso_format = "%Y-%m-%dT%H:%M:%S.%f"
 
-        self._prefill_tuples = []
+        self._prefill_tuples: list[tuple[float, float]] = []
         self._max_batch_size = vllm_config.scheduler_config.max_num_seqs
         self._last_ts = 0
 
