@@ -32,5 +32,6 @@ def test_file_stats_logger(model: ModelInfo, max_model_len, max_num_seqs,
     with Path(tmp_path / "request_metrics.jsonl").open() as f:
         for line in f.readlines():
             data = json.loads(line)
-            assert "engine_stats" in data
+            assert "prefill_interrupt_seconds" in data
+            assert "e2e_latency_seconds" in data
             assert "timestamp" in data

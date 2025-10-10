@@ -46,7 +46,8 @@ class PerfRecord:
 
         # add _seconds onto the timing info from the engine
         for k in self._TIME_KEYS:
-            json_dict[k + "_seconds"] = json_dict.pop(k)
+            if k in json_dict:
+                json_dict[k + "_seconds"] = json_dict.pop(k)
 
         return json.dumps(json_dict)
 
