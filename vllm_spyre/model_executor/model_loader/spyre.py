@@ -12,7 +12,6 @@ from transformers import PretrainedConfig
 from vllm.config import ModelConfig, VllmConfig
 from vllm.forward_context import get_forward_context
 from vllm.logger import init_logger
-from vllm.model_executor.layers.logits_processor import LogitsProcessor
 from vllm.model_executor.model_loader.weight_utils import (
     download_weights_from_hf)
 from vllm.v1.outputs import SamplerOutput
@@ -58,9 +57,6 @@ class SpyreCausalLM(nn.Module):
         rank: int,
     ) -> None:
         super().__init__()
-        self.logits_processor = LogitsProcessor(
-            vllm_config.model_config.hf_config.vocab_size,
-            logits_as_input=True)
 
         try:
             ## Temporary backwards compatibility for 0.10.2
@@ -130,14 +126,6 @@ class SpyreCausalLM(nn.Module):
             # removing finished or padded sequences
             logits = logits[self.indices]
 
-        return logits
-
-    def compute_logits(
-        self,
-        hidden_states: torch.Tensor,
-        sampling_metadata: SamplingMetadata,
-    ) -> torch.Tensor:
-        logits = self.logits_processor(None, hidden_states, sampling_metadata)
         return logits
 
     def sample(
