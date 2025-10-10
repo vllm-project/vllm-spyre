@@ -31,7 +31,7 @@ with `--batch_size` > 1.
 Note: Unlike static batching, no warmup shapes need to be provided for 
 continuous batching. While the user does not have to specify the prompt 
 lengths (see `VLLM_SPYRE_WARMUP_PROMPT_LENS` for static batching), the vLLM 
-arguments `max-num-seqs` is used to set the maximum batch size (analogous to 
+argument `max-num-seqs` is used to set the maximum batch size (analogous to 
 `VLLM_SPYRE_WARMUP_BATCH_SIZES` for static batching).
 """
 
