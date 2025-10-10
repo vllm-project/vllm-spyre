@@ -186,12 +186,12 @@ def test_prompts_misaligned_with_tkv_boundaries(
     Configuration:
         * max_num_seqs: 2
         * number of prompts: 3
-            * 0: len = 49, max tokens = 33, step joining = 0
-            * 1: len = 41, max tokens = 36, step joining = 0
-            * 2: len = 32, max tokens = 2, step joining = 0
+            * 0: len = 49, max tokens = 10, step joining = 0
+            * 1: len = 41, max tokens = 13, step joining = 0
+            * 2: len = 5, max tokens = 2, step joining = 0
     """
-    seqs_max_tokens = [33, 36, 2]
-    prompts_lengths = [49, 41, 32]
+    seqs_max_tokens = [10, 13, 2]
+    prompts_lengths = [49, 41, 5]
     steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
 
     checked_steps = [
@@ -240,8 +240,8 @@ def test_prompts_misaligned_with_tkv_boundaries(
         {
             # Sequence 0 finishes at step 11
             # (start step + 2 prefills + 9 decodes - 1) = 1 + 2 + 9 - 1 = 11
-            "step": 34,
-            "tkv": 96,
+            "step": 11,
+            "tkv": 73,
             "waiting": ["2"],
             "running": ["1"],
             "request_outputs": ["1", "0"],
@@ -252,8 +252,8 @@ def test_prompts_misaligned_with_tkv_boundaries(
         {
             # Prefill sequence 2
             # total blocks in use: 4 - 2 + 1 = 3
-            "step": 35,
-            "tkv": 96,  # Tkv doesn't increase because it is a prefill
+            "step": 12,
+            "tkv": 73,  # Tkv doesn't increase because it is a prefill
             "waiting": [],
             "running": ["2", "1"],
             "request_outputs": ["2"],
@@ -264,8 +264,8 @@ def test_prompts_misaligned_with_tkv_boundaries(
         {
             # Sequence 2 finishes at step 13
             # (start step + 1 prefill + 1 decodes - 1) = 12 + 1 + 1 - 1 = 13
-            "step": 36,
-            "tkv": 97,
+            "step": 13,
+            "tkv": 74,
             "waiting": [],
             "running": ["1"],
             "request_outputs": ["2", "1"],
@@ -276,8 +276,8 @@ def test_prompts_misaligned_with_tkv_boundaries(
         {
             # Decode sequences 1
             # total blocks in use: 3 - 1 + 1 = 3
-            "step": 37,
-            "tkv": 98,
+            "step": 14,
+            "tkv": 75,
             "waiting": [],
             "running": ["1"],
             "request_outputs": ["1"],
@@ -287,8 +287,8 @@ def test_prompts_misaligned_with_tkv_boundaries(
         {
             # Sequence 1 finishes at step 15
             # (start step + 2 prefills + 12 decodes - 1) = 2 + 2 + 12 - 1 = 15
-            "step": 38,
-            "tkv": 99,
+            "step": 15,
+            "tkv": 76,
             "waiting": [],
             "running": [],
             "request_outputs": ["1"],
@@ -298,7 +298,7 @@ def test_prompts_misaligned_with_tkv_boundaries(
         },
         {
             # Tkv should be cleared one step later
-            "step": 39,
+            "step": 16,
             "tkv": 0,
             "waiting": [],
             "running": [],
@@ -341,10 +341,10 @@ def test_two_sequences_finish_same_time_as_new_arrive(
         * number of prompts: 3
             * 0: len = 49, max tokens = 4, step joining = 0
             * 1: len = 30, max tokens = 4, step joining = 0
-            * 2: len = 32, max tokens = 3, step joining = 5
+            * 2: len = 20, max tokens = 3, step joining = 5
     """
     seqs_max_tokens = [4, 4, 3]
-    prompts_lengths = [49, 32, 32]
+    prompts_lengths = [49, 30, 20]
     steps_add_reqs = [0, 0, 5]
 
     checked_steps = [
@@ -488,10 +488,10 @@ def test_new_sequence_joins_during_decode(model: ModelInfo, backend: str,
         * number of prompts: 4
             * 0: len = 49, max tokens = 60, step joining = 0
             * 1: len = 89, max tokens = 37, step joining = 32
-            * 2: len = 32, max tokens = 3, step joining = 67
+            * 2: len = 9, max tokens = 3, step joining = 67
     """
     seqs_max_tokens = [60, 37, 3]
-    prompts_lengths = [49, 89, 32]
+    prompts_lengths = [49, 89, 9]
     steps_add_reqs = [0, 31, 66]
 
     checked_steps = [
@@ -1187,10 +1187,10 @@ def test_requested_tokens_not_fitting_remaining_space(
         * number of prompts: 3
             * 0: len = 49, max tokens = 18, step joining = 0
             * 1: len = 41, max tokens = 15, step joining = 0
-            * 2: len = 32, max tokens = 55, step joining = 0
+            * 2: len = 30, max tokens = 55, step joining = 0
     """
     seqs_max_tokens = [18, 15, 55]
-    prompts_lengths = [49, 41, 32]
+    prompts_lengths = [49, 41, 30]
     steps_add_reqs = [0, 0, 0]
 
     checked_steps = [
@@ -1352,14 +1352,14 @@ def test_requests_use_all_available_blocks(model: ModelInfo, backend: str,
     Configuration:
         * max_num_seqs: 4
         * number of prompts: 4
-            * 0: len = 32, max tokens = 3, step joining = 0
-            * 1: len = 32, max tokens = 3, step joining = 0
-            * 2: len = 32, max tokens = 3, step joining = 0
-            * 3: len = 32, max tokens = 3, step joining = 0
+            * 0: len = 10, max tokens = 3, step joining = 0
+            * 1: len = 10, max tokens = 3, step joining = 0
+            * 2: len = 10, max tokens = 3, step joining = 0
+            * 3: len = 10, max tokens = 3, step joining = 0
         * available_blocks: 8
     """
     seqs_max_tokens = [3, 3, 3, 3]  # 2 decodes into a new block per sequence
-    prompts_lengths = [32, 32, 32, 32]  # 1 block for prefill per sequence
+    prompts_lengths = [10, 10, 10, 10]  # 1 block for prefill per sequence
     steps_add_reqs = [0, 0, 0, 0]
     # total number of blocks needed if scheduled together : 4 * (1 + 1) = 8
 
@@ -1488,15 +1488,15 @@ def test_requests_use_more_than_available_blocks(
     Configuration:
         * max_num_seqs: 4
         * number of prompts: 4
-            * 0: len = 32, max tokens = 3, step joining = 0
-            * 1: len = 32, max tokens = 3, step joining = 0
-            * 2: len = 32, max tokens = 3, step joining = 0
-            * 3: len = 32, max tokens = 3, step joining = 0
+            * 0: len = 10, max tokens = 3, step joining = 0
+            * 1: len = 10, max tokens = 3, step joining = 0
+            * 2: len = 10, max tokens = 3, step joining = 0
+            * 3: len = 10, max tokens = 3, step joining = 0
         * available_blocks: 4
     """
 
     seqs_max_tokens = [3, 3, 3, 3]  # 2 decodes into a new block per sequence
-    prompts_lengths = [32, 32, 32, 32]  # 1 block for prefill per sequence
+    prompts_lengths = [10, 10, 10, 10]  # 1 block for prefill per sequence
     steps_add_reqs = [0, 0, 0, 0]
     # total number of blocks needed if scheduled together : 4 * (1 + 1) = 8
 
@@ -1650,13 +1650,13 @@ def test_requests_use_full_batch_tkv_limit_no_prefill_opt(
         * max_num_seqs: 2
         * number of prompts: 2
             * 1: len = 74, max tokens = 3, step joining = 0
-            * 2: len = 32, max tokens = 4, step joining = 0
+            * 2: len = 10, max tokens = 4, step joining = 0
     """
 
     monkeypatch.setenv('VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION', '0')
 
     seqs_max_tokens = [3, 4]
-    prompts_lengths = [74, 32]
+    prompts_lengths = [74, 10]
     steps_add_reqs = [0, 0]
     # total number of blocks needed if scheduled together: (2 + 1)+(1 + 1) = 5
     # needs 2 * (64 + 64 + 2) = 2 * 130 = 260
@@ -1779,13 +1779,13 @@ def test_requests_exceed_batch_tkv_limit_no_prefill_opt(
         * max_num_seqs: 2
         * number of prompts: 2
             * 1: len = 74, max tokens = 3, step joining = 0
-            * 2: len = 32, max tokens = 4, step joining = 0
+            * 2: len = 10, max tokens = 4, step joining = 0
     """
 
     monkeypatch.setenv('VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION', '0')
 
     seqs_max_tokens = [3, 4]
-    prompts_lengths = [74, 32]
+    prompts_lengths = [74, 10]
     steps_add_reqs = [0, 0]
     # needs 2 * (64 + 64 + 2) = 2 * 130 = 260
     max_batch_tkv_limit = 259  # not big enough: 259 < 260
@@ -2149,15 +2149,15 @@ def test_scheduler_heuristic_prioritize_prefill(
     Configuration:
         * max_num_seqs: 2
         * number of prompts: 2
-            * 0: len = 32, max tokens = 3, step joining = 0
-            * 1: len = 32, max tokens = 3, step joining = 0
+            * 0: len = 10, max tokens = 3, step joining = 0
+            * 1: len = 10, max tokens = 3, step joining = 0
         * available_blocks: 16
     """
     # prioritizing prefills over decodes up to 1 block (64 tokens)
     monkeypatch.setenv('VLLM_SPYRE_N_TOKENS_PREFILL_PRIO', '64')
 
     seqs_max_tokens = [3, 3]  # 2 decodes into a new block per sequence
-    prompts_lengths = [32, 32]  # 1 block for prefill per sequence
+    prompts_lengths = [10, 10]  # 1 block for prefill per sequence
     steps_add_reqs = [0, 0]
     # total number of blocks needed if scheduled together : 2 * (1 + 1) = 4
 
