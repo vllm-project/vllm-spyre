@@ -54,8 +54,7 @@ class PerfRecord:
 class FileStatLogger(StatLoggerBase):
 
     def __init__(self, vllm_config: VllmConfig, engine_index=0):
-        self.enabled = (envs_spyre.VLLM_SPYRE_PERF_METRIC_LOGGING_ENABLED
-                        and envs_spyre.VLLM_SPYRE_USE_CB)
+        self.enabled = (envs_spyre.VLLM_SPYRE_PERF_METRIC_LOGGING_ENABLED)
 
         perf_dir = Path(envs_spyre.VLLM_SPYRE_PERF_METRIC_LOGGING_DIR)
         if not perf_dir.exists():
