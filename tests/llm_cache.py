@@ -1,6 +1,7 @@
 """Contains utilities for caching models (instantiated as vLLM endpoints)
 across test cases, to speed up test runtime."""
 
+import os
 from typing import Callable, Generic, Optional, TypeVar
 
 import pytest
@@ -178,6 +179,12 @@ class EngineCache:
             revision = None
             model_name = model
 
+        # Register golden token injector if not disabled
+        disable_golden_token = \
+            bool(int(os.getenv("VLLM_SPYRE_TEST_DISABLE_GOLDEN_TOKEN", "0")))
+        logits_processors = [] if disable_golden_token else \
+            [GoldenTokenInjector]
+
         # 🌶️🌶️🌶️
         # Messing with the blocks and context length by either:
         # - setting context < 512 tokens
@@ -200,7 +207,7 @@ class EngineCache:
             num_gpu_blocks_override=None,
             revision=revision,
             # We always include it, but does not means we always use it
-            logits_processors=[GoldenTokenInjector])
+            logits_processors=logits_processors)
         vllm_config = engine_args.create_engine_config()
         executor_class = Executor.get_class(vllm_config)
 

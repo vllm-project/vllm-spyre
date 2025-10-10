@@ -19,8 +19,10 @@ from vllm.transformers_utils.tokenizer import get_tokenizer
 
 DISABLE_ASSERTS = False  # used for debugging
 
-ISCLOSE_ABS_TOL = 0.08
-ISCLOSE_ABS_TOL_QUANTIZATION = 0.125
+ISCLOSE_ABS_TOL = \
+    float(os.environ.get("VLLM_SPYRE_TEST_ABS_TOL", '0.08'))
+ISCLOSE_ABS_TOL_QUANTIZATION = \
+    float(os.environ.get("VLLM_SPYRE_TEST_QUANTIZED_ABS_TOL", '0.125'))
 
 HF_RESULT_CACHE = HFResultCache()
 
@@ -368,6 +370,88 @@ def spyre_vllm_embeddings(
         results.append(result)
 
     return results
+
+
+def setup_golden_token(
+    model: ModelInfo,
+    sampling_params: Union[SamplingParams, list[SamplingParams]],
+    hf_outputs: list[dict[str, Any]],
+) -> Union[SamplingParams, list[SamplingParams]]:
+
+    abs_tol = ISCLOSE_ABS_TOL_QUANTIZATION if model.is_quantized \
+        else ISCLOSE_ABS_TOL
+
+    if isinstance(sampling_params, SamplingParams):
+        # Single Sampling params case
+        hf = hf_outputs[0]
+        sampling_params.extra_args = {
+            "golden_token_injector": {
+                "expected_token_ids": hf['token_ids'],
+                "expected_logprobs": hf['logprobs'],
+                "error_threshold": abs_tol,
+                "label": "#0"
+            }
+        }
+        return sampling_params
+
+    # Multiple sampling params case
+    assert len(sampling_params) == len(hf_outputs)
+    for idx, (param, hf) in enumerate(zip(sampling_params, hf_outputs)):
+        param.extra_args = {
+            "golden_token_injector": {
+                "expected_token_ids": hf['token_ids'],
+                "expected_logprobs": hf['logprobs'],
+                "error_threshold": abs_tol,
+                "label": f"#{idx}"
+            }
+        }
+    return sampling_params
+
+
+def validate_vllm_vs_hf_output(
+    model: ModelInfo,
+    prompts: Union[list[str], list[list[int]]],
+    max_model_len: int,
+    max_new_tokens: Union[int, list[int]],
+    sampling_params: Union[SamplingParams, list[SamplingParams]],
+    tensor_parallel_size: int,
+    backend: str,
+    monkeypatch: pytest.MonkeyPatch,
+    warmup_shapes: DecodeWarmupShapes | None = None,
+    max_num_seqs: Optional[int] = None,
+    use_cb: bool = False,
+    use_golden_token=True,
+) -> None:
+    hf_outputs = generate_hf_output(
+        model=model,
+        prompts=prompts,
+        max_new_tokens=max_new_tokens,
+        ignore_eos=True,
+    )
+
+    if use_golden_token:
+        sampling_params = setup_golden_token(model, sampling_params,
+                                             hf_outputs)
+
+    vllm_results = generate_spyre_vllm_output(
+        model=model,
+        prompts=prompts,
+        max_model_len=max_model_len,
+        sampling_params=sampling_params,
+        tensor_parallel_size=tensor_parallel_size,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        warmup_shapes=warmup_shapes,
+        max_num_seqs=max_num_seqs,
+        use_cb=use_cb,
+    )
+
+    compare_results(model=model,
+                    tensor_parallel_size=1,
+                    backend=backend,
+                    vllm_results=vllm_results,
+                    hf_results=hf_outputs,
+                    prompts=prompts)
 
 
 # vLLM / Spyre
