@@ -1015,7 +1015,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.prefill_batch.add_request(req_state)
 
         # set prefill index for logits processor
-        for logitsproc in self.input_batch.logitsprocs_wrappers:
+        for logitsproc in self.input_batch.spyre_logitsprocs:
             logitsproc.set_prefill_index(prefill_index)
 
         # Refresh sampling metadata after all request are added to the batch

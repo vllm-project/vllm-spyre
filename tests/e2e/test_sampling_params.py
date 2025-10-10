@@ -249,15 +249,17 @@ def test_spyre_batch1_logit_bias(model: ModelInfo, backend, monkeypatch,
 
 
 def test_spyre_batch1_min_tokens(model: ModelInfo, backend, monkeypatch,
-                                 use_llm_cache, warmup_shapes):
+                                 use_llm_cache, max_model_len, max_num_seqs, 
+                                 warmup_shapes, cb: int):
     spyre_model = get_cached_llm(
         model=model,
-        max_model_len=128,
+        max_model_len=max_model_len,
         tensor_parallel_size=1,
         backend=backend,
         monkeypatch=monkeypatch,
-        warmup_shapes=warmup_shapes,
-    )
+        warmup_shapes=warmup_shapes if cb != 1 else None,
+        max_num_seqs=max_num_seqs if cb == 1 else None,
+        use_cb=cb==1)
     prompt = "What is the capital of the USA?"
     tokenizer = spyre_model.get_tokenizer()
     eos_id = tokenizer.eos_token_id
@@ -268,11 +270,10 @@ def test_spyre_batch1_min_tokens(model: ModelInfo, backend, monkeypatch,
                              max_tokens=20)
     params2 = SamplingParams(seed=8780, logit_bias={eos_id: 50}, max_tokens=20)
 
-    output1 = spyre_model.generate(prompt, params1)[0]
-    output2 = spyre_model.generate(prompt, params2)[0]
+    output = spyre_model.generate([prompt] * 2, [params1, params2])
 
-    assert len(output1.outputs[0].token_ids) >= 19
-    assert len(output2.outputs[0].token_ids) < 19
+    assert len(output[0].outputs[0].token_ids) >= 19
+    assert len(output[1].outputs[0].token_ids) < 19
 
 
 def test_spyre_batch1_ignore_eos(model: ModelInfo, backend, monkeypatch,
