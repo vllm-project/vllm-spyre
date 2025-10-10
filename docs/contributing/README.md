@@ -150,6 +150,21 @@ For tensor-parallel debugging, you can enable an option to redirect all log outp
 Set `VLLM_SPYRE_WORKER_LOG_REDIRECT_DIR` to a local directory, and each rank will redirect stdout and stderr into their own file inside the directory.
 This can be helpful to avoid having interleaved stack dumps from different ranks in stderr.
 
+### Performance Metrics
+
+When deploying to kubernetes clusters, prometheus + grafana can be installed and configured to scrape metrics from vLLM's `/metrics` endpoint.
+
+Where metrics solutions like that are not availabe, vLLM can be configured to log performance metrics about every request to a local file instead.
+Setting both `VLLM_SPYRE_PERF_METRIC_LOGGING_ENABLED=1` and `VLLM_SPYRE_PERF_METRIC_LOGGING_DIR=/some/path` and ensuring that vLLM stat logging is enabled will generate metrics in `/some/path/request_metrics.jsonl`. A sample of this file looks like:
+
+```json
+{"timestamp": "2025-10-09T16:27:56.217", "engine_stats": {"finish_reason": 1, "e2e_latency": 1.0414178371429443, "num_prompt_tokens": 1, "num_generation_tokens": 16, "max_tokens_param": 16, "queued_time": 0.000294207944534719, "prefill_time": 0.1505175830097869, "inference_time": 1.039885999984108, "decode_time": 0.889368416974321, "mean_time_per_output_token": 0.05929122779828807}, "estimated_prefill_interrupt": 0, "estimated_decode_only_itl": 0.05929122779828807}
+{"timestamp": "2025-10-09T16:27:58.325", "engine_stats": {"finish_reason": 1, "e2e_latency": 2.1063718795776367, "num_prompt_tokens": 1, "num_generation_tokens": 16, "max_tokens_param": 16, "queued_time": 0.28837237507104874, "prefill_time": 0.14619670796673745, "inference_time": 1.672317749937065, "decode_time": 1.5261210419703275, "mean_time_per_output_token": 0.10174140279802184}, "estimated_prefill_interrupt": 0, "estimated_decode_only_itl": 0.10174140279802184}
+{"timestamp": "2025-10-09T16:27:58.325", "engine_stats": {"finish_reason": 1, "e2e_latency": 2.1064558029174805, "num_prompt_tokens": 1, "num_generation_tokens": 16, "max_tokens_param": 16, "queued_time": 0.2885727499378845, "prefill_time": 0.1445445839781314, "inference_time": 1.8172897920012474, "decode_time": 1.672745208023116, "mean_time_per_output_token": 0.11151634720154106}, "estimated_prefill_interrupt": 0.1466219425201416, "estimated_decode_only_itl": 0.10174155103353162}
+{"timestamp": "2025-10-09T16:27:58.325", "engine_stats": {"finish_reason": 1, "e2e_latency": 2.1065568923950195, "num_prompt_tokens": 1, "num_generation_tokens": 16, "max_tokens_param": 16, "queued_time": 0.14575050002895296, "prefill_time": 0.14236070902552456, "inference_time": 1.9601146669592708, "decode_time": 1.8177539579337463, "mean_time_per_output_token": 0.12118359719558308}, "estimated_prefill_interrupt": 0.2916107177734375, "estimated_decode_only_itl": 0.10174288267735392}
+{"timestamp": "2025-10-09T16:27:58.325", "engine_stats": {"finish_reason": 1, "e2e_latency": 2.1067748069763184, "num_prompt_tokens": 1, "num_generation_tokens": 16, "max_tokens_param": 16, "queued_time": 0.00039712502621114254, "prefill_time": 0.1449928330257535, "inference_time": 2.10571270796936, "decode_time": 1.9607198749436066, "mean_time_per_output_token": 0.13071465832957377}, "estimated_prefill_interrupt": 0.4345579147338867, "estimated_decode_only_itl": 0.10174413068064798}
+```
+
 ### Topology Aware Allocation
 
 This section is specific to the AIU operator and scheduling workloads onto specific cards.
