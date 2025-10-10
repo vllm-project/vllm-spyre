@@ -137,19 +137,21 @@ asyncio_default_fixture_loop_scope = "function"
 
 # --8<-- [start:test-markers-definition]
 markers = [
-    "skip_global_cleanup",
-    "e2e: Tests using end-to-end engine spin-up",
     "basic: Basic correctness tests",
     "cb: Continuous batching tests",
-    "cpu: Tests using CPU (i.e. eager) backend",
     "compat: backward compatibility tests",
-    "spyre: Tests using Spyre hardware backend",
+    "cpu: Tests using CPU (i.e. eager) backend",
     "decoder: Tests for decoder models",
+    "e2e: Tests using end-to-end engine spin-up",
     "embedding: Tests for embedding models",
-    "quantized: Tests for quantized models",
     "multi: Tests that require >1 cards",
+    "precompilation: Tests the handling of precompiled model catalogs",
+    "quantized: Tests for quantized models",
+    "scoring: Tests for scoring and reranking models",
+    "skip_global_cleanup",
+    "spyre: Tests using Spyre hardware backend",
     "utils: Tests for utility functions",
-    "worker: Tests for worker logic",
+    "worker: Tests for worker logic"
 ]
 # --8<-- [end:test-markers-definition]
 
