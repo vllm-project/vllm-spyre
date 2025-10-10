@@ -55,7 +55,7 @@ class PerfRecord:
 class FileStatLogger(StatLoggerBase):
 
     def __init__(self, vllm_config: VllmConfig, engine_index=0):
-        self.enabled = (envs_spyre.VLLM_SPYRE_PERF_METRIC_LOGGING_ENABLED)
+        self.enabled = envs_spyre.VLLM_SPYRE_PERF_METRIC_LOGGING_ENABLED
 
         perf_dir = Path(envs_spyre.VLLM_SPYRE_PERF_METRIC_LOGGING_DIR)
         if not perf_dir.exists():
@@ -100,7 +100,7 @@ class FileStatLogger(StatLoggerBase):
             # Only log finished requests
             return
 
-        ### Convert float timestamp to human readable string
+        # Convert float timestamp to human readable string
         text_timestamp = datetime.fromtimestamp(
             iteration_stats.iteration_timestamp).strftime(self.iso_format)[:-3]
 
