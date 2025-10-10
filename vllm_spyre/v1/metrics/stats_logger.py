@@ -26,10 +26,29 @@ class PerfRecord:
     timestamp: str
     # timing info
     engine_stats: FinishedRequestStats
-    # estimated time pre-empted for other prefills
-    estimated_prefill_interrupt: float
-    # estimated ITL without prefill interrupts
-    estimated_decode_only_itl: float
+    # time spent pre-empted for other prefills
+    prefill_interrupt_seconds: float
+    # ITL calculated without the prefill interrupts
+    decode_only_itl_seconds: float
+
+    # key names to append with a time unit during json serialization
+    _TIME_KEYS = [
+        "e2e_latency", "queued_time", "prefill_time", "inference_time",
+        "decode_time", "mean_time_per_output_token"
+    ]
+
+    def to_json(self) -> str:
+        json_dict = dataclasses.asdict(self)
+
+        # Flatten the engine stats into the top level
+        engine_dict = json_dict.pop("engine_stats")
+        json_dict.update(engine_dict)
+
+        # add _seconds onto the timing info from the engine
+        for k in self._TIME_KEYS:
+            json_dict[k + "_seconds"] = json_dict.pop(k)
+
+        return json.dumps(json_dict)
 
 
 class FileStatLogger(StatLoggerBase):
@@ -98,9 +117,9 @@ class FileStatLogger(StatLoggerBase):
             record = PerfRecord(
                 timestamp=text_timestamp,
                 engine_stats=r,
-                estimated_decode_only_itl=estimated_decode_itl,
-                estimated_prefill_interrupt=estimated_prefill_interrupt)
-            records_to_write.append(json.dumps(dataclasses.asdict(record)))
+                decode_only_itl_seconds=estimated_decode_itl,
+                prefill_interrupt_seconds=estimated_prefill_interrupt)
+            records_to_write.append(record.to_json())
 
         with open(self.perf_file, "a") as f:
             f.write("\n".join(records_to_write) + "\n")
