@@ -72,7 +72,6 @@ class FileStatLogger(StatLoggerBase):
         # Clear any old metrics out first
         if self.perf_file.exists():
             self.perf_file.unlink()
-
         self.perf_file.touch()
 
         self.iso_format = "%Y-%m-%dT%H:%M:%S.%f"
@@ -80,6 +79,11 @@ class FileStatLogger(StatLoggerBase):
         self._prefill_tuples: list[tuple[float, float]] = []
         self._max_batch_size = vllm_config.scheduler_config.max_num_seqs
         self._last_ts: float = 0
+
+        self.open_file_pointer = self.perf_file.open("a")
+
+    def __del__(self):
+        self.open_file_pointer.close()
 
     def record(self,
                scheduler_stats: Optional[SchedulerStats],
@@ -121,8 +125,8 @@ class FileStatLogger(StatLoggerBase):
                 prefill_interrupt_seconds=estimated_prefill_interrupt)
             records_to_write.append(record.to_json())
 
-        with open(self.perf_file, "a") as f:
-            f.write("\n".join(records_to_write) + "\n")
+        self.open_file_pointer.write("\n".join(records_to_write) + "\n")
+        self.open_file_pointer.flush()
 
     def log_engine_initialized(self):
         pass
