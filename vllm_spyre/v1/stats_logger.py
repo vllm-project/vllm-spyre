@@ -20,8 +20,8 @@ logger = init_logger(__name__)
 
 @dataclasses.dataclass
 class PerfRecord:
-    """One single record for that goes into the .jsonl file.
-    Contains info about a single request"""
+    """A record for request_metrics.jsonl.
+    Contains info about a single finished request"""
     # ISO timestamp w/ milliseconds
     timestamp: str
     # timing info
