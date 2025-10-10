@@ -176,16 +176,6 @@ def init_test_http_connection():
     global_http_connection.reuse_client = False
 
 
-@pytest.fixture()
-def should_do_global_cleanup_after_test(request) -> bool:
-    """Allow subdirectories to skip global cleanup by overriding this fixture.
-    This can provide a ~10x speedup for non-GPU unit tests since they don't need
-    to initialize torch.
-    """
-
-    return not request.node.get_closest_marker("skip_global_cleanup")
-
-
 @pytest.fixture(autouse=True)
 def cleanup_fixture(should_do_global_cleanup_after_test: bool):
     yield
