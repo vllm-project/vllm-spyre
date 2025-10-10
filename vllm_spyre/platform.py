@@ -505,7 +505,12 @@ class SpyrePlatform(Platform):
         """Return the size of biggest ```new_tokens``` of the \
             warmup shapes that fits the prompt length"""
         if self._warmup_shapes is None:
-            return sys.maxsize
+            # ceil division to pad to next block boundary
+            padded_prompt_len = math.ceil(
+                prompt_len / self._block_size) * self._block_size
+            max_new_tokens = (self._config.scheduler_config.max_model_len -
+                              padded_prompt_len)
+            return max_new_tokens
 
         max_new_tokens = 1
         for shape in self._warmup_shapes:
