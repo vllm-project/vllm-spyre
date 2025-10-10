@@ -154,7 +154,7 @@ This can be helpful to avoid having interleaved stack dumps from different ranks
 
 When deploying to kubernetes clusters, prometheus + grafana can be installed and configured to scrape metrics from vLLM's `/metrics` endpoint.
 
-Where metrics solutions like that are not availabe, vLLM can be configured to log performance metrics about every request to a local file instead.
+Where metrics solutions like that are not available, vLLM can be configured to log performance metrics about every request to a local file instead.
 Setting both `VLLM_SPYRE_PERF_METRIC_LOGGING_ENABLED=1` and `VLLM_SPYRE_PERF_METRIC_LOGGING_DIR=/some/path` and ensuring that vLLM stat logging is enabled will generate metrics in `/some/path/request_metrics.jsonl`. A sample of this file looks like:
 
 ```json
