@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS: bool = False
     VLLM_SPYRE_SIMPLE_COMPILE_BACKEND: str = "inductor"
     VLLM_SPYRE_NUM_CPUS: int = 0
+    VLLM_SPYRE_AUTOPILOT_OFF: bool = False
 
 logger = init_logger(__name__)
 
@@ -186,6 +187,12 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Set to 0 to have vllm-spyre attempt to detect the CPU count
     "VLLM_SPYRE_NUM_CPUS":
     lambda: int(os.getenv("VLLM_SPYRE_NUM_CPUS", "0")),
+
+    # If set, disables the DT autopilot functionality. This enables
+    # profiling to capture performance details for individual AIU-kernels.
+    # Lookup VLLM_TORCH_PROFILER_DIR to enable profiling.
+    "VLLM_SPYRE_AUTOPILOT_OFF":
+    lambda: bool(int(os.getenv("VLLM_SPYRE_AUTOPILOT_OFF", "0"))),
 }
 # --8<-- [end:env-vars-definition]
 
