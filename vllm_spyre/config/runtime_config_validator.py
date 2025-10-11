@@ -1,13 +1,16 @@
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
+from vllm.config import ModelConfig
 from vllm.logger import init_logger
 
 from vllm_spyre import envs as envs_spyre
 
-_config_file = Path(__file__).parent / "supported_configurations.yaml"
+_supported_configs_file = Path(__file__).parent / "supported_configs.yaml"
+_known_model_configs_file = Path(__file__).parent / "known_model_configs.json"
 
 logger = init_logger(__name__)
 
@@ -46,10 +49,22 @@ class ModelRuntimeConfiguration:
 model_runtime_configs: list[ModelRuntimeConfiguration] | None = None
 ignored_models: set[str] = set()
 runtime_configs_by_model: dict[str, list[RuntimeConfiguration]]
+known_model_configs: dict[str, dict] | None = None
 
 
-def load_config_yaml() -> list[dict[str, Any]]:
-    with open(_config_file, encoding="utf-8") as f:
+def load_known_model_configs_json() -> dict[str, Any]:
+    with open(_known_model_configs_file, encoding="utf-8") as f:
+        json_data = json.load(f)
+    return json_data
+
+
+def initialize_known_model_configurations_from_file():
+    global known_model_configs
+    known_model_configs = load_known_model_configs_json()
+
+
+def load_supported_configs_yaml() -> list[dict[str, Any]]:
+    with open(_supported_configs_file, encoding="utf-8") as f:
         yaml_data = yaml.safe_load(f)
     return yaml_data
 
@@ -67,8 +82,18 @@ def initialize_supported_configurations(yaml_data: list[dict[str, Any]]):
 
 
 def initialize_supported_configurations_from_file():
-    yaml_data = load_config_yaml()
+    yaml_data = load_supported_configs_yaml()
     initialize_supported_configurations(yaml_data)
+
+
+def get_supported_models_list() -> list[str]:
+    global model_runtime_configs
+    if model_runtime_configs is None:
+        initialize_supported_configurations_from_file()
+    public_models = [
+        mrc.model for mrc in model_runtime_configs or [] if not mrc.ignore
+    ]
+    return public_models
 
 
 def verify_config_parameters(c: RuntimeConfiguration) -> bool:
@@ -111,8 +136,22 @@ def verify_config_parameters(c: RuntimeConfiguration) -> bool:
     return not found_invalid_parameters
 
 
+def find_known_models_by_model_config(model_config: ModelConfig) -> list[str]:
+    if known_model_configs is None:
+        initialize_known_model_configurations_from_file()
+
+    requested_config = model_config.hf_config.__dict__ \
+        if model_config.hf_config else {}
+
+    matching_models = [
+        model for model, config in (known_model_configs or {}).items()
+        if config.items() <= requested_config.items()
+    ]
+    return matching_models
+
+
 def validate_runtime_configuration(
-        model: str,
+        model_config: ModelConfig,
         tp_size: int = 0,
         max_model_len: int = 0,
         max_num_seqs: int = 0,
@@ -128,9 +167,39 @@ def validate_runtime_configuration(
             " backend '%s'", envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND)
         return True
 
-    global model_runtime_configs
     if model_runtime_configs is None:
         initialize_supported_configurations_from_file()
+
+    model = model_config.model
+
+    known_models = {mrc.model for mrc in model_runtime_configs or {}}
+
+    if model not in known_models:
+        logger.info(
+            "Model '%s' is not a known model. Trying to find one with"
+            " a matching ModelConfig.", model)
+
+        matching_models = find_known_models_by_model_config(model_config)
+
+        if len(matching_models) == 1:
+            model = matching_models[0]
+            logger.info("Found model '%s' matching ModelConfig `%s`.", model,
+                        model_config)
+
+        elif len(matching_models) == 0:
+            logger.warning("Found no matching model for ModelConfig `%s`.",
+                           model_config)
+            return False
+
+        elif len(matching_models) > 1:
+            logger.error(
+                "Found several models matching the given ModelConfig."
+                " Aborting model validation. vllm-Spyre developers"
+                " need to update the known model configurations file"
+                " to distinguish between the returned models."
+                " Models found: [%s]. ModelConfig provided `%s`",
+                matching_models, model_config)
+            return False
 
     if model in ignored_models:
         logger.info("Model '%s' is ignored", model)
@@ -211,27 +280,27 @@ def is_context_length_supported(requested_shapes: WarmupShapes,
     with the same or larger batch size.
     (context length = prompt_length + new_tokens)
     """
+
     # TODO: what if more than one warmup shape is requested?
-    #  - largest must match, all must match?
-    #  - group by batch size?
     if len(requested_shapes) > 1:
         return False
-    # warmup_shape = [prompt_length, new_tokens, batch_size]
+
     request_batch_size = requested_shapes[0][2]
-    supported_shapes_with_matching_batch_size = [(ws[0], ws[1], ws[2])
-                                                 for ws in supported_shapes
-                                                 if request_batch_size <= ws[2]
-                                                 ]
-    return (
-        len(supported_shapes_with_matching_batch_size) > 0 and
-        (get_max_model_length(requested_shapes)
-         <= get_max_model_length(supported_shapes_with_matching_batch_size)))
+    shapes_with_same_batch_size = [(ws[0], ws[1], ws[2])
+                                   for ws in supported_shapes
+                                   if request_batch_size <= ws[2]]
+
+    return (len(shapes_with_same_batch_size) > 0
+            and (get_max_model_length(requested_shapes)
+                 <= get_max_model_length(shapes_with_same_batch_size)))
 
 
 def get_max_model_length(warmup_shapes: WarmupShapes) -> int:
     """
     Return the maximum model length from the given warmup shapes.
     """
+
     # max_model_len = prompt_length + new_tokens
     # warmup_shape = [prompt_length, new_tokens, batch_size]
+
     return max([ws[0] + ws[1] for ws in warmup_shapes or []])

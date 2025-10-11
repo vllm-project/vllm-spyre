@@ -47,9 +47,9 @@ configurations.
 
 At runtime, the Spyre engine validates the requested model and configurations against the list
 of supported models and configurations based on the entries in the file
-<gh-file:vllm_spyre/config/supported_configurations.yaml>. If a requested model or configuration
+<gh-file:vllm_spyre/config/supported_configs.yaml>. If a requested model or configuration
 is not found, a warning message will be logged.
 
 ```python
---8<-- "vllm_spyre/config/supported_configurations.yaml:supported-model-runtime-configurations"
+--8<-- "vllm_spyre/config/supported_configs.yaml:supported-model-runtime-configurations"
 ```
