@@ -199,14 +199,13 @@ class EngineCache:
         # Spyre compilation. This seems more robust and helps that all tests in
         # tests/e2e/test_spyre_cb_inference_steps.py pass on Spyre.
         max_num_seqs_compiled = 1 << (max_num_seqs - 1).bit_length()
-        engine_args = EngineArgs(
-            model=model_name,
-            tokenizer=model_name,
-            max_model_len=max(max_model_len, 512),
-            max_num_seqs=max_num_seqs_compiled,
-            num_gpu_blocks_override=None,
-            revision=revision,
-            logits_processors=logits_processors)
+        engine_args = EngineArgs(model=model_name,
+                                 tokenizer=model_name,
+                                 max_model_len=max(max_model_len, 512),
+                                 max_num_seqs=max_num_seqs_compiled,
+                                 num_gpu_blocks_override=None,
+                                 revision=revision,
+                                 logits_processors=logits_processors)
         vllm_config = engine_args.create_engine_config()
         executor_class = Executor.get_class(vllm_config)
 
