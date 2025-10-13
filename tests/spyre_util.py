@@ -265,7 +265,7 @@ def _default_test_models(isEmbeddings=False, isScoring=False):
     # the test command includes `-m quantized`.
     tinygranite = ModelInfo(
         name="ibm-ai-platform/micro-g3.3-8b-instruct-1b",
-        revision="2714578f54cfb744ece40df9326ee0b47e879e03")
+        revision="6e9c6465a9d7e5e9fa35004a29f0c90befa7d23f")
     tinygranite_fp8 = ModelInfo(
         name="ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8",
         revision="0dff8bacb968836dbbc7c2895c6d9ead0a05dc9e",
