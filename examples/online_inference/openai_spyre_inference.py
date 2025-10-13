@@ -4,8 +4,7 @@ This example shows how to use Spyre with vLLM for running online inference.
 Static Batching:
 
 First, start the server with the following command:
-    python3 -m vllm.entrypoints.openai.api_server \
-        --model 'ibm-granite/granite-3.3-8b-instruct' \
+    vllm serve 'ibm-granite/granite-3.3-8b-instruct' \
         --max-model-len=2048 \
         --tensor-parallel-size=4
 
@@ -18,8 +17,7 @@ You can change these with the env variables `VLLM_SPYRE_WARMUP_BATCH_SIZES`,
 Continuous Batching:
 
 First, start the server with the following command:
-    VLLM_SPYRE_USE_CB=1 python3 -m vllm.entrypoints.openai.api_server \
-        --model 'ibm-granite/granite-3.3-8b-instruct' \
+    VLLM_SPYRE_USE_CB=1 vllm serve 'ibm-granite/granite-3.3-8b-instruct' \
         --max-model-len=2048 \
         --tensor-parallel-size=4 \
         --max-num-seqs=4
