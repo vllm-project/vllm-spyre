@@ -46,12 +46,10 @@ def download_model_with_revision(hf_model_id: str, revision: str = "main"):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-model',
-                        '-m',
+    parser.add_argument('-m',
                         dest='hf_model_id',
                         help='HuggingFace model ID.')
-    parser.add_argument('-revision',
-                        '-r',
+    parser.add_argument('-r',
                         dest='revision',
                         default="main",
                         help='Git tag, hash, or branch.')

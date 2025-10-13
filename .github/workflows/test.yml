@@ -178,24 +178,24 @@ jobs:
             echo "model_2_path=${HF_HUB_CACHE}/models--${safe_name_2}" >> "$GITHUB_ENV"
           fi
 
-      - name: "Restore HF models cache"
-        id: cache_restore
-        if: steps.changed-src-files.outputs.any_changed == 'true'
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ env.model_path }}
-          key: ${{ runner.os }}-hf-model-${{ env.model_key }}
-
-      - name: "Restore HF models cache for additional model"
-        id: cache_restore_2
-        if: ( steps.changed-src-files.outputs.any_changed == 'true' && matrix.test_suite.hf_model_2 )
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ env.model_2_path }}
-          key: ${{ runner.os }}-hf-model-${{ env.model_2_key }}
+#      - name: "Restore HF models cache"
+#        id: cache_restore
+#        if: steps.changed-src-files.outputs.any_changed == 'true'
+#        uses: actions/cache/restore@v4
+#        with:
+#          path: ${{ env.model_path }}
+#          key: ${{ runner.os }}-hf-model-${{ env.model_key }}
+#
+#      - name: "Restore HF models cache for additional model"
+#        id: cache_restore_2
+#        if: ( steps.changed-src-files.outputs.any_changed == 'true' && matrix.test_suite.hf_model_2 )
+#        uses: actions/cache/restore@v4
+#        with:
+#          path: ${{ env.model_2_path }}
+#          key: ${{ runner.os }}-hf-model-${{ env.model_2_key }}
 
       - name: "Download HF models"
-        if: ( steps.changed-src-files.outputs.any_changed == 'true' && (steps.cache_restore.outputs.cache-hit != 'true' || steps.cache_restore_2.outputs.cache-hit != 'true'))
+#        if: ( steps.changed-src-files.outputs.any_changed == 'true' && (steps.cache_restore.outputs.cache-hit != 'true' || steps.cache_restore_2.outputs.cache-hit != 'true'))
         run: |
           # We are caching HF models (HF_HUB_CACHE) for reliability rather than
           # speed, since HF downloads are flaky for concurrent jobs.
@@ -215,27 +215,27 @@ jobs:
           hf_model_2="${{ matrix.test_suite.hf_model_2 }}"
           hf_revision_2="${{ matrix.test_suite.hf_model_2_rev }}"
 
-          python3 tools/download_model.py -m "$hf_model" "${hf_revision:-main}" &
+          python3 tools/download_model.py -m "$hf_model" -r "${hf_revision:-main}" &
 
           if [[ -n "$hf_model_2" ]]; then
-            python3 tools/download_model.py -m "$hf_model_2" "${hf_revision_2:-main}" &
+            python3 tools/download_model.py -m "$hf_model_2" -r "${hf_revision_2:-main}" &
           fi
           
           wait
 
-      - name: "Save HF models cache"
-        if: ( steps.changed-src-files.outputs.any_changed == 'true' && github.event_name != 'pull_request' && steps.cache_restore.outputs.cache-hit != 'true' )
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ env.model_path }}
-          key: ${{ runner.os }}-hf-model-${{ env.model_key }}
-
-      - name: "Save HF models cache for additional model"
-        if: ( steps.changed-src-files.outputs.any_changed == 'true' && matrix.test_suite.hf_model_2 && github.event_name != 'pull_request' && steps.cache_restore_2.outputs.cache-hit != 'true' )
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ env.model_2_path }}
-          key: ${{ runner.os }}-hf-model-${{ env.model_2_key }}
+#      - name: "Save HF models cache"
+#        if: ( steps.changed-src-files.outputs.any_changed == 'true' && github.event_name != 'pull_request' && steps.cache_restore.outputs.cache-hit != 'true' )
+#        uses: actions/cache/save@v4
+#        with:
+#          path: ${{ env.model_path }}
+#          key: ${{ runner.os }}-hf-model-${{ env.model_key }}
+#
+#      - name: "Save HF models cache for additional model"
+#        if: ( steps.changed-src-files.outputs.any_changed == 'true' && matrix.test_suite.hf_model_2 && github.event_name != 'pull_request' && steps.cache_restore_2.outputs.cache-hit != 'true' )
+#        uses: actions/cache/save@v4
+#        with:
+#          path: ${{ env.model_2_path }}
+#          key: ${{ runner.os }}-hf-model-${{ env.model_2_key }}
 
       - name: "Run tests"
         if: steps.changed-src-files.outputs.any_changed == 'true'
