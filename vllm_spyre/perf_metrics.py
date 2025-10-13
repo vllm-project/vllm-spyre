@@ -35,6 +35,7 @@ class SpyrePerfMetricFileLogger(SpyrePerfMetricLoggerBase):
         self.time_fmt = "%m-%d %H:%M:%S"
         self.log_path = os.path.join(envs.VLLM_SPYRE_PERF_METRIC_LOGGING_DIR,
                                      f"perf_log_rank_{str(rank)}.txt")
+        os.makedirs(envs.VLLM_SPYRE_PERF_METRIC_LOGGING_DIR, exist_ok=True)
         # Cleanup previous metrics files
         if os.path.exists(self.log_path):
             os.remove(self.log_path)

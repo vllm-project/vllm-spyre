@@ -103,7 +103,14 @@ environment_variables: dict[str, Callable[[], Any]] = {
     lambda: bool(int(os.getenv("VLLM_SPYRE_USE_CB", "0"))),
 
     # Enable performance metric logging. This captures startup information
-    # such as warmup times, and loading times. It is turned off by default.
+    # such as warmup times, and loading times.
+    # When `--disable-log-stats=False` is used, this will log timing metrics
+    # about every finished request into a .jsonl file. These are the same
+    # metrics that are available in prometheus format on the /metrics endpoint,
+    # but it is sometime helpful to view them disaggregated to debug performance
+    # problems. This logging is not designed to be performant, and should not be
+    # enabled in production settings.
+    # It is turned off by default.
     "VLLM_SPYRE_PERF_METRIC_LOGGING_ENABLED":
     lambda: int(os.getenv("VLLM_SPYRE_PERF_METRIC_LOGGING_ENABLED", 0)),
 
