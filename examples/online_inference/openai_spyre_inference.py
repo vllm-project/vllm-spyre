@@ -1,17 +1,36 @@
 """ 
 This example shows how to use Spyre with vLLM for running online inference.
 
+Static Batching:
+
 First, start the server with the following command:
-    python3 -m vllm.entrypoints.openai.api_server \
-        --model /models/llama-7b-chat/ \
+    vllm serve 'ibm-granite/granite-3.3-8b-instruct' \
         --max-model-len=2048 \
-        --block-size=2048
+        --tensor-parallel-size=4
 
 By default, the server will use a batch size of 1, a max prompt length of 64 
 tokens, and a max of 20 decode tokens.
 
-You can change these with the env variables VLLM_SPYRE_WARMUP_BATCH_SIZES, 
-VLLM_SPYRE_WARMUP_PROMPT_LENS, and VLLM_SPYRE_WARMUP_NEW_TOKENS.
+You can change these with the env variables `VLLM_SPYRE_WARMUP_BATCH_SIZES`, 
+`VLLM_SPYRE_WARMUP_PROMPT_LENS`, and `VLLM_SPYRE_WARMUP_NEW_TOKENS`.
+
+Continuous Batching:
+
+First, start the server with the following command:
+    VLLM_SPYRE_USE_CB=1 vllm serve 'ibm-granite/granite-3.3-8b-instruct' \
+        --max-model-len=2048 \
+        --tensor-parallel-size=4 \
+        --max-num-seqs=4
+
+This sets up a server with max batch size 4. To actually exercise continuous 
+batching make sure to submit multiple prompts at once by running this script 
+with `--batch_size` > 1.
+
+Note: Unlike static batching, no warmup shapes need to be provided for 
+continuous batching. While the user does not have to specify the prompt 
+lengths (see `VLLM_SPYRE_WARMUP_PROMPT_LENS` for static batching), the vLLM 
+argument `max-num-seqs` is used to set the maximum batch size (analogous to 
+`VLLM_SPYRE_WARMUP_BATCH_SIZES` for static batching).
 """
 
 import argparse
