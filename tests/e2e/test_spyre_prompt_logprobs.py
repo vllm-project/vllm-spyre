@@ -19,7 +19,7 @@ from vllm_spyre.platform import SpyrePlatform
 
 # Skip for now until prompt logprobs are fixed
 @pytest.mark.skip
-def test_prompt_logprobs(backend: str, model: str | ModelInfo, tp_size: int,
+def test_prompt_logprobs(backend: str, model: ModelInfo, tp_size: int,
                          monkeypatch: pytest.MonkeyPatch) -> None:
     '''
     This test checks the prompt_logprobs output from vllm against a reference
