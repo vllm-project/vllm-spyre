@@ -206,7 +206,6 @@ class EngineCache:
             max_num_seqs=max_num_seqs_compiled,
             num_gpu_blocks_override=None,
             revision=revision,
-            # We always include it, but does not means we always use it
             logits_processors=logits_processors)
         vllm_config = engine_args.create_engine_config()
         executor_class = Executor.get_class(vllm_config)
