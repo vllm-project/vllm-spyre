@@ -185,7 +185,7 @@ def test_full_batch_scheduling(model: ModelInfo, backend: str, monkeypatch):
                 request_id=i,
                 num_tokens=max_batched_tokens,
                 sampling_params=vllm_sampling_params,
-                model=model.name,
+                model=model,
             ))
     schedule = scheduler.schedule()
 
@@ -209,7 +209,8 @@ def test_max_model_len_override(model: ModelInfo, backend, warmup_shapes, cb,
 
     patch_environment(**kwargs, backend=backend, monkeypatch=monkeypatch)
     vllm_config = EngineArgs(
-        model=model.name, max_model_len=max_model_len).create_engine_config()
+        model=model.name, revision=model.revision,
+        max_model_len=max_model_len).create_engine_config()
     model_config = vllm_config.model_config
 
     if not cb:
