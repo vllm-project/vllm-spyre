@@ -49,7 +49,9 @@ class GoldenTokenInjector(LogitsProcessor):
         # for couple requests that does not have too much impact.
         # But since this is used mostly for validation, it would be fine
         # to keep them.
-        self.tokenizer = get_tokenizer(vllm_config.model_config.tokenizer)
+        self.tokenizer = get_tokenizer(
+            vllm_config.model_config.tokenizer,
+            revision=vllm_config.model_config.revision)
 
     def is_argmax_invariant(self) -> bool:
         """Never impacts greedy sampling"""
