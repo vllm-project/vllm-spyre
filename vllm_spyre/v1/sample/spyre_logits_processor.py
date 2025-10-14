@@ -3,14 +3,10 @@ from typing import TYPE_CHECKING, Optional, Sequence, Union
 
 import torch
 from vllm.logger import init_logger
-from vllm.v1.sample.logits_processor import (BUILTIN_LOGITS_PROCESSORS,
-                                             STR_POOLING_REJECTS_LOGITSPROCS,
-                                             BatchUpdate,
-                                             LogitBiasLogitsProcessor,
-                                             LogitsProcessor,
-                                             MinPLogitsProcessor,
-                                             MinTokensLogitsProcessor,
-                                             _load_custom_logitsprocs)
+from vllm.v1.sample.logits_processor import (
+    BUILTIN_LOGITS_PROCESSORS, STR_POOLING_REJECTS_LOGITSPROCS, BatchUpdate,
+    LogitBiasLogitsProcessor, LogitsProcessor, MinPLogitsProcessor,
+    MinTokensLogitsProcessor, _load_custom_logitsprocs)
 from vllm.v1.sample.logits_processor.state import LogitsProcessors
 
 logger = init_logger(__name__)
