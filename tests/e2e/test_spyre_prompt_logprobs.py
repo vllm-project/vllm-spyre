@@ -78,9 +78,8 @@ def test_prompt_logprobs_not_supported_with_cb(
     monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
 
     with pytest.raises(ValueError, match="continuous batching"):
-        VllmConfig(model_config=ModelConfig(model=model.name,
-                                            revision=model.revision,
-                                            task="generate"))
+        VllmConfig(model_config=ModelConfig(
+            model=model.name, revision=model.revision, task="generate"))
 
 
 @pytest.mark.skip
