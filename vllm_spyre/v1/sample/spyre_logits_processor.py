@@ -1,13 +1,17 @@
 import itertools
-from typing import Optional, Sequence, Union, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional, Sequence, Union
 
 import torch
-
 from vllm.logger import init_logger
-from vllm.v1.sample.logits_processor import (
-    BUILTIN_LOGITS_PROCESSORS, STR_POOLING_REJECTS_LOGITSPROCS, BatchUpdate,
-    LogitsProcessor, MinPLogitsProcessor, LogitBiasLogitsProcessor,
-    MinTokensLogitsProcessor, _load_custom_logitsprocs)
+from vllm.v1.sample.logits_processor import (BUILTIN_LOGITS_PROCESSORS,
+                                             STR_POOLING_REJECTS_LOGITSPROCS,
+                                             BatchUpdate,
+                                             LogitBiasLogitsProcessor,
+                                             LogitsProcessor,
+                                             MinPLogitsProcessor,
+                                             MinTokensLogitsProcessor,
+                                             _load_custom_logitsprocs,
+                                             process_dict_updates)
 from vllm.v1.sample.logits_processor.state import LogitsProcessors
 
 logger = init_logger(__name__)
@@ -118,7 +122,7 @@ class LogitsProcessorWrapper(LogitsProcessor, SpyreLogitsProcessor):
         self._prefill_index = idx
 
 
-class SpyreMinPLogitsProcessor(LogitsProcessor, SpyreLogitsProcessor):
+class SpyreMinPLogitsProcessor(MinPLogitsProcessor, SpyreLogitsProcessor):
 
     def __init__(self, vllm_config: "VllmConfig", device: torch.device,
                  is_pin_memory: bool):
@@ -203,16 +207,37 @@ class SpyreMinTokensLogitsProcessor(MinTokensLogitsProcessor,
     def __init__(self, vllm_config: VllmConfig, device: torch.device,
                  is_pin_memory: bool):
         super().__init__(vllm_config, device, is_pin_memory)
-        self._prefill_index : Optional[int] = None
+        self._prefill_slice : Optional[tuple[torch.Tensor, torch.Tensor]] \
+            = None
+        self._is_prefill: bool = False
 
     def set_prefill_index(self, idx: int) -> None:
-        
-        
-        raise NotImplementedError
-    
+
+        reqs: list[int] = []
+        tok_ids: list[int] = []
+        for req, (_, _, stop_tok_ids) in self.min_toks.items():
+            if req == idx:
+                # NOTE: always request 0 for prefill
+                # logits will only have logits for a single request
+                reqs.extend([0] * len(stop_tok_ids))
+                tok_ids.extend(stop_tok_ids)
+
+        if reqs and tok_ids:
+            self._prefill_slice = (self._device_tensor(reqs, torch.int32),
+                                   self._device_tensor(tok_ids, torch.int32))
+        self._is_prefill = True
 
     def apply(self, logits: torch.Tensor) -> torch.Tensor:
-        if self._prefill_index is not None:
-            pass
+        if self._prefill_slice is not None:
+            logits[self._prefill_slice] = -float("inf")
+            self._prefill_slice = None
+            self._is_prefill = False
+            return logits
+        elif self._is_prefill:
+            # It is prefill but we do not need to do anything
+            # for the prefill request, just return logits to
+            # avoid slice the logits with batch_size = 1
+            self._is_prefill = False
+            return logits
 
-        return super().apply(self, logits)
+        return super().apply(logits)

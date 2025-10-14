@@ -249,7 +249,7 @@ def test_spyre_batch1_logit_bias(model: ModelInfo, backend, monkeypatch,
 
 
 def test_spyre_batch1_min_tokens(model: ModelInfo, backend, monkeypatch,
-                                 use_llm_cache, max_model_len, max_num_seqs, 
+                                 use_llm_cache, max_model_len, max_num_seqs,
                                  warmup_shapes, cb: int):
     spyre_model = get_cached_llm(
         model=model,
@@ -259,7 +259,7 @@ def test_spyre_batch1_min_tokens(model: ModelInfo, backend, monkeypatch,
         monkeypatch=monkeypatch,
         warmup_shapes=warmup_shapes if cb != 1 else None,
         max_num_seqs=max_num_seqs if cb == 1 else None,
-        use_cb=cb==1)
+        use_cb=cb == 1)
     prompt = "What is the capital of the USA?"
     tokenizer = spyre_model.get_tokenizer()
     eos_id = tokenizer.eos_token_id
@@ -267,7 +267,7 @@ def test_spyre_batch1_min_tokens(model: ModelInfo, backend, monkeypatch,
     params1 = SamplingParams(min_tokens=19,
                              logit_bias={eos_id: 50},
                              seed=8780,
-                             max_tokens=20)
+                             max_tokens=25)
     params2 = SamplingParams(seed=8780, logit_bias={eos_id: 50}, max_tokens=20)
 
     output = spyre_model.generate([prompt] * 2, [params1, params2])
