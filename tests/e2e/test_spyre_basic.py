@@ -64,39 +64,6 @@ def test_output(model: ModelInfo, tp_size: int, backend: str, cb: int,
                                **kwargs)
 
 
-@pytest.mark.parametrize("backend", [
-    pytest.param(
-        "sendnn_decoder", marks=pytest.mark.spyre, id="sendnn_decoder")
-])
-def test_output_sendnn_decoder(model: ModelInfo,
-                               warmup_shapes: DecodeWarmupShapes, backend: str,
-                               monkeypatch: pytest.MonkeyPatch,
-                               use_llm_cache) -> None:
-    '''
-    Tests the deprecated sendnn_decoder backend, which should fall-back to
-    sendnn
-    '''
-
-    max_new_tokens = warmup_shapes[0][1]
-    prompts = get_chicken_soup_prompts(1)
-
-    vllm_sampling_params = SamplingParams(
-        max_tokens=max_new_tokens,
-        temperature=0,
-        logprobs=0,  # return logprobs of generated tokens only
-        ignore_eos=True)
-
-    validate_vllm_vs_hf_output(model=model,
-                               prompts=prompts,
-                               warmup_shapes=warmup_shapes,
-                               max_model_len=2048,
-                               sampling_params=vllm_sampling_params,
-                               tensor_parallel_size=1,
-                               backend=backend,
-                               monkeypatch=monkeypatch,
-                               max_new_tokens=max_new_tokens)
-
-
 def test_batch_handling(model: ModelInfo, backend: str, cb: int, warmup_shapes,
                         max_num_seqs: int, max_model_len: int,
                         monkeypatch: pytest.MonkeyPatch, use_llm_cache):

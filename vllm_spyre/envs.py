@@ -41,7 +41,7 @@ def override(name: str, value: str) -> None:
         parsed_value = environment_variables[name]()
         _cache[name] = parsed_value
     # Changes back avoid polluting the global environment
-    finally:
+    except (ValueError, TypeError):
         if original_value is not None:
             os.environ[name] = original_value
 
