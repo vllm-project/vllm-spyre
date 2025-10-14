@@ -36,6 +36,14 @@ def _remove_requests(input_batch: SamplingInputBatch, batch_size: int,
     for index in req_indices_to_remove:
         input_batch.remove_request(reqs[index].req_id)
         req_ids_to_remove.add(reqs[index].req_id)
+
+    # FIXME: it is a bug in the current implementation that removed indices may
+    # be duplicated, which can break logitsprocs tracking. Once fixed we should
+    # add this assert.
+    # see also: https://github.com/vllm-project/vllm-spyre/issues/508
+    # removed = input_batch.batch_update_builder.removed
+    # assert len(set(removed)) == len(removed), "Duplicate removed indices"
+
     return req_ids_to_remove
 
 

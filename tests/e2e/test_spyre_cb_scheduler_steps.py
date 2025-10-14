@@ -7,7 +7,6 @@ Run `python -m pytest tests/e2e/test_spyre_cb_inference_steps.py`.
 """
 
 import pytest
-from output_util import check_output_against_hf
 from scheduling_utils import check_scheduler_inference_steps
 from spyre_util import ModelInfo
 
@@ -155,7 +154,7 @@ def test_prompts_aligned_with_tkv_boundaries(model: ModelInfo, backend: str,
         },
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -168,9 +167,6 @@ def test_prompts_aligned_with_tkv_boundaries(model: ModelInfo, backend: str,
         available_blocks=available_blocks,
         use_cb=True,
     )
-
-    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-                            prompts)
 
 
 @pytest.mark.cb
@@ -312,7 +308,7 @@ def test_prompts_misaligned_with_tkv_boundaries(
         },
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -325,9 +321,6 @@ def test_prompts_misaligned_with_tkv_boundaries(
         available_blocks=available_blocks,
         use_cb=True,
     )
-
-    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-                            prompts)
 
 
 @pytest.mark.cb
@@ -458,7 +451,7 @@ def test_two_sequences_finish_same_time_as_new_arrive(
         },
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -471,9 +464,6 @@ def test_two_sequences_finish_same_time_as_new_arrive(
         available_blocks=available_blocks,
         use_cb=True,
     )
-
-    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-                            prompts)
 
 
 @pytest.mark.cb
@@ -643,7 +633,7 @@ def test_new_sequence_joins_during_decode(model: ModelInfo, backend: str,
         }
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -656,9 +646,6 @@ def test_new_sequence_joins_during_decode(model: ModelInfo, backend: str,
         available_blocks=available_blocks,
         use_cb=True,
     )
-
-    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-                            prompts)
 
 
 @pytest.mark.cb
@@ -686,8 +673,8 @@ def test_prompt_too_long_for_current_tkv(model: ModelInfo, backend: str,
             * 1: len = 70, max tokens = 4, step joining = 0
     """
 
-    if prefill_optimization:
-        monkeypatch.setenv('VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION', '1')
+    if not prefill_optimization:
+        monkeypatch.setenv('VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION', '0')
 
     seqs_max_tokens = [10, 4]
     prompts_lengths = [49, 70]
@@ -865,7 +852,7 @@ def test_prompt_too_long_for_current_tkv(model: ModelInfo, backend: str,
         },
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -879,9 +866,6 @@ def test_prompt_too_long_for_current_tkv(model: ModelInfo, backend: str,
         available_blocks=available_blocks,
         use_cb=True,
     )
-
-    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-                            prompts)
 
 
 @pytest.mark.cb
@@ -1035,7 +1019,7 @@ def test_prefill_optimization_tkv_too_big(model: ModelInfo, backend: str,
         },
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -1048,9 +1032,6 @@ def test_prefill_optimization_tkv_too_big(model: ModelInfo, backend: str,
         available_blocks=available_blocks,
         use_cb=True,
     )
-
-    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-                            prompts)
 
 
 @pytest.mark.cb
@@ -1173,7 +1154,7 @@ def test_prefill_optimization_use_more_than_available_blocks(
         },
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -1186,9 +1167,6 @@ def test_prefill_optimization_use_more_than_available_blocks(
         available_blocks=available_blocks,
         use_cb=True,
     )
-
-    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-                            prompts)
 
 
 @pytest.mark.cb
@@ -1343,7 +1321,7 @@ def test_requested_tokens_not_fitting_remaining_space(
         },
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -1356,9 +1334,6 @@ def test_requested_tokens_not_fitting_remaining_space(
         available_blocks=available_blocks,
         use_cb=True,
     )
-
-    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-                            prompts)
 
 
 @pytest.mark.cb
@@ -1482,7 +1457,7 @@ def test_requests_use_all_available_blocks(model: ModelInfo, backend: str,
         },
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -1495,9 +1470,6 @@ def test_requests_use_all_available_blocks(model: ModelInfo, backend: str,
         available_blocks=available_blocks,
         use_cb=True,
     )
-
-    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-                            prompts)
 
 
 @pytest.mark.cb
@@ -1647,7 +1619,7 @@ def test_requests_use_more_than_available_blocks(
         },
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -1661,20 +1633,16 @@ def test_requests_use_more_than_available_blocks(
         use_cb=True,
     )
 
-    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-                            prompts)
-
 
 @pytest.mark.cb
 @pytest.mark.full_model
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [192])
 @pytest.mark.parametrize("available_blocks", [None])
-def test_requests_use_full_batch_tkv_limit(model: ModelInfo, backend: str,
-                                           monkeypatch: pytest.MonkeyPatch,
-                                           set_random_seed, max_num_seqs: int,
-                                           max_model_len: int,
-                                           available_blocks: int):
+def test_requests_use_full_batch_tkv_limit_no_prefill_opt(
+        model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
+        set_random_seed, max_num_seqs: int, max_model_len: int,
+        available_blocks: int):
     """ Scenario where all requests can be scheduled right away as the
     max batch x tkv limit, e.g the volumetric limit, is just high enough
     
@@ -1684,6 +1652,8 @@ def test_requests_use_full_batch_tkv_limit(model: ModelInfo, backend: str,
             * 1: len = 74, max tokens = 3, step joining = 0
             * 2: len = 10, max tokens = 4, step joining = 0
     """
+
+    monkeypatch.setenv('VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION', '0')
 
     seqs_max_tokens = [3, 4]
     prompts_lengths = [74, 10]
@@ -1777,7 +1747,7 @@ def test_requests_use_full_batch_tkv_limit(model: ModelInfo, backend: str,
         },
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -1792,20 +1762,16 @@ def test_requests_use_full_batch_tkv_limit(model: ModelInfo, backend: str,
         use_cb=True,
     )
 
-    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-                            prompts)
-
 
 @pytest.mark.cb
 @pytest.mark.full_model
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [192])
 @pytest.mark.parametrize("available_blocks", [None])
-def test_requests_exceed_batch_tkv_limit(model: ModelInfo, backend: str,
-                                         monkeypatch: pytest.MonkeyPatch,
-                                         set_random_seed, max_num_seqs: int,
-                                         max_model_len: int,
-                                         available_blocks: int):
+def test_requests_exceed_batch_tkv_limit_no_prefill_opt(
+        model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
+        set_random_seed, max_num_seqs: int, max_model_len: int,
+        available_blocks: int):
     """ Scenario where a request cannot be scheduled right away as the
     max batch x tkv limit, e.g the volumetric limit, is exceeded
     
@@ -1815,6 +1781,8 @@ def test_requests_exceed_batch_tkv_limit(model: ModelInfo, backend: str,
             * 1: len = 74, max tokens = 3, step joining = 0
             * 2: len = 10, max tokens = 4, step joining = 0
     """
+
+    monkeypatch.setenv('VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION', '0')
 
     seqs_max_tokens = [3, 4]
     prompts_lengths = [74, 10]
@@ -1918,7 +1886,7 @@ def test_requests_exceed_batch_tkv_limit(model: ModelInfo, backend: str,
         },
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -1933,9 +1901,6 @@ def test_requests_exceed_batch_tkv_limit(model: ModelInfo, backend: str,
         use_cb=True,
     )
 
-    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-                            prompts)
-
 
 @pytest.mark.cb
 @pytest.mark.full_model
@@ -1949,7 +1914,7 @@ def test_requests_use_full_batch_tkv_limit_prefill_opt(
     """ Scenario where all requests can be scheduled right away as the
     max batch x tkv limit, e.g the volumetric limit, is just high enough
     with the prefill optimization enabled. Note that this test is about 
-    cond6_updated whereas test_requests_use_full_batch_tkv_limit
+    cond6_updated whereas test_requests_use_full_batch_tkv_limit_no_prefill_opt
     was testing cond6 (without VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION)
     
     Configuration:
@@ -1958,6 +1923,7 @@ def test_requests_use_full_batch_tkv_limit_prefill_opt(
             * 1: len = 64, max tokens = 2, step joining = 0
             * 2: len = 65, max tokens = 2, step joining = 0
     """
+
     monkeypatch.setenv('VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION', '1')
 
     seqs_max_tokens = [2, 2]
@@ -2029,7 +1995,7 @@ def test_requests_use_full_batch_tkv_limit_prefill_opt(
         },
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -2044,9 +2010,6 @@ def test_requests_use_full_batch_tkv_limit_prefill_opt(
         use_cb=True,
     )
 
-    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-                            prompts)
-
 
 @pytest.mark.cb
 @pytest.mark.full_model
@@ -2060,7 +2023,7 @@ def test_requests_exceed_batch_tkv_limit_prefill_opt(
     """ Scenario where a request cannot be scheduled right away as the
     max batch x tkv limit, e.g the volumetric limit, is exceeded
     with the prefill optimization enabled. Note that this test is about 
-    cond6_updated whereas test_requests_exceed_batch_tkv_limit
+    cond6_updated whereas test_requests_exceed_batch_tkv_limit_no_prefill_opt
     was testing cond6 (without VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION)
     
     Configuration:
@@ -2069,6 +2032,7 @@ def test_requests_exceed_batch_tkv_limit_prefill_opt(
             * 1: len = 64, max tokens = 2, step joining = 0
             * 2: len = 65, max tokens = 2, step joining = 0
     """
+
     monkeypatch.setenv('VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION', '1')
 
     seqs_max_tokens = [2, 2]
@@ -2153,7 +2117,7 @@ def test_requests_exceed_batch_tkv_limit_prefill_opt(
         },
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -2167,9 +2131,6 @@ def test_requests_exceed_batch_tkv_limit_prefill_opt(
         max_batch_tkv_limit=max_batch_tkv_limit,
         use_cb=True,
     )
-
-    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-                            prompts)
 
 
 @pytest.mark.cb
@@ -2271,7 +2232,7 @@ def test_scheduler_heuristic_prioritize_prefill(
         },
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -2284,9 +2245,6 @@ def test_scheduler_heuristic_prioritize_prefill(
         available_blocks=available_blocks,
         use_cb=True,
     )
-
-    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-                            prompts)
 
 
 @pytest.mark.cb
@@ -2416,7 +2374,7 @@ def test_scheduler_heuristic_prioritize_decode(model: ModelInfo, backend: str,
         },
     ]
 
-    cb_outputs, prompts = check_scheduler_inference_steps(
+    check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -2429,6 +2387,3 @@ def test_scheduler_heuristic_prioritize_decode(model: ModelInfo, backend: str,
         available_blocks=available_blocks,
         use_cb=True,
     )
-
-    check_output_against_hf(model, backend, seqs_max_tokens, cb_outputs,
-                            prompts)

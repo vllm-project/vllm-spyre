@@ -4,7 +4,7 @@ Run `python -m pytest tests/e2e/test_spyre_warmup_shapes.py`.
 """
 
 import pytest
-from output_util import check_output_against_hf, generate_spyre_vllm_output
+from output_util import generate_spyre_vllm_output, validate_vllm_vs_hf_output
 from spyre_util import DecodeWarmupShapes, ModelInfo, get_chicken_soup_prompts
 from vllm import SamplingParams
 
@@ -41,18 +41,15 @@ def test_multiple_warmup_shapes(model: ModelInfo,
         logprobs=0,  # return logprobs of generated tokens only
         ignore_eos=True)
 
-    vllm_results = generate_spyre_vllm_output(
-        model=model,
-        prompts=prompts,
-        warmup_shapes=warmup_shapes,
-        max_model_len=2048,
-        sampling_params=vllm_sampling_params,
-        tensor_parallel_size=1,
-        backend=backend,
-        monkeypatch=monkeypatch)
-
-    check_output_against_hf(model, backend, max_new_tokens, vllm_results,
-                            prompts)
+    validate_vllm_vs_hf_output(model=model,
+                               prompts=prompts,
+                               warmup_shapes=warmup_shapes,
+                               max_model_len=2048,
+                               sampling_params=vllm_sampling_params,
+                               tensor_parallel_size=1,
+                               backend=backend,
+                               max_new_tokens=max_new_tokens,
+                               monkeypatch=monkeypatch)
 
 
 @pytest.mark.parametrize("prompts", [["Hello"]])

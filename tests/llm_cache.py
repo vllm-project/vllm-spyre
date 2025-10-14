@@ -1,9 +1,11 @@
 """Contains utilities for caching models (instantiated as vLLM endpoints)
 across test cases, to speed up test runtime."""
 
+import os
 from typing import Callable, Generic, Optional, TypeVar
 
 import pytest
+from golden_token_injector import GoldenTokenInjector
 from llm_cache_util import force_engine_shutdown
 from spyre_util import (DecodeWarmupShapes, ModelInfo, RemoteOpenAIServer,
                         patch_environment)
@@ -177,9 +179,15 @@ class EngineCache:
             revision = None
             model_name = model
 
+        # Register golden token injector if not disabled
+        disable_golden_token = \
+            bool(int(os.getenv("VLLM_SPYRE_TEST_DISABLE_GOLDEN_TOKEN", "0")))
+        logits_processors = [] if disable_golden_token else \
+            [GoldenTokenInjector]
+
         # 🌶️🌶️🌶️
         # Messing with the blocks and context length by either:
-        # - setting context < 256 tokens
+        # - setting context < 512 tokens
         # - setting available blocks != (context * batch size // 64)
         # can cause compilation failures on spyre hardware.
 
@@ -187,14 +195,17 @@ class EngineCache:
         # then adjust these limits in the engine's scheduler for tests.
 
         # Setup the engine
-        engine_args = EngineArgs(
-            model=model_name,
-            tokenizer=model_name,
-            max_model_len=max(max_model_len, 256),
-            max_num_seqs=max_num_seqs,
-            num_gpu_blocks_override=None,
-            revision=revision,
-        )
+        # Round max_num_seqs (batch size) to the next power of two for
+        # Spyre compilation. This seems more robust and helps that all tests in
+        # tests/e2e/test_spyre_cb_inference_steps.py pass on Spyre.
+        max_num_seqs_compiled = 1 << (max_num_seqs - 1).bit_length()
+        engine_args = EngineArgs(model=model_name,
+                                 tokenizer=model_name,
+                                 max_model_len=max(max_model_len, 512),
+                                 max_num_seqs=max_num_seqs_compiled,
+                                 num_gpu_blocks_override=None,
+                                 revision=revision,
+                                 logits_processors=logits_processors)
         vllm_config = engine_args.create_engine_config()
         executor_class = Executor.get_class(vllm_config)
 
@@ -202,7 +213,10 @@ class EngineCache:
                                  executor_class=executor_class,
                                  log_stats=False)
 
+        # Set scheduler configs for max_model_len and max_num_seqs to the
+        # original values. They were changed for more robust compilation only.
         engine_core.scheduler.scheduler_config.max_model_len = max_model_len
+        engine_core.scheduler.scheduler_config.max_num_seqs = max_num_seqs
 
         if available_blocks is not None:
             worker = engine_core.model_executor.driver_worker.worker
