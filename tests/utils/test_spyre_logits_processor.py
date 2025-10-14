@@ -6,7 +6,7 @@ from vllm.sampling_params import SamplingParams
 from vllm.v1.sample.logits_processor import BatchUpdateBuilder
 
 from vllm_spyre.v1.sample.spyre_logits_processor import (
-    SpyreLogitsProcessor, SpyreMinTokensLogitsProcessor)
+    SpyreLogitsProcessor, SpyreMinTokensLogitsProcessor, SpyreLogitBiasLogitsProcessor)
 
 EOS_TOKEN = 3
 VOCAB_SIZE = 8
@@ -93,7 +93,7 @@ def test_mintokens_logits_processor():
                          req_idx=0,
                          num_reqs=1)
 
-    assert torch.allclose(logits, out_logits)  # Do nothing
+    assert torch.allclose(logits, out_logits)  
 
     # Step #1 Prefill req_id #1 (with min tokens)
     params = SamplingParams(min_tokens=4)
@@ -109,7 +109,7 @@ def test_mintokens_logits_processor():
 
     assert out_logits[0][EOS_TOKEN].item() == -math.inf
 
-    # Step #2 Prefill req_id #1
+    # Step #2 Prefill req_id #2
     logits = generate_logits(1)
     out_logits = prefill(SamplingParams(),
                          batch_update_builder,
@@ -119,7 +119,7 @@ def test_mintokens_logits_processor():
                          req_idx=2,
                          num_reqs=3)
 
-    assert torch.allclose(logits, out_logits)  # Do nothing
+    assert torch.allclose(logits, out_logits)  
 
     # Step #3 - #6 Decoding, eos_token for req #1 must be -inf
     for _ in range(3):
@@ -145,3 +145,68 @@ def test_mintokens_logits_processor():
     )
 
     assert torch.allclose(logits, out_logits)
+
+@pytest.mark.cpu
+@pytest.mark.worker
+def test_logitbias_logits_processor():
+    device = torch.device('cpu')
+
+    dummy_config = DummyVllmConfig()
+    lp = SpyreLogitBiasLogitsProcessor(dummy_config, device, False)
+
+    batch_update_builder = BatchUpdateBuilder()
+
+    batch_output_tokens = [[], [], []]
+
+    # Step #0 Prefill req_id #0 (no logits bias)
+    logits = generate_logits(1)
+    out_logits = prefill(SamplingParams(),
+                         batch_update_builder,
+                         lp,
+                         logits,
+                         batch_output_tokens[0],
+                         req_idx=0,
+                         num_reqs=1)
+
+    assert torch.allclose(logits, out_logits)  
+
+    # Step #1 Prefill req_id #1 (with logits bias)
+    params = SamplingParams(logit_bias={1: 100, 7: -100})
+
+    logits = generate_logits(1)
+    out_logits = prefill(params,
+                         batch_update_builder,
+                         lp,
+                         logits,
+                         batch_output_tokens[1],
+                         req_idx=1,
+                         num_reqs=2)
+
+    assert out_logits[0][1].item() >= 100
+    assert out_logits[0][7].item() < 0
+
+    # Step #2 Prefill req_id #2 (no logits bias)
+    logits = generate_logits(1)
+    out_logits = prefill(SamplingParams(),
+                         batch_update_builder,
+                         lp,
+                         logits,
+                         batch_output_tokens[2],
+                         req_idx=2,
+                         num_reqs=3)
+
+    assert torch.allclose(logits, out_logits)  
+
+    # Step #4, decoding, keep applying lotis bias
+    logits = generate_logits(3)
+    out_logits = decode(
+        batch_update_builder,
+        lp,
+        logits,
+        batch_output_tokens,
+    )
+
+    assert torch.allclose(logits[0], out_logits[0])
+    assert torch.allclose(logits[2], out_logits[2])
+    assert out_logits[1][1].item() >= 100
+    assert out_logits[1][7].item() < 0

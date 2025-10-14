@@ -1017,13 +1017,13 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         prefill_index = self.input_batch.add_request(req_state)
         self.prefill_batch.add_request(req_state)
 
-        # set prefill index for logits processor
-        for logitsproc in self.input_batch.spyre_logitsprocs:
-            logitsproc.set_prefill_index(prefill_index)
-
         # Refresh sampling metadata after all request are added to the batch
         self.input_batch.refresh_metadata()
         self.prefill_batch.refresh_metadata()
+
+        # set prefill index for logits processor
+        for logitsproc in self.input_batch.spyre_logitsprocs:
+            logitsproc.set_prefill_index(prefill_index)
 
         self.model.indices = torch.ones(1, dtype=torch.bool, device='cpu')
         slot_mapping = torch.tensor([slots], dtype=torch.int64)
@@ -1370,12 +1370,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                             is_pooling_model=False,
                             custom_logitsprocs=custom_logitsprocs,
                             batch_size=batch_size)
-        # logits_processors = \
-        #     build_logitsprocs(vllm_config=self.vllm_config,
-        #                       device=self.device,
-        #                       is_pin_memory=self.pin_memory,
-        #                       is_pooling_model=False,
-        #                       custom_logitsprocs=custom_logitsprocs)
 
         return SamplingInputBatch(
             max_num_reqs=batch_size,

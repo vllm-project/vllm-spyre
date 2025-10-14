@@ -42,17 +42,42 @@ def build_logitsprocs_for_cb(
         return LogitsProcessors()
     custom_logitsprocs_classes = _load_custom_logitsprocs(custom_logitsprocs)
 
-    return LogitsProcessors(
-        LogitsProcessorWrapper(logit_processor,
+    #  LogitBiasLogitsProcessor,
+    # LogitsProcessor,
+    # MinPLogitsProcessor,
+    # MinTokensLogitsProcessor,
+    return LogitsProcessors( itertools.chain(
+        [SpyreLogitBiasLogitsProcessor(vllm_config,
+                              device,
+                              is_pin_memory),
+         LogitsProcessorWrapper(MinPLogitsProcessor,
+                              vllm_config,
+                              device,
+                              is_pin_memory,
+                              batch_size),
+        SpyreMinTokensLogitsProcessor(vllm_config,
+                              device,
+                              is_pin_memory),
+        ],
+        [LogitsProcessorWrapper(logit_processor,
                               vllm_config,
                               device,
                               is_pin_memory,
                               batch_size) \
-            for logit_processor in itertools.chain(
-                BUILTIN_LOGITS_PROCESSORS,
-                custom_logitsprocs_classes
-            )
-        )
+        for logit_processor in custom_logitsprocs_classes]
+    ))
+    # return LogitsProcessors(
+
+    #     LogitsProcessorWrapper(logit_processor,
+    #                           vllm_config,
+    #                           device,
+    #                           is_pin_memory,
+    #                           batch_size) \
+    #         for logit_processor in itertools.chain(
+    #             BUILTIN_LOGITS_PROCESSORS,
+    #             custom_logitsprocs_classes
+    #         )
+    #     )
 
 
 class SpyreLogitsProcessor:
@@ -155,50 +180,49 @@ class SpyreMinPLogitsProcessor(MinPLogitsProcessor, SpyreLogitsProcessor):
 class SpyreLogitBiasLogitsProcessor(LogitBiasLogitsProcessor,
                                     SpyreLogitsProcessor):
 
-    def __init__(self, _, device: torch.device, is_pin_memory: bool):
-        self.device = device
-        self.pin_memory = is_pin_memory
-        self.biases: dict[int, dict[int, float]] = {}
+    def __init__(self, config : VllmConfig, device: torch.device, is_pin_memory: bool):
+        super().__init__(config, device, is_pin_memory)
 
-        self.bias_tensor: torch.Tensor = torch.tensor(())
-        self.logits_slice = (self._device_tensor([], torch.int32),
-                             self._device_tensor([], torch.int32))
+        self._is_prefill : bool = False
+        self._prefill_slice : Optional[tuple[torch.Tensor, torch.Tensor]] \
+            = None
+        self._prefill_bias : torch.Tensor = torch.tensor(())
 
-    def is_argmax_invariant(self) -> bool:
-        """Logit bias can rebalance token probabilities and change the
-        outcome of argmax in greedy sampling."""
-        return False
 
-    def update_state(self, batch_update: Optional[BatchUpdate]):
-        needs_update = process_dict_updates(
-            self.biases, batch_update,
-            lambda params, _, __: params.logit_bias or None)
+    def set_prefill_index(self, idx: int) -> None:
 
-        # Update tensors if needed.
-        if needs_update:
-            reqs: list[int] = []
-            tok_ids: list[int] = []
-            biases: list[float] = []
-            for req, lb in self.biases.items():
-                reqs.extend([req] * len(lb))
+        reqs: list[int] = []
+        tok_ids: list[int] = []
+        biases: list[float] = []
+        for req, lb in self.biases.items():
+            if req == idx:
+                # NOTE: always request 0 for prefill
+                # prefill will only have logits for a single request
+                reqs.extend([0] * len(lb))
                 tok_ids.extend(lb.keys())
                 biases.extend(lb.values())
 
-            self.bias_tensor = self._device_tensor(biases, torch.float32)
-            self.logits_slice = (self._device_tensor(reqs, torch.int32),
-                                 self._device_tensor(tok_ids, torch.int32))
+        if biases:
+            self._prefill_slice = (self._device_tensor(reqs, torch.int32),
+                                   self._device_tensor(tok_ids, torch.int32))
+            self._prefill_bias = self._device_tensor(biases, torch.float32)
+        self._is_prefill = True
 
-    def _device_tensor(self, data: list, dtype: torch.dtype) -> torch.Tensor:
-        return (torch.tensor(data,
-                             device="cpu",
-                             dtype=dtype,
-                             pin_memory=self.pin_memory).to(device=self.device,
-                                                            non_blocking=True))
 
     def apply(self, logits: torch.Tensor) -> torch.Tensor:
-        if self.biases:
-            logits[self.logits_slice] += self.bias_tensor
-        return logits
+        if self._prefill_slice is not None:
+            logits[self._prefill_slice] += self._prefill_bias
+            self._prefill_slice = None
+            self._is_prefill = False
+            return logits
+        elif self._is_prefill:
+            # It is prefill but we do not need to do anything
+            # for the prefill request, just return logits to
+            # avoid slice the logits with batch_size = 1
+            self._is_prefill = False
+            return logits
+
+        return super().apply(logits)
 
 
 class SpyreMinTokensLogitsProcessor(MinTokensLogitsProcessor,
@@ -218,7 +242,7 @@ class SpyreMinTokensLogitsProcessor(MinTokensLogitsProcessor,
         for req, (_, _, stop_tok_ids) in self.min_toks.items():
             if req == idx:
                 # NOTE: always request 0 for prefill
-                # logits will only have logits for a single request
+                # prefill will only have logits for a single request
                 reqs.extend([0] * len(stop_tok_ids))
                 tok_ids.extend(stop_tok_ids)
 
