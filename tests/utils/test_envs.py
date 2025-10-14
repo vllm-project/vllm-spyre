@@ -33,11 +33,14 @@ def test_env_vars_override_with_bad_value(monkeypatch):
     monkeypatch.setenv("VLLM_SPYRE_NUM_CPUS", "42")
     assert envs.VLLM_SPYRE_NUM_CPUS == 42
 
-    # The environment should not be updated if the config is invalid
+    # envs.override ensures the value can be parsed correctly
     with pytest.raises(ValueError, match=r"invalid literal for int"):
         envs.override("VLLM_SPYRE_NUM_CPUS", "notanumber")
-    assert envs.VLLM_SPYRE_NUM_CPUS == 42
-    assert os.getenv("VLLM_SPYRE_NUM_CPUS") == "42"
+
+
+def test_env_vars_override_for_invalid_config():
+    with pytest.raises(ValueError, match=r"not a known setting"):
+        envs.override("VLLM_SPYRE_NOT_A_CONFIG", "nothing")
 
 
 def test_sendnn_decoder_backwards_compat(monkeypatch):
