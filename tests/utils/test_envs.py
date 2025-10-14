@@ -34,7 +34,8 @@ def test_env_vars_override_with_bad_value(monkeypatch):
     assert envs.VLLM_SPYRE_NUM_CPUS == 42
 
     # The environment should not be updated if the config is invalid
-    envs.override("VLLM_SPYRE_NUM_CPUS", "notanumber")
+    with pytest.raises(ValueError, match=r"invalid literal for int"):
+        envs.override("VLLM_SPYRE_NUM_CPUS", "notanumber")
     assert envs.VLLM_SPYRE_NUM_CPUS == 42
     assert os.getenv("VLLM_SPYRE_NUM_CPUS") == "42"
 
