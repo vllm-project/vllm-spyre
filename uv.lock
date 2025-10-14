@@ -10,14 +10,14 @@ supported-markers = [
 
 [manifest]
 overrides = [
-    { name = "llvmlite", marker = "platform_machine != 's390x'" },
-    { name = "pyarrow", marker = "platform_machine != 's390x'" },
-    { name = "ray", marker = "platform_machine != 's390x'" },
+    { name = "llvmlite", marker = "platform_machine not in 's390x, ppc64le'" },
+    { name = "pyarrow", marker = "platform_machine not in 's390x, ppc64le'" },
+    { name = "ray", marker = "platform_machine not in 's390x, ppc64le'" },
     { name = "torch", marker = "sys_platform == 'never'" },
     { name = "torchaudio", marker = "sys_platform == 'never'" },
     { name = "torchvision", marker = "sys_platform == 'never'" },
     { name = "triton", marker = "sys_platform == 'never'" },
-    { name = "vllm", marker = "platform_machine != 's390x'" },
+    { name = "vllm", marker = "platform_machine not in 's390x, ppc64le'" },
 ]
 
 [[package]]
@@ -543,7 +543,7 @@ dependencies = [
     { name = "numpy" },
     { name = "packaging" },
     { name = "pandas" },
-    { name = "pyarrow", marker = "platform_machine != 's390x'" },
+    { name = "pyarrow", marker = "platform_machine not in 's390x, ppc64le'" },
     { name = "pyyaml" },
     { name = "requests" },
     { name = "tqdm" },
@@ -1578,7 +1578,7 @@ name = "numba"
 version = "0.61.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "llvmlite", marker = "platform_machine != 's390x'" },
+    { name = "llvmlite", marker = "platform_machine not in 's390x, ppc64le'" },
     { name = "numpy" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1c/a0/e21f57604304aa03ebb8e098429222722ad99176a4f979d34af1d1ee80da/numba-0.61.2.tar.gz", hash = "sha256:8750ee147940a6637b80ecf7f95062185ad8726c8c28a2295b8ec1160a196f7d", size = 2820615, upload-time = "2025-04-09T02:58:07.659Z" }
@@ -3747,7 +3747,7 @@ dependencies = [
     { name = "python-json-logger" },
     { name = "pyyaml" },
     { name = "pyzmq" },
-    { name = "ray", marker = "platform_machine != 's390x'" },
+    { name = "ray", marker = "platform_machine not in 's390x, ppc64le'" },
     { name = "regex" },
     { name = "requests" },
     { name = "scipy" },
@@ -3780,7 +3780,7 @@ dependencies = [
     { name = "fms-model-optimizer", extra = ["fp8"] },
     { name = "ibm-fms" },
     { name = "pytest-mock" },
-    { name = "vllm", marker = "platform_machine != 's390x'" },
+    { name = "vllm", marker = "platform_machine not in 's390x, ppc64le'" },
 ]
 
 [package.dev-dependencies]
@@ -3813,7 +3813,7 @@ requires-dist = [
     { name = "fms-model-optimizer", extras = ["fp8"], specifier = ">=0.6.0" },
     { name = "ibm-fms", specifier = ">=1.4.0,<2.0" },
     { name = "pytest-mock", specifier = ">=3.15.0" },
-    { name = "vllm", specifier = ">=0.10.1.1,<=0.10.2" },
+    { name = "vllm", specifier = ">=0.10.2,<=0.11.0" },
 ]
 
 [package.metadata.requires-dev]
