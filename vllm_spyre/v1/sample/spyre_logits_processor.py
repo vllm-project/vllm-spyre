@@ -10,8 +10,7 @@ from vllm.v1.sample.logits_processor import (BUILTIN_LOGITS_PROCESSORS,
                                              LogitsProcessor,
                                              MinPLogitsProcessor,
                                              MinTokensLogitsProcessor,
-                                             _load_custom_logitsprocs,
-                                             process_dict_updates)
+                                             _load_custom_logitsprocs)
 from vllm.v1.sample.logits_processor.state import LogitsProcessors
 
 logger = init_logger(__name__)
@@ -42,19 +41,13 @@ def build_logitsprocs_for_cb(
         return LogitsProcessors()
     custom_logitsprocs_classes = _load_custom_logitsprocs(custom_logitsprocs)
 
-    #  LogitBiasLogitsProcessor,
-    # LogitsProcessor,
-    # MinPLogitsProcessor,
-    # MinTokensLogitsProcessor,
     return LogitsProcessors( itertools.chain(
         [SpyreLogitBiasLogitsProcessor(vllm_config,
                               device,
                               is_pin_memory),
-         LogitsProcessorWrapper(MinPLogitsProcessor,
-                              vllm_config,
+         SpyreMinPLogitsProcessor(vllm_config,
                               device,
-                              is_pin_memory,
-                              batch_size),
+                              is_pin_memory),
         SpyreMinTokensLogitsProcessor(vllm_config,
                               device,
                               is_pin_memory),
@@ -66,18 +59,6 @@ def build_logitsprocs_for_cb(
                               batch_size) \
         for logit_processor in custom_logitsprocs_classes]
     ))
-    # return LogitsProcessors(
-
-    #     LogitsProcessorWrapper(logit_processor,
-    #                           vllm_config,
-    #                           device,
-    #                           is_pin_memory,
-    #                           batch_size) \
-    #         for logit_processor in itertools.chain(
-    #             BUILTIN_LOGITS_PROCESSORS,
-    #             custom_logitsprocs_classes
-    #         )
-    #     )
 
 
 class SpyreLogitsProcessor:
@@ -152,42 +133,47 @@ class SpyreMinPLogitsProcessor(MinPLogitsProcessor, SpyreLogitsProcessor):
     def __init__(self, vllm_config: "VllmConfig", device: torch.device,
                  is_pin_memory: bool):
         super().__init__(vllm_config, device, is_pin_memory)
-        self.prefill_index: Optional[int] = None
+        self._prefill_index: Optional[int] = None
+
+    def set_prefill_index(self, idx: int) -> None:
+        self._prefill_index = idx
 
     def apply(self, logits: torch.Tensor) -> torch.Tensor:
+        if self._prefill_index is None:
+            return super().apply(logits)
 
         if not self.min_p_count:
             return logits
 
-        # if self.prefill_index is not None:
-        #     pass
+        # Convert logits to probability distribution
+        probability_values = torch.nn.functional.softmax(logits, dim=-1)
+        # Calculate maximum probabilities per sequence
+        max_probabilities = torch.amax(probability_values,
+                                       dim=-1,
+                                       keepdim=True)
+        # Adjust min_p
+        adjusted_min_p = max_probabilities.mul_(
+            self.min_p[self._prefill_index].unsqueeze(0))
+        # Identify valid tokens using threshold comparison
+        invalid_token_mask = probability_values < adjusted_min_p
+        # Apply mask using boolean indexing
+        logits[invalid_token_mask] = -float('inf')
+        self._prefill_index = None
 
-        # # Convert logits to probability distribution
-        # probability_values = torch.nn.functional.softmax(logits, dim=-1)
-        # # Calculate maximum probabilities per sequence
-        # max_probabilities = torch.amax(probability_values,
-        #                                dim=-1,
-        #                                keepdim=True)
-        # # Adjust min_p
-        # adjusted_min_p = max_probabilities.mul_(self.min_p)
-        # # Identify valid tokens using threshold comparison
-        # invalid_token_mask = probability_values < adjusted_min_p
-        # # Apply mask using boolean indexing
-        # logits[invalid_token_mask] = -float('inf')
-        # return logits
+        return logits
 
 
 class SpyreLogitBiasLogitsProcessor(LogitBiasLogitsProcessor,
                                     SpyreLogitsProcessor):
 
-    def __init__(self, config : VllmConfig, device: torch.device, is_pin_memory: bool):
+    def __init__(self, config: VllmConfig, device: torch.device,
+                 is_pin_memory: bool):
         super().__init__(config, device, is_pin_memory)
 
-        self._is_prefill : bool = False
+        self._is_prefill: bool = False
         self._prefill_slice : Optional[tuple[torch.Tensor, torch.Tensor]] \
             = None
-        self._prefill_bias : torch.Tensor = torch.tensor(())
-
+        self._prefill_bias: torch.Tensor = torch.tensor(())
 
     def set_prefill_index(self, idx: int) -> None:
 
@@ -207,7 +193,6 @@ class SpyreLogitBiasLogitsProcessor(LogitBiasLogitsProcessor,
                                    self._device_tensor(tok_ids, torch.int32))
             self._prefill_bias = self._device_tensor(biases, torch.float32)
         self._is_prefill = True
-
 
     def apply(self, logits: torch.Tensor) -> torch.Tensor:
         if self._prefill_slice is not None:

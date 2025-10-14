@@ -209,9 +209,6 @@ def test_spyre_batch1_top_k(model: ModelInfo, backend, monkeypatch,
     assert token_div1 < token_div2
 
 
-# def test_spyre_batch1_min_tokens(model: ModelInfo, backend, monkeypatch,
-#                                  use_llm_cache, max_model_len, max_num_seqs,
-#                                  warmup_shapes, cb: int):
 def test_spyre_batch1_logit_bias(model: ModelInfo, backend, monkeypatch,
                                  use_llm_cache, warmup_shapes, max_model_len,
                                  max_num_seqs, cb: int):
@@ -315,15 +312,17 @@ def test_spyre_batch1_ignore_eos(model: ModelInfo, backend, monkeypatch,
 
 
 def test_spyre_batch1_min_p(model: ModelInfo, backend, monkeypatch,
-                            use_llm_cache, warmup_shapes):
+                            use_llm_cache, max_model_len, max_num_seqs,
+                            warmup_shapes, cb: int):
     spyre_model = get_cached_llm(
         model=model,
-        max_model_len=128,
+        max_model_len=max_model_len,
+        max_num_seqs=max_num_seqs,
         tensor_parallel_size=1,
         backend=backend,
         monkeypatch=monkeypatch,
-        warmup_shapes=warmup_shapes,
-    )
+        warmup_shapes=warmup_shapes if cb == 0 else None,
+        use_cb=cb == 1)
     prompt = "The opposite of black is"
     params1 = SamplingParams(min_p=0.5, temperature=1, max_tokens=5)
     params2 = SamplingParams(temperature=1, max_tokens=5)
