@@ -15,8 +15,8 @@ The API server, the engine core, and the workers live in
 different processes. All three refer to the platform API for backend
 specific concerns.
 
-In vLLM-spyre, we provide an implementation for the platform API that is
-loaded at the vllm startup time and bootstraps all the other components.
+In vLLM-Spyre, we implement a platform API that is
+loaded at the vLLM startup time and bootstraps all other components.
 
 ![vLLM Spyre architecture](images/vllm_v1_spyre.svg)
 
