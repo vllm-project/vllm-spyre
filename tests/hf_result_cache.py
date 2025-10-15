@@ -15,6 +15,7 @@ class HFResultCache:
     This cache can be (re)populated by running all tests and committing the
     changes to the .json file.
     """
+
     NO_REVISION_KEY = "no-revision"
 
     def __init__(self):
@@ -29,7 +30,7 @@ class HFResultCache:
         if not self.cached_results_file_path.exists():
             self.cached_results = {}
             # Start with empty file
-            with open(self.cached_results_file_path, 'w') as f:
+            with open(self.cached_results_file_path, "w") as f:
                 json.dump(self.cached_results, f)
         else:
             with open(self.cached_results_file_path) as f:
@@ -44,12 +45,11 @@ class HFResultCache:
         if self.dirty:
             json_string = json.dumps(self.cached_results, indent=4)
             json_string = self._remove_newlines_in_json_lists(json_string)
-            with open(self.cached_results_file_path, 'w') as f:
+            with open(self.cached_results_file_path, "w") as f:
                 f.write(json_string)
             self.dirty = False
 
-    def get_cached_result(self, model: str | ModelInfo,
-                          prompt: str | list[int], max_tokens: int) -> dict:
+    def get_cached_result(self, model: str | ModelInfo, prompt: str | list[int], max_tokens: int) -> dict:
         """
         Retrieve a cached result for the given model, prompt, and max_tokens.
         Returns an empty dictionary if no cache entry is found.
@@ -59,20 +59,15 @@ class HFResultCache:
         max_tokens = str(max_tokens)
 
         if isinstance(model, ModelInfo):
-            revision = model.revision if model.revision \
-                else self.NO_REVISION_KEY
+            revision = model.revision if model.revision else self.NO_REVISION_KEY
             model_name = model.name
         else:
             revision = self.NO_REVISION_KEY
             model_name = model
 
-        return self.cached_results.get(model_name,
-                                       {}).get(revision,
-                                               {}).get(prompt,
-                                                       {}).get(max_tokens, {})
+        return self.cached_results.get(model_name, {}).get(revision, {}).get(prompt, {}).get(max_tokens, {})
 
-    def add_to_cache(self, model: str | ModelInfo, prompt: str | list[int],
-                     max_tokens: int, result: dict):
+    def add_to_cache(self, model: str | ModelInfo, prompt: str | list[int], max_tokens: int, result: dict):
         """
         Add a new result to the cache for the given model, prompt, and
         max_tokens. Marks the cache as 'dirty' to indicate that it needs to be
@@ -83,16 +78,15 @@ class HFResultCache:
         max_tokens = str(max_tokens)
 
         if isinstance(model, ModelInfo):
-            revision = model.revision if model.revision \
-                else self.NO_REVISION_KEY
+            revision = model.revision if model.revision else self.NO_REVISION_KEY
             model_name = model.name
         else:
             revision = self.NO_REVISION_KEY
             model_name = model
 
-        self.cached_results.setdefault(model_name, {}).setdefault(
-            revision, {}).setdefault(prompt,
-                                     {}).setdefault(max_tokens, result)
+        self.cached_results.setdefault(model_name, {}).setdefault(revision, {}).setdefault(prompt, {}).setdefault(
+            max_tokens, result
+        )
         self.dirty = True
 
     def _token_ids_to_string(self, token_ids: list[int]) -> str:
@@ -108,22 +102,18 @@ class HFResultCache:
         # Regex to find content inside square brackets (JSON lists)
         # It captures the content within the brackets, including newlines.
         # The 're.DOTALL' flag allows '.' to match newlines.
-        pattern = r'\[(.*?)\]'
+        pattern = r"\[(.*?)\]"
 
         def replace_newlines(match):
             # Get the captured content (the list items)
             list_content = match.group(1)
             # Strip leading indentation, leaving one space between elements
-            cleaned_content = re.sub(r'\n\s+', "\n ", list_content)
+            cleaned_content = re.sub(r"\n\s+", "\n ", list_content)
             # Delete all newline characters
-            cleaned_content = cleaned_content.replace("\n",
-                                                      "").replace("\r", "")
+            cleaned_content = cleaned_content.replace("\n", "").replace("\r", "")
             # Return the content wrapped in square brackets again
-            return f'[{cleaned_content}]'
+            return f"[{cleaned_content}]"
 
         # Apply the regex and replacement function
-        modified_json_string = re.sub(pattern,
-                                      replace_newlines,
-                                      json_string,
-                                      flags=re.DOTALL)
+        modified_json_string = re.sub(pattern, replace_newlines, json_string, flags=re.DOTALL)
         return modified_json_string

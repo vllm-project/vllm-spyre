@@ -150,9 +150,7 @@ class SortKey(NamedTuple):
         params = item.callspec.params
         if key in params:
             shapes = params[key]
-            SortKey._assert_param(isinstance(shapes, list),
-                                  "Warmup shape must be a list of tuples",
-                                  item)
+            SortKey._assert_param(isinstance(shapes, list), "Warmup shape must be a list of tuples", item)
             SortKey._assert_param(
                 isinstance(shapes[0], tuple),
                 "Warmup shape must be a list of tuples",
@@ -170,8 +168,7 @@ class SortKey(NamedTuple):
         params = item.callspec.params
         for key in TP_KEYS:
             if key in params:
-                SortKey._assert_param(isinstance(params[key], int),
-                                      "tp size must be an int", item)
+                SortKey._assert_param(isinstance(params[key], int), "tp size must be an int", item)
                 return params[key]
         # Assume no TP if not set
         return 1
@@ -182,9 +179,9 @@ class SortKey(NamedTuple):
         params = item.callspec.params
         for key in MODEL_KEYS:
             if key in params:
-                SortKey._assert_param(isinstance(params[key], str | ModelInfo),
-                                      "model must be a string or ModelInfo",
-                                      item)
+                SortKey._assert_param(
+                    isinstance(params[key], str | ModelInfo), "model must be a string or ModelInfo", item
+                )
                 model_or_info = params[key]
                 if isinstance(model_or_info, ModelInfo):
                     return model_or_info.name
@@ -200,8 +197,7 @@ class SortKey(NamedTuple):
             # if isinstance(backend, tuple) and len(backend) == 1:
             #     backend = backend[0]
 
-            SortKey._assert_param(isinstance(backend, str),
-                                  "backend must be a string.", item)
+            SortKey._assert_param(isinstance(backend, str), "backend must be a string.", item)
             return backend
         # If backend isn't given then this is likely a spyre-only test
         return "sendnn"
@@ -210,14 +206,11 @@ class SortKey(NamedTuple):
     def _get_num_blocks(item) -> int:
         if "available_blocks" in item.callspec.params:
             blocks = item.callspec.params["available_blocks"]
-            SortKey._assert_param(isinstance(blocks, int | None),
-                                  "available_blocks must be an optional int.",
-                                  item)
+            SortKey._assert_param(isinstance(blocks, int | None), "available_blocks must be an optional int.", item)
             return blocks if blocks is not None else 0
         # Most tests don't use this param
         return 0
 
     @staticmethod
     def _assert_param(condition, message, item):
-        assert condition, (message + f"\n\n\tTest: {item.listnames()}"
-                           f"\n\n\tParams: {item.callspec.params}")
+        assert condition, message + f"\n\n\tTest: {item.listnames()}\n\n\tParams: {item.callspec.params}"
