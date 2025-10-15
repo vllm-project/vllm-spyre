@@ -6,8 +6,8 @@ The Spyre plugin extends or replaces three main components in vLLM:
 2. Model worker and model runner
 3. Modeling code
 
-To better understand how these modifications take place, it's helpful to
-first consider the state of the native vllm for GPU architecture.
+To better understand these modifications, it's helpful to
+consider the state of the native vllm for GPU architecture.
 
 ![vLLM architecture](images/vllm_v1.svg)
 
