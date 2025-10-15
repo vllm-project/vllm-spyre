@@ -48,6 +48,7 @@ async def generate(
     "output_kind", [RequestOutputKind.DELTA, RequestOutputKind.FINAL_ONLY])
 @pytest.mark.asyncio
 async def test_abort(model: ModelInfo, backend: str, cb: int,
+                     max_model_len: int, max_num_seqs: int,
                      warmup_shapes: DecodeWarmupShapes,
                      output_kind: RequestOutputKind,
                      monkeypatch: pytest.MonkeyPatch):
@@ -72,8 +73,8 @@ async def test_abort(model: ModelInfo, backend: str, cb: int,
         engine = AsyncLLM.from_engine_args(
             AsyncEngineArgs(model=model.name,
                             tokenizer=model.name,
-                            max_model_len=256,
-                            max_num_seqs=4,
+                            max_model_len=max_model_len,
+                            max_num_seqs=max_num_seqs,
                             revision=model.revision))
         has_unfinished_requests = \
             engine.output_processor.has_unfinished_requests

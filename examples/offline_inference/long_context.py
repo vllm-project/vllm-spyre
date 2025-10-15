@@ -121,7 +121,7 @@ def round_up(t):
 
 
 tokens_to_generate = [
-    args.max_model_len + 1 - round_up(prompt_len) for prompt_len in prompt_lens
+    args.max_model_len - round_up(prompt_len) for prompt_len in prompt_lens
 ]
 
 sampling_params = [

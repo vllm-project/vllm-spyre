@@ -18,6 +18,8 @@ from vllm.v1.sample.logits_processor import (BatchUpdateBuilder,
                                              MoveDirectionality)
 from vllm.v1.sample.metadata import SamplingMetadata
 
+from vllm_spyre.v1.sample.spyre_logits_processor import LogitProcessorWrapper
+
 
 @dataclass
 class BaseRequestState:
@@ -223,16 +225,13 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
     condense the sampling parameters.
     '''
 
-    def __init__(
-        self,
-        max_num_reqs: int,
-        max_model_len: int,
-        device: torch.device,
-        pin_memory: bool,
-        vocab_size: int,
-        # Type here is any for compatibility reasons
-        logitsprocs: Optional[LogitsProcessors] = None,
-    ):
+    def __init__(self,
+                 max_num_reqs: int,
+                 max_model_len: int,
+                 device: torch.device,
+                 pin_memory: bool,
+                 vocab_size: int,
+                 logitsprocs: Optional[LogitsProcessors] = None):
 
         super().__init__(
             max_num_reqs,
@@ -302,6 +301,9 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
         self.batch_update_builder = BatchUpdateBuilder()
 
         self.logitsprocs = logitsprocs or LogitsProcessors()
+        self.logitsprocs_wrappers = [lp for lp \
+            in self.logitsprocs.all if isinstance(lp, LogitProcessorWrapper)
+        ]
 
         self.has_allowed_token_ids: set[str] = set()
         self.allowed_token_ids_mask: Optional[torch.Tensor] = None
@@ -517,13 +519,12 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
         self.req_indices_mask[req_index] = False
 
         # Remove and move up
-        tmp_dense = dense_index
-        self.batch_update_builder.removed_append(tmp_dense)
+        self.batch_update_builder.removed_append(dense_index)
 
-        while tmp_dense < self._num_requests + 1:
+        end_dense_idx = min(self._num_requests + 1, self.max_num_reqs - 1)
+        for tmp_dense in range(dense_index, end_dense_idx):
             self.batch_update_builder.moved.append(
-                (tmp_dense, tmp_dense + 1, MoveDirectionality.SWAP))
-            tmp_dense = tmp_dense + 1
+                (tmp_dense, tmp_dense + 1, MoveDirectionality.UNIDIRECTIONAL))
 
         # Remove the references
         self.req_output_token_ids.pop(dense_index)

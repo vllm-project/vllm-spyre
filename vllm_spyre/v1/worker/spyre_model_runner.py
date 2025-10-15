@@ -1,4 +1,3 @@
-import inspect
 import math
 import time
 from abc import ABC, abstractmethod
@@ -24,9 +23,12 @@ from vllm.v1.sample.logits_processor import build_logitsprocs
 
 import vllm_spyre.envs as envs_spyre
 import vllm_spyre.utils as utils_spyre
+from vllm_spyre.compat_utils import dataclass_fields
 from vllm_spyre.model_executor.model_loader.spyre import (
     BACKEND_LIST, SpyreAttentionMetadata, SpyreCausalLM)
 from vllm_spyre.platform import SpyrePlatform
+from vllm_spyre.v1.sample.spyre_logits_processor import (
+    build_logitsprocs_for_cb)
 # yapf conflicts with ruff for this block
 # yapf: disable
 from vllm_spyre.v1.worker.spyre_input_batch import (BaseInputBatch,
@@ -217,11 +219,17 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT,
         # We do at least use the real size from the cache config.
         block_size = self.vllm_config.cache_config.block_size
 
+        if "use_mla" in dataclass_fields(FullAttentionSpec):
+            ## Temporary backwards compatibility for 0.10.2
+            kwargs = {"use_mla": False}
+        else:
+            kwargs = {}
+
         attn_spec = FullAttentionSpec(block_size=block_size,
                                       num_kv_heads=1,
                                       head_size=1,
                                       dtype=torch.float16,
-                                      use_mla=False)
+                                      **kwargs)
         return {"foo": attn_spec}
 
     def complete_warmup(self):
@@ -286,9 +294,7 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
         max_pad_length = max(prompt_lens)
         max_decode_length = max(num_decode_tokens)
         self.model = SpyreCausalLM(
-            self.model_config,
-            parallel_config=self.parallel_config,
-            scheduler_config=self.scheduler_config,
+            vllm_config=self.vllm_config,
             max_prompt_length=max_pad_length,
             max_decode_length=max_decode_length,
             rank=self.rank,
@@ -394,7 +400,10 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
             for req_id in scheduler_output.finished_req_ids:
                 self.input_batch.remove_request(req_id)
                 self.requests.pop(req_id, None)
-            self.input_batch.refresh_metadata()
+                # TODO: Processing multiple removals at once can break alignment
+                # of logitprocs. Refactor so that we can batch removals to the
+                # `input_batch`
+                self.input_batch.refresh_metadata()
 
     def _get_prompt_logprobs_dict(
         self,
@@ -488,8 +497,11 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
     def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
         tasks = list[SupportedTask]()
 
-        if "generate" in self.model_config.supported_tasks:
-            tasks.extend(["generate"])
+        # vLLM models have methods available like `is_text_generation_model`
+        # We don't use vLLM modeling code though :(
+        # Default: assume text generation supported.
+        # TODO: Actually detect what the model supports
+        tasks.append("generate")
 
         return tuple(tasks)
 
@@ -513,13 +525,10 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
         # Execute the model
         attn_metadata = self.build_attn_metadata(model_input)
         with set_forward_context(attn_metadata, self.vllm_config):
-            hidden_states = self.model(input_ids=model_input.input_tokens,
-                                       positions=model_input.input_positions,
-                                       masks=model_input.input_masks,
-                                       is_prompt=model_input.is_prompt)
-
-        # Compute the logits.
-        logits = self.model.compute_logits(hidden_states, None)
+            logits = self.model(input_ids=model_input.input_tokens,
+                                positions=model_input.input_positions,
+                                masks=model_input.input_masks,
+                                is_prompt=model_input.is_prompt)
 
         is_prefill = cast(bool, model_input.is_prompt)
 
@@ -551,14 +560,6 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
         if not self.is_driver_worker:
             return EMPTY_MODEL_RUNNER_OUTPUT
 
-        # temporary backward compat code for 0.10.1.1
-        annotations = inspect.getfullargspec(ModelRunnerOutput).annotations
-        extra_args = {}  # type: ignore
-        if ('spec_token_ids' in annotations):
-            extra_args.update({
-                'spec_token_ids': None,
-            })
-
         model_output = ModelRunnerOutput(
             req_ids=list(req_id_to_index.keys()),
             req_id_to_index=req_id_to_index,
@@ -566,8 +567,7 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
             logprobs=(output.logprobs_tensors.tolists()
                       if output.logprobs_tensors else None),
             prompt_logprobs_dict=prompt_logprobs_dicts,
-            pooler_output=[],
-            **extra_args)
+            pooler_output=[])
 
         return model_output
 
@@ -827,7 +827,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # Note: Until this feature is supported by the compiler we have to set:
         # n_blocks_warmup = n_blocks_avail
 
-        n_blocks_warmup = self.model.model.get_num_blocks_available()
+        n_blocks_warmup = self.get_total_spyre_blocks()
         self._set_blocks(num_blocks=n_blocks_warmup)
         self.model.model.set_past_key_value_states(num_blocks=n_blocks_warmup)
 
@@ -847,22 +847,54 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         super().complete_warmup()
         # get the number or pages from the actual Spyre card after the warmup
         # and set it accordingly in the model runner and for the kv cache size
-        n_blocks_avail = self.model.model.get_num_blocks_available()
+        n_blocks_avail = self.get_total_spyre_blocks()
         self._set_blocks(num_blocks=n_blocks_avail)
         self.model.model.set_past_key_value_states(num_blocks=n_blocks_avail)
 
     def _set_blocks(self, num_blocks: int) -> None:
-        # overwrite num_blocks for testing scheduler constraints
-        num_blocks_override = SpyrePlatform.get_num_spyre_blocks_override()
-        if num_blocks_override > 0:
-            logger.info(
-                "[WARMUP] Overriding number of KV cache blocks on "
-                "Spyre/CPU to %d.", num_blocks_override)
-            num_blocks = num_blocks_override
-
         # set number of available blocks and populate block_pool
         self.n_blocks = num_blocks
         self.block_pool = deque([i for i in range(self.n_blocks)])
+
+    def get_total_spyre_blocks(self) -> int:
+        """Returns the total number of KV cache blocks available for spyre.
+        This currently returns the number of blocks required for a full-sized
+        batch, which may be greater than the available memory.
+
+        Until a correct available memory api is available, the number of blocks
+        must be overridden with a known good value via
+        cache_config.num_gpu_blocks_override
+        """
+        max_batch_size = self.scheduler_config.max_num_seqs
+        max_model_len = self.scheduler_config.max_model_len
+        block_size = SpyrePlatform.get_block_size()
+        min_req_num_blocks = max_model_len // block_size
+
+        blocks_override = self.cache_config.num_gpu_blocks_override
+        if blocks_override is not None and blocks_override > 0:
+            num_blocks = blocks_override
+        else:
+            num_blocks = max_batch_size * min_req_num_blocks
+
+        # Total number of blocks needs to be a multiple of the batch size
+        # (spyre constraint) so round it down
+        num_blocks = max_batch_size * (num_blocks // max_batch_size)
+
+        if num_blocks < min_req_num_blocks:
+            raise ValueError(
+                f"Number of pages available on Spyre {num_blocks} is not "
+                f"enough to serve the current model (need at least "
+                f"{min_req_num_blocks} pages).")
+
+        max_concurrency = num_blocks * block_size / max_model_len
+        backend = "Spyre" if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == 'sendnn' \
+            else "CPU"
+        logger.info("%s KV cache size: %s tokens", backend,
+                    num_blocks * block_size)
+        logger.info("Maximum concurrency for %s tokens per request: %.2fx",
+                    str(max_model_len), max_concurrency)
+
+        return num_blocks
 
     def update_states(self, scheduler_output):
 
@@ -978,6 +1010,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.requests[req_id] = req_state
         prefill_index = self.input_batch.add_request(req_state)
         self.prefill_batch.add_request(req_state)
+
+        # set prefill index for logits processor
+        for logitsproc in self.input_batch.logitsprocs_wrappers:
+            logitsproc.set_prefill_index(prefill_index)
 
         # Refresh sampling metadata after all request are added to the batch
         self.input_batch.refresh_metadata()
@@ -1227,8 +1263,13 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             is_prefill=model_input.is_prompt)
 
     def get_sampling_metadata(self, is_prefill: bool) -> SamplingMetadata:
-        return self.prefill_batch.sampling_metadata \
-            if is_prefill else self.input_batch.sampling_metadata
+
+        if is_prefill:
+            sampling_data = self.prefill_batch.sampling_metadata
+            sampling_data.logitsprocs = self.input_batch.logitsprocs
+            return sampling_data
+        else:
+            return self.input_batch.sampling_metadata
 
     def get_req_id_to_index(self, is_prefill: bool) -> dict[str, int]:
         req_id_to_index = self.prefill_batch.get_unpadded_output_indices() \
@@ -1309,6 +1350,29 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             torch._dynamo.mark_static(model_input.slot_mapping, 1)  # always 1
             torch._dynamo.mark_static(model_input.input_positions,
                                       1)  # always 1
+
+    def build_input_batch(self) -> SamplingInputBatch:
+        # Define logits processors.
+
+        custom_logitsprocs = self.vllm_config.model_config.logits_processors
+
+        batch_size = self.scheduler_config.max_num_seqs
+        logits_processors = \
+            build_logitsprocs_for_cb(vllm_config=self.vllm_config,
+                            device=self.device,
+                            is_pin_memory=self.pin_memory,
+                            is_pooling_model=False,
+                            custom_logitsprocs=custom_logitsprocs,
+                            batch_size=batch_size)
+
+        return SamplingInputBatch(
+            max_num_reqs=batch_size,
+            max_model_len=self.model_config.max_model_len,
+            device=self.device,
+            pin_memory=self.pin_memory,
+            vocab_size=self.model_config.get_vocab_size(),
+            logitsprocs=logits_processors,
+        )
 
 
 class PoolerAdapter(torch.nn.Module):
@@ -1644,12 +1708,10 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
 
         pooling_metadata = self.input_batch.make_pooling_metadata()
 
-        # temporary backward compat code for 0.10.1.1
-        if getattr(pooling_metadata, "build_pooling_cursor", False):
-            ## No partial prefill, hence we can use the prompt lens here
-            pooling_metadata.build_pooling_cursor(
-                num_scheduled_tokens=pooling_metadata.prompt_lens,
-                device=self.device)
+        ## No partial prefill, hence we can use the prompt lens here
+        pooling_metadata.build_pooling_cursor(
+            num_scheduled_tokens=pooling_metadata.prompt_lens,
+            device=self.device)
 
         # prepare unpadded output for the pooler
         hidden_state_list: list[torch.Tensor] = []
@@ -1667,20 +1729,11 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
         for raw_output in raw_pooler_output:
             pooler_output.append(raw_output.data.to("cpu"))
 
-        # temporary backward compat code for 0.10.1.1
-        annotations = inspect.getfullargspec(ModelRunnerOutput).annotations
-        extra_args = {}  # type: ignore
-        if ('spec_token_ids' in annotations):
-            extra_args.update({
-                'spec_token_ids': None,
-            })
-
         model_output = ModelRunnerOutput(
             req_ids=self.input_batch.requests_ids,
             req_id_to_index=self.input_batch.req_id_to_index,
             sampled_token_ids=[],
             logprobs=None,
             prompt_logprobs_dict={},
-            pooler_output=pooler_output,
-            **extra_args)
+            pooler_output=pooler_output)
         return model_output

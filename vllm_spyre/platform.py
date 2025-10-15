@@ -16,6 +16,7 @@ import os
 from typing import TYPE_CHECKING, Union
 
 import torch
+from transformers.models.granite import GraniteConfig
 from vllm.inputs import ProcessorInputs, PromptType
 from vllm.logger import init_logger
 from vllm.pooling_params import PoolingParams
@@ -62,7 +63,6 @@ class SpyrePlatform(Platform):
     supported_quantization: list[str] = ["gptq", "compressed-tensors"]
     _warmup_shapes: tuple[dict[str, int], ...] | None = None
     _block_size: int = 64  # hardcoded Spyre constraint for now
-    _num_spyre_blocks_override: int = -1  # override num of KV cache blocks
     _config: VllmConfig = None
 
     # Backend for dynamic compilation ops
@@ -85,6 +85,9 @@ class SpyrePlatform(Platform):
 
     @classmethod
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:
+        # 🌶️🌶️🌶️ Patch in our perf logger before the engine is created
+        from vllm_spyre.v1.metrics import patch_async_llm_stat_loggers
+        patch_async_llm_stat_loggers()
 
         # In case vllm passes a default vllm_config to us.
         # This happens when get_current_vllm_config is called
@@ -167,20 +170,10 @@ class SpyrePlatform(Platform):
         # - Set the block size (in tokens) to the maximum sequence length
         #       so that the scheduler thinks an entire sequence will fit in
         #       one single block.
-        # - Set the number of blocks to the maximum number of sequences, so
-        #       the scheduler always thinks there's a block available
         # - Set `max_num_batched_tokens` to the size of a full batch of full
         #       length requests, so that the scheduler will always have token
         #       budget available to schedule a full batch
         if cache_config is not None:
-            # overriding number of available Spyre blocks if not None
-            if cache_config.num_gpu_blocks_override:
-                cls._num_spyre_blocks_override = \
-                    cache_config.num_gpu_blocks_override
-            # The V1 scheduler actually needs 2 blocks for each sequence...
-            cache_config.num_gpu_blocks_override = \
-                scheduler_config.max_num_seqs * 2
-
             cache_config.block_size = model_config.max_model_len
             scheduler_config.max_num_batched_tokens = (
                 model_config.max_model_len * scheduler_config.max_num_seqs)
@@ -188,9 +181,8 @@ class SpyrePlatform(Platform):
         logger.info(
             "Overriding configurations based on warmup shapes. "
             "max_model_len=%d, max_num_seqs=%d, block_size=%d, "
-            "num_gpu_blocks_override=%d, max_num_batched_tokens=%d",
-            model_config.max_model_len, scheduler_config.max_num_seqs,
-            cache_config.block_size, cache_config.num_gpu_blocks_override,
+            "max_num_batched_tokens=%d", model_config.max_model_len,
+            scheduler_config.max_num_seqs, cache_config.block_size,
             scheduler_config.max_num_batched_tokens)
 
         # set env vars for torch_sendnn to consume
@@ -209,28 +201,16 @@ class SpyrePlatform(Platform):
         os.environ["VLLM_DT_MAX_BATCH_SIZE"] = str(
             max(vllm_config.scheduler_config.max_num_seqs, 2))
 
-        # max product of batch size x tkv supported by the Spyre compiler
-        if ('granite-3.3-8b-instruct' in model_config.model
-                and parallel_config.world_size == 4):
-            # hard coded value for tensor parallel size 4 with the below model
-            # https://huggingface.co/ibm-granite/granite-3.3-8b-instruct
-            os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(128 * 1024)
-            logger.info("Model granite-3.3-8b-instruct and tensor parallel " \
-            "size 4 detected. Using VLLM_DT_MAX_BATCH_TKV_LIMIT = %d",
-            128 * 1024)
+        # Hardcode some things for granite-3.3-8b-instruct
+        if cls.is_granite_3_8b(vllm_config.model_config):
+            cls.configure_granite_3_8b(vllm_config)
 
-            # If no HDMA p2psize override was specified, set 256MB
-            if not os.getenv("FLEX_HDMA_P2PSIZE", None):
-                os.environ["FLEX_HDMA_P2PSIZE"] = str(1024 * 1024 * 256)
-                logger.info(
-                    "Model granite-3.3-8b-instruct and tensor parallel size 4 "
-                    "detected. Using FLEX_HDMA_P2PSIZE = %d",
-                    1024 * 1024 * 256)
-        else:
-            # default value for any other model/ tensor parallel size
+        if not os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"):
+            # max product of batch size x tkv supported by the Spyre compiler
             default_max_batch_tkv_limit = \
                 vllm_config.model_config.max_model_len * \
                 vllm_config.scheduler_config.max_num_seqs
+
             os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(
                 default_max_batch_tkv_limit)
             logger.info("No model / tensor parallel size specific value for " \
@@ -317,10 +297,6 @@ class SpyrePlatform(Platform):
         return cls._block_size
 
     @classmethod
-    def get_num_spyre_blocks_override(cls) -> int:
-        return cls._num_spyre_blocks_override
-
-    @classmethod
     def supports_v1(cls, model_config: ModelConfig) -> bool:
         """Returns whether the current platform can support v1 for the supplied
         model configuration.
@@ -367,8 +343,7 @@ class SpyrePlatform(Platform):
             # ceil division to pad to next block boundary
             prompt_padding_len = math.ceil(
                 prompt_len / cls._block_size) * cls._block_size
-            # we have to account for the token generated during prefill (-1)
-            if (prompt_padding_len + max_tokens - 1
+            if (prompt_padding_len + max_tokens
                     > cls._config.scheduler_config.max_model_len):
                 raise ValueError(
                     "Could not add request: prompt length is "
@@ -432,33 +407,54 @@ class SpyrePlatform(Platform):
         # Try to determine the CPU time/cores that we are allocated
         cpu_count: float | None = None
         detection_message = ""
-        try:
-            # try to query cgroup CPU limits
-            with open('/sys/fs/cgroup/cpu.max') as f:
-                quota_str, period_str = f.read().strip().split()
 
-            if quota_str != 'max':
-                quota = int(quota_str)
-                period = int(period_str)
-                cpu_count = quota / period
-                detection_message = f"Detected cgroup CPU limit of {cpu_count}"
+        if (num_cpu := envs_spyre.VLLM_SPYRE_NUM_CPUS) > 0:
+            cpu_count = num_cpu
+            detection_message = f"VLLM_SPYRE_NUM_CPUS is set to {cpu_count}"
+        else:
+            try:
+                # try to query cgroup CPU limits
+                with open('/sys/fs/cgroup/cpu.max') as f:
+                    quota_str, period_str = f.read().strip().split()
 
-        except FileNotFoundError:
-            # file may not exist if not running under cgroups v2
-            pass
-        except Exception as e:
-            logger.debug(
-                "Error parsing /sys/fs/cgroup/cpu.max to get CPU info",
-                exc_info=e)
+                if quota_str != 'max':
+                    quota = int(quota_str)
+                    period = int(period_str)
+                    cpu_count = quota / period
+                    detection_message = \
+                        f"Detected cgroup CPU limit of {cpu_count}"
 
-        # could try `nproc` here, but it is affected by
-        # OMP_NUM_THREADS itself
+            except FileNotFoundError:
+                # file may not exist if not running under cgroups v2
+                pass
+            except Exception as e:
+                logger.debug(
+                    "Error parsing /sys/fs/cgroup/cpu.max to get CPU info",
+                    exc_info=e)
 
-        # try os.cpu_count() to get node CPU count
-        if cpu_count is None and (cpu_count_res := os.cpu_count()) is not None:
-            cpu_count = float(cpu_count_res)
-            detection_message = \
-                f"Detected {cpu_count} CPUs from `os.cpu_count()`"
+            # try psutil to get physical core count
+            if cpu_count is None:
+                try:
+                    import psutil
+                    cpu_count = float(psutil.cpu_count(logical=False))
+                    detection_message = \
+                        f"Detected {cpu_count} physical CPUs from " \
+                         "psutil.cpu_count(logical=False)"
+                except ImportError:
+                    logger.info("Install psutil to count physical CPU cores")
+                    pass
+                except Exception as e:
+                    logger.debug("Error using psutil", exc_info=e)
+
+            # could try `nproc` here, but it is affected by
+            # OMP_NUM_THREADS itself
+
+            # try os.cpu_count() to get node CPU count
+            if cpu_count is None and (cpu_count_res :=
+                                      os.cpu_count()) is not None:
+                cpu_count = float(cpu_count_res)
+                detection_message = \
+                    f"Detected {cpu_count} CPUs from `os.cpu_count()`"
 
         # NOTE: math.ceil can output a number for each worker that sums
         # to a total greater than cpu_count.
@@ -474,9 +470,9 @@ class SpyrePlatform(Platform):
         if envs_spyre.VLLM_SPYRE_UPDATE_THREAD_CONFIG:
             if cpus_per_worker is None:
                 raise RuntimeError(
-                    f"{failed_detection_message} Use "
-                    "VLLM_SPYRE_UPDATE_THREAD_CONFIG=0 and configure manually."
-                )
+                    f"{failed_detection_message} Set VLLM_SPYRE_NUM_CPUS or "
+                    "use VLLM_SPYRE_UPDATE_THREAD_CONFIG=0 and configure "
+                    "manually.")
 
             for env in THREADING_ENVS:
                 os.environ[env] = str(cpus_per_worker)
@@ -511,7 +507,12 @@ class SpyrePlatform(Platform):
         """Return the size of biggest ```new_tokens``` of the \
             warmup shapes that fits the prompt length"""
         if self._warmup_shapes is None:
-            return sys.maxsize
+            # ceil division to pad to next block boundary
+            padded_prompt_len = math.ceil(
+                prompt_len / self._block_size) * self._block_size
+            max_new_tokens = (self._config.scheduler_config.max_model_len -
+                              padded_prompt_len)
+            return max_new_tokens
 
         max_new_tokens = 1
         for shape in self._warmup_shapes:
@@ -519,3 +520,73 @@ class SpyrePlatform(Platform):
                 max_new_tokens = max(max_new_tokens, shape['new_tokens'])
 
         return max_new_tokens
+
+    @classmethod
+    def configure_granite_3_8b(cls, vllm_config: VllmConfig):
+        """
+        Configure hard coded values for the model
+        https://huggingface.co/ibm-granite/granite-3.3-8b-instruct
+        """
+        parallel_config = vllm_config.parallel_config
+
+        if parallel_config.world_size != 4:
+            # only override configs for TP=4
+            return
+
+        tkv_128k = 128 * 1024
+        if not os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"):
+            os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(tkv_128k)
+            logger.info("Model granite-3.3-8b-instruct and tensor parallel " \
+            "size 4 detected. Using VLLM_DT_MAX_BATCH_TKV_LIMIT = %d",
+            tkv_128k)
+        elif os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT") != str(tkv_128k):
+            logger.warning(
+                "VLLM_DT_MAX_BATCH_TKV_LIMIT was set to %s, not "
+                "overriding to the granite-3.3-8b-instruct default of %d",
+                os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"), tkv_128k)
+
+        # If no HDMA p2psize override was specified, set 256MB
+        p2psize_256m = 256 * 1024 * 1024
+        if not os.getenv("FLEX_HDMA_P2PSIZE"):
+            os.environ["FLEX_HDMA_P2PSIZE"] = str(p2psize_256m)
+            logger.info(
+                "Model granite-3.3-8b-instruct and tensor parallel size 4 "
+                "detected. Using FLEX_HDMA_P2PSIZE = %d", p2psize_256m)
+        elif os.getenv("FLEX_HDMA_P2PSIZE") != str(p2psize_256m):
+            logger.warning(
+                "FLEX_HDMA_P2PSIZE was set to %s, not using the "
+                "granite-3.3-8b-instruct default of %d",
+                os.getenv("FLEX_HDMA_P2PSIZE"), p2psize_256m)
+
+        # Override the total number of KV cache blocks based on what we know
+        # will fit. (Unless user already set `--num-gpu-blocks-override`)
+        # TODO: remove this once we have correct free memory info available
+        blocks_override = 2080
+        if vllm_config.cache_config.num_gpu_blocks_override is None:
+            vllm_config.cache_config.num_gpu_blocks_override = blocks_override
+            logger.info(
+                "Model granite-3.3-8b-instruct and tensor parallel size 4 "
+                "detected. Overriding available KV Cache blocks to %d",
+                blocks_override)
+        elif (vllm_config.cache_config.num_gpu_blocks_override
+              != blocks_override):
+            logger.warning(
+                "--num-gpu-blocks-override was set to %d, not using the "
+                "granite-3.3-8b-instruct default of %d",
+                vllm_config.cache_config.num_gpu_blocks_override,
+                blocks_override)
+
+    @classmethod
+    def is_granite_3_8b(cls, model_config: ModelConfig):
+        """Returns true if we have a model that looks like
+        ibm-granite/granite-3.3-8b-instruct"""
+        if not isinstance(model_config.hf_config, GraniteConfig):
+            # Not granite at all
+            return False
+
+        return (model_config.hf_config.num_hidden_layers == 40
+                and model_config.hf_config.max_position_embeddings == 131072
+                and model_config.hf_config.hidden_size == 4096
+                and model_config.hf_config.vocab_size == 49159
+                and model_config.hf_config.num_key_value_heads == 8
+                and model_config.hf_config.num_attention_heads == 32)

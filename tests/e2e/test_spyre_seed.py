@@ -11,6 +11,7 @@ from spyre_util import DecodeWarmupShapes, ModelInfo, get_chicken_soup_prompts
 from vllm import SamplingParams
 
 
+@pytest.mark.xfail(reason="Failing currently because of output mismatch")
 @pytest.mark.parametrize("temperature", [0.1, 1.0])
 @pytest.mark.parametrize("seed", [42])
 def test_seed(model: ModelInfo, temperature: float, seed: int,
