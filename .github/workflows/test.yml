@@ -248,8 +248,5 @@ jobs:
           # re-install the vllm_sypre package from source
           source .venv/bin/activate
 
-          # overwrite fms main with feature branch
-          # TODO remove before merging
-          uv pip install git+https://github.com/foundation-model-stack/foundation-model-stack@granite-2b-expand-q-k-128 --force-reinstall
           python3 -m pytest ${{ matrix.test_suite.flags }} \
             tests -v -m "${{ matrix.test_suite.markers }}"
