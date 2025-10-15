@@ -5,18 +5,20 @@
 
 from abc import abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Generic, Optional, TypeVar, cast
+from typing import Generic, Optional, TypeVar, cast
 
 import numpy as np
 import torch
-import vllm.v1.sample.logits_processor
-from vllm.config import VllmConfig
 from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import SamplingParams, SamplingType
 from vllm.v1.pool.metadata import PoolingMetadata
+# from vllm.v1.sample.logits_processor.state import LogitsProcessors
 from vllm.v1.sample.logits_processor import (BatchUpdateBuilder,
+                                             LogitsProcessors,
                                              MoveDirectionality)
 from vllm.v1.sample.metadata import SamplingMetadata
+
+from vllm_spyre.v1.sample.spyre_logits_processor import LogitProcessorWrapper
 
 
 @dataclass
@@ -201,29 +203,6 @@ class SamplingRequestState(BaseRequestState):
         return len(self.prompt_token_ids) + len(self.output_token_ids)
 
 
-# Compatibility code, remove when no supported version
-# has init_builtin_logitsprocs any more
-def get_builtin_logits_processors(
-        vllm_config: Optional[VllmConfig] = None) -> Any:
-    if hasattr(vllm.v1.sample.logits_processor, "LogitsProcessors"):
-        if vllm_config is None:
-            return vllm.v1.sample.logits_processor.LogitsProcessors()
-        return vllm.v1.sample.logits_processor.LogitsProcessors(
-            ctor(vllm_config, "cpu", False)
-            for ctor in vllm.v1.sample.logits_processor.\
-                BUILTIN_LOGITS_PROCESSORS)
-    else:
-        if vllm_config is None:
-            return vllm.v1.sample.logits_processor.LogitsProcessorManager(
-                non_argmax_invariant=[],
-                argmax_invariant=[],
-            )
-        return vllm.v1.sample.logits_processor.init_builtin_logitsprocs(
-            pin_memory_available=False,
-            max_num_reqs=vllm_config.scheduler_config.max_num_seqs + 1,
-            device="cpu")
-
-
 class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
     '''
     This class was based on the InputBatch for GPU of vLLM V1.
@@ -246,16 +225,14 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
     condense the sampling parameters.
     '''
 
-    def __init__(
-        self,
-        max_num_reqs: int,
-        max_model_len: int,
-        device: torch.device,
-        pin_memory: bool,
-        vocab_size: int,
-        # Type here is any for compatibility reasons
-        logitsprocs: Optional[Any] = None,
-    ):
+    def __init__(self,
+                 max_num_reqs: int,
+                 max_model_len: int,
+                 device: torch.device,
+                 pin_memory: bool,
+                 vocab_size: int,
+                 logitsprocs: Optional[LogitsProcessors] = None):
+
         super().__init__(
             max_num_reqs,
             max_model_len,
@@ -323,7 +300,10 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
         # updates. Should reset each step.
         self.batch_update_builder = BatchUpdateBuilder()
 
-        self.logitsprocs = logitsprocs or get_builtin_logits_processors()
+        self.logitsprocs = logitsprocs or LogitsProcessors()
+        self.logitsprocs_wrappers = [lp for lp \
+            in self.logitsprocs.all if isinstance(lp, LogitProcessorWrapper)
+        ]
 
         self.has_allowed_token_ids: set[str] = set()
         self.allowed_token_ids_mask: Optional[torch.Tensor] = None
@@ -539,13 +519,12 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
         self.req_indices_mask[req_index] = False
 
         # Remove and move up
-        tmp_dense = dense_index
-        self.batch_update_builder.removed_append(tmp_dense)
+        self.batch_update_builder.removed_append(dense_index)
 
-        while tmp_dense < self._num_requests + 1:
+        end_dense_idx = min(self._num_requests + 1, self.max_num_reqs - 1)
+        for tmp_dense in range(dense_index, end_dense_idx):
             self.batch_update_builder.moved.append(
-                (tmp_dense, tmp_dense + 1, MoveDirectionality.SWAP))
-            tmp_dense = tmp_dense + 1
+                (tmp_dense, tmp_dense + 1, MoveDirectionality.UNIDIRECTIONAL))
 
         # Remove the references
         self.req_output_token_ids.pop(dense_index)

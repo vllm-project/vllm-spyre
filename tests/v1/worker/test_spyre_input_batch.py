@@ -7,11 +7,11 @@ import pytest
 import torch
 from vllm.sampling_params import SamplingParams
 from vllm.utils import is_pin_memory_available, make_tensor_with_pad
-from vllm.v1.sample.logits_processor import BatchUpdateBuilder
+from vllm.v1.sample.logits_processor import LogitsProcessors
 from vllm.v1.sample.metadata import SamplingMetadata
 
-from vllm_spyre.v1.worker.spyre_input_batch import (
-    SamplingInputBatch, SamplingRequestState, get_builtin_logits_processors)
+from vllm_spyre.v1.worker.spyre_input_batch import (SamplingInputBatch,
+                                                    SamplingRequestState)
 
 VOCAB_SIZE = 1024
 NUM_OUTPUT_TOKENS = 20
@@ -36,6 +36,14 @@ def _remove_requests(input_batch: SamplingInputBatch, batch_size: int,
     for index in req_indices_to_remove:
         input_batch.remove_request(reqs[index].req_id)
         req_ids_to_remove.add(reqs[index].req_id)
+
+    # FIXME: it is a bug in the current implementation that removed indices may
+    # be duplicated, which can break logitsprocs tracking. Once fixed we should
+    # add this assert.
+    # see also: https://github.com/vllm-project/vllm-spyre/issues/508
+    # removed = input_batch.batch_update_builder.removed
+    # assert len(set(removed)) == len(removed), "Duplicate removed indices"
+
     return req_ids_to_remove
 
 
@@ -63,18 +71,11 @@ def _construct_expected_sampling_metadata(
                                          dtype=torch.bool,
                                          device=device)
 
-    batch_update_builder = BatchUpdateBuilder()
-    logitsprocs = get_builtin_logits_processors(vllm_config=None)
-
     bad_words_token_ids = {}
     for req in reqs:
         if req.req_id not in req_ids_retained:
             continue
         index_in_input_batch = input_batch.req_id_to_dense_index(req.req_id)
-
-        params = req.sampling_params
-        batch_update_builder.added.append(
-            (index_in_input_batch, params, req.output_token_ids))
 
         output_token_ids[index_in_input_batch] = req.output_token_ids
         prompt_token_ids[index_in_input_batch] = req.prompt_token_ids
@@ -93,10 +94,6 @@ def _construct_expected_sampling_metadata(
         if req.sampling_params.bad_words_token_ids:
             bad_words_token_ids[
                 index_in_input_batch] = req.sampling_params.bad_words_token_ids
-
-    batch_update = batch_update_builder.get_and_reset(num_reqs)
-    for logit_proc in logitsprocs.all:
-        logit_proc.update_state(batch_update)
 
     return SamplingMetadata(
         temperature=torch.tensor(temperature, dtype=torch.float,
@@ -130,7 +127,7 @@ def _construct_expected_sampling_metadata(
                       and all(x == 1 for x in repetition_penalties)),
         allowed_token_ids_mask=allowed_token_ids_mask,
         bad_words_token_ids=bad_words_token_ids,
-        logitsprocs=logitsprocs,
+        logitsprocs=LogitsProcessors(),
     )
 
 

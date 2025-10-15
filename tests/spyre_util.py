@@ -1,4 +1,4 @@
-import inspect
+import json
 import math
 import os
 import random
@@ -15,8 +15,6 @@ from transformers import AutoTokenizer
 from vllm import SamplingParams
 from vllm.entrypoints.openai.cli_args import make_arg_parser
 from vllm.utils import FlexibleArgumentParser, get_open_port
-from vllm.v1.engine import EngineCoreRequest
-from vllm.v1.engine.core import EngineCore
 from vllm.v1.request import Request
 
 EmbeddingWarmupShapes = list[tuple[int, int]]
@@ -199,14 +197,12 @@ def get_spyre_model_dir_path() -> Path:
     return Path(model_dir_path)
 
 
-# get model backends from env or default to all and add pytest markers
+# add pytest markers to supported different backends
 def get_spyre_backend_list():
-    user_backend_list = os.environ.get("VLLM_SPYRE_TEST_BACKEND_LIST",
-                                       "eager,inductor,sendnn")
+    backend_list = ["eager", "inductor", "sendnn"]
 
     backends = []
-    for backend in user_backend_list.split(","):
-        backend = backend.strip()
+    for backend in backend_list:
         marks = []
         if backend == "eager":
             marks = [pytest.mark.cpu]
@@ -220,12 +216,14 @@ def get_spyre_backend_list():
 # get model names from env, if not set then use default models for each type.
 # Multiple models can be specified with a comma separated list in
 # VLLM_SPYRE_TEST_MODEL_LIST
-def get_spyre_model_list(isEmbeddings=False, isScoring=False):
+def get_spyre_model_list(isEmbeddings=False,
+                         isScoring=False,
+                         full_size_models=False):
     """Returns a list of pytest.params. The values are NamedTuples with a name
     and revision field."""
     user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST")
     if not user_test_model_list:
-        return _default_test_models(isEmbeddings, isScoring)
+        return _default_test_models(isEmbeddings, isScoring, full_size_models)
 
     # User overridden model list
     spyre_model_dir_path = get_spyre_model_dir_path()
@@ -246,7 +244,9 @@ def get_spyre_model_list(isEmbeddings=False, isScoring=False):
     return test_model_list
 
 
-def _default_test_models(isEmbeddings=False, isScoring=False):
+def _default_test_models(isEmbeddings=False,
+                         isScoring=False,
+                         full_size_models=False):
     """Return the default set of test models as pytest parameterizations"""
     if isEmbeddings:
         model = ModelInfo(name="sentence-transformers/all-roberta-large-v1",
@@ -266,29 +266,40 @@ def _default_test_models(isEmbeddings=False, isScoring=False):
     # We run tests for both the full-precision bf16 and fp8-quantized models,
     # but by default the `pytest.mark.quantized` marker is de-selected unless
     # the test command includes `-m quantized`.
-    tinygranite = ModelInfo(
-        name="ibm-ai-platform/micro-g3.3-8b-instruct-1b",
-        revision="6e9c6465a9d7e5e9fa35004a29f0c90befa7d23f")
-    tinygranite_fp8 = ModelInfo(
-        name="ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8",
-        revision="0dff8bacb968836dbbc7c2895c6d9ead0a05dc9e",
-        is_quantized=True)
+    if not full_size_models:
+        tinygranite = ModelInfo(
+            name="ibm-ai-platform/micro-g3.3-8b-instruct-1b",
+            revision="6e9c6465a9d7e5e9fa35004a29f0c90befa7d23f")
+        tinygranite_fp8 = ModelInfo(
+            name="ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8",
+            revision="0dff8bacb968836dbbc7c2895c6d9ead0a05dc9e",
+            is_quantized=True)
+        params = [
+            pytest.param(tinygranite,
+                         marks=[pytest.mark.decoder],
+                         id=tinygranite.name),
+            pytest.param(tinygranite_fp8,
+                         marks=[pytest.mark.decoder, pytest.mark.quantized],
+                         id=tinygranite_fp8.name)
+        ]
+        return params
+
+    # Full sized decoders
+    # The granite 8b fp8 model is not publicly available yet
+    granite = ModelInfo(name="ibm-granite/granite-3.3-8b-instruct",
+                        revision="51dd4bc2ade4059a6bd87649d68aa11e4fb2529b")
     params = [
-        pytest.param(tinygranite,
-                     marks=[pytest.mark.decoder],
-                     id=tinygranite.name),
-        pytest.param(tinygranite_fp8,
-                     marks=[pytest.mark.decoder, pytest.mark.quantized],
-                     id=tinygranite_fp8.name)
+        pytest.param(granite, marks=[pytest.mark.decoder], id=granite.name),
     ]
     return params
 
 
-def create_text_prompt(model: str, min_token_length: int,
+def create_text_prompt(model: ModelInfo, min_token_length: int,
                        max_token_length: int) -> str:
     """Create a text prompt for the specified model that will tokenize to within
     the specified token length range."""
-    tokenizer = AutoTokenizer.from_pretrained(model)
+    tokenizer = AutoTokenizer.from_pretrained(model.name,
+                                              revision=model.revision)
     pepper = "🌶️"
     pepper_tokens = len(tokenizer.encode(pepper, add_special_tokens=False))
 
@@ -305,11 +316,12 @@ def create_text_prompt(model: str, min_token_length: int,
     return prompt
 
 
-def create_seq_prompt(model: str, token_length: int) -> str:
+def create_seq_prompt(model: ModelInfo, token_length: int) -> str:
     """Create a repeating sequential number prompt for the specified
     model that will tokenize to exactly the specified token length."""
 
-    tokenizer = AutoTokenizer.from_pretrained(model)
+    tokenizer = AutoTokenizer.from_pretrained(model.name,
+                                              revision=model.revision)
 
     # 20-token pattern
     pattern = "0 1 2 3 4 5 6 7 8 9 "
@@ -333,10 +345,11 @@ def create_random_request(
     num_tokens: int,
     sampling_params: SamplingParams,
     from_model_vocab: bool = False,
-    model: Optional[str] = None,
-) -> Request | EngineCoreRequest:
+    model: Optional[ModelInfo] = None,
+) -> Request:
 
-    tokenizer = AutoTokenizer.from_pretrained(model)
+    tokenizer = AutoTokenizer.from_pretrained(model.name,
+                                              revision=model.revision)
     if from_model_vocab:
         assert model is not None, "Prompt requested to be generated from " \
         "model's vocabulary: need to provide model."
@@ -356,40 +369,14 @@ def create_random_request(
         assert (len(prompt_token_ids) == num_tokens
                 ), f"need {num_tokens} but got {len(prompt_token_ids)}"
 
-    sig = inspect.signature(EngineCore.add_request)
-    inputs_renamed = hasattr(EngineCoreRequest, 'mm_kwargs')
-    if sig.parameters["request"].annotation == EngineCoreRequest:
-        kwargs = {"mm_kwargs" if inputs_renamed else "mm_inputs": None}
-        return EngineCoreRequest(
-            request_id=str(request_id),
-            prompt_token_ids=prompt_token_ids,
-            mm_hashes=None,
-            mm_placeholders=None,
-            sampling_params=sampling_params,
-            eos_token_id=None,
-            arrival_time=0,
-            lora_request=None,
-            data_parallel_rank=None,
-            pooling_params=None,
-            cache_salt=None,
-            **kwargs,
-        )
-    kwargs = {
-        "multi_modal_kwargs" if inputs_renamed else "multi_modal_inputs": None
-    }
-    return Request(
-        request_id=str(request_id),
-        prompt_token_ids=prompt_token_ids,
-        multi_modal_hashes=None,
-        multi_modal_placeholders=None,
-        sampling_params=sampling_params,
-        eos_token_id=None,
-        arrival_time=0,
-        lora_request=None,
-        pooling_params=None,
-        cache_salt=None,
-        **kwargs,
-    )
+    return Request(request_id=str(request_id),
+                   prompt_token_ids=prompt_token_ids,
+                   sampling_params=sampling_params,
+                   eos_token_id=None,
+                   arrival_time=0,
+                   lora_request=None,
+                   pooling_params=None,
+                   cache_salt=None)
 
 
 def skip_unsupported_tp_size(size: int, backend: str):
@@ -463,3 +450,12 @@ def get_longer_chicken_soup_prompts(num_prompts: int) -> list[str]:
         prompts = prompts * (math.ceil(num_prompts / 4))
 
     return prompts[:num_prompts]
+
+
+def write_sample_model_config(tmp_path,
+                              data,
+                              filename="model_compile.log.json"):
+    """Helper to write a sample model_compile.log.json in tmp_path."""
+    config_path = tmp_path / filename
+    config_path.write_text(json.dumps(data))
+    return config_path

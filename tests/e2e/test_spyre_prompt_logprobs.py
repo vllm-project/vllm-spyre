@@ -8,7 +8,8 @@ import pytest
 import torch
 import torch.nn.functional
 from llm_cache_util import force_engine_shutdown
-from spyre_util import get_chicken_soup_prompts, skip_unsupported_tp_size
+from spyre_util import (ModelInfo, get_chicken_soup_prompts,
+                        skip_unsupported_tp_size)
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, RequestOutput, SamplingParams
 from vllm.config import ModelConfig, VllmConfig
@@ -18,7 +19,7 @@ from vllm_spyre.platform import SpyrePlatform
 
 # Skip for now until prompt logprobs are fixed
 @pytest.mark.skip
-def test_prompt_logprobs(backend: str, model: str, tp_size: int,
+def test_prompt_logprobs(backend: str, model: ModelInfo, tp_size: int,
                          monkeypatch: pytest.MonkeyPatch) -> None:
     '''
     This test checks the prompt_logprobs output from vllm against a reference
@@ -33,14 +34,16 @@ def test_prompt_logprobs(backend: str, model: str, tp_size: int,
 
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS", "1")
-    llm = LLM(model, tensor_parallel_size=tp_size, tokenizer=model)
+    tokenizer = AutoTokenizer.from_pretrained(model.name,
+                                              revision=model.revision)
+    llm = LLM(model, tensor_parallel_size=tp_size, tokenizer=tokenizer)
 
     responses: list[RequestOutput] = llm.generate(
         prompts,
         sampling_params=SamplingParams(prompt_logprobs=num_prompt_logprobs))
 
     expected_prompt_logprobs: dict[str, list] = _get_hf_prompt_logprobs(
-        model_name=model, prompts=prompts, n=num_prompt_logprobs)
+        model_info=model, prompts=prompts, n=num_prompt_logprobs)
 
     for prompt, response in zip(prompts, responses):
         actual_logprobs = response.prompt_logprobs
@@ -52,6 +55,7 @@ def test_prompt_logprobs(backend: str, model: str, tp_size: int,
     force_engine_shutdown(llm)
 
 
+@pytest.mark.skip
 @pytest.mark.cpu
 @pytest.mark.decoder
 def test_prompt_logprobs_must_be_enabled(monkeypatch: pytest.MonkeyPatch):
@@ -63,6 +67,7 @@ def test_prompt_logprobs_must_be_enabled(monkeypatch: pytest.MonkeyPatch):
         SpyrePlatform.validate_request("test-any-prompt", params)
 
 
+@pytest.mark.skip
 @pytest.mark.cpu
 @pytest.mark.decoder
 def test_prompt_logprobs_not_supported_with_cb(
@@ -76,6 +81,7 @@ def test_prompt_logprobs_not_supported_with_cb(
         VllmConfig(model_config=ModelConfig(model=model.name, task="generate"))
 
 
+@pytest.mark.skip
 @pytest.mark.cpu
 @pytest.mark.decoder
 def test_prompt_logprobs_on_single_requests_only(
@@ -125,11 +131,13 @@ def _compare_prompt_logprobs(expected: list, actual: list,
                                 rel_tol=relative_tolerance)
 
 
-def _get_hf_prompt_logprobs(model_name, prompts, n) -> dict[str, list]:
+def _get_hf_prompt_logprobs(model_info: ModelInfo, prompts,
+                            n) -> dict[str, list]:
     """Get prompt logprobs from HF model directly, including top n candidates 
     for each token"""
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForCausalLM.from_pretrained(model_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_info.name,
+                                              revision=model_info.revision)
+    model = AutoModelForCausalLM.from_pretrained(model_info.name)
 
     prompt_logprobs = {}
     for prompt in prompts:

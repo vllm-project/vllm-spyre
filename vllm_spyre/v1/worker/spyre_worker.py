@@ -53,18 +53,25 @@ def new_request_data_builder(
     kwargs = {
         "req_id": req_id,
         "prompt_token_ids": prompt_token_ids,
-        "mm_hashes": [],
-        "mm_positions": [],
         "sampling_params": sampling_params,
         "pooling_params": pooling_params,
         "block_ids": [0],  # not actually used
         "num_computed_tokens": 0,
         "lora_request": None,
     }
-    if 'mm_inputs' in dataclass_fields(NewRequestData):
-        kwargs["mm_inputs"] = []
-    else:
+
+    ## Temporary backwards compatibility for 0.10.2
+    if 'mm_kwargs' in dataclass_fields(NewRequestData):
         kwargs["mm_kwargs"] = []
+    if 'mm_hashes' in dataclass_fields(NewRequestData):
+        kwargs["mm_hashes"] = []
+    if 'mm_positions' in dataclass_fields(NewRequestData):
+        kwargs["mm_positions"] = []
+
+    # Newly required in 0.11.0
+    if "mm_features" in dataclass_fields(NewRequestData):
+        kwargs["mm_features"] = []
+
     return NewRequestData(**kwargs)
 
 
@@ -100,13 +107,6 @@ class SpyreWorker(WorkerBaseV1):
     """A worker class that executes the model on a group of Spyre cores.
     """
 
-    def get_supported_pooling_tasks(self):
-        # Compatibility code required for vllm == 0.10.0
-        # Can be removed for vllm > 0.10.0
-        if self.is_pooling:
-            return ["embed", "score"]
-        return []
-
     @property
     def is_pooling(self) -> bool:
         return self.model_config.runner_type == "pooling"
@@ -128,7 +128,6 @@ class SpyreWorker(WorkerBaseV1):
 
     def compile_or_warm_up_model(self) -> None:
         """Prepare model for execution through compilation/warmup."""
-
         if envs_spyre.VLLM_SPYRE_USE_CB:
             self._warmup_spyre_dynamic_size(self.restricted_tokens)
             return
@@ -187,16 +186,25 @@ class SpyreWorker(WorkerBaseV1):
         The number of device blocks (called "gpu blocks" in most places) can
         also be overridden by `--num-gpu-blocks-override`, which is set under
         `vllm_config.cache_config.num_gpu_blocks_override`.
+
+        🌶️🌶️🌶️ The result from this method _only_ applies to the KV Cache
+        management in vLLM's core scheduler. This does _not_ apply to the KV
+        cache management handled directly by the vllm-spyre worker and model
+        runner. We return a minimal value here to make the vllm scheduler happy.
         """
-        # Currently we override vllm_config.cache_config.num_gpu_blocks_override
-        # in platform.py, so this value is only used by vllm to check that the
-        # number of gpu blocks will fit in available memory.
-        # Since we also return dummy values for the kv cache spec, this check is
-        # meaningless and we can just return a large value to ensure vllm does
-        # not raise a validation error.
-        # TODO: Return the real available device memory when we implement real
-        # kv-caching.
-        return 1 << 64
+        # The fake kv_cache config specified by the model runner sets 4 bytes
+        # per token.
+        accurate_fake_kv_cache_size = (4 *
+                                       self.scheduler_config.max_model_len *
+                                       self.scheduler_config.max_num_seqs)
+
+        # The vLLM scheduler reserves a null block in its kv-cache, so we need
+        # at least one more block to allow for proper scheduling. We double
+        # the cache size here to ensure that the vllm scheduler always has
+        # blocks available. This causes the log message from vLLM about it's
+        # KV cache capacity to be double the log message from vllm-spyre.
+        # This can probably be fixed in a nicer way.
+        return 2 * accurate_fake_kv_cache_size
 
     def initialize_from_config(self,
                                kv_cache_configs: list[KVCacheConfig]) -> None:
@@ -326,22 +334,13 @@ class SpyreWorker(WorkerBaseV1):
             backend = "gloo"
             init_method = "env://"
 
-            # TODO: temporary fix until we have
-            # timeout in vllm's init_distributed_environment
-            torch.distributed.init_process_group(
-                backend=backend,
-                init_method=init_method,
-                world_size=self.parallel_config.world_size,
-                rank=self.rank,
-                timeout=timedelta(
-                    minutes=envs_spyre.VLLM_SPYRE_GLOO_TIMEOUT_MINUTES))
-
             init_distributed_environment(
                 world_size=self.parallel_config.world_size,
                 rank=self.rank,
                 distributed_init_method=init_method,
                 backend=backend,
-            )
+                timeout=timedelta(
+                    minutes=envs_spyre.VLLM_SPYRE_GLOO_TIMEOUT_MINUTES))
 
             if self.parallel_config.world_size > 1:
                 self.init_distributed_environment()
@@ -391,6 +390,12 @@ class SpyreWorker(WorkerBaseV1):
         load_model_start_t = time.time()
 
         if envs_spyre.VLLM_SPYRE_USE_CB:
+            if self.is_pooling:
+                logger.warning(
+                    "Pooling models only support Static " \
+                    "Batching. Using VLLM_SPYRE_USE_CB=0"
+                )
+                envs_spyre.override("VLLM_SPYRE_USE_CB", "0")
             # unused for continuous batching: set here to use same API
             wup_prompt_lens, wup_new_tokens = (0, ), (0, )
         else:
@@ -476,10 +481,9 @@ class SpyreWorker(WorkerBaseV1):
             scheduled_encoder_inputs={},
             num_common_prefix_blocks=0,
             finished_req_ids=set(),
-            free_encoder_input_ids=[],
             structured_output_request_ids={},
             grammar_bitmask=None,
-        )
+            **_get_extra_args())
         logger.info("[WARMUP] Deploying to device...")
         self.execute_model(scheduler_output)
         self._cleanup_model_runner(request=[deploy_req])
@@ -508,10 +512,9 @@ class SpyreWorker(WorkerBaseV1):
             num_common_prefix_blocks=0,
             # The requests to be removed
             finished_req_ids=set([r.req_id for r in request]),
-            free_encoder_input_ids=[],
             structured_output_request_ids={},
             grammar_bitmask=None,
-        )
+            **_get_extra_args())
         self.execute_model(scheduler_output)
         # satisfy mypy
         model_runner: ContinuousBatchingSpyreModelRunner = \
@@ -590,10 +593,9 @@ class SpyreWorker(WorkerBaseV1):
             scheduled_encoder_inputs={},
             num_common_prefix_blocks=0,
             finished_req_ids=set(),
-            free_encoder_input_ids=[],
             structured_output_request_ids={},
             grammar_bitmask=None,
-        )
+            **_get_extra_args())
 
         # First full forward pass
         logger.info("[WARMUP] Compiling graphs...")
@@ -655,10 +657,9 @@ class SpyreWorker(WorkerBaseV1):
                 scheduled_encoder_inputs={},
                 num_common_prefix_blocks=0,
                 finished_req_ids=set(),
-                free_encoder_input_ids=[],
                 structured_output_request_ids={},
                 grammar_bitmask=None,
-            )
+                **_get_extra_args())
 
             logger.info("[WARMUP] Prefill [%s/%s]...", idx + 1, req_count)
 
@@ -692,10 +693,9 @@ class SpyreWorker(WorkerBaseV1):
             scheduled_encoder_inputs={},
             num_common_prefix_blocks=0,
             finished_req_ids=set(),
-            free_encoder_input_ids=[],
             structured_output_request_ids={},
             grammar_bitmask=None,
-        )
+            **_get_extra_args())
         logger.info("[WARMUP] Decode...")
         self.execute_model(scheduler_output)
         self._cleanup_model_runner(request=requests)
@@ -768,3 +768,11 @@ def maybe_override_signals_handler():
 
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
+
+
+def _get_extra_args() -> dict:
+    """Add any required backwards compatibility code for constructing
+    SchedulerOutputs here"""
+    extra_args: dict = {}
+    extra_args.update({"free_encoder_mm_hashes": []})
+    return extra_args
