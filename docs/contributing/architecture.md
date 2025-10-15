@@ -31,7 +31,7 @@ by static batching and continuous batching.
 The changes are broader in the worker process. Here most of the main
 classes have Spyre-specific implementations. From the vLLM code we reuse
 mainly the sampling code with all the logits processing, as well as the pooling
-code for non-generative use cases. 
+code for non-generative use cases.
 
 We have model runners for 3 cases: static batching, continuous batching and
 pooling. The pooling model runner is very similar to the static batching one,
