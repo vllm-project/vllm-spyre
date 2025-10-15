@@ -164,8 +164,11 @@ def test_spyre_batch1_n_generations(model: ModelInfo, backend, monkeypatch,
 def token_diversity(spyre_model, prompt, params, n_experiments):
 
     tokens = []
-    for i in range(n_experiments):
-        output = spyre_model.generate(prompt, params)[0]
+
+    outputs = spyre_model.generate([prompt] * n_experiments,
+                                   params,
+                                   use_tqdm=False)
+    for output in outputs:
         tokens.extend(output.outputs[0].token_ids)
 
     return len(set(tokens))
