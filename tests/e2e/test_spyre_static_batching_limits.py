@@ -34,7 +34,7 @@ def test_max_prompt_len_and_new_tokens(model: ModelInfo,
 
     llm = get_cached_llm(
         model=model,
-        max_model_len=256,
+        max_model_len=256,  # unused
         tensor_parallel_size=1,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -45,7 +45,7 @@ def test_max_prompt_len_and_new_tokens(model: ModelInfo,
 
     # Craft a request with a prompt that is slightly too long for the warmup
     # shape
-    prompt = create_text_prompt(model.name,
+    prompt = create_text_prompt(model,
                                 min_token_length=max_prompt_length,
                                 max_token_length=max_prompt_length +
                                 max_new_tokens - 1)

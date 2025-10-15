@@ -35,7 +35,7 @@ def mock_get_mask_dtype(mocker: MockerFixture):
 @pytest.mark.spyre
 @pytest.mark.cb
 def test_compare_graphs_cb(model: ModelInfo, max_num_seqs: int,
-                           monkeypatch: pytest.MonkeyPatch,
+                           max_model_len: int, monkeypatch: pytest.MonkeyPatch,
                            mocker: MockerFixture):
     """Test that the spyre worker correctly outputs
     continuous batches of requests by comparing to HF"""
@@ -45,7 +45,6 @@ def test_compare_graphs_cb(model: ModelInfo, max_num_seqs: int,
     if script_dir is None:
         pytest.skip("aiu-fms-testing-utils is required "
                     "and is not installed to run this test")
-    max_model_len = 256
 
     model_path = get_model_path(model)
 

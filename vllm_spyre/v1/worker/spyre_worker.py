@@ -1,7 +1,6 @@
 """A Spyre worker class."""
 import contextlib
 import functools
-import inspect
 import json
 import os
 import platform
@@ -54,18 +53,25 @@ def new_request_data_builder(
     kwargs = {
         "req_id": req_id,
         "prompt_token_ids": prompt_token_ids,
-        "mm_hashes": [],
-        "mm_positions": [],
         "sampling_params": sampling_params,
         "pooling_params": pooling_params,
         "block_ids": [0],  # not actually used
         "num_computed_tokens": 0,
         "lora_request": None,
     }
-    if 'mm_inputs' in dataclass_fields(NewRequestData):
-        kwargs["mm_inputs"] = []
-    else:
+
+    ## Temporary backwards compatibility for 0.10.2
+    if 'mm_kwargs' in dataclass_fields(NewRequestData):
         kwargs["mm_kwargs"] = []
+    if 'mm_hashes' in dataclass_fields(NewRequestData):
+        kwargs["mm_hashes"] = []
+    if 'mm_positions' in dataclass_fields(NewRequestData):
+        kwargs["mm_positions"] = []
+
+    # Newly required in 0.11.0
+    if "mm_features" in dataclass_fields(NewRequestData):
+        kwargs["mm_features"] = []
+
     return NewRequestData(**kwargs)
 
 
@@ -328,22 +334,13 @@ class SpyreWorker(WorkerBaseV1):
             backend = "gloo"
             init_method = "env://"
 
-            # TODO: temporary fix until we have
-            # timeout in vllm's init_distributed_environment
-            torch.distributed.init_process_group(
-                backend=backend,
-                init_method=init_method,
-                world_size=self.parallel_config.world_size,
-                rank=self.rank,
-                timeout=timedelta(
-                    minutes=envs_spyre.VLLM_SPYRE_GLOO_TIMEOUT_MINUTES))
-
             init_distributed_environment(
                 world_size=self.parallel_config.world_size,
                 rank=self.rank,
                 distributed_init_method=init_method,
                 backend=backend,
-            )
+                timeout=timedelta(
+                    minutes=envs_spyre.VLLM_SPYRE_GLOO_TIMEOUT_MINUTES))
 
             if self.parallel_config.world_size > 1:
                 self.init_distributed_environment()
@@ -773,15 +770,9 @@ def maybe_override_signals_handler():
     signal.signal(signal.SIGINT, signal_handler)
 
 
-# temporary backward compat code for 0.10.1.1
 def _get_extra_args() -> dict:
-    annotations = inspect.getfullargspec(SchedulerOutput).annotations
-    extra_args = {}  # type: ignore
-    if ('free_encoder_input_ids' in annotations):
-        extra_args.update({
-            'free_encoder_input_ids': [],
-        })
-    else:
-        extra_args.update({"free_encoder_mm_hashes": []})
-
+    """Add any required backwards compatibility code for constructing
+    SchedulerOutputs here"""
+    extra_args: dict = {}
+    extra_args.update({"free_encoder_mm_hashes": []})
     return extra_args

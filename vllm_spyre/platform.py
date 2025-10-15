@@ -85,6 +85,9 @@ class SpyrePlatform(Platform):
 
     @classmethod
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:
+        # 🌶️🌶️🌶️ Patch in our perf logger before the engine is created
+        from vllm_spyre.v1.metrics import patch_async_llm_stat_loggers
+        patch_async_llm_stat_loggers()
 
         # In case vllm passes a default vllm_config to us.
         # This happens when get_current_vllm_config is called
@@ -357,8 +360,7 @@ class SpyrePlatform(Platform):
             # ceil division to pad to next block boundary
             prompt_padding_len = math.ceil(
                 prompt_len / cls._block_size) * cls._block_size
-            # we have to account for the token generated during prefill (-1)
-            if (prompt_padding_len + max_tokens - 1
+            if (prompt_padding_len + max_tokens
                     > cls._config.scheduler_config.max_model_len):
                 raise ValueError(
                     "Could not add request: prompt length is "
@@ -522,7 +524,12 @@ class SpyrePlatform(Platform):
         """Return the size of biggest ```new_tokens``` of the \
             warmup shapes that fits the prompt length"""
         if self._warmup_shapes is None:
-            return sys.maxsize
+            # ceil division to pad to next block boundary
+            padded_prompt_len = math.ceil(
+                prompt_len / self._block_size) * self._block_size
+            max_new_tokens = (self._config.scheduler_config.max_model_len -
+                              padded_prompt_len)
+            return max_new_tokens
 
         max_new_tokens = 1
         for shape in self._warmup_shapes:

@@ -1,83 +1,35 @@
-import inspect
 import os
 
 import pytest
+from vllm.v1.core.sched.output import NewRequestData
+from vllm.v1.kv_cache_interface import FullAttentionSpec
+
+from vllm_spyre.compat_utils import dataclass_fields
 
 pytestmark = pytest.mark.compat
 
 VLLM_VERSION = os.getenv("TEST_VLLM_VERSION", "default")
 
 
-@pytest.mark.cpu
-def test_init_distributed_environment():
-    """Tests whether vllm's init_distributed_environment
-    has the custom timeout argument"""
-    from vllm.distributed import init_distributed_environment
-
-    annotations = inspect.getfullargspec(
-        init_distributed_environment).annotations
+def test_mm_inputs():
 
     if VLLM_VERSION == "vLLM:lowest":
-        assert 'timeout' \
-                not in annotations, ("we should remove compat code which is now"
-                " part of released vllm version")
+        # Can remove "mm_kwargs", "mm_hashes", "mm_positions"
+        # (replaced by mm_features)
+        assert 'mm_kwargs' in dataclass_fields(NewRequestData)
 
 
-def test_request():
-
-    from vllm.v1.request import Request
-
-    annotations = inspect.getfullargspec(Request).annotations
-
-    if VLLM_VERSION == "vLLM:main":
-        assert 'multi_modal_kwargs' not in annotations
-        assert 'multi_modal_hashes' not in annotations
-        assert 'multi_modal_placeholders' not in annotations
-    elif VLLM_VERSION == "vLLM:lowest":
-        assert 'multi_modal_hashes' in annotations
-        assert 'multi_modal_placeholders' in annotations
-        assert 'multi_modal_placeholders' in annotations
-        # The compat code introduced in the PR below can now be removed:
-        # https://github.com/vllm-project/vllm-spyre/pull/463
+def test_get_sampler():
+    if VLLM_VERSION == "vLLM:lowest":
+        try:
+            from vllm.model_executor.layers.sampler import (  # # noqa
+                get_sampler)
+        except ImportError as e:
+            raise AssertionError(
+                "Remove backwards compatibility for get_sampler") from e
 
 
-def test_model_runner_output():
-
-    from vllm.v1.outputs import ModelRunnerOutput
-
-    annotations = inspect.getfullargspec(ModelRunnerOutput).annotations
-
-    if VLLM_VERSION == "vLLM:main":
-        assert 'spec_token_ids' not in annotations
-    elif VLLM_VERSION == "vLLM:lowest":
-        assert 'spec_token_ids' in annotations
-        # The compat code introduced in the PR below can now be removed:
-        # https://github.com/vllm-project/vllm-spyre/pull/463
-
-
-def test_pooling_metadata():
-
-    from vllm.v1.pool.metadata import PoolingMetadata
-
-    has_build_pooling_cursor = getattr(PoolingMetadata, "build_pooling_cursor",
-                                       False)
-
-    if VLLM_VERSION == "vLLM:main":
-        assert has_build_pooling_cursor
-    elif VLLM_VERSION == "vLLM:lowest":
-        assert not has_build_pooling_cursor
-        # The compat code introduced in the PR below can now be removed:
-        # https://github.com/vllm-project/vllm-spyre/pull/463
-
-
-def test_scheduler_output():
-
-    from vllm.v1.core.sched.output import SchedulerOutput
-    annotations = inspect.getfullargspec(SchedulerOutput).annotations
-
-    if VLLM_VERSION == "vLLM:main":
-        assert 'free_encoder_mm_hashes' in annotations
-    elif VLLM_VERSION == "vLLM:lowest":
-        assert 'free_encoder_mm_hashes' not in annotations
-        # The compat code introduced in the PR below can now be removed:
-        # https://github.com/vllm-project/vllm-spyre/pull/463
+def test_use_mla():
+    if VLLM_VERSION == "vLLM:lowest":
+        # Can remove backwards compatibility for use_mla
+        assert "use_mla" in dataclass_fields(FullAttentionSpec)

@@ -1,4 +1,3 @@
-import inspect
 import json
 import math
 import os
@@ -295,11 +294,12 @@ def _default_test_models(isEmbeddings=False,
     return params
 
 
-def create_text_prompt(model: str, min_token_length: int,
+def create_text_prompt(model: ModelInfo, min_token_length: int,
                        max_token_length: int) -> str:
     """Create a text prompt for the specified model that will tokenize to within
     the specified token length range."""
-    tokenizer = AutoTokenizer.from_pretrained(model)
+    tokenizer = AutoTokenizer.from_pretrained(model.name,
+                                              revision=model.revision)
     pepper = "🌶️"
     pepper_tokens = len(tokenizer.encode(pepper, add_special_tokens=False))
 
@@ -316,11 +316,12 @@ def create_text_prompt(model: str, min_token_length: int,
     return prompt
 
 
-def create_seq_prompt(model: str, token_length: int) -> str:
+def create_seq_prompt(model: ModelInfo, token_length: int) -> str:
     """Create a repeating sequential number prompt for the specified
     model that will tokenize to exactly the specified token length."""
 
-    tokenizer = AutoTokenizer.from_pretrained(model)
+    tokenizer = AutoTokenizer.from_pretrained(model.name,
+                                              revision=model.revision)
 
     # 20-token pattern
     pattern = "0 1 2 3 4 5 6 7 8 9 "
@@ -344,10 +345,11 @@ def create_random_request(
     num_tokens: int,
     sampling_params: SamplingParams,
     from_model_vocab: bool = False,
-    model: Optional[str] = None,
+    model: Optional[ModelInfo] = None,
 ) -> Request:
 
-    tokenizer = AutoTokenizer.from_pretrained(model)
+    tokenizer = AutoTokenizer.from_pretrained(model.name,
+                                              revision=model.revision)
     if from_model_vocab:
         assert model is not None, "Prompt requested to be generated from " \
         "model's vocabulary: need to provide model."
@@ -367,22 +369,6 @@ def create_random_request(
         assert (len(prompt_token_ids) == num_tokens
                 ), f"need {num_tokens} but got {len(prompt_token_ids)}"
 
-    # temporary backward compat code for 0.10.1.1
-    annotations = inspect.getfullargspec(Request).annotations
-    extra_args = {}  # noqa
-    if ('multi_modal_hashes' in annotations):
-        extra_args.update({
-            'multi_modal_hashes': None,
-        })
-    if ('multi_modal_placeholders' in annotations):
-        extra_args.update({
-            'multi_modal_placeholders': None,
-        })
-    if ('multi_modal_kwargs' in annotations):
-        extra_args.update({
-            'multi_modal_kwargs': None,
-        })
-
     return Request(request_id=str(request_id),
                    prompt_token_ids=prompt_token_ids,
                    sampling_params=sampling_params,
@@ -390,8 +376,7 @@ def create_random_request(
                    arrival_time=0,
                    lora_request=None,
                    pooling_params=None,
-                   cache_salt=None,
-                   **extra_args)
+                   cache_salt=None)
 
 
 def skip_unsupported_tp_size(size: int, backend: str):
