@@ -11,7 +11,7 @@ first consider the state of the native vllm for GPU architecture.
 
 ![vLLM architecture](images/vllm_v1.svg)
 
-As we can see, the API server, the engine core and the workers live in
+The API server, the engine core, and the workers live in
 different processes. All three refer to the platform API for backend
 specific concerns.
 
