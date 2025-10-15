@@ -42,3 +42,14 @@ configurations.
 [Granite-Embedding-278m (Multilingual)]: https://huggingface.co/ibm-granite/granite-embedding-278m-multilingual
 [BAAI/BGE-Reranker (v2-m3)]: https://huggingface.co/BAAI/bge-reranker-v2-m3
 [BAAI/BGE-Reranker (Large)]: https://huggingface.co/BAAI/bge-reranker-large
+
+## Runtime Validation
+
+At runtime, the Spyre engine validates the requested model and configurations against the list
+of supported models and configurations based on the entries in the file
+<gh-file:vllm_spyre/config/supported_configs.yaml>. If a requested model or configuration
+is not found, a warning message will be logged.
+
+```python
+--8<-- "vllm_spyre/config/supported_configs.yaml:supported-model-runtime-configurations"
+```
