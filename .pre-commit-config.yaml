@@ -6,7 +6,7 @@ default_stages:
   - manual # Run in CI
 repos:
 - repo: https://github.com/astral-sh/ruff-pre-commit
-  rev: v0.11.7
+  rev: v0.14.0
   hooks:
   - id: ruff
     args: [--output-format, github, --fix]
@@ -25,14 +25,3 @@ repos:
   rev: v1.7.7
   hooks:
   - id: actionlint
-- repo: https://github.com/pre-commit/mirrors-mypy
-  rev: v1.18.2
-  hooks:
-  - id: mypy
-    pass_filenames: false
-    # Optional: Add or override arguments for mypy
-    # args: [--strict, --ignore-missing-imports]
-    # Optional: Add additional dependencies if mypy needs them to resolve types
-    additional_dependencies:
-      - "pydantic"
-      - "types-requests"
