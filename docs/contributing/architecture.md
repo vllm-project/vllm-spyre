@@ -20,10 +20,10 @@ loaded at the vLLM startup time and bootstraps all other components.
 
 ![vLLM Spyre architecture](images/vllm_v1_spyre.svg)
 
-As we can see in the diagram, the plugin modifies mainly the engine core
-process and the worker processes. There are some request validation hooks
-in the platform API that the API server invokes to make sure that the request
-can be handled by the backend, but that is all.
+As we can see in the diagram, the plugin mainly modifies the engine core
+and worker processes. The platform API includes request validation hooks
+that the API server invokes to ensure that the requests
+can be handled by the backend.
 
 In the engine core we customize the scheduler for the constrains imposed
 by static batching and continuous batching.
