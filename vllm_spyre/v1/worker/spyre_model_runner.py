@@ -528,13 +528,10 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
         # Execute the model
         attn_metadata = self.build_attn_metadata(model_input)
         with set_forward_context(attn_metadata, self.vllm_config):
-            hidden_states = self.model(input_ids=model_input.input_tokens,
-                                       positions=model_input.input_positions,
-                                       masks=model_input.input_masks,
-                                       is_prompt=model_input.is_prompt)
-
-        # Compute the logits.
-        logits = self.model.compute_logits(hidden_states, None)
+            logits = self.model(input_ids=model_input.input_tokens,
+                                positions=model_input.input_positions,
+                                masks=model_input.input_masks,
+                                is_prompt=model_input.is_prompt)
 
         is_prefill = cast(bool, model_input.is_prompt)
 

@@ -51,11 +51,11 @@ override-dependencies = [
     "torchvision; sys_platform == 'never'",
     "triton; sys_platform == 'never'",
     
-    # Skip packages only on s390x, expected to be pre-installed
-    "vllm ; platform_machine != 's390x'",
-    "ray; platform_machine != 's390x'",
-    "llvmlite; platform_machine != 's390x'",
-    "pyarrow; platform_machine != 's390x'",
+    # Skip packages on s390x and ppc64le, expected to be pre-installed
+    "vllm ; platform_machine not in 's390x, ppc64le'",
+    "ray; platform_machine not in 's390x, ppc64le'",
+    "llvmlite; platform_machine not in 's390x, ppc64le'",
+    "pyarrow; platform_machine not in 's390x, ppc64le'",
 ]
 # fms-mo doesn't support python 3.9, so don't have UV try to resolve it
 environments = [
