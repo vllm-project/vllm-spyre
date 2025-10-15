@@ -28,13 +28,13 @@ can be handled by the backend.
 In the engine core, we customize the scheduler to handle the constraints
 of static batching and continuous batching.
 
-The changes are broader in the worker process. Here most of the main
-classes have Spyre-specific implementations. From the vLLM code we reuse
-mainly the sampling code with all the logits processing, as well as the pooling
+The changes are broader in the worker process. Most of the main
+classes have Spyre-specific implementations. From the vLLM code, we mainly
+reuse the sampling code (including logits processing) and the pooling
 code for non-generative use cases.
 
-We have model runners for 3 cases: static batching, continuous batching and
+We provide model runners for three cases: static batching, continuous batching and
 pooling. The pooling model runner is very similar to the static batching one,
-but the main differences are that it does pooling instead of sampling and it
-uses the transformers modeling code instead of the `foundation-model-stack`
+except that it does pooling instead of sampling and
+uses the `transformers` modeling code instead of the `foundation-model-stack`
 code.
