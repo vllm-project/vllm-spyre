@@ -25,8 +25,8 @@ and worker processes. The platform API includes request validation hooks
 that the API server invokes to ensure that the requests
 can be handled by the backend.
 
-In the engine core we customize the scheduler for the constrains imposed
-by static batching and continuous batching.
+In the engine core, we customize the scheduler to handle the constraints
+of static batching and continuous batching.
 
 The changes are broader in the worker process. Here most of the main
 classes have Spyre-specific implementations. From the vLLM code we reuse
