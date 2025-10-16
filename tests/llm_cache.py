@@ -5,7 +5,7 @@ import os
 from typing import Callable, Generic, Optional, TypeVar
 
 import pytest
-from golden_token_injector import GoldenTokenInjector
+from vllm_spyre.v1.sample.golden_token_injector import GoldenTokenInjector
 from llm_cache_util import force_engine_shutdown
 from spyre_util import (DecodeWarmupShapes, ModelInfo, RemoteOpenAIServer,
                         patch_environment)

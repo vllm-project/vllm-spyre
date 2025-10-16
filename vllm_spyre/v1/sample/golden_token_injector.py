@@ -1,13 +1,15 @@
 import math
 from typing import Optional
 
+import json
 import torch
 import torch.nn.functional as F
 from vllm.config import VllmConfig
+from vllm.logger import init_logger
 from vllm.transformers_utils.tokenizer import get_tokenizer
-from vllm.v1.sample.logits_processor import (BatchUpdate, LogitsProcessor,
-                                             MoveDirectionality)
+from vllm.v1.sample.logits_processor import process_dict_updates
 
+logger = init_logger(__name__)
 
 class ExpectationState:
     '''
@@ -26,13 +28,13 @@ class ExpectationState:
 
     def __init__(self,
                  expected_token_ids: list[int],
-                 expected_logprobs: list[float],
-                 error_threshold: float,
+                 expected_logprobs: Optional[list[float]],
+                 error_threshold: Optional[float],
                  label: Optional[str] = None):
 
         self.token_ids: list[int] = expected_token_ids
-        self.logprobs: list[float] = expected_logprobs
-        self.threshold: float = error_threshold
+        self.logprobs: Optional[list[float]]  = expected_logprobs
+        self.threshold: Optional[float] = error_threshold
         self.label: Optional[str] = label
 
         self.current_token_idx = 0
@@ -54,37 +56,65 @@ class GoldenTokenInjector(LogitsProcessor):
     def is_argmax_invariant(self) -> bool:
         """Never impacts greedy sampling"""
         return False
+    
+    
+
+    @staticmethod
+    def add_req_states(
+        params: SamplingParams, prompt_tok_ids: list[int] | None,
+        output_tok_ids: list[int]) -> Optional[ExpectationState]:
+
+        if params.extra_args and (
+            injector_dict :=
+            params.extra_args.get("golden_token_injector")):
+
+            # OpenAI API can pass this parameter as string, so
+            # we will just parse as the expected dict
+            if isinstance(injector_dict, str):
+                injector_dict = json.loads(injector_dict)
+
+            return ExpectationState(**injector_dict)
+
+        return None
 
     def update_state(self, batch_update: Optional[BatchUpdate]):
-        # This method keeps the indices consistent of request while the
-        # persistent batch is changing.
-        if not batch_update:
-            return
 
-        # Process added requests.
-        for index, params, _, _ in batch_update.added:
-            assert params is not None
-            if params.extra_args and (
-                    injector_dict :=
-                    params.extra_args.get("golden_token_injector")):
-                self.req_states[index] = ExpectationState(**injector_dict)
+        process_dict_updates(self.req_states, batch_update, self.add_req_states)
+        # # This method keeps the indices consistent of request while the
+        # # persistent batch is changing.
+        # if not batch_update:
+        #     return
 
-        if not self.req_states:
-            return
+        # # Process added requests.
+        # for index, params, _, _ in batch_update.added:
+        #     assert params is not None
+        #     if params.extra_args and (
+        #             injector_dict :=
+        #             params.extra_args.get("golden_token_injector")):
+                
+        #         # OpenAI API can pass this parameter as string, so
+        #         # we will just parse as the expected dict
+        #         if isinstance(injector_dict, str):
+        #             injector_dict = json.loads(injector_dict)
 
-        # Process removed requests.
-        for index in batch_update.removed:
-            self.req_states.pop(index, None)
+        #         self.req_states[index] = ExpectationState(**injector_dict)
 
-        # Process moved requests, unidirectional move (a->b) and swap
-        # (a<->b)
-        for adx, bdx, direct in batch_update.moved:
-            a_val = self.req_states.pop(adx, None)
-            b_val = self.req_states.pop(bdx, None)
-            if a_val is not None:
-                self.req_states[bdx] = a_val
-            if direct == MoveDirectionality.SWAP and b_val is not None:
-                self.req_states[adx] = b_val
+        # if not self.req_states:
+        #     return
+
+        # # Process removed requests.
+        # for index in batch_update.removed:
+        #     self.req_states.pop(index, None)
+
+        # # Process moved requests, unidirectional move (a->b) and swap
+        # # (a<->b)
+        # for adx, bdx, direct in batch_update.moved:
+        #     a_val = self.req_states.pop(adx, None)
+        #     b_val = self.req_states.pop(bdx, None)
+        #     if a_val is not None:
+        #         self.req_states[bdx] = a_val
+        #     if direct == MoveDirectionality.SWAP and b_val is not None:
+        #         self.req_states[adx] = b_val
 
     def apply(self, logits: torch.Tensor) -> torch.Tensor:
         if not self.req_states:
