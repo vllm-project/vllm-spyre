@@ -11,9 +11,9 @@ from vllm.v1.sample.logits_processor import (BUILTIN_LOGITS_PROCESSORS,
                                              LogitsProcessor,
                                              MinPLogitsProcessor,
                                              MinTokensLogitsProcessor,
-                                             _load_custom_logitsprocs)
+                                             _load_custom_logitsprocs,
+                                             process_dict_updates)
 # yapf: enable
-from vllm.v1.sample.logits_processor.interface import AddedRequest
 from vllm.v1.sample.logits_processor.state import LogitsProcessors
 
 logger = init_logger(__name__)
@@ -105,24 +105,31 @@ class PrefillHelperLogitsProcessor(LogitsProcessor, SpyreLogitsProcessor):
 
         # This dictionary stores the sampling parameters of `update_state` so
         # we can get when we call `set_prefill` to proper setup the prefill_lp.
-        self._params: dict[int, AddedRequest] = {}
+        self._params: dict[int, tuple[SamplingParams, list[int],
+                                      list[int]]] = {}
 
     def is_argmax_invariant(self) -> bool:
         """Never impacts greedy sampling"""
         return self._batch_lp.is_argmax_invariant()
 
+    @staticmethod
+    def update_batch_params(
+            params: SamplingParams, prompt_tok_ids: list[int] | None,
+            output_tok_ids: list[int]
+    ) -> tuple[Sequence[int], set[int]] | None:
+        return params, prompt_tok_ids, prompt_tok_ids
+
     def update_state(self, batch_update: BatchUpdate | None):
 
-        if batch_update:
-            for added_request in batch_update.added:
-                self._params[added_request[0]] = added_request
+        process_dict_updates(self._params, batch_update,
+                             self.update_batch_params)
 
         # Always pass to the batch LP
         self._batch_lp.update_state(batch_update)
 
     def set_prefill(self, idx: int) -> None:
 
-        _, params, prompt_tok_ids, out_tok_ids = self._params[idx]
+        params, prompt_tok_ids, out_tok_ids = self._params[idx]
         self._prefill_lp.update_state(
             BatchUpdate(
                 batch_size=1,
@@ -130,7 +137,7 @@ class PrefillHelperLogitsProcessor(LogitsProcessor, SpyreLogitsProcessor):
                 moved=[],
                 added=[(0, params, prompt_tok_ids, out_tok_ids)],
             ))
-        self._params.pop(idx)
+        # self._params.pop(idx)
         self._is_prefill = True
 
     def apply(self, logits: torch.Tensor) -> torch.Tensor:
