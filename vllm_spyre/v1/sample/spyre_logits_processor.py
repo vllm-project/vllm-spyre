@@ -114,10 +114,10 @@ class PrefillHelperLogitsProcessor(LogitsProcessor, SpyreLogitsProcessor):
 
     @staticmethod
     def update_batch_params(
-            params: SamplingParams, prompt_tok_ids: list[int] | None,
-            output_tok_ids: list[int]
-    ) -> tuple[Sequence[int], set[int]] | None:
-        return params, prompt_tok_ids, prompt_tok_ids
+        params: SamplingParams, prompt_tok_ids: list[int] | None,
+        output_tok_ids: list[int]
+    ) -> tuple[SamplingParams, Sequence[int] | None, Sequence[int]] | None:
+        return params, prompt_tok_ids, output_tok_ids
 
     def update_state(self, batch_update: BatchUpdate | None):
 
