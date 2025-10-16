@@ -13,6 +13,7 @@ from vllm.v1.sample.logits_processor import (BUILTIN_LOGITS_PROCESSORS,
                                              MinTokensLogitsProcessor,
                                              _load_custom_logitsprocs)
 # yapf: enable
+from vllm.v1.sample.logits_processor.interface import AddedRequest
 from vllm.v1.sample.logits_processor.state import LogitsProcessors
 
 logger = init_logger(__name__)
@@ -24,7 +25,9 @@ else:
     SamplingParams = None
     VllmConfig = None
 
-assert len(BUILTIN_LOGITS_PROCESSORS) == 3
+SPYRE_BUILTIN_LOGITS_PROCESSORS = [
+    MinPLogitsProcessor, MinTokensLogitsProcessor, LogitBiasLogitsProcessor
+]
 
 
 def build_logitsprocs_for_cb(
@@ -35,6 +38,14 @@ def build_logitsprocs_for_cb(
     batch_size: int,
     custom_logitsprocs: Sequence[Union[str, type[LogitsProcessor]]] = (),
 ) -> LogitsProcessors:
+
+    if len(BUILTIN_LOGITS_PROCESSORS) > 3:
+        logger.warning(
+            "There are %d logits processors, which is unexpected "
+            "for this vllm-spyre version. Consider upgrade "
+            "vllm-spyre or open an issue to investigate this",
+            len(BUILTIN_LOGITS_PROCESSORS))
+
     if is_pooling_model:
         if custom_logitsprocs:
             raise ValueError(STR_POOLING_REJECTS_LOGITSPROCS)
@@ -42,6 +53,12 @@ def build_logitsprocs_for_cb(
                      " do not support logits processors.")
         return LogitsProcessors()
     custom_logitsprocs_classes = _load_custom_logitsprocs(custom_logitsprocs)
+
+    # Collect builtin LPs to fallback to the wrapper
+    builtin_logitsprocs = [lp for lp in BUILTIN_LOGITS_PROCESSORS \
+                           if lp not in SPYRE_BUILTIN_LOGITS_PROCESSORS]
+
+    logitprocs_classes = custom_logitsprocs_classes + builtin_logitsprocs
 
     return LogitsProcessors( itertools.chain(
         [SpyreLogitBiasLogitsProcessor(vllm_config,
@@ -59,18 +76,78 @@ def build_logitsprocs_for_cb(
                               device,
                               is_pin_memory,
                               batch_size) \
-        for logit_processor in custom_logitsprocs_classes]
+        for logit_processor in logitprocs_classes]
     ))
 
 
 class SpyreLogitsProcessor:
 
-    def set_prefill_index(self, idx: int) -> None:
+    def set_prefill(self, idx: int) -> None:
         raise NotImplementedError
 
 
+class PrefillHelperLogitsProcessor(LogitsProcessor, SpyreLogitsProcessor):
+    """ 
+    Logits processor (LP) that separates two instances of a concrete LPS:
+    one for the prefill, and other for the batch. This class only works if 
+    the state of the LP is independent between prefill and decoding. for 
+    example this class is not suitable for the golden token injector LP.
+    """
+
+    def __init__(self, config: VllmConfig, device: torch.device,
+                 is_pin_memory: bool, logit_processor: LogitsProcessor):
+        self._prefill_lp : LogitsProcessor = \
+            logit_processor(config, device, is_pin_memory)
+        self._batch_lp : LogitsProcessor = \
+            logit_processor(config, device, is_pin_memory)
+
+        self._is_prefill: bool = False
+
+        # This dictionary stores the sampling parameters of `update_state` so
+        # we can get when we call `set_prefill` to proper setup the prefill_lp.
+        self._params: dict[int, AddedRequest] = {}
+
+    def is_argmax_invariant(self) -> bool:
+        """Never impacts greedy sampling"""
+        return self._batch_lp.is_argmax_invariant()
+
+    def update_state(self, batch_update: BatchUpdate | None):
+
+        if batch_update:
+            for added_request in batch_update.added:
+                self._params[added_request[0]] = added_request
+
+        # Always pass to the batch LP
+        self._batch_lp.update_state(batch_update)
+
+    def set_prefill(self, idx: int) -> None:
+
+        _, params, prompt_tok_ids, out_tok_ids = self._params[idx]
+        self._prefill_lp.update_state(
+            BatchUpdate(
+                batch_size=1,
+                removed=[],
+                moved=[],
+                added=[(0, params, prompt_tok_ids, out_tok_ids)],
+            ))
+        self._params.pop(idx)
+        self._is_prefill = True
+
+    def apply(self, logits: torch.Tensor) -> torch.Tensor:
+        if self._is_prefill:
+            logits = self._prefill_lp.apply(logits)
+
+            # Clean the prefill LP
+            self._is_prefill = False
+            self._prefill_lp.update_state(
+                BatchUpdate(batch_size=1, removed=[0], moved=[], added=[]))
+            return logits
+
+        return self._batch_lp.apply(logits)
+
+
 class LogitsProcessorWrapper(LogitsProcessor, SpyreLogitsProcessor):
-    """Logit processor to inject expected token during generation for tests"""
+    """Logit processor to isolate logits processors to run individually"""
 
     def __init__(self, logit_processor: LogitsProcessor,
                  vllm_config: VllmConfig, device: torch.device,
@@ -126,129 +203,29 @@ class LogitsProcessorWrapper(LogitsProcessor, SpyreLogitsProcessor):
 
         return logits
 
-    def set_prefill_index(self, idx: int) -> None:
+    def set_prefill(self, idx: int) -> None:
         self._prefill_index = idx
 
 
-class SpyreMinPLogitsProcessor(MinPLogitsProcessor, SpyreLogitsProcessor):
-
-    def __init__(self, vllm_config: "VllmConfig", device: torch.device,
-                 is_pin_memory: bool):
-        super().__init__(vllm_config, device, is_pin_memory)
-        self._prefill_index: Optional[int] = None
-
-    def set_prefill_index(self, idx: int) -> None:
-        self._prefill_index = idx
-
-    def apply(self, logits: torch.Tensor) -> torch.Tensor:
-        if self._prefill_index is None:
-            return super().apply(logits)
-
-        if not self.min_p_count:
-            return logits
-
-        # Convert logits to probability distribution
-        probability_values = torch.nn.functional.softmax(logits, dim=-1)
-        # Calculate maximum probabilities per sequence
-        max_probabilities = torch.amax(probability_values,
-                                       dim=-1,
-                                       keepdim=True)
-        # Adjust min_p
-        adjusted_min_p = max_probabilities.mul_(
-            self.min_p[self._prefill_index].unsqueeze(0))
-        # Identify valid tokens using threshold comparison
-        invalid_token_mask = probability_values < adjusted_min_p
-        # Apply mask using boolean indexing
-        logits[invalid_token_mask] = -float('inf')
-        self._prefill_index = None
-
-        return logits
-
-
-class SpyreLogitBiasLogitsProcessor(LogitBiasLogitsProcessor,
-                                    SpyreLogitsProcessor):
-
-    def __init__(self, config: VllmConfig, device: torch.device,
-                 is_pin_memory: bool):
-        super().__init__(config, device, is_pin_memory)
-
-        self._is_prefill: bool = False
-        self._prefill_slice : Optional[tuple[torch.Tensor, torch.Tensor]] \
-            = None
-        self._prefill_bias: torch.Tensor = torch.tensor(())
-
-    def set_prefill_index(self, idx: int) -> None:
-
-        reqs: list[int] = []
-        tok_ids: list[int] = []
-        biases: list[float] = []
-        for req, lb in self.biases.items():
-            if req == idx:
-                # NOTE: always request 0 for prefill
-                # prefill will only have logits for a single request
-                reqs.extend([0] * len(lb))
-                tok_ids.extend(lb.keys())
-                biases.extend(lb.values())
-
-        if biases:
-            self._prefill_slice = (self._device_tensor(reqs, torch.int32),
-                                   self._device_tensor(tok_ids, torch.int32))
-            self._prefill_bias = self._device_tensor(biases, torch.float32)
-        self._is_prefill = True
-
-    def apply(self, logits: torch.Tensor) -> torch.Tensor:
-        if self._prefill_slice is not None:
-            logits[self._prefill_slice] += self._prefill_bias
-            self._prefill_slice = None
-            self._is_prefill = False
-            return logits
-        elif self._is_prefill:
-            # It is prefill but we do not need to do anything
-            # for the prefill request, just return logits to
-            # avoid slice the logits with batch_size = 1
-            self._is_prefill = False
-            return logits
-
-        return super().apply(logits)
-
-
-class SpyreMinTokensLogitsProcessor(MinTokensLogitsProcessor,
-                                    SpyreLogitsProcessor):
+class SpyreMinPLogitsProcessor(PrefillHelperLogitsProcessor):
 
     def __init__(self, vllm_config: VllmConfig, device: torch.device,
                  is_pin_memory: bool):
-        super().__init__(vllm_config, device, is_pin_memory)
-        self._prefill_slice : Optional[tuple[torch.Tensor, torch.Tensor]] \
-            = None
-        self._is_prefill: bool = False
+        super().__init__(vllm_config, device, is_pin_memory,
+                         MinPLogitsProcessor)
 
-    def set_prefill_index(self, idx: int) -> None:
 
-        reqs: list[int] = []
-        tok_ids: list[int] = []
-        for req, (_, _, stop_tok_ids) in self.min_toks.items():
-            if req == idx:
-                # NOTE: always request 0 for prefill
-                # prefill will only have logits for a single request
-                reqs.extend([0] * len(stop_tok_ids))
-                tok_ids.extend(stop_tok_ids)
+class SpyreLogitBiasLogitsProcessor(PrefillHelperLogitsProcessor):
 
-        if reqs and tok_ids:
-            self._prefill_slice = (self._device_tensor(reqs, torch.int32),
-                                   self._device_tensor(tok_ids, torch.int32))
-        self._is_prefill = True
+    def __init__(self, vllm_config: VllmConfig, device: torch.device,
+                 is_pin_memory: bool):
+        super().__init__(vllm_config, device, is_pin_memory,
+                         LogitBiasLogitsProcessor)
 
-    def apply(self, logits: torch.Tensor) -> torch.Tensor:
-        if self._prefill_slice is not None:
-            logits[self._prefill_slice] = -float("inf")
-            self._prefill_slice = None
-            self._is_prefill = False
-            return logits
-        elif self._is_prefill:
-            # It is prefill but we do not need to do anything
-            # for the prefill request, just return logits to
-            # avoid slice the logits with batch_size = 1
-            self._is_prefill = False
-            return logits
 
-        return super().apply(logits)
+class SpyreMinTokensLogitsProcessor(PrefillHelperLogitsProcessor):
+
+    def __init__(self, vllm_config: VllmConfig, device: torch.device,
+                 is_pin_memory: bool):
+        super().__init__(vllm_config, device, is_pin_memory,
+                         MinTokensLogitsProcessor)

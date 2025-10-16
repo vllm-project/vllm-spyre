@@ -43,7 +43,7 @@ def prefill(params: SamplingParams, batch_update_builder: BatchUpdateBuilder,
     lp.update_state(batch_update)
 
     if isinstance(lp, SpyreLogitsProcessor):
-        lp.set_prefill_index(req_idx)
+        lp.set_prefill(req_idx)
 
     out_logits = lp.apply(logits.clone())
     ouput_tokens.append(0)  # just append a random token
