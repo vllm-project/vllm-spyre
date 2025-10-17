@@ -60,6 +60,9 @@ def build_logitsprocs_for_cb(
 
     logitprocs_classes = custom_logitsprocs_classes + builtin_logitsprocs
 
+    # To avoid circular import
+    from vllm_spyre.v1.sample.golden_token_injector import GoldenTokenInjector
+
     return LogitsProcessors( itertools.chain(
         [SpyreLogitBiasLogitsProcessor(vllm_config,
                               device,
@@ -70,6 +73,8 @@ def build_logitsprocs_for_cb(
         SpyreMinTokensLogitsProcessor(vllm_config,
                               device,
                               is_pin_memory),
+        GoldenTokenInjector(vllm_config, device, is_pin_memory)
+
         ],
         [LogitsProcessorWrapper(logit_processor,
                               vllm_config,
