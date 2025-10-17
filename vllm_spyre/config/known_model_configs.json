@@ -39,5 +39,10 @@
     "model_type": "roberta",
     "num_hidden_layers": 24,
     "vocab_size": 50265
+  },
+  "intfloat/multilingual-e5-large": {
+    "model_type": "xlm-roberta",
+    "num_hidden_layers": 24,
+    "vocab_size": 250002
   }
 }
