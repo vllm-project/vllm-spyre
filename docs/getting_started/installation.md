@@ -82,9 +82,9 @@ GitHub.
 Finally, `torch` is needed to run examples and tests. If it is not already installed,
 install it using `pip`.
 
-The spyre runtime stack only supports a narrow range of torch versions. The suggested torch versions to use for a given version of torch_sendnn are:
+The Spyre runtime stack supports specific `torch` versions. Use the compatible version for each `torch_sendnn` release:
 
-| torch_sendnn | pytorch |
+| torch_sendnn | torch |
 | -- | -- |
 | 1.0.0 | 2.7.1 |
 
