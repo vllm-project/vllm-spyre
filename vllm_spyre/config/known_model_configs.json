@@ -1,5 +1,6 @@
 {
   "BAAI/bge-reranker-large": {
+    "architectures": ["XLMRobertaForSequenceClassification"],
     "model_type": "xlm-roberta",
     "max_position_embeddings": 514,
     "num_hidden_layers": 24,
@@ -41,6 +42,7 @@
     "vocab_size": 50265
   },
   "intfloat/multilingual-e5-large": {
+    "architectures": ["XLMRobertaModel"],
     "model_type": "xlm-roberta",
     "num_hidden_layers": 24,
     "vocab_size": 250002

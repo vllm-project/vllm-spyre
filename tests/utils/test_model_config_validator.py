@@ -212,9 +212,12 @@ def test_find_model_by_config(monkeypatch, caplog):
             assert model_config.model != model_id
 
             models_found = find_known_models_by_model_config(model_config)
-            assert len(models_found) == 1
+            assert len(models_found) == 1, \
+                (f"More than one model found. Need to add more distinguishing"
+                 f" parameters for models `{models_found}` in file"
+                 f" `vllm_spyre/config/known_model_configs.json`")
             assert models_found[0] == model_id
 
             validate(model_config)
-            assert f"Model '{model_config.model}' is not a known model"
+            assert f"Model '{model_config.model}' is not a known" in caplog.text
             assert f"Found model '{model_id}'" in caplog.text
