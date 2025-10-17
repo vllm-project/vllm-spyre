@@ -1,15 +1,24 @@
 import math
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 import json
 import torch
 import torch.nn.functional as F
-from vllm.config import VllmConfig
 from vllm.logger import init_logger
 from vllm.transformers_utils.tokenizer import get_tokenizer
-from vllm.v1.sample.logits_processor import process_dict_updates
+from vllm.v1.sample.logits_processor import process_dict_updates, BatchUpdate
+
+from vllm.v1.sample.logits_processor import LogitsProcessor
 
 logger = init_logger(__name__)
+
+if TYPE_CHECKING:
+    from vllm import SamplingParams
+    from vllm.config import VllmConfig
+
+else:
+    VllmConfig = None
+    SamplingParams = None
 
 class ExpectationState:
     '''
@@ -78,43 +87,7 @@ class GoldenTokenInjector(LogitsProcessor):
         return None
 
     def update_state(self, batch_update: Optional[BatchUpdate]):
-
         process_dict_updates(self.req_states, batch_update, self.add_req_states)
-        # # This method keeps the indices consistent of request while the
-        # # persistent batch is changing.
-        # if not batch_update:
-        #     return
-
-        # # Process added requests.
-        # for index, params, _, _ in batch_update.added:
-        #     assert params is not None
-        #     if params.extra_args and (
-        #             injector_dict :=
-        #             params.extra_args.get("golden_token_injector")):
-                
-        #         # OpenAI API can pass this parameter as string, so
-        #         # we will just parse as the expected dict
-        #         if isinstance(injector_dict, str):
-        #             injector_dict = json.loads(injector_dict)
-
-        #         self.req_states[index] = ExpectationState(**injector_dict)
-
-        # if not self.req_states:
-        #     return
-
-        # # Process removed requests.
-        # for index in batch_update.removed:
-        #     self.req_states.pop(index, None)
-
-        # # Process moved requests, unidirectional move (a->b) and swap
-        # # (a<->b)
-        # for adx, bdx, direct in batch_update.moved:
-        #     a_val = self.req_states.pop(adx, None)
-        #     b_val = self.req_states.pop(bdx, None)
-        #     if a_val is not None:
-        #         self.req_states[bdx] = a_val
-        #     if direct == MoveDirectionality.SWAP and b_val is not None:
-        #         self.req_states[adx] = b_val
 
     def apply(self, logits: torch.Tensor) -> torch.Tensor:
         if not self.req_states:
@@ -181,7 +154,7 @@ class GoldenTokenInjector(LogitsProcessor):
                 (full_prob - prob) / other_token_ids_count)
 
             if lp < other_logprobs:
-                print("The logprob is lower than the redistributed "
+                logger.warn("The logprob is lower than the redistributed "
                       "logprobs for the token ids "
                       f"({lp.item()} < {other_logprobs.item()}), this "
                       "suggests that the generation diverged too much "
@@ -197,11 +170,18 @@ class GoldenTokenInjector(LogitsProcessor):
             expected_token = self.tokenizer.decode([expected_token_id])
             old_prob = logprobs[req_idx][token_id].exp().item()
 
-            print(f"Golden token injection for request {label}"\
-                  f" at token index '{expectation.current_token_idx}':")
-            print(f"'{token}' ({old_prob * 100:.2f}%) replaced by"
-                  f" '{expected_token}' ({prob * 100:.2f}%);"
-                  f" baseline: ({expected_prob * 100:.2f}%)")
+            logger.info("Golden token injection for request %s"\
+                  " at token index '%d': "
+                  "'%s' (%.2f%%) replaced by "
+                  "'%s' (%.2f%%);"
+                  " baseline: (%.2f%%)", 
+                  label, 
+                  expectation.current_token_idx,
+                  token, 
+                  old_prob * 100,
+                  expected_token,
+                  prob * 100,
+                  expected_prob * 100)
             expectation.current_token_idx += 1
 
         return logits
