@@ -34,11 +34,11 @@ def generate_logits(batch_size: int = 1):
 
 def prefill(params: SamplingParams, batch_update_builder: BatchUpdateBuilder,
             lp: SpyreLogitsProcessor, logits: torch.Tensor,
-            ouput_tokens: list[int], req_idx: int, num_reqs: int):
+            output_tokens: list[int], req_idx: int, num_reqs: int):
     params._all_stop_token_ids = set([EOS_TOKEN])  #
     prompt_tokens = [0] * 8
     batch_update_builder.added.append(
-        (req_idx, params, prompt_tokens, ouput_tokens))
+        (req_idx, params, prompt_tokens, output_tokens))
     batch_update = batch_update_builder.get_and_reset(num_reqs)
     lp.update_state(batch_update)
 
@@ -46,22 +46,22 @@ def prefill(params: SamplingParams, batch_update_builder: BatchUpdateBuilder,
         lp.set_prefill(req_idx)
 
     out_logits = lp.apply(logits.clone())
-    ouput_tokens.append(0)  # just append a random token
+    output_tokens.append(0)  # just append a random token
 
     return out_logits
 
 
 def decode(batch_update_builder: BatchUpdateBuilder, lp: SpyreLogitsProcessor,
-           logits: torch.Tensor, batch_ouput_tokens: list[list[int]]):
+           logits: torch.Tensor, batch_output_tokens: list[list[int]]):
 
-    assert logits.shape[0] == len(batch_ouput_tokens)
+    assert logits.shape[0] == len(batch_output_tokens)
 
     # This is called at each execute model in spyre model runner update_states
     lp.update_state(None)
 
     out_logits = lp.apply(logits.clone())
 
-    for output_tokens in batch_ouput_tokens:
+    for output_tokens in batch_output_tokens:
         output_tokens.append(0)  # just append a random token
 
     return out_logits
@@ -70,13 +70,13 @@ def decode(batch_update_builder: BatchUpdateBuilder, lp: SpyreLogitsProcessor,
 @pytest.mark.cpu
 @pytest.mark.worker
 def test_mintokens_logits_processor():
-    """ 
+    """
     This method tests the SpyreMinTokensLogitsProcessor class.
 
-    The test case simulates partially the step of the engine with focus on 
+    The test case simulates partially the step of the engine with focus on
     logits processor only.
-    The logits processor should mark the EOS token as -inf once it reaches 
-    the minimum number of tokens specified in the SamplingParams.
+    The logits processor should mark the EOS token as -inf until it reaches the
+    minimum number of tokens specified in the SamplingParams.
     """
     device = torch.device('cpu')
 
