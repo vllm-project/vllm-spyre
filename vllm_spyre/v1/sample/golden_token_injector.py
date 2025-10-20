@@ -39,8 +39,8 @@ class ExpectationState:
 
     def __init__(self,
                  expected_token_ids: list[int],
-                 expected_logprobs: Optional[list[float]],
-                 error_threshold: Optional[float],
+                 expected_logprobs: Optional[list[float]] = None,
+                 error_threshold: Optional[float] = None,
                  label: Optional[str] = None):
 
         self.token_ids: list[int] = expected_token_ids
