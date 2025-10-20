@@ -31,6 +31,10 @@
   configs: [
     { cb: False, tp_size: 1, warmup_shapes: [[512, 0, 64]] },
   ]
+- model: "intfloat/multilingual-e5-large"
+  configs: [
+    { cb: False, tp_size: 1, warmup_shapes: [[512, 0, 64]] },
+  ]
 - model: "BAAI/bge-reranker-v2-m3"
   configs: [
     { cb: False, tp_size: 1, warmup_shapes: [[8192, 0, 1]] },
