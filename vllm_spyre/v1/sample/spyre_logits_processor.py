@@ -29,6 +29,9 @@ def build_logitsprocs_for_cb(
         return LogitsProcessors()
     custom_logitsprocs_classes = _load_custom_logitsprocs(custom_logitsprocs)
 
+    # To avoid circular import
+    from vllm_spyre.v1.sample.golden_token_injector import GoldenTokenInjector
+
     return LogitsProcessors(
         LogitProcessorWrapper(logit_processor,
                               vllm_config,
@@ -37,6 +40,7 @@ def build_logitsprocs_for_cb(
                               batch_size) \
             for logit_processor in itertools.chain(
                 BUILTIN_LOGITS_PROCESSORS,
+                [GoldenTokenInjector],
                 custom_logitsprocs_classes
             )
         )
