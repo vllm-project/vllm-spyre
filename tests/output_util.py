@@ -376,25 +376,14 @@ def setup_golden_token(
     model: ModelInfo,
     sampling_params: Union[SamplingParams, list[SamplingParams]],
     hf_outputs: list[dict[str, Any]],
-) -> Union[SamplingParams, list[SamplingParams]]:
-
+) -> list[SamplingParams]:
     abs_tol = ISCLOSE_ABS_TOL_QUANTIZATION if model.is_quantized \
         else ISCLOSE_ABS_TOL
 
     if isinstance(sampling_params, SamplingParams):
-        # Single Sampling params case
-        hf = hf_outputs[0]
-        sampling_params.extra_args = {
-            "golden_token_injector": {
-                "expected_token_ids": hf['token_ids'],
-                "expected_logprobs": hf['logprobs'],
-                "error_threshold": abs_tol,
-                "label": "#0"
-            }
-        }
-        return sampling_params
+        # golden tokens injection is per request, so we clone SamplingParams
+        sampling_params = [sampling_params.clone() for _ in hf_outputs]
 
-    # Multiple sampling params case
     assert len(sampling_params) == len(hf_outputs)
     for idx, (param, hf) in enumerate(zip(sampling_params, hf_outputs)):
         param.extra_args = {
