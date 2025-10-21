@@ -141,6 +141,7 @@ class GoldenTokenInjector(LogitsProcessor):
                     token,
                     expected_token)
 
+            expectation.current_token_idx += 1
             return
 
         # Check if the token is injectable based on a threshold
