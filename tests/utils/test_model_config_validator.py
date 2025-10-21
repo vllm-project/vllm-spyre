@@ -209,11 +209,10 @@ def test_find_model_by_config(monkeypatch, caplog):
 
             models_found = find_known_models_by_model_config(model_config)
             assert len(models_found) > 0, \
-                (f"Could not find any model matching the ModelConfig of known"
-                 f" model `{model_id}`. Update the parameters for `{model_id}`"
-                 f" in file `vllm_spyre/config/known_model_configs.json` to be"
-                 f" a subset of the ModelConfig parameters in file"
-                 f" `{model_config_file}`.")
+                (f"Could not find any known models that match the ModelConfig"
+                 f" for model `{model_id}`. Update the entry for `{model_id}`"
+                 f" in `vllm_spyre/config/known_model_configs.json` so that its"
+                 f" parameters are a subset of those in `{model_config_file}`.")
             assert len(models_found) < 2, \
                 (f"More than one model found. Add more distinguishing"
                  f" parameters for models `{models_found}` in file"
