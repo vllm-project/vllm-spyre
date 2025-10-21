@@ -56,7 +56,12 @@ class GoldenTokenInjector(LogitsProcessor):
     def __init__(self, vllm_config: VllmConfig, device: torch.device,
                  is_pin_memory: bool):
         self.req_states: dict[int, ExpectationState] = {}
-        self.tokenizer = get_tokenizer(vllm_config.model_config.tokenizer)
+        model_config = vllm_config.model_config
+        self.tokenizer = get_tokenizer(
+            model_config.tokenizer,
+            revision=model_config.tokenizer_revision,
+            tokenizer_mode=model_config.tokenizer_mode,
+            trust_remote_code=model_config.trust_remote_code)
 
     def is_argmax_invariant(self) -> bool:
         """Never impacts greedy sampling"""
