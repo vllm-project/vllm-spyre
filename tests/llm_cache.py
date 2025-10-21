@@ -128,10 +128,11 @@ class LLMCache:
             LLM(
                 model=model_name,
                 tokenizer=model_name,
+                revision=revision,
                 max_model_len=max_model_len,
                 max_num_seqs=max_num_seqs,
                 tensor_parallel_size=tensor_parallel_size,
-                revision=revision,
+                logits_processors=[GoldenTokenInjector],
             ),
         )
 
@@ -195,10 +196,10 @@ class EngineCache:
         max_num_seqs_compiled = 1 << (max_num_seqs - 1).bit_length()
         engine_args = EngineArgs(model=model_name,
                                  tokenizer=model_name,
+                                 revision=revision,
                                  max_model_len=max(max_model_len, 512),
                                  max_num_seqs=max_num_seqs_compiled,
                                  num_gpu_blocks_override=None,
-                                 revision=revision,
                                  logits_processors=[GoldenTokenInjector])
         vllm_config = engine_args.create_engine_config()
         executor_class = Executor.get_class(vllm_config)
