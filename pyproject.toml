@@ -125,6 +125,7 @@ exclude = [
 
 [tool.codespell]
 ignore-words-list = "dout, te, indicies, subtile, ElementE"
+skip = "*.svg"
 #skip = "./tests/models/fixtures,./tests/prompts,./benchmarks/sonnet.txt,./tests/lora/data,./build"
 
 [tool.isort]

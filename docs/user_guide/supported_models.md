@@ -35,6 +35,7 @@ configurations.
 | [BAAI/BGE-Reranker (v2-m3)][]             | 1    | 8192           | 1          |
 | [BAAI/BGE-Reranker (Large)][]             | 1    | 512            | 1          |
 | [BAAI/BGE-Reranker (Large)][]             | 1    | 512            | 64         |
+| [Multilingual-E5-large][]                 | 1    | 512            | 64         |
 
 [Granite-3.3-8b]: https://huggingface.co/ibm-granite/granite-3.3-8b-instruct
 [Granite-3.3-8b (FP8)]: https://huggingface.co/ibm-granite/granite-3.3-8b-instruct
@@ -42,3 +43,15 @@ configurations.
 [Granite-Embedding-278m (Multilingual)]: https://huggingface.co/ibm-granite/granite-embedding-278m-multilingual
 [BAAI/BGE-Reranker (v2-m3)]: https://huggingface.co/BAAI/bge-reranker-v2-m3
 [BAAI/BGE-Reranker (Large)]: https://huggingface.co/BAAI/bge-reranker-large
+[Multilingual-E5-large]: https://huggingface.co/intfloat/multilingual-e5-large
+
+## Runtime Validation
+
+At runtime, the Spyre engine validates the requested model and configurations against the list
+of supported models and configurations based on the entries in the file
+<gh-file:vllm_spyre/config/supported_configs.yaml>. If a requested model or configuration
+is not found, a warning message will be logged.
+
+```python
+--8<-- "vllm_spyre/config/supported_configs.yaml:supported-model-runtime-configurations"
+```

@@ -18,6 +18,7 @@ nav:
       - Supported Models: user_guide/supported_models.md
     - Developer Guide:
       - Contributing: contributing/README.md
+      - Architecture: contributing/architecture.md
       - Continuous Batching:
         - Overview: contributing/continuous_batching/overview.md
         - Tests:
@@ -38,6 +39,7 @@ nav:
     - Supported Models: user_guide/supported_models.md
   - Developer Guide:
     - Contributing: contributing/README.md
+    - Architecture: contributing/architecture.md
     - Continuous Batching:
       - Overview: contributing/continuous_batching/overview.md
       - Tests:
