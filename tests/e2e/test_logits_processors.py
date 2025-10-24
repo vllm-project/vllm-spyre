@@ -1,36 +1,31 @@
-from typing import Optional
-
 import pytest
 import torch
 from llm_cache import patch_environment
 from spyre_util import ModelInfo
 from vllm import LLM, SamplingParams
 from vllm.config import VllmConfig
-from vllm.v1.sample.logits_processor import (BatchUpdate, LogitsProcessor,
-                                             MoveDirectionality)
+from vllm.v1.sample.logits_processor import BatchUpdate, LogitsProcessor, MoveDirectionality
 
 
-def test_custom_logits_processor(model: ModelInfo, backend, monkeypatch,
-                                 max_num_seqs, max_model_len, warmup_shapes,
-                                 cb):
-    '''
-    Simple test to check if custom logits processors are being registered 
-    '''
+def test_custom_logits_processor(
+    model: ModelInfo, backend, monkeypatch, max_num_seqs, max_model_len, warmup_shapes, cb
+):
+    """
+    Simple test to check if custom logits processors are being registered
+    """
 
     monkeypatch.setenv("VLLM_ENABLE_V1_MULTIPROCESSING", "0")
     has_invoked_logits_processor = False
 
     class DummyLogitsProcessor(LogitsProcessor):
-
-        def __init__(self, vllm_config: VllmConfig, device: torch.device,
-                     is_pin_memory: bool):
+        def __init__(self, vllm_config: VllmConfig, device: torch.device, is_pin_memory: bool):
             # Required to register LogitsProcessor
             pass
 
         def is_argmax_invariant(self) -> bool:
             return False
 
-        def update_state(self, batch_update: Optional[BatchUpdate]):
+        def update_state(self, batch_update: BatchUpdate | None):
             # Required to register LogitsProcessor
             pass
 
@@ -39,14 +34,15 @@ def test_custom_logits_processor(model: ModelInfo, backend, monkeypatch,
             has_invoked_logits_processor = True
             return logits
 
-    patch_environment(cb == 1, warmup_shapes if cb == 0 else None, backend,
-                      monkeypatch)
+    patch_environment(cb == 1, warmup_shapes if cb == 0 else None, backend, monkeypatch)
 
-    spyre_model = LLM(model=model.name,
-                      revision=model.revision,
-                      max_model_len=max_model_len,
-                      max_num_seqs=max_num_seqs,
-                      logits_processors=[DummyLogitsProcessor])
+    spyre_model = LLM(
+        model=model.name,
+        revision=model.revision,
+        max_model_len=max_model_len,
+        max_num_seqs=max_num_seqs,
+        logits_processors=[DummyLogitsProcessor],
+    )
     prompt = "Hello Logits Processors"
     params = SamplingParams(max_tokens=5, temperature=0, logprobs=0)
 
@@ -56,18 +52,17 @@ def test_custom_logits_processor(model: ModelInfo, backend, monkeypatch,
 
 
 @pytest.mark.cb
-def test_cb_logits_processor(model: ModelInfo, backend, monkeypatch,
-                             max_model_len):
-    '''
+def test_cb_logits_processor(model: ModelInfo, backend, monkeypatch, max_model_len):
+    """
     Test if the state of logits for CB are correct due to the switch of
     prefill/decode in a step engine. The LLM is initialized with bs=2,
     we send 3 requests, one of them should be waiting for the other 2
-    to complete. The first request should finish and give its slot to 
-    the last one. The logits processors will do a greedy sampling 
+    to complete. The first request should finish and give its slot to
+    the last one. The logits processors will do a greedy sampling
     decoding to emulate the 'state' of the logit processor. After
     the generation we assert that the generated output is the same
     for the spy and vllm.
-    '''
+    """
 
     # Same process to ease things
     monkeypatch.setenv("VLLM_ENABLE_V1_MULTIPROCESSING", "0")
@@ -77,18 +72,17 @@ def test_cb_logits_processor(model: ModelInfo, backend, monkeypatch,
     spy_outputs: dict[int, list[int]] = {}
 
     class SpyLogitsProcessor(LogitsProcessor):
-        '''
-        This logits processor collect the tokens 
-        '''
+        """
+        This logits processor collect the tokens
+        """
 
-        def __init__(self, vllm_config: VllmConfig, device: torch.device,
-                     is_pin_memory: bool):
+        def __init__(self, vllm_config: VllmConfig, device: torch.device, is_pin_memory: bool):
             self.req_info: dict[int, SamplingParams] = {}
 
         def is_argmax_invariant(self) -> bool:
             return False
 
-        def update_state(self, batch_update: Optional[BatchUpdate]):
+        def update_state(self, batch_update: BatchUpdate | None):
             if not batch_update:
                 return
 
@@ -125,24 +119,17 @@ def test_cb_logits_processor(model: ModelInfo, backend, monkeypatch,
 
     patch_environment(True, None, backend, monkeypatch)
 
-    spyre_model = LLM(model=model.name,
-                      revision=model.revision,
-                      max_model_len=max_model_len,
-                      max_num_seqs=2,
-                      logits_processors=[SpyLogitsProcessor])
+    spyre_model = LLM(
+        model=model.name,
+        revision=model.revision,
+        max_model_len=max_model_len,
+        max_num_seqs=2,
+        logits_processors=[SpyLogitsProcessor],
+    )
     prompt = ["Hello Logits Processors"] * 3
-    params0 = SamplingParams(max_tokens=5,
-                             temperature=0,
-                             logprobs=0,
-                             ignore_eos=True)
-    params1 = SamplingParams(max_tokens=10,
-                             temperature=0,
-                             logprobs=0,
-                             ignore_eos=True)
-    params2 = SamplingParams(max_tokens=7,
-                             temperature=0,
-                             logprobs=0,
-                             ignore_eos=True)
+    params0 = SamplingParams(max_tokens=5, temperature=0, logprobs=0, ignore_eos=True)
+    params1 = SamplingParams(max_tokens=10, temperature=0, logprobs=0, ignore_eos=True)
+    params2 = SamplingParams(max_tokens=7, temperature=0, logprobs=0, ignore_eos=True)
 
     # clear from the warmup
     spy_outputs = {}

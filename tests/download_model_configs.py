@@ -6,14 +6,12 @@ from urllib.request import urlretrieve
 
 from transformers import AutoConfig, PretrainedConfig
 
-from vllm_spyre.config.runtime_config_validator import (
-    get_supported_models_list)
+from vllm_spyre.config.runtime_config_validator import get_supported_models_list
 
 _configs_path = Path(__file__).parent / "fixtures" / "model_configs"
 
 
-def download_hf_model_config(hf_model_id: str,
-                             revision: str = "main") -> PretrainedConfig:
+def download_hf_model_config(hf_model_id: str, revision: str = "main") -> PretrainedConfig:
     """
     Use CONFIG_MAPPING to match known patterns to the requested model ID. Does
     not work as reliably as direct download from HF, though (e.g. the
@@ -39,7 +37,7 @@ def download_model_config_from_hf(hf_model_id: str, revision: str = "main"):
     urlretrieve(config_url, config_path / "hf_config.json")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     model_ids = get_supported_models_list()
     for model_id in model_ids:
         # TODO: get the actual FP8 model config
