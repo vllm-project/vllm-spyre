@@ -30,11 +30,9 @@ def _init_logging():
         # Copy the vLLM logging configurations for our package
         if "vllm_spyre" not in config["formatters"]:
             if "vllm" in config["formatters"]:
-                config["formatters"]["vllm_spyre"] = config["formatters"][
-                    "vllm"]
+                config["formatters"]["vllm_spyre"] = config["formatters"]["vllm"]
             else:
-                config["formatters"]["vllm_spyre"] = DEFAULT_LOGGING_CONFIG[
-                    "formatters"]["vllm"]
+                config["formatters"]["vllm_spyre"] = DEFAULT_LOGGING_CONFIG["formatters"]["vllm"]
 
         if "vllm_spyre" not in config["handlers"]:
             if "vllm" in config["handlers"]:

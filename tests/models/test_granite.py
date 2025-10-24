@@ -19,14 +19,16 @@ def test_granite_3_8b_detection():
     """Check that we can detect the model config for granite 3 8b"""
 
     granite_3_8b_config = VllmConfig(
-        model_config=ModelConfig(model=str(FIXTURES_PATH / "ibm-granite" /
-                                           "granite-3.3-8b-instruct")),
+        model_config=ModelConfig(
+            model=str(FIXTURES_PATH / "ibm-granite" / "granite-3.3-8b-instruct")
+        ),
         cache_config=NO_SWAP_CONFIG,
     )
 
     granite_micro_config = VllmConfig(
-        model_config=ModelConfig(model=str(FIXTURES_PATH / "ibm-ai-platform" /
-                                           "micro-g3.3-8b-instruct-1b")),
+        model_config=ModelConfig(
+            model=str(FIXTURES_PATH / "ibm-ai-platform" / "micro-g3.3-8b-instruct-1b")
+        ),
         cache_config=NO_SWAP_CONFIG,
     )
 
@@ -44,8 +46,9 @@ def test_granite_3_8b_overrides():
         tp4_config = ParallelConfig(tensor_parallel_size=4)
 
         granite_3_8b_config = VllmConfig(
-            model_config=ModelConfig(model=str(FIXTURES_PATH / "ibm-granite" /
-                                               "granite-3.3-8b-instruct")),
+            model_config=ModelConfig(
+                model=str(FIXTURES_PATH / "ibm-granite" / "granite-3.3-8b-instruct")
+            ),
             parallel_config=tp4_config,
             cache_config=NO_SWAP_CONFIG,
         )

@@ -2,14 +2,14 @@
 
 Run `python -m pytest tests/e2e/test_spyre_prompt_logprobs.py`.
 """
+
 import math
 
 import pytest
 import torch
 import torch.nn.functional
 from llm_cache_util import force_engine_shutdown
-from spyre_util import (ModelInfo, get_chicken_soup_prompts,
-                        skip_unsupported_tp_size)
+from spyre_util import ModelInfo, get_chicken_soup_prompts, skip_unsupported_tp_size
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, RequestOutput, SamplingParams
 from vllm.config import ModelConfig, VllmConfig
@@ -19,12 +19,13 @@ from vllm_spyre.platform import SpyrePlatform
 
 # Skip for now until prompt logprobs are fixed
 @pytest.mark.skip
-def test_prompt_logprobs(backend: str, model: ModelInfo, tp_size: int,
-                         monkeypatch: pytest.MonkeyPatch) -> None:
-    '''
+def test_prompt_logprobs(
+    backend: str, model: ModelInfo, tp_size: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
     This test checks the prompt_logprobs output from vllm against a reference
     implementation using huggingface.
-    '''
+    """
     skip_unsupported_tp_size(tp_size, backend)
     if "FP8" in model:
         pytest.skip(reason="Prompt logprobs does not support FP8")
@@ -34,24 +35,23 @@ def test_prompt_logprobs(backend: str, model: ModelInfo, tp_size: int,
 
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS", "1")
-    tokenizer = AutoTokenizer.from_pretrained(model.name,
-                                              revision=model.revision)
+    tokenizer = AutoTokenizer.from_pretrained(model.name, revision=model.revision)
     llm = LLM(model, tensor_parallel_size=tp_size, tokenizer=tokenizer)
 
     responses: list[RequestOutput] = llm.generate(
-        prompts,
-        sampling_params=SamplingParams(prompt_logprobs=num_prompt_logprobs))
+        prompts, sampling_params=SamplingParams(prompt_logprobs=num_prompt_logprobs)
+    )
 
     expected_prompt_logprobs: dict[str, list] = _get_hf_prompt_logprobs(
-        model_info=model, prompts=prompts, n=num_prompt_logprobs)
+        model_info=model, prompts=prompts, n=num_prompt_logprobs
+    )
 
     for prompt, response in zip(prompts, responses):
         actual_logprobs = response.prompt_logprobs
         expected_logprobs = expected_prompt_logprobs[prompt]
-        _compare_prompt_logprobs(expected_logprobs,
-                                 actual_logprobs,
-                                 max_different_tokens=1,
-                                 relative_tolerance=0.15)
+        _compare_prompt_logprobs(
+            expected_logprobs, actual_logprobs, max_different_tokens=1, relative_tolerance=0.15
+        )
     force_engine_shutdown(llm)
 
 
@@ -70,23 +70,22 @@ def test_prompt_logprobs_must_be_enabled(monkeypatch: pytest.MonkeyPatch):
 @pytest.mark.skip
 @pytest.mark.cpu
 @pytest.mark.decoder
-def test_prompt_logprobs_not_supported_with_cb(
-        model: str, monkeypatch: pytest.MonkeyPatch):
+def test_prompt_logprobs_not_supported_with_cb(model: str, monkeypatch: pytest.MonkeyPatch):
     # Server shouldn't boot with both prompt logprobs and continuous batching
     # enabled
     monkeypatch.setenv("VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS", "1")
     monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
 
     with pytest.raises(ValueError, match="continuous batching"):
-        VllmConfig(model_config=ModelConfig(
-            model=model.name, revision=model.revision, task="generate"))
+        VllmConfig(
+            model_config=ModelConfig(model=model.name, revision=model.revision, task="generate")
+        )
 
 
 @pytest.mark.skip
 @pytest.mark.cpu
 @pytest.mark.decoder
-def test_prompt_logprobs_on_single_requests_only(
-        model: str, monkeypatch: pytest.MonkeyPatch):
+def test_prompt_logprobs_on_single_requests_only(model: str, monkeypatch: pytest.MonkeyPatch):
     # Only bs=1 is supported for prompt logprobs
     monkeypatch.setenv("VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS", "1")
     monkeypatch.setenv("VLLM_SPYRE_WARMUP_BATCH_SIZES", "2")
@@ -95,9 +94,9 @@ def test_prompt_logprobs_on_single_requests_only(
         VllmConfig(model_config=ModelConfig(model=model.name, task="generate"))
 
 
-def _compare_prompt_logprobs(expected: list, actual: list,
-                             max_different_tokens: int,
-                             relative_tolerance: float):
+def _compare_prompt_logprobs(
+    expected: list, actual: list, max_different_tokens: int, relative_tolerance: float
+):
     # Fuzzy comparison of prompt logprob outputs
     # max_different_tokens is the number of candidate tokens that are allowed to
     # differ at each token in the prompt.
@@ -116,8 +115,7 @@ def _compare_prompt_logprobs(expected: list, actual: list,
         actual_token_set = set(actual_dict.keys())
 
         # Check that (most of) the top n tokens are the same
-        assert len(expected_token_set -
-                   actual_token_set) <= max_different_tokens
+        assert len(expected_token_set - actual_token_set) <= max_different_tokens
 
         for token, actual_logprob in actual_dict.items():
             # skip tokens not in the expected set
@@ -127,23 +125,19 @@ def _compare_prompt_logprobs(expected: list, actual: list,
             expected_logprob = expected_dict[token]
 
             # 60% tolerance- pretty big difference in results atm
-            assert math.isclose(expected_logprob["logprob"],
-                                actual_logprob.logprob,
-                                rel_tol=relative_tolerance)
+            assert math.isclose(
+                expected_logprob["logprob"], actual_logprob.logprob, rel_tol=relative_tolerance
+            )
 
 
-def _get_hf_prompt_logprobs(model_info: ModelInfo, prompts,
-                            n) -> dict[str, list]:
-    """Get prompt logprobs from HF model directly, including top n candidates 
+def _get_hf_prompt_logprobs(model_info: ModelInfo, prompts, n) -> dict[str, list]:
+    """Get prompt logprobs from HF model directly, including top n candidates
     for each token"""
-    tokenizer = AutoTokenizer.from_pretrained(model_info.name,
-                                              revision=model_info.revision)
-    model = AutoModelForCausalLM.from_pretrained(model_info.name,
-                                                 revision=model_info.revision)
+    tokenizer = AutoTokenizer.from_pretrained(model_info.name, revision=model_info.revision)
+    model = AutoModelForCausalLM.from_pretrained(model_info.name, revision=model_info.revision)
 
     prompt_logprobs = {}
     for prompt in prompts:
-
         inputs = tokenizer(prompt, return_tensors="pt")
         input_ids = inputs["input_ids"]
 
@@ -164,8 +158,7 @@ def _get_hf_prompt_logprobs(model_info: ModelInfo, prompts,
         topk_logprobs, topk_indices = torch.topk(log_probs, dim=2, k=n)
 
         # Gather log-probabilities of the actual prompt logprobs
-        token_logprobs = log_probs.gather(
-            2, shifted_input_ids.unsqueeze(-1)).squeeze(-1)
+        token_logprobs = log_probs.gather(2, shifted_input_ids.unsqueeze(-1)).squeeze(-1)
 
         # Squeeze out batch dimension 1
         token_logprobs = token_logprobs.squeeze()
@@ -190,8 +183,7 @@ def _get_hf_prompt_logprobs(model_info: ModelInfo, prompts,
 
             prompt_token = input_ids[0][idx + 1]
             prompt_logprob = token_logprobs[idx]
-            decoded_prompt_token = tokenizer.convert_ids_to_tokens(
-                prompt_token.item())
+            decoded_prompt_token = tokenizer.convert_ids_to_tokens(prompt_token.item())
             logprobs_dict[prompt_token.item()] = {
                 "decoded_token": decoded_prompt_token,
                 "logprob": prompt_logprob.item(),

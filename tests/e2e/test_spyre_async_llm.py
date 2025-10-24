@@ -29,10 +29,9 @@ async def generate(
         seed=42,
         n=n,
     )
-    async for out in engine.generate(request_id=request_id,
-                                     prompt=prompt,
-                                     sampling_params=sampling_params):
-
+    async for out in engine.generate(
+        request_id=request_id, prompt=prompt, sampling_params=sampling_params
+    ):
         num_tokens = sum(len(output.token_ids) for output in out.outputs)
         if output_kind == RequestOutputKind.DELTA:
             count += num_tokens
@@ -44,14 +43,18 @@ async def generate(
     return count, request_id
 
 
-@pytest.mark.parametrize(
-    "output_kind", [RequestOutputKind.DELTA, RequestOutputKind.FINAL_ONLY])
+@pytest.mark.parametrize("output_kind", [RequestOutputKind.DELTA, RequestOutputKind.FINAL_ONLY])
 @pytest.mark.asyncio
-async def test_abort(model: ModelInfo, backend: str, cb: int,
-                     max_model_len: int, max_num_seqs: int,
-                     warmup_shapes: DecodeWarmupShapes,
-                     output_kind: RequestOutputKind,
-                     monkeypatch: pytest.MonkeyPatch):
+async def test_abort(
+    model: ModelInfo,
+    backend: str,
+    cb: int,
+    max_model_len: int,
+    max_num_seqs: int,
+    warmup_shapes: DecodeWarmupShapes,
+    output_kind: RequestOutputKind,
+    monkeypatch: pytest.MonkeyPatch,
+):
     """Test handling of cancelled requests"""
     with monkeypatch.context() as m, ExitStack() as after:
         m.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
@@ -62,22 +65,27 @@ async def test_abort(model: ModelInfo, backend: str, cb: int,
             warmup_new_tokens = [t[1] for t in warmup_shapes]
             warmup_batch_size = [t[2] for t in warmup_shapes]
 
-            m.setenv('VLLM_SPYRE_WARMUP_PROMPT_LENS',
-                     ','.join(str(val) for val in warmup_prompt_length))
-            m.setenv('VLLM_SPYRE_WARMUP_NEW_TOKENS',
-                     ','.join(str(val) for val in warmup_new_tokens))
-            m.setenv('VLLM_SPYRE_WARMUP_BATCH_SIZES',
-                     ','.join(str(val) for val in warmup_batch_size))
+            m.setenv(
+                "VLLM_SPYRE_WARMUP_PROMPT_LENS", ",".join(str(val) for val in warmup_prompt_length)
+            )
+            m.setenv(
+                "VLLM_SPYRE_WARMUP_NEW_TOKENS", ",".join(str(val) for val in warmup_new_tokens)
+            )
+            m.setenv(
+                "VLLM_SPYRE_WARMUP_BATCH_SIZES", ",".join(str(val) for val in warmup_batch_size)
+            )
 
         # Async LLM API is a little different between v0 and V1
         engine = AsyncLLM.from_engine_args(
-            AsyncEngineArgs(model=model.name,
-                            tokenizer=model.name,
-                            max_model_len=max_model_len,
-                            max_num_seqs=max_num_seqs,
-                            revision=model.revision))
-        has_unfinished_requests = \
-            engine.output_processor.has_unfinished_requests
+            AsyncEngineArgs(
+                model=model.name,
+                tokenizer=model.name,
+                max_model_len=max_model_len,
+                max_num_seqs=max_num_seqs,
+                revision=model.revision,
+            )
+        )
+        has_unfinished_requests = engine.output_processor.has_unfinished_requests
         after.callback(engine.shutdown)
 
         # Test structure here mirrors upstream vLLM test_abort:
@@ -97,8 +105,9 @@ async def test_abort(model: ModelInfo, backend: str, cb: int,
             n = 2 if idx in PARALLEL_SAMPLE_REQ_IDS else 1
             tasks.append(
                 asyncio.create_task(
-                    generate(engine, request_id, prompt, output_kind,
-                             max_tokens, n)))
+                    generate(engine, request_id, prompt, output_kind, max_tokens, n)
+                )
+            )
 
         # Simulate cancellation from API server client disconnect
         for idx in REQUEST_IDS_TO_ABORT:
@@ -116,8 +125,8 @@ async def test_abort(model: ModelInfo, backend: str, cb: int,
                 n = 2 if idx in PARALLEL_SAMPLE_REQ_IDS else 1
                 expected_tokens = NUM_EXPECTED_TOKENS * n
                 assert num_generated_tokens == expected_tokens, (
-                    f"{request_id} generated {num_generated_tokens} but "
-                    f"expected {expected_tokens}")
+                    f"{request_id} generated {num_generated_tokens} but expected {expected_tokens}"
+                )
 
         # Make sure all aborted requests were really aborted
         assert not has_unfinished_requests()
@@ -125,8 +134,8 @@ async def test_abort(model: ModelInfo, backend: str, cb: int,
         # Confirm that the server is still up and functioning
         request_id = f"request-{REQUEST_IDS_TO_ABORT[0]}"
         task = asyncio.create_task(
-            generate(engine, request_id, prompt, output_kind,
-                     NUM_EXPECTED_TOKENS))
+            generate(engine, request_id, prompt, output_kind, NUM_EXPECTED_TOKENS)
+        )
         num_generated_tokens, request_id = await task
         assert num_generated_tokens == NUM_EXPECTED_TOKENS
         assert not has_unfinished_requests()

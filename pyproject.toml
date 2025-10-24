@@ -63,8 +63,8 @@ environments = [
 ]
 
 [tool.ruff]
-# Allow lines to be as long as 80.
-line-length = 80
+# Use widescreen monitors 😎😎😎
+line-length = 100
 exclude = [
     "vllm_spyre/model_executor/model_loader/spyre_setup.py"
 ]
@@ -98,6 +98,11 @@ ignore = [
     "B007",
     # f-string format
     "UP032",
+    # % formatters
+    "UP031",
+    # ternary operators
+    "SIM108",
+
 
     # TODO: Fix all of these in code instead
 

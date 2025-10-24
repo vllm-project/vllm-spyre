@@ -10,9 +10,7 @@ from vllm_spyre import envs as envs_spyre
 
 @pytest.mark.cpu
 @pytest.mark.cb
-def test_file_stats_logger(model: ModelInfo, max_model_len, max_num_seqs,
-                           tmp_path):
-
+def test_file_stats_logger(model: ModelInfo, max_model_len, max_num_seqs, tmp_path):
     prompts = get_chicken_soup_prompts(4)
 
     envs_spyre.override("VLLM_SPYRE_PERF_METRIC_LOGGING_ENABLED", "1")
@@ -20,11 +18,13 @@ def test_file_stats_logger(model: ModelInfo, max_model_len, max_num_seqs,
     envs_spyre.override("VLLM_SPYRE_USE_CB", "1")
     envs_spyre.override("VLLM_SPYRE_DYNAMO_BACKEND", "eager")
 
-    model = LLM(model=model.name,
-                revision=model.revision,
-                max_model_len=max_model_len,
-                max_num_seqs=max_num_seqs,
-                disable_log_stats=False)
+    model = LLM(
+        model=model.name,
+        revision=model.revision,
+        max_model_len=max_model_len,
+        max_num_seqs=max_num_seqs,
+        disable_log_stats=False,
+    )
     model.generate(prompts=prompts)
 
     assert Path(tmp_path / "request_metrics.jsonl").exists()
