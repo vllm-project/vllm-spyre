@@ -4,9 +4,11 @@ import random
 
 import pytest
 import torch
-from llm_cache import clear_llm_caches, get_cached_api_server, print_llm_cache_info
+from llm_cache import (clear_llm_caches, get_cached_api_server,
+                       print_llm_cache_info)
 from llm_cache_util import SortKey, sort_tests_for_llm_caching
-from spyre_util import get_spyre_backend_list, get_spyre_model_list, skip_unsupported_tp_size
+from spyre_util import (get_spyre_backend_list, get_spyre_model_list,
+                        skip_unsupported_tp_size)
 from vllm.connections import global_http_connection
 from vllm.distributed import cleanup_dist_env_and_memory
 
@@ -32,7 +34,8 @@ def pytest_generate_tests(metafunc):
     default_max_model_len = [512]
 
     existing_markers = [
-        marker.name if marker.name != "parametrize" else marker.args[0] for marker in metafunc.definition.own_markers
+        marker.name if marker.name != "parametrize" else marker.args[0]
+        for marker in metafunc.definition.own_markers
     ]
 
     marker = metafunc.config.option.markexpr  # From CLI
@@ -43,7 +46,8 @@ def pytest_generate_tests(metafunc):
         # When -m full_model is called, all tests tagged with
         # full_model mark will be injected with these custom values
         if metafunc.definition.get_closest_marker("full_model"):
-            _add_param("model", get_spyre_model_list(full_size_models=True), metafunc, existing_markers)
+            _add_param("model", get_spyre_model_list(full_size_models=True),
+                       metafunc, existing_markers)
             _add_param(
                 "backend",
                 ["sendnn"],
@@ -91,9 +95,11 @@ def pytest_generate_tests(metafunc):
     # Will need to do some fancy stuff to add custom
     # markers
     if "cb" in metafunc.fixturenames and "cb" not in existing_markers:
-        metafunc.parametrize("cb", [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
+        metafunc.parametrize(
+            "cb", [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
 
-    if "tp_size" in metafunc.fixturenames and "tp_size" not in existing_markers:
+    if "tp_size" in metafunc.fixturenames and \
+        "tp_size" not in existing_markers:
         metafunc.parametrize(
             "tp_size",
             [
@@ -106,11 +112,13 @@ def pytest_generate_tests(metafunc):
         )
 
 
-def _add_param(param_name: str, param_value, metafunc, existing_markers) -> None:
+def _add_param(param_name: str, param_value, metafunc,
+               existing_markers) -> None:
     """helper function to parametrize stuff.
     We make sure to not parametrize something
     if it exists explicitly on the test"""
-    if param_name in metafunc.fixturenames and param_name not in existing_markers:
+    if (param_name in metafunc.fixturenames
+            and param_name not in existing_markers):
         metafunc.parametrize(
             param_name,
             param_value,
@@ -119,7 +127,7 @@ def _add_param(param_name: str, param_value, metafunc, existing_markers) -> None
 
 
 def pytest_collection_modifyitems(config, items):
-    """Modify tests at collection time"""
+    """ Modify tests at collection time """
     _mark_all_e2e(items)
 
     _skip_unsupported_compiler_tests(config, items)
@@ -199,7 +207,7 @@ def runtime_xfail(request):
     Call runtime_xfail() to mark running test as xfail.
     """
 
-    def _xfail(reason=""):
+    def _xfail(reason=''):
         request.node.add_marker(pytest.mark.xfail(reason=reason))
 
     return _xfail
@@ -207,14 +215,15 @@ def runtime_xfail(request):
 
 @pytest.fixture(scope="function")
 def remote_openai_server(request):
-    """Fixture to set up a test server."""
+    """ Fixture to set up a test server."""
     params = request.node.callspec.params
 
     try:
-        model = params["model"]
-        backend = params["backend"]
+        model = params['model']
+        backend = params['backend']
     except KeyError as e:
-        raise pytest.UsageError("Error setting up remote_openai_server params") from e
+        raise pytest.UsageError(
+            "Error setting up remote_openai_server params") from e
 
     # Default to None if not present
     quantization = params.get("quantization", None)
@@ -222,8 +231,8 @@ def remote_openai_server(request):
     # Add extra server args if present in test
     server_args = ["--quantization", quantization] if quantization else []
 
-    if "tp_size" in params:
-        tp_size = params["tp_size"]
+    if 'tp_size' in params:
+        tp_size = params['tp_size']
         if int(tp_size) > 1:
             # Don't set tp size explicitly if it's 1
             skip_unsupported_tp_size(int(tp_size), backend)
@@ -232,28 +241,41 @@ def remote_openai_server(request):
     if "cb" in params and params["cb"] == 1:
         max_model_len = params["max_model_len"]
         max_num_seqs = params["max_num_seqs"]
-        env_dict = {"VLLM_SPYRE_USE_CB": "1", "VLLM_SPYRE_DYNAMO_BACKEND": backend}
-        server_args.extend(["--max_num_seqs", str(max_num_seqs), "--max-model-len", str(max_model_len)])
+        env_dict = {
+            "VLLM_SPYRE_USE_CB": "1",
+            "VLLM_SPYRE_DYNAMO_BACKEND": backend
+        }
+        server_args.extend([
+            "--max_num_seqs",
+            str(max_num_seqs), "--max-model-len",
+            str(max_model_len)
+        ])
     else:
-        warmup_shapes = params["warmup_shapes"]
+        warmup_shapes = params['warmup_shapes']
         warmup_prompt_length = [t[0] for t in warmup_shapes]
         warmup_new_tokens = [t[1] for t in warmup_shapes]
         warmup_batch_size = [t[2] for t in warmup_shapes]
         env_dict = {
-            "VLLM_SPYRE_WARMUP_PROMPT_LENS": ",".join(map(str, warmup_prompt_length)),
-            "VLLM_SPYRE_WARMUP_NEW_TOKENS": ",".join(map(str, warmup_new_tokens)),
-            "VLLM_SPYRE_WARMUP_BATCH_SIZES": ",".join(map(str, warmup_batch_size)),
-            "VLLM_SPYRE_DYNAMO_BACKEND": backend,
+            "VLLM_SPYRE_WARMUP_PROMPT_LENS":
+            ','.join(map(str, warmup_prompt_length)),
+            "VLLM_SPYRE_WARMUP_NEW_TOKENS":
+            ','.join(map(str, warmup_new_tokens)),
+            "VLLM_SPYRE_WARMUP_BATCH_SIZES":
+            ','.join(map(str, warmup_batch_size)),
+            "VLLM_SPYRE_DYNAMO_BACKEND":
+            backend,
         }
 
     try:
-        server = get_cached_api_server(model, server_args=server_args, server_env=env_dict)
+        server = get_cached_api_server(model,
+                                       server_args=server_args,
+                                       server_env=env_dict)
         yield server
     except Exception as e:
         pytest.fail(f"Failed to setup server: {e}")
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope='session', autouse=True)
 def teardown_fixture():
     # Session scoped fixture will run once for the entire suite
     yield
@@ -265,7 +287,7 @@ def teardown_fixture():
 
 @pytest.fixture
 def set_random_seed(request):
-    func_hash = hashlib.sha256(request.node.originalname.encode("utf-8"))
+    func_hash = hashlib.sha256(request.node.originalname.encode('utf-8'))
     seed = int(func_hash.hexdigest(), 16)
     random.seed(seed)
     yield
@@ -275,7 +297,6 @@ def set_random_seed(request):
 def temporary_enable_log_propagate():
     """Context manager to temporarily enable log propagation."""
     import logging
-
     logger = logging.getLogger("vllm_spyre")
     logger.propagate = True
     yield

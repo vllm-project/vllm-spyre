@@ -10,52 +10,46 @@ from typing import Any
 import pytest
 from llm_cache_util import force_engine_shutdown
 from openai import BadRequestError
-from output_util import check_output_against_hf, extract_output, generate_spyre_vllm_output
-from spyre_util import (
-    ModelInfo,
-    RemoteOpenAIServer,
-    create_seq_prompt,
-    get_chicken_soup_prompts,
-    skip_unsupported_tp_size,
-)
+from output_util import (check_output_against_hf, extract_output,
+                         generate_spyre_vllm_output)
+from spyre_util import (ModelInfo, RemoteOpenAIServer, create_seq_prompt,
+                        get_chicken_soup_prompts, skip_unsupported_tp_size)
 from vllm import LLM, SamplingParams
 
 
 @pytest.mark.cb
-@pytest.mark.parametrize("backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
-def test_cb_max_tokens(
-    model: ModelInfo,
-    backend: str,
-    max_model_len: int,
-    max_num_seqs: int,
-    monkeypatch: pytest.MonkeyPatch,
-    use_llm_cache,
-):
+@pytest.mark.parametrize(
+    "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
+def test_cb_max_tokens(model: ModelInfo, backend: str, max_model_len: int,
+                       max_num_seqs: int, monkeypatch: pytest.MonkeyPatch,
+                       use_llm_cache):
     """Test that continuous batches of requests that
     are longer than the `max_model_len` are correctly rejected"""
     max_tokens = 20
 
     overflow_prompt = " ".join(["a"] * max_model_len)
 
-    vllm_sampling_params = SamplingParams(max_tokens=max_tokens, temperature=0, ignore_eos=True, logprobs=0)
+    vllm_sampling_params = SamplingParams(max_tokens=max_tokens,
+                                          temperature=0,
+                                          ignore_eos=True,
+                                          logprobs=0)
 
     with pytest.raises(ValueError, match="max model context length"):
-        generate_spyre_vllm_output(
-            model=model,
-            prompts=overflow_prompt,
-            max_model_len=max_model_len,
-            sampling_params=vllm_sampling_params,
-            tensor_parallel_size=1,
-            backend=backend,
-            max_num_seqs=max_num_seqs,
-            use_cb=True,
-            monkeypatch=monkeypatch,
-        )
+        generate_spyre_vllm_output(model=model,
+                                   prompts=overflow_prompt,
+                                   max_model_len=max_model_len,
+                                   sampling_params=vllm_sampling_params,
+                                   tensor_parallel_size=1,
+                                   backend=backend,
+                                   max_num_seqs=max_num_seqs,
+                                   use_cb=True,
+                                   monkeypatch=monkeypatch)
 
 
 @pytest.mark.cb
 @pytest.mark.parametrize("cb", [True])
-@pytest.mark.parametrize("backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
+@pytest.mark.parametrize(
+    "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 def test_api_cb_rejects_oversized_request(
     remote_openai_server: RemoteOpenAIServer,
     model: ModelInfo,
@@ -80,7 +74,8 @@ def test_api_cb_rejects_oversized_request(
 
 @pytest.mark.cb
 @pytest.mark.parametrize("cb", [True])
-@pytest.mark.parametrize("backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
+@pytest.mark.parametrize(
+    "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 def test_api_cb_generates_correct_max_tokens(
     remote_openai_server: RemoteOpenAIServer,
     model: ModelInfo,
@@ -94,16 +89,18 @@ def test_api_cb_generates_correct_max_tokens(
     client = remote_openai_server.get_client()
     max_tokens = 10
 
-    response = client.completions.create(
-        model=model.name, prompt=get_chicken_soup_prompts(1), max_tokens=max_tokens, temperature=0
-    )
+    response = client.completions.create(model=model.name,
+                                         prompt=get_chicken_soup_prompts(1),
+                                         max_tokens=max_tokens,
+                                         temperature=0)
 
     assert response.usage.completion_tokens == max_tokens
 
 
 @pytest.mark.compiler_support_32k
 @pytest.mark.cb
-@pytest.mark.parametrize("backend", [pytest.param("sendnn", marks=pytest.mark.spyre, id="sendnn")])
+@pytest.mark.parametrize(
+    "backend", [pytest.param("sendnn", marks=pytest.mark.spyre, id="sendnn")])
 @pytest.mark.parametrize(
     "tp_size",
     [
@@ -139,14 +136,12 @@ def test_long_context_batches(
         (1, 17000),
     ]
 
-    vllm_model = LLM(
-        model=model.name,
-        tokenizer=model.name,
-        max_model_len=max_model_len,
-        max_num_seqs=max_num_seqs,
-        tensor_parallel_size=tp_size,
-        revision=model.revision,
-    )
+    vllm_model = LLM(model=model.name,
+                     tokenizer=model.name,
+                     max_model_len=max_model_len,
+                     max_num_seqs=max_num_seqs,
+                     tensor_parallel_size=tp_size,
+                     revision=model.revision)
 
     sampling_params = SamplingParams(
         max_tokens=max_tokens,
@@ -191,12 +186,12 @@ def test_swap_decode_programs_for_cb(
     tp_size: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """
-
-    Validate the runtime's ability to swap between different compiled decode
+    '''
+    
+    Validate the runtime's ability to swap between different compiled decode 
     programs for varying batch sizes and TKV.
 
-    The test case consists of 32 small input prompts with specifically chosen
+    The test case consists of 32 small input prompts with specifically chosen 
     max_new_tokens values to trigger different decode programs at runtime.
 
     The test case structure is as follows:
@@ -207,11 +202,11 @@ def test_swap_decode_programs_for_cb(
     -  2 prompts with max_new_tokens @ 8k
     -  1 prompt  with max_new_tokens @ 16k
     -  1 prompt  with max_new_tokens @ 32k
+    
+    '''
 
-    """
-
-    model = "ibm-granite/granite-3.3-8b-instruct"
-    backend = "sendnn"
+    model = 'ibm-granite/granite-3.3-8b-instruct'
+    backend = 'sendnn'
     max_num_seqs = 32
 
     max_model_len = 32 * 1024  # 32K
@@ -226,8 +221,7 @@ def test_swap_decode_programs_for_cb(
         max_tokens=max_new_tokens - 64,
         temperature=0,
         logprobs=0,  # return logprobs of generated tokens only
-        ignore_eos=True,
-    )
+        ignore_eos=True)
 
     p1k = 1 * 1024
     p2k = 2 * 1024
@@ -243,42 +237,35 @@ def test_swap_decode_programs_for_cb(
     sampling_params_16k = [create_sampling_params(p16k) for _ in range(1)]
     sampling_params_32k = [create_sampling_params(p32k) for _ in range(1)]
 
-    sampling_params = (
-        sampling_params_1k
-        + sampling_params_2k
-        + sampling_params_4k
-        + sampling_params_8k
-        + sampling_params_16k
-        + sampling_params_32k
-    )
+    sampling_params = sampling_params_1k + sampling_params_2k + \
+        sampling_params_4k + sampling_params_8k + sampling_params_16k + \
+            sampling_params_32k
 
     # Read the cache and check beforehand if the cache was written with the
     # expected prompt. We use the filepath of this script to resolve
     # the cache filepaths
-    script_directory = Path(__file__).parent.absolute() / "cache"
-    with open(script_directory / "prompts_8k_bs2.pickle", "rb") as f:
+    script_directory = Path(__file__).parent.absolute() / 'cache'
+    with open(script_directory / 'prompts_8k_bs2.pickle', 'rb') as f:
         cache_result_8k_bs2: list[dict[str, Any]] = pickle.loads(f.read())
 
-    assert cache_result_8k_bs2[0]["prompt"] == prompts[28]
-    assert cache_result_8k_bs2[1]["prompt"] == prompts[29]
+    assert cache_result_8k_bs2[0]['prompt'] == prompts[28]
+    assert cache_result_8k_bs2[1]['prompt'] == prompts[29]
 
-    with open(script_directory / "prompts_16k_bs1.pickle", "rb") as f:
+    with open(script_directory / 'prompts_16k_bs1.pickle', 'rb') as f:
         cache_result_16k_bs1: list[dict[str, Any]] = pickle.loads(f.read())
 
-    assert cache_result_16k_bs1[0]["prompt"] == prompts[30]
+    assert cache_result_16k_bs1[0]['prompt'] == prompts[30]
 
     # Generate results from vLLM
-    vllm_results = generate_spyre_vllm_output(
-        model=model,
-        prompts=prompts,
-        sampling_params=sampling_params,
-        tensor_parallel_size=tp_size,
-        backend=backend,
-        max_num_seqs=max_num_seqs,
-        monkeypatch=monkeypatch,
-        max_model_len=max_model_len,
-        use_cb=True,
-    )
+    vllm_results = generate_spyre_vllm_output(model=model,
+                                              prompts=prompts,
+                                              sampling_params=sampling_params,
+                                              tensor_parallel_size=tp_size,
+                                              backend=backend,
+                                              max_num_seqs=max_num_seqs,
+                                              monkeypatch=monkeypatch,
+                                              max_model_len=max_model_len,
+                                              use_cb=True)
 
     # TODO: dummy validation, currently the outputs do not match with
     # HF cache.

@@ -44,37 +44,42 @@ def handle_disable_compilation(vllm_config: VllmConfig, is_decoder: bool):
 
     # If this is a decoder model, disable compilation
     logger.info(
-        "[PRECOMPILED_WARN] Setting %s because %s is a decoder model",
-        DISABLE_COMPILATION_ENV_VAR,
-        vllm_config.model_config.model,
-    )
+        "[PRECOMPILED_WARN] "
+        "Setting %s because %s is a decoder model",
+        DISABLE_COMPILATION_ENV_VAR, vllm_config.model_config.model)
     os.environ[DISABLE_COMPILATION_ENV_VAR] = "true"
 
     # If the user has set req_precompiled_decoder_env_var,
     # then we need to enforce that they setup their cache
     torch_cache_dir = os.getenv("TORCH_SENDNN_CACHE_DIR", None)
-    torch_cache_enabled = bool(int(os.getenv("TORCH_SENDNN_CACHE_ENABLE", "0")))
+    torch_cache_enabled = bool(int(os.getenv("TORCH_SENDNN_CACHE_ENABLE",
+                                             "0")))
 
-    if not torch_cache_dir or not torch_cache_enabled or not os.path.isdir(torch_cache_dir):
+    if not torch_cache_dir or not torch_cache_enabled or not os.path.isdir(
+            torch_cache_dir):
         raise ValueError(
             f"{req_precompiled_decoder_env_var}=1 requires setting"
-            " TORCH_SENDNN_CACHE_DIR to a valid path and setting "
-            "TORCH_SENDNN_CACHE_ENABLE=1"
-        )
+            " TORCH_SENDNN_CACHE_DIR to a valid path and setting " \
+            "TORCH_SENDNN_CACHE_ENABLE=1")
 
-    compilation_config_path = Path(torch_cache_dir) / PRE_COMPILE_MODEL_CONFIG_FILENAME
-    compilation_catalog_path = Path(torch_cache_dir) / PRE_COMPILE_MODEL_CATALOG_FILENAME
+    compilation_config_path = Path(
+        torch_cache_dir) / PRE_COMPILE_MODEL_CONFIG_FILENAME
+    compilation_catalog_path = Path(
+        torch_cache_dir) / PRE_COMPILE_MODEL_CATALOG_FILENAME
 
-    if not compilation_catalog_path.exists() and not compilation_config_path.exists():
+    if not compilation_catalog_path.exists() and \
+        not compilation_config_path.exists():
         raise ValueError(
             f"{req_precompiled_decoder_env_var}=1 was set, but no "
             f"pre-compiled model config was found in the "
             f"TORCH_SENDNN_CACHE_DIR: {str(compilation_config_path)} or"
-            f"{str(compilation_catalog_path)} does not exist"
-        )
+            f"{str(compilation_catalog_path)} does not exist")
 
-    if not compilation_catalog_path.is_file() and not compilation_config_path.is_file():
-        raise ValueError("{req_precompiled_decoder_env_var}=1 was set, but the pre-compiled model config is not a file")
+    if not compilation_catalog_path.is_file() and \
+        not compilation_config_path.is_file():
+        raise ValueError(
+            "{req_precompiled_decoder_env_var}=1 was set, but the "
+            "pre-compiled model config is not a file")
 
     matching_config = None
 
@@ -86,19 +91,20 @@ def handle_disable_compilation(vllm_config: VllmConfig, is_decoder: bool):
             try:
                 pre_compile_catalog = json.load(f)
             except json.JSONDecodeError as e:
-                raise ValueError(f"Precompiled catalog {str(compilation_catalog_path)} is not a valid JSON file") from e
-        match_result = match_from_pre_compile_catalog(pre_compile_catalog, vllm_config)
+                raise ValueError(
+                    f"Precompiled catalog {str(compilation_catalog_path)}"
+                    " is not a valid JSON file") from e
+        match_result = match_from_pre_compile_catalog(pre_compile_catalog,
+                                                      vllm_config)
 
         if match_result == -1:
             # No match found
             logger.warning(
-                "[PRECOMPILED_WARN] "
+                "[PRECOMPILED_WARN] " \
                 "Provided vllm configuration doesn't match any of the "
                 "pre-compiled model configurations. Catalog: \n%s\n "
-                "vllm_config: \n%s",
-                str(compilation_catalog_path),
-                str(vllm_config),
-            )
+                "vllm_config: \n%s", str(compilation_catalog_path),
+                str(vllm_config))
 
             # Return with warning
             return
@@ -110,10 +116,16 @@ def handle_disable_compilation(vllm_config: VllmConfig, is_decoder: bool):
             try:
                 compilation_config = json.load(f)
             except json.JSONDecodeError as e:
-                raise ValueError(f"Precompiled model config {str(compilation_config_path)} was not valid json") from e
-        match_result = match_from_model_config_file(compilation_config, vllm_config)
+                raise ValueError("Precompiled model config "
+                                 f"{str(compilation_config_path)} was "
+                                 "not valid json") from e
+        match_result = match_from_model_config_file(compilation_config,
+                                                    vllm_config)
         if not match_result:
-            logger.warning("[PRECOMPILED_WARN] Provided vllm configuration doesn't match any of the pre-compiled model")
+            logger.warning(
+                "[PRECOMPILED_WARN] "
+                "Provided vllm configuration doesn't match any of the "
+                "pre-compiled model")
             # Return with warning
             return
         else:
@@ -123,17 +135,18 @@ def handle_disable_compilation(vllm_config: VllmConfig, is_decoder: bool):
         # Check vllm_spyre version
         try:
             from vllm_spyre._version import version as vllm_spyre_version
-
             if matching_config["vllm_spyre_version"] != vllm_spyre_version:
                 # Can be converted to ValueError if we want to be strict
                 # with checking
                 logger.warning(
-                    "[PRECOMPILED_WARN] Model was compiled on vllm-spyre %s but the current vllm_spyre version is %s",
-                    matching_config["vllm_spyre_version"],
-                    vllm_spyre_version,
-                )
+                    "[PRECOMPILED_WARN] "
+                    "Model was compiled on vllm-spyre "
+                    "%s but the current vllm_spyre version is %s",
+                    matching_config['vllm_spyre_version'], vllm_spyre_version)
         except ImportError:
-            logger.warning("Cannot validate vllm_spyre version against pre-compiled model config")
+            logger.warning(
+                "Cannot validate vllm_spyre version against pre-compiled "
+                "model config")
 
         # Check model name
         model_name = matching_config["data"]["MODEL_NAME"]
@@ -146,13 +159,11 @@ def handle_disable_compilation(vllm_config: VllmConfig, is_decoder: bool):
                 "[PRECOMPILED_WARN] "
                 "Configured model name is %s but the pre-compiled model "
                 "config has name %s. Please ensure this is the correct "
-                "model",
-                vllm_config.model_config.model,
-                model_name,
-            )
+                "model", vllm_config.model_config.model, model_name)
 
 
-def match_from_pre_compile_catalog(pre_compile_catalog: dict, vllm_config: VllmConfig) -> int:
+def match_from_pre_compile_catalog(pre_compile_catalog: dict,
+                                   vllm_config: VllmConfig) -> int:
     """Function to find the pre-compile model configuration that matches
     the provided vllm_config.
     """
@@ -167,7 +178,8 @@ def match_from_pre_compile_catalog(pre_compile_catalog: dict, vllm_config: VllmC
     return -1
 
 
-def match_from_model_config_file(compilation_config: dict, vllm_config: VllmConfig) -> bool:
+def match_from_model_config_file(compilation_config: dict,
+                                 vllm_config: VllmConfig) -> bool:
     """Function to validate if vllm configuration provided matches
     pre-compile model configuration
     """
@@ -186,9 +198,11 @@ def match_from_model_config_file(compilation_config: dict, vllm_config: VllmConf
         else:
             get_list = lambda x: [int(i) for i in x.split(",")]
 
-            prompt_lens = get_list(vllm_configs["VLLM_SPYRE_WARMUP_PROMPT_LENS"])
+            prompt_lens = get_list(
+                vllm_configs["VLLM_SPYRE_WARMUP_PROMPT_LENS"])
             new_tokens = get_list(vllm_configs["VLLM_SPYRE_WARMUP_NEW_TOKENS"])
-            batch_sizes = get_list(vllm_configs["VLLM_SPYRE_WARMUP_BATCH_SIZES"])
+            batch_sizes = get_list(
+                vllm_configs["VLLM_SPYRE_WARMUP_BATCH_SIZES"])
 
             if prompt_lens != envs_spyre.VLLM_SPYRE_WARMUP_PROMPT_LENS:
                 return False

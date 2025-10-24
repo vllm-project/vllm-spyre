@@ -1,8 +1,7 @@
 """Utilities for selecting and loading Spyre models."""
-
 import os
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, Optional, cast
 
 import torch
 import torch._inductor.config
@@ -13,7 +12,8 @@ from transformers import PretrainedConfig
 from vllm.config import ModelConfig, VllmConfig
 from vllm.forward_context import get_forward_context
 from vllm.logger import init_logger
-from vllm.model_executor.model_loader.weight_utils import download_weights_from_hf
+from vllm.model_executor.model_loader.weight_utils import (
+    download_weights_from_hf)
 from vllm.v1.outputs import SamplerOutput
 from vllm.v1.sample.metadata import SamplingMetadata
 from vllm.v1.sample.sampler import Sampler
@@ -28,7 +28,7 @@ except ImportError:
     print("WARNING: Disabled: dynamo_tracer")
     pass
 
-BACKEND_LIST = ["sendnn", "inductor"]
+BACKEND_LIST = ['sendnn', 'inductor']
 
 logger = init_logger(__name__)
 
@@ -48,6 +48,7 @@ class SpyreAttentionMetadata:
 
 
 class SpyreCausalLM(nn.Module):
+
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -60,7 +61,6 @@ class SpyreCausalLM(nn.Module):
         try:
             ## Temporary backwards compatibility for 0.10.2
             from vllm.model_executor.layers.sampler import get_sampler
-
             self.sampler = get_sampler()
         except (ImportError, ModuleNotFoundError):
             self.sampler = Sampler()
@@ -73,7 +73,9 @@ class SpyreCausalLM(nn.Module):
         # number of right pads (relevant for continuous batching only)
         self.n_pads_right = 0
 
-        self._mask_dtype = torch.float16 if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn" else torch.float32
+        self._mask_dtype = torch.float16 if \
+            envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn" \
+            else torch.float32
 
         # FMS Model
         if envs_spyre.VLLM_SPYRE_USE_CB:
@@ -93,6 +95,7 @@ class SpyreCausalLM(nn.Module):
         masks: torch.Tensor,
         is_prompt: bool,
     ) -> torch.Tensor:
+
         if is_prompt and not envs_spyre.VLLM_SPYRE_USE_CB:
             self.model.past_key_value_states = None  # type: ignore
 
@@ -129,7 +132,7 @@ class SpyreCausalLM(nn.Module):
         self,
         logits: torch.Tensor,
         sampling_metadata: SamplingMetadata,
-    ) -> SamplerOutput | None:
+    ) -> Optional[SamplerOutput]:
         next_tokens = self.sampler(logits, sampling_metadata)
         return next_tokens
 
@@ -138,6 +141,7 @@ class SpyreCausalLM(nn.Module):
 
 
 class FmsModelBase(nn.Module):
+
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -163,7 +167,8 @@ class FmsModelBase(nn.Module):
             model_config=self.model_config,
             max_prompt_length=max_prompt_length,
             max_decode_length=max_decode_length,
-            distributed_strategy="tp" if self.parallel_config.world_size > 1 else None,
+            distributed_strategy="tp"
+            if self.parallel_config.world_size > 1 else None,
             sendnn_dynamic=sendnn_dynamic,
             rank=rank,
             world_size=self.parallel_config.world_size,
@@ -174,10 +179,11 @@ class FmsModelBase(nn.Module):
         model_config: ModelConfig,
         max_prompt_length: int,
         max_decode_length: int,
-        distributed_strategy: str | None,
+        distributed_strategy: Optional[str],
         sendnn_dynamic: bool,
         **kwargs,
     ) -> None:
+
         logger.debug("Loading model weights for model %s", model_config.model)
         logger.debug("Model config has dtype: %s", model_config.dtype)
 
@@ -185,16 +191,15 @@ class FmsModelBase(nn.Module):
         # model_config's dtype, hence we don't log the msg below
         # since it might confuse the user
         if model_config.quantization:
-            logger.debug("Quantized model found with quantization : %s", model_config.quantization)
+            logger.debug(
+                "Quantized model found with quantization : %s", \
+                    model_config.quantization)
         else:
             if self.dtype is not model_config.dtype:
                 logger.info(
                     "Ignoring user-provided dtype=%s (provided either through"
                     " --dtype CLI arg or model_config.dtype) and using"
-                    " dtype=%s instead.",
-                    model_config.dtype,
-                    self.dtype,
-                )
+                    " dtype=%s instead.", model_config.dtype, self.dtype)
 
         is_local = os.path.isdir(model_config.model)
         model_path = model_config.model
@@ -204,13 +209,12 @@ class FmsModelBase(nn.Module):
                 model_name_or_path=model_path,
                 cache_dir=None,
                 allow_patterns=["*.safetensors", "*.bin", "*.pt"],
-                revision=model_config.revision,
-            )
+                revision=model_config.revision)
 
         with utils_spyre.stagger_region(
-            envs_spyre.VLLM_SPYRE_MAX_LOAD_PROCESSES,
-            kwargs["world_size"],
-            kwargs["rank"],
+                envs_spyre.VLLM_SPYRE_MAX_LOAD_PROCESSES,
+                kwargs["world_size"],
+                kwargs["rank"],
         ):
             self.model = get_model(
                 architecture="hf_pretrained",
@@ -223,24 +227,22 @@ class FmsModelBase(nn.Module):
         self.model.eval()
         torch.set_grad_enabled(False)
 
-        _target_cache_size = max(int(max_decode_length * 2), int(max_prompt_length * 2.5))
-        if (
-            hasattr(torch._dynamo.config, "accumulated_cache_size_limit")
-            and _target_cache_size > torch._dynamo.config.accumulated_cache_size_limit
-        ):
+        _target_cache_size = max(int(max_decode_length * 2),
+                                 int(max_prompt_length * 2.5))
+        if hasattr(torch._dynamo.config, "accumulated_cache_size_limit") and \
+            _target_cache_size > torch._dynamo.config.\
+            accumulated_cache_size_limit:
             _prev = torch._dynamo.config.accumulated_cache_size_limit
-            torch._dynamo.config.accumulated_cache_size_limit = _target_cache_size
+            torch._dynamo.config.accumulated_cache_size_limit = \
+                _target_cache_size
             logger.info(
                 "NOTICE: Adjusting "
                 "torch._dynamo.config.accumulated_cache_size_limit "
                 "from %s to %s "
                 "to accommodate prompt size of %d "
-                "and decode tokens of %d",
-                _prev,
+                "and decode tokens of %d", _prev,
                 torch._dynamo.config.accumulated_cache_size_limit,
-                max_prompt_length,
-                max_decode_length,
-            )
+                max_prompt_length, max_decode_length)
 
         if _target_cache_size > torch._dynamo.config.cache_size_limit:
             _prev = torch._dynamo.config.cache_size_limit
@@ -249,12 +251,9 @@ class FmsModelBase(nn.Module):
                 "NOTICE: Adjusting torch._dynamo.config.cache_size_limit "
                 "from %s to %s "
                 "to accommodate prompt size of %d "
-                "and decode tokens of %d",
-                _prev,
+                "and decode tokens of %d", _prev,
                 torch._dynamo.config.accumulated_cache_size_limit,
-                max_prompt_length,
-                max_decode_length,
-            )
+                max_prompt_length, max_decode_length)
 
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in BACKEND_LIST:
             # When running on Spyre cards for either non-quantized (bf16) models
@@ -305,13 +304,12 @@ class FmsModelBase(nn.Module):
             logger.debug(
                 "Casting param %s to fp32. This is required"
                 " for attention implementations that only support"
-                " full precision.",
-                name,
-            )
+                " full precision.", name)
             param.data = param.data.to(dtype=torch.float32)
 
 
 class ContinuousBatchingFmsModel(FmsModelBase):
+
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -326,25 +324,33 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         # can produce 1 token with prefill plus rest of model length
         max_decode_length = max_model_len - BLOCK_SIZE + 1
 
-        super().__init__(vllm_config, max_prompt_length, max_decode_length, rank, sendnn_dynamic=True)
+        super().__init__(vllm_config,
+                         max_prompt_length,
+                         max_decode_length,
+                         rank,
+                         sendnn_dynamic=True)
 
         self.prefill_past_key_values = None
 
         # physical KV cache on AIU Spyre: will eventually not live in this class
         self.kv_cache_specs = {}
-        self.kv_cache_specs["block_size"] = BLOCK_SIZE
-        self.kv_cache_specs["num_kv_heads"] = self.model_config.get_num_kv_heads(self.parallel_config)
+        self.kv_cache_specs['block_size'] = BLOCK_SIZE
+        self.kv_cache_specs[
+            'num_kv_heads'] = self.model_config.get_num_kv_heads(
+                self.parallel_config)
 
-        if self.config.model_type in {"llama", "granite"}:
-            self.kv_cache_specs["num_layers"] = self.config.num_hidden_layers
-            self.kv_cache_specs["head_dim"] = self.config.hidden_size // self.config.num_attention_heads
-        elif self.config.model_type == "gpt_bigcode":
-            self.kv_cache_specs["num_layers"] = self.config.n_layer
-            self.kv_cache_specs["head_dim"] = self.config.n_embd // self.config.n_head
+        if self.config.model_type in {'llama', 'granite'}:
+            self.kv_cache_specs['num_layers'] = self.config.num_hidden_layers
+            self.kv_cache_specs['head_dim'] = self.config.hidden_size // \
+                self.config.num_attention_heads
+        elif self.config.model_type == 'gpt_bigcode':
+            self.kv_cache_specs['num_layers'] = self.config.n_layer
+            self.kv_cache_specs[
+                'head_dim'] = self.config.n_embd // self.config.n_head
         else:
             raise NotImplementedError(
-                f"[SpyreCausalLM] model type {self.config.model_type} not supported in ContinuousBatchingFmsModel"
-            )
+                f"[SpyreCausalLM] model type {self.config.model_type} "
+                f"not supported in ContinuousBatchingFmsModel")
 
         if self.model_config.quantization:
             self.attention_name = "spyre_paged_attn_fp8"
@@ -353,67 +359,53 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             self.attention_name = "spyre_paged_attn"
             self.is_fp8_model = False
 
-        self.current_scale: list[tuple] | None = None
+        self.current_scale: Optional[list[tuple]] = None
 
     def set_past_key_value_states(self, num_blocks) -> None:
         # List[layers] of Tuple[k,v] of
         # Tensor[num_blocks, block_size, num_kv_heads, head_dim]
         if not self.model_config.quantization:
             self.past_key_value_states = [
-                (
-                    torch.zeros(
-                        num_blocks,
-                        self.kv_cache_specs["block_size"],
-                        self.kv_cache_specs["num_kv_heads"],
-                        self.kv_cache_specs["head_dim"],
-                        dtype=self.dtype,
-                    ),
-                    torch.zeros(
-                        num_blocks,
-                        self.kv_cache_specs["block_size"],
-                        self.kv_cache_specs["num_kv_heads"],
-                        self.kv_cache_specs["head_dim"],
-                        dtype=self.dtype,
-                    ),
-                )
-                for _ in range(self.kv_cache_specs["num_layers"])
+                (torch.zeros(num_blocks,
+                             self.kv_cache_specs['block_size'],
+                             self.kv_cache_specs['num_kv_heads'],
+                             self.kv_cache_specs['head_dim'],
+                             dtype=self.dtype),
+                 torch.zeros(num_blocks,
+                             self.kv_cache_specs['block_size'],
+                             self.kv_cache_specs['num_kv_heads'],
+                             self.kv_cache_specs['head_dim'],
+                             dtype=self.dtype))
+                for _ in range(self.kv_cache_specs['num_layers'])
             ]
         else:
             from fms_mo.aiu_addons.fp8.fp8_utils import ScaledTensor
-
             batch_size = max(2, self.scheduler_config.max_num_seqs)
             self.past_key_value_states = [
-                (
-                    ScaledTensor(
-                        torch.zeros(
-                            num_blocks,
-                            self.kv_cache_specs["block_size"],
-                            self.kv_cache_specs["num_kv_heads"],
-                            self.kv_cache_specs["head_dim"],
-                            dtype=self.dtype,
-                        ),
-                        scale=torch.tensor([1.0] * batch_size, dtype=torch.float32),
-                        scaled=False,
-                    ),
-                    ScaledTensor(
-                        torch.zeros(
-                            num_blocks,
-                            self.kv_cache_specs["block_size"],
-                            self.kv_cache_specs["num_kv_heads"],
-                            self.kv_cache_specs["head_dim"],
-                            dtype=self.dtype,
-                        ),
-                        scale=torch.tensor([1.0] * batch_size, dtype=torch.float32),
-                        scaled=False,
-                    ),
-                )
-                for _ in range(self.kv_cache_specs["num_layers"])
+                (ScaledTensor(torch.zeros(num_blocks,
+                                          self.kv_cache_specs['block_size'],
+                                          self.kv_cache_specs['num_kv_heads'],
+                                          self.kv_cache_specs['head_dim'],
+                                          dtype=self.dtype),
+                              scale=torch.tensor([1.0] * batch_size,
+                                                 dtype=torch.float32),
+                              scaled=False),
+                 ScaledTensor(torch.zeros(num_blocks,
+                                          self.kv_cache_specs['block_size'],
+                                          self.kv_cache_specs['num_kv_heads'],
+                                          self.kv_cache_specs['head_dim'],
+                                          dtype=self.dtype),
+                              scale=torch.tensor([1.0] * batch_size,
+                                                 dtype=torch.float32),
+                              scaled=False))
+                for _ in range(self.kv_cache_specs['num_layers'])
             ]
             # This list keep the reference of scales of the quantized weights
             # that will be updated after model execution
             self.current_kv_scales = [
-                (k_cache._scale, v_cache._scale) for k_cache, v_cache in self.past_key_value_states
-            ]
+                    (k_cache._scale, v_cache._scale) for k_cache, v_cache \
+                        in self.past_key_value_states
+                ]
 
     def forward(
         self,
@@ -424,24 +416,27 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         is_prompt: bool,
         **extra_kwargs,
     ) -> torch.Tensor:
+
         forward_context = get_forward_context()
 
-        attn_metadata = cast(SpyreAttentionMetadata, forward_context.attn_metadata)
+        attn_metadata = cast(SpyreAttentionMetadata,
+                             forward_context.attn_metadata)
         assert attn_metadata is not None
         # import will be not be needed/ handled by FMS soon
         import fms.utils.spyre.paged  # noqa # pylint: disable=unused-import
 
         # specify attention type for continuous batching
-        extra_kwargs["attn_name"] = self.attention_name
+        extra_kwargs['attn_name'] = self.attention_name
 
         if self.is_fp8_model:
             # set scale for kv_cache
             self._set_scale_for_fp8(attn_metadata)
 
             # Adjust decode for bs=1 if needed
-            input_ids, position_ids, attn_metadata = self._adjust_input_for_fp8(
-                input_ids=input_ids, position_ids=position_ids, attn_metadata=attn_metadata
-            )
+            input_ids, position_ids, attn_metadata = \
+                self._adjust_input_for_fp8(input_ids=input_ids,
+                                           position_ids=position_ids,
+                                           attn_metadata=attn_metadata)
 
         # Run the model
         output = self.model(
@@ -480,21 +475,27 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                 # reset to 1.
                 assert len(attn_metadata.scale_indices) == 1
                 prefill_index = attn_metadata.scale_indices[0]
-                k._scale = self.current_kv_scales[layer_idx][0][prefill_index] = torch.ones(1, dtype=torch.float32)
-                v._scale = self.current_kv_scales[layer_idx][1][prefill_index] = torch.ones(1, dtype=torch.float32)
+                k._scale = self.current_kv_scales[layer_idx][0][
+                    prefill_index] = torch.ones(1, dtype=torch.float32)
+                v._scale = self.current_kv_scales[layer_idx][1][
+                    prefill_index] = torch.ones(1, dtype=torch.float32)
                 k._scaled = False
                 v._scaled = False
             elif len(attn_metadata.scale_indices) == 1:
                 # Decode
                 # Special case for decode of bs=1, pad the batch to be bs=2
                 dec_index = attn_metadata.scale_indices[0]
-                k._scale = self.current_kv_scales[layer_idx][0][dec_index].repeat(2)
-                v._scale = self.current_kv_scales[layer_idx][1][dec_index].repeat(2)
+                k._scale = \
+                    self.current_kv_scales[layer_idx][0][dec_index].repeat(2)
+                v._scale = \
+                    self.current_kv_scales[layer_idx][1][dec_index].repeat(2)
 
             else:
                 # Set scale only for the requests of the batch
-                k._scale = self.current_kv_scales[layer_idx][0][attn_metadata.scale_indices].reshape(-1)
-                v._scale = self.current_kv_scales[layer_idx][1][attn_metadata.scale_indices].reshape(-1)
+                k._scale = self.current_kv_scales[layer_idx][0][
+                    attn_metadata.scale_indices].reshape(-1)
+                v._scale = self.current_kv_scales[layer_idx][1][
+                    attn_metadata.scale_indices].reshape(-1)
 
             # We set dynamic only for the first dimension of scale
             # during decoding
@@ -504,15 +505,22 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             torch._dynamo.mark_dynamic(k._scale, is_dynamic_flag)
 
     def _update_scale_for_fp8(self, attn_metadata: SpyreAttentionMetadata):
+
         for layer_idx, (k, v) in enumerate(self.past_key_value_states):
-            if attn_metadata.is_prefill or len(attn_metadata.scale_indices) > 1:
-                self.current_kv_scales[layer_idx][0][attn_metadata.scale_indices] = k._scale
-                self.current_kv_scales[layer_idx][1][attn_metadata.scale_indices] = v._scale
+            if attn_metadata.is_prefill or len(
+                    attn_metadata.scale_indices) > 1:
+
+                self.current_kv_scales[layer_idx][0][
+                    attn_metadata.scale_indices] = k._scale
+                self.current_kv_scales[layer_idx][1][
+                    attn_metadata.scale_indices] = v._scale
             else:
                 # if we did the padding, then we need to update only the scale
                 # for the decoding index
-                self.current_kv_scales[layer_idx][0][attn_metadata.scale_indices[0]] = k._scale[0]
-                self.current_kv_scales[layer_idx][1][attn_metadata.scale_indices[0]] = v._scale[0]
+                self.current_kv_scales[layer_idx][0][
+                    attn_metadata.scale_indices[0]] = k._scale[0]
+                self.current_kv_scales[layer_idx][1][
+                    attn_metadata.scale_indices[0]] = v._scale[0]
 
     def get_dtype(self) -> torch.dtype:
         # Get the model's data type
@@ -531,9 +539,10 @@ class ContinuousBatchingFmsModel(FmsModelBase):
 
     # TODO: this is not the best place to do. But we expect this to
     # be temporary and here should be easy to remove later
-    def _adjust_input_for_fp8(
-        self, input_ids: torch.Tensor, position_ids: torch.Tensor, attn_metadata: SpyreAttentionMetadata
-    ):
+    def _adjust_input_for_fp8(self, input_ids: torch.Tensor,
+                              position_ids: torch.Tensor,
+                              attn_metadata: SpyreAttentionMetadata):
+
         # NOTE: We only need to adjust the inputs for decode with
         # batch_size=2
         if attn_metadata.is_prefill or input_ids.shape[0] > 1:
@@ -542,18 +551,23 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         input_ids = input_ids.repeat(2, 1)
         position_ids = position_ids.repeat(2, 1)
         attn_metadata = SpyreAttentionMetadata(
-            slot_mapping=attn_metadata.slot_mapping.repeat(2, 1),
-            current_tkv_mask=attn_metadata.current_tkv_mask.repeat(2),
-            left_padded_prompt_mask=attn_metadata.left_padded_prompt_mask.repeat(2),
-            block_table=attn_metadata.block_table.repeat(2, 1),
-            is_prefill=attn_metadata.is_prefill,
+            slot_mapping=\
+                attn_metadata.slot_mapping.repeat(2, 1),
+            current_tkv_mask=\
+                attn_metadata.current_tkv_mask.repeat(2),
+            left_padded_prompt_mask=\
+                attn_metadata.left_padded_prompt_mask.repeat(2),
+            block_table=\
+                attn_metadata.block_table.repeat(2, 1),
+            is_prefill=\
+                attn_metadata.is_prefill,
             # NOTE: we don't change here, because we'll need this untouched
             # when we update the the scale after run the model
-            scale_indices=attn_metadata.scale_indices,
-        )
+            scale_indices=attn_metadata.scale_indices)
         return input_ids, position_ids, attn_metadata
 
-    def _adjust_output_for_fp8(self, logits: torch.Tensor, attn_metadata: SpyreAttentionMetadata):
+    def _adjust_output_for_fp8(self, logits: torch.Tensor,
+                               attn_metadata: SpyreAttentionMetadata):
         if attn_metadata.is_prefill or len(attn_metadata.scale_indices) > 1:
             # skip for prefill or decode for bs>1
             return logits
@@ -562,6 +576,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
 
 
 class StaticBatchingFmsModel(FmsModelBase):
+
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -569,7 +584,11 @@ class StaticBatchingFmsModel(FmsModelBase):
         max_decode_length: int,
         rank: int,
     ) -> None:
-        super().__init__(vllm_config, max_prompt_length, max_decode_length, rank, sendnn_dynamic=False)
+        super().__init__(vllm_config,
+                         max_prompt_length,
+                         max_decode_length,
+                         rank,
+                         sendnn_dynamic=False)
 
         # dynamic KV cache
         self.past_key_value_states = None
@@ -588,7 +607,7 @@ class StaticBatchingFmsModel(FmsModelBase):
         **extra_kwargs,
     ) -> torch.Tensor:
         # specify attention type for static batching
-        extra_kwargs["attn_name"] = self.attention_name
+        extra_kwargs['attn_name'] = self.attention_name
 
         # In order to calculate prompt logprobs, we have to return the
         # hidden states from the whole prompt. The static graphs need to be
