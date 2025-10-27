@@ -15,10 +15,17 @@ from vllm.forward_context import set_forward_context
 from vllm.logger import init_logger
 from vllm.model_executor.layers.pooler import ClassifierPooler, Pooler
 from vllm.sampling_params import SamplingType
-from vllm.utils import is_pin_memory_available
+
+try:
+    # pre 0.11.1 compatibility
+    from vllm.utils import is_pin_memory_available
+except ImportError:
+    from vllm.utils.platform_utils import is_pin_memory_available
+
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.outputs import LogprobsTensors, SamplerOutput
 from vllm.v1.pool.metadata import PoolingMetadata
+
 from vllm.v1.sample.logits_processor import build_logitsprocs
 
 import vllm_spyre.envs as envs_spyre
