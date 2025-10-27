@@ -262,17 +262,23 @@ def test_spyre_batch1_min_tokens(model: ModelInfo, backend, monkeypatch,
     tokenizer = spyre_model.get_tokenizer()
     eos_id = tokenizer.eos_token_id
 
-    params1 = SamplingParams(min_tokens=19,
-                             logit_bias={eos_id: 50},
+    params1 = SamplingParams(min_tokens=10,
+                             logit_bias={eos_id: 1000},
                              seed=8780,
                              max_tokens=20)
-    params2 = SamplingParams(seed=8780, logit_bias={eos_id: 50}, max_tokens=20)
+    params2 = SamplingParams(seed=8780,
+                             logit_bias={eos_id: 1000},
+                             max_tokens=20)
 
     output1 = spyre_model.generate(prompt, params1)[0]
     output2 = spyre_model.generate(prompt, params2)[0]
 
-    assert len(output1.outputs[0].token_ids) >= 19
-    assert len(output2.outputs[0].token_ids) < 19
+    # Logits bias should force eos token appears, then we check if
+    # after min tokens reached the logits processor is properly
+    # cleared. Therefore token count shall be 10 + 1
+    # (min_tokens + eos_token_id)
+    assert len(output1.outputs[0].token_ids) == 11
+    assert len(output2.outputs[0].token_ids) == 1
 
 
 def test_spyre_batch1_ignore_eos(model: ModelInfo, backend, monkeypatch,
