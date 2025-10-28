@@ -19,7 +19,7 @@ try:
     from vllm.v1.metrics.stats import MultiModalCacheStats
 except ImportError:
     # compatibility for vllm pre 0.11.1
-    class MultiModalCacheStats:
+    class MultiModalCacheStats:  ## noqa
         pass
 
 
