@@ -1,0 +1,54 @@
+# --8<-- [start:supported-model-runtime-configurations]
+
+# Parameters:
+#  - cb: True, for continuous batching; False, for static batching mode
+#  - tp_size: tensor parallel size
+#  - max_model_len: context length (prompt_length + max_new_tokens)
+#  - max_num_seqs: number of sequences in a batch (per instance)
+#  - warmup_shapes: [(fixed_prompt_length, max_new_tokens, batch_size)]
+
+- model: "ibm-granite/granite-3.3-8b-instruct"
+  configs: [
+    { cb: False, tp_size: 1, warmup_shapes: [[2048, 1024, 16]] },
+    { cb: False, tp_size: 4, warmup_shapes: [[6144, 2048,  1]] },
+    { cb: False, tp_size: 4, warmup_shapes: [[7168, 1024,  4]] },
+    { cb: True,  tp_size: 1, max_model_len: 3072,  max_num_seqs: 16 },
+    { cb: True,  tp_size: 1, max_model_len: 8192,  max_num_seqs: 4 },
+    { cb: True,  tp_size: 2, max_model_len: 8192,  max_num_seqs: 4 },
+    { cb: True,  tp_size: 4, max_model_len: 32768, max_num_seqs: 32 },
+  ]
+- model: "ibm-granite/granite-3.3-8b-instruct-FP8"
+  configs: [
+    { cb: True, tp_size: 1, max_model_len: 3072,  max_num_seqs: 16 },
+    { cb: True, tp_size: 4, max_model_len: 16384, max_num_seqs: 4 },
+    { cb: True, tp_size: 4, max_model_len: 32768, max_num_seqs: 32 },
+  ]
+- model: "ibm-granite/granite-embedding-125m-english"
+  configs: [
+    { cb: False, tp_size: 1, warmup_shapes: [[512, 0, 64]] },
+  ]
+- model: "ibm-granite/granite-embedding-278m-multilingual"
+  configs: [
+    { cb: False, tp_size: 1, warmup_shapes: [[512, 0, 64]] },
+  ]
+- model: "intfloat/multilingual-e5-large"
+  configs: [
+    { cb: False, tp_size: 1, warmup_shapes: [[512, 0, 64]] },
+  ]
+- model: "BAAI/bge-reranker-v2-m3"
+  configs: [
+    { cb: False, tp_size: 1, warmup_shapes: [[8192, 0, 1]] },
+  ]
+- model: "BAAI/bge-reranker-large"
+  configs: [
+    { cb: False, tp_size: 1, warmup_shapes: [[512, 0, 64]] },
+  ]
+- model: "sentence-transformers/all-roberta-large-v1"
+  configs: [
+    { cb: False, tp_size: 1, warmup_shapes: [[128, 0, 8]] },
+  ]
+# --8<-- [end:supported-model-runtime-configurations]
+- model: "ibm-ai-platform/micro-g3.3-8b-instruct-1b"
+  ignore: True
+- model: "ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8"
+  ignore: True

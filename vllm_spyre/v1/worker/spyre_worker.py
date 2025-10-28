@@ -444,7 +444,8 @@ class SpyreWorker(WorkerBaseV1):
             0, len(valid_token_ids_tensor), (3, prompt_len))]
 
         # TODO: we need 2 requests for warmup on FP8+CB
-        is_fp8_plus_cb = 'FP8' in self.model_config.model and \
+        # Check if model is quantized
+        is_fp8_plus_cb = self.model_config.quantization is not None and \
             envs_spyre.VLLM_SPYRE_USE_CB
         req_count = 3 if is_fp8_plus_cb else 2
         requests = [
