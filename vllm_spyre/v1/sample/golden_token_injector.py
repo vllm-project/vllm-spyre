@@ -121,7 +121,6 @@ class GoldenTokenInjector(LogitsProcessor):
 
         current_token_idx = len(expectation.output_token_ids)
 
-
         if not current_token_idx < len(expectation.token_ids):
             logger.warning_once(
                 "Request %s does not have enough expected tokens "
