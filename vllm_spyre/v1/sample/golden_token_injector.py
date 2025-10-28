@@ -116,10 +116,11 @@ class GoldenTokenInjector(LogitsProcessor):
         # Label to identify request, if the label was set in the state,
         # use it, otherwise it will be the index of the request in the
         # batch
-
-        current_token_idx = len(expectation.output_token_ids)
         label = f"'{expectation.label}'" if expectation.label is not None \
             else f"idx '{req_idx}'"
+
+        current_token_idx = len(expectation.output_token_ids)
+
 
         if not current_token_idx < len(expectation.token_ids):
             logger.warning_once(
