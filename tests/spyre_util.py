@@ -284,12 +284,17 @@ def _default_test_models(isEmbeddings=False,
         ]
         return params
 
-    # Full sized decoders
-    # The granite 8b fp8 model is not publicly available yet
+    # Full-size decoders
     granite = ModelInfo(name="ibm-granite/granite-3.3-8b-instruct",
                         revision="51dd4bc2ade4059a6bd87649d68aa11e4fb2529b")
+    granite_fp8 = ModelInfo(
+        name="ibm-granite/granite-3.3-8b-instruct-FP8",
+        revision="4b5990b8d402a75febe0086abbf1e490af494e3d")
     params = [
         pytest.param(granite, marks=[pytest.mark.decoder], id=granite.name),
+        pytest.param(granite_fp8,
+                     marks=[pytest.mark.decoder, pytest.mark.quantized],
+                     id=granite_fp8.name)
     ]
     return params
 

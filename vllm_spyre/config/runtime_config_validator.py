@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from pandas.io.json._normalize import nested_to_record as flatten
 from vllm.config import ModelConfig
 from vllm.logger import init_logger
 
@@ -137,16 +138,31 @@ def verify_config_parameters(c: RuntimeConfiguration) -> bool:
 
 
 def find_known_models_by_model_config(model_config: ModelConfig) -> list[str]:
+    """
+    Try to find a supported model by comparing the requested model config to
+    the known model configurations. The known model configurations file only
+    contains a minimal subset of model config parameters to distinguish
+    between the supported models.
+    """
     if known_model_configs is None:
         initialize_known_model_configurations_from_file()
 
     requested_config = model_config.hf_config.__dict__ \
         if model_config.hf_config else {}
 
+    # remove sub-dicts with integers as keys so we can flatten dictionaries
+    requested_config.pop("id2label", None)
+
+    # don't return quantized models if the requested config doesn't have it
+    def is_quantized(config: dict) -> bool:
+        return "quantization_config" in config
+
     matching_models = [
         model for model, config in (known_model_configs or {}).items()
-        if config.items() <= requested_config.items()
+        if flatten(config).items() <= flatten(requested_config).items() and (
+            is_quantized(config) == is_quantized(requested_config))
     ]
+
     return matching_models
 
 
