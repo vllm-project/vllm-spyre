@@ -36,6 +36,7 @@ class ExpectationState:
     '''
 
     def __init__(self,
+                 output_token_ids: list[int],
                  expected_token_ids: list[int],
                  expected_logprobs: Optional[list[float]] = None,
                  error_threshold: Optional[float] = None,
@@ -45,8 +46,8 @@ class ExpectationState:
         self.logprobs: Optional[list[float]] = expected_logprobs
         self.threshold: Optional[float] = error_threshold
         self.label: Optional[str] = label
-
-        self.current_token_idx = 0
+        # to track the generated outputs
+        self.output_token_ids: list[int] = output_token_ids
         self.has_error = False
 
 
@@ -84,7 +85,8 @@ class GoldenTokenInjector(LogitsProcessor):
                 raise ValueError(
                     "Golden token injector accepts only str or dict.")
 
-            return ExpectationState(**injector_dict)
+            return ExpectationState(output_token_ids=output_tok_ids,
+                                    **injector_dict)
 
         return None
 
@@ -111,21 +113,26 @@ class GoldenTokenInjector(LogitsProcessor):
             # request, skip until the end of its generation.
             return
 
-        expected_token_id = expectation.token_ids[
-            expectation.current_token_idx]
-        token_id = torch.argmax(logits[req_idx], dim=-1)
-
-        if expected_token_id == token_id:
-            # Expectation is met, nothing to do.
-            expectation.current_token_idx += 1
-            return
-
         # Label to identify request, if the label was set in the state,
         # use it, otherwise it will be the index of the request in the
         # batch
 
+        current_token_idx = len(expectation.output_token_ids)
         label = f"'{expectation.label}'" if expectation.label is not None \
             else f"idx '{req_idx}'"
+
+        if not current_token_idx < len(expectation.token_ids):
+            logger.warning_once(
+                "Request %s does not have enough expected tokens "
+                " for this generation; count: %d", label, current_token_idx)
+            return
+
+        expected_token_id = expectation.token_ids[current_token_idx]
+        token_id = torch.argmax(logits[req_idx], dim=-1)
+
+        if expected_token_id == token_id:
+            # Expectation is met, nothing to do.
+            return
 
         # Decode the tokens for better human readability
         token = self.tokenizer.decode([token_id])
@@ -142,11 +149,10 @@ class GoldenTokenInjector(LogitsProcessor):
                     " at token index '%d': "
                     "'%s'  replaced by '%s'",
                     label,
-                    expectation.current_token_idx,
+                    current_token_idx,
                     token,
                     expected_token)
 
-            expectation.current_token_idx += 1
             return
 
         # Check if the token is injectable based on a threshold
@@ -155,7 +161,7 @@ class GoldenTokenInjector(LogitsProcessor):
 
         expected_logprob = \
             cast(torch.Tensor, expectation.logprobs)[
-                expectation.current_token_idx
+                current_token_idx
             ]
         expected_prob = math.exp(expected_logprob)
 
@@ -170,7 +176,7 @@ class GoldenTokenInjector(LogitsProcessor):
                 "%.2f > %.2f at request "
                 "%s token idx '%s'."
                 " Token injection will be skipped.", err,
-                expectation.threshold, label, expectation.current_token_idx)
+                expectation.threshold, label, current_token_idx)
             expectation.has_error = True
             return
 
@@ -209,10 +215,9 @@ class GoldenTokenInjector(LogitsProcessor):
                 "'%s' (%.2f%%);"
                 " baseline: (%.2f%%)",
                 label,
-                expectation.current_token_idx,
+                current_token_idx,
                 token,
                 old_prob * 100,
                 expected_token,
                 prob * 100,
                 expected_prob * 100)
-        expectation.current_token_idx += 1
