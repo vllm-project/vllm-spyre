@@ -15,6 +15,14 @@ from vllm.v1.metrics.stats import (FinishedRequestStats, IterationStats,
 
 from vllm_spyre import envs as envs_spyre
 
+try:
+    from vllm.v1.metrics.stats import MultiModalCacheStats
+except ImportError:
+    # compatibility for vllm pre 0.11.1
+    class MultiModalCacheStats:
+        pass
+
+
 logger = init_logger(__name__)
 
 
@@ -88,6 +96,7 @@ class FileStatLogger(StatLoggerBase):
     def record(self,
                scheduler_stats: Optional[SchedulerStats],
                iteration_stats: Optional[IterationStats],
+               mm_cache_stats: MultiModalCacheStats | None = None,
                engine_idx: int = 0):
         if not self.enabled or engine_idx != 0:
             # Only log from rank 0

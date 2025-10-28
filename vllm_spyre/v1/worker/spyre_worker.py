@@ -583,21 +583,11 @@ class SpyreWorker(WorkerBase):
             new_block_ids.append([req.block_ids])
             num_computed_tokens.append(req.num_computed_tokens)
 
-        kwargs = {}
-        if "num_output_tokens" in dataclass_fields(CachedRequestData):
-            kwargs = {
-                "num_output_tokens": [],
-                "resumed_req_token_ids": []
-            }
-            
-        cached_request_data = CachedRequestData(
-            req_ids=req_ids,
-            resumed_from_preemption=False,
-            new_token_ids=new_token_ids,
-            new_block_ids=new_block_ids,
-            num_computed_tokens=num_computed_tokens,
-            **kwargs
-        )
+        cached_request_data = CachedRequestData.make_empty()
+        cached_request_data.req_ids = req_ids
+        cached_request_data.new_block_ids = new_block_ids
+        cached_request_data.new_token_ids = new_token_ids
+        cached_request_data.num_computed_tokens = num_computed_tokens
 
         # Set up scheduler_output for execute_model
         scheduler_output = SchedulerOutput(
@@ -692,14 +682,15 @@ class SpyreWorker(WorkerBase):
             functools.reduce(lambda blocks, req: blocks + req.block_ids,
                              requests, [])
 
-        cached_request_data = CachedRequestData(
-            req_ids=[req.req_id for req in requests],
-            resumed_from_preemption=False,
-            new_token_ids=[[valid_token_ids_tensor[random_token_id()]]
-                           for _ in requests],
-            new_block_ids=block_ids,
-            num_computed_tokens=[prompt_len for _ in requests],
-        )
+        cached_request_data = CachedRequestData.make_empty()
+        cached_request_data.req_ids = [req.req_id for req in requests]
+        cached_request_data.new_block_ids = block_ids
+        cached_request_data.new_token_ids = [
+            [valid_token_ids_tensor[random_token_id()]] for _ in requests
+        ]
+        cached_request_data.num_computed_tokens = [
+            prompt_len for _ in requests
+        ]
 
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=[],
