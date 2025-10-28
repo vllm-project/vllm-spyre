@@ -65,7 +65,6 @@ class LogitProcessorWrapper(LogitsProcessor):
     def update_state(self, batch_update: Optional[BatchUpdate]):
         # This method keeps the indices consistent of request while the
         # persistent batch is changing.
-        # Process added requests.
 
         # Some LogitsProcessors, eg. MinTokensLogitsProcessor, require
         # update_state to be called even if batch_update is None
