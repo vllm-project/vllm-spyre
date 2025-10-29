@@ -157,6 +157,11 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         # cache for self.check_batch_tkv_limit() outer key: tuple(request_ids),
         # inner key: (request_id, max_batch_tkv_limit), value: (lower, upper)
         self._cache_check_batch_tkv_limit: dict[tuple, dict[tuple, tuple]] = {}
+        # Consecutive prefill operations are interleaved with a decode step to
+        # minimize interruptions of current running requests. This mitigates the
+        # peaks in inter-token latency (ITL). A prefill is skipped if the
+        # previous step was also a prefill.
+        self.previous_step_was_prefill: bool = False
 
     def update_from_output(
         self,
@@ -199,12 +204,14 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         # Schedule Prefill and Decode separately
         if len(self.waiting) > 0:
             # For prefill, hide current decodes from the scheduler
+            self.previous_step_was_prefill = True
             running_holdback = self.running
             self.running = []
             logger.debug(
                 "Scheduling a prefill step of %d requests, holding back %d "
                 "requests", len(self.waiting), len(holdback_queue))
         else:
+            self.previous_step_was_prefill = False
             running_holdback = []
             logger.debug("Scheduling a decode step of %d requests",
                          len(self.running))
@@ -222,6 +229,10 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
     def can_schedule(self, request) -> bool:
         max_prompt_batch_size = 1
         max_context_len = self.scheduler_config.max_model_len
+
+        # two consecutive prefill steps are now allowed
+        if self.previous_step_was_prefill:
+            return False
 
         # running and waiting queues are both empty -> start a new batch
         # which can always be scheduled
