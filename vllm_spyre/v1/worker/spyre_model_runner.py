@@ -1046,6 +1046,12 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # block table is stored in self.req_ids2blocks (only passed for decode)
         block_table = None
 
+        if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
+            # Block table is now needed for chunked prefill
+            # We need to create and forward it from here for
+            # ContinuousBatchingFmsModel to receive the information
+            block_table = torch.tensor([blocks])  # need to set here because
+
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
             input_positions=position_ids,

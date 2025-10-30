@@ -1,4 +1,5 @@
 """Utilities for selecting and loading Spyre models."""
+import math
 import os
 from dataclasses import dataclass
 from typing import Any, Optional, cast
@@ -439,20 +440,69 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                                            position_ids=position_ids,
                                            attn_metadata=attn_metadata)
 
-        # Run the model
-        output = self.model(
-            input_ids,
-            position_ids=position_ids,
-            mask=mask,
-            past_key_value_states=self.past_key_value_states,
-            use_cache=use_cache,
-            last_n_tokens=SpyrePlatform.get_block_size() if is_prompt else 1,
-            current_tkv_mask=attn_metadata.current_tkv_mask,
-            left_padded_prompt_mask=attn_metadata.left_padded_prompt_mask,
-            block_table=attn_metadata.block_table,
-            slot_mapping=attn_metadata.slot_mapping,
-            **extra_kwargs,
-        )
+        if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL and is_prompt:
+            # run chunked prefill
+
+            # same for all chunks
+            left_padded_prompt_mask = torch.nonzero(input_ids[0])[0]
+            last_chunk_tkv_mask = torch.nonzero(input_ids[0])[-1] + 1
+
+            chunk_size = envs_spyre.VLLM_SPYRE_PREFILL_CHUNK_SIZE
+            for i in range(math.ceil(input_ids.shape[1] / chunk_size)):
+                chunk_start = i * chunk_size
+                chunk_end = (i + 1) * chunk_size
+
+                input_ids_chunk = input_ids[:, chunk_start:chunk_end]
+                position_ids_chunk = position_ids[:, chunk_start:chunk_end]
+                tkv_mask_chunk = min(last_chunk_tkv_mask,
+                                     torch.tensor([chunk_end]))
+                block_table_chunk = attn_metadata.block_table[:, :i + 1]
+                slot_mapping_chunk = attn_metadata.slot_mapping[:, chunk_start:
+                                                                chunk_end]
+
+                # batch static
+                torch._dynamo.mark_static(input_ids_chunk, 0)
+                torch._dynamo.mark_static(position_ids_chunk, 0)
+                torch._dynamo.mark_static(block_table_chunk, 0)
+                torch._dynamo.mark_static(slot_mapping_chunk, 0)
+
+                # seq dynamic
+                torch._dynamo.mark_dynamic(input_ids_chunk, 1)
+                torch._dynamo.mark_dynamic(slot_mapping_chunk, 1)
+                torch._dynamo.mark_dynamic(position_ids_chunk, 1)
+                torch._dynamo.mark_dynamic(block_table_chunk, 1)
+
+                output = self.model(
+                    input_ids_chunk,
+                    position_ids=position_ids_chunk,
+                    mask=None,
+                    past_key_value_states=self.past_key_value_states,
+                    use_cache=use_cache,
+                    last_n_tokens=SpyrePlatform.get_block_size()
+                    if is_prompt else 1,
+                    current_tkv_mask=tkv_mask_chunk,
+                    left_padded_prompt_mask=left_padded_prompt_mask,
+                    block_table=block_table_chunk,
+                    slot_mapping=slot_mapping_chunk,
+                    **extra_kwargs,
+                )
+
+        else:
+            # normal prefill or decode
+            output = self.model(
+                input_ids,
+                position_ids=position_ids,
+                mask=mask,
+                past_key_value_states=self.past_key_value_states,
+                use_cache=use_cache,
+                last_n_tokens=SpyrePlatform.get_block_size()
+                if is_prompt else 1,
+                current_tkv_mask=attn_metadata.current_tkv_mask,
+                left_padded_prompt_mask=attn_metadata.left_padded_prompt_mask,
+                block_table=attn_metadata.block_table,
+                slot_mapping=attn_metadata.slot_mapping,
+                **extra_kwargs,
+            )
 
         logits, self.past_key_value_states = output
 
