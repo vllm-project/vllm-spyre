@@ -10,7 +10,7 @@ import tempfile
 import pytest
 import torch
 from graph_compare_utils import (collect_graph_files, compare_graphs,
-                                 get_aftu_script_dir, get_model_path,
+                                 get_model_path,
                                  run_inference_py_and_get_graphs)
 from output_util import generate_spyre_vllm_output
 from pytest_mock.plugin import MockerFixture
@@ -40,12 +40,6 @@ def test_compare_graphs_cb(model: ModelInfo, max_num_seqs: int,
     """Test that the spyre worker correctly outputs
     continuous batches of requests by comparing to HF"""
 
-    # AFTU
-    script_dir = get_aftu_script_dir()
-    if script_dir is None:
-        pytest.skip("aiu-fms-testing-utils is required "
-                    "and is not installed to run this test")
-
     model_path = get_model_path(model)
 
     attn_type = 'paged_fp8' if model.is_quantized \
@@ -55,11 +49,11 @@ def test_compare_graphs_cb(model: ModelInfo, max_num_seqs: int,
         mock_get_mask_dtype(mocker)
 
     inference_py_args = [
-        sys.executable, "scripts/inference.py", "--architecture",
-        "hf_pretrained", "--model_path", model_path, "--tokenizer", model_path,
-        "--unfuse_weights", "--device_type", "aiu", "--compile",
-        "--cast_bf16_to_fp16", "--compile_dynamic", "--min_pad_length", "64",
-        "--max_new_tokens", "5", "--batch_size",
+        sys.executable, "-m", "aiu_fms_testing_utils.scripts.inference",
+        "--architecture", "hf_pretrained", "--model_path", model_path,
+        "--tokenizer", model_path, "--unfuse_weights", "--device_type", "aiu",
+        "--compile", "--cast_bf16_to_fp16", "--compile_dynamic",
+        "--min_pad_length", "64", "--max_new_tokens", "5", "--batch_size",
         str(max_num_seqs), "--compile_dynamic_sendnn", "--attention_type",
         attn_type
     ]
@@ -72,8 +66,7 @@ def test_compare_graphs_cb(model: ModelInfo, max_num_seqs: int,
         "VLLM_DT_MAX_BATCH_SIZE": str(max_num_seqs),
         "VLLM_DT_MAX_BATCH_TKV_LIMIT": str(1024 * 128)
     }
-    aftu_graphs = run_inference_py_and_get_graphs(inference_py_args,
-                                                  script_dir, extra_env)
+    aftu_graphs = run_inference_py_and_get_graphs(inference_py_args, extra_env)
 
     assert len(aftu_graphs) > 0
     # VLLM
@@ -126,12 +119,6 @@ def test_compare_graphs_static_batching(model: ModelInfo,
                                         monkeypatch: pytest.MonkeyPatch,
                                         mocker: MockerFixture) -> None:
 
-    # AFTU
-    script_dir = get_aftu_script_dir()
-    if script_dir is None:
-        pytest.skip("aiu-fms-testing-utils is required "
-                    "and is not installed to run this test")
-
     attn_type = 'math_fp8' if model.is_quantized \
         else 'sdpa'
 
@@ -141,10 +128,11 @@ def test_compare_graphs_static_batching(model: ModelInfo,
     model_path = get_model_path(model)
 
     inference_py_args = [
-        sys.executable, "scripts/inference.py", "--architecture",
-        "hf_pretrained", "--model_path", model_path, "--tokenizer", model_path,
-        "--unfuse_weights", "--device_type", "aiu", "--compile",
-        "--cast_bf16_to_fp16", "--compile_dynamic", "--fixed_prompt_length",
+        sys.executable, "-m", "aiu_fms_testing_utils.scripts.inference",
+        "--architecture", "hf_pretrained", "--model_path", model_path,
+        "--tokenizer", model_path, "--unfuse_weights", "--device_type", "aiu",
+        "--compile", "--cast_bf16_to_fp16", "--compile_dynamic",
+        "--fixed_prompt_length",
         str(warmup_shapes[0][0]), "--max_new_tokens",
         str(warmup_shapes[0][1]), "--batch_size",
         str(warmup_shapes[0][2]), "--attention_type", attn_type
@@ -153,8 +141,7 @@ def test_compare_graphs_static_batching(model: ModelInfo,
     if not model.is_quantized:
         inference_py_args += ["--default_dtype", "fp16"]
 
-    aftu_graphs = run_inference_py_and_get_graphs(inference_py_args,
-                                                  script_dir)
+    aftu_graphs = run_inference_py_and_get_graphs(inference_py_args)
     assert len(aftu_graphs) > 0
     # VLLM
     prompts = get_chicken_soup_prompts(4)
