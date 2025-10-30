@@ -378,12 +378,14 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
             # This doesn't include "unverified" tokens like spec decode tokens.
             num_new_tokens = (num_computed_tokens + len(new_token_ids) -
                               req_state.num_tokens)
-            if num_new_tokens == 1:
-                # Avoid slicing list in most common case.
-                req_state.output_token_ids.append(new_token_ids[-1])
-            elif num_new_tokens > 0:
-                req_state.output_token_ids.extend(
-                    new_token_ids[-num_new_tokens:])
+            
+            # TODO: this should be only called on PP
+            # if num_new_tokens == 1:
+            #     # Avoid slicing list in most common case.
+            #     req_state.output_token_ids.append(new_token_ids[-1])
+            # elif num_new_tokens > 0:
+            #     req_state.output_token_ids.extend(
+            #         new_token_ids[-num_new_tokens:])
 
             req_index = self.input_batch.get_req_index(req_id)
             # Add new_token_ids to token_ids_cpu.
@@ -1033,6 +1035,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # filling block table and slot mapping
         blocks = []
         slots = []
+        
         for pos_i in range(right_padding_tkv):
             if pos_i % self.block_size == 0:
                 block_number = self.block_pool.popleft()
@@ -1071,17 +1074,14 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         req_state = SamplingRequestState(req_id=req_id,
                                          prompt_token_ids=prompt_token_ids,
+                                         prefill_slot_mapping=slots,
                                          sampling_params=sampling_params,
                                          generator=generator,
                                          output_token_ids=[],
                                          left_padding=left_padding,
                                          padded_prompt_tokens=padded_input_tokens)
         
-        if is_chunked_prefill:
-            # chunk the inputs
-            padded_input_tokens = padded_input_tokens[:,:chunk_size]
-            position_ids = position_ids[:,:chunk_size]
-            slots = slots[:chunk_size]
+        
 
         self.requests[req_id] = req_state
         prefill_index = self.input_batch.add_request(req_state)
@@ -1100,14 +1100,41 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.prefill_batch.refresh_metadata()
 
         self.model.indices = torch.ones(1, dtype=torch.bool, device='cpu')
-        slot_mapping = torch.tensor([slots], dtype=torch.int64)
         
-        # not needed for prefill
+        
+        # not needed for prefill (if not chunked prefill)
         current_tkv_mask = None
         # left padding info is stored in CachedRequestState of self.requests
         left_padded_prompt_mask = None
         # block table is stored in self.req_ids2blocks (only passed for decode)
         block_table = None
+
+        if is_chunked_prefill:
+            # chunk the inputs
+            chunk_start = padded_input_tokens.shape[1] - self.tkv
+            chunk_end = min(chunk_start + chunk_size, self.tkv)
+            padded_input_tokens = padded_input_tokens[:,chunk_start:chunk_end]
+            position_ids = position_ids[:,chunk_start:chunk_end]
+            slots = slots[chunk_start:chunk_end]
+
+            # create block table tensor
+            table_length = len(blocks)
+            block_start = table_length -self.tkv // self.block_size
+            block_end = chunk_end // self.block_size 
+            block_table = torch.tensor(
+                blocks[block_start:block_end], dtype=torch.int64
+            ).unsqueeze(0)
+
+            # # create block table tensor
+            current_tkv_mask = torch.tensor([chunk_end], 
+                                            dtype=torch.int64, device=self.device)
+
+            left_padded_prompt_mask = torch.tensor([req_state.left_padding], 
+                                                    dtype=torch.long,
+                                                    device=self.device)
+
+
+        slot_mapping = torch.tensor([slots], dtype=torch.int64)
 
         model_inputs = SamplingForwardInputs(
             input_tokens=padded_input_tokens,
@@ -1141,27 +1168,45 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             scheduler_output.scheduled_cached_reqs.num_computed_tokens[0]
         num_scheduled_tokens = scheduler_output.num_scheduled_tokens[req_id]
 
+        padded_prompt_len = request.padded_prompt_tokens.shape[1]
 
         chunk_size = self.scheduler_config.max_num_batched_tokens
-        chunk_start = num_computed_tokens
+        chunk_start = padded_prompt_len - self.tkv + num_computed_tokens
         chunk_end = num_computed_tokens + max(chunk_size, num_scheduled_tokens)
         
         input_tokens = prompt_token_ids[:,chunk_start:chunk_end]
 
         pos = num_computed_tokens - request.left_padding
         input_positions = torch.tensor([range(pos, 
-                                              pos + chunk_size)])
+                                              pos + chunk_size)],
+                                        dtype=torch.long,
+                                        device=self.device)
 
+        left_padded_prompt_mask = torch.tensor([request.left_padding],
+                                               dtype=torch.long,
+                                               device=self.device)
         mask = None
+
+        # TODO: review this!
+        current_tkv = (num_scheduled_tokens // chunk_size) * chunk_size
+        current_tkv_mask = torch.tensor([min(self.tkv, current_tkv)], 
+                                        dtype=torch.int64, 
+                                        device=self.device)
+        
+        slot_mapping = torch.tensor([request.prefill_slot_mapping[chunk_start:chunk_end]], 
+                                    dtype=torch.int64, 
+                                    device=self.device) 
+        block_table = None # TODO
+
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
-            input_positions=position_ids,
+            input_positions=input_positions,
             input_masks=mask,
             current_tkv_mask=current_tkv_mask,
             left_padded_prompt_mask=left_padded_prompt_mask,
             block_table=block_table,
             slot_mapping=slot_mapping,
-            is_prompt=False,
+            is_prompt=True,
             scale_indices=self.input_batch.request_indices)
 
         self._mark_input_tensors(model_inputs)
