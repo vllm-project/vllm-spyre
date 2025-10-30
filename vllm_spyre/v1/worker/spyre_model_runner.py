@@ -572,7 +572,7 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
 
         # Add the sampled token(s) to the request cache
         req_ids = (scheduler_output.scheduled_new_reqs
-                   if is_prefill else self.input_batch.sorted_requests_ids)
+                   if len(scheduler_output.scheduled_new_reqs) > 0 else self.input_batch.sorted_requests_ids)
         sampled_ids = output.sampled_token_ids.tolist()
         for i, req in enumerate(req_ids):
             req_state = self.requests[req.req_id] \
@@ -582,16 +582,16 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
             # Check if is chunked prefill to not generate tokens at this step
             is_chunked_prefill = False
 
-            if is_prefill:
-                num_scheduled_tokens =\
-                    scheduler_output.num_scheduled_tokens[req_state.req_id]
+            num_scheduled_tokens =\
+                scheduler_output.num_scheduled_tokens[req_state.req_id]
+            if len(scheduler_output.scheduled_new_reqs) > 0:
                 is_chunked_prefill =\
                     num_scheduled_tokens < len(req_state.prompt_token_ids)
             else:
                 num_computed_tokens =\
                     scheduler_output.scheduled_cached_reqs.num_computed_tokens[i]
                 is_chunked_prefill =\
-                    num_computed_tokens < len(req_state.prompt_token_ids)
+                    num_computed_tokens + num_scheduled_tokens < len(req_state.prompt_token_ids)
                 
             # Don't generate output token for chunked prefill
             if is_chunked_prefill:
@@ -1188,7 +1188,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         mask = None
 
         # TODO: review this!
-        current_tkv = (num_scheduled_tokens // chunk_size) * chunk_size
+        current_tkv = chunk_end
         current_tkv_mask = torch.tensor([min(self.tkv, current_tkv)], 
                                         dtype=torch.int64, 
                                         device=self.device)
@@ -1197,7 +1197,15 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                                     dtype=torch.int64, 
                                     device=self.device) 
         block_table = None # TODO
-
+        # create block table tensor
+        blocks = list(self.req_ids2blocks[req_id])
+        table_length = len(blocks)
+        block_start = table_length -self.tkv // self.block_size
+        block_end = chunk_end // self.block_size 
+        block_table = torch.tensor(
+            blocks[block_start:block_end], dtype=torch.int64
+        ).unsqueeze(0)
+        
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
             input_positions=input_positions,
