@@ -475,7 +475,15 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
         return prompt_logprobs_dict
 
     def _prepare_prompt(self,
-                        _: list[NewRequestData]) -> SamplingForwardInputs:
+                        _: SchedulerOutput) -> SamplingForwardInputs:
+        raise NotImplementedError
+    
+    def _prepare_chunked_prefill(self,
+                        _: SchedulerOutput) -> SamplingForwardInputs:
+        logger.warning(
+            "The class %s does not provide a chunked prefill implementation. "
+            "Either disable it or report a bug.",
+            self.__class__.__name__)
         raise NotImplementedError
 
     def _prepare_decode(self, _: CachedRequestData) -> SamplingForwardInputs:
@@ -486,14 +494,28 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
 
         # NOTE: We assume that all sequences in the group are all prompts or
         # all decodes. Also assuming that new sequences are prefills
-        is_prompt = len(scheduler_output.scheduled_new_reqs) > 0
+        is_prefill = len(scheduler_output.scheduled_new_reqs) > 0
+
+        # NOTE: We assume also that there's only on prefill at each step
+        # and if will be a chunked prefill if the num of computed tokens
+        # is less than the length of the prompt, that is, if this is true,
+        # then it is still prefilling the request.
+        is_chunked_prefill = False
+        if len(scheduler_output.scheduled_cached_reqs.req_ids) == 1:
+            req_id = scheduler_output.scheduled_cached_reqs.req_ids[0]
+            is_chunked_prefill = \
+                len(self.requests[req_id].prompt_token_ids) > \
+                scheduler_output.scheduled_cached_reqs.num_computed_tokens[0]
 
         # Prepare input tensors.
-        if is_prompt:
+        if is_prefill:
             # Assert no running requests
             assert len(scheduler_output.scheduled_cached_reqs.req_ids) == 0
 
-            return self._prepare_prompt(scheduler_output.scheduled_new_reqs)
+            return self._prepare_prompt(scheduler_output)
+        elif is_chunked_prefill:
+            return self._prepare_chunked_prefill(
+                scheduler_output)
         else:
             return self._prepare_decode(scheduler_output.scheduled_cached_reqs)
 
@@ -554,6 +576,27 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
             req_state = self.requests[req.req_id] \
                 if not isinstance(
                 req, str) else self.requests[req]
+            
+            # Check if is chunked prefill to not generate tokens at this step
+            is_chunked_prefill = False
+
+            if is_prefill:
+                num_scheduled_tokens =\
+                    scheduler_output.num_scheduled_tokens[req_state.req_id]
+                is_chunked_prefill =\
+                    num_scheduled_tokens < len(req_state.prompt_token_ids)
+            else:
+                num_computed_tokens =\
+                    scheduler_output.scheduled_cached_reqs.num_computed_tokens[i]
+                is_chunked_prefill =\
+                    num_computed_tokens < len(req_state.prompt_token_ids)
+                
+            # Don't generate output token for chunked prefill
+            if is_chunked_prefill:
+                sampled_ids[i] = []
+                continue
+
+            # Append generated token(s)
             req_state.output_token_ids.extend(sampled_ids[i])
 
         prompt_logprobs_dicts = self._get_prompt_logprobs_dict(
@@ -566,7 +609,7 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
         model_output = ModelRunnerOutput(
             req_ids=list(req_id_to_index.keys()),
             req_id_to_index=req_id_to_index,
-            sampled_token_ids=output.sampled_token_ids.tolist(),
+            sampled_token_ids=sampled_ids,
             logprobs=(output.logprobs_tensors.tolists()
                       if output.logprobs_tensors else None),
             prompt_logprobs_dict=prompt_logprobs_dicts,
@@ -634,8 +677,9 @@ class StaticBatchingSpyreModelRunner(WarmupShapesMixin, SpyreModelRunner):
 
     def _prepare_prompt(
         self,
-        new_requests: list[NewRequestData],
+        scheduler_output: SchedulerOutput,
     ) -> SamplingForwardInputs:
+        new_requests = scheduler_output.scheduled_new_reqs
         assert len(new_requests) > 0
         input_token_list: list[torch.Tensor] = []
         padded_batch_size, min_pad_length_batch = self._get_padded_batch_size(
@@ -915,8 +959,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
     def _prepare_prompt(
         self,
-        new_requests: list[NewRequestData],
+        schedule_output : SchedulerOutput,
     ) -> SamplingForwardInputs:
+        new_requests = schedule_output.scheduled_new_reqs
         # currently all prefills are of batch size 1
         assert len(new_requests) == 1
 
@@ -1004,26 +1049,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         else:
             generator = None
 
-        req_state = SamplingRequestState(req_id=req_id,
-                                         prompt_token_ids=prompt_token_ids,
-                                         sampling_params=sampling_params,
-                                         generator=generator,
-                                         output_token_ids=[],
-                                         left_padding=left_padding)
-        self.requests[req_id] = req_state
-        prefill_index = self.input_batch.add_request(req_state)
-        self.prefill_batch.add_request(req_state)
-
-        # set prefill index for logits processor
-        for logitsproc in self.input_batch.logitsprocs_wrappers:
-            logitsproc.set_prefill_index(prefill_index)
-
-        # Refresh sampling metadata after all request are added to the batch
-        self.input_batch.refresh_metadata()
-        self.prefill_batch.refresh_metadata()
-
-        self.model.indices = torch.ones(1, dtype=torch.bool, device='cpu')
-        slot_mapping = torch.tensor([slots], dtype=torch.int64)
         prompt_token_ids_tensor = torch.tensor(prompt_token_ids,
                                                dtype=torch.long,
                                                device=torch.device("cpu"))
@@ -1039,6 +1064,28 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             min_pad_right=right_padding_tkv)
         mask = mask.unsqueeze(1).contiguous()
 
+        req_state = SamplingRequestState(req_id=req_id,
+                                         prompt_token_ids=prompt_token_ids,
+                                         sampling_params=sampling_params,
+                                         generator=generator,
+                                         output_token_ids=[],
+                                         left_padding=left_padding,
+                                         padded_prompt_tokens=input_tokens)
+        self.requests[req_id] = req_state
+        prefill_index = self.input_batch.add_request(req_state)
+        self.prefill_batch.add_request(req_state)
+
+        # set prefill index for logits processor
+        for logitsproc in self.input_batch.logitsprocs_wrappers:
+            logitsproc.set_prefill_index(prefill_index)
+
+        # Refresh sampling metadata after all request are added to the batch
+        self.input_batch.refresh_metadata()
+        self.prefill_batch.refresh_metadata()
+
+        self.model.indices = torch.ones(1, dtype=torch.bool, device='cpu')
+        slot_mapping = torch.tensor([slots], dtype=torch.int64)
+        
         # not needed for prefill
         current_tkv_mask = None
         # left padding info is stored in CachedRequestState of self.requests
@@ -1057,6 +1104,49 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             is_prompt=True,
             # used only for quantized model
             scale_indices=[prefill_index])
+
+        self._mark_input_tensors(model_inputs)
+
+        return model_inputs
+    
+    def _prepare_chunked_prefill(
+            self,
+            scheduler_output: SchedulerOutput) -> SamplingForwardInputs:
+        
+        # cached_request_data.num_computed_tokens
+        cached_request_data = scheduler_output.scheduled_cached_reqs
+
+        request = self.requests[cached_request_data.req_ids[0]]
+        req_id = request.req_id
+        prompt_token_ids = request.padded_prompt_tokens
+
+        prefill_chunk_size = self.scheduler_config.max_num_batched_tokens
+        chunk_j = cached_request_data.num_computed_tokens[0] // prefill_chunk_size
+        current_tkv = self.tkv
+
+        chunk_start = -current_tkv + chunk_j * prefill_chunk_size
+        chunk_end = -current_tkv + min(
+            (chunk_j + 1) * prefill_chunk_size, current_tkv
+        )
+
+        ids_length = input_ids[seq_i].shape[0]
+        input_ids_seq_chunk = (
+            input_ids[seq_i][
+                chunk_start + ids_length : chunk_end + ids_length
+            ]
+            .unsqueeze(0)
+            .clone()
+        )
+        model_inputs = SamplingForwardInputs(
+            input_tokens=input_tokens,
+            input_positions=position_ids,
+            input_masks=mask,
+            current_tkv_mask=current_tkv_mask,
+            left_padded_prompt_mask=left_padded_prompt_mask,
+            block_table=block_table,
+            slot_mapping=slot_mapping,
+            is_prompt=False,
+            scale_indices=self.input_batch.request_indices)
 
         self._mark_input_tensors(model_inputs)
 
@@ -1327,6 +1417,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             torch._dynamo.mark_static(model_input.slot_mapping, 0)
             torch._dynamo.mark_static(model_input.input_positions, 0)
             torch._dynamo.mark_static(model_input.input_masks, 0)
+            if model_input.block_table is not None:
+                # Needed by chunked prefill
+                torch._dynamo.mark_dynamic(model_input.block_table, 0)
 
             # sequence dynamic
             torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
@@ -1334,6 +1427,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             torch._dynamo.mark_dynamic(model_input.input_positions, 1)
             torch._dynamo.mark_dynamic(model_input.input_masks, 2)
             torch._dynamo.mark_dynamic(model_input.input_masks, 3)
+            if model_input.block_table is not None:
+                # Needed by chunked prefill
+                torch._dynamo.mark_dynamic(model_input.block_table, 1)
+
 
         # decode
         else:
@@ -1575,8 +1672,9 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
 
     def _prepare_prompt(
         self,
-        new_requests: list[NewRequestData],
+        scheduler_output : SchedulerOutput,
     ) -> PoolingForwardInputs:
+        new_requests = scheduler_output.scheduled_new_reqs
         assert len(new_requests) > 0
         input_token_list: list[torch.Tensor] = []
         padded_batch_size, min_pad_length_batch = self._get_padded_batch_size(
@@ -1656,7 +1754,7 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
         assert is_prompt
         # Assert no running requests
         assert len(scheduler_output.scheduled_cached_reqs.req_ids) == 0
-        return self._prepare_prompt(scheduler_output.scheduled_new_reqs)
+        return self._prepare_prompt(scheduler_output)
 
     def _mark_input_tensors(self, model_input: PoolingForwardInputs) -> None:
 

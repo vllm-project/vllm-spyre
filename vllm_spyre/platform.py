@@ -175,8 +175,8 @@ class SpyrePlatform(Platform):
         #       budget available to schedule a full batch
         if cache_config is not None:
             cache_config.block_size = model_config.max_model_len
-            scheduler_config.max_num_batched_tokens = (
-                model_config.max_model_len * scheduler_config.max_num_seqs)
+            # scheduler_config.max_num_batched_tokens = (
+            #     model_config.max_model_len * scheduler_config.max_num_seqs)
 
         logger.info(
             "Overriding configurations based on warmup shapes. "
