@@ -583,7 +583,6 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
                 req_state.output_token_ids.extend(sampled_ids[i])
                 continue
 
-
             # Check if is chunked prefill to not generate tokens at this step
             is_chunked_prefill = False
 
