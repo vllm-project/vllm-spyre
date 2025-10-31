@@ -715,6 +715,7 @@ class StaticBatchingSpyreModelRunner(WarmupShapesMixin, SpyreModelRunner):
             req_state = SamplingRequestState(
                 req_id=req_id,
                 prompt_token_ids=request_data.prompt_token_ids,
+                padded_prompt_tokens=request_data.prompt_token_ids,
                 sampling_params=sampling_params,
                 generator=generator,
                 output_token_ids=[],
@@ -970,6 +971,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         request = new_requests[0]
         req_id = request.req_id
         prompt_token_ids = request.prompt_token_ids
+        print(prompt_token_ids)
         sampling_params = request.sampling_params
         is_new_batch = len(self.req_ids2blocks) == 0
         prompt_len = len(prompt_token_ids)
@@ -1132,6 +1134,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             left_padded_prompt_mask = torch.tensor([req_state.left_padding], 
                                                     dtype=torch.long,
                                                     device=self.device)
+            
+            print("*" * 20)
+            print(slots)
+            # print(current_tkv_mask)
 
 
         slot_mapping = torch.tensor([slots], dtype=torch.int64)
@@ -1205,6 +1211,13 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         block_table = torch.tensor(
             blocks[block_start:block_end], dtype=torch.int64
         ).unsqueeze(0)
+
+        # print(input_tokens)
+        # print(input_positions)
+        print("*" * 20)
+        # print(left_padded_prompt_mask)
+        # print(current_tkv_mask)
+        print(slot_mapping)
         
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,

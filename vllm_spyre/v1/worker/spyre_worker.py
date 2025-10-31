@@ -56,7 +56,7 @@ def new_request_data_builder(
         "sampling_params": sampling_params,
         "pooling_params": pooling_params,
         "block_ids": [0],  # not actually used
-        "num_computed_tokens": 0,
+        "num_computed_tokens": len(prompt_token_ids),
         "lora_request": None,
     }
 
@@ -586,8 +586,7 @@ class SpyreWorker(WorkerBaseV1):
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=dummy_requests,
             scheduled_cached_reqs=cached_request_data,
-            num_scheduled_tokens={i: prompt_len
-                                  for i in range(batch_size)},
+            num_scheduled_tokens={r.req_id: len(r.prompt_token_ids) for r in dummy_requests},
             total_num_scheduled_tokens=sum(prompt_len
                                            for _ in range(batch_size)),
             scheduled_spec_decode_tokens={},
@@ -711,11 +710,13 @@ class SpyreWorker(WorkerBaseV1):
         """Handle a complete forward pass"""
         scheduler_output.scheduled_new_reqs = requests
         scheduler_output.scheduled_cached_reqs = CachedRequestData.make_empty()
+        scheduler_output.num_scheduled_tokens = {r.req_id: len(r.prompt_token_ids) for r in requests}
         self.execute_model(scheduler_output)  # Prefill
 
         # Switch to cached requests to trigger decoding steps
         scheduler_output.scheduled_new_reqs = []
         scheduler_output.scheduled_cached_reqs = cached_request_data
+        scheduler_output.num_scheduled_tokens = {r.req_id: 1 for r in requests}
         for _ in range(num_decode_tokens - 1):
             self.execute_model(scheduler_output)
 
