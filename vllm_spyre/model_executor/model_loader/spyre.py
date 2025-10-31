@@ -103,8 +103,7 @@ class SpyreCausalLM(nn.Module):
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn":
             # Bug in 2.3.1 fixed in 2.4.1 for SDPA flash
             # cpu impl when padding too much
-            # extra_kwargs["attn_algorithm"] = "math"
-            pass
+            extra_kwargs["attn_algorithm"] = "math"
 
         # normal prefill or decoding step
         logits = self.model(
