@@ -571,13 +571,14 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
         req_id_to_index = self.get_req_id_to_index(is_prefill)
 
         # Add the sampled token(s) to the request cache
-        req_ids = (scheduler_output.scheduled_new_reqs
-                   if len(scheduler_output.scheduled_new_reqs) > 0 else self.input_batch.sorted_requests_ids)
+        req_ids = ([r.req_id for r in scheduler_output.scheduled_new_reqs]
+                   if len(scheduler_output.scheduled_new_reqs) > 0 else \
+                    self.input_batch.sorted_requests_ids)
         sampled_ids = output.sampled_token_ids.tolist()
-        for i, req in enumerate(req_ids):
-            req_state = self.requests[req.req_id] \
-                if not isinstance(
-                req, str) else self.requests[req]
+        cached_reqs = scheduler_output.scheduled_cached_reqs
+        cached_req_map = {id: i for i, id in enumerate(cached_reqs.req_ids)}
+        for i, req_id in enumerate(req_ids):
+            req_state = self.requests[req_id]
             
             # Check if is chunked prefill to not generate tokens at this step
             is_chunked_prefill = False
@@ -589,7 +590,7 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
                     num_scheduled_tokens < len(req_state.prompt_token_ids)
             else:
                 num_computed_tokens =\
-                    scheduler_output.scheduled_cached_reqs.num_computed_tokens[i]
+                    cached_reqs.num_computed_tokens[cached_req_map[req_id]]
                 is_chunked_prefill =\
                     num_computed_tokens + num_scheduled_tokens < len(req_state.prompt_token_ids)
                 
@@ -971,7 +972,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         request = new_requests[0]
         req_id = request.req_id
         prompt_token_ids = request.prompt_token_ids
-        print(prompt_token_ids)
         sampling_params = request.sampling_params
         is_new_batch = len(self.req_ids2blocks) == 0
         prompt_len = len(prompt_token_ids)
@@ -1134,10 +1134,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             left_padded_prompt_mask = torch.tensor([req_state.left_padding], 
                                                     dtype=torch.long,
                                                     device=self.device)
-            
-            print("*" * 20)
-            print(slots)
-            # print(current_tkv_mask)
 
 
         slot_mapping = torch.tensor([slots], dtype=torch.int64)
@@ -1211,13 +1207,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         block_table = torch.tensor(
             blocks[block_start:block_end], dtype=torch.int64
         ).unsqueeze(0)
-
-        # print(input_tokens)
-        # print(input_positions)
-        print("*" * 20)
-        # print(left_padded_prompt_mask)
-        # print(current_tkv_mask)
-        print(slot_mapping)
         
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
