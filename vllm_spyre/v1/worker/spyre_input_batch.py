@@ -191,6 +191,8 @@ class BaseInputBatch(Generic[RequestState]):
 @dataclass
 class SamplingRequestState(BaseRequestState):
 
+    padded_prompt_tokens: torch.Tensor
+    prefill_slot_mapping: list[int] = field(default_factory=list)
     left_padding: int = 0  # Defaults to 0, i. e. not padding
 
     sampling_params: SamplingParams = SamplingParams()
