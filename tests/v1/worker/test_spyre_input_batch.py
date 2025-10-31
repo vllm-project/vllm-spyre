@@ -6,7 +6,13 @@ import numpy as np
 import pytest
 import torch
 from vllm.sampling_params import SamplingParams
-from vllm.utils import is_pin_memory_available, make_tensor_with_pad
+
+try:
+    from vllm.utils import is_pin_memory_available, make_tensor_with_pad
+except ImportError:
+    from vllm.utils.platform_utils import is_pin_memory_available
+    from vllm.utils.torch_utils import make_tensor_with_pad
+
 from vllm.v1.sample.logits_processor import LogitsProcessors
 from vllm.v1.sample.metadata import SamplingMetadata
 

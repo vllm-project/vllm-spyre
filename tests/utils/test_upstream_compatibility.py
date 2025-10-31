@@ -33,3 +33,32 @@ def test_use_mla():
     if VLLM_VERSION == "vLLM:lowest":
         # Can remove backwards compatibility for use_mla
         assert "use_mla" in dataclass_fields(FullAttentionSpec)
+
+
+def test_pin_memory_available():
+    if VLLM_VERSION == "vLLM:lowest":
+        try:
+            from vllm.utils import is_pin_memory_available  # # noqa
+            from vllm.utils import make_tensor_with_pad  # # noqa
+        except ImportError as e:
+            raise AssertionError("remove backwards compatibility imports for "
+                                 "is_pin_memory_available and "
+                                 "make_tensor_with_pad") from e
+
+
+def test_multi_modal_cache_stats():
+    if VLLM_VERSION == "vLLM:lowest":
+        # If this import succeeds then remove the backwards compatibility type
+        # def for MultiModalCacheStats
+        with pytest.raises(ImportError):
+            from vllm.v1.metrics.stats import MultiModalCacheStats  # # noqa
+
+
+def test_v0_worker_Base():
+    if VLLM_VERSION == "vLLM:lowest":
+        try:
+            from vllm.worker.worker_base import WorkerBase  # # noqa
+        except ImportError as e:
+            raise AssertionError(
+                "remove the backwards compatibility code from "
+                "the SpyreWorker initializer") from e

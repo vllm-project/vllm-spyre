@@ -26,8 +26,7 @@ from vllm.v1.core.sched.output import (CachedRequestData, NewRequestData,
                                        SchedulerOutput)
 from vllm.v1.kv_cache_interface import KVCacheConfig, KVCacheSpec
 from vllm.v1.outputs import ModelRunnerOutput
-from vllm.v1.worker.worker_base import WorkerBase as WorkerBaseV1
-from vllm.worker.worker_base import WorkerBase
+from vllm.v1.worker.worker_base import WorkerBase
 
 import vllm_spyre.envs as envs_spyre
 import vllm_spyre.perf_metrics as perf_metrics
@@ -103,7 +102,7 @@ def _maybe_warmup_context(limit: int, world_size: int, rank: int):
         _inside_warmup_mode = False
 
 
-class SpyreWorker(WorkerBaseV1):
+class SpyreWorker(WorkerBase):
     """A worker class that executes the model on a group of Spyre cores.
     """
 
@@ -220,11 +219,21 @@ class SpyreWorker(WorkerBaseV1):
         distributed_init_method: str,
         is_driver_worker: bool = False,
     ) -> None:
-        WorkerBase.__init__(self, vllm_config=vllm_config)
-        self.local_rank = local_rank
-        self.rank = rank
-        self.distributed_init_method = distributed_init_method
-        self.is_driver_worker = is_driver_worker
+        try:
+            # pre 0.11.1 compatibility with old worker base class
+            from vllm.worker.worker_base import WorkerBase as LegacyWorkerBase
+            LegacyWorkerBase.__init__(self, vllm_config=vllm_config)
+            self.local_rank = local_rank
+            self.rank = rank
+            self.distributed_init_method = distributed_init_method
+            self.is_driver_worker = is_driver_worker
+        except ImportError:
+            # From 0.11.1 and on we should only have to call the super init
+            super().__init__(vllm_config=vllm_config,
+                             local_rank=local_rank,
+                             rank=rank,
+                             distributed_init_method=distributed_init_method,
+                             is_driver_worker=is_driver_worker)
 
         # For power-user debugging of spyre logs for tensor parallel ops
         self.redirect_logs_to_files()
@@ -592,13 +601,11 @@ class SpyreWorker(WorkerBaseV1):
             new_block_ids.append([req.block_ids])
             num_computed_tokens.append(req.num_computed_tokens)
 
-        cached_request_data = CachedRequestData(
-            req_ids=req_ids,
-            resumed_from_preemption=False,
-            new_token_ids=new_token_ids,
-            new_block_ids=new_block_ids,
-            num_computed_tokens=num_computed_tokens,
-        )
+        cached_request_data = CachedRequestData.make_empty()
+        cached_request_data.req_ids = req_ids
+        cached_request_data.new_block_ids = new_block_ids
+        cached_request_data.new_token_ids = new_token_ids
+        cached_request_data.num_computed_tokens = num_computed_tokens
 
         # Set up scheduler_output for execute_model
         scheduler_output = SchedulerOutput(
@@ -693,14 +700,15 @@ class SpyreWorker(WorkerBaseV1):
             functools.reduce(lambda blocks, req: blocks + req.block_ids,
                              requests, [])
 
-        cached_request_data = CachedRequestData(
-            req_ids=[req.req_id for req in requests],
-            resumed_from_preemption=False,
-            new_token_ids=[[valid_token_ids_tensor[random_token_id()]]
-                           for _ in requests],
-            new_block_ids=block_ids,
-            num_computed_tokens=[prompt_len for _ in requests],
-        )
+        cached_request_data = CachedRequestData.make_empty()
+        cached_request_data.req_ids = [req.req_id for req in requests]
+        cached_request_data.new_block_ids = block_ids
+        cached_request_data.new_token_ids = [
+            [valid_token_ids_tensor[random_token_id()]] for _ in requests
+        ]
+        cached_request_data.num_computed_tokens = [
+            prompt_len for _ in requests
+        ]
 
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=[],
