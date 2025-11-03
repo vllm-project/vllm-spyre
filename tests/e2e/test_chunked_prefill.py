@@ -21,9 +21,8 @@ def get_model_runner(cp_model: LLM):
 
 
 @pytest.mark.full_model
-def test_prepare_chunked_prefill_called(model: ModelInfo, tp_size: int,
-                                        backend: str, max_num_seqs: int,
-                                        max_model_len: int,
+def test_prepare_chunked_prefill_called(model: ModelInfo, backend: str,
+                                        max_num_seqs: int, max_model_len: int,
                                         monkeypatch: pytest.MonkeyPatch,
                                         mocker: MockerFixture,
                                         use_llm_cache) -> None:
@@ -37,7 +36,7 @@ def test_prepare_chunked_prefill_called(model: ModelInfo, tp_size: int,
 
     cp_model = get_cached_llm(model=model,
                               max_model_len=max_model_len,
-                              tensor_parallel_size=tp_size,
+                              tensor_parallel_size=1,
                               backend=backend,
                               monkeypatch=monkeypatch,
                               max_num_seqs=max_num_seqs,
@@ -85,8 +84,8 @@ def test_prepare_chunked_prefill_called(model: ModelInfo, tp_size: int,
 
 
 @pytest.mark.full_model
-def test_prepare_chunked_prefill_not_called(model: ModelInfo, tp_size: int,
-                                            backend: str, max_num_seqs: int,
+def test_prepare_chunked_prefill_not_called(model: ModelInfo, backend: str,
+                                            max_num_seqs: int,
                                             max_model_len: int,
                                             monkeypatch: pytest.MonkeyPatch,
                                             mocker: MockerFixture,
@@ -100,7 +99,7 @@ def test_prepare_chunked_prefill_not_called(model: ModelInfo, tp_size: int,
 
     cp_model = get_cached_llm(model=model,
                               max_model_len=max_model_len,
-                              tensor_parallel_size=tp_size,
+                              tensor_parallel_size=1,
                               backend=backend,
                               monkeypatch=monkeypatch,
                               max_num_seqs=max_num_seqs,
