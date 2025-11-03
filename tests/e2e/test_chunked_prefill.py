@@ -3,12 +3,13 @@
 Run `python -m pytest tests/e2e/test_spyre_basic.py`.
 """
 
+from unittest.mock import patch
+
 import pytest
 from llm_cache import get_cached_llm
 from pytest_mock.plugin import MockerFixture
 from spyre_util import ModelInfo, get_chicken_soup_prompts
 from vllm import LLM, SamplingParams
-from unittest.mock import patch
 
 CHUNK_SIZE = 64
 
