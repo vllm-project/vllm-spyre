@@ -6,8 +6,9 @@ Run `python -m pytest tests/e2e/test_spyre_basic.py`.
 import pytest
 from llm_cache import get_cached_llm
 from pytest_mock.plugin import MockerFixture
-from spyre_util import DecodeWarmupShapes, ModelInfo, get_chicken_soup_prompts
+from spyre_util import ModelInfo, get_chicken_soup_prompts
 from vllm import LLM, SamplingParams
+from unittest.mock import patch
 
 CHUNK_SIZE = 64
 
@@ -20,9 +21,8 @@ def get_model_runner(cp_model: LLM):
 
 @pytest.mark.full_model
 def test_prepare_chunked_prefill_called(model: ModelInfo, tp_size: int,
-                                        backend: str, cb: int,
-                                        max_num_seqs: int, max_model_len: int,
-                                        warmup_shapes: DecodeWarmupShapes,
+                                        backend: str, max_num_seqs: int,
+                                        max_model_len: int,
                                         monkeypatch: pytest.MonkeyPatch,
                                         mocker: MockerFixture,
                                         use_llm_cache) -> None:
@@ -43,8 +43,6 @@ def test_prepare_chunked_prefill_called(model: ModelInfo, tp_size: int,
                               use_cb=True,
                               max_num_batched_tokens=CHUNK_SIZE)
     model_runner = get_model_runner(cp_model)
-
-    spy = mocker.spy(model_runner, '_prepare_chunked_prefill')
 
     # This should have ~167 tokens, Needs 3 prefills for 64 chunk size
     prompt = \
@@ -72,9 +70,14 @@ def test_prepare_chunked_prefill_called(model: ModelInfo, tp_size: int,
                                      logprobs=0,
                                      ignore_eos=True)
 
+    with patch.object(model_runner,
+                      "_prepare_chunked_prefill",
+                      wraps=model_runner._prepare_chunked_prefill) as spy:
+        cp_model.generate(prompt, sampling_params)
+
     #TODO: validate output
-    cp_model.generate(prompt, sampling_params)
     spy.assert_called()
+
     # The first prefill use the regular method, the last two will
     # pass through the _prepare_chunked_prefill
     assert spy.call_count == 2
@@ -82,10 +85,8 @@ def test_prepare_chunked_prefill_called(model: ModelInfo, tp_size: int,
 
 @pytest.mark.full_model
 def test_prepare_chunked_prefill_not_called(model: ModelInfo, tp_size: int,
-                                            backend: str, cb: int,
-                                            max_num_seqs: int,
+                                            backend: str, max_num_seqs: int,
                                             max_model_len: int,
-                                            warmup_shapes: DecodeWarmupShapes,
                                             monkeypatch: pytest.MonkeyPatch,
                                             mocker: MockerFixture,
                                             use_llm_cache) -> None:
@@ -106,20 +107,18 @@ def test_prepare_chunked_prefill_not_called(model: ModelInfo, tp_size: int,
                               max_num_batched_tokens=CHUNK_SIZE)
     model_runner = get_model_runner(cp_model)
 
-    spy = mocker.spy(model_runner, '_prepare_chunked_prefill')
-
-    sampling_params = SamplingParams(
-        max_tokens=8,
-        temperature=0,
-        logprobs=0,  # return logprobs of generated tokens only
-        ignore_eos=True)
+    sampling_params = SamplingParams(max_tokens=8,
+                                     temperature=0,
+                                     logprobs=0,
+                                     ignore_eos=True)
 
     prompts = get_chicken_soup_prompts(4)
 
     model_runner = get_model_runner(cp_model)
 
-    spy = mocker.spy(model_runner, '_prepare_chunked_prefill')
-
     #TODO: validate output
-    cp_model.generate(prompts, sampling_params)
+    with patch.object(model_runner,
+                      "_prepare_chunked_prefill",
+                      wraps=model_runner._prepare_chunked_prefill) as spy:
+        cp_model.generate(prompts, sampling_params)
     spy.assert_not_called()
