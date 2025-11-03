@@ -366,7 +366,6 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
         # PP will be enabled in the future
         req_data = scheduler_output.scheduled_cached_reqs
         for i, req_id in enumerate(req_data.req_ids):
-            # req_state: SamplingRequestState = self.requests[req_id]
 
             # Update the cached states.
             num_computed_tokens = req_data.num_computed_tokens[i]
@@ -374,18 +373,6 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
             # when PP will be enabled in the future
             new_token_ids = req_data.new_token_ids[i] if len(
                 req_data.new_token_ids) > 0 else []
-            # Add the sampled token(s) from the previous step (if any).
-            # This doesn't include "unverified" tokens like spec decode tokens.
-
-            # TODO: this logic is related PP
-            # num_new_tokens = (num_computed_tokens + len(new_token_ids) -
-            #                   req_state.num_tokens)
-            # if num_new_tokens == 1:
-            #     # Avoid slicing list in most common case.
-            #     req_state.output_token_ids.append(new_token_ids[-1])
-            # elif num_new_tokens > 0:
-            #     req_state.output_token_ids.extend(
-            #         new_token_ids[-num_new_tokens:])
 
             req_index = self.input_batch.get_req_index(req_id)
             # Add new_token_ids to token_ids_cpu.
