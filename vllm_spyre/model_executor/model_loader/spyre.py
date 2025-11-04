@@ -487,6 +487,8 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                     **extra_kwargs,
                 )
 
+                logits, self.past_key_value_states = output
+
         else:
             # normal prefill or decode
             output = self.model(
