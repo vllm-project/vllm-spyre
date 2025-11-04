@@ -175,6 +175,340 @@ def test_prompts_aligned_with_tkv_boundaries(model: ModelInfo, backend: str,
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [256])
 @pytest.mark.parametrize("available_blocks", [None])
+def test_chunked_prefill_prompts_aligned_with_blocks(
+        model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
+        set_random_seed: None, max_num_seqs: int, max_model_len: int,
+        available_blocks: int):
+    """ Scenario where it happens that all the sequences get scheduled in a 
+    fashion where they are aligned with the block boundaries (i.e. tkv multiple 
+    of 64 at the time of prefilling).
+    
+    Configuration:
+        * max_num_seqs: 2
+        * number of prompts: 3
+            * 0: len = 70, max tokens = 70, step joining = 0
+            * 1: len = 41, max tokens = 65, step joining = 0
+            * 2: len = 100, max tokens = 4, step joining = 0
+    """
+
+    seqs_max_tokens = [70, 65, 4]
+    prompts_lengths = [70, 41, 95]
+    steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0", "1", "2"],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+        {
+            # Prefill sequence 0
+            "step": 1,
+            "tkv": 128,
+            "waiting": ["1", "2"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 4,  # prefill (1 block) + 64 decodes (1 block)
+            "n_used_blocks": 2
+        },
+        {
+            # Prefill sequence 1
+            "step": 2,
+            "tkv": 128,
+            "waiting": ["2"],
+            "running": ["1", "0"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 6,
+            "n_used_blocks": 3
+        },
+        {
+            # Decode sequences 0 and 1
+            # total blocks in use: 2 + 2 = 4
+            "step": 3,
+            "tkv": 129,
+            "waiting": ["2"],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"],
+            "n_reserved_blocks": 6,
+            "n_used_blocks": 5
+        },
+        {
+            # Sequence 1 finishes at step 66
+            # (start step + 1 prefill + 64 decodes - 1) = 2 + 1 + 64 - 1 = 66
+            "step": 66,
+            "tkv": 192,
+            "waiting": ["2"],
+            "running": ["0"],
+            "request_outputs": ["1", "0"],
+            "finished_requests": ["1"],
+            "n_reserved_blocks": 6,
+            "n_used_blocks": 5
+        },
+        {
+            # Prefill sequence 2
+            # total blocks in use: 4 - 2 + 1 = 3
+            "step": 67,
+            "tkv": 192,  # Tkv doesn't increase because it is a prefill
+            "waiting": [],
+            "running": ["2", "0"],
+            "request_outputs": ["2"],
+            "n_reserved_blocks": 7,
+            "n_used_blocks": 5
+        },
+        {
+            # Decode sequences 0 and 2
+            # total blocks in use: 3 + 2 = 5
+            "step": 68,
+            "tkv": 193,
+            "waiting": [],
+            "running": ["2", "0"],
+            "request_outputs": ["2", "0"],
+            "n_reserved_blocks": 7,
+            "n_used_blocks": 7
+        },
+        {
+            # Sequence 2 finishes at step 70
+            # (start step + 1 prefills + 3 decodes - 1) = 67 + 1 + 3 - 1 = 70
+            "step": 70,
+            "tkv": 195,
+            "waiting": [],
+            "running": ["0"],
+            "request_outputs": ["2", "0"],
+            "finished_requests": ["2"],
+            "n_reserved_blocks": 7,
+            "n_used_blocks": 7
+        },
+        {
+            # Decode sequence 0
+            "step": 71,
+            "tkv": 196,
+            "waiting": [],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 4
+        },
+        {
+            # Sequence 0 finishes at step 72
+            # (start step + 3 prefills + 69 decodes - 1) = 1 + 3 + 69 - 1 = 72
+            "step": 72,
+            "tkv": 197,
+            "waiting": [],
+            "running": [],
+            "request_outputs": ["0"],
+            "finished_requests": ["0"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 4
+        },
+        {
+            # Tkv should be cleared one step later
+            "step": 73,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+    ]
+
+    check_scheduler_inference_steps(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        seqs_max_tokens=seqs_max_tokens,
+        prompts_lengths=prompts_lengths,
+        steps_add_reqs=steps_add_reqs,
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
+        available_blocks=available_blocks,
+        use_cb=True,
+    )
+
+
+@pytest.mark.cb
+@pytest.mark.full_model
+# These values are all parameterized for test sorting
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_model_len", [256])
+@pytest.mark.parametrize("available_blocks", [None])
+def test_chunked_prefill_prompts_misaligned_with_blocks(
+        model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
+        set_random_seed: None, max_num_seqs: int, max_model_len: int,
+        available_blocks: int):
+    """ Scenario where it happens that all the sequences get scheduled in a 
+    fashion where they are aligned with the block boundaries (i.e. tkv multiple 
+    of 64 at the time of prefilling).
+    
+    Configuration:
+        * max_num_seqs: 2
+        * number of prompts: 3
+            * 0: len = 70, max tokens = 70, step joining = 0
+            * 1: len = 41, max tokens = 65, step joining = 0
+            * 2: len = 100, max tokens = 4, step joining = 0
+    """
+
+    seqs_max_tokens = [70, 55, 4]
+    prompts_lengths = [70, 41, 95]
+    steps_add_reqs = [0, 0, 0]  # add all requests in the beginning
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0", "1", "2"],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+        {
+            # Prefill sequence 0
+            "step": 1,
+            "tkv": 128,
+            "waiting": ["1", "2"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 4,  # prefill (1 block) + 64 decodes (1 block)
+            "n_used_blocks": 2
+        },
+        {
+            # Prefill sequence 1
+            "step": 2,
+            "tkv": 128,
+            "waiting": ["2"],
+            "running": ["1", "0"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 6,
+            "n_used_blocks": 3
+        },
+        {
+            # Decode sequences 0 and 1
+            # total blocks in use: 2 + 2 = 4
+            "step": 3,
+            "tkv": 129,
+            "waiting": ["2"],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"],
+            "n_reserved_blocks": 6,
+            "n_used_blocks": 5
+        },
+        {
+            # Sequence 1 finishes at step 56
+            # (start step + 1 prefill + 54 decodes - 1) = 2 + 1 + 54 - 1 = 56
+            "step": 56,
+            "tkv": 182,
+            "waiting": ["2"],
+            "running": ["0"],
+            "request_outputs": ["1", "0"],
+            "finished_requests": ["1"],
+            "n_reserved_blocks": 6,
+            "n_used_blocks": 5
+        },
+        {
+            # Prefill sequence 2
+            # total blocks in use: 4 - 2 + 1 = 3
+            "step": 57,
+            "tkv": 182,  # Tkv doesn't increase because it is a prefill
+            "waiting": [],
+            "running": ["2", "0"],
+            "request_outputs": ["2"],
+            "n_reserved_blocks": 6,
+            "n_used_blocks": 5
+        },
+        {
+            # Decode sequences 0 and 2
+            # total blocks in use: 3 + 2 = 5
+            "step": 58,
+            "tkv": 183,
+            "waiting": [],
+            "running": ["2", "0"],
+            "request_outputs": ["2", "0"],
+            "n_reserved_blocks": 6,
+            "n_used_blocks": 5
+        },
+        {
+            # Sequence 2 finishes at step 60
+            # (start step + 1 prefills + 3 decodes - 1) = 57 + 1 + 3 - 1 = 60
+            "step": 60,
+            "tkv": 185,
+            "waiting": [],
+            "running": ["0"],
+            "request_outputs": ["2", "0"],
+            "finished_requests": ["2"],
+            "n_reserved_blocks": 6,
+            "n_used_blocks": 5
+        },
+        {
+            # Decode sequence 0
+            "step": 61,
+            "tkv": 186,
+            "waiting": [],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 3
+        },
+        {
+            # Decode sequence 0, expand one block
+            "step": 68,
+            "tkv": 193,
+            "waiting": [],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 4
+        },
+        {
+            # Sequence 0 finishes at step 72
+            # (start step + 3 prefills + 69 decodes - 1) = 1 + 3 + 69 - 1 = 72
+            "step": 72,
+            "tkv": 197,
+            "waiting": [],
+            "running": [],
+            "request_outputs": ["0"],
+            "finished_requests": ["0"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 4
+        },
+        {
+            # Tkv should be cleared one step later
+            "step": 73,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+    ]
+
+    check_scheduler_inference_steps(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        seqs_max_tokens=seqs_max_tokens,
+        prompts_lengths=prompts_lengths,
+        steps_add_reqs=steps_add_reqs,
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
+        available_blocks=available_blocks,
+        use_cb=True,
+    )
+
+
+@pytest.mark.cb
+@pytest.mark.full_model
+# These values are all parameterized for test sorting
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_model_len", [256])
+@pytest.mark.parametrize("available_blocks", [None])
 def test_prompts_misaligned_with_tkv_boundaries(
         model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
         set_random_seed: None, max_num_seqs: int, max_model_len: int,
