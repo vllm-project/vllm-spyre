@@ -69,7 +69,7 @@ def _construct_expected_sampling_metadata(
     presence_penalties = [0.0 for _ in range(num_reqs)]
     frequency_penalties = [0.0 for _ in range(num_reqs)]
     repetition_penalties = [1.0 for _ in range(num_reqs)]
-    top_k = [0 for _ in range(num_reqs)]
+    top_k = [VOCAB_SIZE for _ in range(num_reqs)]
     top_p = [0.0 for _ in range(num_reqs)]
     temperature = [0.0 for _ in range(num_reqs)]
     allowed_token_ids_mask = torch.zeros(num_reqs,
@@ -91,7 +91,8 @@ def _construct_expected_sampling_metadata(
             req.sampling_params.frequency_penalty)
         repetition_penalties[index_in_input_batch] = (
             req.sampling_params.repetition_penalty)
-        top_k[index_in_input_batch] = req.sampling_params.top_k
+        if req.sampling_params.top_k > 0:
+            top_k[index_in_input_batch] = req.sampling_params.top_k
         top_p[index_in_input_batch] = req.sampling_params.top_p
         temperature[index_in_input_batch] = req.sampling_params.temperature
         if req.sampling_params.allowed_token_ids:
@@ -108,7 +109,7 @@ def _construct_expected_sampling_metadata(
         all_random=True,
         top_p=None if all(x == 1.0 for x in top_p) else torch.tensor(
             top_p, dtype=torch.float, device=device),
-        top_k=None if all(x == 0 for x in top_k) else torch.tensor(
+        top_k=None if all(x == VOCAB_SIZE for x in top_k) else torch.tensor(
             top_k, dtype=torch.int, device=device),
         generators={},
         max_num_logprobs=0,
@@ -139,7 +140,7 @@ def _construct_expected_sampling_metadata(
 
 def _create_sampling_params():
     return SamplingParams(
-        top_k=np.random.randint(1, 10),
+        top_k=np.random.randint(0, 10),
         top_p=np.random.uniform(0.0, 1.0),
         presence_penalty=np.random.uniform(-2.0, 2.0),
         repetition_penalty=np.random.uniform(0.0, 2.0),
@@ -273,3 +274,30 @@ def test_sampling_metadata_in_input_batch(batch_size: int):
         reqs, req_ids_retained, input_batch, device=torch.device(device))
 
     compare_results(sampling_metadata, expected_sampling_metadata)
+
+
+@pytest.mark.cpu
+@pytest.mark.worker
+def test_sampling_metadata_topk_edges():
+    device = torch.device('cpu')
+    input_batch: SamplingInputBatch = SamplingInputBatch(
+        max_num_reqs=2,
+        max_model_len=1024,
+        device=device,
+        pin_memory=is_pin_memory_available(),
+        vocab_size=VOCAB_SIZE,
+    )
+
+    # top_k should be clamped to VOCAB_SIZE
+    req = _construct_cached_request_state(0)
+    req.sampling_params = SamplingParams(temperature=1.0, top_k=VOCAB_SIZE + 1)
+    input_batch.add_request(req, 0)
+
+    # in a batch with both greedy and sampling, default top_k should be
+    # VOCAB_SIZE
+    req = _construct_cached_request_state(1)
+    req.sampling_params = SamplingParams(temperature=0)
+    input_batch.add_request(req, 1)
+
+    assert input_batch.top_k[0] == VOCAB_SIZE
+    assert input_batch.top_k[1] == VOCAB_SIZE

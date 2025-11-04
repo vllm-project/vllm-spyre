@@ -38,7 +38,7 @@ configurations.
 | [Multilingual-E5-large][]                 | 1    | 512            | 64         |
 
 [Granite-3.3-8b]: https://huggingface.co/ibm-granite/granite-3.3-8b-instruct
-[Granite-3.3-8b (FP8)]: https://huggingface.co/ibm-granite/granite-3.3-8b-instruct
+[Granite-3.3-8b (FP8)]: https://huggingface.co/ibm-granite/granite-3.3-8b-instruct-FP8
 [Granite-Embedding-125m (English)]: https://huggingface.co/ibm-granite/granite-embedding-125m-english
 [Granite-Embedding-278m (Multilingual)]: https://huggingface.co/ibm-granite/granite-embedding-278m-multilingual
 [BAAI/BGE-Reranker (v2-m3)]: https://huggingface.co/BAAI/bge-reranker-v2-m3

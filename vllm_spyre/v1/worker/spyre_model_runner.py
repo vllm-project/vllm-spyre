@@ -410,6 +410,9 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
                 # of logitprocs. Refactor so that we can batch removals to the
                 # `input_batch`
                 self.input_batch.refresh_metadata()
+        else:
+            # Due to logits processor we need to refresh metadata at each step
+            self.input_batch.refresh_metadata()
 
     def _get_prompt_logprobs_dict(
         self,

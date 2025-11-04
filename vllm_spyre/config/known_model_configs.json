@@ -14,13 +14,11 @@
   },
   "ibm-granite/granite-3.3-8b-instruct": {
     "model_type": "granite",
-    "attention_dropout": 0.0,
     "vocab_size": 49159
   },
   "ibm-granite/granite-3.3-8b-instruct-FP8": {
     "model_type": "granite",
-    "attention_dropout": 0.1,
-    "vocab_size": 49155,
+    "vocab_size": 49159,
     "quantization_config": {
       "format": "float-quantized"
     }
