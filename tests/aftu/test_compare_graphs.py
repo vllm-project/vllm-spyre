@@ -15,7 +15,7 @@ from graph_compare_utils import (collect_graph_files, compare_graphs,
 from output_util import generate_spyre_vllm_output
 from pytest_mock.plugin import MockerFixture
 from spyre_util import DecodeWarmupShapes, ModelInfo, get_chicken_soup_prompts
-from vllm import SamplingParams
+from vllm import LLM, SamplingParams
 
 from vllm_spyre.model_executor.model_loader.spyre import SpyreCausalLM
 
@@ -58,9 +58,9 @@ def test_compare_graphs_cb(model: ModelInfo, max_num_seqs: int,
         sys.executable, "scripts/inference.py", "--architecture",
         "hf_pretrained", "--model_path", model_path, "--tokenizer", model_path,
         "--unfuse_weights", "--device_type", "aiu", "--compile",
-        "--cast_bf16_to_fp16", "--compile_dynamic", "--min_pad_length", "64",
-        "--max_new_tokens", "5", "--batch_size",
-        str(max_num_seqs), "--compile_dynamic_sendnn", "--attention_type",
+        "--cast_bf16_to_fp16", "--compile_dynamic", "--min_pad_length", "192",
+        "--max_new_tokens", "5", "--batch_size", str(max_num_seqs), "--prefill_chunk_size", "128",
+        "--compile_dynamic_sendnn", "--attention_type",
         attn_type
     ]
 
@@ -70,7 +70,8 @@ def test_compare_graphs_cb(model: ModelInfo, max_num_seqs: int,
     extra_env = {
         "VLLM_DT_MAX_CONTEXT_LEN": str(max_model_len),
         "VLLM_DT_MAX_BATCH_SIZE": str(max_num_seqs),
-        "VLLM_DT_MAX_BATCH_TKV_LIMIT": str(1024 * 128)
+        "VLLM_DT_CHUNK_LEN": str(128),
+        "VLLM_DT_MAX_BATCH_TKV_LIMIT": str(1024 * 128),
     }
     aftu_graphs = run_inference_py_and_get_graphs(inference_py_args,
                                                   script_dir, extra_env)
@@ -87,6 +88,10 @@ def test_compare_graphs_cb(model: ModelInfo, max_num_seqs: int,
 
     # need for the mocker
     monkeypatch.setenv('VLLM_ENABLE_V1_MULTIPROCESSING', 0)
+    monkeypatch.setenv('VLLM_DT_CHUNK_LEN', '128')
+    monkeypatch.setenv('VLLM_SPYRE_USE_CHUNKED_PREFILL', "1")
+    monkeypatch.setenv('VLLM_SPYRE_USE_CB', "1")
+    monkeypatch.setenv('VLLM_SPYRE_DYNAMO_BACKEND', "sendnn")
 
     vllm_sampling_params = SamplingParams(
         max_tokens=max_new_tokens,
@@ -100,15 +105,24 @@ def test_compare_graphs_cb(model: ModelInfo, max_num_seqs: int,
         with tempfile.TemporaryDirectory() as tmpdir:
             os.chdir(tmpdir)
 
-            generate_spyre_vllm_output(model=model,
-                                       prompts=prompts,
-                                       max_model_len=max_model_len,
-                                       sampling_params=vllm_sampling_params,
-                                       tensor_parallel_size=1,
-                                       backend='sendnn',
-                                       max_num_seqs=max_num_seqs,
-                                       use_cb=True,
-                                       monkeypatch=monkeypatch)
+            # generate_spyre_vllm_output(model=model,
+            #                            prompts=prompts,
+            #                            max_model_len=max_model_len,
+            #                            sampling_params=vllm_sampling_params,
+            #                            tensor_parallel_size=1,
+            #                            backend='sendnn',
+            #                            max_num_seqs=max_num_seqs,
+            #                            use_cb=True,
+            #                            monkeypatch=monkeypatch)
+            LLM(
+                model=model.name,
+                max_model_len=max_model_len,
+                tensor_parallel_size=1,
+                # backend=backend,
+                # warmup_shapes=warmup_shapes,
+                max_num_seqs=max_num_seqs,
+                max_num_batched_tokens=128,
+            )
 
             vllm_graphs = collect_graph_files(tmpdir)
     finally:

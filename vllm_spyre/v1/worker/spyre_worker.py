@@ -436,7 +436,7 @@ class SpyreWorker(WorkerBaseV1):
         valid_token_ids_tensor = torch.tensor(valid_token_ids,
                                               dtype=torch.long,
                                               device=torch.device("cpu"))
-        prompt_len = 128
+        prompt_len = 256
         num_decode_tokens = 2
 
         # Sample from the valid token ids
