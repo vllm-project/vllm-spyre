@@ -1,7 +1,7 @@
 import os
 
 import pytest
-from vllm.v1.core.sched.output import NewRequestData
+from vllm.v1.core.sched.output import NewRequestData, SchedulerOutput
 from vllm.v1.kv_cache_interface import FullAttentionSpec
 
 from vllm_spyre.compat_utils import dataclass_fields
@@ -54,7 +54,7 @@ def test_multi_modal_cache_stats():
             from vllm.v1.metrics.stats import MultiModalCacheStats  # # noqa
 
 
-def test_v0_worker_Base():
+def test_v0_worker_base():
     if VLLM_VERSION == "vLLM:lowest":
         try:
             from vllm.worker.worker_base import WorkerBase  # # noqa
@@ -62,3 +62,11 @@ def test_v0_worker_Base():
             raise AssertionError(
                 "remove the backwards compatibility code from "
                 "the SpyreWorker initializer") from e
+
+
+def test_structured_output_request_ids():
+    if VLLM_VERSION == "vLLM:lowest":
+        # Can remove "structured_output_request_ids" and "grammar_bitmask"
+        # from backwards compat
+        assert 'structured_output_request_ids' in dataclass_fields(
+            SchedulerOutput)

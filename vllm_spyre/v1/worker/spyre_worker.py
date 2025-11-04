@@ -509,8 +509,6 @@ class SpyreWorker(WorkerBase):
             scheduled_encoder_inputs={},
             num_common_prefix_blocks=0,
             finished_req_ids=set(),
-            structured_output_request_ids={},
-            grammar_bitmask=None,
             **_get_extra_args())
         logger.info("[WARMUP] Deploying to device...")
         self.execute_model(scheduler_output)
@@ -540,8 +538,6 @@ class SpyreWorker(WorkerBase):
             num_common_prefix_blocks=0,
             # The requests to be removed
             finished_req_ids=set([r.req_id for r in request]),
-            structured_output_request_ids={},
-            grammar_bitmask=None,
             **_get_extra_args())
         self.execute_model(scheduler_output)
         # satisfy mypy
@@ -619,8 +615,6 @@ class SpyreWorker(WorkerBase):
             scheduled_encoder_inputs={},
             num_common_prefix_blocks=0,
             finished_req_ids=set(),
-            structured_output_request_ids={},
-            grammar_bitmask=None,
             **_get_extra_args())
 
         # First full forward pass
@@ -683,8 +677,6 @@ class SpyreWorker(WorkerBase):
                 scheduled_encoder_inputs={},
                 num_common_prefix_blocks=0,
                 finished_req_ids=set(),
-                structured_output_request_ids={},
-                grammar_bitmask=None,
                 **_get_extra_args())
 
             logger.info("[WARMUP] Prefill [%s/%s]...", idx + 1, req_count)
@@ -720,8 +712,6 @@ class SpyreWorker(WorkerBase):
             scheduled_encoder_inputs={},
             num_common_prefix_blocks=0,
             finished_req_ids=set(),
-            structured_output_request_ids={},
-            grammar_bitmask=None,
             **_get_extra_args())
         logger.info("[WARMUP] Decode...")
         self.execute_model(scheduler_output)
@@ -802,4 +792,10 @@ def _get_extra_args() -> dict:
     SchedulerOutputs here"""
     extra_args: dict = {}
     extra_args.update({"free_encoder_mm_hashes": []})
+
+    if "structured_output_request_ids" in dataclass_fields(SchedulerOutput):
+        extra_args["structured_output_request_ids"] = {}
+    if "grammar_bitmask" in dataclass_fields(SchedulerOutput):
+        extra_args["grammar_bitmask"] = None
+
     return extra_args

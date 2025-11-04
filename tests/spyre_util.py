@@ -14,8 +14,15 @@ import requests
 from transformers import AutoTokenizer
 from vllm import SamplingParams
 from vllm.entrypoints.openai.cli_args import make_arg_parser
-from vllm.utils.argparse_utils import FlexibleArgumentParser
-from vllm.utils.network_utils import get_open_port
+
+try:
+    # old
+    from vllm.utils import FlexibleArgumentParser, get_open_port
+except ImportError:
+    # new
+    from vllm.utils.argparse_utils import FlexibleArgumentParser
+    from vllm.utils.network_utils import get_open_port
+
 from vllm.v1.request import Request
 
 EmbeddingWarmupShapes = list[tuple[int, int]]
