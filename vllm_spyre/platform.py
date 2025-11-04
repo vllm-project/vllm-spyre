@@ -19,14 +19,18 @@ import torch
 from transformers.models.granite import GraniteConfig
 from vllm.inputs import ProcessorInputs, PromptType
 from vllm.logger import init_logger
-from vllm.pooling_params import PoolingParams
-from vllm.sampling_params import SamplingParams
 
 if TYPE_CHECKING:
+    # NB: We can't eagerly import many things from vllm since vllm.config
+    # will import this file. These would lead to circular imports
     from vllm.config import ModelConfig, VllmConfig
+    from vllm.pooling_params import PoolingParams
+    from vllm.sampling_params import SamplingParams
 else:
     ModelConfig = None
     VllmConfig = None
+    SamplingParams = None
+    PoolingParams = None
 from vllm.platforms import Platform, PlatformEnum
 
 import vllm_spyre.envs as envs_spyre
@@ -328,6 +332,9 @@ class SpyrePlatform(Platform):
         processed_inputs: ProcessorInputs | None = None,
     ) -> None:
         """Raises if this request is unsupported on this platform"""
+
+        # TODO: fix
+        from vllm.pooling_params import PoolingParams
         if isinstance(params, PoolingParams):
             # Only validating generation requests for now
             return None
