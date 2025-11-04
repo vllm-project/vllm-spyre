@@ -178,6 +178,14 @@ class SpyrePlatform(Platform):
             if not envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
                 scheduler_config.max_num_batched_tokens = (
                     model_config.max_model_len * scheduler_config.max_num_seqs)
+            else:
+                assert scheduler_config.max_num_batched_tokens % \
+                    cls._block_size == 0, ("`max_num_batched_tokens` must"
+                    f" be divisible by the block size ({cls._block_size}) "
+                    "to enable chunked prefill. It was set to "
+                    f"`{scheduler_config.max_num_batched_tokens}`. Please "
+                    "set `--max-num-batched-tokens` to a number that satisfy "
+                    "this constraint.")
 
         logger.info(
             "Overriding configurations based on warmup shapes. "
