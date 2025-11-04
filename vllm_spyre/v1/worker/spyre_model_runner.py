@@ -1163,9 +1163,11 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         input_tokens = prompt_token_ids[:, chunk_start:chunk_end]
 
         pos = num_computed_tokens - request.left_padding
-        input_positions = torch.tensor([range(pos, pos + chunk_size)],
-                                       dtype=torch.long,
-                                       device=self.device)
+        # input_tokens.shape[1] to match the trimmed input tokens
+        input_positions = torch.tensor(
+            [range(pos, pos + input_tokens.shape[1])],
+            dtype=torch.long,
+            device=self.device)
 
         left_padded_prompt_mask = torch.tensor([request.left_padding],
                                                dtype=torch.long,

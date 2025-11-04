@@ -11,7 +11,7 @@ from pytest_mock.plugin import MockerFixture
 from spyre_util import ModelInfo, get_chicken_soup_prompts
 from vllm import LLM, SamplingParams
 
-CHUNK_SIZE = 64
+CHUNK_SIZE = 128
 
 
 def get_model_runner(cp_model: LLM):
@@ -20,7 +20,7 @@ def get_model_runner(cp_model: LLM):
             driver_worker.worker.model_runner
 
 
-@pytest.mark.full_model
+@pytest.mark.cb
 def test_prepare_chunked_prefill_called(model: ModelInfo, backend: str,
                                         max_num_seqs: int, max_model_len: int,
                                         monkeypatch: pytest.MonkeyPatch,
@@ -80,10 +80,10 @@ def test_prepare_chunked_prefill_called(model: ModelInfo, backend: str,
 
     # The first prefill use the regular method, the last two will
     # pass through the _prepare_chunked_prefill
-    assert spy.call_count == 2
+    assert spy.call_count == 1
 
 
-@pytest.mark.full_model
+@pytest.mark.cb
 def test_prepare_chunked_prefill_not_called(model: ModelInfo, backend: str,
                                             max_num_seqs: int,
                                             max_model_len: int,
