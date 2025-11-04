@@ -46,6 +46,7 @@ local_scheme = "no-local-version"
 # So we set to 'never' to prevent installing it or eventually any other 
 # by accident
 override-dependencies = [
+    "transformers==4.55.2", # hack hack waiting for dependency bumps
     "torch; sys_platform == 'never'",
     "torchaudio; sys_platform == 'never'",
     "torchvision; sys_platform == 'never'",
