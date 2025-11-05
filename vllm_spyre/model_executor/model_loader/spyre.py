@@ -443,7 +443,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         output = self.model(
             input_ids,
             position_ids=position_ids,
-            # mask=mask,
+            mask=mask,
             past_key_value_states=self.past_key_value_states,
             use_cache=use_cache,
             last_n_tokens=SpyrePlatform.get_block_size() if is_prompt else 1,

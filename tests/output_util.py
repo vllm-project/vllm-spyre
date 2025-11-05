@@ -468,11 +468,10 @@ def generate_spyre_vllm_output(
         monkeypatch=monkeypatch,
         warmup_shapes=warmup_shapes,
         max_num_seqs=max_num_seqs,
-        max_num_batched_tokens=128,
         use_cb=use_cb,
     )
 
-    # vllm_outputs = vllm_model.generate(prompts, sampling_params)
+    vllm_outputs = vllm_model.generate(prompts, sampling_params)
     results = []
 
     for req_output in vllm_outputs:

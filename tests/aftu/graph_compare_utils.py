@@ -81,7 +81,7 @@ def compare_graphs(a_map: dict[str, tuple[str, str]],
         if diff:
             print("Found difference!", a_filename, b_filename)
             lines_count = len(diff)
-            for line in diff[:200]:
+            for line in diff[:20]:
                 print(line)
             if (lines_count > 20):
                 print(f"[...] Omitted {lines_count - 20} lines")

@@ -862,6 +862,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             pin_memory=self.pin_memory,
             vocab_size=vllm_config.model_config.get_vocab_size())
 
+        self.use_chunked_prefill = envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL
+
     def pre_warmup(self) -> None:
         # Set the number of kv cache blocks to the minimal value of 2 which is
         # required for warmup. After the warmup, the number of blocks will be
@@ -1046,13 +1048,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             generator = None
 
         prompt_token_ids_tensor = torch.tensor(prompt_token_ids,
-                                               dtype=torch.long,
+                                               dtype=torch.int64,
                                                device=torch.device("cpu"))
 
-        num_sched_tokens = scheduler_output.num_scheduled_tokens[req_id]
-
-        is_chunked_prefill = num_sched_tokens < len(prompt_token_ids)
-        chunk_size = self.scheduler_config.max_num_batched_tokens
         # get position ids and attention mask
         # applies left padding to ensure that the tkv of the new sequence
         # tkv_prefill aligns with tkv of current decode batch tkv_decode:
@@ -1062,7 +1060,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             [prompt_token_ids_tensor],
             min_pad_left=left_padding_tkv,
             min_pad_right=right_padding_tkv,
-            create_mask=not is_chunked_prefill)
+            create_mask=not self.use_chunked_prefill)
 
         req_state = SamplingRequestState(
             req_id=req_id,
@@ -1099,13 +1097,16 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # block table is stored in self.req_ids2blocks (only passed for decode)
         block_table = None
 
-        # if is_chunked_prefill:
-        if True:
+        if self.use_chunked_prefill:
+
             # chunk the inputs
+            chunk_size = self.scheduler_config.max_num_batched_tokens
             chunk_start = padded_input_tokens.shape[1] - self.tkv
             chunk_end = min(chunk_start + chunk_size, self.tkv)
-            padded_input_tokens = padded_input_tokens[0, chunk_start:chunk_end].unsqueeze(0).clone()
-            position_ids = position_ids[0, chunk_start:chunk_end].unsqueeze(0).clone()
+            padded_input_tokens = padded_input_tokens[
+                0, chunk_start:chunk_end].unsqueeze(0).clone()
+            position_ids = position_ids[0, chunk_start:chunk_end].unsqueeze(
+                0).clone()
             slots = slots[chunk_start:chunk_end]
 
             # create block table tensor
@@ -1113,21 +1114,19 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             block_start = table_length - self.tkv // self.block_size
             block_end = chunk_end // self.block_size
             block_table = torch.tensor(blocks[block_start:block_end],
-                                        dtype=torch.int64).unsqueeze(0).contiguous()
+                                       dtype=torch.int64).unsqueeze(0)
 
             # # create block table tensor
             current_tkv_mask = torch.tensor([chunk_end],
                                             dtype=torch.int64,
-                                            device=self.device).contiguous()
+                                            device=self.device)
 
             left_padded_prompt_mask = torch.tensor([req_state.left_padding],
-                                                    dtype=torch.long,
-                                                    device=self.device).contiguous()
+                                                   dtype=torch.int64,
+                                                   device=self.device)
 
-        mask = None
-        slot_mapping = torch.tensor([slots], dtype=torch.int64).clone().contiguous()
+        slot_mapping = torch.tensor([slots], dtype=torch.int64)
 
-        print("_prepare_prompt")
         model_inputs = SamplingForwardInputs(
             input_tokens=padded_input_tokens,
             input_positions=position_ids,
@@ -1139,15 +1138,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             is_prompt=True,
             # used only for quantized model
             scale_indices=[prefill_index])
-        
-        print(model_inputs.input_tokens.stride())
-        print(model_inputs.input_positions.stride())
-        print(model_inputs.input_tokens.shape)
-        print(model_inputs.input_positions.shape)
-        print(model_inputs.input_tokens.is_contiguous())
-        print(model_inputs.input_positions.is_contiguous())
 
-        print(model_inputs)
         self._mark_input_tensors(model_inputs)
 
         return model_inputs
@@ -1171,17 +1162,20 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         chunk_start = padded_prompt_len - self.tkv + num_computed_tokens
         chunk_end = num_computed_tokens + max(chunk_size, num_scheduled_tokens)
 
-        input_tokens = prompt_token_ids[0, chunk_start:chunk_end].unsqueeze(0).clone()
+        logger.debug("Chunk prefill of request %s %d:%d of %d padded tokens",
+                     req_id, chunk_start, chunk_end, padded_prompt_len)
+        input_tokens = prompt_token_ids[0, chunk_start:chunk_end].unsqueeze(
+            0).clone()
 
         pos = num_computed_tokens - request.left_padding
         # input_tokens.shape[1] to match the trimmed input tokens
         input_positions = torch.tensor(
             [range(pos, pos + input_tokens.shape[1])],
-            dtype=torch.long,
+            dtype=torch.int64,
             device=self.device)
 
         left_padded_prompt_mask = torch.tensor([request.left_padding],
-                                               dtype=torch.long,
+                                               dtype=torch.int64,
                                                device=self.device)
         mask = None
 
@@ -1215,7 +1209,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             is_prompt=True,
             scale_indices=self.input_batch.request_indices)
 
-        print("_prepare_chunked_prefill")
         self._mark_input_tensors(model_inputs)
 
         return model_inputs
@@ -1305,8 +1298,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         # mask not needed during decode
         mask = None
-
-        input_tokens = input_tokens.clone(memory_format=torch.contiguous_format)
 
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,

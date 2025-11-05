@@ -12,10 +12,9 @@ import torch
 from graph_compare_utils import (collect_graph_files, compare_graphs,
                                  get_model_path,
                                  run_inference_py_and_get_graphs)
-from output_util import generate_spyre_vllm_output
 from pytest_mock.plugin import MockerFixture
-from spyre_util import DecodeWarmupShapes, ModelInfo, get_chicken_soup_prompts
-from vllm import SamplingParams
+from spyre_util import DecodeWarmupShapes, ModelInfo
+from vllm import LLM
 
 from vllm_spyre.model_executor.model_loader.spyre import SpyreCausalLM
 
@@ -69,10 +68,8 @@ def test_compare_graphs_cb(model: ModelInfo, max_num_seqs: int,
     aftu_graphs = run_inference_py_and_get_graphs(inference_py_args, extra_env)
 
     assert len(aftu_graphs) > 0
-    # VLLM
-    prompts = get_chicken_soup_prompts(4)
 
-    max_new_tokens = 20
+    # VLLM
 
     monkeypatch.setenv("DEE_DUMP_GRAPHS", "vllm_cb")
     # Disable cache to produce the graphs
@@ -81,27 +78,17 @@ def test_compare_graphs_cb(model: ModelInfo, max_num_seqs: int,
     # need for the mocker
     monkeypatch.setenv('VLLM_ENABLE_V1_MULTIPROCESSING', 0)
 
-    vllm_sampling_params = SamplingParams(
-        max_tokens=max_new_tokens,
-        temperature=0,
-        logprobs=0,  # return logprobs of generated tokens only
-        ignore_eos=True)
-
     original_cwd = os.getcwd()
     try:
         # Change to temp dir to set the test environment clean
         with tempfile.TemporaryDirectory() as tmpdir:
             os.chdir(tmpdir)
 
-            generate_spyre_vllm_output(model=model,
-                                       prompts=prompts,
-                                       max_model_len=max_model_len,
-                                       sampling_params=vllm_sampling_params,
-                                       tensor_parallel_size=1,
-                                       backend='sendnn',
-                                       max_num_seqs=max_num_seqs,
-                                       use_cb=True,
-                                       monkeypatch=monkeypatch)
+            # We only need to load the model
+            LLM(model=model.name,
+                max_model_len=max_model_len,
+                tensor_parallel_size=1,
+                max_num_seqs=max_num_seqs)
 
             vllm_graphs = collect_graph_files(tmpdir)
     finally:
@@ -144,19 +131,12 @@ def test_compare_graphs_static_batching(model: ModelInfo,
     aftu_graphs = run_inference_py_and_get_graphs(inference_py_args)
     assert len(aftu_graphs) > 0
     # VLLM
-    prompts = get_chicken_soup_prompts(4)
-
-    max_new_tokens = warmup_shapes[0][1]
 
     monkeypatch.setenv("DEE_DUMP_GRAPHS", "vllm_sb")
     # Disable cache to produce the graphs
     monkeypatch.setenv("TORCH_SENDNN_CACHE_ENABLE", "0")
     # needed for the mocker
     monkeypatch.setenv('VLLM_ENABLE_V1_MULTIPROCESSING', 0)
-    vllm_sampling_params = SamplingParams(max_tokens=max_new_tokens,
-                                          temperature=0,
-                                          logprobs=0,
-                                          ignore_eos=True)
 
     original_cwd = os.getcwd()
     try:
@@ -164,14 +144,10 @@ def test_compare_graphs_static_batching(model: ModelInfo,
         with tempfile.TemporaryDirectory() as tmpdir:
             os.chdir(tmpdir)
 
-            generate_spyre_vllm_output(model=model,
-                                       prompts=prompts,
-                                       warmup_shapes=warmup_shapes,
-                                       max_model_len=2048,
-                                       sampling_params=vllm_sampling_params,
-                                       tensor_parallel_size=1,
-                                       backend='sendnn',
-                                       monkeypatch=monkeypatch)
+            LLM(model=model.name,
+                max_model_len=2048,
+                tensor_parallel_size=1,
+                max_num_seqs=warmup_shapes[0][2])
 
             vllm_graphs = collect_graph_files(tmpdir)
     finally:
