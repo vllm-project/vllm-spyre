@@ -230,9 +230,9 @@ def test_compare_graphs_chunked_prefill(model: ModelInfo, max_num_seqs: int,
 
     monkeypatch.setenv('VLLM_DT_CHUNK_LEN', str(chunk_size))
     patch_environment(use_cb=True,
-                    warmup_shapes=None,
-                    backend="sendnn",
-                    monkeypatch=monkeypatch)
+                      warmup_shapes=None,
+                      backend="sendnn",
+                      monkeypatch=monkeypatch)
 
     original_cwd = os.getcwd()
     try:
