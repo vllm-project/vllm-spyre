@@ -90,6 +90,7 @@ def test_compare_graphs_cb(model: ModelInfo, max_num_seqs: int,
 
             # We only need to load the model
             LLM(model=model.name,
+                revision=model.revision,
                 max_model_len=max_model_len,
                 tensor_parallel_size=1,
                 max_num_seqs=max_num_seqs)
@@ -155,6 +156,7 @@ def test_compare_graphs_static_batching(model: ModelInfo,
             os.chdir(tmpdir)
 
             LLM(model=model.name,
+                revision=model.revision,
                 max_model_len=2048,
                 tensor_parallel_size=1,
                 max_num_seqs=warmup_shapes[0][2])
@@ -229,6 +231,7 @@ def test_compare_graphs_chunked_prefill(model: ModelInfo, max_num_seqs: int,
     monkeypatch.setenv("TORCH_SENDNN_CACHE_ENABLE", "0")
 
     monkeypatch.setenv('VLLM_DT_CHUNK_LEN', str(chunk_size))
+    monkeypatch.setenv('VLLM_SPYRE_USE_CHUNKED_PREFILL', "1")
     patch_environment(use_cb=True,
                       warmup_shapes=None,
                       backend="sendnn",
@@ -242,6 +245,7 @@ def test_compare_graphs_chunked_prefill(model: ModelInfo, max_num_seqs: int,
 
             # We only need to load the model
             LLM(model=model.name,
+                revision=model.revision,
                 max_model_len=max_model_len,
                 tensor_parallel_size=1,
                 max_num_batched_tokens=chunk_size,
