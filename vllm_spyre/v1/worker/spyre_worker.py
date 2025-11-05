@@ -491,6 +491,21 @@ class SpyreWorker(WorkerBaseV1):
         # one additional prefill to deploy the compiled program to the device,
         # the necessary operations are included in the graph and will be removed
         # after this execution
+
+        # update sampling_params here to ensure logits processing code is also
+        # compiled during warmup
+        deploy_req.sampling_params = SamplingParams(
+            temperature=1.0,
+            top_k=10,
+            top_p=0.9,
+            min_p=0.9,
+            presence_penalty=0.5,
+            frequency_penalty=0.5,
+            repetition_penalty=1.2,
+            max_tokens=4,
+            min_tokens=1,
+            logprobs=1,
+        )
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=[deploy_req],
             scheduled_cached_reqs=CachedRequestData.make_empty(),
