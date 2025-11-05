@@ -453,8 +453,11 @@ class ContinuousBatchingFmsModel(FmsModelBase):
 
                 input_ids_chunk = input_ids[:, chunk_start:chunk_end]
                 position_ids_chunk = position_ids[:, chunk_start:chunk_end]
-                tkv_mask_chunk = torch.tensor([chunk_end])
-                block_table_chunk = attn_metadata.block_table[:, :i + 1]
+                tkv_mask_chunk = min(torch.tensor([chunk_end]),
+                                     torch.tensor([input_ids.shape[1]]))
+                block_table_chunk = attn_metadata.block_table[:, :(i + 1) *
+                                                              (chunk_size //
+                                                               64)]
                 slot_mapping_chunk = attn_metadata.slot_mapping[:, chunk_start:
                                                                 chunk_end]
 
