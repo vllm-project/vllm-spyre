@@ -994,14 +994,13 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         self.prefill_batch.clear_requests()
 
-        
         # right padding to the next block boundary (ceil division)
         # -> prefills must to be multiples of the block size (Spyre constraint)
         n = prompt_len if is_new_batch else self.tkv
         if self.use_chunked_prefill and not is_new_batch:
             chunks_count = math.ceil(prompt_len / chunk_size)
             # Shift the right padding considering additional decodes that
-            # interleaving the prefills
+            # are interleaving the prefills
             n += chunks_count
 
         right_padding_tkv = math.ceil(n / self.block_size) * self.block_size
@@ -1114,7 +1113,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
             # NOTE: unsqueeze(0).clone() is needed to avoid have
             # tensor stride and size different which will causes
-            # graph recompilation 
+            # graph recompilation
             padded_input_tokens = padded_input_tokens[
                 0, chunk_start:chunk_end].unsqueeze(0).clone()
             position_ids = position_ids[0, chunk_start:chunk_end].unsqueeze(
@@ -1138,7 +1137,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                                                    dtype=torch.int64,
                                                    device=self.device)
 
-        slot_mapping = torch.tensor([slots], dtype=torch.int64, device=self.device)
+        slot_mapping = torch.tensor([slots],
+                                    dtype=torch.int64,
+                                    device=self.device)
 
         model_inputs = SamplingForwardInputs(
             input_tokens=padded_input_tokens,
