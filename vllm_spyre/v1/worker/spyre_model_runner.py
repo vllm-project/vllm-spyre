@@ -479,14 +479,13 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
     def prepare_model_input(
             self, scheduler_output: SchedulerOutput) -> SamplingForwardInputs:
 
-        # NOTE: We assume that all sequences in the group are all prompts or
+        # NOTE: We assume that all sequences in the group are all prefills or
         # all decodes. Also assuming that new sequences are prefills
         is_prefill = len(scheduler_output.scheduled_new_reqs) > 0
 
-        # NOTE: We assume also that there's only on prefill at each step
-        # and if will be a chunked prefill if the num of computed tokens
-        # is less than the length of the prompt, that is, if this is true,
-        # then it is still prefilling the request.
+        # NOTE: We also assume that there's only one prefill at each step
+        # and if it is a chunked prefill then the num of computed tokens
+        # is less than the length of the prompt
         is_chunked_prefill = False
         if len(scheduler_output.scheduled_cached_reqs.req_ids) == 1:
             req_id = scheduler_output.scheduled_cached_reqs.req_ids[0]
@@ -969,6 +968,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         is_new_batch = len(self.req_ids2blocks) == 0
         prompt_len = len(prompt_token_ids)
 
+        # Only used in chunked prefill
+        chunk_size = self.scheduler_config.max_num_batched_tokens
+
         # make sure that the current tkv of the decode batch is greater or
         # equal to the prompt length of the new joining sequence
         if not is_new_batch and prompt_len > self.tkv:
@@ -992,9 +994,16 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         self.prefill_batch.clear_requests()
 
+        
         # right padding to the next block boundary (ceil division)
         # -> prefills must to be multiples of the block size (Spyre constraint)
         n = prompt_len if is_new_batch else self.tkv
+        if self.use_chunked_prefill and not is_new_batch:
+            chunks_count = math.ceil(prompt_len / chunk_size)
+            # Shift the right padding considering additional decodes that
+            # interleaving the prefills
+            n += chunks_count
+
         right_padding_tkv = math.ceil(n / self.block_size) * self.block_size
 
         # set the tkv to the block padding if starting a new decode batch
@@ -1100,9 +1109,12 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         if self.use_chunked_prefill:
 
             # chunk the inputs
-            chunk_size = self.scheduler_config.max_num_batched_tokens
             chunk_start = padded_input_tokens.shape[1] - self.tkv
             chunk_end = min(chunk_start + chunk_size, self.tkv)
+
+            # NOTE: unsqueeze(0).clone() is needed to avoid have
+            # tensor stride and size different which will causes
+            # graph recompilation 
             padded_input_tokens = padded_input_tokens[
                 0, chunk_start:chunk_end].unsqueeze(0).clone()
             position_ids = position_ids[0, chunk_start:chunk_end].unsqueeze(
@@ -1114,9 +1126,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             block_start = table_length - self.tkv // self.block_size
             block_end = chunk_end // self.block_size
             block_table = torch.tensor(blocks[block_start:block_end],
-                                       dtype=torch.int64).unsqueeze(0)
+                                       dtype=torch.int64,
+                                       device=self.device).unsqueeze(0)
 
-            # # create block table tensor
+            # create block table tensor
             current_tkv_mask = torch.tensor([chunk_end],
                                             dtype=torch.int64,
                                             device=self.device)
@@ -1125,7 +1138,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                                                    dtype=torch.int64,
                                                    device=self.device)
 
-        slot_mapping = torch.tensor([slots], dtype=torch.int64)
+        slot_mapping = torch.tensor([slots], dtype=torch.int64, device=self.device)
 
         model_inputs = SamplingForwardInputs(
             input_tokens=padded_input_tokens,
