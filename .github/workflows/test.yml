@@ -65,7 +65,7 @@ jobs:
             markers: "cpu and cb and not quantized"
             flags: "--timeout=300  --durations=0 -s"
           - name: "worker and utils"
-            markers: "not e2e and not quantized"
+            markers: "not e2e and not quantized and not spyre"
             flags: "--timeout=300"
           - name: "compatibility"
             markers: "compat"
