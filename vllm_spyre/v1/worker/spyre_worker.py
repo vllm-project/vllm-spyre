@@ -432,12 +432,6 @@ class SpyreWorker(WorkerBaseV1):
         logger.info("load model took %.3fs", load_model_total_t)
 
     def _warmup_spyre_dynamic_size(self, special_token_ids):
-        # this setting is required to mark a dimension of size 1 as dynamic
-        # for pytorch >= 2.7.1 (needed to support batch size 1 for decodes)
-
-        from torch.fx.experimental import _config as config
-        config.backed_size_oblivious = True
-
         warmup_start_t = time.time()
 
         # satisfy mypy
@@ -672,6 +666,11 @@ class SpyreWorker(WorkerBaseV1):
         prompt_len: int,
         valid_token_ids_tensor: torch.Tensor,
     ) -> None:
+        # this setting is required to mark a dimension of size 1 as dynamic
+        # for pytorch >= 2.7.1 (needed to support batch size 1 for decodes)
+        # NB: this setting is disabled at the end of this function
+        from torch.fx.experimental import _config as config
+        config.backed_size_oblivious = True
 
         # TODO: because of FP8 we are doing warmup with bs=2 again.
         # Once we figure it out this limitation we should revert this to
@@ -733,6 +732,9 @@ class SpyreWorker(WorkerBaseV1):
         logger.info("[WARMUP] Decode...")
         self.execute_model(scheduler_output)
         self._cleanup_model_runner(request=requests)
+
+        # only set this for model compilation
+        config.backed_size_oblivious = False
 
     def _warmup_model_forward_pass(
         self,
