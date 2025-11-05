@@ -445,7 +445,6 @@ class ContinuousBatchingFmsModel(FmsModelBase):
 
             # same for all chunks
             left_padded_prompt_mask = torch.nonzero(input_ids[0])[0]
-            last_chunk_tkv_mask = torch.nonzero(input_ids[0])[-1] + 1
 
             chunk_size = envs_spyre.VLLM_SPYRE_PREFILL_CHUNK_SIZE
             for i in range(math.ceil(input_ids.shape[1] / chunk_size)):
@@ -454,8 +453,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
 
                 input_ids_chunk = input_ids[:, chunk_start:chunk_end]
                 position_ids_chunk = position_ids[:, chunk_start:chunk_end]
-                tkv_mask_chunk = min(last_chunk_tkv_mask,
-                                     torch.tensor([chunk_end]))
+                tkv_mask_chunk = torch.tensor([chunk_end])
                 block_table_chunk = attn_metadata.block_table[:, :i + 1]
                 slot_mapping_chunk = attn_metadata.slot_mapping[:, chunk_start:
                                                                 chunk_end]
