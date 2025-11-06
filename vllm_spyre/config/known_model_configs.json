@@ -1,0 +1,48 @@
+{
+  "BAAI/bge-reranker-large": {
+    "architectures": ["XLMRobertaForSequenceClassification"],
+    "model_type": "xlm-roberta",
+    "max_position_embeddings": 514,
+    "num_hidden_layers": 24,
+    "vocab_size": 250002
+  },
+  "BAAI/bge-reranker-v2-m3": {
+    "model_type": "xlm-roberta",
+    "max_position_embeddings": 8194,
+    "num_hidden_layers": 24,
+    "vocab_size": 250002
+  },
+  "ibm-granite/granite-3.3-8b-instruct": {
+    "model_type": "granite",
+    "vocab_size": 49159
+  },
+  "ibm-granite/granite-3.3-8b-instruct-FP8": {
+    "model_type": "granite",
+    "vocab_size": 49159,
+    "quantization_config": {
+      "format": "float-quantized"
+    }
+  },
+  "ibm-granite/granite-embedding-125m-english": {
+    "model_type": "roberta",
+    "gradient_checkpointing": false,
+    "num_hidden_layers": 12,
+    "vocab_size": 50265
+  },
+  "ibm-granite/granite-embedding-278m-multilingual": {
+    "model_type": "xlm-roberta",
+    "num_hidden_layers": 12,
+    "vocab_size": 250002
+  },
+  "sentence-transformers/all-roberta-large-v1": {
+    "model_type": "roberta",
+    "num_hidden_layers": 24,
+    "vocab_size": 50265
+  },
+  "intfloat/multilingual-e5-large": {
+    "architectures": ["XLMRobertaModel"],
+    "model_type": "xlm-roberta",
+    "num_hidden_layers": 24,
+    "vocab_size": 250002
+  }
+}

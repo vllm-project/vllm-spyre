@@ -125,6 +125,7 @@ exclude = [
 
 [tool.codespell]
 ignore-words-list = "dout, te, indicies, subtile, ElementE"
+skip = "*.svg"
 #skip = "./tests/models/fixtures,./tests/prompts,./benchmarks/sonnet.txt,./tests/lora/data,./build"
 
 [tool.isort]
@@ -170,7 +171,7 @@ dev = [
     "pytest-timeout==2.3.1",
     "requests==2.32.3",
     "sentence-transformers==3.4.1",
-    "aiu-fms-testing-utils>=0.4.0",
+    "aiu-fms-testing-utils>=0.4.3",
 ]
 lint = [
     "clang-format==18.1.5",

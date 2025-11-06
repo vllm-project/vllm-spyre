@@ -231,6 +231,23 @@ class SpyrePlatform(Platform):
                 envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO,
                 envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO)
 
+        # Compare requested runtime configuration with supported configurations
+        # Don't use top-level import to avoid circular import error
+        from vllm_spyre.config.runtime_config_validator import (
+            validate_runtime_configuration)
+
+        warmup_shape_tuples = [
+            (ws['prompt_length'], ws['new_tokens'], ws['batch_size'])
+            for ws in cls._warmup_shapes
+        ] if cls._warmup_shapes and not envs_spyre.VLLM_SPYRE_USE_CB else None
+
+        validate_runtime_configuration(
+            model_config=model_config,
+            tp_size=parallel_config.tensor_parallel_size,
+            max_model_len=model_config.max_model_len,
+            max_num_seqs=scheduler_config.max_num_seqs,
+            warmup_shapes=warmup_shape_tuples)
+
         handle_disable_compilation(vllm_config, is_decoder)
 
     @classmethod
