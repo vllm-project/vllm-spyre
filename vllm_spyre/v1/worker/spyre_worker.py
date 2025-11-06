@@ -103,6 +103,17 @@ def _maybe_warmup_context(limit: int, world_size: int, rank: int):
         _inside_warmup_mode = False
 
 
+@contextlib.contextmanager
+def use_torch_fx_backed_size_oblivious():
+    # this setting is required to mark a dimension of size 1 as dynamic
+    # for pytorch >= 2.7.1 (needed to support batch size 1 for decodes)
+    # NB: this setting is disabled at the end of this function
+    from torch.fx.experimental import _config as config
+    config.backed_size_oblivious = True
+    yield
+    config.backed_size_oblivious = False
+
+
 class SpyreWorker(WorkerBaseV1):
     """A worker class that executes the model on a group of Spyre cores.
     """
@@ -432,12 +443,6 @@ class SpyreWorker(WorkerBaseV1):
         logger.info("load model took %.3fs", load_model_total_t)
 
     def _warmup_spyre_dynamic_size(self, special_token_ids):
-        # this setting is required to mark a dimension of size 1 as dynamic
-        # for pytorch >= 2.7.1 (needed to support batch size 1 for decodes)
-
-        from torch.fx.experimental import _config as config
-        config.backed_size_oblivious = True
-
         warmup_start_t = time.time()
 
         # satisfy mypy
@@ -491,6 +496,21 @@ class SpyreWorker(WorkerBaseV1):
         # one additional prefill to deploy the compiled program to the device,
         # the necessary operations are included in the graph and will be removed
         # after this execution
+
+        # update sampling_params here to ensure logits processing code is also
+        # compiled during warmup
+        deploy_req.sampling_params = SamplingParams(
+            temperature=1.0,
+            top_k=10,
+            top_p=0.9,
+            min_p=0.9,
+            presence_penalty=0.5,
+            frequency_penalty=0.5,
+            repetition_penalty=1.2,
+            max_tokens=4,
+            min_tokens=1,
+            logprobs=1,
+        )
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=[deploy_req],
             scheduled_cached_reqs=CachedRequestData.make_empty(),
@@ -651,6 +671,7 @@ class SpyreWorker(WorkerBaseV1):
             num_decode_tokens, warmup_total_t, compile_cache_str)
         maybe_override_signals_handler()
 
+    @use_torch_fx_backed_size_oblivious()
     def _dynamic_warmup(
         self,
         requests: list[NewRequestData],
