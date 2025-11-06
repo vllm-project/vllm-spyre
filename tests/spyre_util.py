@@ -213,6 +213,25 @@ def get_spyre_backend_list():
     return backends
 
 
+def get_spyre_cb_param(use_cb=False):
+    """Returns a list of pytest.params with cb set to True or both"""
+    if use_cb:
+        return [pytest.param(1, marks=pytest.mark.cb, id="cb")]
+    return [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0]
+
+
+def get_spyre_tp_size(num_tp=None):
+    """Returns a list of pytest.params with one or multiple tp sizes"""
+    if num_tp and num_tp > 1:
+        return [pytest.param(num_tp, marks=pytest.mark.multi)]
+    return [
+        pytest.param(1),
+        pytest.param(2, marks=pytest.mark.multi),
+        pytest.param(4, marks=pytest.mark.multi),
+        pytest.param(8, marks=pytest.mark.multi),
+    ]
+
+
 # get model names from env, if not set then use default models for each type.
 # Multiple models can be specified with a comma separated list in
 # VLLM_SPYRE_TEST_MODEL_LIST
