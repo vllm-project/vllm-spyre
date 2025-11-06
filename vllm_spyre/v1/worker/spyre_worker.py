@@ -36,8 +36,8 @@ from vllm_spyre.compat_utils import dataclass_fields
 from vllm_spyre.model_executor.model_loader import spyre_setup
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import (
-    ContinuousBatchingSpyreModelRunner, SpyrePoolingModelRunner,
-    StaticBatchingSpyreModelRunner, SupportedTask, ChunkedPrefillModelRunner)
+    ChunkedPrefillModelRunner, ContinuousBatchingSpyreModelRunner,
+    SpyrePoolingModelRunner, StaticBatchingSpyreModelRunner, SupportedTask)
 
 logger = init_logger(__name__)
 
