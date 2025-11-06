@@ -37,7 +37,7 @@ from vllm_spyre.model_executor.model_loader import spyre_setup
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import (
     ContinuousBatchingSpyreModelRunner, SpyrePoolingModelRunner,
-    StaticBatchingSpyreModelRunner, SupportedTask)
+    StaticBatchingSpyreModelRunner, SupportedTask, ChunkedPrefillModelRunner)
 
 logger = init_logger(__name__)
 
@@ -239,14 +239,20 @@ class SpyreWorker(WorkerBaseV1):
             init_cached_hf_modules()
         self.model_runner: \
             Union[StaticBatchingSpyreModelRunner,
-                  ContinuousBatchingSpyreModelRunner, SpyrePoolingModelRunner]
+                  ContinuousBatchingSpyreModelRunner,
+                  ChunkedPrefillModelRunner,
+                  SpyrePoolingModelRunner]
         if self.is_pooling:
             self.model_runner = SpyrePoolingModelRunner(
                 self.vllm_config, self.is_driver_worker, self.rank)
             self.spyre_warmup_shapes = SpyrePlatform.get_warmup_shapes(
                 self.vllm_config.scheduler_config)
         else:
-            if envs_spyre.VLLM_SPYRE_USE_CB:
+            if envs_spyre.VLLM_SPYRE_USE_CB and \
+                envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
+                self.model_runner = ChunkedPrefillModelRunner(
+                    self.vllm_config, self.is_driver_worker, self.rank)
+            elif envs_spyre.VLLM_SPYRE_USE_CB:
                 self.model_runner = ContinuousBatchingSpyreModelRunner(
                     self.vllm_config, self.is_driver_worker, self.rank)
             else:
