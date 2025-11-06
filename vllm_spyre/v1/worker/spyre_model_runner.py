@@ -1762,6 +1762,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         prompt_token_ids = request.prompt_token_ids
 
         chunk_size = self.scheduler_config.max_num_batched_tokens
+        chunk_blocks = chunk_size // self.block_size
         num_computed_tokens = request.num_computed_tokens
         # basic check, if the computed tokens is divisible by the
         # chunk size
@@ -1794,11 +1795,26 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         block_table = torch.tensor(blocks[:block_end],
                                    dtype=torch.int64).unsqueeze(0)
         
-        slot_mapping = torch.tensor(
+        slot_mapping2 = torch.tensor(
             request.prefill_slot_mapping[chunk_start:chunk_start + chunk_size],
             dtype=torch.int64,
             device=self.device).unsqueeze(0)
-
+        
+        slot_mapping = []
+        for i in range(chunk_blocks):
+            block = block_table[0][-chunk_blocks + i]
+            slot_mapping += list(
+                range(block * self.block_size, 
+                      block * self.block_size + self.block_size))
+        slot_mapping = torch.tensor(slot_mapping, 
+                                    device=self.device, 
+                                    dtype=torch.int64).unsqueeze(0)
+        # slot_mapping = torch.tensor(
+        #     request.prefill_slot_mapping[chunk_start:chunk_start + chunk_size],
+        #     dtype=torch.int64,
+        #     device=self.device).unsqueeze(0)
+        print(slot_mapping)
+        print(slot_mapping2)
 
         left_pad_blocks_offset = 0 if left_padding == 0 else chunk_size - left_padding
         
@@ -1809,9 +1825,11 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         elif left_padding > 0 and num_computed_tokens == 0:
             # Case II - First chunk but it contains some left blocks at the left
             input_tokens_np[
-                left_padding:left_padding+left_pad_blocks_offset] = prompt_token_ids[:left_pad_blocks_offset]
+                left_padding:left_padding+left_pad_blocks_offset] = \
+                    prompt_token_ids[:left_pad_blocks_offset]
             input_positions_np[
-                left_padding:left_padding+left_pad_blocks_offset] = range(left_pad_blocks_offset)
+                left_padding:left_padding+left_pad_blocks_offset] = \
+                    range(left_pad_blocks_offset)
         else:
             # Case III - (Almost) Happy default case
             # - Chunks at full size, even if it is the first
