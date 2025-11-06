@@ -103,6 +103,17 @@ def _maybe_warmup_context(limit: int, world_size: int, rank: int):
         _inside_warmup_mode = False
 
 
+@contextlib.contextmanager
+def use_torch_fx_backed_size_oblivious():
+    # this setting is required to mark a dimension of size 1 as dynamic
+    # for pytorch >= 2.7.1 (needed to support batch size 1 for decodes)
+    # NB: this setting is disabled at the end of this function
+    from torch.fx.experimental import _config as config
+    config.backed_size_oblivious = True
+    yield
+    config.backed_size_oblivious = False
+
+
 class SpyreWorker(WorkerBaseV1):
     """A worker class that executes the model on a group of Spyre cores.
     """
@@ -660,17 +671,13 @@ class SpyreWorker(WorkerBaseV1):
             num_decode_tokens, warmup_total_t, compile_cache_str)
         maybe_override_signals_handler()
 
+    @use_torch_fx_backed_size_oblivious()
     def _dynamic_warmup(
         self,
         requests: list[NewRequestData],
         prompt_len: int,
         valid_token_ids_tensor: torch.Tensor,
     ) -> None:
-        # this setting is required to mark a dimension of size 1 as dynamic
-        # for pytorch >= 2.7.1 (needed to support batch size 1 for decodes)
-        # NB: this setting is disabled at the end of this function
-        from torch.fx.experimental import _config as config
-        config.backed_size_oblivious = True
 
         # TODO: because of FP8 we are doing warmup with bs=2 again.
         # Once we figure it out this limitation we should revert this to
@@ -732,9 +739,6 @@ class SpyreWorker(WorkerBaseV1):
         logger.info("[WARMUP] Decode...")
         self.execute_model(scheduler_output)
         self._cleanup_model_runner(request=requests)
-
-        # only set this for model compilation
-        config.backed_size_oblivious = False
 
     def _warmup_model_forward_pass(
         self,
