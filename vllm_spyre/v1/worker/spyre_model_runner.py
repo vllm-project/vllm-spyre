@@ -1779,7 +1779,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                      req_id, chunk_start, chunk_end, prompt_len)
 
         padded_prompt_tokens = request.padded_prompt_tokens
-        input_tokens = torch.ones(chunk_size, 
+        input_tokens = torch.zeros(chunk_size, 
                                    dtype=torch.int64, 
                                    device=self.device)
         input_tokens_np = input_tokens.numpy()
@@ -1788,7 +1788,17 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                                    device=self.device)
         input_positions_np = input_positions.numpy()
         
+        # create block table tensor
+        blocks = list(self.req_ids2blocks[req_id])
+        block_end = math.ceil((chunk_start + chunk_size) / self.block_size)
+        block_table = torch.tensor(blocks[:block_end],
+                                   dtype=torch.int64).unsqueeze(0)
         
+        slot_mapping = torch.tensor(
+            request.prefill_slot_mapping[chunk_start:chunk_start + chunk_size],
+            dtype=torch.int64,
+            device=self.device).unsqueeze(0)
+
 
         left_pad_blocks_offset = 0 if left_padding == 0 else chunk_size - left_padding
         
@@ -1856,17 +1866,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                                         dtype=torch.int64,
                                         device=self.device)
 
-        slot_mapping = torch.tensor(
-            request.prefill_slot_mapping[chunk_start:chunk_start + chunk_size],
-            dtype=torch.int64,
-            device=self.device).unsqueeze(0)
-
-        # create block table tensor
-        blocks = list(self.req_ids2blocks[req_id])
-        block_end = math.ceil((chunk_start + chunk_size) / self.block_size)
-        block_table = torch.tensor(blocks[:block_end],
-                                   dtype=torch.int64).unsqueeze(0)
-
+        
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
             input_positions=input_positions,
