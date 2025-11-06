@@ -1772,6 +1772,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         chunk_start = num_computed_tokens
 
         chunk_end = min(prompt_len, num_computed_tokens + chunk_size)
+        chunk_i = num_computed_tokens // chunk_size
         # left_padding = 0
         # if prompt_len < chunk_size:
         #     left_padding = math.ceil(prompt_len / )
@@ -1781,7 +1782,41 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                      req_id, chunk_start, chunk_end, prompt_len)
 
         padded_prompt_tokens = request.padded_prompt_tokens
-        input_tokens = padded_prompt_tokens[chunk_start:chunk_start +
+        input_tokens = torch.zeros(chunk_size, 
+                                   dtype=torch.int64, 
+                                   device=self.device)
+        input_tokens_np = input_tokens.numpy()
+        input_positions = torch.zeros(chunk_size, 
+                                   dtype=torch.int64, 
+                                   device=self.device)
+        input_positions_np = input_positions.numpy()
+        
+        
+
+        left_pad_blocks_offset = 0 if left_padding == 0 else chunk_size - left_padding
+        
+        if prompt_len < chunk_size and num_computed_tokens == 0:
+            # First chunk less than chunk size
+            input_tokens_np[left_padding:left_padding+chunk_end] = prompt_token_ids
+            input_positions_np[left_padding:left_padding+chunk_end] = range(prompt_len)
+        elif left_padding > 0 and num_computed_tokens == 0:
+            # First chunk but it contains some left blocks at the left
+            input_tokens_np[
+                left_padding:left_padding+left_pad_blocks_offset] = prompt_token_ids[:left_pad_blocks_offset]
+            input_positions_np[
+                left_padding:left_padding+left_pad_blocks_offset] = range(left_pad_blocks_offset)
+        else:
+            # Happy default case
+
+            token_idx = left_pad_blocks_offset + (chunk_i - 1) * chunk_size
+            input_tokens_np[:chunk_end-token_idx] = (
+                prompt_token_ids[token_idx:min(token_idx + chunk_size, prompt_len)])
+            input_positions_np[:chunk_end-token_idx] = range(token_idx, chunk_end)
+
+
+        input_tokens = input_tokens.unsqueeze(0).clone()
+        input_positions = input_positions.unsqueeze(0).clone()
+        input_tokens2 = padded_prompt_tokens[chunk_start:chunk_start +
                                             chunk_size].unsqueeze(0).clone()
 
         n = math.ceil(prompt_len / chunk_size) * chunk_size
@@ -1790,12 +1825,13 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         padded_input_pos_np[left_padding:left_padding+prompt_len] = \
             range(prompt_len)
 
-        # input_positions = torch.arange(start=chunk_start,
-        #                                end=chunk_start+chunk_size,
-        #                                dtype=torch.int64,
-        #                                device=self.device).unsqueeze(0)
-        input_positions = padded_input_pos[chunk_start:chunk_start +
+        input_positions2 = padded_input_pos[chunk_start:chunk_start +
                                            chunk_size].unsqueeze(0).clone()
+        
+        print('input_tokens', input_tokens)
+        print('input_tokens2', input_tokens2)
+        print('input_positions', input_positions)
+        print('input_positions2', input_positions2)
 
         left_padded_prompt_mask = torch.tensor([left_padding],
                                                dtype=torch.int64,
