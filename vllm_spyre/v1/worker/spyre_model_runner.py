@@ -379,9 +379,11 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
             num_new_tokens = (num_computed_tokens + len(new_token_ids) -
                               req_state.num_tokens)
             if num_new_tokens == 1:
+                raise AssertionError("NO PP!")
                 # Avoid slicing list in most common case.
                 req_state.output_token_ids.append(new_token_ids[-1])
             elif num_new_tokens > 0:
+                raise AssertionError("NO PP!")
                 req_state.output_token_ids.extend(
                     new_token_ids[-num_new_tokens:])
 

@@ -152,6 +152,7 @@ class EngineCache:
         max_model_len: int,
         max_num_seqs: int,
         available_blocks: int,
+        chunk_size: int,
         backend: str,
         monkeypatch,
     ) -> EngineCore:
@@ -160,13 +161,19 @@ class EngineCache:
             "max_model_len": max_model_len,
             "max_num_seqs": max_num_seqs,
             "available_blocks": available_blocks,
+            "chunk_size": chunk_size,
         }
 
         # Always patch the environment so that it's consistent with the engine
+        if chunk_size is not None and chunk_size > 0:
+            use_chunked_prefill = True
+        else:
+            use_chunked_prefill = False
         patch_environment(use_cb=True,
                           warmup_shapes=None,
                           backend=backend,
-                          monkeypatch=monkeypatch)
+                          monkeypatch=monkeypatch,
+                          use_chunked_prefill=use_chunked_prefill)
 
         maybe_engine = self._cache.maybe_get(runtime_config)
         if maybe_engine:
@@ -200,7 +207,8 @@ class EngineCache:
                                  max_model_len=max(max_model_len, 512),
                                  max_num_seqs=max_num_seqs_compiled,
                                  num_gpu_blocks_override=None,
-                                 logits_processors=[GoldenTokenInjector])
+                                 logits_processors=[GoldenTokenInjector],
+                                 max_num_batched_tokens=chunk_size)
         vllm_config = engine_args.create_engine_config()
         executor_class = Executor.get_class(vllm_config)
 
@@ -322,23 +330,26 @@ def print_llm_cache_info():
     print("\n-------------------------\n")
 
 
-def get_cached_engine(
-    model: str,
-    max_model_len: int,
-    max_num_seqs: int,
-    available_blocks: int,
-    backend: str,
-    monkeypatch,
-) -> EngineCore:
+def get_cached_engine(model: str,
+                      max_model_len: int,
+                      max_num_seqs: int,
+                      available_blocks: int,
+                      backend: str,
+                      monkeypatch,
+                      chunk_size: int | None = None) -> EngineCore:
     # Clear other caches first
     LLM_CACHE.clear()
     API_SERVER_CACHE.clear()
 
-    return ENGINE_CACHE.get_engine(
+    engine = ENGINE_CACHE.get_engine(
         model=model,
         max_model_len=max_model_len,
         max_num_seqs=max_num_seqs,
         available_blocks=available_blocks,
+        chunk_size=chunk_size,
         backend=backend,
         monkeypatch=monkeypatch,
     )
+
+    # TODO: clean up any remaining requests from previous failed tests
+    return engine
