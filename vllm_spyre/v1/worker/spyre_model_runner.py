@@ -1884,7 +1884,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                                         dtype=torch.int64,
                                         device=self.device)
 
-        
+        self.model.n_pads_right = self.block_size - current_tkv % self.block_size - 1
+        self.model.indices = torch.ones(1, dtype=torch.bool, device='cpu')
+
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
             input_positions=input_positions,
@@ -1895,6 +1897,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             is_prompt=True,
             scale_indices=self.input_batch.request_indices)
 
+        print(model_inputs)
         self._mark_input_tensors(model_inputs)
 
         return model_inputs
