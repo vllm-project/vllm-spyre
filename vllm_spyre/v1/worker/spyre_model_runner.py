@@ -1872,7 +1872,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         # So we have to match this padding with the tkv of this chunk
         # being prefilled.
         # `((request_tkv -1) % self.block_size) + 1`: gives us the tkv offset
-        # removing all the left blocks
+        # removing all the left blocks. Reminder: this tkv must be in the range
+        # [1, block_size]
+        #
         # `self.block_size - `: will just flip the index to get it as
         # negative index
         self.model.n_pads_right = self.block_size - ((
@@ -1950,15 +1952,12 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         # Include dummy slots and blocks for the left pad blocks
         blocks = [0] * (left_padding // self.block_size)
-        slots = [0] * left_padding
 
         for pos_i in range(padded_prompt):
             if pos_i % self.block_size == 0:
                 block_number = self.block_pool.popleft()
                 blocks.append(block_number)
             block_offset = pos_i % self.block_size
-            slot = block_number * self.block_size + block_offset
-            slots.append(slot)
         self.req_ids2blocks[req_id] = deque(blocks)
 
         # Add new request to the cached states.
@@ -1975,7 +1974,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             generator=generator,
             output_token_ids=[],
             left_padding=left_padding,
-            prefill_slot_mapping=slots,
         )
 
         self.requests[req_id] = req_state
