@@ -1953,11 +1953,10 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         # Include dummy slots and blocks for the left pad blocks
         blocks = [0] * (left_padding // self.block_size)
 
-        for pos_i in range(padded_prompt):
-            if pos_i % self.block_size == 0:
-                block_number = self.block_pool.popleft()
-                blocks.append(block_number)
-            block_offset = pos_i % self.block_size
+        blocks += [
+            self.block_pool.popleft()
+            for _ in range(padded_prompt // self.block_size)
+        ]
         self.req_ids2blocks[req_id] = deque(blocks)
 
         # Add new request to the cached states.

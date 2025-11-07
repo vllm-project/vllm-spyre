@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 from llm_cache import get_cached_llm
 from pytest_mock.plugin import MockerFixture
-from spyre_util import ModelInfo, get_chicken_soup_prompts
+from spyre_util import ModelInfo
 from vllm import LLM, SamplingParams
 
 CHUNK_SIZE = 128
@@ -79,4 +79,3 @@ def test_prepare_chunked_prefill_called(model: ModelInfo, backend: str,
     spy.assert_called()
 
     assert spy.call_count == 2
-
