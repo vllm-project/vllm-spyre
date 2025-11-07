@@ -1891,7 +1891,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             is_prompt=True,
             scale_indices=self.input_batch.request_indices)
 
-        print(model_inputs)
         self._mark_input_tensors(model_inputs)
 
         return model_inputs
