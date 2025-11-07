@@ -3,6 +3,7 @@
 Run `python -m pytest tests/e2e/test_spyre_basic.py`.
 """
 
+from typing import cast
 from unittest.mock import patch
 
 import pytest
@@ -10,10 +11,10 @@ from llm_cache import get_cached_llm
 from output_util import (compare_results, extract_output, generate_hf_output,
                          setup_golden_token)
 from pytest_mock.plugin import MockerFixture
-from spyre_util import ModelInfo
+from spyre_util import ModelInfo, get_longer_chicken_soup_prompts
 from vllm import LLM, SamplingParams
 
-CHUNK_SIZE = 128
+from vllm_spyre.v1.worker.spyre_model_runner import SamplingForwardInputs
 
 
 def get_model_runner(cp_model: LLM):
@@ -22,38 +23,42 @@ def get_model_runner(cp_model: LLM):
             driver_worker.worker.model_runner
 
 
+chicken_soup_prompt = get_longer_chicken_soup_prompts(4)
+
+# Should have 95 tokens
+prompt_0 = chicken_soup_prompt[0]
+# Should have 169 tokens
+prompt_01 = chicken_soup_prompt[0] + chicken_soup_prompt[1]
+# Should have 251
+prompt_012 = chicken_soup_prompt[0] + chicken_soup_prompt[
+    1] + chicken_soup_prompt[2]
+
+# (prompt, chunk size, expected_chunks_count)
+USE_CASES = {
+    # Case I - Prompt fits in a single chunk
+    "case_I": (prompt_0, 128, 1, 0),
+    # Case II and III - Needs has left pads
+    "case_II": (prompt_01, 128, 2, 64),
+    # Case III again - no padding
+    "case_III": (prompt_012, 128, 2, 0),
+}
+
+
 @pytest.mark.cb
-def test__chunked_prefill_correctness(model: ModelInfo, backend: str,
-                                      max_num_seqs: int, max_model_len: int,
-                                      monkeypatch: pytest.MonkeyPatch,
-                                      mocker: MockerFixture,
-                                      use_llm_cache) -> None:
+@pytest.mark.parametrize("use_case", list(USE_CASES.keys()))
+def test_chunked_prefill_correctness(model: ModelInfo, backend: str,
+                                     max_num_seqs: int, max_model_len: int,
+                                     monkeypatch: pytest.MonkeyPatch,
+                                     mocker: MockerFixture, use_case: str,
+                                     use_llm_cache) -> None:
     """
     Minimal test to check if vllm-spyre activate code for chunked prefill for
     a prompt greater than the chunk size
     """
 
-    # This should have ~167 tokens, Needs 2 prefills for 128 chunk size
-    prompt = \
-     ("Lorem ipsum dolor sit amet, consectetur"
-     "adipiscing elit, sed do eiusmod tempor incididunt ut labore"
-     "et dolore magna aliqua. Ut enim ad minim veniam,"
-     "quis nostrud exercitation ullamco laboris nisi ut"
-     "aliquip ex ea commodo consequat. Duis aute irure dolor"
-     "in reprehenderit in voluptate velit esse cillum"
-     "dolore eu fugiat nulla pariatur. Excepteur sint"
-     "occaecat cupidatat non proident, sunt in culpa qui"
-     "officia deserunt mollit anim id est laborum.Lorem ipsum"
-     "dolor sit amet, consectetur adipiscing elit, sed do"
-     "eiusmod tempor incididunt ut labore et dolore magna"
-     "aliqua. Ut enim ad minim veniam, quis nostrud"
-     "exercitation ullamco laboris nisi ut aliquip ex ea commodo"
-     "consequat. Duis aute irure dolor in reprehenderit in"
-     "voluptate velit esse cillum dolore eu fugiat nulla"
-     "pariatur. Excepteur sint occaecat cupidatat non proident,"
-     "sunt in culpa qui officia deserunt mollit anim id est"
-     "laborum.")
 
+    (prompt, chunk_size, expected_chunk_count, expected_left_padding) =\
+          USE_CASES[use_case]
     max_new_tokens = 8
 
     hf_outputs = generate_hf_output(
@@ -73,7 +78,7 @@ def test__chunked_prefill_correctness(model: ModelInfo, backend: str,
                               monkeypatch=monkeypatch,
                               max_num_seqs=max_num_seqs,
                               use_cb=True,
-                              max_num_batched_tokens=CHUNK_SIZE)
+                              max_num_batched_tokens=chunk_size)
     model_runner = get_model_runner(cp_model)
 
     sampling_params = SamplingParams(max_tokens=max_new_tokens,
@@ -83,15 +88,29 @@ def test__chunked_prefill_correctness(model: ModelInfo, backend: str,
     gti_sampling_params = setup_golden_token(model, sampling_params,
                                              hf_outputs)
 
-    with patch.object(model_runner,
-                      "_prepare_chunked_prefill",
-                      wraps=model_runner._prepare_chunked_prefill) as spy:
+    _prepare_chunked_prefill = model_runner._prepare_chunked_prefill
+    records = []
+
+    def wrapper(self, *args, **kwargs):
+        model_input = \
+            _prepare_chunked_prefill(self, *args, **kwargs)
+        records.append(model_input)
+        return model_input
+
+    with patch.object(model_runner, "_prepare_chunked_prefill",
+                      wraps=wrapper) as spy:
         results = cp_model.generate(prompt, gti_sampling_params)
         vllm_results = [extract_output(results[0])]
 
+        for r in records:
+            model_input = cast(SamplingForwardInputs, r)
+            # Must be a single one value
+            left_padding = model_input.left_padded_prompt_mask[0].item()
+            assert left_padding == expected_left_padding
+
     # Validate if the prefill was chunked
     spy.assert_called()
-    assert spy.call_count == 2
+    assert spy.call_count == expected_chunk_count
 
     # Validate output
     compare_results(model=model,

@@ -1806,7 +1806,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             else chunk_size - left_padding
 
         if prompt_len < chunk_size and num_computed_tokens == 0:
-            # Case I - First chunk and it is less than the chunk size
+            # Case I - Prompt fits in a single chunk
             input_tokens_np[left_padding:left_padding +
                             chunk_end] = prompt_token_ids
             input_positions_np[left_padding:left_padding +
