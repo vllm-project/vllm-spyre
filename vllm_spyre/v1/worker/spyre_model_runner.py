@@ -670,7 +670,6 @@ class StaticBatchingSpyreModelRunner(WarmupShapesMixin, SpyreModelRunner):
             req_state = SamplingRequestState(
                 req_id=req_id,
                 prompt_token_ids=request_data.prompt_token_ids,
-                padded_prompt_tokens=request_data.prompt_token_ids,
                 sampling_params=sampling_params,
                 generator=generator,
                 output_token_ids=[],
@@ -1008,7 +1007,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         req_state = SamplingRequestState(req_id=req_id,
                                          prompt_token_ids=prompt_token_ids,
-                                         padded_prompt_tokens=prompt_token_ids,
                                          sampling_params=sampling_params,
                                          generator=generator,
                                          output_token_ids=[],
@@ -1779,47 +1777,40 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         logger.debug("Chunked prefill of request %s %d:%d of %d tokens",
                      req_id, chunk_start, chunk_end, prompt_len)
 
-        padded_prompt_tokens = request.padded_prompt_tokens
-        input_tokens = torch.zeros(chunk_size, 
-                                   dtype=torch.int64, 
+        input_tokens = torch.zeros(chunk_size,
+                                   dtype=torch.int64,
                                    device=self.device)
         input_tokens_np = input_tokens.numpy()
-        input_positions = torch.zeros(chunk_size, 
-                                   dtype=torch.int64, 
-                                   device=self.device)
+        input_positions = torch.zeros(chunk_size,
+                                      dtype=torch.int64,
+                                      device=self.device)
         input_positions_np = input_positions.numpy()
-        
+
         # create block table tensor
         blocks = list(self.req_ids2blocks[req_id])
         block_end = math.ceil((chunk_start + chunk_size) / self.block_size)
         block_table = torch.tensor(blocks[:block_end],
                                    dtype=torch.int64).unsqueeze(0)
-        
-        slot_mapping2 = torch.tensor(
-            request.prefill_slot_mapping[chunk_start:chunk_start + chunk_size],
-            dtype=torch.int64,
-            device=self.device).unsqueeze(0)
-        
+
         slot_mapping = []
         for i in range(chunk_blocks):
             block = block_table[0][-chunk_blocks + i]
             slot_mapping += list(
-                range(block * self.block_size, 
+                range(block * self.block_size,
                       block * self.block_size + self.block_size))
-        slot_mapping = torch.tensor(slot_mapping, 
-                                    device=self.device, 
+        slot_mapping = torch.tensor(slot_mapping,
+                                    device=self.device,
                                     dtype=torch.int64).unsqueeze(0)
-        # slot_mapping = torch.tensor(
-        #     request.prefill_slot_mapping[chunk_start:chunk_start + chunk_size],
-        #     dtype=torch.int64,
-        #     device=self.device).unsqueeze(0)
 
-        left_pad_blocks_offset = 0 if left_padding == 0 else chunk_size - left_padding
-        
+        left_pad_blocks_offset = 0 if left_padding == 0 \
+            else chunk_size - left_padding
+
         if prompt_len < chunk_size and num_computed_tokens == 0:
             # Case I - First chunk and it is less than the chunk size
-            input_tokens_np[left_padding:left_padding+chunk_end] = prompt_token_ids
-            input_positions_np[left_padding:left_padding+chunk_end] = range(prompt_len)
+            input_tokens_np[left_padding:left_padding +
+                            chunk_end] = prompt_token_ids
+            input_positions_np[left_padding:left_padding +
+                               chunk_end] = range(prompt_len)
         elif left_padding > 0 and num_computed_tokens == 0:
             # Case II - First chunk but it contains some left blocks at the left
             input_tokens_np[
@@ -1835,55 +1826,35 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             # - Subsequent chunks after Case II
 
             # The `token_idx` is the offset of the chunking in the prompt,
-            # because we can have left pad blocks, we may not slice it with 
+            # because we can have left pad blocks, we may not slice it with
             # the exact size of the chunk
             if left_padding == 0:
                 # No left padding, it will start with full chunks
                 token_idx = chunk_i * chunk_size
             else:
                 # The `left_pad_blocks_offset` is a piece of a incomplete chunk
-                # We handled the first chunk in Case II, the following is the 
+                # We handled the first chunk in Case II, the following is the
                 # sum of size of chunks and the incomplete chunk
                 token_idx = left_pad_blocks_offset + (chunk_i - 1) * chunk_size
 
-            input_tokens_np[:chunk_end-token_idx] = (
-                prompt_token_ids[token_idx:min(token_idx + chunk_size, prompt_len)])
-            input_positions_np[:chunk_end-token_idx] = range(token_idx, chunk_end)
-
+            input_tokens_np[:chunk_end - token_idx] = (
+                prompt_token_ids[token_idx:min(token_idx +
+                                               chunk_size, prompt_len)])
+            input_positions_np[:chunk_end - token_idx] = range(
+                token_idx, chunk_end)
 
         input_tokens = input_tokens.unsqueeze(0).clone()
         input_positions = input_positions.unsqueeze(0).clone()
-        input_tokens2 = padded_prompt_tokens[chunk_start:chunk_start +
-                                            chunk_size].unsqueeze(0).clone()
-
-        n = math.ceil(prompt_len / chunk_size) * chunk_size
-        padded_input_pos = torch.zeros(n, dtype=torch.int64)
-        padded_input_pos_np = padded_input_pos.numpy()
-        padded_input_pos_np[left_padding:left_padding+prompt_len] = \
-            range(prompt_len)
-
-        input_positions2 = padded_input_pos[chunk_start:chunk_start +
-                                           chunk_size].unsqueeze(0).clone()
-        
-        if not torch.all(input_tokens == input_tokens2) or not torch.all(input_positions == input_positions2):
-            
-            print('input_tokens', input_tokens)
-            print('input_tokens2', input_tokens2)
-            print('input_positions', input_positions)
-            print('input_positions2', input_positions2)
-            raise Exception("")
 
         left_padded_prompt_mask = torch.tensor([left_padding],
                                                dtype=torch.int64,
                                                device=self.device)
 
-        
-        
         # NOTE(wallas): Looks like we need to use multiple of blocks for prefill
         # so, later we use model.n_pads_right to get right logits.
-        # In my naive mind this would be the `request_tkv`
+        # In my naive mind this would be the `request_tkv` below,
         # but it gives me incorrect results
-        # 
+        #
         prefill_tkv = num_computed_tokens + chunk_size
         current_tkv_mask = torch.tensor([prefill_tkv],
                                         dtype=torch.int64,
@@ -1892,17 +1863,20 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         request_tkv = min(num_computed_tokens + chunk_size,
                           left_padding + prompt_len)
 
-        # Trick padding: 
-        # In `model_executor/model_loader/spyre.py`: We have this line to get the logits of a prefill:
-        # 
+        # Trick padding:
+        # In `model_executor/model_loader/spyre.py`: We have this line to
+        # get the logits of a prefill:
+        #
         #   logits = logits[self.indices, -self.n_pads_right - 1, :]
-        # 
-        # So we have to match this padding with the tkv of this chunk 
+        #
+        # So we have to match this padding with the tkv of this chunk
         # being prefilled.
-        # `((request_tkv -1) % self.block_size) + 1` gives us the tkv offset removing all the left 
-        # blocks 
-        # `self.block_size - ` will just flip the index to get it as negative index
-        self.model.n_pads_right = self.block_size - (((request_tkv -1) % self.block_size) + 1 )
+        # `((request_tkv -1) % self.block_size) + 1`: gives us the tkv offset
+        # removing all the left blocks
+        # `self.block_size - `: will just flip the index to get it as
+        # negative index
+        self.model.n_pads_right = self.block_size - ((
+            (request_tkv - 1) % self.block_size) + 1)
         self.model.indices = torch.ones(1, dtype=torch.bool, device='cpu')
 
         model_inputs = SamplingForwardInputs(
@@ -1994,22 +1968,15 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         else:
             generator = None
 
-        n = math.ceil(prompt_len / chunk_size) * chunk_size
-        padded_input_tokens = torch.zeros(n, dtype=torch.int64)
-        padded_input_tokens_np = padded_input_tokens.numpy()
-        padded_input_tokens_np[left_padding:left_padding +
-                               prompt_len] = prompt_token_ids
-
         req_state = SamplingRequestState(
             req_id=req_id,
             prompt_token_ids=prompt_token_ids,
-            tkv=self.tkv,
             sampling_params=sampling_params,
             generator=generator,
             output_token_ids=[],
             left_padding=left_padding,
             prefill_slot_mapping=slots,
-            padded_prompt_tokens=padded_input_tokens)
+        )
 
         self.requests[req_id] = req_state
         prefill_index = self.input_batch.add_request(req_state)
