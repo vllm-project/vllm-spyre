@@ -1813,8 +1813,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         #     request.prefill_slot_mapping[chunk_start:chunk_start + chunk_size],
         #     dtype=torch.int64,
         #     device=self.device).unsqueeze(0)
-        print(slot_mapping)
-        print(slot_mapping2)
 
         left_pad_blocks_offset = 0 if left_padding == 0 else chunk_size - left_padding
         
@@ -1847,6 +1845,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                 # We handled the first chunk in Case II, the following is the 
                 # sum of size of chunks and the incomplete chunk
                 token_idx = left_pad_blocks_offset + (chunk_i - 1) * chunk_size
+
             input_tokens_np[:chunk_end-token_idx] = (
                 prompt_token_ids[token_idx:min(token_idx + chunk_size, prompt_len)])
             input_positions_np[:chunk_end-token_idx] = range(token_idx, chunk_end)
@@ -1872,19 +1871,39 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             print('input_tokens2', input_tokens2)
             print('input_positions', input_positions)
             print('input_positions2', input_positions2)
+            raise Exception("")
 
         left_padded_prompt_mask = torch.tensor([left_padding],
                                                dtype=torch.int64,
                                                device=self.device)
 
-        # current_tkv = left_padding + chunk_end
-        current_tkv = min(num_computed_tokens + chunk_size,
-                          left_padding + prompt_len)
+        
+        
+        # NOTE(wallas): Looks like we need to use multiple of blocks for prefill
+        # so, later we use model.n_pads_right to get right logits.
+        # In my naive mind this would be:
+        # current_tkv = min(num_computed_tokens + chunk_size,
+        #                   left_padding + prompt_len)
+        # but it gives me incorrect results
+        # 
+        current_tkv = num_computed_tokens + chunk_size
         current_tkv_mask = torch.tensor([current_tkv],
                                         dtype=torch.int64,
                                         device=self.device)
 
-        self.model.n_pads_right = self.block_size - current_tkv % self.block_size - 1
+        # self.model.n_pads_right = self.block_size - current_tkv % self.block_size - 1
+
+        # Trick padding: 
+        # In `model_executor/model_loader/spyre.py`: We have this line to get the logits of a prefill:
+        # 
+        #   logits = logits[self.indices, -self.n_pads_right - 1, :]
+        # 
+        # So we have to match this padding with the tkv of this chunk 
+        # being prefilled.
+        # `((current_tkv -1) % self.block_size) + 1` gives us the tkv offset removing all the left 
+        # blocks 
+        # `self.block_size - ` will just flip the index to get it as negative index
+        self.model.n_pads_right = self.block_size - (((current_tkv -1) % self.block_size) + 1 )
         self.model.indices = torch.ones(1, dtype=torch.bool, device='cpu')
 
         model_inputs = SamplingForwardInputs(
@@ -1956,10 +1975,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         self.req_ids2reserved_blocks[req_id] = n_reserved_blocks
 
-        # filling block table and slot mapping
-        # Left pads will be included later
+        # Include dummy slots and blocks for the left pad blocks
         blocks = [0] * (left_padding // self.block_size)
-        # Include slots for
         slots = [0] * left_padding
 
         for pos_i in range(padded_prompt):
