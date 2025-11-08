@@ -1750,6 +1750,69 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             "Should not call this method on chunked prefill implementation")
 
     def _prepare_chunked_prefill(self, scheduler_output: SchedulerOutput):
+        '''
+        Cases / Scenarios for the chunked prefill with right padding.
+ 
+
+        X    - Padding
+        T    - Token
+        O    - Right padding / unused slot
+        |    - Blocks separator
+        ||   - Chunks separator
+        ...  - Trimmed sequence
+
+        For the following "drawing" consider blocks of 4 tokens
+        and chunks of 8 tokens
+
+        # Case I
+
+        Prompt fits in the chunk with left padding
+
+        3 tokens
+        1 block
+        1 chunk
+        4 left padding
+
+        X X X X | T T T O || O O O O | O O O O || O O O O | O O O O || ...
+
+        Variation: Prompt fits in the chunk but no left padding needed
+
+        T tokens
+        2 block
+        1 chunk
+        0 left padding
+
+        T T T T | T T T O || O O O O | O O O O || O O O O | O O O O || ...
+
+        ---
+        # Case II 
+
+        Prompt is greater than chunk, and it contains left padding
+
+        10 tokens
+        4 blocks
+        2 chunks
+        4 left padding
+
+        X X X X | T T T T || T T T T | T T O O || O O O O | O O O O || ...
+        
+        # Case III 
+
+        No left paddings and more than one chunk
+
+        13 tokens
+        4 blocks
+        2 chunks
+        0 left padding
+
+        T T T T | T T T T || T T T T | T O O O || O O O O | O O O O || ...
+
+        NOTE: The goal of this "illustration" is to depics strategies to write
+        code to create the chunks, not necessarily enumerate the possible 
+        scenario. Of course there are interpretations where these cases 
+        overlaps. 
+        
+        '''
 
         # Get request id from new request or cached request
         req_id = scheduler_output.scheduled_new_reqs[0].req_id if \
@@ -1820,21 +1883,19 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                 left_padding:left_padding+left_pad_blocks_offset] = \
                     range(left_pad_blocks_offset)
         else:
-            # Case III - (Almost) Happy default case
-            # - Chunks at full size, even if it is the first
-            # - Last chunk, clamping the prompt at the end
-            # - Subsequent chunks after Case II
-
             # The `token_idx` is the offset of the chunking in the prompt,
             # because we can have left pad blocks, we may not slice it with
-            # the exact size of the chunk
+            # the exact size of the chunk.
             if left_padding == 0:
+                # Case III
                 # No left padding, it will start with full chunks
                 token_idx = chunk_i * chunk_size
             else:
-                # The `left_pad_blocks_offset` is a piece of a incomplete chunk
-                # We handled the first chunk in Case II, the following is the
-                # sum of size of chunks and the incomplete chunk
+                # Case II - remaining chunks
+                # The `left_pad_blocks_offset` is the piece of the first 
+                # chunk that needed to be incomplete to compensate left
+                # padding. Sum it with the remaining chunks count to get 
+                # where to slice the prompt
                 token_idx = left_pad_blocks_offset + (chunk_i - 1) * chunk_size
 
             input_tokens_np[:chunk_end - token_idx] = (
