@@ -1837,7 +1837,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         chunk_end = min(prompt_len, num_computed_tokens + chunk_size)
         chunk_i = num_computed_tokens // chunk_size
-        # left_padding = request.left_padding
         chunk_count = math.ceil(prompt_len / chunk_size)
         left_padding = chunk_count * chunk_size - padded_prompt_len
 
@@ -1854,7 +1853,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         input_positions_np = input_positions.numpy()
 
         # create block table tensor
-        blocks = [0] * (left_padding // self.block_size) + list(self.req_ids2blocks[req_id])
+        blocks = [0] * (left_padding // self.block_size) + list(
+            self.req_ids2blocks[req_id])
         block_end = math.ceil((chunk_start + chunk_size) / self.block_size)
         block_table = torch.tensor(blocks[:block_end],
                                    dtype=torch.int64).unsqueeze(0)
@@ -1896,9 +1896,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                 token_idx = chunk_i * chunk_size
             else:
                 # Case II - remaining chunks
-                # The `left_pad_blocks_offset` is the piece of the first 
+                # The `left_pad_blocks_offset` is the piece of the first
                 # chunk that needed to be incomplete to compensate left
-                # padding. Sum it with the remaining chunks count to get 
+                # padding. Sum it with the remaining chunks count to get
                 # where to slice the prompt
                 token_idx = left_pad_blocks_offset + (chunk_i - 1) * chunk_size
 
@@ -1959,8 +1959,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         self._mark_input_tensors(model_inputs)
 
         return model_inputs
-    
-    def _prepare_decode2(
+
+    def _prepare_decode(
         self,
         cached_request_data: CachedRequestData,
     ) -> SamplingForwardInputs:
@@ -1977,19 +1977,24 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             cached_request_data.req_ids)
         req_ids = self.input_batch.sorted_requests_ids
 
-        n_blocks = 0  # maximal number of blocks used by any seq in the batch
+        # maximal number of blocks used by any seq in the batch
+        max_n_blocks = 0
+
         for req_id in req_ids:
             # adding new blocks if needed
             req_state = self.requests[req_id]
             if req_state.num_computed_tokens % self.block_size == 0:
                 self.req_ids2blocks[req_id].append(self.block_pool.popleft())
-            n_blocks = max(n_blocks, len(self.req_ids2blocks[req_id]))
+            max_n_blocks = max(max_n_blocks, len(self.req_ids2blocks[req_id]))
 
+        # We'll calculate tkv on the fly, it is the max num computed tokens
+        # of a request since there is no tokens left padding, only for blocks
+        tkv = 0
         for req_id in req_ids:
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
 
-            req_state: SamplingRequestState = self.requests[req_id]
+            req_state = self.requests[req_id]
 
             # filling block table with padding blocks to make it rectangular
             # Note: the padding block id 0 here is chosen arbitrarily, it can
@@ -1997,13 +2002,16 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             # [0, self.n_blocks - 1]). Further, it also be a block id that holds
             # actual KV cache for another (or the same) sequence.
             blocks = self.req_ids2blocks[req_id].copy()
-            for i in range(n_blocks - len(self.req_ids2blocks[req_id])):
+            left_pad_blocks_count = (max_n_blocks -
+                                     len(self.req_ids2blocks[req_id]))
+
+            for _ in range(left_pad_blocks_count):
                 blocks.appendleft(0)
             block_table.append(blocks)
 
             # slot_mapping for all blocks of sequence
             start_slot = block_table[-1][-1] * self.block_size
-            offset = self.tkv % self.block_size
+            offset = req_state.num_computed_tokens % self.block_size
             slot = [start_slot + offset]
             slot_mapping.append(slot)
 
@@ -2012,12 +2020,17 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             input_tokens.append([generation_token])
             input_positions.append([req_state.num_computed_tokens])
 
-            # retrieve left padding information stored during prefill and
-            # updated when calling reduce_left_padding()
-            left_padded_prompt_mask.append(req_state.left_padding)
+            # Calculate left padding on the fly
+            left_padding = left_pad_blocks_count * self.block_size
+            left_padded_prompt_mask.append(left_padding)
+
+            req_tkv = (req_state.left_padding + req_state.num_computed_tokens +
+                       1)
+            tkv_mask.append(req_tkv)
+            tkv = max(tkv, req_tkv)
 
         # update tkv
-        self.tkv = self.tkv + 1
+        self.tkv = tkv
 
         # construct tensors from lists
         input_tokens = torch.tensor(input_tokens,
@@ -2026,8 +2039,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         position_ids = torch.tensor(input_positions,
                                     dtype=torch.long,
                                     device=self.device)
-        current_tkv_mask = torch.tensor(tkv_mask,
-                                        dtype=torch.int64)
+        current_tkv_mask = torch.tensor(tkv_mask, dtype=torch.int64)
         left_padded_prompt_mask = torch.tensor(left_padded_prompt_mask,
                                                dtype=torch.long,
                                                device=self.device)
@@ -2058,42 +2070,12 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         is_new_batch = len(self.req_ids2blocks) == 0
         prompt_len = len(prompt_token_ids)
 
-        # Only used in chunked prefill
-        chunk_size = self.scheduler_config.max_num_batched_tokens
-
-        # make sure that the current tkv of the decode batch is greater or
-        # equal to the prompt length of the new joining sequence
-        if not is_new_batch and prompt_len > self.tkv:
-            # increasing the current tkv by a multiple of the block size
-            # TODO(wallas): consider chunk size now
-            tkv_offset = math.ceil(
-                (prompt_len - self.tkv) / self.block_size) * self.block_size
-            if tkv_offset > 0:
-                # Note: drawing explaining this optimization in more detail
-                # can be found here (see page 3 in particular):
-                # https://github.com/vllm-project/vllm-spyre/pull/340#issuecomment-3179337304
-                logger.debug("Prefill optimization: Adding %d blocks per " \
-                "sequence in the decode batch to prefill the current " \
-                "sequence.", tkv_offset // self.block_size)
-                self.tkv += tkv_offset
-
-                # adding left pads to the requests in the current decode batch
-                requests = self.requests.values()
-                for req in requests:
-                    if req.req_id != req_id:
-                        req.left_padding += tkv_offset
-
         self.prefill_batch.clear_requests()
 
-        padded_prompt = math.ceil(
-            prompt_len / self.block_size) * self.block_size
-        # number of left pads if the prompt is less than the chunk size
-        # chunk_count = math.ceil(prompt_len / chunk_size)
-        # left_padding = chunk_count * chunk_size - padded_prompt
+        blocks_count = math.ceil(prompt_len / self.block_size)
 
         # set the new tkv  to the block padding if starting a new decode batch
         if is_new_batch:
-            # self.tkv = left_padding + prompt_len
             self.tkv = prompt_len
 
         # Reserve the number of blocks that this new sequence requires in the
@@ -2106,13 +2088,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         self.req_ids2reserved_blocks[req_id] = n_reserved_blocks
 
-        # Include dummy slots and blocks for the left pad blocks
-        # blocks = [0] * (left_padding // self.block_size)
-
-        blocks = [
-            self.block_pool.popleft()
-            for _ in range(padded_prompt // self.block_size)
-        ]
+        # allocate blocks
+        blocks = [self.block_pool.popleft() for _ in range(blocks_count)]
         self.req_ids2blocks[req_id] = deque(blocks)
 
         # Add new request to the cached states.
@@ -2128,7 +2105,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             sampling_params=sampling_params,
             generator=generator,
             output_token_ids=[],
-            # left_padding=left_padding,
+            # We do not store it, we calculate it on the fly
+            # to always use the optimizations of blocks
+            # usage
             left_padding=0,
         )
 
@@ -2143,7 +2122,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         # Refresh sampling metadata after all request are added to the batch
         self.input_batch.refresh_metadata()
         self.prefill_batch.refresh_metadata()
-
 
     def prepare_model_input(self, scheduler_output):
 
@@ -2285,8 +2263,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             tkv=self.tkv)
 
         return model_output
-    
-   
 
     def _mark_input_tensors(self, model_input: SamplingForwardInputs) -> None:
 
