@@ -44,7 +44,7 @@ USE_CASES = {
 }
 
 
-@pytest.mark.cb
+@pytest.mark.chunked_prefill
 @pytest.mark.parametrize("use_case", list(USE_CASES.keys()))
 def test_chunked_prefill_correctness(model: ModelInfo, backend: str,
                                      max_num_seqs: int, max_model_len: int,
