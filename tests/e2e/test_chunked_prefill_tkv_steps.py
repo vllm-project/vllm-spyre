@@ -25,12 +25,17 @@ from vllm_spyre.v1.worker.spyre_model_runner import SpyreModelRunner
 @dataclass
 class ChunkedPrefillModelRunnerOutput(ModelRunnerOutput):
     # Current TKV for each request
-    request_tkvs: dict[str, int] = field(default_factory=dict)
+    # request_tkvs: dict[str, int] = field(default_factory=dict)
+    # JK! We will just return tkv = max(request_tkvs)
+
     # Number of computed tokens for each request (may be smaller than the number
     # of scheduled tokens)
     computed_tokens: dict[str, int] = field(default_factory=dict)
+    # (not implemented yet- maybe will be?)
+
     # Free KV cache blocks left to use
     n_free_blocks: int = 0
+    # Already part of CB model runner output
 
 
 ########## End assumptions
@@ -44,8 +49,6 @@ def default_test_params(test_func):
     test_func = pytest.mark.parametrize(
         "max_num_seqs", [2], ids=lambda val: f"max_num_seqs({val})")(test_func)
 
-    # TODO: Need to add `chunk_size` as a param for the test sorting logic for
-    # engine caching
     test_func = pytest.mark.parametrize(
         "chunk_size", [128], ids=lambda val: f"chunk_size({val})")(test_func)
 
@@ -68,12 +71,13 @@ def get_cpu_model_runner(model: ModelInfo, max_model_len: int,
     runner: SpyreModelRunner = \
         engine_core.model_executor.driver_worker.worker.model_runner
 
-    # clear some stuff
-    # TODO: fix
-    # if runner.requests:
-    #     for request_id in runner.requests:
-    #         abort_sched = SchedulerOutput(finished_req_ids=[request_id])
-    #         runner.execute_model(abort_sched)
+    # Clean things up, this isn't a fixture that cleans up after previous tests
+    if runner.requests:
+        for request_id in list(runner.requests):
+            # aborting one-by-one should be less error prone for the runner
+            abort_sched = make_scheduler_output(scheduled_new_reqs=[],
+                                                finished_req_ids={request_id})
+            runner.execute_model(abort_sched)
 
     return runner
 
@@ -90,7 +94,8 @@ def make_scheduler_output(
         scheduled_cached_reqs: CachedRequestData = None,
         num_scheduled_tokens: dict[str, int] = None,
         finished_req_ids: set[str] = None) -> SchedulerOutput:
-    total_tokens = sum(num_scheduled_tokens.values())
+    total_tokens = sum(
+        num_scheduled_tokens.values()) if num_scheduled_tokens else 0
     if scheduled_cached_reqs is None:
         scheduled_cached_reqs = CachedRequestData.make_empty()
     if num_scheduled_tokens is None:
@@ -149,7 +154,7 @@ def test_single_block_chunked_prefill(model: ModelInfo, max_model_len: int,
     # one output token from prefill
     assert len(output.sampled_token_ids[0]) == 1
     # tkv is prompt_len + 1
-    assert output.request_tkvs[req_id] == prompt_len + 1
+    assert output.tkv == prompt_len + 1
 
 
 @pytest.mark.cpu
@@ -182,14 +187,13 @@ def test_multi_chunk_padded_prefill(model: ModelInfo, max_model_len: int,
     # remaining prompt tokens.
     # Since this request needs to be padded to end in the page ending in 256,
     # it requires one full padding block on the left and will only process 64
-    # tokens
-    assert output.computed_tokens[req_id] == 64
-    # Unclear if we need this, but we'd be at the first chunk boundary for the
-    # prefill
-    assert output.request_tkvs[req_id] == 128
+    # tokens.
+    # TODO: Uncomment when/if supported
+    # assert output.computed_tokens[req_id] == 64
+    computed_tokens = {req_id: 64}
 
     # Scheduler schedules remaining 148 - 64 = 84 tokens
-    cached_req_data = make_cached_request_data(output.computed_tokens)
+    cached_req_data = make_cached_request_data(computed_tokens)
     scheduler_output = make_scheduler_output(
         scheduled_new_reqs=[],
         scheduled_cached_reqs=cached_req_data,
@@ -198,8 +202,8 @@ def test_multi_chunk_padded_prefill(model: ModelInfo, max_model_len: int,
 
     # Should be one output token now
     assert len(output.sampled_token_ids[0]) == 1
-    # Padding block from prefill removed: tkv is back to prompt_len + 1
-    assert output.request_tkvs[req_id] == prompt_len + 1
+    # TKV shouldn't reflect any prefill padding, it's just prompt + 1
+    assert output.tkv == prompt_len + 1
 
 
 @pytest.mark.cpu
@@ -228,12 +232,11 @@ def test_multi_chunk_unpadded_prefill(model: ModelInfo, max_model_len: int,
     # no output tokens
     assert len(output.sampled_token_ids[0]) == 0
     # No left padding block so all 128 tokens are computed
-    assert output.computed_tokens[req_id] == 128
-    # At first chunk boundary
-    assert output.request_tkvs[req_id] == 128
+    # assert output.computed_tokens[req_id] == 128
+    computed_tokens = {req_id: 128}
 
     # Scheduler schedules remaining 200 - 128 = 72 tokens
-    cached_req_data = make_cached_request_data(output.computed_tokens)
+    cached_req_data = make_cached_request_data(computed_tokens)
     scheduler_output = make_scheduler_output(
         scheduled_new_reqs=[],
         scheduled_cached_reqs=cached_req_data,
@@ -242,8 +245,7 @@ def test_multi_chunk_unpadded_prefill(model: ModelInfo, max_model_len: int,
 
     # Should be one output token now
     assert len(output.sampled_token_ids[0]) == 1
-    # Padding block from prefill removed: tkv is back to prompt_len + 1
-    assert output.request_tkvs[req_id] == prompt_len + 1
+    assert output.tkv == prompt_len + 1
 
 
 @pytest.mark.cpu
@@ -267,28 +269,29 @@ def test_decode_padding_to_same_block(model: ModelInfo, max_model_len: int,
 
     steps = 1
 
+    computed_tokens = lambda: {
+        short_req_id: short_prompt_len + steps,
+        long_req_id: long_prompt_len + steps
+    }
+
     # Prefill both in one pass each
     new_req_data = make_new_request_data(short_req_id, short_prompt_len)
     scheduler_output = make_scheduler_output(
         scheduled_new_reqs=[new_req_data],
         num_scheduled_tokens={short_req_id: short_prompt_len})
     output = runner.execute_model(scheduler_output)
-    assert output.request_tkvs[short_req_id] == short_prompt_len + steps
+    assert output.tkv == short_prompt_len + steps
 
     new_req_data = make_new_request_data(long_req_id, long_prompt_len)
     scheduler_output = make_scheduler_output(
         scheduled_new_reqs=[new_req_data],
         num_scheduled_tokens={long_req_id: long_prompt_len})
     output = runner.execute_model(scheduler_output)
-    assert output.request_tkvs[long_req_id] == long_prompt_len + steps
-
-    steps += 1  # 2
+    assert output.tkv == long_prompt_len + steps
 
     # Both requests are still in the first block
     # Scheduler schedules 1 token each
-    # NB: Assuming here that output.request_tkvs always outputs tkv for all
-    # requests
-    cached_req_data = make_cached_request_data(output.request_tkvs)
+    cached_req_data = make_cached_request_data(computed_tokens())
     scheduler_output = make_scheduler_output(
         scheduled_new_reqs=[],
         scheduled_cached_reqs=cached_req_data,
@@ -297,17 +300,16 @@ def test_decode_padding_to_same_block(model: ModelInfo, max_model_len: int,
             long_req_id: 1
         })
     output = runner.execute_model(scheduler_output)
-
-    assert output.request_tkvs[short_req_id] == short_prompt_len + steps
-    assert output.request_tkvs[long_req_id] == long_prompt_len + steps
-
-    steps += 1  # 3
+    steps += 1  # Step 2
+    # TKV is the length of the long request since both are still in first block
+    assert output.tkv == long_prompt_len + steps
+    # Save the number of free blocks to compare once we allocate a new one
+    initial_free_blocks = output.n_free_blocks
 
     # Now the long request is at the first block boundary (tkv = 64)
     # We'll have to pad the short request to be within the same block by adding
     # a full block of left padding to it
-
-    cached_req_data = make_cached_request_data(output.request_tkvs)
+    cached_req_data = make_cached_request_data(computed_tokens())
     scheduler_output = make_scheduler_output(
         scheduled_new_reqs=[],
         scheduled_cached_reqs=cached_req_data,
@@ -316,17 +318,17 @@ def test_decode_padding_to_same_block(model: ModelInfo, max_model_len: int,
             long_req_id: 1
         })
     output = runner.execute_model(scheduler_output)
+    steps += 1  # Step 3
 
-    # 🌶️🌶️🌶️ short prompt gets padded
-    assert output.request_tkvs[short_req_id] == short_prompt_len + steps + 64
-    assert output.request_tkvs[long_req_id] == long_prompt_len + steps
-
-    steps += 1  # 4
+    # 🌶️🌶️🌶️ short prompt gets padded, it's now the longest sequence
+    assert output.tkv == short_prompt_len + steps + 64
+    # We should have allocated only one new block for the long prompt entering
+    assert output.n_free_blocks == initial_free_blocks - 1
 
     # The shorter request is now at the second block boundary (tkv = 128), so we
     # can remove the extra block of padding (tkv = 64) since it will now be in
     # the second block along with the longer request
-    cached_req_data = make_cached_request_data(output.request_tkvs)
+    cached_req_data = make_cached_request_data(computed_tokens())
     scheduler_output = make_scheduler_output(
         scheduled_new_reqs=[],
         scheduled_cached_reqs=cached_req_data,
@@ -335,7 +337,9 @@ def test_decode_padding_to_same_block(model: ModelInfo, max_model_len: int,
             long_req_id: 1
         })
     output = runner.execute_model(scheduler_output)
+    steps += 1  # step 4
 
-    # 🌶️🌶️🌶️ short prompt padding removed again
-    assert output.request_tkvs[short_req_id] == short_prompt_len + steps
-    assert output.request_tkvs[long_req_id] == long_prompt_len + steps
+    # 🌶️🌶️🌶️ short prompt padding removed again, tkv is back to long + steps
+    assert output.tkv == long_prompt_len + steps
+    # One more real block was allocated for the short request
+    assert output.n_free_blocks == initial_free_blocks - 2
