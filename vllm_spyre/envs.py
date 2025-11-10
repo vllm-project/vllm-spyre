@@ -183,8 +183,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
 
     # Feature Flag
     # If set, use the V1 chunked prefill implementation. Otherwise, normal
-    # single prefill is used.
-    # TODO Sophie set False later
+    # single prefill is used.``
     "VLLM_SPYRE_USE_CHUNKED_PREFILL":
     lambda: bool(int(os.getenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", "0"))),
 }
