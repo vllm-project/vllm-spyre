@@ -1958,6 +1958,14 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         self._mark_input_tensors(model_inputs)
 
+        # Check if it is last prefill
+        num_scheduled_tokens = scheduler_output.num_scheduled_tokens[req_id]
+        if num_computed_tokens + num_scheduled_tokens == prompt_len:
+            # Last prefill we need to setup the logitsprocessors to sampling
+            prefill_index = self.input_batch.get_req_index(req_id)
+            for logitsproc in self.input_batch.logitsprocs_wrappers:
+                logitsproc.set_prefill_index(prefill_index)
+
         return model_inputs
 
     def _prepare_decode(
@@ -2112,12 +2120,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         )
 
         self.requests[req_id] = req_state
-        prefill_index = self.input_batch.add_request(req_state)
+        self.input_batch.add_request(req_state)
         self.prefill_batch.add_request(req_state)
-
-        # set prefill index for logits processor
-        for logitsproc in self.input_batch.logitsprocs_wrappers:
-            logitsproc.set_prefill_index(prefill_index)
 
         # Refresh sampling metadata after all request are added to the batch
         self.input_batch.refresh_metadata()
