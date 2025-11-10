@@ -370,6 +370,7 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
 
             # Update the cached states.
             num_computed_tokens = req_data.num_computed_tokens[i]
+            req_state.num_computed_tokens = num_computed_tokens
             # The scheduler will send the sampled tokens back
             # when PP will be enabled in the future
             new_token_ids = req_data.new_token_ids[i] if len(
@@ -1742,3 +1743,565 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
             prompt_logprobs_dict={},
             pooler_output=pooler_output)
         return model_output
+
+
+class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
+
+    def _prepare_prompt(self, _):
+        AssertionError(
+            "Should not call this method on chunked prefill implementation")
+
+    def _prepare_chunked_prefill(self, scheduler_output: SchedulerOutput):
+        '''
+        Cases / Scenarios for the chunked prefill with right padding.
+ 
+
+        X    - Padding
+        T    - Token
+        O    - Right padding / unused slot
+        |    - Blocks separator
+        ||   - Chunks separator
+        ...  - Trimmed sequence
+
+        For the following "drawing" consider blocks of 4 tokens
+        and chunks of 8 tokens
+
+        # Case I
+
+        Prompt fits in the chunk with left padding
+
+        3 tokens
+        1 block
+        1 chunk
+        4 left padding
+
+        X X X X | T T T O || O O O O | O O O O || O O O O | O O O O || ...
+
+        Variation: Prompt fits in the chunk but no left padding needed
+
+        T tokens
+        2 block
+        1 chunk
+        0 left padding
+
+        T T T T | T T T O || O O O O | O O O O || O O O O | O O O O || ...
+
+        ---
+        # Case II 
+
+        Prompt is greater than chunk, and it contains left padding
+
+        10 tokens
+        4 blocks
+        2 chunks
+        4 left padding
+
+        X X X X | T T T T || T T T T | T T O O || O O O O | O O O O || ...
+        
+        # Case III 
+
+        No left paddings and more than one chunk
+
+        13 tokens
+        4 blocks
+        2 chunks
+        0 left padding
+
+        T T T T | T T T T || T T T T | T O O O || O O O O | O O O O || ...
+
+        NOTE: The goal of this "illustration" is to depics strategies to write
+        code to create the chunks, not necessarily enumerate the possible 
+        scenario. Of course there are interpretations where these cases 
+        overlaps. 
+        
+        '''
+
+        # Get request id from new request or cached request
+        req_id = scheduler_output.scheduled_new_reqs[0].req_id if \
+            len(scheduler_output.scheduled_new_reqs) == 1 \
+                else scheduler_output.scheduled_cached_reqs.req_ids[0]
+
+        request = self.requests[req_id]
+        prompt_token_ids = request.prompt_token_ids
+
+        chunk_size = self.scheduler_config.max_num_batched_tokens
+        chunk_blocks = chunk_size // self.block_size
+        num_computed_tokens = request.num_computed_tokens
+        # basic check, if the computed tokens is divisible by the
+        # chunk size
+        assert num_computed_tokens % chunk_size == 0
+
+        prompt_len = len(prompt_token_ids)
+        padded_prompt_len = math.ceil(
+            prompt_len / self.block_size) * self.block_size
+
+        chunk_start = num_computed_tokens
+
+        chunk_end = min(prompt_len, num_computed_tokens + chunk_size)
+        chunk_i = num_computed_tokens // chunk_size
+        chunk_count = math.ceil(prompt_len / chunk_size)
+        left_padding = chunk_count * chunk_size - padded_prompt_len
+
+        logger.debug("Chunked prefill of request %s %d:%d of %d tokens",
+                     req_id, chunk_start, chunk_end, prompt_len)
+
+        input_tokens = torch.zeros(chunk_size,
+                                   dtype=torch.int64,
+                                   device=self.device)
+        input_tokens_np = input_tokens.numpy()
+        input_positions = torch.zeros(chunk_size,
+                                      dtype=torch.int64,
+                                      device=self.device)
+        input_positions_np = input_positions.numpy()
+
+        # create block table tensor
+        blocks = [0] * (left_padding // self.block_size) + list(
+            self.req_ids2blocks[req_id])
+        block_end = math.ceil((chunk_start + chunk_size) / self.block_size)
+        block_table = torch.tensor(blocks[:block_end],
+                                   dtype=torch.int64).unsqueeze(0)
+
+        slot_mapping = []
+        for i in range(chunk_blocks):
+            block = block_table[0][-chunk_blocks + i]
+            slot_mapping += list(
+                range(block * self.block_size,
+                      block * self.block_size + self.block_size))
+        slot_mapping = torch.tensor(slot_mapping,
+                                    device=self.device,
+                                    dtype=torch.int64).unsqueeze(0)
+
+        left_pad_blocks_offset = 0 if left_padding == 0 \
+            else chunk_size - left_padding
+
+        if prompt_len < chunk_size and num_computed_tokens == 0:
+            # Case I - Prompt fits in a single chunk
+            input_tokens_np[left_padding:left_padding +
+                            chunk_end] = prompt_token_ids
+            input_positions_np[left_padding:left_padding +
+                               chunk_end] = range(prompt_len)
+        elif left_padding > 0 and num_computed_tokens == 0:
+            # Case II - First chunk but it contains some left blocks at the left
+            input_tokens_np[
+                left_padding:left_padding+left_pad_blocks_offset] = \
+                    prompt_token_ids[:left_pad_blocks_offset]
+            input_positions_np[
+                left_padding:left_padding+left_pad_blocks_offset] = \
+                    range(left_pad_blocks_offset)
+        else:
+            # The `token_idx` is the offset of the chunking in the prompt,
+            # because we can have left pad blocks, we may not slice it with
+            # the exact size of the chunk.
+            if left_padding == 0:
+                # Case III
+                # No left padding, it will start with full chunks
+                token_idx = chunk_i * chunk_size
+            else:
+                # Case II - remaining chunks
+                # The `left_pad_blocks_offset` is the piece of the first
+                # chunk that needed to be incomplete to compensate left
+                # padding. Sum it with the remaining chunks count to get
+                # where to slice the prompt
+                token_idx = left_pad_blocks_offset + (chunk_i - 1) * chunk_size
+
+            input_tokens_np[:chunk_end - token_idx] = (
+                prompt_token_ids[token_idx:min(token_idx +
+                                               chunk_size, prompt_len)])
+            input_positions_np[:chunk_end - token_idx] = range(
+                token_idx, chunk_end)
+
+        input_tokens = input_tokens.unsqueeze(0).clone()
+        input_positions = input_positions.unsqueeze(0).clone()
+
+        left_padded_prompt_mask = torch.tensor([left_padding],
+                                               dtype=torch.int64,
+                                               device=self.device)
+
+        # NOTE(wallas): Looks like we need to use multiple of blocks for prefill
+        # so, later we use model.n_pads_right to get right logits.
+        # In my naive mind this would be the `request_tkv` below,
+        # but it gives me incorrect results
+        #
+        prefill_tkv = num_computed_tokens + chunk_size
+        current_tkv_mask = torch.tensor([prefill_tkv],
+                                        dtype=torch.int64,
+                                        device=self.device)
+
+        request_tkv = min(num_computed_tokens + chunk_size,
+                          left_padding + prompt_len)
+
+        # Trick padding:
+        # In `model_executor/model_loader/spyre.py`: We have this line to
+        # get the logits of a prefill:
+        #
+        #   logits = logits[self.indices, -self.n_pads_right - 1, :]
+        #
+        # So we have to match this padding with the tkv of this chunk
+        # being prefilled.
+        # `((request_tkv -1) % self.block_size) + 1`: gives us the tkv offset
+        # removing all the left blocks. Reminder: this tkv must be in the range
+        # [1, block_size]
+        #
+        # `self.block_size - `: will just flip the index to get it as
+        # negative index
+        self.model.n_pads_right = self.block_size - ((
+            (request_tkv - 1) % self.block_size) + 1)
+        self.model.indices = torch.ones(1, dtype=torch.bool, device='cpu')
+
+        model_inputs = SamplingForwardInputs(
+            input_tokens=input_tokens,
+            input_positions=input_positions,
+            current_tkv_mask=current_tkv_mask,
+            left_padded_prompt_mask=left_padded_prompt_mask,
+            block_table=block_table,
+            slot_mapping=slot_mapping,
+            is_prompt=True,
+            scale_indices=self.input_batch.request_indices)
+
+        self._mark_input_tensors(model_inputs)
+
+        # Check if it is last prefill
+        num_scheduled_tokens = scheduler_output.num_scheduled_tokens[req_id]
+        if num_computed_tokens + num_scheduled_tokens == prompt_len:
+            # Last prefill we need to setup the logitsprocessors to sampling
+            prefill_index = self.input_batch.get_req_index(req_id)
+            for logitsproc in self.input_batch.logitsprocs_wrappers:
+                logitsproc.set_prefill_index(prefill_index)
+
+        return model_inputs
+
+    def _prepare_decode(
+        self,
+        cached_request_data: CachedRequestData,
+    ) -> SamplingForwardInputs:
+        assert len(cached_request_data.req_ids) > 0
+
+        input_tokens = []
+        input_positions = []
+        block_table = []
+        slot_mapping = []
+        left_padded_prompt_mask = []
+        tkv_mask = []
+
+        assert len(self.input_batch.req_id_to_index) == len(
+            cached_request_data.req_ids)
+        req_ids = self.input_batch.sorted_requests_ids
+
+        # maximal number of blocks used by any seq in the batch
+        max_n_blocks = 0
+
+        for req_id in req_ids:
+            # adding new blocks if needed
+            req_state = self.requests[req_id]
+            if req_state.num_computed_tokens % self.block_size == 0:
+                self.req_ids2blocks[req_id].append(self.block_pool.popleft())
+            max_n_blocks = max(max_n_blocks, len(self.req_ids2blocks[req_id]))
+
+        # We'll calculate tkv on the fly, it is the max num computed tokens
+        # of a request since there is no tokens left padding, only for blocks
+        tkv = 0
+        for req_id in req_ids:
+            # TODO: Will this always just be one token ID if there's no spec
+            # or jump decoding?
+
+            req_state = self.requests[req_id]
+
+            # filling block table with padding blocks to make it rectangular
+            # Note: the padding block id 0 here is chosen arbitrarily, it can
+            # be any allocated block id on the Sypre card (has to be in range
+            # [0, self.n_blocks - 1]). Further, it also be a block id that holds
+            # actual KV cache for another (or the same) sequence.
+            blocks = self.req_ids2blocks[req_id].copy()
+            left_pad_blocks_count = (max_n_blocks -
+                                     len(self.req_ids2blocks[req_id]))
+
+            for _ in range(left_pad_blocks_count):
+                blocks.appendleft(0)
+            block_table.append(blocks)
+
+            # slot_mapping for all blocks of sequence
+            start_slot = block_table[-1][-1] * self.block_size
+            offset = req_state.num_computed_tokens % self.block_size
+            slot = [start_slot + offset]
+            slot_mapping.append(slot)
+
+            # input token and position of the token generated in the last step
+            generation_token = req_state.output_token_ids[-1]
+            input_tokens.append([generation_token])
+            input_positions.append([req_state.num_computed_tokens])
+
+            # Calculate left padding on the fly
+            left_padding = left_pad_blocks_count * self.block_size
+            left_padded_prompt_mask.append(left_padding)
+
+            req_tkv = (req_state.left_padding + req_state.num_computed_tokens +
+                       1)
+            tkv_mask.append(req_tkv)
+            tkv = max(tkv, req_tkv)
+
+        # update tkv
+        self.tkv = tkv
+
+        # construct tensors from lists
+        input_tokens = torch.tensor(input_tokens,
+                                    dtype=torch.long,
+                                    device=self.device)
+        position_ids = torch.tensor(input_positions,
+                                    dtype=torch.long,
+                                    device=self.device)
+        current_tkv_mask = torch.tensor(tkv_mask, dtype=torch.int64)
+        left_padded_prompt_mask = torch.tensor(left_padded_prompt_mask,
+                                               dtype=torch.long,
+                                               device=self.device)
+        block_table = torch.tensor(block_table, dtype=torch.int64)
+        slot_mapping = torch.tensor(slot_mapping, dtype=torch.int64)
+        self.model.indices = torch.ones(len(cached_request_data.req_ids),
+                                        dtype=torch.bool,
+                                        device="cpu")
+
+        model_inputs = SamplingForwardInputs(
+            input_tokens=input_tokens,
+            input_positions=position_ids,
+            current_tkv_mask=current_tkv_mask,
+            left_padded_prompt_mask=left_padded_prompt_mask,
+            block_table=block_table,
+            slot_mapping=slot_mapping,
+            is_prompt=False,
+            scale_indices=self.input_batch.request_indices)
+
+        self._mark_input_tensors(model_inputs)
+
+        return model_inputs
+
+    def add_new_request(self, request: NewRequestData):
+        req_id = request.req_id
+        prompt_token_ids = request.prompt_token_ids
+        sampling_params = request.sampling_params
+        is_new_batch = len(self.req_ids2blocks) == 0
+        prompt_len = len(prompt_token_ids)
+
+        self.prefill_batch.clear_requests()
+
+        blocks_count = math.ceil(prompt_len / self.block_size)
+
+        # set the new tkv  to the block padding if starting a new decode batch
+        if is_new_batch:
+            self.tkv = prompt_len
+
+        # Reserve the number of blocks that this new sequence requires in the
+        # worst case (it might always stop early by producing the EOS token)
+        new_tokens = (sampling_params.max_tokens
+                      if sampling_params is not None else 0)
+        total_tokens = prompt_len + new_tokens - 1
+        # subtract the padding blocks from the reserved blocks
+        n_reserved_blocks = math.ceil(total_tokens / self.block_size)
+
+        self.req_ids2reserved_blocks[req_id] = n_reserved_blocks
+
+        # allocate blocks
+        blocks = [self.block_pool.popleft() for _ in range(blocks_count)]
+        self.req_ids2blocks[req_id] = deque(blocks)
+
+        # Add new request to the cached states.
+        if sampling_params.sampling_type == SamplingType.RANDOM_SEED:
+            generator = torch.Generator(device=self.device)
+            generator.manual_seed(sampling_params.seed)
+        else:
+            generator = None
+
+        req_state = SamplingRequestState(
+            req_id=req_id,
+            prompt_token_ids=prompt_token_ids,
+            sampling_params=sampling_params,
+            generator=generator,
+            output_token_ids=[],
+            # We do not store it, we calculate it on the fly
+            # to always use the optimizations of blocks
+            # usage
+            left_padding=0,
+        )
+
+        self.requests[req_id] = req_state
+        self.input_batch.add_request(req_state)
+        self.prefill_batch.add_request(req_state)
+
+        # Refresh sampling metadata after all request are added to the batch
+        self.input_batch.refresh_metadata()
+        self.prefill_batch.refresh_metadata()
+
+    def prepare_model_input(self, scheduler_output):
+
+        is_prefill = False
+        if len(scheduler_output.scheduled_new_reqs) == 1:
+            # First prefill let's update cache
+            assert len(scheduler_output.scheduled_cached_reqs.req_ids) == 0
+            self.add_new_request(scheduler_output.scheduled_new_reqs[0])
+            is_prefill = True
+
+        # NOTE: We assume that there's only one prefill at each step
+        # and if it is a chunked prefill then the num of computed tokens
+        # is less than the length of the prompt
+        if len(scheduler_output.scheduled_cached_reqs.req_ids) == 1:
+            req_id = scheduler_output.scheduled_cached_reqs.req_ids[0]
+            is_prefill = \
+                len(self.requests[req_id].prompt_token_ids) > \
+                scheduler_output.scheduled_cached_reqs.num_computed_tokens[0]
+
+        # Prepare input tensors.
+        if is_prefill:
+            # All prefills are chunked
+            return self._prepare_chunked_prefill(scheduler_output)
+        else:
+            return self._prepare_decode(scheduler_output.scheduled_cached_reqs)
+
+    def get_empty_output(self):
+        return CBSpyreModelRunnerOutput(req_ids=[],
+                                        req_id_to_index={},
+                                        sampled_token_ids=[],
+                                        logprobs=None,
+                                        prompt_logprobs_dict={},
+                                        pooler_output=[],
+                                        num_nans_in_logits=None,
+                                        tkv=self.tkv)
+
+    @SpyrePlatform.inference_mode()
+    def execute_model(
+        self,
+        scheduler_output: SchedulerOutput,
+        **kwargs,
+    ) -> ModelRunnerOutput:
+
+        t0 = time.time()
+
+        self.update_states(scheduler_output)
+
+        if not scheduler_output.total_num_scheduled_tokens:
+            # Return empty ModelRunnerOuptut if there's no work to do.
+            return self.get_empty_output()
+
+        model_input = self.prepare_model_input(scheduler_output)
+
+        # Execute the model
+        attn_metadata = self.build_attn_metadata(model_input)
+        with set_forward_context(attn_metadata, self.vllm_config):
+            logits = self.model(input_ids=model_input.input_tokens,
+                                positions=model_input.input_positions,
+                                masks=model_input.input_masks,
+                                is_prompt=model_input.is_prompt)
+
+        is_prefill = cast(bool, model_input.is_prompt)
+
+        # Get mapping between requests ids to the index within the batch
+        req_id_to_index = self.get_req_id_to_index(is_prefill)
+
+        prompt_logprobs_dicts = self._get_prompt_logprobs_dict(
+            logits=logits, model_inputs=model_input)
+
+        is_chunked_prefill = False
+
+        cached_reqs = scheduler_output.scheduled_cached_reqs
+        cached_req_map = {id: i for i, id in enumerate(cached_reqs.req_ids)}
+        if is_prefill:
+            req_id = scheduler_output.scheduled_new_reqs[0].req_id if\
+                  len(scheduler_output.scheduled_new_reqs) == 1 else \
+                  cached_reqs.req_ids[0]
+            req_state = self.requests[req_id]
+
+            num_scheduled_tokens =\
+                scheduler_output.num_scheduled_tokens[req_id]
+            if len(scheduler_output.scheduled_new_reqs) > 0:
+                is_chunked_prefill =\
+                    num_scheduled_tokens < len(req_state.prompt_token_ids)
+            else:
+                num_computed_tokens =\
+                    cached_reqs.num_computed_tokens[cached_req_map[req_id]]
+                is_chunked_prefill = ((num_computed_tokens +
+                                       num_scheduled_tokens)
+                                      < len(req_state.prompt_token_ids))
+
+        # If the prompt is being prefilled we don't have to sample
+        # and generate a new token.
+        if is_chunked_prefill:
+            # Only return outputs from the driver worker
+            if not self.is_driver_worker:
+                return self.get_empty_output()
+
+            return CBSpyreModelRunnerOutput(
+                req_ids=list(req_id_to_index.keys()),
+                req_id_to_index=req_id_to_index,
+                sampled_token_ids=[],
+                logprobs=None,
+                # TODO: probably it does not makes sense
+                prompt_logprobs_dict=prompt_logprobs_dicts,
+                pooler_output=[],
+                tkv=self.tkv)
+
+        # Sample the next token.
+        output: SamplerOutput = self.model.sample(
+            logits=logits,
+            sampling_metadata=self.get_sampling_metadata(is_prefill),
+        )
+        t1 = time.time() - t0
+        logger.debug("t_token: %.2fms", (t1 * 1000))
+
+        # Add the sampled token(s) to the request cache
+        req_ids = ([r.req_id for r in scheduler_output.scheduled_new_reqs]
+                   if len(scheduler_output.scheduled_new_reqs) > 0 \
+                    else self.input_batch.sorted_requests_ids)
+        sampled_ids = output.sampled_token_ids.tolist()
+
+        for i, req_id in enumerate(req_ids):
+            req_state = self.requests[req_id]
+            req_state.output_token_ids.extend(sampled_ids[i])
+
+        # Only return outputs from the driver worker
+        if not self.is_driver_worker:
+            return self.get_empty_output()
+
+        model_output = CBSpyreModelRunnerOutput(
+            req_ids=list(req_id_to_index.keys()),
+            req_id_to_index=req_id_to_index,
+            sampled_token_ids=output.sampled_token_ids.tolist(),
+            logprobs=(output.logprobs_tensors.tolists()
+                      if output.logprobs_tensors else None),
+            prompt_logprobs_dict=prompt_logprobs_dicts,
+            pooler_output=[],
+            tkv=self.tkv)
+
+        return model_output
+
+    def _mark_input_tensors(self, model_input: SamplingForwardInputs) -> None:
+
+        # Marking dimensions static/dynamic
+        if model_input.is_prompt:
+
+            # batch static (batch size 1)
+            torch._dynamo.mark_static(model_input.input_tokens, 0)
+            torch._dynamo.mark_static(model_input.slot_mapping, 0)
+            torch._dynamo.mark_static(model_input.input_positions, 0)
+            torch._dynamo.mark_static(model_input.block_table, 0)
+
+            # sequence dynamic
+            torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
+            torch._dynamo.mark_dynamic(model_input.slot_mapping, 1)
+            torch._dynamo.mark_dynamic(model_input.input_positions, 1)
+            torch._dynamo.mark_dynamic(model_input.block_table, 1)
+
+        # decode
+        else:
+            # mask is no longer used here
+
+            # batch dynamic
+            torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
+            torch._dynamo.mark_dynamic(model_input.block_table, 0)
+            torch._dynamo.mark_dynamic(model_input.slot_mapping, 0)
+            torch._dynamo.mark_dynamic(model_input.input_positions, 0)
+            torch._dynamo.mark_dynamic(model_input.current_tkv_mask, 0)
+            torch._dynamo.mark_dynamic(model_input.left_padded_prompt_mask, 0)
+
+            # sequence
+            torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
+            torch._dynamo.mark_dynamic(model_input.block_table, 1)
+            torch._dynamo.mark_static(model_input.slot_mapping, 1)  # always 1
+            torch._dynamo.mark_static(model_input.input_positions,
+                                      1)  # always 1

@@ -78,17 +78,16 @@ class LLMCache:
         self._cache: ModelCache[LLM] = ModelCache[LLM](
             teardown_method=lambda x: force_engine_shutdown(x))
 
-    def get_cached_llm(
-        self,
-        model: str | ModelInfo,
-        max_model_len: int,
-        tensor_parallel_size: int,
-        backend: str,
-        monkeypatch: pytest.MonkeyPatch,
-        warmup_shapes: DecodeWarmupShapes | None = None,
-        max_num_seqs: Optional[int] = None,
-        use_cb: bool = False,
-    ) -> LLM:
+    def get_cached_llm(self,
+                       model: str | ModelInfo,
+                       max_model_len: int,
+                       tensor_parallel_size: int,
+                       backend: str,
+                       monkeypatch: pytest.MonkeyPatch,
+                       warmup_shapes: DecodeWarmupShapes | None = None,
+                       max_num_seqs: Optional[int] = None,
+                       use_cb: bool = False,
+                       max_num_batched_tokens: Optional[int] = None) -> LLM:
         """Creates an LLM with the provided runtime configuration.
 
         If the last LLM created matches the config, then returns the cached LLM
@@ -107,6 +106,10 @@ class LLMCache:
             })
         else:
             runtime_config.update({"warmup_shapes": tuple(warmup_shapes)})
+
+        if max_num_batched_tokens is not None:
+            runtime_config.update(
+                {"max_num_batched_tokens": max_num_batched_tokens})
 
         # Always patch the environment so that it's consistent with the LLM
         patch_environment(use_cb, warmup_shapes, backend, monkeypatch)
@@ -132,6 +135,7 @@ class LLMCache:
                 max_model_len=max_model_len,
                 max_num_seqs=max_num_seqs,
                 tensor_parallel_size=tensor_parallel_size,
+                max_num_batched_tokens=max_num_batched_tokens,
                 logits_processors=[GoldenTokenInjector],
             ),
         )
@@ -274,16 +278,15 @@ LLM_CACHE = LLMCache()
 ENGINE_CACHE = EngineCache()
 
 
-def get_cached_llm(
-    model: str | ModelInfo,
-    max_model_len: int,
-    tensor_parallel_size: int,
-    backend: str,
-    monkeypatch: pytest.MonkeyPatch,
-    warmup_shapes: DecodeWarmupShapes | None = None,
-    max_num_seqs: Optional[int] = None,
-    use_cb: bool = False,
-) -> LLM:
+def get_cached_llm(model: str | ModelInfo,
+                   max_model_len: int,
+                   tensor_parallel_size: int,
+                   backend: str,
+                   monkeypatch: pytest.MonkeyPatch,
+                   warmup_shapes: DecodeWarmupShapes | None = None,
+                   max_num_seqs: Optional[int] = None,
+                   use_cb: bool = False,
+                   max_num_batched_tokens: Optional[int] = None) -> LLM:
     # Clear other caches first
     API_SERVER_CACHE.clear()
     ENGINE_CACHE.clear()
@@ -297,6 +300,7 @@ def get_cached_llm(
         warmup_shapes=warmup_shapes,
         max_num_seqs=max_num_seqs,
         use_cb=use_cb,
+        max_num_batched_tokens=max_num_batched_tokens,
     )
 
 

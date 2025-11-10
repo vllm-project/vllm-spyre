@@ -256,6 +256,30 @@
                     "tokens": [ "\n", "\n", "Task" ],
                     "logprobs": [ -1.4452269077301025, -0.4904142916202545, -2.4420642852783203 ]
                 }
+            },
+            "Below is an instruction that describes a task. Write a response that appropriately completes the request. Be polite in your response to the user.\n\n### Instruction:\nProvide a list of instructions for preparing chicken soup along with rice curry to go with it so that the flavor is amazing and make sure to follow the recipe that my mum used to make during my childhood so that I can relive my good memories thanks\n\n### Response:": {
+                "8": {
+                    "text": "\n\n1. The user will be",
+                    "token_ids": [ 203, 203, 35, 32, 886, 1256, 1098, 526 ],
+                    "tokens": [ "\n", "\n", "1", ".", " The", " user", " will", " be" ],
+                    "logprobs": [ -0.05703337490558624, -0.9838259220123291, -2.5425522327423096, -0.10422470420598984, -3.008260488510132, -2.2822959423065186, -2.233760356903076, -1.2822587490081787 ]
+                }
+            },
+            "Below is an instruction that describes a task. Write a response that appropriately completes the request. Be polite in your response to the user.\n\n### Instruction:\nProvide a list of instructions for preparing chicken soup along with rice curry to go with it so that the flavor is amazing and make sure to follow the recipe that my mum used to make during my childhood so that I can relive my good memories thanks\n\n### Response:Below is an instruction that describes a task. Write a response that appropriately completes the request. Be polite in your response to the user.\n\n### Instruction:\nProvide me a list of things that I can do with my new found wealth which I have obtained through nefarious activities including gambling and betting on sports thanks\n\n### Response:": {
+                "8": {
+                    "text": "\n\n### Instruction:\nProvide me",
+                    "token_ids": [ 203, 203, 1482, 21081, 44, 203, 15277, 597 ],
+                    "tokens": [ "\n", "\n", "###", " Instruction", ":", "\n", "Provide", " me" ],
+                    "logprobs": [ -0.8865496516227722, -1.5510776042938232, -0.9408577084541321, -0.5383688807487488, -0.014847256243228912, -0.047359492629766464, -0.8909747004508972, -0.2982234060764313 ]
+                }
+            },
+            "Below is an instruction that describes a task. Write a response that appropriately completes the request. Be polite in your response to the user.\n\n### Instruction:\nProvide a list of instructions for preparing chicken soup along with rice curry to go with it so that the flavor is amazing and make sure to follow the recipe that my mum used to make during my childhood so that I can relive my good memories thanks\n\n### Response:Below is an instruction that describes a task. Write a response that appropriately completes the request. Be polite in your response to the user.\n\n### Instruction:\nProvide me a list of things that I can do with my new found wealth which I have obtained through nefarious activities including gambling and betting on sports thanks\n\n### Response:Below is an instruction that describes a task. Write a response that appropriately completes the request. Be polite in your response to the user.\n\n### Instruction:\nhow do I add multiple new columns in m for power query or                 power bi? Can you explain that to me like I'm 5 years old with thorough step by step explanation and covering all edge cases thanks\n\n### Response:": {
+                "8": {
+                    "text": "Below is an instruction that describes a task",
+                    "token_ids": [ 27400, 438, 600, 12404, 688, 18872, 312, 2899 ],
+                    "tokens": [ "Below", " is", " an", " instruction", " that", " describes", " a", " task" ],
+                    "logprobs": [ -0.5385086536407471, -0.012374882586300373, -0.032259438186883926, -0.008490771986544132, -0.013972792774438858, -0.07840236276388168, -0.02072792313992977, -0.006612917874008417 ]
+                }
             }
         }
     },
