@@ -1749,7 +1749,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         AssertionError(
             "Should not call this method on chunked prefill implementation")
 
-    def _prepare_chunked_prefill(self, scheduler_output: SchedulerOutput):
+    def _prepare_chunked_prefill(self, req_id: str):
         '''
         Cases / Scenarios for the chunked prefill with right padding.
  
@@ -1813,11 +1813,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         overlaps. 
         
         '''
-
-        # Get request id from new request or cached request
-        req_id = scheduler_output.scheduled_new_reqs[0].req_id if \
-            len(scheduler_output.scheduled_new_reqs) == 1 \
-                else scheduler_output.scheduled_cached_reqs.req_ids[0]
 
         request = self.requests[req_id]
         prompt_token_ids = request.prompt_token_ids
@@ -1953,14 +1948,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             scale_indices=self.input_batch.request_indices)
 
         self._mark_input_tensors(model_inputs)
-
-        # Check if it is last prefill
-        num_scheduled_tokens = scheduler_output.num_scheduled_tokens[req_id]
-        if num_computed_tokens + num_scheduled_tokens == prompt_len:
-            # Last prefill we need to setup the logitsprocessors to sampling
-            prefill_index = self.input_batch.get_req_index(req_id)
-            for logitsproc in self.input_batch.logitsprocs_wrappers:
-                logitsproc.set_prefill_index(prefill_index)
 
         return model_inputs
 
@@ -2123,6 +2110,23 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         self.input_batch.refresh_metadata()
         self.prefill_batch.refresh_metadata()
 
+    def _maybe_prepare_last_prefill(self, req_id: str,
+                                    scheduler_output: SchedulerOutput):
+        ''' In the last prefill we have to setup the batch to sample the 
+            first token.
+        '''
+        # Check if it is last prefill
+        request = self.requests[req_id]
+        num_computed_tokens = request.num_computed_tokens
+        prompt_len = len(request.prompt_token_ids)
+        num_scheduled_tokens = scheduler_output.num_scheduled_tokens[req_id]
+
+        if num_computed_tokens + num_scheduled_tokens == prompt_len:
+            # Last prefill we need to setup the logitsprocessors to sampling
+            prefill_index = self.input_batch.get_req_index(req_id)
+            for logitsproc in self.input_batch.logitsprocs_wrappers:
+                logitsproc.set_prefill_index(prefill_index)
+
     def prepare_model_input(self, scheduler_output):
 
         is_prefill = False
@@ -2147,7 +2151,15 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         # Prepare input tensors.
         if is_prefill:
             # All prefills are chunked
-            return self._prepare_chunked_prefill(scheduler_output)
+            # Get request id from new request or cached request
+            req_id = scheduler_output.scheduled_new_reqs[0].req_id if \
+                len(scheduler_output.scheduled_new_reqs) == 1 \
+                    else scheduler_output.scheduled_cached_reqs.req_ids[0]
+            model_inputs = self._prepare_chunked_prefill(req_id)
+
+            self._maybe_prepare_last_prefill(req_id, scheduler_output)
+
+            return model_inputs
         else:
             return self._prepare_decode(scheduler_output.scheduled_cached_reqs)
 
