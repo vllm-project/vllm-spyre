@@ -2133,8 +2133,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             is_prefill = True
 
         # NOTE: We assume that there's only one prefill at each step
-        # and if it is a chunked prefill then the num of computed tokens
-        # is less than the length of the prompt
+        # and if it is a single request cached here and the number of
+        # computed tokens is less than the length of the prompt then
+        # it is still prefilling.
         if len(scheduler_output.scheduled_cached_reqs.req_ids) == 1:
             # Whether it's a prefill or not, should not have any request here
             assert len(scheduler_output.scheduled_new_reqs) == 0
