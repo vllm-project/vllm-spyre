@@ -2282,6 +2282,18 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         req_ids = ([r.req_id for r in scheduler_output.scheduled_new_reqs]
                    if len(scheduler_output.scheduled_new_reqs) > 0 \
                     else self.input_batch.sorted_requests_ids)
+
+        # Get the right batch, if this is the last chunk to conclude the
+        # prefill, we'll generate a token and we should get from the prefill
+        # batch because input_batch may have other request that are were
+        # not processed at this step.
+        batch = self.prefill_batch if is_prefill \
+            else self.input_batch
+
+        # Add the sampled token(s) to the request cache
+        req_ids = ([r.req_id for r in scheduler_output.scheduled_new_reqs]
+                if len(scheduler_output.scheduled_new_reqs) > 0 \
+                else batch.sorted_requests_ids)
         sampled_ids = output.sampled_token_ids.tolist()
 
         for i, req_id in enumerate(req_ids):
