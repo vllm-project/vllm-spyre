@@ -23,24 +23,26 @@ def get_model_runner(cp_model: LLM):
             driver_worker.worker.model_runner
 
 
-chicken_soup_prompt = get_longer_chicken_soup_prompts(4)
+chicken_soup_prompts = get_longer_chicken_soup_prompts(4)
 
-# Should have 95 tokens
-prompt_0 = chicken_soup_prompt[0]
-# Should have 169 tokens
-prompt_01 = chicken_soup_prompt[0] + chicken_soup_prompt[1]
+# NOTE: considering granite 3.3 tokenizer
+# Should have 95 tokens 
+prompt_95 = chicken_soup_prompts[0]
 # Should have 251
-prompt_012 = chicken_soup_prompt[0] + chicken_soup_prompt[
-    1] + chicken_soup_prompt[2]
+prompt_251 = chicken_soup_prompts[0] + chicken_soup_prompts[
+    1] + chicken_soup_prompts[2]
+# Should have 260 tokens
+prompt_260 = chicken_soup_prompts[0] + chicken_soup_prompts[2] + \
+    chicken_soup_prompts[3]
 
-# (prompt, chunk size, expected_chunks_count)
+
 USE_CASES = {
     # Case I - Prompt fits in a single chunk
-    "case_I": (prompt_0, 128, 1, 0),
-    # Case II and III - Needs has left pads
-    "case_II": (prompt_01, 128, 2, 64),
+    "case_I": (prompt_95, 128, 1, 0),
+    # Case II - Has left padding
+    "case_II": (prompt_260, 128, 3, 64),
     # Case III again - no padding
-    "case_III": (prompt_012, 128, 2, 0),
+    "case_III": (prompt_251, 128, 2, 0),
 }
 
 
