@@ -411,3 +411,145 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
                      self._cache_check_batch_tkv_limit[outer_key][inner_key])
 
         return return_value
+
+
+class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
+    """ Support of chunked prefill """
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+
+        # We want to keep track of requests for which the prefill is ongoing.
+        # Theoretically, only one request can be prefilled at a time, but we
+        # keep a list to be able to batch prefills in the future.
+        self.prefilling: list[Request] = []
+
+    def update_from_output(self, scheduler_output, model_runner_output):
+        assert isinstance(model_runner_output, CBSpyreModelRunnerOutput), (
+            "Expecting an instance of CBSpyreModelRunnerOutput when doing "
+            "chunked prefill.")
+
+        for req in self.prefilling:
+            # replace num_computed_tokens with the exact number of computed
+            # prompt tokens, the current value might be wrong because of padding
+
+            # TODO agree on interface with CBSpyreModelRunnerOutput
+            # req.num_computed_tokens = \
+            # model_runner_output.req_num_computed_tokens[req.request_id]
+            pass
+
+        # Remove completed prefills
+        self.prefilling = [
+            req for req in self.prefilling
+            if req.num_computed_tokens < req.num_prompt_tokens
+        ]
+
+        return super().update_from_output(scheduler_output,
+                                          model_runner_output)
+
+    def schedule(self) -> "SchedulerOutput":
+        """This override adds constraints and then delegates most of the work
+        to the base scheduler
+
+        To avoid additional specialization, some requests are held back from the
+        base scheduler but are restored after.
+        """
+        # First purge the full waiting queue into our holdback queue, preserving
+        # priority, so that the base scheduler does not see them.
+        holdback_queue: deque[Request] = deque()
+        while self.waiting:
+            holdback_queue.append(self.waiting.popleft())
+
+        # Check if new requests can be scheduled.
+        while holdback_queue:
+            if self.can_schedule(holdback_queue[0]):
+                # Add request to the waiting queue
+                self.waiting.append(holdback_queue.popleft())
+            else:
+                # Otherwise, we simply stop here so that the scheduler
+                # can work with the batch we have
+                break
+
+        assert len(self.prefilling) <= 1, \
+            "Only one request can be prefilled at a time, but got %d" \
+                % len(self.prefilling)
+        assert len(self.waiting) == 0 or len(self.prefilling) == 0, \
+        "Cannot schedule new requests while another request prefill is ongoing."
+        assert all(r in self.running for r in self.prefilling), \
+        "Ongoing prefill requests must be in the running queue."
+
+        # Check ongoing prefills
+        if self.prefilling:
+            # Some running requests are currently being prefilled. We need to
+            # separate them from currently decoding requests, and schedule
+            # them separately. Either we schedule a chunked prefill step, or a
+            # decoding step
+
+            schedule_prefill = self.can_schedule(self.prefilling[0])
+
+            if schedule_prefill:
+                running_holdback = [
+                    r for r in self.running if r not in self.prefilling
+                ]
+                self.running = self.prefilling
+                logger.debug(
+                    "Scheduling a chunked prefill step of %d requests, holding "
+                    "back %d requests", len(self.running), len(holdback_queue))
+            else:
+                self.running = [
+                    r for r in self.running if r not in self.prefilling
+                ]
+                running_holdback = self.prefilling
+                logger.debug(
+                    "Scheduling a decode step of %d requests, holding back %d "
+                    "requests", len(self.running), len(holdback_queue))
+
+        # Check new requests to prefill
+        elif len(self.waiting) > 0:
+            self.prefilling.extend(self.waiting)
+            # Hide current decodes from the scheduler
+            running_holdback = self.running
+            self.running = []
+            logger.debug(
+                "Scheduling a prefill step of %d requests, holding back %d "
+                "requests", len(self.waiting), len(holdback_queue))
+        else:
+            running_holdback = []
+            logger.debug("Scheduling a decode step of %d requests",
+                         len(self.running))
+
+        # delegate to super of SpyreScheduler: base V1 Scheduler
+        outputs = super(SpyreScheduler, self).schedule()
+
+        # restore holdbacks after running the base scheduler
+        self.running = self.running + running_holdback
+        while holdback_queue:
+            self.waiting.append(holdback_queue.popleft())
+
+        return outputs
+
+    def can_schedule(self, request):
+        # For currently prefilling requests: all the required blocks were
+        # already reserved and all the conditions were already checked at the
+        # time of scheduling the first chunk. We also always prioritize prefill
+        # over decode, and this allows us to skip verification of later chunks.
+        #
+        # Soon, we will add some constraints here:
+        # 1. If it is not the last chunk: schedule the prefill if we have enough
+        #    blocks for a single chunked prefill, and if previous step was a
+        #    decode step (we interleave prefills with decodes)
+        # 2. If it is the last chunk: do a prefill if all the other scheduling
+        #    conditions are met
+        if request in self.prefilling:
+            return True
+
+        # We can't schedule a new request if another request is already
+        # prefilling
+        if self.prefilling:
+            return False
+
+        # We use can_schedule from ContinuousBatchingSpyreScheduler as it is to
+        # verify the different scheduling conditions.
+        # NOTE we won't be able to continue doing so when we interleave prefill
+        # with decode steps
+        return super().can_schedule(request)

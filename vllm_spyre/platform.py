@@ -128,8 +128,12 @@ class SpyrePlatform(Platform):
             os.environ["COMPILATION_MODE"] = "offline"
 
         if envs_spyre.VLLM_SPYRE_USE_CB and is_decoder:
-            scheduler_config.scheduler_cls = "vllm_spyre.v1.core."\
-                "scheduler.ContinuousBatchingSpyreScheduler"
+            if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
+                scheduler_config.scheduler_cls = "vllm_spyre.v1.core."\
+                    "scheduler.ChunkedPrefillSpyreScheduler"
+            else:
+                scheduler_config.scheduler_cls = "vllm_spyre.v1.core."\
+                    "scheduler.ContinuousBatchingSpyreScheduler"
             if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
                 raise ValueError("Prompt logprobs not supported with " \
                 "continuous batching")
