@@ -2174,6 +2174,48 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                                         tkv=self.tkv,
                                         n_free_blocks=self.get_n_free_blocks())
 
+    def check_incomplete_prefill(self, scheduler_output : SchedulerOutput):
+        cached_reqs = scheduler_output.scheduled_cached_reqs
+        new_reqs = scheduler_output.scheduled_new_reqs
+
+        if cached_reqs.num_reqs != 1 and len(new_reqs) != 1:
+            # Not a prefill
+            return False
+        
+        # possible prefill
+        req_id = new_reqs[0].req_id if\
+                len(new_reqs) == 1 else \
+                cached_reqs.req_ids[0]
+        
+        num_scheduled_tokens =\
+            scheduler_output.num_scheduled_tokens[req_id]
+        if len(new_reqs) == 1:
+            return (num_scheduled_tokens < 
+                    len(new_reqs[0].prompt_token_ids))
+        else:
+            req_state = self.requests[req_id]
+            num_computed_tokens = cached_reqs.num_computed_tokens[0]
+            return ((num_computed_tokens + num_scheduled_tokens)
+                    < len(req_state.prompt_token_ids))
+    
+    def partial_update_states(self, scheduler_output : SchedulerOutput):
+
+
+        if len(scheduler_output.scheduled_new_reqs) > 0:
+            # There is no state yet for this
+            return
+        # We are only considering cached requests
+        cached_reqs = scheduler_output.scheduled_cached_reqs
+        assert cached_reqs.num_reqs == 1
+
+        req_id = cached_reqs.req_ids[0]
+
+        req_state = self.requests[req_id]
+
+        req_state.num_computed_tokens = cached_reqs.num_computed_tokens[0]
+
+
+
     @SpyrePlatform.inference_mode()
     def execute_model(
         self,
@@ -2183,7 +2225,12 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         t0 = time.time()
 
-        self.update_states(scheduler_output)
+        is_incomplete_prefill = self.check_incomplete_prefill(scheduler_output)
+
+        if is_incomplete_prefill and scheduler_output:
+            self.partial_update_states(scheduler_output)
+        else:
+            self.update_states(scheduler_output)
 
         if not scheduler_output.total_num_scheduled_tokens:
             # Return empty ModelRunnerOuptut if there's no work to do.
@@ -2207,31 +2254,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         prompt_logprobs_dicts = self._get_prompt_logprobs_dict(
             logits=logits, model_inputs=model_input)
 
-        is_incomplete_prefill = False
-
-        cached_reqs = scheduler_output.scheduled_cached_reqs
-        cached_req_map = {id: i for i, id in enumerate(cached_reqs.req_ids)}
-        if is_prefill:
-            req_id = scheduler_output.scheduled_new_reqs[0].req_id if\
-                  len(scheduler_output.scheduled_new_reqs) == 1 else \
-                  cached_reqs.req_ids[0]
-            req_state = self.requests[req_id]
-
-            num_scheduled_tokens =\
-                scheduler_output.num_scheduled_tokens[req_id]
-            if len(scheduler_output.scheduled_new_reqs) > 0:
-                is_incomplete_prefill =\
-                    num_scheduled_tokens < len(req_state.prompt_token_ids)
-            else:
-                num_computed_tokens =\
-                    cached_reqs.num_computed_tokens[cached_req_map[req_id]]
-                is_incomplete_prefill = ((num_computed_tokens +
-                                          num_scheduled_tokens)
-                                         < len(req_state.prompt_token_ids))
-
         # If the prompt is being prefilled we don't have to sample
         # and generate a new token.
-        if is_incomplete_prefill:
+        if is_prefill and is_incomplete_prefill:
             # Only return outputs from the driver worker
             if not self.is_driver_worker:
                 return self.get_empty_output()
