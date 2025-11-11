@@ -1773,7 +1773,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         1 chunk
         4 left padding
 
-        X X X X | T T T O || O O O O | O O O O || O O O O | O O O O || ...
+        X X X X | T T T O || 
 
         Variation: Prompt fits in the chunk but no left padding needed
 
@@ -1782,7 +1782,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         1 chunk
         0 left padding
 
-        T T T T | T T T O || O O O O | O O O O || O O O O | O O O O || ...
+        T T T T | T T T O || 
 
         ---
         # Case II 
@@ -1794,7 +1794,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         2 chunks
         4 left padding
 
-        X X X X | T T T T || T T T T | T T O O || O O O O | O O O O || ...
+        X X X X | T T T T || T T T T | T T O O || 
         
         # Case III 
 
@@ -1805,7 +1805,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         2 chunks
         0 left padding
 
-        T T T T | T T T T || T T T T | T O O O || O O O O | O O O O || ...
+        T T T T | T T T T || T T T T | T O O O || 
 
         NOTE: The goal of this "illustration" is to depics strategies to write
         code to create the chunks, not necessarily enumerate the possible 
@@ -1825,23 +1825,14 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         chunk_size = self.scheduler_config.max_num_batched_tokens
         chunk_blocks = chunk_size // self.block_size
         num_computed_tokens = request.num_computed_tokens
-        # basic check, if the computed tokens is divisible by the
-        # chunk size
-        assert num_computed_tokens % chunk_size == 0
 
         prompt_len = len(prompt_token_ids)
         padded_prompt_len = math.ceil(
             prompt_len / self.block_size) * self.block_size
 
-        chunk_start = num_computed_tokens
-
-        chunk_end = min(prompt_len, num_computed_tokens + chunk_size)
-        chunk_i = num_computed_tokens // chunk_size
+        chunk_i = math.ceil(num_computed_tokens / chunk_size)
         chunk_count = math.ceil(prompt_len / chunk_size)
         left_padding = chunk_count * chunk_size - padded_prompt_len
-
-        logger.debug("Chunked prefill of request %s %d:%d of %d tokens",
-                     req_id, chunk_start, chunk_end, prompt_len)
 
         input_tokens = torch.zeros(chunk_size,
                                    dtype=torch.int64,
@@ -1855,7 +1846,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         # create block table tensor
         blocks = [0] * (left_padding // self.block_size) + list(
             self.req_ids2blocks[req_id])
-        block_end = math.ceil((chunk_start + chunk_size) / self.block_size)
+        block_end = math.ceil(
+            (num_computed_tokens + chunk_size) / self.block_size)
         block_table = torch.tensor(blocks[:block_end],
                                    dtype=torch.int64).unsqueeze(0)
 
@@ -1869,44 +1861,48 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                                     device=self.device,
                                     dtype=torch.int64).unsqueeze(0)
 
+        # `left_pad_blocks_offset` is the number of prompt tokens
+        # used in the first chunk, which is not a multiple of the
+        # chunk size due to left padding. Sum this value with the
+        # offset of the current chunk to know where to slice the
+        # prompt.
         left_pad_blocks_offset = 0 if left_padding == 0 \
             else chunk_size - left_padding
 
-        if prompt_len < chunk_size and num_computed_tokens == 0:
+        # Most of the time should be zero, only set for the first chunk
+        # in a prompt with left padding.
+        chunk_left_offset = 0
+        if prompt_len < chunk_size:
             # Case I - Prompt fits in a single chunk
-            input_tokens_np[left_padding:left_padding +
-                            chunk_end] = prompt_token_ids
-            input_positions_np[left_padding:left_padding +
-                               chunk_end] = range(prompt_len)
+            chunk_start = 0
+            chunk_end = prompt_len
         elif left_padding > 0 and num_computed_tokens == 0:
-            # Case II - First chunk but it contains some left blocks at the left
-            input_tokens_np[
-                left_padding:left_padding+left_pad_blocks_offset] = \
-                    prompt_token_ids[:left_pad_blocks_offset]
-            input_positions_np[
-                left_padding:left_padding+left_pad_blocks_offset] = \
-                    range(left_pad_blocks_offset)
+            # Case II - First chunk, but it contains some padding blocks at
+            # the left
+            chunk_start = 0
+            chunk_end = left_pad_blocks_offset
+            chunk_left_offset = left_padding  # Only case it will be not zero
         else:
-            # The `token_idx` is the offset of the chunking in the prompt,
-            # because we can have left pad blocks, we may not slice it with
-            # the exact size of the chunk.
             if left_padding == 0:
                 # Case III
                 # No left padding, it will start with full chunks
-                token_idx = chunk_i * chunk_size
+                chunk_start = chunk_i * chunk_size
             else:
                 # Case II - remaining chunks
-                # The `left_pad_blocks_offset` is the piece of the first
-                # chunk that needed to be incomplete to compensate left
-                # padding. Sum it with the remaining chunks count to get
-                # where to slice the prompt
-                token_idx = left_pad_blocks_offset + (chunk_i - 1) * chunk_size
+                chunk_start = left_pad_blocks_offset + (chunk_i -
+                                                        1) * chunk_size
 
-            input_tokens_np[:chunk_end - token_idx] = (
-                prompt_token_ids[token_idx:min(token_idx +
-                                               chunk_size, prompt_len)])
-            input_positions_np[:chunk_end - token_idx] = range(
-                token_idx, chunk_end)
+            chunk_end = min(chunk_start + chunk_size, prompt_len)
+
+        # Create tensors based on slice
+        input_tokens_np[chunk_left_offset:chunk_left_offset + chunk_end -
+                        chunk_start] = (
+                            prompt_token_ids[chunk_start:chunk_end])
+        input_positions_np[chunk_left_offset:chunk_left_offset + chunk_end -
+                           chunk_start] = range(chunk_start, chunk_end)
+
+        logger.debug("Chunked prefill of request %s %d:%d of %d tokens",
+                     req_id, chunk_start, chunk_end, prompt_len)
 
         input_tokens = input_tokens.unsqueeze(0).clone()
         input_positions = input_positions.unsqueeze(0).clone()
