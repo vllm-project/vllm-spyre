@@ -1751,7 +1751,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         AssertionError(
             "Should not call this method on chunked prefill implementation")
 
-    def _prepare_chunked_prefill(self, scheduler_output: SchedulerOutput):
+    def _prepare_chunked_prefill(self, req_id: str):
         '''
         Cases / Scenarios for the chunked prefill with right padding.
  
@@ -1775,7 +1775,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         1 chunk
         4 left padding
 
-        X X X X | T T T O || O O O O | O O O O || O O O O | O O O O || ...
+        X X X X | T T T O || 
 
         Variation: Prompt fits in the chunk but no left padding needed
 
@@ -1784,7 +1784,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         1 chunk
         0 left padding
 
-        T T T T | T T T O || O O O O | O O O O || O O O O | O O O O || ...
+        T T T T | T T T O || 
 
         ---
         # Case II 
@@ -1796,7 +1796,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         2 chunks
         4 left padding
 
-        X X X X | T T T T || T T T T | T T O O || O O O O | O O O O || ...
+        X X X X | T T T T || T T T T | T T O O || 
         
         # Case III 
 
@@ -1807,7 +1807,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         2 chunks
         0 left padding
 
-        T T T T | T T T T || T T T T | T O O O || O O O O | O O O O || ...
+        T T T T | T T T T || T T T T | T O O O || 
 
         NOTE: The goal of this "illustration" is to depics strategies to write
         code to create the chunks, not necessarily enumerate the possible 
@@ -1816,34 +1816,20 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         
         '''
 
-        # Get request id from new request or cached request
-        req_id = scheduler_output.scheduled_new_reqs[0].req_id if \
-            len(scheduler_output.scheduled_new_reqs) == 1 \
-                else scheduler_output.scheduled_cached_reqs.req_ids[0]
-
         request = self.requests[req_id]
         prompt_token_ids = request.prompt_token_ids
 
         chunk_size = self.scheduler_config.max_num_batched_tokens
         chunk_blocks = chunk_size // self.block_size
         num_computed_tokens = request.num_computed_tokens
-        # basic check, if the computed tokens is divisible by the
-        # chunk size
-        assert num_computed_tokens % chunk_size == 0
 
         prompt_len = len(prompt_token_ids)
         padded_prompt_len = math.ceil(
             prompt_len / self.block_size) * self.block_size
 
-        chunk_start = num_computed_tokens
-
-        chunk_end = min(prompt_len, num_computed_tokens + chunk_size)
-        chunk_i = num_computed_tokens // chunk_size
+        chunk_i = math.ceil(num_computed_tokens / chunk_size)
         chunk_count = math.ceil(prompt_len / chunk_size)
         left_padding = chunk_count * chunk_size - padded_prompt_len
-
-        logger.debug("Chunked prefill of request %s %d:%d of %d tokens",
-                     req_id, chunk_start, chunk_end, prompt_len)
 
         input_tokens = torch.zeros(chunk_size,
                                    dtype=torch.int64,
@@ -1857,7 +1843,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         # create block table tensor
         blocks = [0] * (left_padding // self.block_size) + list(
             self.req_ids2blocks[req_id])
-        block_end = math.ceil((chunk_start + chunk_size) / self.block_size)
+        block_end = math.ceil(
+            (num_computed_tokens + chunk_size) / self.block_size)
         block_table = torch.tensor(blocks[:block_end],
                                    dtype=torch.int64).unsqueeze(0)
 
@@ -1871,44 +1858,48 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                                     device=self.device,
                                     dtype=torch.int64).unsqueeze(0)
 
+        # `left_pad_blocks_offset` is the number of prompt tokens
+        # used in the first chunk, which is not a multiple of the
+        # chunk size due to left padding. Sum this value with the
+        # offset of the current chunk to know where to slice the
+        # prompt.
         left_pad_blocks_offset = 0 if left_padding == 0 \
             else chunk_size - left_padding
 
-        if prompt_len < chunk_size and num_computed_tokens == 0:
+        # Most of the time should be zero, only set for the first chunk
+        # in a prompt with left padding.
+        chunk_left_offset = 0
+        if prompt_len < chunk_size:
             # Case I - Prompt fits in a single chunk
-            input_tokens_np[left_padding:left_padding +
-                            chunk_end] = prompt_token_ids
-            input_positions_np[left_padding:left_padding +
-                               chunk_end] = range(prompt_len)
+            chunk_start = 0
+            chunk_end = prompt_len
         elif left_padding > 0 and num_computed_tokens == 0:
-            # Case II - First chunk but it contains some left blocks at the left
-            input_tokens_np[
-                left_padding:left_padding+left_pad_blocks_offset] = \
-                    prompt_token_ids[:left_pad_blocks_offset]
-            input_positions_np[
-                left_padding:left_padding+left_pad_blocks_offset] = \
-                    range(left_pad_blocks_offset)
+            # Case II - First chunk, but it contains some padding blocks at
+            # the left
+            chunk_start = 0
+            chunk_end = left_pad_blocks_offset
+            chunk_left_offset = left_padding  # The only case it won't be zero
         else:
-            # The `token_idx` is the offset of the chunking in the prompt,
-            # because we can have left pad blocks, we may not slice it with
-            # the exact size of the chunk.
             if left_padding == 0:
                 # Case III
                 # No left padding, it will start with full chunks
-                token_idx = chunk_i * chunk_size
+                chunk_start = chunk_i * chunk_size
             else:
                 # Case II - remaining chunks
-                # The `left_pad_blocks_offset` is the piece of the first
-                # chunk that needed to be incomplete to compensate left
-                # padding. Sum it with the remaining chunks count to get
-                # where to slice the prompt
-                token_idx = left_pad_blocks_offset + (chunk_i - 1) * chunk_size
+                chunk_start = left_pad_blocks_offset + (chunk_i -
+                                                        1) * chunk_size
 
-            input_tokens_np[:chunk_end - token_idx] = (
-                prompt_token_ids[token_idx:min(token_idx +
-                                               chunk_size, prompt_len)])
-            input_positions_np[:chunk_end - token_idx] = range(
-                token_idx, chunk_end)
+            chunk_end = min(chunk_start + chunk_size, prompt_len)
+
+        # Create tensors based on slice
+        input_tokens_np[chunk_left_offset:chunk_left_offset + chunk_end -
+                        chunk_start] = (
+                            prompt_token_ids[chunk_start:chunk_end])
+        input_positions_np[chunk_left_offset:chunk_left_offset + chunk_end -
+                           chunk_start] = range(chunk_start, chunk_end)
+
+        logger.debug("Chunked prefill of request %s %d:%d of %d tokens",
+                     req_id, chunk_start, chunk_end, prompt_len)
 
         input_tokens = input_tokens.unsqueeze(0).clone()
         input_positions = input_positions.unsqueeze(0).clone()
@@ -1959,14 +1950,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             scale_indices=self.input_batch.request_indices)
 
         self._mark_input_tensors(model_inputs)
-
-        # Check if it is last prefill
-        num_scheduled_tokens = scheduler_output.num_scheduled_tokens[req_id]
-        if num_computed_tokens + num_scheduled_tokens == prompt_len:
-            # Last prefill we need to setup the logitsprocessors to sampling
-            prefill_index = self.input_batch.get_req_index(req_id)
-            for logitsproc in self.input_batch.logitsprocs_wrappers:
-                logitsproc.set_prefill_index(prefill_index)
 
         return model_inputs
 
@@ -2034,8 +2017,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             left_padding = left_pad_blocks_count * self.block_size
             left_padded_prompt_mask.append(left_padding)
 
-            req_tkv = (req_state.left_padding + req_state.num_computed_tokens +
-                       1)
+            req_tkv = (left_padding + req_state.num_computed_tokens + 1)
             tkv_mask.append(req_tkv)
             tkv = max(tkv, req_tkv)
 
@@ -2122,12 +2104,30 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         )
 
         self.requests[req_id] = req_state
+
         self.input_batch.add_request(req_state)
         self.prefill_batch.add_request(req_state)
 
         # Refresh sampling metadata after all request are added to the batch
         self.input_batch.refresh_metadata()
         self.prefill_batch.refresh_metadata()
+
+    def _maybe_prepare_last_prefill(self, req_id: str,
+                                    scheduler_output: SchedulerOutput):
+        ''' In the last prefill we have to setup the batch to sample the 
+            first token.
+        '''
+        # Check if it is last prefill
+        request = self.requests[req_id]
+        num_computed_tokens = request.num_computed_tokens
+        prompt_len = len(request.prompt_token_ids)
+        num_scheduled_tokens = scheduler_output.num_scheduled_tokens[req_id]
+
+        if num_computed_tokens + num_scheduled_tokens == prompt_len:
+            # Last prefill we need to setup the logitsprocessors to sampling
+            prefill_index = self.input_batch.get_req_index(req_id)
+            for logitsproc in self.input_batch.logitsprocs_wrappers:
+                logitsproc.set_prefill_index(prefill_index)
 
     def prepare_model_input(self, scheduler_output):
 
@@ -2139,9 +2139,12 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             is_prefill = True
 
         # NOTE: We assume that there's only one prefill at each step
-        # and if it is a chunked prefill then the num of computed tokens
-        # is less than the length of the prompt
+        # and if it is a single request cached here and the number of
+        # computed tokens is less than the length of the prompt then
+        # it is still prefilling.
         if len(scheduler_output.scheduled_cached_reqs.req_ids) == 1:
+            # Whether it's a prefill or not, should not have any request here
+            assert len(scheduler_output.scheduled_new_reqs) == 0
             req_id = scheduler_output.scheduled_cached_reqs.req_ids[0]
             is_prefill = \
                 len(self.requests[req_id].prompt_token_ids) > \
@@ -2150,7 +2153,15 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         # Prepare input tensors.
         if is_prefill:
             # All prefills are chunked
-            return self._prepare_chunked_prefill(scheduler_output)
+            # Get request id from new request or cached request
+            req_id = scheduler_output.scheduled_new_reqs[0].req_id if \
+                len(scheduler_output.scheduled_new_reqs) == 1 \
+                    else scheduler_output.scheduled_cached_reqs.req_ids[0]
+            model_inputs = self._prepare_chunked_prefill(req_id)
+
+            self._maybe_prepare_last_prefill(req_id, scheduler_output)
+
+            return model_inputs
         else:
             return self._prepare_decode(scheduler_output.scheduled_cached_reqs)
 
@@ -2162,7 +2173,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                                         prompt_logprobs_dict={},
                                         pooler_output=[],
                                         num_nans_in_logits=None,
-                                        tkv=self.tkv)
+                                        tkv=self.tkv,
+                                        n_free_blocks=self.get_n_free_blocks())
 
     @SpyrePlatform.inference_mode()
     def execute_model(
@@ -2197,7 +2209,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         prompt_logprobs_dicts = self._get_prompt_logprobs_dict(
             logits=logits, model_inputs=model_input)
 
-        is_chunked_prefill = False
+        is_incomplete_prefill = False
 
         cached_reqs = scheduler_output.scheduled_cached_reqs
         cached_req_map = {id: i for i, id in enumerate(cached_reqs.req_ids)}
@@ -2210,18 +2222,18 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             num_scheduled_tokens =\
                 scheduler_output.num_scheduled_tokens[req_id]
             if len(scheduler_output.scheduled_new_reqs) > 0:
-                is_chunked_prefill =\
+                is_incomplete_prefill =\
                     num_scheduled_tokens < len(req_state.prompt_token_ids)
             else:
                 num_computed_tokens =\
                     cached_reqs.num_computed_tokens[cached_req_map[req_id]]
-                is_chunked_prefill = ((num_computed_tokens +
-                                       num_scheduled_tokens)
-                                      < len(req_state.prompt_token_ids))
+                is_incomplete_prefill = ((num_computed_tokens +
+                                          num_scheduled_tokens)
+                                         < len(req_state.prompt_token_ids))
 
         # If the prompt is being prefilled we don't have to sample
         # and generate a new token.
-        if is_chunked_prefill:
+        if is_incomplete_prefill:
             # Only return outputs from the driver worker
             if not self.is_driver_worker:
                 return self.get_empty_output()
@@ -2234,7 +2246,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                 # TODO: probably it does not makes sense
                 prompt_logprobs_dict=prompt_logprobs_dicts,
                 pooler_output=[],
-                tkv=self.tkv)
+                tkv=self.tkv,
+                n_free_blocks=self.get_n_free_blocks())
 
         # Sample the next token.
         output: SamplerOutput = self.model.sample(
@@ -2266,7 +2279,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                       if output.logprobs_tensors else None),
             prompt_logprobs_dict=prompt_logprobs_dicts,
             pooler_output=[],
-            tkv=self.tkv)
+            tkv=self.tkv,
+            n_free_blocks=self.get_n_free_blocks())
 
         return model_output
 
