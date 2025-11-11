@@ -2192,7 +2192,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         prompt_logprobs_dicts = self._get_prompt_logprobs_dict(
             logits=logits, model_inputs=model_input)
 
-        is_chunked_prefill = False
+        is_incomplete_prefill = False
 
         cached_reqs = scheduler_output.scheduled_cached_reqs
         cached_req_map = {id: i for i, id in enumerate(cached_reqs.req_ids)}
@@ -2205,18 +2205,18 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             num_scheduled_tokens =\
                 scheduler_output.num_scheduled_tokens[req_id]
             if len(scheduler_output.scheduled_new_reqs) > 0:
-                is_chunked_prefill =\
+                is_incomplete_prefill =\
                     num_scheduled_tokens < len(req_state.prompt_token_ids)
             else:
                 num_computed_tokens =\
                     cached_reqs.num_computed_tokens[cached_req_map[req_id]]
-                is_chunked_prefill = ((num_computed_tokens +
-                                       num_scheduled_tokens)
-                                      < len(req_state.prompt_token_ids))
+                is_incomplete_prefill = ((num_computed_tokens +
+                                          num_scheduled_tokens)
+                                         < len(req_state.prompt_token_ids))
 
         # If the prompt is being prefilled we don't have to sample
         # and generate a new token.
-        if is_chunked_prefill:
+        if is_incomplete_prefill:
             # Only return outputs from the driver worker
             if not self.is_driver_worker:
                 return self.get_empty_output()

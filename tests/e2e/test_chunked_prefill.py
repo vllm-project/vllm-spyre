@@ -26,7 +26,7 @@ def get_model_runner(cp_model: LLM):
 chicken_soup_prompts = get_longer_chicken_soup_prompts(4)
 
 # NOTE: considering granite 3.3 tokenizer
-# Should have 95 tokens 
+# Should have 95 tokens
 prompt_95 = chicken_soup_prompts[0]
 # Should have 251
 prompt_251 = chicken_soup_prompts[0] + chicken_soup_prompts[
@@ -34,7 +34,6 @@ prompt_251 = chicken_soup_prompts[0] + chicken_soup_prompts[
 # Should have 260 tokens
 prompt_260 = chicken_soup_prompts[0] + chicken_soup_prompts[2] + \
     chicken_soup_prompts[3]
-
 
 USE_CASES = {
     # Case I - Prompt fits in a single chunk
