@@ -2103,15 +2103,12 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         self.requests[req_id] = req_state
 
-        self.input_batch.add_request(req_state)
+        # Add only to prefill batch, it will be added later to the input batch
+        # once if is fully prefilled
         self.prefill_batch.add_request(req_state)
 
-        # Refresh sampling metadata after all request are added to the batch
-        self.input_batch.refresh_metadata()
-        self.prefill_batch.refresh_metadata()
-
     def _maybe_prepare_last_prefill(self, req_id: str,
-                                    scheduler_output: SchedulerOutput):
+                                    scheduler_output: SchedulerOutput) -> None:
         ''' In the last prefill we have to setup the batch to sample the 
             first token.
         '''
@@ -2121,11 +2118,17 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         prompt_len = len(request.prompt_token_ids)
         num_scheduled_tokens = scheduler_output.num_scheduled_tokens[req_id]
 
-        if num_computed_tokens + num_scheduled_tokens == prompt_len:
-            # Last prefill we need to setup the logitsprocessors to sampling
-            prefill_index = self.input_batch.get_req_index(req_id)
-            for logitsproc in self.input_batch.logitsprocs_wrappers:
-                logitsproc.set_prefill_index(prefill_index)
+        if num_computed_tokens + num_scheduled_tokens < prompt_len:
+            return
+
+        # Last prefill we need to setup the logitsprocessors to sampling
+        prefill_index = self.input_batch.add_request(request)
+        for logitsproc in self.input_batch.logitsprocs_wrappers:
+            logitsproc.set_prefill_index(prefill_index)
+
+        # Refresh sampling metadata after all request are added to the batch
+        self.input_batch.refresh_metadata()
+        self.prefill_batch.refresh_metadata()
 
     def prepare_model_input(self, scheduler_output):
 
@@ -2140,7 +2143,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         # and if it is a single request cached here and the number of
         # computed tokens is less than the length of the prompt then
         # it is still prefilling.
-        if len(scheduler_output.scheduled_cached_reqs.req_ids) == 1:
+        if scheduler_output.scheduled_cached_reqs.num_reqs == 1:
             # Whether it's a prefill or not, should not have any request here
             assert len(scheduler_output.scheduled_new_reqs) == 0
             req_id = scheduler_output.scheduled_cached_reqs.req_ids[0]
@@ -2173,6 +2176,48 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                                         num_nans_in_logits=None,
                                         tkv=self.tkv,
                                         n_free_blocks=self.get_n_free_blocks())
+
+    def check_incomplete_prefill(self, scheduler_output: SchedulerOutput):
+        cached_reqs = scheduler_output.scheduled_cached_reqs
+        new_reqs = scheduler_output.scheduled_new_reqs
+
+        if cached_reqs.num_reqs != 1 and len(new_reqs) != 1:
+            # Not a prefill
+            return False
+
+        # possible prefill
+        req_id = new_reqs[0].req_id if\
+                len(new_reqs) == 1 else \
+                cached_reqs.req_ids[0]
+
+        num_scheduled_tokens =\
+            scheduler_output.num_scheduled_tokens[req_id]
+        if len(new_reqs) == 1:
+            return (num_scheduled_tokens < len(new_reqs[0].prompt_token_ids))
+        else:
+            req_state = self.requests[req_id]
+            num_computed_tokens = cached_reqs.num_computed_tokens[0]
+            return ((num_computed_tokens + num_scheduled_tokens)
+                    < len(req_state.prompt_token_ids))
+
+    def update_states(self, scheduler_output: SchedulerOutput):
+        cached_reqs = scheduler_output.scheduled_cached_reqs
+
+        if cached_reqs.num_reqs == 1:
+            # NOTE: while prefilling the request is not yet in the
+            # input batch, and update states try to access it there.
+            # For now, if it is prefilling, we only need to update
+            # num of computed tokens of the request
+            req_id = cached_reqs.req_ids[0]
+            req_state = self.requests[req_id]
+            num_computed_tokens = cached_reqs.num_computed_tokens[0]
+            if num_computed_tokens < len(req_state.prompt_token_ids):
+                req_state.num_computed_tokens = num_computed_tokens
+                # num_computed_tokens updated, don't call
+                # update_states in the super class.
+                return
+
+        super().update_states(scheduler_output)
 
     @SpyrePlatform.inference_mode()
     def execute_model(
@@ -2207,31 +2252,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         prompt_logprobs_dicts = self._get_prompt_logprobs_dict(
             logits=logits, model_inputs=model_input)
 
-        is_incomplete_prefill = False
-
-        cached_reqs = scheduler_output.scheduled_cached_reqs
-        cached_req_map = {id: i for i, id in enumerate(cached_reqs.req_ids)}
-        if is_prefill:
-            req_id = scheduler_output.scheduled_new_reqs[0].req_id if\
-                  len(scheduler_output.scheduled_new_reqs) == 1 else \
-                  cached_reqs.req_ids[0]
-            req_state = self.requests[req_id]
-
-            num_scheduled_tokens =\
-                scheduler_output.num_scheduled_tokens[req_id]
-            if len(scheduler_output.scheduled_new_reqs) > 0:
-                is_incomplete_prefill =\
-                    num_scheduled_tokens < len(req_state.prompt_token_ids)
-            else:
-                num_computed_tokens =\
-                    cached_reqs.num_computed_tokens[cached_req_map[req_id]]
-                is_incomplete_prefill = ((num_computed_tokens +
-                                          num_scheduled_tokens)
-                                         < len(req_state.prompt_token_ids))
-
         # If the prompt is being prefilled we don't have to sample
         # and generate a new token.
-        if is_incomplete_prefill:
+        if is_prefill and self.check_incomplete_prefill(scheduler_output):
             # Only return outputs from the driver worker
             if not self.is_driver_worker:
                 return self.get_empty_output()
