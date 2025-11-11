@@ -68,8 +68,7 @@ def test_chunked_prefill_correctness(model: ModelInfo, backend: str,
         max_new_tokens=max_new_tokens,
         ignore_eos=True,
     )
-
-    monkeypatch.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", "1")
+    ### NB: May not be guaranteed to be set
     monkeypatch.setenv("VLLM_ENABLE_V1_MULTIPROCESSING", "0")
 
     cp_model = get_cached_llm(model=model,

@@ -50,22 +50,24 @@ def default_test_params(test_func):
         "max_num_seqs", [2], ids=lambda val: f"max_num_seqs({val})")(test_func)
 
     test_func = pytest.mark.parametrize(
-        "chunk_size", [128], ids=lambda val: f"chunk_size({val})")(test_func)
+        "max_num_batched_tokens", [128],
+        ids=lambda val: f"max_num_batched_tokens({val})")(test_func)
 
     return test_func
 
 
 def get_cpu_model_runner(model: ModelInfo, max_model_len: int,
-                         max_num_seqs: int, chunk_size: int,
+                         max_num_seqs: int, max_num_batched_tokens: int,
                          monkeypatch: pytest.MonkeyPatch) -> SpyreModelRunner:
     # TODO: Need to add chunked prefill mode + params to get_cached_engine
-    engine_core: EngineCore = get_cached_engine(model=model,
-                                                max_model_len=max_model_len,
-                                                max_num_seqs=max_num_seqs,
-                                                chunk_size=chunk_size,
-                                                available_blocks=None,
-                                                backend="eager",
-                                                monkeypatch=monkeypatch)
+    engine_core: EngineCore = get_cached_engine(
+        model=model,
+        max_model_len=max_model_len,
+        max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=max_num_batched_tokens,
+        available_blocks=None,
+        backend="eager",
+        monkeypatch=monkeypatch)
 
     # NB: Only works because this engine is run with no multiprocessing and TP=1
     runner: SpyreModelRunner = \
@@ -131,7 +133,8 @@ def make_new_request_data(req_id, prompt_len):
 @pytest.mark.chunked_prefill
 @default_test_params
 def test_single_block_chunked_prefill(model: ModelInfo, max_model_len: int,
-                                      max_num_seqs: int, chunk_size: int,
+                                      max_num_seqs: int,
+                                      max_num_batched_tokens: int,
                                       monkeypatch: pytest.MonkeyPatch):
     """A request that fits within a single block should be prefilled in one
     step and should not be padded out to the chunk boundary on decode"""
@@ -139,7 +142,7 @@ def test_single_block_chunked_prefill(model: ModelInfo, max_model_len: int,
         model=model,
         max_model_len=max_model_len,
         max_num_seqs=max_num_seqs,
-        chunk_size=chunk_size,
+        max_num_batched_tokens=max_num_batched_tokens,
         monkeypatch=monkeypatch)
 
     req_id = "1"
@@ -155,21 +158,22 @@ def test_single_block_chunked_prefill(model: ModelInfo, max_model_len: int,
     # one output token from prefill
     assert len(output.sampled_token_ids[0]) == 1
     # tkv is prompt_len + 1
-    assert output.tkv == prompt_len # + 1 (wait why not?)
+    assert output.tkv == prompt_len + 1
 
 
 @pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @default_test_params
 def test_multi_chunk_padded_prefill(model: ModelInfo, max_model_len: int,
-                                    max_num_seqs: int, chunk_size: int,
+                                    max_num_seqs: int,
+                                    max_num_batched_tokens: int,
                                     monkeypatch: pytest.MonkeyPatch):
     """A request that's longer than a chunk is split into multiple chunks"""
     runner: SpyreModelRunner = get_cpu_model_runner(
         model=model,
         max_model_len=max_model_len,
         max_num_seqs=max_num_seqs,
-        chunk_size=chunk_size,
+        max_num_batched_tokens=max_num_batched_tokens,
         monkeypatch=monkeypatch)
 
     req_id = "1"
@@ -211,14 +215,15 @@ def test_multi_chunk_padded_prefill(model: ModelInfo, max_model_len: int,
 @pytest.mark.chunked_prefill
 @default_test_params
 def test_multi_chunk_unpadded_prefill(model: ModelInfo, max_model_len: int,
-                                      max_num_seqs: int, chunk_size: int,
+                                      max_num_seqs: int,
+                                      max_num_batched_tokens: int,
                                       monkeypatch: pytest.MonkeyPatch):
     """A request that's longer than a chunk is split into multiple chunks"""
     runner: SpyreModelRunner = get_cpu_model_runner(
         model=model,
         max_model_len=max_model_len,
         max_num_seqs=max_num_seqs,
-        chunk_size=chunk_size,
+        max_num_batched_tokens=max_num_batched_tokens,
         monkeypatch=monkeypatch)
 
     req_id = "1"
@@ -253,14 +258,15 @@ def test_multi_chunk_unpadded_prefill(model: ModelInfo, max_model_len: int,
 @pytest.mark.chunked_prefill
 @default_test_params
 def test_decode_padding_to_same_block(model: ModelInfo, max_model_len: int,
-                                      max_num_seqs: int, chunk_size: int,
+                                      max_num_seqs: int,
+                                      max_num_batched_tokens: int,
                                       monkeypatch: pytest.MonkeyPatch):
     """A request that's longer than a chunk is split into multiple chunks"""
     runner: SpyreModelRunner = get_cpu_model_runner(
         model=model,
         max_model_len=max_model_len,
         max_num_seqs=max_num_seqs,
-        chunk_size=chunk_size,
+        max_num_batched_tokens=max_num_batched_tokens,
         monkeypatch=monkeypatch)
 
     short_req_id = "short"
@@ -303,7 +309,7 @@ def test_decode_padding_to_same_block(model: ModelInfo, max_model_len: int,
     # TKV is the length of the long request since both are still in first block
     assert output.tkv == long_prompt_len + steps
     # Save the number of free blocks to compare once we allocate a new one
-    initial_free_blocks = output.n_free_blocks
+    initial_free_blocks = len(runner.block_pool)
 
     # Now the long request is at the first block boundary (tkv = 64)
     # We'll have to pad the short request to be within the same block by adding
@@ -322,7 +328,7 @@ def test_decode_padding_to_same_block(model: ModelInfo, max_model_len: int,
     # 🌶️🌶️🌶️ short prompt gets padded, it's now the longest sequence
     assert output.tkv == short_prompt_len + steps + 64
     # We should have allocated only one new block for the long prompt entering
-    assert output.n_free_blocks == initial_free_blocks - 1
+    assert len(runner.block_pool) == initial_free_blocks - 1
 
     # The shorter request is now at the second block boundary (tkv = 128), so we
     # can remove the extra block of padding (tkv = 64) since it will now be in
@@ -341,4 +347,4 @@ def test_decode_padding_to_same_block(model: ModelInfo, max_model_len: int,
     # 🌶️🌶️🌶️ short prompt padding removed again, tkv is back to long + steps
     assert output.tkv == long_prompt_len + steps
     # One more real block was allocated for the short request
-    assert output.n_free_blocks == initial_free_blocks - 2
+    assert len(runner.block_pool) == initial_free_blocks - 2
