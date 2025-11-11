@@ -2136,6 +2136,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         # and if it is a chunked prefill then the num of computed tokens
         # is less than the length of the prompt
         if len(scheduler_output.scheduled_cached_reqs.req_ids) == 1:
+            # Whether it's a prefill or not, should not have any request here
+            assert len(scheduler_output.scheduled_new_reqs) == 0
             req_id = scheduler_output.scheduled_cached_reqs.req_ids[0]
             is_prefill = \
                 len(self.requests[req_id].prompt_token_ids) > \
