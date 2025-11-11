@@ -1876,7 +1876,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             # the left
             chunk_start = 0
             chunk_end = left_pad_blocks_offset
-            chunk_left_offset = left_padding  # Only case it will be not zero
+            chunk_left_offset = left_padding  # The only case it won't be zero
         else:
             if left_padding == 0:
                 # Case III
