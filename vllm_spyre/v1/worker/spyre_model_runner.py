@@ -2028,8 +2028,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             left_padding = left_pad_blocks_count * self.block_size
             left_padded_prompt_mask.append(left_padding)
 
-            req_tkv = (req_state.left_padding + req_state.num_computed_tokens +
-                       1)
+            req_tkv = (left_padding + req_state.num_computed_tokens + 1)
             tkv_mask.append(req_tkv)
             tkv = max(tkv, req_tkv)
 
@@ -2116,6 +2115,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         )
 
         self.requests[req_id] = req_state
+
         self.input_batch.add_request(req_state)
         self.prefill_batch.add_request(req_state)
 
@@ -2156,7 +2156,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                                         prompt_logprobs_dict={},
                                         pooler_output=[],
                                         num_nans_in_logits=None,
-                                        tkv=self.tkv)
+                                        tkv=self.tkv,
+                                        n_free_blocks=self.get_n_free_blocks())
 
     @SpyrePlatform.inference_mode()
     def execute_model(
@@ -2228,7 +2229,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                 # TODO: probably it does not makes sense
                 prompt_logprobs_dict=prompt_logprobs_dicts,
                 pooler_output=[],
-                tkv=self.tkv)
+                tkv=self.tkv,
+                n_free_blocks=self.get_n_free_blocks())
 
         # Sample the next token.
         output: SamplerOutput = self.model.sample(
@@ -2260,7 +2262,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                       if output.logprobs_tensors else None),
             prompt_logprobs_dict=prompt_logprobs_dicts,
             pooler_output=[],
-            tkv=self.tkv)
+            tkv=self.tkv,
+            n_free_blocks=self.get_n_free_blocks())
 
         return model_output
 
