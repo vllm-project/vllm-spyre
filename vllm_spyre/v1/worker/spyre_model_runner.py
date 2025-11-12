@@ -2064,9 +2064,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         blocks_count = math.ceil(prompt_len / self.block_size)
 
-        # If starting a new batch, the initial TKV will be prompt_len + 1
+        # set the new tkv to the prompt length if starting a new decode batch
         if is_new_batch:
-            self.tkv = prompt_len + 1
+            self.tkv = prompt_len
 
         # Reserve the number of blocks that this new sequence requires in the
         # worst case (it might always stop early by producing the EOS token)
