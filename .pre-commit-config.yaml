@@ -19,6 +19,12 @@ repos:
   rev: v0.45.0
   hooks:
   - id: markdownlint
+    args: [
+      "--config",
+      "pyproject.toml",
+      "--configPointer",
+      "/tool/markdownlint",
+    ]
     exclude: '.*\.inc\.md'
     stages: [manual] # Only run in CI
 - repo: https://github.com/rhysd/actionlint

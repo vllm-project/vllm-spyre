@@ -159,6 +159,17 @@ markers = [
 ]
 # --8<-- [end:test-markers-definition]
 
+[tool.markdownlint]
+#MD013.line_length = 100
+MD013 = false # line-length
+MD033 = false # inline-html
+MD038 = false # no-space-in-code
+MD041 = false # first-line-h1
+MD046 = false # code-block-style
+MD024.allow_different_nesting = true # no-duplicate-headers
+MD007.indent = 4 # ul-indent
+MD037 = false # no-space-in-emphasis (allow MkDocs Admonitions)
+
 [tool.pymarkdown]
 plugins.md013.enabled = false # line-length
 plugins.md033.enabled = false # inline-html

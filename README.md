@@ -21,6 +21,7 @@ For more information, check out the following:
 ## Getting Started
 
 Visit our [documentation](https://vllm-spyre.readthedocs.io/en/latest/):
+
 - [Installation](https://vllm-spyre.readthedocs.io/en/latest/getting_started/installation.html)
 - [List of Supported Models](https://vllm-spyre.readthedocs.io/en/latest/user_guide/supported_models.html)
 - [List of Supported Features](https://vllm-spyre.readthedocs.io/en/latest/user_guide/supported_features.html)
