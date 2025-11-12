@@ -1745,6 +1745,19 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
 
 class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
+    def __init__(
+        self,
+        vllm_config: VllmConfig,
+        is_driver_worker: bool,
+        rank: int,
+    ):
+        super().__init__(vllm_config=vllm_config,
+                         is_driver_worker=is_driver_worker,
+                         rank=rank)
+
+        self.chunk_blocks_count = \
+            self.scheduler_config.max_num_batched_tokens // self.block_size
+
     def _prepare_prompt(self, _):
         AssertionError(
             "Should not call this method on chunked prefill implementation")
@@ -1818,7 +1831,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         prompt_token_ids = request.prompt_token_ids
 
         chunk_size = self.scheduler_config.max_num_batched_tokens
-        chunk_blocks = chunk_size // self.block_size
         num_computed_tokens = request.num_computed_tokens
 
         prompt_len = len(prompt_token_ids)
@@ -1841,14 +1853,13 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         # create block table tensor
         blocks = [0] * (left_padding // self.block_size) + list(
             self.req_ids2blocks[req_id])
-        block_end = math.ceil(
-            (num_computed_tokens + chunk_size) / self.block_size)
+        block_end = (chunk_i + 1) * self.chunk_blocks_count
         block_table = torch.tensor(blocks[:block_end],
                                    dtype=torch.int64).unsqueeze(0)
 
         slot_mapping = []
-        for i in range(chunk_blocks):
-            block = block_table[0][-chunk_blocks + i]
+        for i in range(self.chunk_blocks_count):
+            block = block_table[0][-self.chunk_blocks_count + i]
             slot_mapping += list(
                 range(block * self.block_size,
                       block * self.block_size + self.block_size))
@@ -1911,13 +1922,12 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         # In my naive mind this would be the `request_tkv` below,
         # but it gives me incorrect results
         #
-        prefill_tkv = num_computed_tokens + chunk_size
+        prefill_tkv = (chunk_i + 1) * chunk_size
         current_tkv_mask = torch.tensor([prefill_tkv],
                                         dtype=torch.int64,
                                         device=self.device)
 
-        request_tkv = min(num_computed_tokens + chunk_size,
-                          left_padding + prompt_len)
+        request_tkv = min(prefill_tkv, left_padding + prompt_len)
 
         # Trick padding:
         # In `model_executor/model_loader/spyre.py`: We have this line to
@@ -2282,6 +2292,18 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         req_ids = ([r.req_id for r in scheduler_output.scheduled_new_reqs]
                    if len(scheduler_output.scheduled_new_reqs) > 0 \
                     else self.input_batch.sorted_requests_ids)
+
+        # Get the right batch, if this is the last chunk to conclude the
+        # prefill, we'll generate a token and we should get from the prefill
+        # batch because input_batch may have other request that are were
+        # not processed at this step.
+        batch = self.prefill_batch if is_prefill \
+            else self.input_batch
+
+        # Add the sampled token(s) to the request cache
+        req_ids = ([r.req_id for r in scheduler_output.scheduled_new_reqs]
+                if len(scheduler_output.scheduled_new_reqs) > 0 \
+                else batch.sorted_requests_ids)
         sampled_ids = output.sampled_token_ids.tolist()
 
         for i, req_id in enumerate(req_ids):
