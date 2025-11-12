@@ -75,12 +75,9 @@ def _construct_expected_sampling_metadata(
 
         output_token_ids[index_in_input_batch] = req.output_token_ids
         prompt_token_ids[index_in_input_batch] = req.prompt_token_ids
-        presence_penalties[
-            index_in_input_batch] = req.sampling_params.presence_penalty
-        frequency_penalties[index_in_input_batch] = (
-            req.sampling_params.frequency_penalty)
-        repetition_penalties[index_in_input_batch] = (
-            req.sampling_params.repetition_penalty)
+        presence_penalties[index_in_input_batch] = req.sampling_params.presence_penalty
+        frequency_penalties[index_in_input_batch] = req.sampling_params.frequency_penalty
+        repetition_penalties[index_in_input_batch] = req.sampling_params.repetition_penalty
         if req.sampling_params.top_k > 0:
             top_k[index_in_input_batch] = req.sampling_params.top_k
         top_p[index_in_input_batch] = req.sampling_params.top_p
@@ -96,10 +93,12 @@ def _construct_expected_sampling_metadata(
         temperature=torch.tensor(temperature, dtype=torch.float, device=device),
         all_greedy=False,
         all_random=True,
-        top_p=None if all(x == 1.0 for x in top_p) else torch.tensor(
-            top_p, dtype=torch.float, device=device),
-        top_k=None if all(x == VOCAB_SIZE for x in top_k) else torch.tensor(
-            top_k, dtype=torch.int, device=device),
+        top_p=None
+        if all(x == 1.0 for x in top_p)
+        else torch.tensor(top_p, dtype=torch.float, device=device),
+        top_k=None
+        if all(x == VOCAB_SIZE for x in top_k)
+        else torch.tensor(top_k, dtype=torch.int, device=device),
         generators={},
         max_num_logprobs=0,
         prompt_token_ids=make_tensor_with_pad(
@@ -257,7 +256,7 @@ def test_sampling_metadata_in_input_batch(batch_size: int):
 @pytest.mark.cpu
 @pytest.mark.worker
 def test_sampling_metadata_topk_edges():
-    device = torch.device('cpu')
+    device = torch.device("cpu")
     input_batch: SamplingInputBatch = SamplingInputBatch(
         max_num_reqs=2,
         max_model_len=1024,

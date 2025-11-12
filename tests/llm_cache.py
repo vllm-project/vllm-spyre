@@ -1,7 +1,7 @@
 """Contains utilities for caching models (instantiated as vLLM endpoints)
 across test cases, to speed up test runtime."""
 
-from typing import Callable, Generic, Optional, TypeVar
+from typing import Callable, Generic, TypeVar
 
 import pytest
 from llm_cache_util import force_engine_shutdown
@@ -78,16 +78,18 @@ class LLMCache:
             teardown_method=lambda x: force_engine_shutdown(x)
         )
 
-    def get_cached_llm(self,
-                       model: str | ModelInfo,
-                       max_model_len: int,
-                       tensor_parallel_size: int,
-                       backend: str,
-                       monkeypatch: pytest.MonkeyPatch,
-                       warmup_shapes: DecodeWarmupShapes | None = None,
-                       max_num_seqs: Optional[int] = None,
-                       use_cb: bool = False,
-                       max_num_batched_tokens: Optional[int] = None) -> LLM:
+    def get_cached_llm(
+        self,
+        model: str | ModelInfo,
+        max_model_len: int,
+        tensor_parallel_size: int,
+        backend: str,
+        monkeypatch: pytest.MonkeyPatch,
+        warmup_shapes: DecodeWarmupShapes | None = None,
+        max_num_seqs: int | None = None,
+        use_cb: bool = False,
+        max_num_batched_tokens: int | None = None,
+    ) -> LLM:
         """Creates an LLM with the provided runtime configuration.
 
         If the last LLM created matches the config, then returns the cached LLM
@@ -98,7 +100,7 @@ class LLMCache:
             "tensor_parallel_size": tensor_parallel_size,
             "backend": backend,
             "use_cb": use_cb,
-            "max_num_batched_tokens": max_num_batched_tokens
+            "max_num_batched_tokens": max_num_batched_tokens,
         }
         if use_cb:
             runtime_config.update({"max_model_len": max_model_len, "max_num_seqs": max_num_seqs})
@@ -107,12 +109,13 @@ class LLMCache:
 
         # Always patch the environment so that it's consistent with the LLM
         # Use chunked prefill if max_num_batched_tokens is set
-        patch_environment(use_cb,
-                          warmup_shapes,
-                          backend,
-                          monkeypatch,
-                          use_chunked_prefill=max_num_batched_tokens
-                          is not None)
+        patch_environment(
+            use_cb,
+            warmup_shapes,
+            backend,
+            monkeypatch,
+            use_chunked_prefill=max_num_batched_tokens is not None,
+        )
 
         maybe_llm = self._cache.maybe_get(runtime_config)
         if maybe_llm:
@@ -173,11 +176,13 @@ class EngineCache:
             use_chunked_prefill = True
         else:
             use_chunked_prefill = False
-        patch_environment(use_cb=True,
-                          warmup_shapes=None,
-                          backend=backend,
-                          monkeypatch=monkeypatch,
-                          use_chunked_prefill=use_chunked_prefill)
+        patch_environment(
+            use_cb=True,
+            warmup_shapes=None,
+            backend=backend,
+            monkeypatch=monkeypatch,
+            use_chunked_prefill=use_chunked_prefill,
+        )
 
         maybe_engine = self._cache.maybe_get(runtime_config)
         if maybe_engine:
@@ -205,14 +210,16 @@ class EngineCache:
         # Spyre compilation. This seems more robust and helps that all tests in
         # tests/e2e/test_spyre_cb_inference_steps.py pass on Spyre.
         max_num_seqs_compiled = 1 << (max_num_seqs - 1).bit_length()
-        engine_args = EngineArgs(model=model_name,
-                                 tokenizer=model_name,
-                                 revision=revision,
-                                 max_model_len=max(max_model_len, 512),
-                                 max_num_seqs=max_num_seqs_compiled,
-                                 num_gpu_blocks_override=None,
-                                 logits_processors=[GoldenTokenInjector],
-                                 max_num_batched_tokens=max_num_batched_tokens)
+        engine_args = EngineArgs(
+            model=model_name,
+            tokenizer=model_name,
+            revision=revision,
+            max_model_len=max(max_model_len, 512),
+            max_num_seqs=max_num_seqs_compiled,
+            num_gpu_blocks_override=None,
+            logits_processors=[GoldenTokenInjector],
+            max_num_batched_tokens=max_num_batched_tokens,
+        )
         vllm_config = engine_args.create_engine_config()
         executor_class = Executor.get_class(vllm_config)
 
@@ -276,15 +283,17 @@ LLM_CACHE = LLMCache()
 ENGINE_CACHE = EngineCache()
 
 
-def get_cached_llm(model: str | ModelInfo,
-                   max_model_len: int,
-                   tensor_parallel_size: int,
-                   backend: str,
-                   monkeypatch: pytest.MonkeyPatch,
-                   warmup_shapes: DecodeWarmupShapes | None = None,
-                   max_num_seqs: Optional[int] = None,
-                   use_cb: bool = False,
-                   max_num_batched_tokens: Optional[int] = None) -> LLM:
+def get_cached_llm(
+    model: str | ModelInfo,
+    max_model_len: int,
+    tensor_parallel_size: int,
+    backend: str,
+    monkeypatch: pytest.MonkeyPatch,
+    warmup_shapes: DecodeWarmupShapes | None = None,
+    max_num_seqs: int | None = None,
+    use_cb: bool = False,
+    max_num_batched_tokens: int | None = None,
+) -> LLM:
     # Clear other caches first
     API_SERVER_CACHE.clear()
     ENGINE_CACHE.clear()
@@ -335,13 +344,15 @@ def print_llm_cache_info():
     print("\n-------------------------\n")
 
 
-def get_cached_engine(model: str,
-                      max_model_len: int,
-                      max_num_seqs: int,
-                      available_blocks: int,
-                      backend: str,
-                      monkeypatch,
-                      max_num_batched_tokens: int | None = None) -> EngineCore:
+def get_cached_engine(
+    model: str,
+    max_model_len: int,
+    max_num_seqs: int,
+    available_blocks: int,
+    backend: str,
+    monkeypatch,
+    max_num_batched_tokens: int | None = None,
+) -> EngineCore:
     # Clear other caches first
     LLM_CACHE.clear()
     API_SERVER_CACHE.clear()

@@ -158,9 +158,10 @@ def find_known_models_by_model_config(model_config: ModelConfig) -> list[str]:
         return "quantization_config" in config
 
     matching_models = [
-        model for model, config in (known_model_configs or {}).items()
-        if flatten(config).items() <= flatten(requested_config).items() and (
-            is_quantized(config) == is_quantized(requested_config))
+        model
+        for model, config in (known_model_configs or {}).items()
+        if flatten(config).items() <= flatten(requested_config).items()
+        and (is_quantized(config) == is_quantized(requested_config))
     ]
 
     return matching_models

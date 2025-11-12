@@ -385,8 +385,7 @@ def setup_golden_token(
     sampling_params: Union[SamplingParams, list[SamplingParams]],
     hf_outputs: list[dict[str, Any]],
 ) -> list[SamplingParams]:
-    abs_tol = ISCLOSE_ABS_TOL_QUANTIZATION if model.is_quantized \
-        else ISCLOSE_ABS_TOL
+    abs_tol = ISCLOSE_ABS_TOL_QUANTIZATION if model.is_quantized else ISCLOSE_ABS_TOL
 
     if isinstance(sampling_params, SamplingParams):
         # golden tokens injection is per request, so we clone SamplingParams

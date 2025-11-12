@@ -183,7 +183,6 @@ class BaseInputBatch(Generic[RequestState]):
 
 @dataclass
 class SamplingRequestState(BaseRequestState):
-
     num_computed_tokens: int = 0
 
     left_padding: int = 0  # Defaults to 0, i. e. not padding
@@ -410,8 +409,7 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
         else:
             top_k = self.vocab_size
         self.top_k_cpu[req_index] = top_k
-        self.frequency_penalties_cpu[
-            req_index] = sampling_params.frequency_penalty
+        self.frequency_penalties_cpu[req_index] = sampling_params.frequency_penalty
         if sampling_params.frequency_penalty != 0.0:
             self.frequency_penalties_reqs.add(req_id)
         self.presence_penalties_cpu[req_index] = sampling_params.presence_penalty

@@ -161,14 +161,13 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Configures the number of CPUs used when determining multi-threading
     # configurations
     # Set to 0 to have vllm-spyre attempt to detect the CPU count
-    "VLLM_SPYRE_NUM_CPUS":
-    lambda: int(os.getenv("VLLM_SPYRE_NUM_CPUS", "0")),
-
+    "VLLM_SPYRE_NUM_CPUS": lambda: int(os.getenv("VLLM_SPYRE_NUM_CPUS", "0")),
     # Feature Flag
     # If set, use the V1 chunked prefill implementation. Otherwise, normal
     # single prefill is used.``
-    "VLLM_SPYRE_USE_CHUNKED_PREFILL":
-    lambda: bool(int(os.getenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", "0"))),
+    "VLLM_SPYRE_USE_CHUNKED_PREFILL": lambda: bool(
+        int(os.getenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", "0"))
+    ),
 }
 # --8<-- [end:env-vars-definition]
 

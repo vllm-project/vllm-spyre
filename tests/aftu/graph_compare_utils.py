@@ -64,9 +64,7 @@ def diff_graph(a_filepath, a_file, b_filepath, b_file) -> Iterator[str]:
     )
 
 
-def compare_graphs(a_map: dict[str, tuple[str, str]],
-                   b_map: dict[str, tuple[str, str]]) -> bool:
-
+def compare_graphs(a_map: dict[str, tuple[str, str]], b_map: dict[str, tuple[str, str]]) -> bool:
     are_graphs_similar = True
     for k, a_graph in a_map.items():
         a_filename, a_filedata = a_graph
@@ -87,7 +85,7 @@ def compare_graphs(a_map: dict[str, tuple[str, str]],
 
 
 def run_inference_py_and_get_graphs(
-    inference_py_args: list[str],  extra_env: dict[str, str] | None = None
+    inference_py_args: list[str], extra_env: dict[str, str] | None = None
 ) -> dict[str, tuple[str, str]]:
     with tempfile.TemporaryDirectory() as tmpdir:
         env = os.environ.copy()

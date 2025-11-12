@@ -47,9 +47,7 @@ def test_output(
         ignore_eos=False,
     )
 
-    vllm_sampling_params = [
-        vllm_sampling_params_normal.clone() for _ in range(3)
-    ]
+    vllm_sampling_params = [vllm_sampling_params_normal.clone() for _ in range(3)]
     hf_max_new_tokens = [max_new_tokens_long] * 3
 
     # stop last or first sequence in batch early

@@ -74,8 +74,7 @@ class LogitProcessorWrapper(LogitsProcessor):
         update_called = {i: False for i in range(len(self.logitprocs))}
 
         if batch_update is not None:
-            for index, params, prompt_tok_ids, out_tok_ids in \
-                batch_update.added:
+            for index, params, prompt_tok_ids, out_tok_ids in batch_update.added:
                 update_called[index] = True
                 self.logitprocs[index].update_state(
                     BatchUpdate(
@@ -83,18 +82,20 @@ class LogitProcessorWrapper(LogitsProcessor):
                         removed=[],
                         moved=[],
                         added=[(0, params, prompt_tok_ids, out_tok_ids)],
-                    ))
+                    )
+                )
 
             for index in batch_update.removed:
                 update_called[index] = True
                 self.logitprocs[index].update_state(
-                    BatchUpdate(batch_size=1, removed=[0], moved=[], added=[]))
+                    BatchUpdate(batch_size=1, removed=[0], moved=[], added=[])
+                )
 
             for adx, bdx, _ in batch_update.moved:
-                update_called[adx], update_called[bdx] = \
-                    update_called[bdx], update_called[adx] = \
-                self.logitprocs[adx], self.logitprocs[bdx] = \
-                    self.logitprocs[bdx], self.logitprocs[adx]
+                update_called[adx], update_called[bdx] = update_called[bdx], update_called[adx] = (
+                    self.logitprocs[adx],
+                    self.logitprocs[bdx],
+                ) = self.logitprocs[bdx], self.logitprocs[adx]
 
         for index in [i for i, called in update_called.items() if not called]:
             self.logitprocs[index].update_state(None)
