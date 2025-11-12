@@ -940,13 +940,13 @@ wheels = [
 
 [[package]]
 name = "ibm-fms"
-version = "1.4.0"
+version = "1.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "torch", marker = "sys_platform == 'never'" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/30/12/5528237efc16dd77f794eedb2214b4a2692746b1a8115ca493e3132a8e35/ibm_fms-1.4.0-py3-none-any.whl", hash = "sha256:a7dc7d3488136d3e2bce1d78bb985f41e5ebaca8ae718dac8ac19b9fa9c5bdf5", size = 189645, upload-time = "2025-09-27T00:27:11.882Z" },
+    { url = "https://files.pythonhosted.org/packages/85/73/a9baa69717c28f71f3d07043b122c76e092974c5f1a886f45f5e6760db7f/ibm_fms-1.5.0-py3-none-any.whl", hash = "sha256:027446b12a4ad8da787da9e45c12c726df8b6c0bd09791614a447923910f50a6", size = 191609, upload-time = "2025-10-31T16:43:21.278Z" },
 ]
 
 [[package]]

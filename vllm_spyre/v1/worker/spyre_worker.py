@@ -36,8 +36,8 @@ from vllm_spyre.compat_utils import dataclass_fields
 from vllm_spyre.model_executor.model_loader import spyre_setup
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import (
-    ContinuousBatchingSpyreModelRunner, SpyrePoolingModelRunner,
-    StaticBatchingSpyreModelRunner, SupportedTask)
+    ChunkedPrefillModelRunner, ContinuousBatchingSpyreModelRunner,
+    SpyrePoolingModelRunner, StaticBatchingSpyreModelRunner, SupportedTask)
 
 logger = init_logger(__name__)
 
@@ -56,7 +56,7 @@ def new_request_data_builder(
         "sampling_params": sampling_params,
         "pooling_params": pooling_params,
         "block_ids": [0],  # not actually used
-        "num_computed_tokens": 0,
+        "num_computed_tokens": len(prompt_token_ids),
         "lora_request": None,
     }
 
@@ -250,14 +250,20 @@ class SpyreWorker(WorkerBaseV1):
             init_cached_hf_modules()
         self.model_runner: \
             Union[StaticBatchingSpyreModelRunner,
-                  ContinuousBatchingSpyreModelRunner, SpyrePoolingModelRunner]
+                  ContinuousBatchingSpyreModelRunner,
+                  ChunkedPrefillModelRunner,
+                  SpyrePoolingModelRunner]
         if self.is_pooling:
             self.model_runner = SpyrePoolingModelRunner(
                 self.vllm_config, self.is_driver_worker, self.rank)
             self.spyre_warmup_shapes = SpyrePlatform.get_warmup_shapes(
                 self.vllm_config.scheduler_config)
         else:
-            if envs_spyre.VLLM_SPYRE_USE_CB:
+            if envs_spyre.VLLM_SPYRE_USE_CB and \
+                envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
+                self.model_runner = ChunkedPrefillModelRunner(
+                    self.vllm_config, self.is_driver_worker, self.rank)
+            elif envs_spyre.VLLM_SPYRE_USE_CB:
                 self.model_runner = ContinuousBatchingSpyreModelRunner(
                     self.vllm_config, self.is_driver_worker, self.rank)
             else:
@@ -624,8 +630,10 @@ class SpyreWorker(WorkerBaseV1):
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=dummy_requests,
             scheduled_cached_reqs=cached_request_data,
-            num_scheduled_tokens={i: prompt_len
-                                  for i in range(batch_size)},
+            num_scheduled_tokens={
+                r.req_id: len(r.prompt_token_ids)
+                for r in dummy_requests
+            },
             total_num_scheduled_tokens=sum(prompt_len
                                            for _ in range(batch_size)),
             scheduled_spec_decode_tokens={},
@@ -750,11 +758,16 @@ class SpyreWorker(WorkerBaseV1):
         """Handle a complete forward pass"""
         scheduler_output.scheduled_new_reqs = requests
         scheduler_output.scheduled_cached_reqs = CachedRequestData.make_empty()
+        scheduler_output.num_scheduled_tokens = {
+            r.req_id: len(r.prompt_token_ids)
+            for r in requests
+        }
         self.execute_model(scheduler_output)  # Prefill
 
         # Switch to cached requests to trigger decoding steps
         scheduler_output.scheduled_new_reqs = []
         scheduler_output.scheduled_cached_reqs = cached_request_data
+        scheduler_output.num_scheduled_tokens = {r.req_id: 1 for r in requests}
         for _ in range(num_decode_tokens - 1):
             self.execute_model(scheduler_output)
 
