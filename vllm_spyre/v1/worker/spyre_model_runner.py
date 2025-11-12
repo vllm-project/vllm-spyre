@@ -1754,11 +1754,10 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         super().__init__(vllm_config=vllm_config,
                          is_driver_worker=is_driver_worker,
                          rank=rank)
-        
+
         self.chunk_blocks_count = \
             self.scheduler_config.max_num_batched_tokens // self.block_size
-        
-        
+
     def _prepare_prompt(self, _):
         AssertionError(
             "Should not call this method on chunked prefill implementation")
@@ -1854,8 +1853,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         # create block table tensor
         blocks = [0] * (left_padding // self.block_size) + list(
             self.req_ids2blocks[req_id])
-        block_end = math.ceil(
-            (num_computed_tokens + chunk_size) / self.block_size)
+        block_end = (chunk_i + 1) * self.chunk_blocks_count
         block_table = torch.tensor(blocks[:block_end],
                                    dtype=torch.int64).unsqueeze(0)
 
@@ -1924,13 +1922,12 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         # In my naive mind this would be the `request_tkv` below,
         # but it gives me incorrect results
         #
-        prefill_tkv = num_computed_tokens + chunk_size
+        prefill_tkv = (chunk_i + 1) * chunk_size
         current_tkv_mask = torch.tensor([prefill_tkv],
                                         dtype=torch.int64,
                                         device=self.device)
 
-        request_tkv = min(num_computed_tokens + chunk_size,
-                          left_padding + prompt_len)
+        request_tkv = min(prefill_tkv, left_padding + prompt_len)
 
         # Trick padding:
         # In `model_executor/model_loader/spyre.py`: We have this line to
