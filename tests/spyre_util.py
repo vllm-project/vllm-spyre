@@ -21,8 +21,11 @@ EmbeddingWarmupShapes = list[tuple[int, int]]
 DecodeWarmupShapes = list[tuple[int, int, int]]
 
 
-def patch_environment(use_cb: bool, warmup_shapes: DecodeWarmupShapes | None,
-                      backend: str, monkeypatch):
+def patch_environment(use_cb: bool,
+                      warmup_shapes: DecodeWarmupShapes | None,
+                      backend: str,
+                      monkeypatch,
+                      use_chunked_prefill: bool = False):
     # Setup the environment correctly for the LLM
 
     # ---- For static batching ----
@@ -35,6 +38,8 @@ def patch_environment(use_cb: bool, warmup_shapes: DecodeWarmupShapes | None,
     # --------------
     monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1" if use_cb else "0")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+    monkeypatch.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL",
+                       "1" if use_chunked_prefill else "0")
 
 
 def patch_warmup_shapes(warmup_shapes: DecodeWarmupShapes

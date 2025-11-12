@@ -78,17 +78,16 @@ class LLMCache:
         self._cache: ModelCache[LLM] = ModelCache[LLM](
             teardown_method=lambda x: force_engine_shutdown(x))
 
-    def get_cached_llm(
-        self,
-        model: str | ModelInfo,
-        max_model_len: int,
-        tensor_parallel_size: int,
-        backend: str,
-        monkeypatch: pytest.MonkeyPatch,
-        warmup_shapes: DecodeWarmupShapes | None = None,
-        max_num_seqs: Optional[int] = None,
-        use_cb: bool = False,
-    ) -> LLM:
+    def get_cached_llm(self,
+                       model: str | ModelInfo,
+                       max_model_len: int,
+                       tensor_parallel_size: int,
+                       backend: str,
+                       monkeypatch: pytest.MonkeyPatch,
+                       warmup_shapes: DecodeWarmupShapes | None = None,
+                       max_num_seqs: Optional[int] = None,
+                       use_cb: bool = False,
+                       max_num_batched_tokens: Optional[int] = None) -> LLM:
         """Creates an LLM with the provided runtime configuration.
 
         If the last LLM created matches the config, then returns the cached LLM
@@ -99,6 +98,7 @@ class LLMCache:
             "tensor_parallel_size": tensor_parallel_size,
             "backend": backend,
             "use_cb": use_cb,
+            "max_num_batched_tokens": max_num_batched_tokens
         }
         if use_cb:
             runtime_config.update({
@@ -109,7 +109,13 @@ class LLMCache:
             runtime_config.update({"warmup_shapes": tuple(warmup_shapes)})
 
         # Always patch the environment so that it's consistent with the LLM
-        patch_environment(use_cb, warmup_shapes, backend, monkeypatch)
+        # Use chunked prefill if max_num_batched_tokens is set
+        patch_environment(use_cb,
+                          warmup_shapes,
+                          backend,
+                          monkeypatch,
+                          use_chunked_prefill=max_num_batched_tokens
+                          is not None)
 
         maybe_llm = self._cache.maybe_get(runtime_config)
         if maybe_llm:
@@ -132,6 +138,7 @@ class LLMCache:
                 max_model_len=max_model_len,
                 max_num_seqs=max_num_seqs,
                 tensor_parallel_size=tensor_parallel_size,
+                max_num_batched_tokens=max_num_batched_tokens,
                 logits_processors=[GoldenTokenInjector],
             ),
         )
@@ -152,6 +159,7 @@ class EngineCache:
         max_model_len: int,
         max_num_seqs: int,
         available_blocks: int,
+        max_num_batched_tokens: int,
         backend: str,
         monkeypatch,
     ) -> EngineCore:
@@ -160,13 +168,19 @@ class EngineCache:
             "max_model_len": max_model_len,
             "max_num_seqs": max_num_seqs,
             "available_blocks": available_blocks,
+            "max_num_batched_tokens": max_num_batched_tokens,
         }
 
         # Always patch the environment so that it's consistent with the engine
+        if max_num_batched_tokens is not None and max_num_batched_tokens > 0:
+            use_chunked_prefill = True
+        else:
+            use_chunked_prefill = False
         patch_environment(use_cb=True,
                           warmup_shapes=None,
                           backend=backend,
-                          monkeypatch=monkeypatch)
+                          monkeypatch=monkeypatch,
+                          use_chunked_prefill=use_chunked_prefill)
 
         maybe_engine = self._cache.maybe_get(runtime_config)
         if maybe_engine:
@@ -200,7 +214,8 @@ class EngineCache:
                                  max_model_len=max(max_model_len, 512),
                                  max_num_seqs=max_num_seqs_compiled,
                                  num_gpu_blocks_override=None,
-                                 logits_processors=[GoldenTokenInjector])
+                                 logits_processors=[GoldenTokenInjector],
+                                 max_num_batched_tokens=max_num_batched_tokens)
         vllm_config = engine_args.create_engine_config()
         executor_class = Executor.get_class(vllm_config)
 
@@ -266,16 +281,15 @@ LLM_CACHE = LLMCache()
 ENGINE_CACHE = EngineCache()
 
 
-def get_cached_llm(
-    model: str | ModelInfo,
-    max_model_len: int,
-    tensor_parallel_size: int,
-    backend: str,
-    monkeypatch: pytest.MonkeyPatch,
-    warmup_shapes: DecodeWarmupShapes | None = None,
-    max_num_seqs: Optional[int] = None,
-    use_cb: bool = False,
-) -> LLM:
+def get_cached_llm(model: str | ModelInfo,
+                   max_model_len: int,
+                   tensor_parallel_size: int,
+                   backend: str,
+                   monkeypatch: pytest.MonkeyPatch,
+                   warmup_shapes: DecodeWarmupShapes | None = None,
+                   max_num_seqs: Optional[int] = None,
+                   use_cb: bool = False,
+                   max_num_batched_tokens: Optional[int] = None) -> LLM:
     # Clear other caches first
     API_SERVER_CACHE.clear()
     ENGINE_CACHE.clear()
@@ -289,6 +303,7 @@ def get_cached_llm(
         warmup_shapes=warmup_shapes,
         max_num_seqs=max_num_seqs,
         use_cb=use_cb,
+        max_num_batched_tokens=max_num_batched_tokens,
     )
 
 
@@ -322,23 +337,26 @@ def print_llm_cache_info():
     print("\n-------------------------\n")
 
 
-def get_cached_engine(
-    model: str,
-    max_model_len: int,
-    max_num_seqs: int,
-    available_blocks: int,
-    backend: str,
-    monkeypatch,
-) -> EngineCore:
+def get_cached_engine(model: str,
+                      max_model_len: int,
+                      max_num_seqs: int,
+                      available_blocks: int,
+                      backend: str,
+                      monkeypatch,
+                      max_num_batched_tokens: int | None = None) -> EngineCore:
     # Clear other caches first
     LLM_CACHE.clear()
     API_SERVER_CACHE.clear()
 
-    return ENGINE_CACHE.get_engine(
+    engine = ENGINE_CACHE.get_engine(
         model=model,
         max_model_len=max_model_len,
         max_num_seqs=max_num_seqs,
         available_blocks=available_blocks,
+        max_num_batched_tokens=max_num_batched_tokens,
         backend=backend,
         monkeypatch=monkeypatch,
     )
+
+    # TODO: clean up any remaining requests from previous failed tests
+    return engine
