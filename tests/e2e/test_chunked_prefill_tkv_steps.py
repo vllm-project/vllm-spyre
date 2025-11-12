@@ -18,6 +18,7 @@ from vllm.v1.engine.core import EngineCore
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request, SamplingParams
 
+from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import SpyreModelRunner
 
 
@@ -146,7 +147,8 @@ def test_single_block_chunked_prefill(model: ModelInfo, max_model_len: int,
         monkeypatch=monkeypatch)
 
     req_id = "1"
-    prompt_len = 48
+    # Sub-block prompt
+    prompt_len = SpyrePlatform.get_block_size() - 12
     new_req_data = make_new_request_data(req_id, prompt_len)
 
     scheduler_output = make_scheduler_output(
@@ -160,6 +162,17 @@ def test_single_block_chunked_prefill(model: ModelInfo, max_model_len: int,
     # tkv is prompt_len
     assert output.tkv == prompt_len
 
+    # One decode pass to ensure no extra padding shenanigans
+    cached_req_data = make_cached_request_data({req_id: prompt_len})
+    scheduler_output = make_scheduler_output(
+        scheduled_new_reqs=[],
+        scheduled_cached_reqs=cached_req_data,
+        num_scheduled_tokens={req_id: 1})
+    output = runner.execute_model(scheduler_output)
+    assert len(output.sampled_token_ids[0]) == 1
+    # No extra block or chunk padding
+    assert output.tkv == prompt_len + 1
+
 
 @pytest.mark.cpu
 @pytest.mark.chunked_prefill
@@ -168,41 +181,46 @@ def test_multi_chunk_padded_prefill(model: ModelInfo, max_model_len: int,
                                     max_num_seqs: int,
                                     max_num_batched_tokens: int,
                                     monkeypatch: pytest.MonkeyPatch):
-    """A request that's longer than a chunk is split into multiple chunks"""
+    """A request that's longer than a chunk is split into multiple chunks, and 
+    left-padded only with full size blocks to the end of the last chunk boundary
+    """
     runner: SpyreModelRunner = get_cpu_model_runner(
         model=model,
         max_model_len=max_model_len,
         max_num_seqs=max_num_seqs,
         max_num_batched_tokens=max_num_batched_tokens,
         monkeypatch=monkeypatch)
+    block_size = SpyrePlatform.get_block_size()
 
     req_id = "1"
-    prompt_len = 148
+    # Slightly longer than one chunk, so we'll need full left-block padding
+    prompt_len = max_num_batched_tokens + 20
     new_req_data = make_new_request_data(req_id, prompt_len)
 
-    # Scheduler will give first 128 token chunk
+    # Scheduler will give first chunk
     scheduler_output = make_scheduler_output(
-        scheduled_new_reqs=[new_req_data], num_scheduled_tokens={req_id: 128})
+        scheduled_new_reqs=[new_req_data],
+        num_scheduled_tokens={req_id: max_num_batched_tokens})
     output = runner.execute_model(scheduler_output)
 
     # no output tokens
     assert len(output.sampled_token_ids) == 0
+    # Since this request only has one partial block in the second chunk but it
+    # needs to be padded all the way to the last block of the second chunk, only
+    # a single block of tokens will actually be processed in the first chunk.
     # 🌶️🌶️🌶️ We probably need to be able to pass back the number of tokens that
     # we actually processed so that the scheduler has an accurate count of
     # remaining prompt tokens.
-    # Since this request needs to be padded to end in the page ending in 256,
-    # it requires one full padding block on the left and will only process 64
-    # tokens.
-    # TODO: Uncomment when/if supported
+    # TODO: Uncomment when supported
     # assert output.computed_tokens[req_id] == 64
-    computed_tokens = {req_id: 64}
+    computed_tokens = {req_id: block_size}
 
     # Scheduler schedules remaining 148 - 64 = 84 tokens
     cached_req_data = make_cached_request_data(computed_tokens)
     scheduler_output = make_scheduler_output(
         scheduled_new_reqs=[],
         scheduled_cached_reqs=cached_req_data,
-        num_scheduled_tokens={req_id: 84})
+        num_scheduled_tokens={req_id: prompt_len - block_size})
     output = runner.execute_model(scheduler_output)
 
     # Should be one output token now
@@ -218,7 +236,9 @@ def test_multi_chunk_unpadded_prefill(model: ModelInfo, max_model_len: int,
                                       max_num_seqs: int,
                                       max_num_batched_tokens: int,
                                       monkeypatch: pytest.MonkeyPatch):
-    """A request that's longer than a chunk is split into multiple chunks"""
+    """A request that's longer than a chunk can be split into multiple chunks
+    with no padding required when the prompt is within one block of the end of
+    a chunk"""
     runner: SpyreModelRunner = get_cpu_model_runner(
         model=model,
         max_model_len=max_model_len,
@@ -227,26 +247,29 @@ def test_multi_chunk_unpadded_prefill(model: ModelInfo, max_model_len: int,
         monkeypatch=monkeypatch)
 
     req_id = "1"
-    prompt_len = 200
+    # Prompt is within one block of two full chunks
+    prompt_len = 2 * max_num_batched_tokens - 20
     new_req_data = make_new_request_data(req_id, prompt_len)
 
     # Scheduler will give first 128 token chunk
     scheduler_output = make_scheduler_output(
-        scheduled_new_reqs=[new_req_data], num_scheduled_tokens={req_id: 128})
+        scheduled_new_reqs=[new_req_data],
+        num_scheduled_tokens={req_id: max_num_batched_tokens})
     output = runner.execute_model(scheduler_output)
 
     # no output tokens
     assert len(output.sampled_token_ids) == 0
     # No left padding block so all 128 tokens are computed
-    # assert output.computed_tokens[req_id] == 128
-    computed_tokens = {req_id: 128}
+    # TODO: uncomment when supported
+    # assert output.computed_tokens[req_id] == max_num_batched_tokens
+    computed_tokens = {req_id: max_num_batched_tokens}
 
     # Scheduler schedules remaining 200 - 128 = 72 tokens
     cached_req_data = make_cached_request_data(computed_tokens)
     scheduler_output = make_scheduler_output(
         scheduled_new_reqs=[],
         scheduled_cached_reqs=cached_req_data,
-        num_scheduled_tokens={req_id: 72})
+        num_scheduled_tokens={req_id: prompt_len - max_num_batched_tokens})
     output = runner.execute_model(scheduler_output)
 
     # Should be one output token now
@@ -261,7 +284,8 @@ def test_decode_padding_to_same_block(model: ModelInfo, max_model_len: int,
                                       max_num_seqs: int,
                                       max_num_batched_tokens: int,
                                       monkeypatch: pytest.MonkeyPatch):
-    """A request that's longer than a chunk is split into multiple chunks"""
+    """Test that decode batches will use full blocks of left-padding to align
+    themselves into the same last block of tokens in the sequence"""
     runner: SpyreModelRunner = get_cpu_model_runner(
         model=model,
         max_model_len=max_model_len,
