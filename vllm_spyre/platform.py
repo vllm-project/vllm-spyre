@@ -186,6 +186,8 @@ class SpyrePlatform(Platform):
                     f"`{scheduler_config.max_num_batched_tokens}`. Please "
                     "set `--max-num-batched-tokens` to a number that satisfy "
                     "this constraint.")
+                os.environ["VLLM_DT_CHUNK_LEN"] = \
+                    str(scheduler_config.max_num_batched_tokens)
 
         logger.info(
             "Overriding configurations based on warmup shapes. "
