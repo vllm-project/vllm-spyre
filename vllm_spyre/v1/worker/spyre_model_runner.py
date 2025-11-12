@@ -1745,6 +1745,20 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
 
 class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
+    def __init__(
+        self,
+        vllm_config: VllmConfig,
+        is_driver_worker: bool,
+        rank: int,
+    ):
+        super().__init__(vllm_config=vllm_config,
+                         is_driver_worker=is_driver_worker,
+                         rank=rank)
+        
+        self.chunk_blocks_count = \
+            self.scheduler_config.max_num_batched_tokens // self.block_size
+        
+        
     def _prepare_prompt(self, _):
         AssertionError(
             "Should not call this method on chunked prefill implementation")
@@ -1818,7 +1832,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         prompt_token_ids = request.prompt_token_ids
 
         chunk_size = self.scheduler_config.max_num_batched_tokens
-        chunk_blocks = chunk_size // self.block_size
         num_computed_tokens = request.num_computed_tokens
 
         prompt_len = len(prompt_token_ids)
@@ -1847,8 +1860,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                                    dtype=torch.int64).unsqueeze(0)
 
         slot_mapping = []
-        for i in range(chunk_blocks):
-            block = block_table[0][-chunk_blocks + i]
+        for i in range(self.chunk_blocks_count):
+            block = block_table[0][-self.chunk_blocks_count + i]
             slot_mapping += list(
                 range(block * self.block_size,
                       block * self.block_size + self.block_size))
