@@ -2074,7 +2074,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         blocks_count = math.ceil(prompt_len / self.block_size)
 
-        # set the new tkv  to the block padding if starting a new decode batch
+        # set the new tkv to the prompt length if starting a new decode batch
         if is_new_batch:
             self.tkv = prompt_len
 
