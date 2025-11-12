@@ -50,32 +50,24 @@ def test_compare_graphs_cb(
     if model.is_quantized:
         mock_get_mask_dtype(mocker)
 
+    # fmt: off
     inference_py_args = [
-        sys.executable,
-        "-m",
-        "aiu_fms_testing_utils.scripts.inference",
-        "--architecture",
-        "hf_pretrained",
-        "--model_path",
-        model_path,
-        "--tokenizer",
-        model_path,
+        sys.executable, "-m", "aiu_fms_testing_utils.scripts.inference",
+        "--architecture", "hf_pretrained",
+        "--model_path", model_path,
+        "--tokenizer", model_path,
         "--unfuse_weights",
-        "--device_type",
-        "aiu",
+        "--device_type", "aiu",
         "--compile",
         "--cast_bf16_to_fp16",
         "--compile_dynamic",
-        "--min_pad_length",
-        "64",
-        "--max_new_tokens",
-        "5",
-        "--batch_size",
-        str(max_num_seqs),
+        "--min_pad_length", "64",
+        "--max_new_tokens", "5",
+        "--batch_size", str(max_num_seqs),
         "--compile_dynamic_sendnn",
-        "--attention_type",
-        attn_type,
+        "--attention_type", attn_type,
     ]
+    # fmt: on
 
     if not model.is_quantized:
         inference_py_args += ["--default_dtype", "fp16"]
@@ -140,31 +132,23 @@ def test_compare_graphs_static_batching(
 
     model_path = get_model_path(model)
 
+    # fmt: off
     inference_py_args = [
-        sys.executable,
-        "-m",
-        "aiu_fms_testing_utils.scripts.inference",
-        "--architecture",
-        "hf_pretrained",
-        "--model_path",
-        model_path,
-        "--tokenizer",
-        model_path,
+        sys.executable, "-m", "aiu_fms_testing_utils.scripts.inference",
+        "--architecture", "hf_pretrained",
+        "--model_path", model_path,
+        "--tokenizer", model_path,
         "--unfuse_weights",
-        "--device_type",
-        "aiu",
+        "--device_type", "aiu",
         "--compile",
         "--cast_bf16_to_fp16",
         "--compile_dynamic",
-        "--fixed_prompt_length",
-        str(warmup_shapes[0][0]),
-        "--max_new_tokens",
-        str(warmup_shapes[0][1]),
-        "--batch_size",
-        str(warmup_shapes[0][2]),
-        "--attention_type",
-        attn_type,
+        "--fixed_prompt_length", str(warmup_shapes[0][0]),
+        "--max_new_tokens", str(warmup_shapes[0][1]),
+        "--batch_size", str(warmup_shapes[0][2]),
+        "--attention_type", attn_type,
     ]
+    # fmt: on
 
     if not model.is_quantized:
         inference_py_args += ["--default_dtype", "fp16"]
@@ -217,36 +201,27 @@ def test_compare_graphs_chunked_prefill(
     model_path = get_model_path(model)
 
     chunk_size = 128
+
+    # fmt: off
     inference_py_args = [
-        sys.executable,
-        "-m",
-        "aiu_fms_testing_utils.scripts.inference",
-        "--architecture",
-        "hf_pretrained",
-        "--model_path",
-        model_path,
-        "--tokenizer",
-        model_path,
+        sys.executable, "-m", "aiu_fms_testing_utils.scripts.inference",
+        "--architecture", "hf_pretrained",
+        "--model_path", model_path,
+        "--tokenizer", model_path,
         "--unfuse_weights",
-        "--device_type",
-        "aiu",
+        "--device_type", "aiu",
         "--compile",
         "--cast_bf16_to_fp16",
         "--compile_dynamic",
-        "--min_pad_length",
-        "64",
-        "--max_new_tokens",
-        "5",
-        "--batch_size",
-        str(max_num_seqs),
+        "--min_pad_length", "64",
+        "--max_new_tokens", "5",
+        "--batch_size", str(max_num_seqs),
         "--compile_dynamic_sendnn",
-        "--attention_type",
-        "paged",
-        "--default_dtype",
-        "fp16",
-        "--prefill_chunk_size",
-        str(chunk_size),
+        "--attention_type", "paged",
+        "--default_dtype", "fp16",
+        "--prefill_chunk_size", str(chunk_size),
     ]
+    # fmt: on
 
     extra_env = {
         "VLLM_DT_MAX_CONTEXT_LEN": str(max_model_len),

@@ -11,6 +11,7 @@ repos:
   - id: ruff
     args: [--output-format, github, --fix]
   - id: ruff-format
+    # args: [--diff] # Uncomment to show diffs (not reformatting files)
 - repo: https://github.com/crate-ci/typos
   rev: v1.35.5
   hooks:
