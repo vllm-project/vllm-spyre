@@ -142,6 +142,7 @@ markers = [
     "e2e: Tests using end-to-end engine spin-up",
     "basic: Basic correctness tests",
     "cb: Continuous batching tests",
+    "chunked_prefill: Tests with chunked prefill enabled",
     "cpu: Tests using CPU (i.e. eager) backend",
     "compat: backward compatibility tests",
     "spyre: Tests using Spyre hardware backend",
