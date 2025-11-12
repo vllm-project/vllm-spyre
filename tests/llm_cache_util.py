@@ -54,6 +54,7 @@ class SortKey(NamedTuple):
     max_model_len: int = 0
     max_num_seqs: int = 0
     num_blocks: int = 0
+    max_num_batched_tokens: int = 0
     warmup_shapes: DecodeWarmupShapes | None = None
 
     @staticmethod
@@ -87,6 +88,7 @@ class SortKey(NamedTuple):
             tp_size=SortKey._get_tp_size(item),
             use_cb=SortKey._uses_cb(item),
             num_blocks=SortKey._get_num_blocks(item),
+            max_num_batched_tokens=SortKey._get_max_num_batched_tokens(item),
             **sort_kwargs,
         )
 
@@ -107,6 +109,8 @@ class SortKey(NamedTuple):
             # Not currently cached and needs updating to fixture name
             # CB step tests require a raw engine for scheduler access
             return "engine"
+        if "test_chunked_prefill_tkv_steps.py" in item.listnames():
+            return "engine"
 
         # Else shouldn't be using any cache
         return ""
@@ -117,6 +121,18 @@ class SortKey(NamedTuple):
         Checks for the pytest.mark.cb mark."""
         markers = {mark.name for mark in item.own_markers}
         return "cb" in markers
+
+    def _get_max_num_batched_tokens(item) -> int:
+        """Chunk size for chunked prefill, if enabled"""
+        params = item.callspec.params
+        if "max_num_batched_tokens" in params:
+            SortKey._assert_param(
+                isinstance(params["max_model_len"], int),
+                "max_num_batched_tokens must be an int",
+                item,
+            )
+            return params["max_num_batched_tokens"]
+        return 0
 
     @staticmethod
     def _get_max_model_len(item) -> int:

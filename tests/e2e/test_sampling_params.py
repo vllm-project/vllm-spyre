@@ -166,8 +166,11 @@ def test_spyre_batch1_n_generations(
 
 def token_diversity(spyre_model, prompt, params, n_experiments):
     tokens = []
-    for i in range(n_experiments):
-        output = spyre_model.generate(prompt, params)[0]
+
+    outputs = spyre_model.generate([prompt] * n_experiments,
+                                   params,
+                                   use_tqdm=False)
+    for output in outputs:
         tokens.extend(output.outputs[0].token_ids)
 
     return len(set(tokens))
@@ -209,17 +212,18 @@ def test_spyre_batch1_top_k(model: ModelInfo, backend, monkeypatch, use_llm_cach
     assert token_div1 < token_div2
 
 
-def test_spyre_batch1_logit_bias(
-    model: ModelInfo, backend, monkeypatch, use_llm_cache, warmup_shapes
-):
+def test_spyre_batch1_logit_bias(model: ModelInfo, backend, monkeypatch,
+                                 use_llm_cache, warmup_shapes, max_model_len,
+                                 max_num_seqs, cb: int):
     spyre_model = get_cached_llm(
         model=model,
-        max_model_len=128,
+        max_model_len=max_model_len,
+        max_num_seqs=max_num_seqs,
         tensor_parallel_size=1,
         backend=backend,
         monkeypatch=monkeypatch,
-        warmup_shapes=warmup_shapes,
-    )
+        warmup_shapes=warmup_shapes if cb == 0 else None,
+        use_cb=cb == 1)
     tokenizer = spyre_model.get_tokenizer()
     banned_word = "train"
     forced_word = "plane"
@@ -242,38 +246,46 @@ def test_spyre_batch1_logit_bias(
     )
     params2 = SamplingParams(temperature=0, seed=8780, max_tokens=5)
 
-    output1 = spyre_model.generate(prompt, params1)[0]
-    output2 = spyre_model.generate(prompt, params2)[0]
+    output = spyre_model.generate([prompt, prompt], [params1, params2])
 
-    assert banned_word not in output1.outputs[0].text.lower()
-    assert forced_word in output1.outputs[0].text.lower()
+    assert banned_word not in output[0].outputs[0].text.lower()
+    assert forced_word in output[0].outputs[0].text.lower()
 
-    assert output1.outputs[0].text != output2.outputs[0].text
+    assert output[0].outputs[0].text != output[1].outputs[0].text
 
 
-def test_spyre_batch1_min_tokens(
-    model: ModelInfo, backend, monkeypatch, use_llm_cache, warmup_shapes
-):
+def test_spyre_batch1_min_tokens(model: ModelInfo, backend, monkeypatch,
+                                 use_llm_cache, max_model_len, max_num_seqs,
+                                 warmup_shapes, cb: int):
     spyre_model = get_cached_llm(
         model=model,
-        max_model_len=128,
+        max_model_len=max_model_len,
         tensor_parallel_size=1,
         backend=backend,
         monkeypatch=monkeypatch,
-        warmup_shapes=warmup_shapes,
-    )
+        warmup_shapes=warmup_shapes if cb != 1 else None,
+        max_num_seqs=max_num_seqs if cb == 1 else None,
+        use_cb=cb == 1)
     prompt = "What is the capital of the USA?"
     tokenizer = spyre_model.get_tokenizer()
     eos_id = tokenizer.eos_token_id
 
-    params1 = SamplingParams(min_tokens=19, logit_bias={eos_id: 50}, seed=8780, max_tokens=20)
-    params2 = SamplingParams(seed=8780, logit_bias={eos_id: 50}, max_tokens=20)
+    params1 = SamplingParams(min_tokens=10,
+                             logit_bias={eos_id: 1000},
+                             seed=8780,
+                             max_tokens=20)
+    params2 = SamplingParams(seed=8780,
+                             logit_bias={eos_id: 1000},
+                             max_tokens=20)
 
-    output1 = spyre_model.generate(prompt, params1)[0]
-    output2 = spyre_model.generate(prompt, params2)[0]
+    output = spyre_model.generate([prompt] * 2, [params1, params2])
 
-    assert len(output1.outputs[0].token_ids) >= 19
-    assert len(output2.outputs[0].token_ids) < 19
+    # Logits bias should force eos token appears, then we check if
+    # after min tokens reached the logits processor is properly
+    # cleared. Therefore token count shall be 10 + 1
+    # (min_tokens + eos_token_id)
+    assert len(output[0].outputs[0].token_ids) == 11
+    assert len(output[1].outputs[0].token_ids) == 1
 
 
 def test_spyre_batch1_ignore_eos(
@@ -304,15 +316,18 @@ def test_spyre_batch1_ignore_eos(
     assert output2.outputs[0].finish_reason != "length"
 
 
-def test_spyre_batch1_min_p(model: ModelInfo, backend, monkeypatch, use_llm_cache, warmup_shapes):
+def test_spyre_batch1_min_p(model: ModelInfo, backend, monkeypatch,
+                            use_llm_cache, max_model_len, max_num_seqs,
+                            warmup_shapes, cb: int):
     spyre_model = get_cached_llm(
         model=model,
-        max_model_len=128,
+        max_model_len=max_model_len,
+        max_num_seqs=max_num_seqs,
         tensor_parallel_size=1,
         backend=backend,
         monkeypatch=monkeypatch,
-        warmup_shapes=warmup_shapes,
-    )
+        warmup_shapes=warmup_shapes if cb == 0 else None,
+        use_cb=cb == 1)
     prompt = "The opposite of black is"
     params1 = SamplingParams(min_p=0.5, temperature=1, max_tokens=5)
     params2 = SamplingParams(temperature=1, max_tokens=5)

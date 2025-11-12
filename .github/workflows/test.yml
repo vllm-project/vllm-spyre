@@ -7,7 +7,8 @@ on:
   pull_request:
     # add labeled and unlabeled to the default types (runs when label is added)
     types: [opened, synchronize, reopened, labeled, unlabeled, auto_merge_enabled]
-    branches: [main]
+    # temporary hack: run tests into wallas-cp-new
+    branches: [main, wallas-cp-new]
 
   push:
     branches: [main]
@@ -42,8 +43,10 @@ jobs:
           - name: "vLLM:main"
             repo: "git+https://github.com/vllm-project/vllm --branch main"
         test_suite:
+          - name: "chunked prefill"
+            markers: "cpu and chunked_prefill and not quantized"
           - name: "static batching"
-            markers: "cpu and decoder and not cb and not other_e2e and not quantized"
+            markers: "cpu and decoder and not cb and not other_e2e and not chunked_prefill and not quantized"
             flags: "--timeout=300"
             hf_model: "JackFram/llama-160m"
           - name: "fp8"
@@ -65,7 +68,7 @@ jobs:
             markers: "cpu and cb and not quantized"
             flags: "--timeout=300  --durations=0 -s"
           - name: "worker and utils"
-            markers: "not e2e and not quantized"
+            markers: "not e2e and not quantized and not spyre"
             flags: "--timeout=300"
           - name: "compatibility"
             markers: "compat"

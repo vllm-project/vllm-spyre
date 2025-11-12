@@ -21,9 +21,11 @@ EmbeddingWarmupShapes = list[tuple[int, int]]
 DecodeWarmupShapes = list[tuple[int, int, int]]
 
 
-def patch_environment(
-    use_cb: bool, warmup_shapes: DecodeWarmupShapes | None, backend: str, monkeypatch
-):
+def patch_environment(use_cb: bool,
+                      warmup_shapes: DecodeWarmupShapes | None,
+                      backend: str,
+                      monkeypatch,
+                      use_chunked_prefill: bool = False):
     # Setup the environment correctly for the LLM
 
     # ---- For static batching ----
@@ -38,6 +40,8 @@ def patch_environment(
     # --------------
     monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1" if use_cb else "0")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+    monkeypatch.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL",
+                       "1" if use_chunked_prefill else "0")
 
 
 def patch_warmup_shapes(warmup_shapes: DecodeWarmupShapes | EmbeddingWarmupShapes, monkeypatch):
@@ -277,14 +281,17 @@ def _default_test_models(isEmbeddings=False, isScoring=False, full_size_models=F
         ]
         return params
 
-    # Full sized decoders
-    # The granite 8b fp8 model is not publicly available yet
-    granite = ModelInfo(
-        name="ibm-granite/granite-3.3-8b-instruct",
-        revision="51dd4bc2ade4059a6bd87649d68aa11e4fb2529b",
-    )
+    # Full-size decoders
+    granite = ModelInfo(name="ibm-granite/granite-3.3-8b-instruct",
+                        revision="51dd4bc2ade4059a6bd87649d68aa11e4fb2529b")
+    granite_fp8 = ModelInfo(
+        name="ibm-granite/granite-3.3-8b-instruct-FP8",
+        revision="4b5990b8d402a75febe0086abbf1e490af494e3d")
     params = [
         pytest.param(granite, marks=[pytest.mark.decoder], id=granite.name),
+        pytest.param(granite_fp8,
+                     marks=[pytest.mark.decoder, pytest.mark.quantized],
+                     id=granite_fp8.name)
     ]
     return params
 

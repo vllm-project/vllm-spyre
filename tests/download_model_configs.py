@@ -40,9 +40,6 @@ def download_model_config_from_hf(hf_model_id: str, revision: str = "main"):
 if __name__ == "__main__":
     model_ids = get_supported_models_list()
     for model_id in model_ids:
-        # TODO: get the actual FP8 model config
-        if "-FP8" in model_id:
-            continue
         config = download_hf_model_config(model_id)
         # download_model_config_from_hf(model_id)
         print(f"model_id: {model_id}")

@@ -182,9 +182,6 @@ def test_find_model_by_config(monkeypatch, caplog):
         # m.setenv("HF_HUB_OFFLINE", "1")
 
         for model_id in get_supported_models_list():
-            # TODO: get the actual FP8 model config
-            if "-FP8" in model_id:
-                continue
 
             model_config_dir = model_configs_dir / model_id
             model_config_file = model_config_dir / "config.json"
@@ -195,7 +192,7 @@ def test_find_model_by_config(monkeypatch, caplog):
             )
 
             if env.get("HF_HUB_OFFLINE", "0") == "0":
-                # it takes about 3 sec per model to load config from HF:
+                # it takes up to 3 sec per model to load config from HF:
                 #   vllm.config.ModelConfig.__post_init__():
                 #     model_info, arch = self.registry.inspect_model_cls(...)
                 model_config = ModelConfig(model=str(model_config_dir))
@@ -208,11 +205,15 @@ def test_find_model_by_config(monkeypatch, caplog):
             assert model_config.model != model_id
 
             models_found = find_known_models_by_model_config(model_config)
-            assert len(models_found) == 1, (
-                f"More than one model found. Need to add more distinguishing"
-                f" parameters for models `{models_found}` in file"
-                f" `vllm_spyre/config/known_model_configs.json`"
-            )
+            assert len(models_found) > 0, \
+                (f"Could not find any known models that match the ModelConfig"
+                 f" for model `{model_id}`. Update the entry for `{model_id}`"
+                 f" in `vllm_spyre/config/known_model_configs.json` so that its"
+                 f" parameters are a subset of those in `{model_config_file}`.")
+            assert len(models_found) < 2, \
+                (f"More than one model found. Add more distinguishing"
+                 f" parameters for models `{models_found}` in file"
+                 f" `vllm_spyre/config/known_model_configs.json`!")
             assert models_found[0] == model_id
 
             validate(model_config)

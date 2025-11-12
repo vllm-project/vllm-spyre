@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.12'",
@@ -130,7 +130,7 @@ wheels = [
 
 [[package]]
 name = "aiu-fms-testing-utils"
-version = "0.4.0"
+version = "0.4.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fms-model-optimizer", extra = ["fp8"] },
@@ -141,7 +141,7 @@ dependencies = [
     { name = "transformers" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e1/91/246e6334965fc3495093e46f53acd087e6da792f9326f69a6c822d72431d/aiu_fms_testing_utils-0.4.0-py3-none-any.whl", hash = "sha256:f5b50fb03dae0f23a55797c94ba821b4dc51ba41fa136687c421b4149782628c", size = 44974, upload-time = "2025-09-27T00:28:00.99Z" },
+    { url = "https://files.pythonhosted.org/packages/24/1d/4c06643a03e1179e28178617f1b66c07b2c1b3e772dd2aad2c3551b2f74b/aiu_fms_testing_utils-0.4.3-py3-none-any.whl", hash = "sha256:a73ef722b5f34d6694b0f75e4eb6d4073c263f7236283972fe963a563c25d3ab", size = 83940, upload-time = "2025-10-28T22:08:17.676Z" },
 ]
 
 [[package]]
@@ -940,13 +940,13 @@ wheels = [
 
 [[package]]
 name = "ibm-fms"
-version = "1.4.0"
+version = "1.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "torch", marker = "sys_platform == 'never'" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/30/12/5528237efc16dd77f794eedb2214b4a2692746b1a8115ca493e3132a8e35/ibm_fms-1.4.0-py3-none-any.whl", hash = "sha256:a7dc7d3488136d3e2bce1d78bb985f41e5ebaca8ae718dac8ac19b9fa9c5bdf5", size = 189645, upload-time = "2025-09-27T00:27:11.882Z" },
+    { url = "https://files.pythonhosted.org/packages/85/73/a9baa69717c28f71f3d07043b122c76e092974c5f1a886f45f5e6760db7f/ibm_fms-1.5.0-py3-none-any.whl", hash = "sha256:027446b12a4ad8da787da9e45c12c726df8b6c0bd09791614a447923910f50a6", size = 191609, upload-time = "2025-10-31T16:43:21.278Z" },
 ]
 
 [[package]]
@@ -3818,7 +3818,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "aiu-fms-testing-utils", specifier = ">=0.4.0" },
+    { name = "aiu-fms-testing-utils", specifier = ">=0.4.3" },
     { name = "pytest", specifier = "==8.3.4" },
     { name = "pytest-asyncio", specifier = ">=1.0.0" },
     { name = "pytest-forked", specifier = ">=1.6.0" },

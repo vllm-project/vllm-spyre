@@ -68,27 +68,36 @@ class LogitProcessorWrapper(LogitsProcessor):
     def update_state(self, batch_update: BatchUpdate | None):
         # This method keeps the indices consistent of request while the
         # persistent batch is changing.
-        if not batch_update:
-            return
 
-        # Process added requests.
-        for index, params, prompt_tok_ids, out_tok_ids in batch_update.added:
-            self.logitprocs[index].update_state(
-                BatchUpdate(
-                    batch_size=1,
-                    removed=[],
-                    moved=[],
-                    added=[(0, params, prompt_tok_ids, out_tok_ids)],
-                )
-            )
+        # Some LogitsProcessors, eg. MinTokensLogitsProcessor, require
+        # update_state to be called even if batch_update is None
+        update_called = {i: False for i in range(len(self.logitprocs))}
 
-        for index in batch_update.removed:
-            self.logitprocs[index].update_state(
-                BatchUpdate(batch_size=1, removed=[0], moved=[], added=[])
-            )
+        if batch_update is not None:
+            for index, params, prompt_tok_ids, out_tok_ids in \
+                batch_update.added:
+                update_called[index] = True
+                self.logitprocs[index].update_state(
+                    BatchUpdate(
+                        batch_size=1,
+                        removed=[],
+                        moved=[],
+                        added=[(0, params, prompt_tok_ids, out_tok_ids)],
+                    ))
 
-        for adx, bdx, _ in batch_update.moved:
-            self.logitprocs[adx], self.logitprocs[bdx] = self.logitprocs[bdx], self.logitprocs[adx]
+            for index in batch_update.removed:
+                update_called[index] = True
+                self.logitprocs[index].update_state(
+                    BatchUpdate(batch_size=1, removed=[0], moved=[], added=[]))
+
+            for adx, bdx, _ in batch_update.moved:
+                update_called[adx], update_called[bdx] = \
+                    update_called[bdx], update_called[adx] = \
+                self.logitprocs[adx], self.logitprocs[bdx] = \
+                    self.logitprocs[bdx], self.logitprocs[adx]
+
+        for index in [i for i, called in update_called.items() if not called]:
+            self.logitprocs[index].update_state(None)
 
     def apply(self, logits: torch.Tensor) -> torch.Tensor:
         if self._prefill_index is not None:
