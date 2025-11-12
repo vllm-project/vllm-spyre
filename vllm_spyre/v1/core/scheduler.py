@@ -500,9 +500,6 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
                     r for r in self.running if r not in self.prefilling
                 ]
                 running_holdback = self.prefilling
-                logger.debug(
-                    "Scheduling a decode step of %d requests, holding back %d "
-                    "requests", len(self.running), len(holdback_queue))
 
         # Check new requests to prefill
         elif len(self.waiting) > 0:
@@ -511,12 +508,10 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
             running_holdback = self.running
             self.running = []
             logger.debug(
-                "Scheduling a prefill step of %d requests, holding back %d "
-                "requests", len(self.waiting), len(holdback_queue))
+                "Scheduling a chunked prefill step of %d requests, holding back"
+                " %d requests", len(self.waiting), len(holdback_queue))
         else:
             running_holdback = []
-            logger.debug("Scheduling a decode step of %d requests",
-                         len(self.running))
 
         # delegate to super of SpyreScheduler: base V1 Scheduler
         outputs = super(SpyreScheduler, self).schedule()
