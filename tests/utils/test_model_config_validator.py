@@ -12,13 +12,13 @@ from vllm.config import ModelConfig
 from vllm_spyre import envs as envs_spyre
 from vllm_spyre.config import runtime_config_validator
 from vllm_spyre.config.runtime_config_validator import (
-    find_known_models_by_model_config, get_supported_models_list)
-from vllm_spyre.config.runtime_config_validator import (
-    validate_runtime_configuration as validate)
+    find_known_models_by_model_config,
+    get_supported_models_list,
+)
+from vllm_spyre.config.runtime_config_validator import validate_runtime_configuration as validate
 
 
 class TestModelConfig(ModelConfig):
-
     def __init__(self, model: str, hf_config: PretrainedConfig = None):
         self.model = model
         self.hf_config = hf_config
@@ -158,10 +158,8 @@ def test_model_runtime_configurations(monkeypatch, caplog):
         assert validate(model, 2, warmup_shapes=[[64, 19, 2]])
         # validate that config parameters do not exceed upper bounds
         assert not validate(model, 1, warmup_shapes=[[128, 20, 4]])
-        assert not validate(
-            model, 2, warmup_shapes=[[64, 20, 4], [128, 20, 2]])
-        assert not validate(
-            model, 1, warmup_shapes=[[64, 20, 4], [128, 20, 2], [256, 20, 1]])
+        assert not validate(model, 2, warmup_shapes=[[64, 20, 4], [128, 20, 2]])
+        assert not validate(model, 1, warmup_shapes=[[64, 20, 4], [128, 20, 2], [256, 20, 1]])
 
     # restore default configs for following tests
     runtime_config_validator.initialize_supported_configurations_from_file()
@@ -175,8 +173,7 @@ def test_find_model_by_config(monkeypatch, caplog):
     This is important for the case where models are mounted to the local file
     system instead of being loaded/cached from HuggingFace.
     """
-    model_configs_dir = Path(
-        __file__).parent.parent / "fixtures" / "model_configs"
+    model_configs_dir = Path(__file__).parent.parent / "fixtures" / "model_configs"
 
     setup_log_capture(caplog, level=logging.INFO)
 
@@ -185,13 +182,13 @@ def test_find_model_by_config(monkeypatch, caplog):
         # m.setenv("HF_HUB_OFFLINE", "1")
 
         for model_id in get_supported_models_list():
-
             model_config_dir = model_configs_dir / model_id
             model_config_file = model_config_dir / "config.json"
 
-            assert model_config_file.exists(), \
-                (f"Missing config file for model {model_id}."
-                 f" Use download_model_configs.py to download it.")
+            assert model_config_file.exists(), (
+                f"Missing config file for model {model_id}."
+                f" Use download_model_configs.py to download it."
+            )
 
             if env.get("HF_HUB_OFFLINE", "0") == "0":
                 # it takes up to 3 sec per model to load config from HF:
@@ -200,23 +197,24 @@ def test_find_model_by_config(monkeypatch, caplog):
                 model_config = ModelConfig(model=str(model_config_dir))
             else:
                 hf_config = AutoConfig.from_pretrained(
-                    pretrained_model_name_or_path=model_config_file,
-                    local_files_only=True)
-                model_config = TestModelConfig(model=str(model_config_dir),
-                                               hf_config=hf_config)
+                    pretrained_model_name_or_path=model_config_file, local_files_only=True
+                )
+                model_config = TestModelConfig(model=str(model_config_dir), hf_config=hf_config)
 
             assert model_config.model != model_id
 
             models_found = find_known_models_by_model_config(model_config)
-            assert len(models_found) > 0, \
-                (f"Could not find any known models that match the ModelConfig"
-                 f" for model `{model_id}`. Update the entry for `{model_id}`"
-                 f" in `vllm_spyre/config/known_model_configs.json` so that its"
-                 f" parameters are a subset of those in `{model_config_file}`.")
-            assert len(models_found) < 2, \
-                (f"More than one model found. Add more distinguishing"
-                 f" parameters for models `{models_found}` in file"
-                 f" `vllm_spyre/config/known_model_configs.json`!")
+            assert len(models_found) > 0, (
+                f"Could not find any known models that match the ModelConfig"
+                f" for model `{model_id}`. Update the entry for `{model_id}`"
+                f" in `vllm_spyre/config/known_model_configs.json` so that its"
+                f" parameters are a subset of those in `{model_config_file}`."
+            )
+            assert len(models_found) < 2, (
+                f"More than one model found. Add more distinguishing"
+                f" parameters for models `{models_found}` in file"
+                f" `vllm_spyre/config/known_model_configs.json`!"
+            )
             assert models_found[0] == model_id
 
             validate(model_config)

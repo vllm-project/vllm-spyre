@@ -6,11 +6,9 @@ from collections.abc import Iterator
 from glob import iglob
 from os import path
 from subprocess import PIPE, STDOUT, CalledProcessError, TimeoutExpired, run
-from typing import Optional
 
 from spyre_util import ModelInfo
-from vllm.model_executor.model_loader.weight_utils import (
-    download_weights_from_hf)
+from vllm.model_executor.model_loader.weight_utils import download_weights_from_hf
 
 
 def load_graph_to_compare(file_path):
@@ -18,18 +16,18 @@ def load_graph_to_compare(file_path):
         content = file.read()
 
     # Replace id: <number> with id: ###
-    content = re.sub(r'id: \d+', 'id: ###', content)
+    content = re.sub(r"id: \d+", "id: ###", content)
 
     # Replace ptr: <pointer> with ptr: xxxx
-    content = re.sub(r'ptr: 0x[0-9a-fA-F]{12}', 'ptr: xxxx', content)
+    content = re.sub(r"ptr: 0x[0-9a-fA-F]{12}", "ptr: xxxx", content)
 
     # Replace value
-    content = re.sub(r'values: ([0-9a-fA-F]{2}\s*)+', 'values: $$', content)
+    content = re.sub(r"values: ([0-9a-fA-F]{2}\s*)+", "values: $$", content)
 
     # Regex to find all 's#' patterns surrounded by spaces,
     # or starting with a space and ending with a comma.
     # Examples: ' s1 ', ' s1,', ' s1 s2 '
-    matched_symbols = re.findall(r'\s*(s\d+)[\s|,]', content)
+    matched_symbols = re.findall(r"\s*(s\d+)[\s|,]", content)
 
     symbols_set = set([m for m in matched_symbols])
 
@@ -39,7 +37,7 @@ def load_graph_to_compare(file_path):
     symbol_map = {i: s for i, s in enumerate(sorted_symbols)}
 
     for i, s in symbol_map.items():
-        content = content.replace(s, f'S#{i}')
+        content = content.replace(s, f"S#{i}")
 
     return content
 
@@ -55,22 +53,18 @@ def collect_graph_files(input_dir: str) -> dict[str, tuple[str, str]]:
 
     # NOTE: f.split("dump")[-1], split the filename by using dump,
     # to get numeric part which is the last one
-    filemap = { f.split("dump")[-1]: (f, load_graph_to_compare(f)) \
-        for f in filepaths}
+    filemap = {f.split("dump")[-1]: (f, load_graph_to_compare(f)) for f in filepaths}
 
     return filemap
 
 
 def diff_graph(a_filepath, a_file, b_filepath, b_file) -> Iterator[str]:
-    return difflib.unified_diff(a_file.split("\n"),
-                                b_file.split("\n"),
-                                fromfile=a_filepath,
-                                tofile=b_filepath)
+    return difflib.unified_diff(
+        a_file.split("\n"), b_file.split("\n"), fromfile=a_filepath, tofile=b_filepath
+    )
 
 
-def compare_graphs(a_map: dict[str, tuple[str, str]],
-                   b_map: dict[str, tuple[str, str]]) -> bool:
-
+def compare_graphs(a_map: dict[str, tuple[str, str]], b_map: dict[str, tuple[str, str]]) -> bool:
     are_graphs_similar = True
     for k, a_graph in a_map.items():
         a_filename, a_filedata = a_graph
@@ -83,7 +77,7 @@ def compare_graphs(a_map: dict[str, tuple[str, str]],
             lines_count = len(diff)
             for line in diff[:20]:
                 print(line)
-            if (lines_count > 20):
+            if lines_count > 20:
                 print(f"[...] Omitted {lines_count - 20} lines")
             are_graphs_similar = False
 
@@ -91,28 +85,25 @@ def compare_graphs(a_map: dict[str, tuple[str, str]],
 
 
 def run_inference_py_and_get_graphs(
-        inference_py_args: list[str],
-        extra_env: Optional[dict[str,
-                                 str]] = None) -> dict[str, tuple[str, str]]:
+    inference_py_args: list[str], extra_env: dict[str, str] | None = None
+) -> dict[str, tuple[str, str]]:
     with tempfile.TemporaryDirectory() as tmpdir:
-
         env = os.environ.copy()
-        env.update({
-            "DEE_DUMP_GRAPHS": "aftu",
-            "TORCH_SENDNN_CACHE_ENABLE": "0"
-        })
+        env.update({"DEE_DUMP_GRAPHS": "aftu", "TORCH_SENDNN_CACHE_ENABLE": "0"})
         if extra_env:
             env.update(extra_env)
 
         try:
-            run(inference_py_args,
+            run(
+                inference_py_args,
                 stdout=PIPE,
                 stderr=STDOUT,
                 text=True,
                 check=True,
                 env=env,
                 cwd=tmpdir,
-                timeout=600)
+                timeout=600,
+            )
         except TimeoutExpired as e:
             print("`inference.py` process timeout!")
             if e.stdout:
@@ -139,4 +130,5 @@ def get_model_path(model: ModelInfo):
         model_name_or_path=model.name,
         cache_dir=None,
         allow_patterns=["*.safetensors", "*.bin", "*.pt"],
-        revision=model.revision)
+        revision=model.revision,
+    )
