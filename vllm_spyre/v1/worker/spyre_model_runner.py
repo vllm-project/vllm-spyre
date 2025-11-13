@@ -2275,6 +2275,11 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             for req_id, idx in req_id_to_index.items()
         }
 
+        # TODO: dead code, this only works for SB with bs=1, either
+        # fix it or remove it.
+        prompt_logprobs_dicts = self._get_prompt_logprobs_dict(
+            logits=logits, model_inputs=model_input)
+
         # If the prompt is being prefilled we don't have to sample
         # and generate a new token.
         if is_prefill and self.check_incomplete_prefill(scheduler_output):
@@ -2287,7 +2292,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                 req_id_to_index=req_id_to_index,
                 sampled_token_ids=[],
                 logprobs=None,
-                prompt_logprobs_dict={},
+                prompt_logprobs_dict=prompt_logprobs_dicts,
                 pooler_output=[],
                 tkv=self.tkv,
                 n_free_blocks=self.get_n_free_blocks(),
@@ -2333,7 +2338,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             sampled_token_ids=output.sampled_token_ids.tolist(),
             logprobs=(output.logprobs_tensors.tolists()
                       if output.logprobs_tensors else None),
-            prompt_logprobs_dict={},
+            prompt_logprobs_dict=prompt_logprobs_dicts,
             pooler_output=[],
             tkv=self.tkv,
             n_free_blocks=self.get_n_free_blocks(),
