@@ -25,6 +25,12 @@
                     "token_ids": [ 203 ],
                     "tokens": [ "\n" ],
                     "logprobs": [ -0.03913814201951027 ]
+                },
+                "8": {
+                    "text": "\n\n1.\n\nThe user",
+                    "token_ids": [ 203, 203, 35, 32, 203, 203, 1318, 1256 ],
+                    "tokens": [ "\n", "\n", "1", ".", "\n", "\n", "The", " user" ],
+                    "logprobs": [ -0.03913814201951027, -1.4629193544387817, -2.2675654888153076, -0.10821957141160965, -2.4334921836853027, -0.7974967956542969, -2.3020193576812744, -2.239565849304199 ]
                 }
             },
             "Below is an instruction that describes a task. Write a response that appropriately completes the request. Be polite in your response to the user.\n\n### Instruction:\nProvide me a list of things that I can do with my new found wealth.\n\n### Response:": {

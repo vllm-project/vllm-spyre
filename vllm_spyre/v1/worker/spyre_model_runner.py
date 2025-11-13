@@ -89,6 +89,12 @@ class CBSpyreModelRunnerOutput(ModelRunnerOutput):
     n_free_blocks: int = 0
 
 
+@dataclass
+class CPSpyreModelRunnerOutput(CBSpyreModelRunnerOutput):
+    # Left padding of each request that was calculated by model runner
+    left_padding: dict[str, int] = field(default_factory=dict)
+
+
 InputBatchT = TypeVar("InputBatchT", bound=BaseInputBatch)
 RequestStateT = TypeVar("RequestStateT", bound=BaseRequestState)
 ModelInputsT = TypeVar("ModelInputsT", bound=ModelForwardInputs)
@@ -2178,7 +2184,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             return self._prepare_decode(scheduler_output.scheduled_cached_reqs)
 
     def get_empty_output(self):
-        return CBSpyreModelRunnerOutput(req_ids=[],
+        return CPSpyreModelRunnerOutput(req_ids=[],
                                         req_id_to_index={},
                                         sampled_token_ids=[],
                                         logprobs=None,
@@ -2186,7 +2192,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                                         pooler_output=[],
                                         num_nans_in_logits=None,
                                         tkv=self.tkv,
-                                        n_free_blocks=self.get_n_free_blocks())
+                                        n_free_blocks=self.get_n_free_blocks(),
+                                        left_padding={})
 
     def check_incomplete_prefill(self, scheduler_output: SchedulerOutput):
         cached_reqs = scheduler_output.scheduled_cached_reqs
@@ -2260,8 +2267,13 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         # Get mapping between requests ids to the index within the batch
         req_id_to_index = self.get_req_id_to_index(is_prefill)
 
-        prompt_logprobs_dicts = self._get_prompt_logprobs_dict(
-            logits=logits, model_inputs=model_input)
+        # Prepare the left paddings to pass to the scheduler
+        left_padded_prompt_mask = cast(torch.tensor,
+                                       model_input.left_padded_prompt_mask)
+        left_padding = {
+            req_id: left_padded_prompt_mask[idx].item()
+            for req_id, idx in req_id_to_index.items()
+        }
 
         # If the prompt is being prefilled we don't have to sample
         # and generate a new token.
@@ -2270,16 +2282,16 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             if not self.is_driver_worker:
                 return self.get_empty_output()
 
-            return CBSpyreModelRunnerOutput(
+            return CPSpyreModelRunnerOutput(
                 req_ids=list(req_id_to_index.keys()),
                 req_id_to_index=req_id_to_index,
                 sampled_token_ids=[],
                 logprobs=None,
-                # TODO: probably it does not makes sense
-                prompt_logprobs_dict=prompt_logprobs_dicts,
+                prompt_logprobs_dict={},
                 pooler_output=[],
                 tkv=self.tkv,
-                n_free_blocks=self.get_n_free_blocks())
+                n_free_blocks=self.get_n_free_blocks(),
+                left_padding=left_padding)
 
         # Sample the next token.
         output: SamplerOutput = self.model.sample(
@@ -2315,16 +2327,17 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         if not self.is_driver_worker:
             return self.get_empty_output()
 
-        model_output = CBSpyreModelRunnerOutput(
+        model_output = CPSpyreModelRunnerOutput(
             req_ids=list(req_id_to_index.keys()),
             req_id_to_index=req_id_to_index,
             sampled_token_ids=output.sampled_token_ids.tolist(),
             logprobs=(output.logprobs_tensors.tolists()
                       if output.logprobs_tensors else None),
-            prompt_logprobs_dict=prompt_logprobs_dicts,
+            prompt_logprobs_dict={},
             pooler_output=[],
             tkv=self.tkv,
-            n_free_blocks=self.get_n_free_blocks())
+            n_free_blocks=self.get_n_free_blocks(),
+            left_padding=left_padding)
 
         return model_output
 
