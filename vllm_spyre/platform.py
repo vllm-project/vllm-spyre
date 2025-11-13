@@ -589,7 +589,7 @@ class SpyrePlatform(Platform):
         # Override the total number of KV cache blocks based on what we know
         # will fit. (Unless user already set `--num-gpu-blocks-override`)
         # TODO: remove this once we have correct free memory info available
-        blocks_override = 2080
+        blocks_override = 8192
         if vllm_config.cache_config.num_gpu_blocks_override is None:
             vllm_config.cache_config.num_gpu_blocks_override = blocks_override
             logger.info(
