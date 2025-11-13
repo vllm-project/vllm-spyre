@@ -422,14 +422,14 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         # We want to keep track of requests for which the prefill is ongoing.
         # Theoretically, only one request can be prefilled at a time, but we
         # keep a list to be able to batch prefills in the future.
-        self.prefilling: list[Request] = []
+        self.ongoing_prefills: list[Request] = []
 
     def update_from_output(self, scheduler_output, model_runner_output):
         assert isinstance(model_runner_output, CBSpyreModelRunnerOutput), (
             "Expecting an instance of CBSpyreModelRunnerOutput when doing "
             "chunked prefill.")
 
-        for req in self.prefilling:
+        for req in self.ongoing_prefills:
             # replace num_computed_tokens with the exact number of computed
             # prompt tokens, the current value might be wrong because of padding
 
@@ -439,8 +439,8 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
             pass
 
         # Remove completed prefills
-        self.prefilling = [
-            req for req in self.prefilling
+        self.ongoing_prefills = [
+            req for req in self.ongoing_prefills
             if req.num_computed_tokens < req.num_prompt_tokens
         ]
 
@@ -470,40 +470,40 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
                 # can work with the batch we have
                 break
 
-        assert len(self.prefilling) <= 1, \
+        assert len(self.ongoing_prefills) <= 1, \
             "Only one request can be prefilled at a time, but got %d" \
-                % len(self.prefilling)
-        assert len(self.waiting) == 0 or len(self.prefilling) == 0, \
+                % len(self.ongoing_prefills)
+        assert len(self.waiting) == 0 or len(self.ongoing_prefills) == 0, \
         "Cannot schedule new requests while another request prefill is ongoing."
-        assert all(r in self.running for r in self.prefilling), \
+        assert all(r in self.running for r in self.ongoing_prefills), \
         "Ongoing prefill requests must be in the running queue."
 
         # Check ongoing prefills
-        if self.prefilling:
+        if self.ongoing_prefills:
             # Some running requests are currently being prefilled. We need to
             # separate them from currently decoding requests, and schedule
             # them separately. Either we schedule a chunked prefill step, or a
             # decoding step
 
-            schedule_prefill = self.can_schedule(self.prefilling[0])
+            schedule_prefill = self.can_schedule(self.ongoing_prefills[0])
 
             if schedule_prefill:
                 running_holdback = [
-                    r for r in self.running if r not in self.prefilling
+                    r for r in self.running if r not in self.ongoing_prefills
                 ]
-                self.running = self.prefilling
+                self.running = self.ongoing_prefills
                 logger.debug(
                     "Scheduling a chunked prefill step of %d requests, holding "
                     "back %d requests", len(self.running), len(holdback_queue))
             else:
                 self.running = [
-                    r for r in self.running if r not in self.prefilling
+                    r for r in self.running if r not in self.ongoing_prefills
                 ]
-                running_holdback = self.prefilling
+                running_holdback = self.ongoing_prefills
 
         # Check new requests to prefill
         elif len(self.waiting) > 0:
-            self.prefilling.extend(self.waiting)
+            self.ongoing_prefills.extend(self.waiting)
             # Hide current decodes from the scheduler
             running_holdback = self.running
             self.running = []
@@ -535,12 +535,12 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         #    decode step (we interleave prefills with decodes)
         # 2. If it is the last chunk: do a prefill if all the other scheduling
         #    conditions are met
-        if request in self.prefilling:
+        if request in self.ongoing_prefills:
             return True
 
         # We can't schedule a new request if another request is already
         # prefilling
-        if self.prefilling:
+        if self.ongoing_prefills:
             return False
 
         # We use can_schedule from ContinuousBatchingSpyreScheduler as it is to
