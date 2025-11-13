@@ -127,6 +127,11 @@ class SpyrePlatform(Platform):
             os.environ["FLEX_OVERWRITE_NMB_FRAME"] = "false"
             os.environ["COMPILATION_MODE"] = "offline"
 
+        assert (envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL \
+            and envs_spyre.VLLM_SPYRE_USE_CB) or \
+                not envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL, \
+            "Cannot use chunked prefill without continuous batching."
+
         if envs_spyre.VLLM_SPYRE_USE_CB and is_decoder:
             if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
                 scheduler_config.scheduler_cls = "vllm_spyre.v1.core."\
