@@ -1822,12 +1822,13 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             # Case I - Prompt fits in a single chunk
             chunk_start = 0
             chunk_end = prompt_len
+            chunk_left_offset = left_padding
         elif left_padding > 0 and num_computed_tokens == 0:
             # Case II - First chunk, but it contains some padding blocks at
             # the left
             chunk_start = 0
             chunk_end = left_pad_blocks_offset
-            chunk_left_offset = left_padding  # The only case it won't be zero
+            chunk_left_offset = left_padding
         else:
             if left_padding == 0:
                 # Case III
