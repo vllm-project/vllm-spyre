@@ -417,7 +417,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
 
 
 class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
-    """ Support of chunked prefill """
+    """Support of chunked prefill"""
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -429,8 +429,8 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
 
     def update_from_output(self, scheduler_output, model_runner_output):
         assert isinstance(model_runner_output, CBSpyreModelRunnerOutput), (
-            "Expecting an instance of CBSpyreModelRunnerOutput when doing "
-            "chunked prefill.")
+            "Expecting an instance of CBSpyreModelRunnerOutput when doing chunked prefill."
+        )
 
         for req in self.ongoing_prefills:
             # replace num_computed_tokens with the exact number of computed
@@ -443,12 +443,10 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
 
         # Remove completed prefills
         self.ongoing_prefills = [
-            req for req in self.ongoing_prefills
-            if req.num_computed_tokens < req.num_prompt_tokens
+            req for req in self.ongoing_prefills if req.num_computed_tokens < req.num_prompt_tokens
         ]
 
-        return super().update_from_output(scheduler_output,
-                                          model_runner_output)
+        return super().update_from_output(scheduler_output, model_runner_output)
 
     def schedule(self) -> "SchedulerOutput":
         """This override adds constraints and then delegates most of the work
@@ -473,13 +471,15 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
                 # can work with the batch we have
                 break
 
-        assert len(self.ongoing_prefills) <= 1, \
-            "Only one request can be prefilled at a time, but got %d" \
-                % len(self.ongoing_prefills)
-        assert len(self.waiting) == 0 or len(self.ongoing_prefills) == 0, \
-        "Cannot schedule new requests while another request prefill is ongoing."
-        assert all(r in self.running for r in self.ongoing_prefills), \
-        "Ongoing prefill requests must be in the running queue."
+        assert len(self.ongoing_prefills) <= 1, (
+            "Only one request can be prefilled at a time, but got %d" % len(self.ongoing_prefills)
+        )
+        assert len(self.waiting) == 0 or len(self.ongoing_prefills) == 0, (
+            "Cannot schedule new requests while another request prefill is ongoing."
+        )
+        assert all(r in self.running for r in self.ongoing_prefills), (
+            "Ongoing prefill requests must be in the running queue."
+        )
 
         # Check ongoing prefills
         if self.ongoing_prefills:
@@ -491,17 +491,15 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
             schedule_prefill = self.can_schedule(self.ongoing_prefills[0])
 
             if schedule_prefill:
-                running_holdback = [
-                    r for r in self.running if r not in self.ongoing_prefills
-                ]
+                running_holdback = [r for r in self.running if r not in self.ongoing_prefills]
                 self.running = self.ongoing_prefills
                 logger.debug(
-                    "Scheduling a chunked prefill step of %d requests, holding "
-                    "back %d requests", len(self.running), len(holdback_queue))
+                    "Scheduling a chunked prefill step of %d requests, holding back %d requests",
+                    len(self.running),
+                    len(holdback_queue),
+                )
             else:
-                self.running = [
-                    r for r in self.running if r not in self.ongoing_prefills
-                ]
+                self.running = [r for r in self.running if r not in self.ongoing_prefills]
                 running_holdback = self.ongoing_prefills
 
         # Check new requests to prefill
@@ -511,8 +509,10 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
             running_holdback = self.running
             self.running = []
             logger.debug(
-                "Scheduling a chunked prefill step of %d requests, holding back"
-                " %d requests", len(self.waiting), len(holdback_queue))
+                "Scheduling a chunked prefill step of %d requests, holding back %d requests",
+                len(self.waiting),
+                len(holdback_queue),
+            )
         else:
             running_holdback = []
 
