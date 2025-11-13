@@ -63,7 +63,7 @@ def test_compare_graphs_cb(model: ModelInfo, max_num_seqs: int,
     extra_env = {
         "VLLM_DT_MAX_CONTEXT_LEN": str(max_model_len),
         "VLLM_DT_MAX_BATCH_SIZE": str(max_num_seqs),
-        "VLLM_DT_MAX_BATCH_TKV_LIMIT": str(1024 * 128)
+        "VLLM_DT_MAX_BATCH_TKV_LIMIT": str(512 * 1024)
     }
     aftu_graphs = run_inference_py_and_get_graphs(inference_py_args, extra_env)
 
@@ -217,7 +217,7 @@ def test_compare_graphs_chunked_prefill(model: ModelInfo, max_num_seqs: int,
     extra_env = {
         "VLLM_DT_MAX_CONTEXT_LEN": str(max_model_len),
         "VLLM_DT_MAX_BATCH_SIZE": str(max_num_seqs),
-        "VLLM_DT_MAX_BATCH_TKV_LIMIT": str(1024 * 128),
+        "VLLM_DT_MAX_BATCH_TKV_LIMIT": str(512 * 1024),
         "VLLM_DT_CHUNK_LEN": str(chunk_size)
     }
     aftu_graphs = run_inference_py_and_get_graphs(inference_py_args, extra_env)
