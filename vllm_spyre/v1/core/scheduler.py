@@ -424,6 +424,11 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         # keep a list to be able to batch prefills in the future.
         self.ongoing_prefills: list[Request] = []
 
+        # Consecutive chunked prefill operations are interleaved with a decode
+        # step to minimize interruptions of current running requests. We skip a
+        # prefill step if the previous step was also a prefill.
+        self.previous_step_was_prefill: bool = False
+
     def update_from_output(self, scheduler_output, model_runner_output):
         assert isinstance(model_runner_output, CBSpyreModelRunnerOutput), (
             "Expecting an instance of CBSpyreModelRunnerOutput when doing "
@@ -492,6 +497,7 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
                     r for r in self.running if r not in self.ongoing_prefills
                 ]
                 self.running = self.ongoing_prefills
+                self.previous_step_was_prefill = True
                 logger.debug(
                     "Scheduling a chunked prefill step of %d requests, holding "
                     "back %d requests", len(self.running), len(holdback_queue))
@@ -500,6 +506,7 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
                     r for r in self.running if r not in self.ongoing_prefills
                 ]
                 running_holdback = self.ongoing_prefills
+                self.previous_step_was_prefill = False
 
         # Check new requests to prefill
         elif len(self.waiting) > 0:
@@ -507,10 +514,12 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
             # Hide current decodes from the scheduler
             running_holdback = self.running
             self.running = []
+            self.previous_step_was_prefill = True
             logger.debug(
                 "Scheduling a chunked prefill step of %d requests, holding back"
                 " %d requests", len(self.waiting), len(holdback_queue))
         else:
+            self.previous_step_was_prefill = False
             running_holdback = []
 
         # delegate to super of SpyreScheduler: base V1 Scheduler
@@ -524,6 +533,13 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         return outputs
 
     def can_schedule(self, request):
+        # Forbid two consecutive prefill steps where there are decoding requests
+        decoding_requests = [
+            r for r in self.running if r not in self.ongoing_prefills
+        ]
+        if self.previous_step_was_prefill and decoding_requests:
+            return False
+
         # For currently prefilling requests: all the required blocks were
         # already reserved and all the conditions were already checked at the
         # time of scheduling the first chunk. We also always prioritize prefill
