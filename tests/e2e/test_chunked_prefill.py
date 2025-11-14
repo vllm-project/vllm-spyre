@@ -11,7 +11,8 @@ from llm_cache import get_cached_llm
 from output_util import (compare_results, extract_output, generate_hf_output,
                          setup_golden_token)
 from pytest_mock.plugin import MockerFixture
-from spyre_util import ModelInfo, get_longer_chicken_soup_prompts
+from spyre_util import (ModelInfo, get_chicken_soup_prompts,
+                        get_longer_chicken_soup_prompts)
 from vllm import LLM, SamplingParams
 
 from vllm_spyre.v1.worker.spyre_model_runner import SamplingForwardInputs
@@ -26,6 +27,8 @@ def get_model_runner(cp_model: LLM):
 chicken_soup_prompts = get_longer_chicken_soup_prompts(4)
 
 # NOTE: considering granite 3.3 tokenizer
+# Should have 51 tokens
+prompt_51 = get_chicken_soup_prompts(1)[0]
 # Should have 95 tokens
 prompt_95 = chicken_soup_prompts[0]
 # Should have 251
@@ -37,7 +40,9 @@ prompt_260 = chicken_soup_prompts[0] + chicken_soup_prompts[2] + \
 
 USE_CASES = {
     # Case I - Prompt fits in a single chunk
-    "case_I": (prompt_95, 128, 1, 0),
+    "case_Ia": (prompt_95, 128, 1, 0),
+    # Case I - Prompt fits in a single chunk with left padding
+    "case_Ib": (prompt_51, 128, 1, 64),
     # Case II - Has left padding
     "case_II": (prompt_260, 128, 3, 64),
     # Case III again - no padding
@@ -104,7 +109,7 @@ def test_chunked_prefill_correctness(model: ModelInfo, backend: str,
 
         for r in records:
             model_input = cast(SamplingForwardInputs, r)
-            # Must be a single one value
+            # Must be a single value
             left_padding = model_input.left_padded_prompt_mask[0].item()
             assert left_padding == expected_left_padding
 
