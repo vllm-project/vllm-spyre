@@ -618,8 +618,10 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         max_context_len = self.scheduler_config.max_model_len
 
         # check that there is space in the current decode batch
-        cond1 = len(self.running) + len(
-            self.waiting) < self.max_num_running_reqs
+        num_running = len(self.running)
+        if request in self.running:
+            num_running -= 1
+        cond1 = num_running + len(self.waiting) < self.max_num_running_reqs
         # check that there is space in the prefill batch
         cond2 = len(self.waiting) < max_prefill_batch_size
         # check that the prompt length does not exceed the current tkv
