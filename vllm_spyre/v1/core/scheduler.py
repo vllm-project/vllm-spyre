@@ -13,7 +13,8 @@ from vllm.v1.request import Request
 
 import vllm_spyre.envs as envs_spyre
 from vllm_spyre.platform import SpyrePlatform
-from vllm_spyre.v1.worker.spyre_model_runner import CBSpyreModelRunnerOutput
+from vllm_spyre.v1.worker.spyre_model_runner import (CBSpyreModelRunnerOutput,
+                                                     CPSpyreModelRunnerOutput)
 
 if TYPE_CHECKING:
     from vllm.v1.core.sched.output import SchedulerOutput
@@ -430,18 +431,23 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         self.previous_step_was_prefill: bool = False
 
     def update_from_output(self, scheduler_output, model_runner_output):
-        assert isinstance(model_runner_output, CBSpyreModelRunnerOutput), (
-            "Expecting an instance of CBSpyreModelRunnerOutput when doing "
+        assert isinstance(model_runner_output, CPSpyreModelRunnerOutput), (
+            "Expecting an instance of CPSpyreModelRunnerOutput when doing "
             "chunked prefill.")
 
+        # Update the correct num_computed_tokens value given left-padding info
         for req in self.ongoing_prefills:
-            # replace num_computed_tokens with the exact number of computed
-            # prompt tokens, the current value might be wrong because of padding
+            if req.request_id not in model_runner_output.left_padding:
+                continue
 
-            # TODO agree on interface with CBSpyreModelRunnerOutput
-            # req.num_computed_tokens = \
-            # model_runner_output.req_num_computed_tokens[req.request_id]
-            pass
+            # The number of computed tokens only need to be adapted when it is
+            # the first chunk of a multi-chunks prefill
+            is_first_chunk = req.num_computed_tokens <= self.chunk_size
+            is_last_chunk = req.num_computed_tokens == req.num_prompt_tokens
+            if is_first_chunk and not is_last_chunk:
+                req_left_padding = model_runner_output.left_padding[
+                    req.request_id]
+                req.num_computed_tokens -= req_left_padding
 
         # Remove completed prefills
         self.ongoing_prefills = [
