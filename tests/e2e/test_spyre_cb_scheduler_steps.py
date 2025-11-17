@@ -797,8 +797,7 @@ def test_prefill_tkv_too_big(model: ModelInfo, backend: str,
     Note that as we could prefill the prompt straight away, however,
     in this test the max model length is decreased to a value where
     the tkv of the decode batch would be shifted beyond the max model length, 
-    we therefore have to wait with scheduling. 
-    -> see cond4_updated in vllm_spyre/v1/core/scheduler.py
+    we therefore have to wait with scheduling.
 
     Configuration:
         * max_num_seqs: 2
@@ -959,8 +958,7 @@ def test_prefill_use_more_than_available_blocks(
     Note that we could prefill the prompt straight away, however,
     in this test the number of available KV cache blocks is decreased
     to a value where the the number of reserved blocks would exceed the number
-    of available blocks, we therefore have to wait with scheduling. 
-    -> see cond5_updated in vllm_spyre/v1/core/scheduler.py
+    of available blocks after the tkv shift, we therefore cannot schedule it.
 
     Configuration:
         * max_num_seqs: 2
@@ -1586,7 +1584,7 @@ def test_requests_use_full_batch_tkv_limit_prefill_opt(
         },
         # Note: we can prefill seq 1 here as the volumetric limit
         # max_batch_tkv_limit is just big enough (258)
-        # -> cond6_updated in can_schedule() is True
+        # -> cond5 in can_schedule() is True
         {
             # Prefill sequence 1
             # total blocks in use: 3
@@ -1690,7 +1688,7 @@ def test_requests_exceed_batch_tkv_limit_prefill_opt(
         },
         # Note: we cannot prefill seq 1 as the volumetric limit
         # max_batch_tkv_limit is exceeded: 257 < 258
-        # -> cond6_updated in can_schedule() is False
+        # -> cond5 in can_schedule() is False
         {
             # Decode sequence 0
             # Sequence 0 finishes at step 2
