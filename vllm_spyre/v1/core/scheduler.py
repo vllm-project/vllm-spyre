@@ -672,5 +672,4 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         # Check that there is space in the prefill batch
         max_prefill_batch_size = 1
         num_scheduled_prefills = len(self.waiting) + len(self.ongoing_prefills)
-        assert num_scheduled_prefills < 2, "AAAAAAAAAAA"
         return num_scheduled_prefills < max_prefill_batch_size
