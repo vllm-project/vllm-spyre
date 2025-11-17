@@ -863,8 +863,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
     def _set_blocks(self, num_blocks: int) -> None:
         # set number of available blocks and populate block_pool
-        self.n_blocks = num_blocks
-        self.block_pool = deque([i for i in range(self.n_blocks)])
+        self.n_blocks = num_blocks - 1
+        self.block_pool = deque([i for i in range(1, self.n_blocks + 1)])
 
     def get_total_spyre_blocks(self) -> int:
         """Returns the total number of KV cache blocks available for spyre.
