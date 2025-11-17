@@ -561,9 +561,9 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
 
         # calculate new max tkv of the batch given the new sequence joins
         # considers all possible cases:
-        # - prompt_len > self.tkv by more than self.block_size
+        # - prompt_len > self.tkv and fall into different blocks
         # - prompt_len and self.tkv fall within the same block
-        # - prompt_len < self.tkv by more than self.block_size
+        # - prompt_len < self.tkv and fall into different blocks
         prompt_len = request.num_prompt_tokens
         n_blocks = math.floor(max(self.tkv, prompt_len) / self.block_size)
         max_tkv = n_blocks * self.block_size + max(
