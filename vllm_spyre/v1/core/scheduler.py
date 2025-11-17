@@ -543,8 +543,61 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         if self.ongoing_prefills:
             return False
 
-        # We use can_schedule from ContinuousBatchingSpyreScheduler as it is to
-        # verify the different scheduling conditions.
-        # NOTE we won't be able to continue doing so when we interleave prefill
-        # with decode steps
-        return super().can_schedule(request)
+        # chunked prefill scheduling conditions
+        max_prompt_batch_size = 1
+        max_context_len = self.scheduler_config.max_model_len
+
+        # running and waiting queues are both empty -> start a new batch
+        # which can always be scheduled
+        if len(self.running) + len(self.waiting) == 0:
+            return True
+
+        # check that there is space in the current decode batch
+        cond1 = len(self.running) + len(
+            self.waiting) < self.max_num_running_reqs
+
+        # check that there is space in the prefill batch
+        cond2 = len(self.waiting) < max_prompt_batch_size
+
+        # calculate new max tkv of the batch given the new sequence joins
+        # considers all possible cases:
+        # - prompt_len > self.tkv and fall into different blocks
+        # - prompt_len and self.tkv fall within the same block
+        # - prompt_len < self.tkv and fall into different blocks
+        prompt_len = request.num_prompt_tokens
+        n_blocks = math.floor(max(self.tkv, prompt_len) / self.block_size)
+        max_tkv = n_blocks * self.block_size + max(
+            self.tkv % self.block_size, prompt_len % self.block_size)
+        new_tkv = n_blocks * self.block_size + prompt_len % self.block_size
+
+        # check that the number of requested tokens can be served
+        # new sequence (optimal condition)
+        cond3 = request.max_tokens <= (max_context_len - new_tkv)
+        # check cond3 for all other sequences in the current decode batch
+        # Note: using max_tkv is a conservative upper bound here. For the
+        # optimal check we need model runner to return per sequence tkvs
+        for req in self.running:
+            cond4_current = req.max_tokens <= (max_context_len - max_tkv)
+            cond3 = cond3 and cond4_current
+            # early exiting loop if violated 4th condition
+            if not cond3:
+                return False
+
+        # check that there are enough free blocks/pages remaining
+        # Note: we only have to do check in case of a running batches
+        # (not start_new_batch), because the minimal number of blocks covers
+        # the context length for a single sequence, so tkv < block size is ok
+        total_tokens = prompt_len + request.max_tokens - 1
+        num_blocks_required = math.ceil(total_tokens / self.block_size)
+        cond4 = num_blocks_required <= self.n_free_blocks
+
+        # check that batch size x tkv is smaller than the max supported number
+        # Note: using max_tkv is a conservative upper bound here. For the
+        # optimal check we need model runner to return per sequence tkvs
+        cond5 = lambda: self.check_batch_tkv_limit(request=request,
+                                                   tkv=max_tkv,
+                                                   running=self.running,
+                                                   max_batch_tkv_limit=self.
+                                                   max_batch_tkv_limit)
+
+        return cond1 and cond2 and cond3 and cond4 and cond5()
