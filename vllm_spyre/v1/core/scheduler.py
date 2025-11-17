@@ -248,28 +248,18 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             (self.tkv - request.num_prompt_tokens) / self.block_size)
         num_blocks_required -= num_fully_padded_blocks
         cond5 = num_blocks_required <= self.n_free_blocks
-        # scheduling heuristic: prefill vs decode prioritization
-        # note that prefills are performed on the minimal number of blocks
-        # needed and prefill time is thus proportional to the number of blocks
-        num_blocks_prefill = math.ceil(
-            self.tkv / self.block_size) - num_fully_padded_blocks
-        # if VLLM_SPYRE_N_TOKENS_PREFILL_PRIO is -1 -> no heuristic is enforced
-        cond6 = (num_blocks_prefill * self.block_size
-                 <= envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO) if (
-                     envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO
-                     >= 0) else True
         # check that batch size x tkv is smaller than the max supported number
-        cond7 = lambda: self.check_batch_tkv_limit(request=request,
+        cond6 = lambda: self.check_batch_tkv_limit(request=request,
                                                    tkv=self.tkv,
                                                    running=self.running,
                                                    max_batch_tkv_limit=self.
                                                    max_batch_tkv_limit)
 
-        if cond1 and cond2 and cond3 and cond4 and cond5 and cond6 and cond7():
+        if cond1 and cond2 and cond3 and cond4 and cond5 and cond6():
             return True
 
         # the following conditions must always be true, if not we can exit here
-        if not (cond1 and cond2 and cond4 and cond5 and cond6 and cond7()
+        if not (cond1 and cond2 and cond4 and cond5 and cond6()
                 ) or not envs_spyre.VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION:
             return False
 
@@ -295,27 +285,15 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             (tkv_updated + request.max_tokens - 1) / self.block_size)
         cond5_updated = num_blocks_required_updated <= self.n_free_blocks
 
-        # check prefill vs decode prioritization with updated tkv
-        # Note: num_fully_padded_blocks is always 0 in this code branch by
-        # construction: if the prompt is bigger than self.tkv, we shift
-        # self.tkv by tkv_offset to just accommodate the new prompt. The
-        # alignment with self.tkv this will require max block_size - 1 pads.
-        num_blocks_prefill_updated = math.ceil(tkv_updated / self.block_size)
-        cond6_updated = (num_blocks_prefill_updated * self.block_size
-                         <= envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO) if (
-                             envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO
-                             >= 0) else True
-
         # check that batch size x tkv is smaller than the max supported number
         # with updated tkv (cond6) -> only call if the other cond are met
-        cond7_updated = lambda: self.check_batch_tkv_limit(
+        cond6_updated = lambda: self.check_batch_tkv_limit(
             request=request,
             tkv=tkv_updated,
             running=self.running,
             max_batch_tkv_limit=self.max_batch_tkv_limit)
 
-        return (cond4_updated and cond5_updated and cond6_updated
-                and cond7_updated())
+        return cond4_updated and cond5_updated and cond6_updated()
 
     def check_batch_tkv_limit(self, request, tkv, running,
                               max_batch_tkv_limit) -> bool:
