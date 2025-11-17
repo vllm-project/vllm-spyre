@@ -591,10 +591,10 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         if request in self.running:
             num_running -= 1
         cond1 = num_running + len(self.waiting) < self.max_num_running_reqs
-        
+
         # check that there is space in the prefill batch
         cond2 = len(self.waiting) < max_prefill_batch_size
-        
+
         # calculate new max tkv of the batch given the new sequence joins
         # considers all possible cases:
         # - prompt_len > self.tkv and fall into different blocks
@@ -628,7 +628,7 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
             total_tokens = prompt_len + request.max_tokens - 1
             num_blocks_required = math.ceil(total_tokens / self.block_size)
             cond4 = num_blocks_required <= self.n_free_blocks
-            
+
         # check that batch size x tkv is smaller than the max supported number
         # Note: using max_tkv is a conservative upper bound here. For the
         # optimal check we need model runner to return per sequence tkvs
@@ -639,7 +639,6 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
                                                    max_batch_tkv_limit)
 
         return cond1 and cond2 and cond3 and cond4 and cond5()
-
 
     def _has_scheduling_priority(self, request):
         # Forbid two consecutive prefill steps where there are decoding requests
