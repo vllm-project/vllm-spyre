@@ -587,9 +587,18 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         return can_schedule
 
     def _satisfies_prefill_constraints(self, request: Request) -> bool:
+        # TODO theoretically we could already do a chunked prefill even
+        # if the decode batch is full, but the current implementation of input
+        # batch doesn't allow to do so. Check with Wallas
+        # Check that there is space in the current decode batch
+        num_running = len(self.running)
+        if request in self.running:
+            num_running -= 1
+        cond1 = num_running + len(self.waiting) < self.max_num_running_reqs
+
         # check that there is space in the prefill batch
         max_prefill_batch_size = 1
-        cond1 = len(self.waiting) < max_prefill_batch_size
+        cond2 = len(self.waiting) < max_prefill_batch_size
 
         # all the blocks for the request are allocated at the time of the first
         # chunked prefill. We need to check here that there are enough free
@@ -600,8 +609,8 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         prompt_len = request.num_prompt_tokens
         total_tokens = prompt_len + request.max_tokens - 1
         num_blocks_required = math.ceil(total_tokens / self.block_size)
-        cond2 = num_blocks_required <= self.n_free_blocks
-        return cond1 and cond2
+        cond3 = num_blocks_required <= self.n_free_blocks
+        return cond1 and cond2 and cond3
 
     def _satisfies_decode_constraints(self, request: Request) -> bool:
         max_context_len = self.scheduler_config.max_model_len
