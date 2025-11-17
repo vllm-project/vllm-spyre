@@ -427,19 +427,10 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         - Decode batch size: cannot have more than batch-size number of 
             running requests, including prefill and decode
 
-        - Prompt fits the TKV (this constraint can be relaxed by setting
-            `VLLM_SPYRE_N_TOKENS_PREFILL_PRIO` variable to 1): the prompt
-            length should not exceed the current maximum TKV of all the
-            running requests
-
         - Remaining space after TKV: the number of requested tokens must fit
             between the maximum TKV of all the running requests and the end of
             the model's context
             
-        - Long prompt deprioritization (constraint is disabled by default):
-            long prompts over the `VLLM_SPYRE_N_TOKENS_PREFILL_PRIO` threshold
-            are deprioritized in favor of decodes an shorter prompts
-        
         - Volumetric constraint: the surface defined by the maximum TKV of
             all the running requests and the number of running requests must
             not exceed the limit defined by `VLLM_DT_MAX_BATCH_TKV_LIMIT`
