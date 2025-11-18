@@ -16,6 +16,7 @@ from vllm.logger import init_logger
 from vllm.model_executor.layers.pooler import ClassifierPooler, Pooler
 from vllm.sampling_params import SamplingType
 from vllm.utils import is_pin_memory_available
+from vllm.v1.core.sched.output import CachedRequestData
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.outputs import LogprobsTensors, SamplerOutput
 from vllm.v1.pool.metadata import PoolingMetadata
@@ -40,11 +41,9 @@ from vllm_spyre.v1.worker.spyre_input_batch import (BaseInputBatch,
 
 # yapf: enable
 if TYPE_CHECKING:
-    from vllm.v1.core.sched.output import (CachedRequestData, NewRequestData,
-                                           SchedulerOutput)
+    from vllm.v1.core.sched.output import NewRequestData, SchedulerOutput
     from vllm.v1.sample.metadata import SamplingMetadata
 else:
-    CachedRequestData = None
     SchedulerOutput = None
     NewRequestData = None
     SamplingMetadata = None
@@ -2224,15 +2223,18 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         if cached_reqs.num_reqs == 1:
             # NOTE: while prefilling the request is not yet in the
             # input batch, and update states try to access it there.
-            # For now, if it is prefilling, we only need to update
-            # num of computed tokens of the request
             req_id = cached_reqs.req_ids[0]
             req_state = self.requests[req_id]
             num_computed_tokens = cached_reqs.num_computed_tokens[0]
             if num_computed_tokens < len(req_state.prompt_token_ids):
+                # For now, if it is prefilling, we only need to update num of
+                # computed tokens of the request
                 req_state.num_computed_tokens = num_computed_tokens
-                # num_computed_tokens updated, don't call
-                # update_states in the super class.
+                # hide the prefill request from the super class
+                scheduler_output.scheduled_cached_reqs = \
+                    CachedRequestData.make_empty()
+                super().update_states(scheduler_output)
+                scheduler_output.scheduled_cached_reqs = cached_reqs
                 return
 
         super().update_states(scheduler_output)
