@@ -555,7 +555,7 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         for req in self.running:
             # current tkv of the (left aligned) decode sequence
             tkv = n_blocks * self.block_size + \
-                req.num_prompt_tokens % self.block_size
+                req.num_computed_tokens % self.block_size
             cond4_current = req.max_tokens <= (max_context_len - tkv)
             cond3 = cond3 and cond4_current
             # early exiting loop if violated 4th condition
