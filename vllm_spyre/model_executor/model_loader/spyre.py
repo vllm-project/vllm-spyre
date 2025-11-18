@@ -348,6 +348,13 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             self.kv_cache_specs['num_layers'] = self.config.num_hidden_layers
             self.kv_cache_specs['head_dim'] = self.config.hidden_size // \
                 self.config.num_attention_heads
+        elif self.config.model_type in ["mistral", "mistral3"]:
+            self.kv_cache_specs["num_layers"] = getattr(
+                self.model.config, "nlayers", 40
+            )
+            self.kv_cache_specs["head_dim"] = getattr(
+                self.model.config, "head_dim", 128
+            )
         elif self.config.model_type == 'gpt_bigcode':
             self.kv_cache_specs['num_layers'] = self.config.n_layer
             self.kv_cache_specs[
