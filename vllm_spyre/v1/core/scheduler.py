@@ -555,9 +555,9 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         # Note: using max_tkv is a conservative upper bound here. For the
         # optimal check we need model runner to return per sequence tkvs
         for req in self.running:
-            cond4_current = req.max_tokens <= (max_context_len - max_tkv)
-            cond3 = cond3 and cond4_current
-            # early exiting loop if violated 4th condition
+            cond3_current = req.max_tokens <= (max_context_len - max_tkv)
+            cond3 = cond3 and cond3_current
+            # early exiting loop if violated 3rd condition
             if not cond3:
                 return False
 
