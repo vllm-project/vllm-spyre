@@ -794,7 +794,7 @@ def test_prefill_tkv_too_big(model: ModelInfo, backend: str,
                              available_blocks: int):
     """ Scenario where the requested prompt is too long for current tkv value
    
-    Note that as we could prefill the prompt straight away, however,
+    Note that as we could prefill the prompt straight away. However,
     in this test the max model length is decreased to a value where
     the tkv of the decode batch would be shifted beyond the max model length, 
     we therefore have to wait with scheduling.
@@ -955,7 +955,7 @@ def test_prefill_use_more_than_available_blocks(
         available_blocks: int):
     """ Scenario where the requested prompt is too long for current tkv value
    
-    Note that we could prefill the prompt straight away, however,
+    Note that we could prefill the prompt straight away. However,
     in this test the number of available KV cache blocks is decreased
     to a value where the the number of reserved blocks would exceed the number
     of available blocks after the tkv shift, we therefore cannot schedule it.
@@ -1540,10 +1540,11 @@ def test_requests_use_more_than_available_blocks(
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [192])
 @pytest.mark.parametrize("available_blocks", [None])
-def test_requests_use_full_batch_tkv_limit_prefill_opt(
-        model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
-        set_random_seed, max_num_seqs: int, max_model_len: int,
-        available_blocks: int):
+def test_requests_use_full_batch_tkv_limit(model: ModelInfo, backend: str,
+                                           monkeypatch: pytest.MonkeyPatch,
+                                           set_random_seed, max_num_seqs: int,
+                                           max_model_len: int,
+                                           available_blocks: int):
     """ Scenario where all requests can be scheduled right away as the
     max batch x tkv limit, e.g the volumetric limit, is just high enough.
     
@@ -1643,10 +1644,11 @@ def test_requests_use_full_batch_tkv_limit_prefill_opt(
 @pytest.mark.parametrize("max_num_seqs", [2])
 @pytest.mark.parametrize("max_model_len", [192])
 @pytest.mark.parametrize("available_blocks", [None])
-def test_requests_exceed_batch_tkv_limit_prefill_opt(
-        model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
-        set_random_seed, max_num_seqs: int, max_model_len: int,
-        available_blocks: int):
+def test_requests_exceed_batch_tkv_limit(model: ModelInfo, backend: str,
+                                         monkeypatch: pytest.MonkeyPatch,
+                                         set_random_seed, max_num_seqs: int,
+                                         max_model_len: int,
+                                         available_blocks: int):
     """ Scenario where a request cannot be scheduled right away as the
     max batch x tkv limit, e.g the volumetric limit, is exceeded.
     
