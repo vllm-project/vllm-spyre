@@ -548,13 +548,17 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
 
         # check that the number of requested tokens can be served
         # new sequence (optimal condition)
-        cond3 = request.max_tokens <= (max_context_len - new_tkv)
+        cond3 = request.max_tokens - 1 <= (max_context_len - new_tkv)
         # check cond3 for all other sequences in the current decode batch
         for req in self.running:
             # current tkv of the (left aligned) decode sequence
             tkv = n_blocks * self.block_size + \
                 req.num_computed_tokens % self.block_size
-            cond3_current = req.max_tokens <= (max_context_len - tkv)
+            n_generated_output_tokens = (req.num_computed_tokens -
+                                         req.num_prompt_tokens)
+            max_tokens_remaining = req.max_tokens - n_generated_output_tokens
+            # note that the -1 comes from the token we generate during prefill
+            cond3_current = max_tokens_remaining - 1 <= (max_context_len - tkv)
             cond3 = cond3 and cond3_current
             # early exiting loop if violated 3rd condition
             if not cond3:
