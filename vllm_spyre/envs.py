@@ -124,14 +124,6 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS":
     lambda: False,
 
-    # If set, enables the joining of a new sequence even if its prompt length
-    # is exceeding the tkv of the current decode batch. As this shifts all the
-    # sequences in the decode batch to the right (increasing the tkv), there is
-    # also a potential performance decrease coming with this.
-    "VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION":
-    lambda: bool(int(os.getenv("VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION", "1"))
-                 ),
-
     # Allow vllm-spyre to update env vars related to multi-threading (eg. OMP)
     # based on the detected CPU cores and server configuration
     "VLLM_SPYRE_UPDATE_THREAD_CONFIG":
