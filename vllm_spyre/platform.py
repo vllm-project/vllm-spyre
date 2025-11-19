@@ -175,6 +175,10 @@ class SpyrePlatform(Platform):
                     "vllm_spyre.v1.core.scheduler."\
                         "StaticBatchingSpyreScheduler")
 
+        # Hardcode some things for granite-3.3-8b-instruct
+        if cls.is_granite_3_8b(vllm_config.model_config):
+            cls.configure_granite_3_8b(vllm_config)
+
         # To disable any paged attention ops in the base scheduler, we:
         # - Set the block size (in tokens) to the maximum sequence length
         #       so that the scheduler thinks an entire sequence will fit in
@@ -220,10 +224,6 @@ class SpyrePlatform(Platform):
         # only concerns the max batch size.
         os.environ["VLLM_DT_MAX_BATCH_SIZE"] = str(
             max(vllm_config.scheduler_config.max_num_seqs, 2))
-
-        # Hardcode some things for granite-3.3-8b-instruct
-        if cls.is_granite_3_8b(vllm_config.model_config):
-            cls.configure_granite_3_8b(vllm_config)
 
         if not os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"):
             # max product of batch size x tkv supported by the Spyre compiler
@@ -598,6 +598,15 @@ class SpyrePlatform(Platform):
                 "granite-3.3-8b-instruct default of %d",
                 vllm_config.cache_config.num_gpu_blocks_override,
                 blocks_override)
+
+        # hard-coded value for max_num_batched_tokens with chunked prefill
+        # TODO: make this default but overridable by user-provided value; this
+        # requires a way to detect if value set by vllm or by the user
+        if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
+            logger.info("Model granite-3.3-8b-instruct and tensor parallel " \
+            "size 4 with chunked prefill detected. Setting " \
+            "--max-num-batched-tokens 4096")
+            vllm_config.scheduler_config.max_num_batched_tokens = 4096
 
     @classmethod
     def is_granite_3_8b(cls, model_config: ModelConfig):
