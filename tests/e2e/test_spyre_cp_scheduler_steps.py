@@ -11,7 +11,8 @@ from scheduling_utils import check_scheduler_inference_steps
 from spyre_util import ModelInfo
 
 
-@pytest.mark.cp
+@pytest.mark.cpu
+@pytest.mark.chunked_prefill
 @pytest.mark.full_model
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [2])
