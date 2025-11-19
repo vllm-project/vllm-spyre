@@ -548,6 +548,7 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
 
         # check that the number of requested tokens can be served
         # new sequence (optimal condition)
+        # note that the -1 comes from the token we generate during prefill
         cond3 = request.max_tokens - 1 <= (max_context_len - new_tkv)
         # check cond3 for all other sequences in the current decode batch
         for req in self.running:
