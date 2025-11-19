@@ -2191,7 +2191,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                                         prompt_logprobs_dict={},
                                         pooler_output=[],
                                         num_nans_in_logits=None,
-                                        tkv=self.tkv,
+                                        tkv=0,
                                         n_free_blocks=self.get_n_free_blocks(),
                                         left_padding={})
 

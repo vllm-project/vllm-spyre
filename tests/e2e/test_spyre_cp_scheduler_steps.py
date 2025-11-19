@@ -127,7 +127,7 @@ def test_prefill_tkv_too_big(model: ModelInfo, backend: str,
         {
             # Tkv should be cleared one step later
             "step": 34,
-            "tkv": 86,  # @Wallas, this should be cleaned up -> tkv 0 
+            "tkv": 0,
             "waiting": [],
             "running": [],
             "request_outputs": [],
