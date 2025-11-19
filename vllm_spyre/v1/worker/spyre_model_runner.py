@@ -1873,7 +1873,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                                     device=self.device,
                                     dtype=torch.int64).unsqueeze(0)
 
-        if prompt_len < chunk_size:
+        if prompt_len <= chunk_size:
             # Case I - Prompt fits in a single chunk
             chunk_start = 0
             chunk_end = prompt_len
