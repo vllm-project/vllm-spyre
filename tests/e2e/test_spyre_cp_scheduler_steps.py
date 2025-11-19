@@ -285,3 +285,125 @@ def test_prefill_use_more_than_available_blocks(
         use_cb=False,
         max_num_batched_tokens=max_num_batched_tokens,
     )
+
+
+@pytest.mark.cpu
+@pytest.mark.chunked_prefill
+@pytest.mark.full_model
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_model_len", [128])
+@pytest.mark.parametrize("max_num_batched_tokens", [128])
+@pytest.mark.parametrize("available_blocks", [None])
+def test_requests_exceed_batch_tkv_limit(model: ModelInfo, backend: str,
+                                         monkeypatch: pytest.MonkeyPatch,
+                                         set_random_seed, max_num_seqs: int,
+                                         max_model_len: int,
+                                         max_num_batched_tokens: int,
+                                         available_blocks: int):
+    """ Scenario where a request cannot be scheduled right away as the
+    max batch x tkv limit, e.g the volumetric limit, is exceeded.
+    
+    Configuration:
+        * max_num_seqs: 2
+        * number of prompts: 2
+            * 1: len = 64, max tokens = 2, step joining = 0
+            * 2: len = 65, max tokens = 2, step joining = 0
+    """
+
+    seqs_max_tokens = [2, 2]
+    prompts_lengths = [64, 65]
+    steps_add_reqs = [0, 0]
+    # total number of blocks needed if scheduled together: (1 + 1)+(1 + 1) = 4
+    # note that as not scheduled together, we only needs 2 blocks here
+    # needs 2 * (64 + 1) = 2 * 65 = 130
+    max_batch_tkv_limit = 129  # not big enough
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0", "1"],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+        {
+            # Prefill sequence 0
+            # total blocks in use: 1
+            "step": 1,
+            "tkv": 64,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 2,  # prefill (1 block) + 1 decode (1 block)
+            "n_used_blocks": 1
+        },
+        # Note: we cannot prefill seq 1 as the volumetric limit
+        # max_batch_tkv_limit is exceeded: 129 < 130
+        # -> cond5 in can_schedule() is False
+        {
+            # Decode sequence 0
+            # Sequence 0 finishes at step 2
+            # total blocks in use: 2
+            "step": 2,
+            "tkv": 65,
+            "waiting": ["1"],
+            "running": [],
+            "request_outputs": ["0"],
+            "finished_requests": ["0"],
+            "n_reserved_blocks": 2,
+            "n_used_blocks": 2
+        },
+        {
+            # Prefill sequence 1
+            # total blocks in use: 2
+            "step": 3,
+            "tkv": 65,
+            "waiting": [],
+            "running": ["1"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 2,
+            "n_used_blocks": 2  # 2 - 2 + 2
+        },
+        {
+            # Decode sequence 1
+            # Sequence 1 finishes at step 4
+            # total blocks in use: 3
+            "step": 4,
+            "tkv": 66,
+            "waiting": [],
+            "running": [],
+            "request_outputs": ["1"],
+            "finished_requests": ["1"],
+            "n_reserved_blocks": 2,
+            "n_used_blocks": 2
+        },
+        {
+            # Tkv should be cleared one step later
+            # total blocks in use: 2 - 2 = 0
+            "step": 5,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+    ]
+
+    check_scheduler_inference_steps(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        seqs_max_tokens=seqs_max_tokens,
+        prompts_lengths=prompts_lengths,
+        steps_add_reqs=steps_add_reqs,
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
+        available_blocks=available_blocks,
+        max_batch_tkv_limit=max_batch_tkv_limit,
+        use_cb=False,
+        max_num_batched_tokens=max_num_batched_tokens,
+    )
