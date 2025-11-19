@@ -150,3 +150,138 @@ def test_prefill_tkv_too_big(model: ModelInfo, backend: str,
         use_cb=False,
         max_num_batched_tokens=max_num_batched_tokens,
     )
+
+
+@pytest.mark.cpu
+@pytest.mark.chunked_prefill
+@pytest.mark.full_model
+# These values are all parameterized for test sorting
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_model_len", [128])
+@pytest.mark.parametrize("max_num_batched_tokens", [128])
+# provide only 2 blocks, but at least 3 blocks would be required to schedule
+# the sequences together in a batch.
+@pytest.mark.parametrize("available_blocks", [2])
+def test_prefill_use_more_than_available_blocks(
+        model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
+        set_random_seed, max_num_seqs: int, max_model_len: int,
+        max_num_batched_tokens: int, available_blocks: int):
+    """ Scenario where the number of available KV cache blocks is decreased
+    to a value where the the number of reserved blocks would exceed the number
+    of available blocks, we therefore have to wait scheduling the request. 
+
+    Configuration:
+        * max_num_seqs: 2
+        * number of prompts: 2
+            * 0: len = 49, max tokens = 3, step joining = 0
+            * 1: len = 70, max tokens = 3, step joining = 0
+        * available_blocks: 2
+    """
+
+    seqs_max_tokens = [3, 3]
+    prompts_lengths = [49, 70]
+    steps_add_reqs = [0, 0]
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0", "1"],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+        {
+            # Prefill sequence 0
+            # total blocks in use: 1
+            "step": 1,
+            "tkv": 49,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 1,
+            "n_used_blocks": 1
+        },
+        # We cannot schedule sequence 1 here. Needs 2 more blocks, but only
+        # a total of 2 blocks available.
+        {
+            # Decode sequence 0
+            "step": 2,
+            "tkv": 50,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 1,
+            "n_used_blocks": 1
+        },
+        {
+            # Decode sequence 0
+            # seq 0 finishes in this step
+            "step": 3,
+            "tkv": 51,
+            "waiting": ["1"],
+            "running": [],
+            "request_outputs": ["0"],
+            "finished_requests": ["0"],
+            "n_reserved_blocks": 1,
+            "n_used_blocks": 1
+        },
+        {
+            # Prefill sequence 1
+            "step": 4,
+            "tkv": 70,
+            "waiting": [],
+            "running": ["1"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 2,
+            "n_used_blocks": 2
+        },
+        {
+            # Decode sequence 1
+            "step": 5,
+            "tkv": 71,
+            "waiting": [],
+            "running": ["1"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 2,
+            "n_used_blocks": 2
+        },
+        {
+            # Decode sequence 0
+            # seq 0 finishes in this step
+            "step": 6,
+            "tkv": 72,
+            "waiting": [],
+            "running": [],
+            "request_outputs": ["1"],
+            "finished_requests": ["1"],
+            "n_reserved_blocks": 2,
+            "n_used_blocks": 2
+        },
+        {
+            # Tkv should be cleared one step later
+            "step": 7,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+    ]
+
+    check_scheduler_inference_steps(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        seqs_max_tokens=seqs_max_tokens,
+        prompts_lengths=prompts_lengths,
+        steps_add_reqs=steps_add_reqs,
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
+        available_blocks=available_blocks,
+        use_cb=False,
+        max_num_batched_tokens=max_num_batched_tokens,
+    )
