@@ -379,14 +379,13 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
 
 class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
     """ 
-    # TODO also add all this to vllm-spyre documentation
     Chunked-Prefill Scheduling policy
 
     The prefill vs. decode priority policy is the following:
-        - Current prefill request priority: No new request's chunked prefill
-            can start as long as there another request's prefill is on-going
+        - Current prefill request priority: A new request cannot start prefill
+           while another request's prefill is on-going
             
-        - Prefills step interleaving: The prefill steps are interleaved with
+        - Prefill step interleaving: The prefill steps are interleaved with
             one decode steps: as long as there are decoding requests, two
             prefill steps cannot be consecutive
 
@@ -396,27 +395,30 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         - No empty step: if a prefill step is prevented because it doesn't
             satisfy Spyre's specific constraints, a decode step is scheduled
 
-    Additional Spyre's specific constraints:
+    Spyre scheduling constraints:
         - Blocks constraint: all the blocks necessary to serve a request are
             allocated at the time of scheduling the first chunk of a chunked
-            prefill. For the first chunked prefill, there must be enough
-            blocks to accommodate the prompt and the maximum number of output
-            tokens
+            prefill. There must be enough blocks to accommodate the prompt and
+            the maximum number of output tokens
 
         Note: all the remaining constraints need to be satisfied at the time
         of scheduling the last chunk of a chunked prefill
         
-        - Prefill batch size: prefill batch size if of 1, only one request's
-            chunk prefill can be scheduled at a time
+        - Prefill batch size: prefill batch is of size 1, only one request's
+            chunked prefill can be scheduled at a time
             
-        - Decode batch size: cannot have more than batch-size number of 
-            running requests, including prefill and decode
+        - Decode batch size: cannot have more than max_num_seqs running 
+            requests, including prefill and decode
 
         - Remaining space after TKV: the number of requested tokens must fit
             between the maximum TKV of all the running requests and the end of
             the model's context
             
-        - Volumetric constraint: the surface defined by the maximum TKV of
+        - Volumetric constraint: the total "surface" defined by the running 
+            requests should never exceed `VLLM_DT_MAX_BATCH_TKV_LIMIT`. See 
+            `check_batch_tkv_limit()` method for details.
+        
+        the surface defined by the maximum TKV of
             all the running requests and the number of running requests must
             not exceed the limit defined by `VLLM_DT_MAX_BATCH_TKV_LIMIT`
     """
