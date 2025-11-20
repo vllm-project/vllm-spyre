@@ -940,13 +940,10 @@ wheels = [
 
 [[package]]
 name = "ibm-fms"
-version = "1.4.0"
-source = { registry = "https://pypi.org/simple" }
+version = "1.5.1.dev12+g665320a64"
+source = { git = "https://github.com/foundation-model-stack/foundation-model-stack#665320a644ce9f8d370259ee3e96824df3b2fd7e" }
 dependencies = [
     { name = "torch", marker = "sys_platform == 'never'" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/30/12/5528237efc16dd77f794eedb2214b4a2692746b1a8115ca493e3132a8e35/ibm_fms-1.4.0-py3-none-any.whl", hash = "sha256:a7dc7d3488136d3e2bce1d78bb985f41e5ebaca8ae718dac8ac19b9fa9c5bdf5", size = 189645, upload-time = "2025-09-27T00:27:11.882Z" },
 ]
 
 [[package]]
@@ -3812,8 +3809,9 @@ lint = [
 requires-dist = [
     { name = "fms-model-optimizer", extras = ["fp8"], specifier = ">=0.6.0" },
     { name = "ibm-fms", specifier = ">=1.4.0,<2.0" },
+    { name = "ibm-fms", git = "https://github.com/foundation-model-stack/foundation-model-stack" },
     { name = "pytest-mock", specifier = ">=3.15.0" },
-    { name = "vllm", specifier = ">=0.10.1.1,<=0.10.2" },
+    { name = "vllm", specifier = "==0.10.2" },
 ]
 
 [package.metadata.requires-dev]
