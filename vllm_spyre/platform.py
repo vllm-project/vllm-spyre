@@ -127,9 +127,18 @@ class SpyrePlatform(Platform):
             os.environ["FLEX_OVERWRITE_NMB_FRAME"] = "false"
             os.environ["COMPILATION_MODE"] = "offline"
 
+        assert (envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL \
+            and envs_spyre.VLLM_SPYRE_USE_CB) or \
+                not envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL, \
+            "Cannot use chunked prefill without continuous batching."
+
         if envs_spyre.VLLM_SPYRE_USE_CB and is_decoder:
-            scheduler_config.scheduler_cls = "vllm_spyre.v1.core."\
-                "scheduler.ContinuousBatchingSpyreScheduler"
+            if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
+                scheduler_config.scheduler_cls = "vllm_spyre.v1.core."\
+                    "scheduler.ChunkedPrefillSpyreScheduler"
+            else:
+                scheduler_config.scheduler_cls = "vllm_spyre.v1.core."\
+                    "scheduler.ContinuousBatchingSpyreScheduler"
             if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
                 raise ValueError("Prompt logprobs not supported with " \
                 "continuous batching")
@@ -227,20 +236,6 @@ class SpyrePlatform(Platform):
             logger.info("No model / tensor parallel size specific value for " \
             "VLLM_DT_MAX_BATCH_TKV_LIMIT found. Using the default value " \
             "(max_model_len * max_batch_size): %d", default_max_batch_tkv_limit)
-
-        # scheduling heuristic: prefill vs decode prioritization
-        if envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO == -1:
-            logger.info(
-                "Env var VLLM_SPYRE_N_TOKENS_PREFILL_PRIO for prefill/decode "
-                "balancing unset. Defaulting to -1, which always prioritizes "
-                "prefills (no scheduler heuristic/ balancing at all).")
-        else:
-            logger.info(
-                "Env var VLLM_SPYRE_N_TOKENS_PREFILL_PRIO for prefill/decode "
-                "balancing is set to %s. This means that prefills using up to "
-                " %s tokens will always be prioritized over decodes.",
-                envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO,
-                envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO)
 
         # Compare requested runtime configuration with supported configurations
         # Don't use top-level import to avoid circular import error
