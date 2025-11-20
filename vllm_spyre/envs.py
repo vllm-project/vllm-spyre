@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     VLLM_SPYRE_PERF_METRIC_LOGGING_DIR: str = "/tmp"
     VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER: bool = False
     VLLM_SPYRE_USE_CHUNKED_PREFILL: bool = False
+    VLLM_SPYRE_CP_USE_INTERLEAVING: bool = False
     # Prompt logprobs are behind a flag because they're only supported for
     # static batching and require passing back the hidden states for the full
     # prefill on every request. This could incur a heavy performance penalty in
@@ -172,6 +173,12 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # single prefill is used.
     "VLLM_SPYRE_USE_CHUNKED_PREFILL":
     lambda: bool(int(os.getenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", "0"))),
+
+    # Feature Flag
+    # Works only with chunked prefill enabled. If set, prefill steps are
+    # interleaved with a decode step
+    "VLLM_SPYRE_CP_USE_INTERLEAVING":
+    lambda: bool(int(os.getenv("VLLM_SPYRE_CP_USE_INTERLEAVING", "0"))),
 }
 # --8<-- [end:env-vars-definition]
 
