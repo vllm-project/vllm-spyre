@@ -436,7 +436,7 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         # Prefills interleaving: if the feature flag is set, prefill operations
         # are interleaved with a decode step. This allows to minimize currently
         # decoding requests
-        self.do_interleaving: bool = envs_spyre.VLLM_SPYRE_CP_USE_INTERLEAVING
+        self.do_interleaving: bool = envs_spyre.VLLM_SPYRE_CP_INTERLEAVE_STEPS 
         self.previous_step_was_prefill: bool = False
 
     def update_from_output(self, scheduler_output, model_runner_output):

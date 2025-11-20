@@ -131,11 +131,6 @@ class SpyrePlatform(Platform):
             and envs_spyre.VLLM_SPYRE_USE_CB) or \
                 not envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL, \
             "Cannot use chunked prefill without continuous batching."
-        assert (envs_spyre.VLLM_SPYRE_CP_USE_INTERLEAVING \
-            and envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL) or \
-                not envs_spyre.VLLM_SPYRE_CP_USE_INTERLEAVING, \
-            "You need to enable chunked prefill in order to do chunked " \
-            "prefill interleaving with decode steps"
 
         if envs_spyre.VLLM_SPYRE_USE_CB and is_decoder:
             if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
