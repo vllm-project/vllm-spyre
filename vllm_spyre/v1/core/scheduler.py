@@ -248,9 +248,11 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         # if the tkv has been shifted
         if tkv > self.tkv:
             for req in self.running:
-                # note that this a conservative upper bound not including
-                # the already generated tokens
-                cond3_current = req.max_tokens <= (max_context_len - tkv)
+                n_generated_output_tokens = (req.num_computed_tokens -
+                                             req.num_prompt_tokens)
+                max_tokens_remaining = (req.max_tokens -
+                                        n_generated_output_tokens)
+                cond3_current = max_tokens_remaining <= (max_context_len - tkv)
                 cond3 = cond3 and cond3_current
                 # early exiting loop if condition is violated
                 if not cond3:
