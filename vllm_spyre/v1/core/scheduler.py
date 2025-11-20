@@ -386,7 +386,7 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
            while another request's prefill is on-going
             
         - Prefill step interleaving: The prefill steps are interleaved with
-            one decode steps: as long as there are decoding requests, two
+            one decode step: as long as there are decoding requests, two
             prefill steps cannot be consecutive
 
         - General prefill priority: conditioned on interleaving constraint,
@@ -410,7 +410,7 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         - Decode batch size: cannot have more than max_num_seqs running 
             requests, including prefill and decode
 
-        - Remaining space after TKV: the number of requested tokens must fit
+        - Max model length constraint: the number of requested tokens must fit
             between the maximum TKV of all the running requests and the end of
             the model's context
             
@@ -436,7 +436,7 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         # Prefills interleaving: if the feature flag is set, prefill operations
         # are interleaved with a decode step. This allows to minimize currently
         # decoding requests
-        self.do_interleaving: bool = envs_spyre.VLLM_SPYRE_CP_INTERLEAVE_STEPS 
+        self.do_interleaving: bool = envs_spyre.VLLM_SPYRE_CP_INTERLEAVE_STEPS
         self.previous_step_was_prefill: bool = False
 
     def update_from_output(self, scheduler_output, model_runner_output):
@@ -450,7 +450,7 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
                 continue
 
             # The number of computed tokens only need to be adapted when it is
-            # the first chunk of a multi-chunks prefill
+            # the first chunk of a multi-chunk prefill
             is_first_chunk = req.num_computed_tokens <= self.chunk_size
             is_last_chunk = req.num_computed_tokens == req.num_prompt_tokens
             if is_first_chunk and not is_last_chunk:
