@@ -556,17 +556,17 @@ class SpyrePlatform(Platform):
             # only override configs for TP=4
             return
 
-        tkv_512k = 512 * 1024
+        tkv_128k = 128 * 1024
         if not os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"):
-            os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(tkv_512k)
+            os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(tkv_128k)
             logger.info("Model granite-3.3-8b-instruct and tensor parallel " \
             "size 4 detected. Using VLLM_DT_MAX_BATCH_TKV_LIMIT = %d",
-            tkv_512k)
-        elif os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT") != str(tkv_512k):
+            tkv_128k)
+        elif os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT") != str(tkv_128k):
             logger.warning(
                 "VLLM_DT_MAX_BATCH_TKV_LIMIT was set to %s, not "
                 "overriding to the granite-3.3-8b-instruct default of %d",
-                os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"), tkv_512k)
+                os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"), tkv_128k)
 
         # If no HDMA p2psize override was specified, set 256MB
         p2psize_256m = 256 * 1024 * 1024

@@ -52,5 +52,5 @@ def test_granite_3_8b_overrides():
 
         assert granite_3_8b_config.cache_config.num_gpu_blocks_override == 8192
 
-        assert int(os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT")) == 512 * 1024
+        assert int(os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT")) == 128 * 1024
         assert int(os.getenv("FLEX_HDMA_P2PSIZE")) == 256 * 1024 * 1024
