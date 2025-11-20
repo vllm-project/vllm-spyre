@@ -94,9 +94,18 @@ def pytest_generate_tests(metafunc):
     # TODO: add both these using _add_param too
     # Will need to do some fancy stuff to add custom
     # markers
+    if ("mode" in metafunc.fixturenames and "cb" not in existing_markers
+            and "chunked_prefill" not in existing_markers):
+        metafunc.parametrize("mode", [
+            "sb",
+            pytest.param("cb", marks=pytest.mark.cb, id="cb"),
+            pytest.param("cp", marks=pytest.mark.chunked_prefill, id="cp")
+        ])
+
     if "cb" in metafunc.fixturenames and "cb" not in existing_markers:
         metafunc.parametrize(
             "cb", [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
+
 
     if "tp_size" in metafunc.fixturenames and \
         "tp_size" not in existing_markers:
@@ -238,7 +247,7 @@ def remote_openai_server(request):
             skip_unsupported_tp_size(int(tp_size), backend)
             server_args.extend(["--tensor-parallel-size", str(tp_size)])
 
-    if "cb" in params and params["cb"] == 1:
+    if "mode" in params and params["mode"] == "cb":
         max_model_len = params["max_model_len"]
         max_num_seqs = params["max_num_seqs"]
         env_dict = {

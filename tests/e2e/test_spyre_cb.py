@@ -16,13 +16,16 @@ from spyre_util import (ModelInfo, RemoteOpenAIServer, create_seq_prompt,
                         get_chicken_soup_prompts, skip_unsupported_tp_size)
 from vllm import LLM, SamplingParams
 
+cp_mark = pytest.param(True, marks=pytest.mark.chunked_prefill, id="cp")
+
 
 @pytest.mark.cb
+@pytest.mark.parametrize("use_cp", [False, cp_mark])
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 def test_cb_max_tokens(model: ModelInfo, backend: str, max_model_len: int,
                        max_num_seqs: int, monkeypatch: pytest.MonkeyPatch,
-                       use_llm_cache):
+                       use_llm_cache, use_cp: bool):
     """Test that continuous batches of requests that
     are longer than the `max_model_len` are correctly rejected"""
     max_tokens = 20
@@ -48,6 +51,7 @@ def test_cb_max_tokens(model: ModelInfo, backend: str, max_model_len: int,
 
 @pytest.mark.cb
 @pytest.mark.parametrize("cb", [True])
+@pytest.mark.parametrize("use_cp", [False, cp_mark])
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 def test_api_cb_rejects_oversized_request(
@@ -57,6 +61,7 @@ def test_api_cb_rejects_oversized_request(
     cb: bool,
     max_model_len: int,
     max_num_seqs: int,
+    use_cp: bool,
 ):
     """Verify API rejects request that exceed max_model_len with CB enabled"""
 
@@ -74,6 +79,7 @@ def test_api_cb_rejects_oversized_request(
 
 @pytest.mark.cb
 @pytest.mark.parametrize("cb", [True])
+@pytest.mark.parametrize("use_cp", [False, cp_mark])
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 def test_api_cb_generates_correct_max_tokens(
@@ -83,6 +89,7 @@ def test_api_cb_generates_correct_max_tokens(
     cb: bool,
     max_model_len: int,
     max_num_seqs: int,
+    use_cp: bool,
 ):
     """Verify API generates the correct numbers of tokens with CB enabled"""
 
