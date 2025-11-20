@@ -11,7 +11,6 @@ from vllm.v1.engine import EngineCoreOutputs
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request
 
-import vllm_spyre.envs as envs_spyre
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import CBSpyreModelRunnerOutput
 
@@ -231,69 +230,52 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         # check that there is space in the current decode batch
         cond1 = len(self.running) + len(
             self.waiting) < self.max_num_running_reqs
+
         # check that there is space in the prefill batch
         cond2 = len(self.waiting) < max_prompt_batch_size
-        # check that the prompt length does not exceed the current tkv
-        cond3 = request.num_prompt_tokens <= self.tkv
+
+        tkv = self.tkv
+
+        # shift tkv if the prompt length exceeds the current tkv
+        if request.num_prompt_tokens > self.tkv:
+            tkv += math.ceil((request.num_prompt_tokens - self.tkv) /
+                             self.block_size) * self.block_size
+
         # check that the number of requested tokens can be served
-        cond4 = request.max_tokens <= (max_context_len - self.tkv)
+        cond3 = request.max_tokens <= (max_context_len - tkv)
+
+        # check condition for all other sequences in the current decode batch
+        # if the tkv has been shifted
+        if tkv > self.tkv:
+            for req in self.running:
+                # note that this a conservative upper bound not including
+                # the already generated tokens
+                cond3_current = req.max_tokens <= (max_context_len - tkv)
+                cond3 = cond3 and cond3_current
+                # early exiting loop if condition is violated
+                if not cond3:
+                    return False
+
         # check that there are enough free blocks/pages remaining
         # Note: we only have to do check in case of a running batches
         # (not start_new_batch), because the minimal number of blocks covers
         # the context length for a single sequence, so tkv < block size is ok
         num_blocks_required = math.ceil(
-            (self.tkv + request.max_tokens - 1) / self.block_size)
+            (tkv + request.max_tokens - 1) / self.block_size)
         # optimization: subtract the padding blocks from the reserved blocks
         num_fully_padded_blocks = math.floor(
-            (self.tkv - request.num_prompt_tokens) / self.block_size)
+            (tkv - request.num_prompt_tokens) / self.block_size)
         num_blocks_required -= num_fully_padded_blocks
-        cond5 = num_blocks_required <= self.n_free_blocks
+        cond4 = num_blocks_required <= self.n_free_blocks
+
         # check that batch size x tkv is smaller than the max supported number
-        cond6 = lambda: self.check_batch_tkv_limit(request=request,
-                                                   tkv=self.tkv,
+        cond5 = lambda: self.check_batch_tkv_limit(request=request,
+                                                   tkv=tkv,
                                                    running=self.running,
                                                    max_batch_tkv_limit=self.
                                                    max_batch_tkv_limit)
 
-        if cond1 and cond2 and cond3 and cond4 and cond5 and cond6():
-            return True
-
-        # the following conditions must always be true, if not we can exit here
-        if not (cond1 and cond2 and cond4 and cond5 and cond6()
-                ) or not envs_spyre.VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION:
-            return False
-
-        # cond3 is violated: request.num_prompt_tokens > self.tkv
-        # check whether the new sequence can join the decode batch by
-        # increasing the current tkv by a multiple of the block size
-        tkv_offset = math.ceil((request.num_prompt_tokens - self.tkv) /
-                               self.block_size) * self.block_size
-        tkv_updated = self.tkv + tkv_offset
-        # check cond4 again with updated tkv for current sequence
-        cond4_updated = request.max_tokens <= (max_context_len - tkv_updated)
-
-        # check cond4 for all other sequences in the current decode batch
-        for req in self.running:
-            cond4_current = req.max_tokens <= (max_context_len - tkv_updated)
-            cond4_updated = cond4_updated and cond4_current
-            # early exiting loop if violated 4th condition
-            if not cond4_updated:
-                return False
-
-        # check if enough number of blocks to serve sequence with updated tkv
-        num_blocks_required_updated = math.ceil(
-            (tkv_updated + request.max_tokens - 1) / self.block_size)
-        cond5_updated = num_blocks_required_updated <= self.n_free_blocks
-
-        # check that batch size x tkv is smaller than the max supported number
-        # with updated tkv (cond6) -> only call if the other cond are met
-        cond6_updated = lambda: self.check_batch_tkv_limit(
-            request=request,
-            tkv=tkv_updated,
-            running=self.running,
-            max_batch_tkv_limit=self.max_batch_tkv_limit)
-
-        return cond4_updated and cond5_updated and cond6_updated()
+        return cond1 and cond2 and cond3 and cond4 and cond5()
 
     def check_batch_tkv_limit(self, request, tkv, running,
                               max_batch_tkv_limit) -> bool:
