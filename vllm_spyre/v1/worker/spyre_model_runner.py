@@ -1873,18 +1873,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                                     device=self.device,
                                     dtype=torch.int64).unsqueeze(0)
 
-        # `left_pad_blocks_offset` is the number of prompt tokens
-        # used in the first chunk, which is not a multiple of the
-        # chunk size due to left padding. Sum this value with the
-        # offset of the current chunk to know where to slice the
-        # prompt.
-        left_pad_blocks_offset = 0 if left_padding == 0 \
-            else chunk_size - left_padding
-
-        # Most of the time should be zero, only set for the first chunk
-        # in a prompt with left padding.
-        chunk_left_offset = 0
-        if prompt_len < chunk_size:
+        if prompt_len <= chunk_size:
             # Case I - Prompt fits in a single chunk
             chunk_start = 0
             chunk_end = prompt_len
@@ -1893,19 +1882,12 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             # Case II - First chunk, but it contains some padding blocks at
             # the left
             chunk_start = 0
-            chunk_end = left_pad_blocks_offset
+            chunk_end = chunk_size - left_padding
             chunk_left_offset = left_padding
         else:
-            if left_padding == 0:
-                # Case III
-                # No left padding, it will start with full chunks
-                chunk_start = chunk_i * chunk_size
-            else:
-                # Case II - remaining chunks
-                chunk_start = left_pad_blocks_offset + (chunk_i -
-                                                        1) * chunk_size
-
+            chunk_start = chunk_i * chunk_size - left_padding
             chunk_end = min(chunk_start + chunk_size, prompt_len)
+            chunk_left_offset = 0
 
         # Create tensors based on slice
         input_tokens_np[chunk_left_offset:chunk_left_offset + chunk_end -
@@ -2150,10 +2132,12 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
     def prepare_model_input(self, scheduler_output):
 
         is_prefill = False
+        req_id: str = ""
         if len(scheduler_output.scheduled_new_reqs) == 1:
             # First prefill let's update cache
             assert len(scheduler_output.scheduled_cached_reqs.req_ids) == 0
             self.add_new_request(scheduler_output.scheduled_new_reqs[0])
+            req_id = scheduler_output.scheduled_new_reqs[0].req_id
             is_prefill = True
 
         # NOTE: We assume that there's only one prefill at each step
@@ -2172,11 +2156,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         if is_prefill:
             # All prefills are chunked
             # Get request id from new request or cached request
-            req_id = scheduler_output.scheduled_new_reqs[0].req_id if \
-                len(scheduler_output.scheduled_new_reqs) == 1 \
-                    else scheduler_output.scheduled_cached_reqs.req_ids[0]
             model_inputs = self._prepare_chunked_prefill(req_id)
-
             self._maybe_prepare_last_prefill(req_id, scheduler_output)
 
             return model_inputs
