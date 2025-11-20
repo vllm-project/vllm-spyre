@@ -11,7 +11,6 @@ from vllm.v1.engine import EngineCoreOutputs
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request
 
-import vllm_spyre.envs as envs_spyre
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import (CBSpyreModelRunnerOutput,
                                                      CPSpyreModelRunnerOutput)
@@ -232,69 +231,52 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
         # check that there is space in the current decode batch
         cond1 = len(self.running) + len(
             self.waiting) < self.max_num_running_reqs
+
         # check that there is space in the prefill batch
         cond2 = len(self.waiting) < max_prompt_batch_size
-        # check that the prompt length does not exceed the current tkv
-        cond3 = request.num_prompt_tokens <= self.tkv
+
+        tkv = self.tkv
+
+        # shift tkv if the prompt length exceeds the current tkv
+        if request.num_prompt_tokens > self.tkv:
+            tkv += math.ceil((request.num_prompt_tokens - self.tkv) /
+                             self.block_size) * self.block_size
+
         # check that the number of requested tokens can be served
-        cond4 = request.max_tokens <= (max_context_len - self.tkv)
+        cond3 = request.max_tokens <= (max_context_len - tkv)
+
+        # check condition for all other sequences in the current decode batch
+        # if the tkv has been shifted
+        if tkv > self.tkv:
+            for req in self.running:
+                # note that this a conservative upper bound not including
+                # the already generated tokens
+                cond3_current = req.max_tokens <= (max_context_len - tkv)
+                cond3 = cond3 and cond3_current
+                # early exiting loop if condition is violated
+                if not cond3:
+                    return False
+
         # check that there are enough free blocks/pages remaining
         # Note: we only have to do check in case of a running batches
         # (not start_new_batch), because the minimal number of blocks covers
         # the context length for a single sequence, so tkv < block size is ok
         num_blocks_required = math.ceil(
-            (self.tkv + request.max_tokens - 1) / self.block_size)
+            (tkv + request.max_tokens - 1) / self.block_size)
         # optimization: subtract the padding blocks from the reserved blocks
         num_fully_padded_blocks = math.floor(
-            (self.tkv - request.num_prompt_tokens) / self.block_size)
+            (tkv - request.num_prompt_tokens) / self.block_size)
         num_blocks_required -= num_fully_padded_blocks
-        cond5 = num_blocks_required <= self.n_free_blocks
+        cond4 = num_blocks_required <= self.n_free_blocks
+
         # check that batch size x tkv is smaller than the max supported number
-        cond6 = lambda: self.check_batch_tkv_limit(request=request,
-                                                   tkv=self.tkv,
+        cond5 = lambda: self.check_batch_tkv_limit(request=request,
+                                                   tkv=tkv,
                                                    running=self.running,
                                                    max_batch_tkv_limit=self.
                                                    max_batch_tkv_limit)
 
-        if cond1 and cond2 and cond3 and cond4 and cond5 and cond6():
-            return True
-
-        # the following conditions must always be true, if not we can exit here
-        if not (cond1 and cond2 and cond4 and cond5 and cond6()
-                ) or not envs_spyre.VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION:
-            return False
-
-        # cond3 is violated: request.num_prompt_tokens > self.tkv
-        # check whether the new sequence can join the decode batch by
-        # increasing the current tkv by a multiple of the block size
-        tkv_offset = math.ceil((request.num_prompt_tokens - self.tkv) /
-                               self.block_size) * self.block_size
-        tkv_updated = self.tkv + tkv_offset
-        # check cond4 again with updated tkv for current sequence
-        cond4_updated = request.max_tokens <= (max_context_len - tkv_updated)
-
-        # check cond4 for all other sequences in the current decode batch
-        for req in self.running:
-            cond4_current = req.max_tokens <= (max_context_len - tkv_updated)
-            cond4_updated = cond4_updated and cond4_current
-            # early exiting loop if violated 4th condition
-            if not cond4_updated:
-                return False
-
-        # check if enough number of blocks to serve sequence with updated tkv
-        num_blocks_required_updated = math.ceil(
-            (tkv_updated + request.max_tokens - 1) / self.block_size)
-        cond5_updated = num_blocks_required_updated <= self.n_free_blocks
-
-        # check that batch size x tkv is smaller than the max supported number
-        # with updated tkv (cond6) -> only call if the other cond are met
-        cond6_updated = lambda: self.check_batch_tkv_limit(
-            request=request,
-            tkv=tkv_updated,
-            running=self.running,
-            max_batch_tkv_limit=self.max_batch_tkv_limit)
-
-        return cond4_updated and cond5_updated and cond6_updated()
+        return cond1 and cond2 and cond3 and cond4 and cond5()
 
     def check_batch_tkv_limit(self, request, tkv, running,
                               max_batch_tkv_limit) -> bool:
@@ -335,30 +317,32 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
                 return tkv <= lower
 
         # Compute the effective token length of the new request
-        new_req_tkv = tkv + request.max_tokens - 1
+        new_req_max_tkv = tkv + request.max_tokens - 1
 
         # Compute token lengths for all running requests (decode batch)
-        decode_req_tkvs = [
+        decode_req_max_tkvs = [
             tkv + req.max_tokens - 1 -
             (req.num_computed_tokens - req.num_prompt_tokens)
             for req in running
         ]
         # Sort decode requests token lengths in ascending order
-        decode_req_tkvs.sort()
+        decode_req_max_tkvs.sort()
 
         # Initialize values
         batch_size = len(running) + 1
         max_batch_tkv = 0
 
         # Try adding the new request to the batch and check the max volume
-        for decode_req_tkv in decode_req_tkvs:
-            if new_req_tkv <= decode_req_tkv:
+        for decode_req_max_tkv in decode_req_max_tkvs:
+            if new_req_max_tkv <= decode_req_max_tkv:
                 # If the new request is shorter, it limits the batch volume
-                max_batch_tkv = max(max_batch_tkv, batch_size * new_req_tkv)
+                max_batch_tkv = max(max_batch_tkv,
+                                    batch_size * new_req_max_tkv)
                 break
             else:
                 # Otherwise, use the current (longer) request's volume
-                max_batch_tkv = max(max_batch_tkv, batch_size * decode_req_tkv)
+                max_batch_tkv = max(max_batch_tkv,
+                                    batch_size * decode_req_max_tkv)
                 # decrease batch_size by 1 as the current request finished
                 batch_size -= 1
 
@@ -628,31 +612,37 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         # - prompt_len < self.tkv and fall into different blocks
         prompt_len = request.num_prompt_tokens
         n_blocks = math.floor(max(self.tkv, prompt_len) / self.block_size)
-        max_tkv = n_blocks * self.block_size + max(
-            self.tkv % self.block_size, prompt_len % self.block_size)
-        new_tkv = n_blocks * self.block_size + prompt_len % self.block_size
+        new_req_tkv = n_blocks * self.block_size + prompt_len % self.block_size
 
-        # check that the number of requested tokens of the new sequence can be
-        # served
-        cond2 = request.max_tokens <= (max_context_len - new_tkv)
-        # check cond3 for all other sequences in the current decode batch
-        # Note: using max_tkv is a conservative upper bound here. For the
-        # optimal check we need model runner to return per sequence tkvs
+        # check that the number of requested tokens can be served for the
+        # new sequence (optimal condition)
+        # note that the -1 comes from the token we generate during prefill
+        cond2 = request.max_tokens - 1 <= (max_context_len - new_req_tkv)
+        # check cond2 for all other sequences in the current decode batch
         for req in self.running:
-            cond2_current = req.max_tokens <= (max_context_len - max_tkv)
+            # current tkv of the (left aligned) decode sequence
+            dec_req_tkv = n_blocks * self.block_size + \
+                req.num_computed_tokens % self.block_size
+            n_generated_output_tokens = (req.num_computed_tokens -
+                                         req.num_prompt_tokens)
+            max_tokens_remaining = req.max_tokens - n_generated_output_tokens
+            # note that the -1 comes from the token we generate during prefill
+            cond2_current = max_tokens_remaining - 1 <= (max_context_len -
+                                                         dec_req_tkv)
             cond2 = cond2 and cond2_current
-            # early exiting loop if violated 4th condition
+            # early exiting loop if violated 3rd condition
             if not cond2:
                 return False
 
         # check that batch size x tkv is smaller than the max supported number
         # Note: using max_tkv is a conservative upper bound here. For the
         # optimal check we need model runner to return per sequence tkvs
-        cond3 = lambda: self.check_batch_tkv_limit(request=request,
-                                                   tkv=max_tkv,
-                                                   running=self.running,
-                                                   max_batch_tkv_limit=self.
-                                                   max_batch_tkv_limit)
+        cond3 = lambda: self.check_batch_tkv_limit_cp(request=request,
+                                                      tkv=new_req_tkv,
+                                                      n_blocks=n_blocks,
+                                                      running=self.running,
+                                                      max_batch_tkv_limit=self.
+                                                      max_batch_tkv_limit)
 
         return cond1 and cond2 and cond3()
 
@@ -673,3 +663,66 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         max_prefill_batch_size = 1
         num_scheduled_prefills = len(self.waiting) + len(self.ongoing_prefills)
         return num_scheduled_prefills < max_prefill_batch_size
+
+    def check_batch_tkv_limit_cp(self, request, new_req_tkv, n_blocks, running,
+                                 max_batch_tkv_limit) -> bool:
+        """
+        Check whether adding a new sequence to the decode batch would violate
+        Spyre's maximum batch volume constraint for chunked prefill. 
+
+        In Spyre, the product of `batch_size` and the current `tkv` 
+        (tokens-per-sequence) must not exceed the limit defined by 
+        `VLLM_DT_MAX_BATCH_TKV_LIMIT`. Before scheduling a new sequence, 
+        we must ensure that this constraint will hold for all decoding 
+        steps that result from combining the new sequence with the currently 
+        running decode batch.
+
+        This implementation:
+        1. Computes the maximum possible `tkv` for each sequence in the 
+        decode batch.
+        2. Sorts these values in ascending order.
+        3. Iterates through them, stopping once the `tkv` of the new sequence.
+        is reached. Remaining sequences do not need to be checked explicitly, 
+        since they were validated when they were added (by inductive reasoning).
+
+        Note: drawing explaining the algorithm in more detail uploaded here: 
+        https://github.com/vllm-project/vllm-spyre/pull/363#issuecomment-3173605517
+        """
+
+        # Compute the effective token length of the new request
+        new_req_max_tkv = new_req_tkv + request.max_tokens - 1
+
+        # Compute token lengths for all running requests (decode batch)
+        decode_req_max_tkvs = []
+        for req in running:
+            # current tkv of the (left aligned) decode sequence
+            dec_req_tkv = n_blocks * self.block_size + \
+                req.num_computed_tokens % self.block_size
+            n_generated_output_tokens = (req.num_computed_tokens -
+                                         req.num_prompt_tokens)
+            dec_req_max_tkv = dec_req_tkv + (req.max_tokens -
+                                             n_generated_output_tokens) - 1
+            decode_req_max_tkvs.append(dec_req_max_tkv)
+
+        # Sort decode requests token lengths in ascending order
+        decode_req_max_tkvs.sort()
+
+        # Initialize values
+        batch_size = len(running) + 1
+        max_batch_tkv = 0
+
+        # Try adding the new request to the batch and check the max volume
+        for decode_req_max_tkv in decode_req_max_tkvs:
+            if new_req_max_tkv <= decode_req_max_tkv:
+                # If the new request is shorter, it limits the batch volume
+                max_batch_tkv = max(max_batch_tkv,
+                                    batch_size * new_req_max_tkv)
+                break
+            else:
+                # Otherwise, use the current (longer) request's volume
+                max_batch_tkv = max(max_batch_tkv,
+                                    batch_size * decode_req_max_tkv)
+                # decrease batch_size by 1 as the current request finished
+                batch_size -= 1
+
+        return max_batch_tkv <= int(max_batch_tkv_limit)
