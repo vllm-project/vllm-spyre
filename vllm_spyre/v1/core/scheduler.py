@@ -482,8 +482,13 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         # Check if new requests can be scheduled for prefill
         while holdback_queue:
             if self.can_schedule_prefill(holdback_queue[0]):
+                new_request = holdback_queue.popleft()
+                logger.debug(
+                    "Next scheduled request: '%s' with %d prompt tokens",
+                    new_request.request_id, new_request.num_prompt_tokens)
+
                 # Add request to the waiting queue
-                self.waiting.append(holdback_queue.popleft())
+                self.waiting.append(new_request)
             else:
                 # Otherwise, we simply stop here so that the scheduler
                 # can work with the batch we have
@@ -515,9 +520,6 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
                 ]
                 self.running = self.ongoing_prefills
                 self.previous_step_was_prefill = True
-                logger.debug(
-                    "Scheduling a chunked prefill step of %d requests, holding "
-                    "back %d requests", len(self.running), len(holdback_queue))
             else:
                 self.running = [
                     r for r in self.running if r not in self.ongoing_prefills
@@ -532,9 +534,6 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
             running_holdback = self.running
             self.running = []
             self.previous_step_was_prefill = True
-            logger.debug(
-                "Scheduling a chunked prefill step of %d requests, holding back"
-                " %d requests", len(self.waiting), len(holdback_queue))
         else:
             self.previous_step_was_prefill = False
             running_holdback = []
@@ -547,6 +546,13 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         while holdback_queue:
             self.waiting.append(holdback_queue.popleft())
 
+        # Log the scheduled tokens not at every step, but when doing chunked
+        # prefill. These include decode steps during interleaving
+        if self.ongoing_prefills or any(
+                r.num_computed_tokens <= r.num_prompt_tokens + 1
+                for r in self.running):
+            logger.debug("Scheduled tokens chunked prefills: %s",
+                         outputs.num_scheduled_tokens)
         return outputs
 
     def can_schedule_prefill(self, request: Request) -> bool:
@@ -592,8 +598,7 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
 
         # TODO theoretically we could already do a chunked prefill even
         # if the decode batch is full, but the current implementation of input
-        # batch doesn't allow to do so. Check with Wallas
-        # Check that there is space in the current decode batch
+        # batch doesn't allow to do so.
         num_running = len(self.running)
         if request in self.running:
             num_running -= 1
