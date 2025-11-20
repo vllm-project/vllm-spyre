@@ -83,6 +83,7 @@ def check_scheduler_inference_steps(
     available_blocks: int,
     max_batch_tkv_limit: int = -1,
     use_cb: bool = True,
+    max_num_batched_tokens: int = None,
 ):
     """
     Test the scheduler execution by comparing the scheduler attributes at each 
@@ -151,6 +152,7 @@ def check_scheduler_inference_steps(
         model=model,
         max_model_len=max_model_len,
         max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=max_num_batched_tokens,
         available_blocks=available_blocks,
         backend=backend,
         monkeypatch=monkeypatch)
