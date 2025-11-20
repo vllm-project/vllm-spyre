@@ -192,6 +192,20 @@ class SpyrePlatform(Platform):
                 scheduler_config.max_num_batched_tokens = (
                     model_config.max_model_len * scheduler_config.max_num_seqs)
             else:
+                # TODO: ideally, this would be user-configurable from CLI/engine
+                # args instead of with the internal env var, but that requires a
+                # way to detect if value set by vllm or by the user
+                if (chunk_len := os.getenv("VLLM_DT_CHUNK_LEN")) is None:
+                    os.environ["VLLM_DT_CHUNK_LEN"] = \
+                        str(scheduler_config.max_num_batched_tokens)
+                else:
+                    try:
+                        chunk_len_int = int(chunk_len)
+                    except (ValueError, TypeError) as e:
+                        raise Exception(
+                            "VLLM_DT_CHUNK_LEN must be an integer") from e
+                    scheduler_config.max_num_batched_tokens = chunk_len_int
+
                 assert scheduler_config.max_num_batched_tokens % \
                     cls._block_size == 0, ("`max_num_batched_tokens` must"
                     f" be divisible by the block size ({cls._block_size}) "
@@ -199,8 +213,6 @@ class SpyrePlatform(Platform):
                     f"`{scheduler_config.max_num_batched_tokens}`. Please "
                     "set `--max-num-batched-tokens` to a number that satisfy "
                     "this constraint.")
-                os.environ["VLLM_DT_CHUNK_LEN"] = \
-                    str(scheduler_config.max_num_batched_tokens)
 
         logger.info(
             "Overriding configurations based on warmup shapes. "
@@ -600,11 +612,11 @@ class SpyrePlatform(Platform):
                 blocks_override)
 
         # hard-coded value for max_num_batched_tokens with chunked prefill
-        # TODO: make this default but overridable by user-provided value; this
-        # requires a way to detect if value set by vllm or by the user
-        if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
-            logger.info("Model granite-3.3-8b-instruct and tensor parallel " \
-            "size 4 with chunked prefill detected. Setting " \
+        if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL \
+            and envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn" \
+            and os.getenv("VLLM_DT_CHUNK_LEN") is None:
+            logger.info("Model granite-3.3-8b-instruct and tensor " \
+            "parallel size 4 with chunked prefill detected. Setting " \
             "--max-num-batched-tokens 4096")
             vllm_config.scheduler_config.max_num_batched_tokens = 4096
 
