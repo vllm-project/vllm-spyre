@@ -407,3 +407,121 @@ def test_prefill_use_more_than_available_blocks(
         use_cb=False,
         max_num_batched_tokens=max_num_batched_tokens,
     )
+
+
+@pytest.mark.cpu
+@pytest.mark.chunked_prefill
+@pytest.mark.full_model
+# These values are all parameterized for test sorting
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_model_len", [2048])
+@pytest.mark.parametrize("max_num_batched_tokens", [128])
+@pytest.mark.parametrize("available_blocks", [None])
+def test_single_cp_prefill(model: ModelInfo, backend: str,
+                           monkeypatch: pytest.MonkeyPatch, set_random_seed,
+                           max_num_seqs: int, max_model_len: int,
+                           max_num_batched_tokens: int, available_blocks: int):
+    """ Scenario where to test the most basic execution of chunked scheduling:
+    a single prompts larger than the chunk size. 
+
+    Configuration:
+        * max_num_seqs: 2
+        * number of prompts: 1
+            * 0: len = 512, max tokens = 1, step joining = 0
+    """
+
+    seqs_max_tokens = [2]
+    prompts_lengths = [512]
+    steps_add_reqs = [0]
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0"],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+        {
+            # Prefill sequence 0 chunk 0
+            "step": 1,
+            "tkv": 512,
+            "waiting": [],
+            "running": ["0"],
+            "request_outputs": [],
+            "n_reserved_blocks": 9,
+            "n_used_blocks": 8
+        },
+        {
+            # Prefill sequence 0 chunk 1
+            "step": 2,
+            "tkv": 512,
+            "waiting": [],
+            "running": ["0"],
+            "request_outputs": [],
+            "n_reserved_blocks": 9,
+            "n_used_blocks": 8
+        },
+        {
+            # Prefill sequence 0 chunk 2
+            # total blocks in use: 6
+            "step": 3,
+            "tkv": 512,
+            "waiting": [],
+            "running": ["0"],
+            "request_outputs": [],
+            "n_reserved_blocks": 9,
+            "n_used_blocks": 8
+        },
+        {
+            # Prefill sequence 0 chunk 3
+            # total blocks in use: 8
+            "step": 4,
+            "tkv": 512,
+            "waiting": [],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 9,
+            "n_used_blocks": 8
+        },
+        {
+            # Decode sequence 0
+            # seq 0 finishes in this step
+            "step": 5,
+            "tkv": 513,
+            "waiting": [],
+            "running": [],
+            "request_outputs": ["0"],
+            "finished_requests": ["0"],
+            "n_reserved_blocks": 9,
+            "n_used_blocks": 9
+        },
+        {
+            # Tkv should be cleared one step later
+            "step": 6,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+    ]
+
+    check_scheduler_inference_steps(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        seqs_max_tokens=seqs_max_tokens,
+        prompts_lengths=prompts_lengths,
+        steps_add_reqs=steps_add_reqs,
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
+        available_blocks=available_blocks,
+        use_cb=False,
+        random_prompts=True,
+        max_num_batched_tokens=max_num_batched_tokens,
+    )

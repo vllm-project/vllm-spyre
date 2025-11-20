@@ -43,6 +43,7 @@ def generate_prompts(
     steps_add_reqs: list[int],
     seqs_max_tokens: list[int],
     prompts_lengths: list[int],
+    from_model_vocab: bool = False,
 ):
     generated_prompts = []
 
@@ -62,7 +63,8 @@ def generate_prompts(
         request = create_random_request(request_id=i,
                                         num_tokens=prompt_length,
                                         sampling_params=sampling_params,
-                                        model=model)
+                                        model=model,
+                                        from_model_vocab=from_model_vocab)
         requests.append((add_step, request))
         # NOTE: It is going to be decoded later
         generated_prompts.append(request.prompt_token_ids)
@@ -84,6 +86,7 @@ def check_scheduler_inference_steps(
     max_batch_tkv_limit: int = -1,
     use_cb: bool = True,
     max_num_batched_tokens: int = None,
+    random_prompts: bool = False,
 ):
     """
     Test the scheduler execution by comparing the scheduler attributes at each 
@@ -123,8 +126,11 @@ def check_scheduler_inference_steps(
         "tokens": []
     })
 
-    prompts, requests = generate_prompts(model, steps_add_reqs,
-                                         seqs_max_tokens, prompts_lengths)
+    prompts, requests = generate_prompts(model,
+                                         steps_add_reqs,
+                                         seqs_max_tokens,
+                                         prompts_lengths,
+                                         from_model_vocab=random_prompts)
 
     hf_results = generate_hf_output(
         model=model,
