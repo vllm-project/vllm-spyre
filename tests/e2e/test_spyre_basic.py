@@ -168,8 +168,9 @@ def test_max_model_len_override(model: ModelInfo, backend, warmup_shapes,
     max_model_len = 64
     kwargs = ({
         "use_cb": True,
-        "warmup_shapes": None
-    } if mode == "cb" else {
+        "warmup_shapes": None,
+        "use_chunked_prefill": mode == "cp",
+    } if mode in ["cb", "cp"] else {
         "use_cb": False,
         "warmup_shapes": warmup_shapes,
     })
