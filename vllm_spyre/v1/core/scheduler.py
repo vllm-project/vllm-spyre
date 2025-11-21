@@ -11,8 +11,10 @@ from vllm.v1.engine import EngineCoreOutputs
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request
 
+import vllm_spyre.envs as envs_spyre
 from vllm_spyre.platform import SpyrePlatform
-from vllm_spyre.v1.worker.spyre_model_runner import CBSpyreModelRunnerOutput
+from vllm_spyre.v1.worker.spyre_model_runner import (CBSpyreModelRunnerOutput,
+                                                     CPSpyreModelRunnerOutput)
 
 if TYPE_CHECKING:
     from vllm.v1.core.sched.output import SchedulerOutput
@@ -378,29 +380,85 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
 
 
 class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
-    """ Support of chunked prefill """
+    """ 
+    Chunked-Prefill Scheduling policy
+
+    The prefill vs. decode priority policy is the following:
+        - Current prefill request priority: A new request cannot start prefill
+           while another request's prefill is on-going
+            
+        - Prefill step interleaving: The prefill steps are interleaved with
+            one decode step: as long as there are decoding requests, two
+            prefill steps cannot be consecutive
+
+        - General prefill priority: conditioned on interleaving constraint,
+            prefill has priority over decode
+
+        - No empty step: if a prefill step is prevented because it doesn't
+            satisfy Spyre's specific constraints, a decode step is scheduled
+
+    Spyre scheduling constraints:
+        - Blocks constraint: all the blocks necessary to serve a request are
+            allocated at the time of scheduling the first chunk of a chunked
+            prefill. There must be enough blocks to accommodate the prompt and
+            the maximum number of output tokens
+
+        Note: all the remaining constraints need to be satisfied at the time
+        of scheduling the last chunk of a chunked prefill
+        
+        - Prefill batch size: prefill batch is of size 1, only one request's
+            chunked prefill can be scheduled at a time
+            
+        - Decode batch size: cannot have more than max_num_seqs running 
+            requests, including prefill and decode
+
+        - Max model length constraint: the number of requested tokens must fit
+            between the maximum TKV of all the running requests and the end of
+            the model's context
+            
+        - Volumetric constraint: the total "surface" defined by the running 
+            requests should never exceed `VLLM_DT_MAX_BATCH_TKV_LIMIT`. See 
+            `check_batch_tkv_limit()` method for details.
+        
+        the surface defined by the maximum TKV of
+            all the running requests and the number of running requests must
+            not exceed the limit defined by `VLLM_DT_MAX_BATCH_TKV_LIMIT`
+    """
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
+
+        self.chunk_size = self.scheduler_config.max_num_batched_tokens
 
         # We want to keep track of requests for which the prefill is ongoing.
         # Theoretically, only one request can be prefilled at a time, but we
         # keep a list to be able to batch prefills in the future.
         self.ongoing_prefills: list[Request] = []
 
+        # Prefills interleaving: if the feature flag is set, prefill operations
+        # are interleaved with a decode step. This allows to minimize currently
+        # decoding requests
+        self.do_interleaving: bool = envs_spyre.VLLM_SPYRE_CP_INTERLEAVE_STEPS
+        self.previous_step_was_prefill: bool = False
+
     def update_from_output(self, scheduler_output, model_runner_output):
-        assert isinstance(model_runner_output, CBSpyreModelRunnerOutput), (
-            "Expecting an instance of CBSpyreModelRunnerOutput when doing "
+        assert isinstance(model_runner_output, CPSpyreModelRunnerOutput), (
+            "Expecting an instance of CPSpyreModelRunnerOutput when doing "
             "chunked prefill.")
 
+        # Update the correct num_computed_tokens value given left-padding info
         for req in self.ongoing_prefills:
-            # replace num_computed_tokens with the exact number of computed
-            # prompt tokens, the current value might be wrong because of padding
+            if req.request_id not in model_runner_output.left_padding:
+                continue
 
-            # TODO agree on interface with CBSpyreModelRunnerOutput
-            # req.num_computed_tokens = \
-            # model_runner_output.req_num_computed_tokens[req.request_id]
-            pass
+            # The number of computed tokens only need to be adapted when it is
+            # the first chunk of a multi-chunk prefill
+            is_first_chunk = req.num_computed_tokens <= self.chunk_size
+            is_last_chunk = req.num_computed_tokens == req.num_prompt_tokens
+            if is_first_chunk and not is_last_chunk:
+                req_left_padding = model_runner_output.left_padding[
+                    req.request_id]
+                req.num_computed_tokens -= req_left_padding
 
         # Remove completed prefills
         self.ongoing_prefills = [
@@ -412,11 +470,12 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
                                           model_runner_output)
 
     def schedule(self) -> "SchedulerOutput":
-        """This override adds constraints and then delegates most of the work
-        to the base scheduler
-
+        """
+        The chunked prefill scheduling policy is enforced in this method, then
+        delegates the final scheduling decision to the base scheduler
+        
         To avoid additional specialization, some requests are held back from the
-        base scheduler but are restored after.
+        base scheduler but are restored after
         """
         # First purge the full waiting queue into our holdback queue, preserving
         # priority, so that the base scheduler does not see them.
@@ -424,11 +483,16 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         while self.waiting:
             holdback_queue.append(self.waiting.popleft())
 
-        # Check if new requests can be scheduled.
+        # Check if new requests can be scheduled for prefill
         while holdback_queue:
-            if self.can_schedule(holdback_queue[0]):
+            if self.can_schedule_prefill(holdback_queue[0]):
+                new_request = holdback_queue.popleft()
+                logger.debug(
+                    "Next scheduled request: '%s' with %d prompt tokens",
+                    new_request.request_id, new_request.num_prompt_tokens)
+
                 # Add request to the waiting queue
-                self.waiting.append(holdback_queue.popleft())
+                self.waiting.append(new_request)
             else:
                 # Otherwise, we simply stop here so that the scheduler
                 # can work with the batch we have
@@ -449,21 +513,23 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
             # them separately. Either we schedule a chunked prefill step, or a
             # decoding step
 
-            schedule_prefill = self.can_schedule(self.ongoing_prefills[0])
+            assert len(self.ongoing_prefills) == 1
+
+            schedule_prefill = self.can_schedule_prefill(
+                self.ongoing_prefills[0])
 
             if schedule_prefill:
                 running_holdback = [
                     r for r in self.running if r not in self.ongoing_prefills
                 ]
                 self.running = self.ongoing_prefills
-                logger.debug(
-                    "Scheduling a chunked prefill step of %d requests, holding "
-                    "back %d requests", len(self.running), len(holdback_queue))
+                self.previous_step_was_prefill = True
             else:
                 self.running = [
                     r for r in self.running if r not in self.ongoing_prefills
                 ]
                 running_holdback = self.ongoing_prefills
+                self.previous_step_was_prefill = False
 
         # Check new requests to prefill
         elif len(self.waiting) > 0:
@@ -471,10 +537,9 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
             # Hide current decodes from the scheduler
             running_holdback = self.running
             self.running = []
-            logger.debug(
-                "Scheduling a chunked prefill step of %d requests, holding back"
-                " %d requests", len(self.waiting), len(holdback_queue))
+            self.previous_step_was_prefill = True
         else:
+            self.previous_step_was_prefill = False
             running_holdback = []
 
         # delegate to super of SpyreScheduler: base V1 Scheduler
@@ -485,43 +550,90 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         while holdback_queue:
             self.waiting.append(holdback_queue.popleft())
 
+        # Log the scheduled tokens not at every step, but when doing chunked
+        # prefill. These include decode steps during interleaving
+        if self.ongoing_prefills or any(
+                r.num_computed_tokens <= r.num_prompt_tokens + 1
+                for r in self.running):
+            logger.debug("Scheduled chunked prefills tokens: %s",
+                         outputs.num_scheduled_tokens)
         return outputs
 
-    def can_schedule(self, request):
-        # For currently prefilling requests: all the required blocks were
-        # already reserved and all the conditions were already checked at the
-        # time of scheduling the first chunk. We also always prioritize prefill
-        # over decode, and this allows us to skip verification of later chunks.
-        #
-        # Soon, we will add some constraints here:
-        # 1. If it is not the last chunk: schedule the prefill if we have enough
-        #    blocks for a single chunked prefill, and if previous step was a
-        #    decode step (we interleave prefills with decodes)
-        # 2. If it is the last chunk: do a prefill if all the other scheduling
-        #    conditions are met
-        if request in self.ongoing_prefills:
-            return True
-
-        # We can't schedule a new request if another request is already
-        # prefilling
-        if self.ongoing_prefills:
-            return False
-
-        # chunked prefill scheduling conditions
-        max_prompt_batch_size = 1
-        max_context_len = self.scheduler_config.max_model_len
-
-        # running and waiting queues are both empty -> start a new batch
+    def can_schedule_prefill(self, request: Request) -> bool:
+        # running and waiting queues are both empty, we can start a new batch
         # which can always be scheduled
         if len(self.running) + len(self.waiting) == 0:
             return True
 
-        # check that there is space in the current decode batch
-        cond1 = len(self.running) + len(
-            self.waiting) < self.max_num_running_reqs
+        if not self._has_scheduling_priority(request):
+            return False
+
+        return self._satisfies_constraints(request)
+
+    def _satisfies_constraints(self, request: Request) -> bool:
+        is_first_chunk = request.num_computed_tokens == 0
+        is_last_chunk = (request.num_prompt_tokens -
+                         request.num_computed_tokens) <= self.chunk_size
+
+        if not self.do_interleaving:
+            # All the prefills are consecutive, so the first chunk has to
+            # satisfy all the constraints, and we don't need to check them again
+            # for subsequent chunks.
+            if not is_first_chunk:
+                return True
+
+            return self._satisfies_first_chunk_constraints(request) \
+                and self._satisfies_last_chunk_constraints(request)
+
+        can_schedule = True
+        if is_first_chunk:
+            can_schedule = self._satisfies_first_chunk_constraints(request)
+
+        if is_last_chunk:
+            can_schedule = can_schedule \
+                and self._satisfies_last_chunk_constraints(request)
+
+        return can_schedule
+
+    def _satisfies_first_chunk_constraints(self, request: Request) -> bool:
+        """First chunked prefill can be scheduled only if there is space in the 
+        prefill batch and if there is enough blocks to accommodate entire
+        request"""
+
+        # TODO theoretically we could already do a chunked prefill even
+        # if the decode batch is full, but the current implementation of input
+        # batch doesn't allow to do so.
+        num_running = len(self.running)
+        cond1 = num_running + len(self.waiting) < self.max_num_running_reqs
 
         # check that there is space in the prefill batch
-        cond2 = len(self.waiting) < max_prompt_batch_size
+        max_prefill_batch_size = 1
+        cond2 = len(self.waiting) < max_prefill_batch_size
+
+        # all the blocks for the request are allocated at the time of the first
+        # chunked prefill. We need to check here that there are enough free
+        # blocks/pages remaining
+        # Note: we only have to do check in case of a running batches
+        # (not start_new_batch), because the minimal number of blocks covers
+        # the context length for a single sequence, so tkv < block size is ok
+        prompt_len = request.num_prompt_tokens
+        total_tokens = prompt_len + request.max_tokens - 1
+        num_blocks_required = math.ceil(total_tokens / self.block_size)
+        cond3 = num_blocks_required <= self.n_free_blocks
+        return cond1 and cond2 and cond3
+
+    def _satisfies_last_chunk_constraints(self, request: Request) -> bool:
+        """Last chunked prefill can be scheduled only if there is enough space
+        in the decode batch, and if all the other spyre-related conditions
+        are satisfied."""
+
+        max_context_len = self.scheduler_config.max_model_len
+
+        # check that there is space in the current decode batch
+        num_running = len(self.running)
+        if request in self.running:
+            num_running -= 1
+        cond1 = num_running + len(self.waiting) < self.max_num_running_reqs
 
         # calculate new max tkv of the batch given the new sequence joins
         # considers all possible cases:
@@ -532,11 +644,11 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         n_blocks = math.floor(max(self.tkv, prompt_len) / self.block_size)
         new_req_tkv = n_blocks * self.block_size + prompt_len % self.block_size
 
-        # check that the number of requested tokens can be served
+        # check that the number of requested tokens can be served for the
         # new sequence (optimal condition)
         # note that the -1 comes from the token we generate during prefill
-        cond3 = request.max_tokens - 1 <= (max_context_len - new_req_tkv)
-        # check cond3 for all other sequences in the current decode batch
+        cond2 = request.max_tokens - 1 <= (max_context_len - new_req_tkv)
+        # check cond2 for all other sequences in the current decode batch
         for req in self.running:
             # current tkv of the (left aligned) decode sequence
             dec_req_tkv = n_blocks * self.block_size + \
@@ -545,30 +657,45 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
                                          req.num_prompt_tokens)
             max_tokens_remaining = req.max_tokens - n_generated_output_tokens
             # note that the -1 comes from the token we generate during prefill
-            cond3_current = max_tokens_remaining - 1 <= (max_context_len -
+            cond2_current = max_tokens_remaining - 1 <= (max_context_len -
                                                          dec_req_tkv)
-            cond3 = cond3 and cond3_current
-            # early exiting loop if violated 3rd condition
-            if not cond3:
+            cond2 = cond2 and cond2_current
+            # early exiting loop if violated 2nd condition
+            if not cond2:
                 return False
 
-        # check that there are enough free blocks/pages remaining
-        # Note: we only have to do check in case of a running batches
-        # (not start_new_batch), because the minimal number of blocks covers
-        # the context length for a single sequence, so tkv < block size is ok
-        total_tokens = prompt_len + request.max_tokens - 1
-        num_blocks_required = math.ceil(total_tokens / self.block_size)
-        cond4 = num_blocks_required <= self.n_free_blocks
-
         # check that batch size x tkv is smaller than the max supported number
-        cond5 = lambda: self.check_batch_tkv_limit_cp(request=request,
+        # Note: using max_tkv is a conservative upper bound here. For the
+        # optimal check we need model runner to return per sequence tkvs
+        cond3 = lambda: self.check_batch_tkv_limit_cp(request=request,
                                                       new_req_tkv=new_req_tkv,
                                                       n_blocks=n_blocks,
                                                       running=self.running,
                                                       max_batch_tkv_limit=self.
                                                       max_batch_tkv_limit)
 
-        return cond1 and cond2 and cond3 and cond4 and cond5()
+        return cond1 and cond2 and cond3()
+
+    def _has_scheduling_priority(self, request):
+        decoding_requests = [
+            r for r in self.running if r not in self.ongoing_prefills
+        ]
+
+        # If we do interleaving, then two consecutive prefill steps are
+        # forbidden when there are decoding requests
+        if self.do_interleaving and self.previous_step_was_prefill \
+            and len(decoding_requests) > 0:
+            return False
+
+        # Requests that are already prefilling are prioritized over new requests
+        if request in self.ongoing_prefills:
+            return True
+
+        # We can start prefilling a new requests if we satisfy the maximum
+        # number of concurrent prefills
+        max_concurrent_prefills = 1
+        num_prefills = len(self.waiting) + len(self.ongoing_prefills)
+        return num_prefills < max_concurrent_prefills
 
     def check_batch_tkv_limit_cp(self, request, new_req_tkv, n_blocks, running,
                                  max_batch_tkv_limit) -> bool:
@@ -614,7 +741,11 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         decode_req_max_tkvs.sort()
 
         # Initialize values
-        batch_size = len(running) + 1
+        # The request is already in the running queue if it has done a first
+        # chunked prefill
+        batch_size = len(running)
+        if request not in running:
+            batch_size += 1
         max_batch_tkv = 0
 
         # Try adding the new request to the batch and check the max volume
