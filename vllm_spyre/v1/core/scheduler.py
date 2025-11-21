@@ -602,8 +602,6 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         # if the decode batch is full, but the current implementation of input
         # batch doesn't allow to do so.
         num_running = len(self.running)
-        if request in self.running:
-            num_running -= 1
         cond1 = num_running + len(self.waiting) < self.max_num_running_reqs
 
         # check that there is space in the prefill batch
