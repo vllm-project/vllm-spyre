@@ -16,16 +16,16 @@ from spyre_util import (ModelInfo, RemoteOpenAIServer, create_seq_prompt,
                         get_chicken_soup_prompts, skip_unsupported_tp_size)
 from vllm import LLM, SamplingParams
 
-cp_mark = pytest.param(True, marks=pytest.mark.chunked_prefill, id="cp")
+cb_mark = pytest.param("cb", marks=pytest.mark.cb, id="cp")
+cp_mark = pytest.param("cp", marks=pytest.mark.chunked_prefill, id="cp")
 
 
-@pytest.mark.cb
-@pytest.mark.parametrize("use_cp", [False, cp_mark])
+@pytest.mark.parametrize("mode", [cb_mark, cp_mark])
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 def test_cb_max_tokens(model: ModelInfo, backend: str, max_model_len: int,
                        max_num_seqs: int, monkeypatch: pytest.MonkeyPatch,
-                       use_llm_cache, use_cp: bool):
+                       use_llm_cache, mode: bool):
     """Test that continuous batches of requests that
     are longer than the `max_model_len` are correctly rejected"""
     max_tokens = 20
@@ -38,30 +38,29 @@ def test_cb_max_tokens(model: ModelInfo, backend: str, max_model_len: int,
                                           logprobs=0)
 
     with pytest.raises(ValueError, match="max model context length"):
-        generate_spyre_vllm_output(model=model,
-                                   prompts=overflow_prompt,
-                                   max_model_len=max_model_len,
-                                   sampling_params=vllm_sampling_params,
-                                   tensor_parallel_size=1,
-                                   backend=backend,
-                                   max_num_seqs=max_num_seqs,
-                                   use_cb=True,
-                                   monkeypatch=monkeypatch)
+        generate_spyre_vllm_output(
+            model=model,
+            prompts=overflow_prompt,
+            max_model_len=max_model_len,
+            sampling_params=vllm_sampling_params,
+            tensor_parallel_size=1,
+            backend=backend,
+            max_num_seqs=max_num_seqs,
+            use_cb=True,
+            max_num_batched_tokens=(128 if mode else None),
+            monkeypatch=monkeypatch)
 
 
-@pytest.mark.cb
-@pytest.mark.parametrize("cb", [True])
-@pytest.mark.parametrize("use_cp", [False, cp_mark])
+@pytest.mark.parametrize("mode", [cb_mark, cp_mark])
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 def test_api_cb_rejects_oversized_request(
     remote_openai_server: RemoteOpenAIServer,
     model: ModelInfo,
     backend: str,
-    cb: bool,
     max_model_len: int,
     max_num_seqs: int,
-    use_cp: bool,
+    mode: bool,
 ):
     """Verify API rejects request that exceed max_model_len with CB enabled"""
 
@@ -77,19 +76,16 @@ def test_api_cb_rejects_oversized_request(
         )
 
 
-@pytest.mark.cb
-@pytest.mark.parametrize("cb", [True])
-@pytest.mark.parametrize("use_cp", [False, cp_mark])
+@pytest.mark.parametrize("mode", [cb_mark, cp_mark])
 @pytest.mark.parametrize(
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 def test_api_cb_generates_correct_max_tokens(
     remote_openai_server: RemoteOpenAIServer,
     model: ModelInfo,
     backend: str,
-    cb: bool,
     max_model_len: int,
     max_num_seqs: int,
-    use_cp: bool,
+    mode: bool,
 ):
     """Verify API generates the correct numbers of tokens with CB enabled"""
 

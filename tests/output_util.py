@@ -479,6 +479,7 @@ def generate_spyre_vllm_output(
     warmup_shapes: DecodeWarmupShapes | None = None,
     max_num_seqs: Optional[int] = None,
     use_cb: bool = False,
+    max_num_batched_tokens: Optional[int] = None,
 ) -> list[dict[str, Any]]:
     # Allows to run multiprocess V1 engine without dumping meaningless logs at
     # shutdown engine this context.
@@ -492,6 +493,7 @@ def generate_spyre_vllm_output(
         monkeypatch=monkeypatch,
         warmup_shapes=warmup_shapes,
         max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=max_num_batched_tokens,
         use_cb=use_cb,
     )
 
