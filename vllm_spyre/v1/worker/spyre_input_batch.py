@@ -18,7 +18,7 @@ from vllm.v1.sample.logits_processor import (BatchUpdateBuilder,
                                              MoveDirectionality)
 from vllm.v1.sample.metadata import SamplingMetadata
 
-from vllm_spyre.v1.sample.spyre_logits_processor import LogitProcessorWrapper
+from vllm_spyre.v1.sample.spyre_logits_processor import SpyreLogitsProcessor
 
 
 @dataclass
@@ -303,8 +303,8 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
         self.batch_update_builder = BatchUpdateBuilder()
 
         self.logitsprocs = logitsprocs or LogitsProcessors()
-        self.logitsprocs_wrappers = [lp for lp \
-            in self.logitsprocs.all if isinstance(lp, LogitProcessorWrapper)
+        self.spyre_logitsprocs = [lp for lp \
+            in self.logitsprocs.all if isinstance(lp, SpyreLogitsProcessor)
         ]
 
         self.has_allowed_token_ids: set[str] = set()
@@ -529,7 +529,7 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
         end_dense_idx = min(self._num_requests + 1, self.max_num_reqs - 1)
         for tmp_dense in range(dense_index, end_dense_idx):
             self.batch_update_builder.moved.append(
-                (tmp_dense, tmp_dense + 1, MoveDirectionality.UNIDIRECTIONAL))
+                (tmp_dense + 1, tmp_dense, MoveDirectionality.UNIDIRECTIONAL))
 
         # Remove the references
         self.req_output_token_ids.pop(dense_index)
