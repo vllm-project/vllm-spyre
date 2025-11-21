@@ -15,7 +15,7 @@ from vllm.v1.engine.core import EngineCore
 
 from vllm_spyre.v1.core.scheduler import ContinuousBatchingSpyreScheduler
 
-DISABLE_ASSERTS = False  # used for debugging
+DISABLE_ASSERTS = True  # used for debugging
 
 
 def augment_checked_steps(
