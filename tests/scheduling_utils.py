@@ -226,6 +226,11 @@ def check_scheduler_inference_steps(
                 [len(blocks) for blocks in req_ids2blocks.values()])
 
             if step > 0:
+                if DISABLE_ASSERTS:
+                    print(
+                        f"{step=}, {n_reserved_blocks=}, {n_used_blocks=}, "
+                        f"{scheduler.tkv=}, {waiting=}, {out_reqs_finished=}, "
+                        f"{running=}, {out_reqs_ids=}")
                 assert DISABLE_ASSERTS or (
                     n_reserved_blocks == step_ref["n_reserved_blocks"]
                 ), f"Step {step}, n_reserved_blocks: {n_reserved_blocks}"

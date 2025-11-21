@@ -421,7 +421,7 @@ def test_single_cp_prefill(model: ModelInfo, backend: str,
                            monkeypatch: pytest.MonkeyPatch, set_random_seed,
                            max_num_seqs: int, max_model_len: int,
                            max_num_batched_tokens: int, available_blocks: int):
-    """ Scenario where to test the most basic execution of chunked scheduling:
+    """ Scenario to test the most basic execution of chunked scheduling:
     a single prompts larger than the chunk size. 
 
     Configuration:
@@ -501,6 +501,597 @@ def test_single_cp_prefill(model: ModelInfo, backend: str,
         {
             # Tkv should be cleared one step later
             "step": 6,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+    ]
+
+    check_scheduler_inference_steps(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        seqs_max_tokens=seqs_max_tokens,
+        prompts_lengths=prompts_lengths,
+        steps_add_reqs=steps_add_reqs,
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
+        available_blocks=available_blocks,
+        use_cb=False,
+        random_prompts=True,
+        max_num_batched_tokens=max_num_batched_tokens,
+    )
+
+
+@pytest.mark.cpu
+@pytest.mark.chunked_prefill
+@pytest.mark.full_model
+# These values are all parameterized for test sorting
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_model_len", [2048])
+@pytest.mark.parametrize("max_num_batched_tokens", [128])
+@pytest.mark.parametrize("available_blocks", [None])
+def test_cp_prefill_interleave1(model: ModelInfo, backend: str,
+                                monkeypatch: pytest.MonkeyPatch,
+                                set_random_seed, max_num_seqs: int,
+                                max_model_len: int,
+                                max_num_batched_tokens: int,
+                                available_blocks: int):
+    """ Scenario where two sequences are scheduled from the beginning
+    and the shorter sequence gets scheduled first. After a couple of
+    iterations the interleaving of requests starts.
+
+    Configuration:
+        * max_num_seqs: 2
+        * number of prompts: 1
+            * 0: len = 10,  max tokens = 8, step joining = 0
+            * 1: len = 512, max tokens = 4, step joining = 0
+    """
+
+    seqs_max_tokens = [8, 4]
+    prompts_lengths = [10, 512]
+    steps_add_reqs = [0, 0]
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0", "1"],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+        {
+            # Request 0 is prefilled with a single chunk
+            # Token 0 is generated
+            "step": 1,
+            "tkv": 10,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 1,
+            "n_used_blocks": 1
+        },
+        {
+            # Request 0 starts decoding.
+            # Request 1 can't be scheduled do to a restricton on
+            # consecutive prefills. Token 1 is generated
+            "step": 2,
+            "tkv": 11,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 1,
+            "n_used_blocks": 1
+        },
+        {
+            # Chunk 0 of request 1 prefill
+            "step": 3,
+            "tkv": 11,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": [],
+            "n_reserved_blocks": 10,
+            "n_used_blocks": 9
+        },
+        {
+            # Decode 2 of request 0.
+            "step": 4,
+            "tkv": 12,
+            "waiting": [],
+            "running": ["0", "1"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 10,
+            "n_used_blocks": 9
+        },
+        {
+            # Chunk 1 of request 1 prefill
+            "step": 5,
+            "tkv": 12,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": [],
+            "n_reserved_blocks": 10,
+            "n_used_blocks": 9
+        },
+        {
+            # Decode 3 of request 0.
+            "step": 6,
+            "tkv": 13,
+            "waiting": [],
+            "running": ["0", "1"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 10,
+            "n_used_blocks": 9
+        },
+        {
+            # Chunk 2 of request 1 prefill
+            "step": 7,
+            "tkv": 13,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": [],
+            "n_reserved_blocks": 10,
+            "n_used_blocks": 9
+        },
+        {
+            # Decode 4 of request 0.
+            "step": 8,
+            "tkv": 14,
+            "waiting": [],
+            "running": ["0", "1"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 10,
+            "n_used_blocks": 9
+        },
+        {
+            # Chunk 3 of request 1 prefill.
+            # First token is generated
+            "step": 9,
+            "tkv": 14,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 10,
+            "n_used_blocks": 9
+        },
+        {
+            # Decode 5 of request 0.
+            # Decode 1 of request 1.
+            "step": 10,
+            "tkv": 527,  # tkv jump
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"],
+            "n_reserved_blocks": 10,
+            "n_used_blocks": 10
+        },
+        {
+            # Decode 6 of request 0.
+            # Decode 2 of request 1.
+            "step": 11,
+            "tkv": 528,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"],
+            "n_reserved_blocks": 10,
+            "n_used_blocks": 10
+        },
+        {
+            # Decode 7 of request 0.
+            # Decode 3 of request 1.
+            # Requests are done
+            "step": 12,
+            "tkv": 529,
+            "waiting": [],
+            "running": [],
+            "finished_requests": ["1", "0"],
+            "request_outputs": ["1", "0"],
+            "n_reserved_blocks": 10,
+            "n_used_blocks": 10
+        },
+        {
+            # Tkv should be cleared one step later
+            "step": 13,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+    ]
+
+    check_scheduler_inference_steps(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        seqs_max_tokens=seqs_max_tokens,
+        prompts_lengths=prompts_lengths,
+        steps_add_reqs=steps_add_reqs,
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
+        available_blocks=available_blocks,
+        use_cb=False,
+        random_prompts=True,
+        max_num_batched_tokens=max_num_batched_tokens,
+    )
+
+
+@pytest.mark.cpu
+@pytest.mark.chunked_prefill
+@pytest.mark.full_model
+# These values are all parameterized for test sorting
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_model_len", [2048])
+@pytest.mark.parametrize("max_num_batched_tokens", [128])
+@pytest.mark.parametrize("available_blocks", [None])
+def test_cp_prefill_no_interleave(model: ModelInfo, backend: str,
+                                  monkeypatch: pytest.MonkeyPatch,
+                                  set_random_seed, max_num_seqs: int,
+                                  max_model_len: int,
+                                  max_num_batched_tokens: int,
+                                  available_blocks: int):
+    """Same as test_cp_prefill_interleave1 but with interleaving disabled
+
+    Configuration:
+        * max_num_seqs: 2
+        * number of prompts: 1
+            * 0: len = 10,  max tokens = 8, step joining = 0
+            * 1: len = 512, max tokens = 4, step joining = 0
+    """
+
+    monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
+
+    seqs_max_tokens = [8, 4]
+    prompts_lengths = [10, 512]
+    steps_add_reqs = [0, 0]
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0", "1"],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+        {
+            # Request 0 is prefilled with a single chunk
+            # Token 0 is generated
+            "step": 1,
+            "tkv": 10,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 1,
+            "n_used_blocks": 1
+        },
+        {
+            # Chunk 0 of request 1 prefill
+            "step": 2,
+            "tkv": 10,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": [],
+            "n_reserved_blocks": 10,
+            "n_used_blocks": 9
+        },
+        {
+            # Chunk 1 of request 1 prefill
+            "step": 3,
+            "tkv": 10,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": [],
+            "n_reserved_blocks": 10,
+            "n_used_blocks": 9
+        },
+        {
+            # Chunk 2 of request 1 prefill
+            "step": 4,
+            "tkv": 10,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": [],
+            "n_reserved_blocks": 10,
+            "n_used_blocks": 9
+        },
+        {
+            # Chunk 3 of request 1 prefill.
+            # First token is generated
+            "step": 5,
+            "tkv": 10,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 10,
+            "n_used_blocks": 9
+        },
+        {
+            # Both requests start decoding.
+            "step": 6,
+            "tkv": 523,  # tkv jump
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"],
+            "n_reserved_blocks": 10,
+            "n_used_blocks": 10
+        },
+        {
+            # Decode 2
+            "step": 7,
+            "tkv": 524,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"],
+            "n_reserved_blocks": 10,
+            "n_used_blocks": 10
+        },
+        {
+            # Decode 3
+            "step": 8,
+            "tkv": 525,
+            "waiting": [],
+            "running": ["0"],
+            "finished_requests": ["1"],
+            "request_outputs": ["1", "0"],
+            "n_reserved_blocks": 10,
+            "n_used_blocks": 10
+        },
+        {
+            # Decode 4 of request 0.
+            "step": 9,
+            "tkv": 14,  # tkv jump
+            "waiting": [],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 1,
+            "n_used_blocks": 1
+        },
+        {
+            # Decode 5 of request 0.
+            "step": 10,
+            "tkv": 15,  # tkv jump
+            "waiting": [],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 1,
+            "n_used_blocks": 1
+        },
+        {
+            # Decode 6 of request 0.
+            "step": 11,
+            "tkv": 16,  # tkv jump
+            "waiting": [],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 1,
+            "n_used_blocks": 1
+        },
+        {
+            # Decode 7 of request 0.
+            "step": 12,
+            "tkv": 17,  # tkv jump
+            "waiting": [],
+            "running": [],
+            "finished_requests": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 1,
+            "n_used_blocks": 1
+        },
+        {
+            # Tkv should be cleared one step later
+            "step": 13,  # with or without interleaving we finish at step 13
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+    ]
+
+    check_scheduler_inference_steps(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        seqs_max_tokens=seqs_max_tokens,
+        prompts_lengths=prompts_lengths,
+        steps_add_reqs=steps_add_reqs,
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
+        available_blocks=available_blocks,
+        use_cb=False,
+        random_prompts=True,
+        max_num_batched_tokens=max_num_batched_tokens,
+    )
+
+
+@pytest.mark.cpu
+@pytest.mark.chunked_prefill
+@pytest.mark.full_model
+# These values are all parameterized for test sorting
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_model_len", [2048])
+@pytest.mark.parametrize("max_num_batched_tokens", [128])
+@pytest.mark.parametrize("available_blocks", [None])
+def test_cp_prefill_interleave2(model: ModelInfo, backend: str,
+                                monkeypatch: pytest.MonkeyPatch,
+                                set_random_seed, max_num_seqs: int,
+                                max_model_len: int,
+                                max_num_batched_tokens: int,
+                                available_blocks: int):
+    """Same as test_cp_prefill_interleave1 but now the second
+    request arrives during decode of step 0
+
+    Configuration:
+        * max_num_seqs: 2
+        * number of prompts: 1
+            * 0: len = 10,  max tokens = 8, step joining = 0
+            * 1: len = 512, max tokens = 4, step joining = 3
+    """
+
+    seqs_max_tokens = [8, 4]
+    prompts_lengths = [10, 512]
+    steps_add_reqs = [0, 3]
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0"],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+        {
+            # Request 0 is prefilled with a single chunk
+            # Token 0 is generated
+            "step": 1,
+            "tkv": 10,
+            "waiting": [],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 1,
+            "n_used_blocks": 1
+        },
+        {
+            # Decode 1 of request 0.
+            "step": 2,
+            "tkv": 11,
+            "waiting": [],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 1,
+            "n_used_blocks": 1
+        },
+        {
+            # Decode 2 of request 0.
+            "step": 3,
+            "tkv": 12,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 1,
+            "n_used_blocks": 1
+        },
+        {
+            # Chunk 0 of request 1 prefill
+            "step": 4,
+            "tkv": 12,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": [],
+            "n_reserved_blocks": 10,
+            "n_used_blocks": 9
+        },
+        {
+            # Decode 3 of request 0.
+            "step": 5,
+            "tkv": 13,
+            "waiting": [],
+            "running": ["0", "1"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 10,
+            "n_used_blocks": 9
+        },
+        {
+            # Chunk 1 of request 1 prefill
+            "step": 6,
+            "tkv": 13,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": [],
+            "n_reserved_blocks": 10,
+            "n_used_blocks": 9
+        },
+        {
+            # Decode 4 of request 0.
+            "step": 7,
+            "tkv": 14,
+            "waiting": [],
+            "running": ["0", "1"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 10,
+            "n_used_blocks": 9
+        },
+        {
+            # Chunk 2 of request 1 prefill
+            "step": 8,
+            "tkv": 14,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": [],
+            "n_reserved_blocks": 10,
+            "n_used_blocks": 9
+        },
+        {
+            # Decode 5 of request 0.
+            "step": 9,
+            "tkv": 15,
+            "waiting": [],
+            "running": ["0", "1"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 10,
+            "n_used_blocks": 9
+        },
+        {
+            # Chunk 3 of request 1 prefill.
+            # First token is generated
+            "step": 10,
+            "tkv": 15,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 10,
+            "n_used_blocks": 9
+        },
+        {
+            # Decode 6 of request 0.
+            # Decode 1 of request 1.
+            "step": 11,
+            "tkv": 528,  # tkv jump
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"],
+            "n_reserved_blocks": 10,
+            "n_used_blocks": 10
+        },
+        {
+            # Decode 7 of request 0.
+            # Decode 2 of request 1.
+            "step": 12,
+            "tkv": 529,
+            "waiting": [],
+            "running": ['1'],
+            "finished_requests": ["0"],
+            "request_outputs": ["1", "0"],
+            "n_reserved_blocks": 10,
+            "n_used_blocks": 10
+        },
+        {
+            "step": 13,
+            "tkv": 515,  # tkv jump
+            "waiting": [],
+            "running": [],
+            "finished_requests": ["1"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 9,
+            "n_used_blocks": 9
+        },
+        {
+            # Tkv should be cleared one step later
+            "step": 14,
             "tkv": 0,
             "waiting": [],
             "running": [],
