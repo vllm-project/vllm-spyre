@@ -689,10 +689,11 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         if request in self.ongoing_prefills:
             return True
 
-        # Check that there is space in the prefill batch
-        max_prefill_batch_size = 1
-        num_scheduled_prefills = len(self.waiting) + len(self.ongoing_prefills)
-        return num_scheduled_prefills < max_prefill_batch_size
+        # We can start prefilling a new requests if we satisfy the maximum
+        # number of concurrent prefills
+        max_concurrent_prefills = 1
+        num_prefills = len(self.waiting) + len(self.ongoing_prefills)
+        return num_prefills < max_concurrent_prefills
 
     def check_batch_tkv_limit_cp(self, request, new_req_tkv, n_blocks, running,
                                  max_batch_tkv_limit) -> bool:
