@@ -263,6 +263,7 @@ def test_spyre_batch1_min_tokens(model: ModelInfo, backend, monkeypatch,
         backend=backend,
         monkeypatch=monkeypatch,
         warmup_shapes=warmup_shapes if mode == "sb" else None,
+        max_num_seqs=max_num_seqs if mode == "cb" or mode == "cp" else None,
         max_num_batched_tokens=128 if mode == "cp" else None,
         use_cb=mode == "cb" or mode == "cp")
     prompt = "What is the capital of the USA?"
