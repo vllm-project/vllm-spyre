@@ -553,7 +553,7 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         if self.ongoing_prefills or any(
                 r.num_computed_tokens <= r.num_prompt_tokens + 1
                 for r in self.running):
-            logger.debug("Scheduled tokens chunked prefills: %s",
+            logger.debug("Scheduled chunked prefills tokens: %s",
                          outputs.num_scheduled_tokens)
         return outputs
 
@@ -625,7 +625,7 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
     def _satisfies_last_chunk_constraints(self, request: Request) -> bool:
         """Last chunked prefill can be scheduled only if there is enough space
         in the decode batch, and if all the other spyre-related conditions
-        are satisfied"""
+        are satisfied."""
 
         max_context_len = self.scheduler_config.max_model_len
 
@@ -660,7 +660,7 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
             cond2_current = max_tokens_remaining - 1 <= (max_context_len -
                                                          dec_req_tkv)
             cond2 = cond2 and cond2_current
-            # early exiting loop if violated 3rd condition
+            # early exiting loop if violated 2nd condition
             if not cond2:
                 return False
 
@@ -684,7 +684,7 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         # If we do interleaving, then two consecutive prefill steps are
         # forbidden when there are decoding requests
         if self.do_interleaving and self.previous_step_was_prefill \
-            and decoding_requests:
+            and len(decoding_requests) > 0:
             return False
 
         # Requests that are already prefilling are prioritized over new requests
@@ -740,6 +740,8 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         decode_req_max_tkvs.sort()
 
         # Initialize values
+        # The request is already in the running queue if it has done a first
+        # chunked prefill
         batch_size = len(running)
         if request not in running:
             batch_size += 1
