@@ -12,7 +12,7 @@ from vllm import SamplingParams
 @pytest.mark.parametrize("stop_last", [True, False])
 def test_output(model: ModelInfo, stop_last: bool, max_model_len: int,
                 max_num_seqs: int, warmup_shapes: DecodeWarmupShapes,
-                backend: str, mode: int, monkeypatch: pytest.MonkeyPatch,
+                backend: str, mode: str, monkeypatch: pytest.MonkeyPatch,
                 use_llm_cache) -> None:
     '''
     Checks that `max_tokens` parameter of `SamplingParams` works correctly

@@ -25,7 +25,7 @@ cp_mark = pytest.param("cp", marks=pytest.mark.chunked_prefill, id="cp")
     "backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 def test_cb_max_tokens(model: ModelInfo, backend: str, max_model_len: int,
                        max_num_seqs: int, monkeypatch: pytest.MonkeyPatch,
-                       use_llm_cache, mode: bool):
+                       use_llm_cache, mode: str):
     """Test that continuous batches of requests that
     are longer than the `max_model_len` are correctly rejected"""
     max_tokens = 20
@@ -47,7 +47,7 @@ def test_cb_max_tokens(model: ModelInfo, backend: str, max_model_len: int,
             backend=backend,
             max_num_seqs=max_num_seqs,
             use_cb=True,
-            max_num_batched_tokens=(128 if mode else None),
+            max_num_batched_tokens=(128 if mode == "cp" else None),
             monkeypatch=monkeypatch)
 
 
@@ -60,7 +60,7 @@ def test_api_cb_rejects_oversized_request(
     backend: str,
     max_model_len: int,
     max_num_seqs: int,
-    mode: bool,
+    mode: str,
 ):
     """Verify API rejects request that exceed max_model_len with CB enabled"""
 
