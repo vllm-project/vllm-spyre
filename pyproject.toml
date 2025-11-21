@@ -12,8 +12,7 @@ readme = "README.md"
 license = {text = "Apache 2"}
 dependencies = [
     "fms-model-optimizer[fp8]>=0.6.0",
-    "ibm-fms>=1.4.0,<2.0",
-    "ibm-fms@git+https://github.com/foundation-model-stack/foundation-model-stack#egg=mistral-1.4.0-text",
+    "ibm-fms",
     "vllm==0.10.2",
     "pytest-mock>=3.15.0",
 ]
@@ -62,6 +61,9 @@ override-dependencies = [
 environments = [
     "python_version > '3.9'"
 ]
+
+[tool.uv.sources]
+ibm-fms = { git = "https://github.com/foundation-model-stack/foundation-model-stack", rev = "mistral-1.4.0-text" }
 
 [tool.ruff]
 # Allow lines to be as long as 80.
