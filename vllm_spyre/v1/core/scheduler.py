@@ -3,7 +3,7 @@
 import math
 import os
 from collections import deque
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterable, Union
 
 from vllm.logger import init_logger
 from vllm.v1.core.sched.scheduler import Scheduler
@@ -763,3 +763,21 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
                 batch_size -= 1
 
         return max_batch_tkv <= int(max_batch_tkv_limit)
+
+    def finish_requests(
+        self,
+        request_ids: Union[str, Iterable[str]],
+        finished_status,
+    ) -> None:
+        """Handles removing finished requests from ongoing_prefills"""
+        if isinstance(request_ids, str):
+            request_ids = (request_ids, )
+
+        # first defer to vLLM scheduler where validation is handled
+        super(SpyreScheduler,
+              self).finish_requests(request_ids=request_ids,
+                                    finished_status=finished_status)
+
+        self.ongoing_prefills = [
+            r for r in self.ongoing_prefills if r.request_id not in request_ids
+        ]
