@@ -51,7 +51,7 @@ def test_custom_logits_processor(model: ModelInfo, backend, monkeypatch,
                       revision=model.revision,
                       max_model_len=max_model_len,
                       max_num_seqs=max_num_seqs,
-                      max_num_batched_tokens=128 if mode == "cp" else "None",
+                      max_num_batched_tokens=128 if mode == "cp" else None,
                       logits_processors=[DummyLogitsProcessor])
     prompt = "Hello Logits Processors"
     params = SamplingParams(max_tokens=5, temperature=0, logprobs=0)
