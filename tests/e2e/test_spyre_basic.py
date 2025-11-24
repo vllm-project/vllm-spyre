@@ -36,6 +36,9 @@ def test_output(model: ModelInfo, tp_size: int, backend: str, mode: str,
 
     skip_unsupported_tp_size(tp_size, backend)
 
+    if mode == "cp" and model.is_quantized:
+        pytest.skip("Chunked prefill and FP8 not supported at the moment.")
+
     prompts = get_chicken_soup_prompts(4)
 
     kwargs = ({
