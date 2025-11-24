@@ -414,7 +414,7 @@ def test_prefill_use_more_than_available_blocks(
 @pytest.mark.full_model
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [2])
-@pytest.mark.parametrize("max_model_len", [2048])
+@pytest.mark.parametrize("max_model_len", [514])
 @pytest.mark.parametrize("max_num_batched_tokens", [128])
 @pytest.mark.parametrize("available_blocks", [None])
 def test_single_cp_prefill(model: ModelInfo, backend: str,
