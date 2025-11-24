@@ -170,7 +170,7 @@ def test_compare_graphs_static_batching(model: ModelInfo,
 
 
 @pytest.mark.spyre
-@pytest.mark.cb
+@pytest.mark.chunked_prefill
 def test_compare_graphs_chunked_prefill(model: ModelInfo, max_num_seqs: int,
                                         max_model_len: int,
                                         monkeypatch: pytest.MonkeyPatch):

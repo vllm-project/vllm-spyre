@@ -12,7 +12,7 @@ from vllm.v1.sample.logits_processor import (BatchUpdate, LogitsProcessor,
 
 def test_custom_logits_processor(model: ModelInfo, backend, monkeypatch,
                                  max_num_seqs, max_model_len, warmup_shapes,
-                                 cb):
+                                 mode: str):
     '''
     Simple test to check if custom logits processors are being registered 
     '''
@@ -39,13 +39,19 @@ def test_custom_logits_processor(model: ModelInfo, backend, monkeypatch,
             has_invoked_logits_processor = True
             return logits
 
-    patch_environment(cb == 1, warmup_shapes if cb == 0 else None, backend,
-                      monkeypatch)
+    patch_environment(
+        use_cb=mode in ["cb", "cp"],
+        warmup_shapes=warmup_shapes if mode == "sb" else None,
+        backend=backend,
+        use_chunked_prefill=mode == "cp",
+        monkeypatch=monkeypatch,
+    )
 
     spyre_model = LLM(model=model.name,
                       revision=model.revision,
                       max_model_len=max_model_len,
                       max_num_seqs=max_num_seqs,
+                      max_num_batched_tokens=128 if mode == "cp" else None,
                       logits_processors=[DummyLogitsProcessor])
     prompt = "Hello Logits Processors"
     params = SamplingParams(max_tokens=5, temperature=0, logprobs=0)
