@@ -3,7 +3,7 @@
 import math
 import os
 from collections import deque
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterable, Union
 
 from vllm.logger import init_logger
 from vllm.v1.core.sched.scheduler import Scheduler
@@ -626,13 +626,13 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         """Last chunked prefill can be scheduled only if there is enough space
         in the decode batch, and if all the other spyre-related conditions
         are satisfied."""
-
+        decoding_requests = [
+            r for r in self.running if r not in self.ongoing_prefills
+        ]
         max_context_len = self.scheduler_config.max_model_len
 
         # check that there is space in the current decode batch
-        num_running = len(self.running)
-        if request in self.running:
-            num_running -= 1
+        num_running = len(decoding_requests)
         cond1 = num_running + len(self.waiting) < self.max_num_running_reqs
 
         # calculate new max tkv of the batch given the new sequence joins
@@ -649,7 +649,7 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         # note that the -1 comes from the token we generate during prefill
         cond2 = request.max_tokens - 1 <= (max_context_len - new_req_tkv)
         # check cond2 for all other sequences in the current decode batch
-        for req in self.running:
+        for req in decoding_requests:
             # current tkv of the (left aligned) decode sequence
             dec_req_tkv = n_blocks * self.block_size + \
                 req.num_computed_tokens % self.block_size
@@ -667,12 +667,12 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         # check that batch size x tkv is smaller than the max supported number
         # Note: using max_tkv is a conservative upper bound here. For the
         # optimal check we need model runner to return per sequence tkvs
-        cond3 = lambda: self.check_batch_tkv_limit_cp(request=request,
-                                                      new_req_tkv=new_req_tkv,
-                                                      n_blocks=n_blocks,
-                                                      running=self.running,
-                                                      max_batch_tkv_limit=self.
-                                                      max_batch_tkv_limit)
+        cond3 = lambda: self.check_batch_tkv_limit_cp(
+            request=request,
+            new_req_tkv=new_req_tkv,
+            n_blocks=n_blocks,
+            running=decoding_requests,
+            max_batch_tkv_limit=self.max_batch_tkv_limit)
 
         return cond1 and cond2 and cond3()
 
@@ -763,3 +763,21 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
                 batch_size -= 1
 
         return max_batch_tkv <= int(max_batch_tkv_limit)
+
+    def finish_requests(
+        self,
+        request_ids: Union[str, Iterable[str]],
+        finished_status,
+    ) -> None:
+        """Handles removing finished requests from ongoing_prefills"""
+        if isinstance(request_ids, str):
+            request_ids = (request_ids, )
+
+        # first defer to vLLM scheduler where validation is handled
+        super(SpyreScheduler,
+              self).finish_requests(request_ids=request_ids,
+                                    finished_status=finished_status)
+
+        self.ongoing_prefills = [
+            r for r in self.ongoing_prefills if r.request_id not in request_ids
+        ]
