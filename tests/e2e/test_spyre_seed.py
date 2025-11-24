@@ -16,7 +16,7 @@ from vllm import SamplingParams
 @pytest.mark.parametrize("seed", [42])
 def test_seed(model: ModelInfo, temperature: float, seed: int,
               max_model_len: int, max_num_seqs: int,
-              warmup_shapes: DecodeWarmupShapes, backend: str, cb: int,
+              warmup_shapes: DecodeWarmupShapes, backend: str, mode: str,
               monkeypatch: pytest.MonkeyPatch, use_llm_cache) -> None:
     '''
     The warmup is based on a single shape. After the warmup,
@@ -37,7 +37,7 @@ def test_seed(model: ModelInfo, temperature: float, seed: int,
         ignore_eos=True,
         seed=seed)
 
-    if bool(cb):
+    if mode == "sb":
         # Turn off warmup shapes for CB
         warmup_shapes = None
 
@@ -49,8 +49,9 @@ def test_seed(model: ModelInfo, temperature: float, seed: int,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
         backend=backend,
-        use_cb=bool(cb),
+        use_cb=mode in ['cb', "cp"],
         max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=128 if mode == "cp" else None,
         monkeypatch=monkeypatch)
 
     # compare all generated outputs against the first generated output
