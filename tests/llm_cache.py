@@ -1,6 +1,7 @@
 """Contains utilities for caching models (instantiated as vLLM endpoints)
 across test cases, to speed up test runtime."""
 
+import os
 from typing import Callable, Generic, Optional, TypeVar
 
 import pytest
@@ -11,6 +12,7 @@ from vllm import LLM, EngineArgs
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor
 
+from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.sample.golden_token_injector import GoldenTokenInjector
 
 T = TypeVar("T")
@@ -32,6 +34,8 @@ class ModelCache(Generic[T]):
             self._teardown = lambda x: x.shutdown()
         else:
             self._teardown = teardown_method
+
+        self._preexisting_max_tkv = os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT")
 
     def maybe_get(self, runtime_config: dict) -> T | None:
         if runtime_config == self._runtime_config:
@@ -61,6 +65,11 @@ class ModelCache(Generic[T]):
             self._teardown(self._model)
             self._model = None
             self._runtime_config = None
+            if self._preexisting_max_tkv is not None:
+                os.environ[
+                    "VLLM_DT_MAX_BATCH_TKV_LIMIT"] = self._preexisting_max_tkv
+            else:
+                os.environ.pop('VLLM_DT_MAX_BATCH_TKV_LIMIT', None)
 
     def _type(self) -> type | None:
         if hasattr(self, "__orig_class__"):
@@ -217,6 +226,7 @@ class EngineCache:
                                  logits_processors=[GoldenTokenInjector],
                                  max_num_batched_tokens=max_num_batched_tokens)
         vllm_config = engine_args.create_engine_config()
+        SpyrePlatform.check_and_update_config(vllm_config)
         executor_class = Executor.get_class(vllm_config)
 
         engine_core = EngineCore(vllm_config=vllm_config,

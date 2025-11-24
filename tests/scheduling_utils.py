@@ -15,7 +15,7 @@ from vllm.v1.engine.core import EngineCore
 
 from vllm_spyre.v1.core.scheduler import ContinuousBatchingSpyreScheduler
 
-DISABLE_ASSERTS = True  # used for debugging
+DISABLE_ASSERTS = False  # used for debugging
 
 
 def augment_checked_steps(
@@ -175,6 +175,9 @@ def check_scheduler_inference_steps(
         # This default value is set by platform.py
         scheduler.max_batch_tkv_limit = int(
             os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"))
+
+    scheduler.do_interleaving = bool(
+        int(os.getenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "1")))
 
     # In-between steps are added as normal decode steps
     checked_steps = augment_checked_steps(checked_steps)
