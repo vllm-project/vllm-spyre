@@ -1,6 +1,7 @@
 """Contains utilities for caching models (instantiated as vLLM endpoints)
 across test cases, to speed up test runtime."""
 
+import os
 from typing import Callable, Generic, Optional, TypeVar
 
 import pytest
@@ -33,6 +34,8 @@ class ModelCache(Generic[T]):
         else:
             self._teardown = teardown_method
 
+        self._preexisting_max_tkv = os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT")
+
     def maybe_get(self, runtime_config: dict) -> T | None:
         if runtime_config == self._runtime_config:
             self.hits += 1
@@ -61,6 +64,11 @@ class ModelCache(Generic[T]):
             self._teardown(self._model)
             self._model = None
             self._runtime_config = None
+            if self._preexisting_max_tkv is not None:
+                os.environ[
+                    "VLLM_DT_MAX_BATCH_TKV_LIMIT"] = self._preexisting_max_tkv
+            else:
+                os.environ.pop('VLLM_DT_MAX_BATCH_TKV_LIMIT', None)
 
     def _type(self) -> type | None:
         if hasattr(self, "__orig_class__"):
