@@ -12,7 +12,6 @@ from vllm import LLM, EngineArgs
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor
 
-from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.sample.golden_token_injector import GoldenTokenInjector
 
 T = TypeVar("T")
@@ -226,7 +225,6 @@ class EngineCache:
                                  logits_processors=[GoldenTokenInjector],
                                  max_num_batched_tokens=max_num_batched_tokens)
         vllm_config = engine_args.create_engine_config()
-        SpyrePlatform.check_and_update_config(vllm_config)
         executor_class = Executor.get_class(vllm_config)
 
         engine_core = EngineCore(vllm_config=vllm_config,
