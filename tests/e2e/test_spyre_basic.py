@@ -41,6 +41,7 @@ def test_output(model: ModelInfo, tp_size: int, backend: str, mode: str,
     kwargs = ({
         "max_num_seqs": max_num_seqs,
         "use_cb": True,
+        "max_num_batched_tokens": 128 if mode == "cp" else None,
     } if mode == "cb" or mode == "cp" else {
         "warmup_shapes": warmup_shapes,
     })
@@ -91,8 +92,9 @@ def test_batch_handling(model: ModelInfo, backend: str, mode: str,
 
     kwargs = {
         "max_num_seqs": max_num_seqs,
-        "use_cb": True
-    } if mode == "cb" else {
+        "use_cb": True,
+        "max_num_batched_tokens": 128 if mode == "cp" else None,
+    } if mode == "cb" or mode == "cp" else {
         "warmup_shapes": warmup_shapes
     }
 
