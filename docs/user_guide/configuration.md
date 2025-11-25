@@ -53,7 +53,7 @@ Unlike static batching, no warmup shapes need to be provided for continuous batc
 
 Chunked prefill is a technique that improves ITL (Inference Time Latency) in continuous batching mode when large prompts need to be prefetched. Without it, these large prefills can negatively impact the performance of ongoing decodes. In essence, chunked prefill divides incoming prompts into smaller segments and processes them incrementally, allowing the system to balance prefill work with active decoding tasks.
 
-For configuration and tuning guidance, see the [vLLM official documentation on chunked prefill](https://docs.vllm.ai/en/latest/configuration/optimization/#chunked-prefill.). 
+For configuration and tuning guidance, see the [vLLM official documentation on chunked prefill](https://docs.vllm.ai/en/latest/configuration/optimization/#chunked-prefill.).
 
 In the vLLM v1 engine, this feature is enabled by default. In vLLM-Spyre, however, users must explicitly enable it by setting the environment variable `VLLM_SPYRE_USE_CHUNKED_PREFILL=1`.
 
@@ -62,7 +62,7 @@ In the vLLM v1 engine, this feature is enabled by default. In vLLM-Spyre, howeve
 
 As in vLLM, the `max_num_batched_tokens` parameter controls how chunks are formed. However, because current versions of vLLM-Spyre cannot prefill and decode within the same engine step, `max_num_batched_tokens` specifies the chunk size, whereas in upstream vLLM it represents a shared token budget for both prefills and decodes.
 
-This parameter should be tuned according to your infrastructure. For convenience, when using the model `ibm-granite/granite-3.3-8b-instruct` with `tp=4`, vLLM-Spyre automatically sets max_num_batched_tokens to `4096`, a value known to produce good results. 
+This parameter should be tuned according to your infrastructure. For convenience, when using the model `ibm-granite/granite-3.3-8b-instruct` with `tp=4`, vLLM-Spyre automatically sets max_num_batched_tokens to `4096`, a value known to produce good results.
 
 ## Caching Compiled Graphs
 
