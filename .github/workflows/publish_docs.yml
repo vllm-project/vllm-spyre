@@ -30,7 +30,7 @@ jobs:
 
       - name: Install documentation dependencies
         run: |
-          pip install -r requirements-docs.txt
+          pip install -r docs/requirements-docs.txt
 
       - name: Build documentation
         run: mkdocs build --strict
