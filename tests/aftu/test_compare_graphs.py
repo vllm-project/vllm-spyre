@@ -231,11 +231,11 @@ def test_compare_graphs_chunked_prefill(model: ModelInfo, max_num_seqs: int,
     monkeypatch.setenv("TORCH_SENDNN_CACHE_ENABLE", "0")
 
     monkeypatch.setenv('VLLM_DT_CHUNK_LEN', str(chunk_size))
-    monkeypatch.setenv('VLLM_SPYRE_USE_CHUNKED_PREFILL', "1")
     patch_environment(use_cb=True,
                       warmup_shapes=None,
                       backend="sendnn",
-                      monkeypatch=monkeypatch)
+                      monkeypatch=monkeypatch,
+                      use_chunked_prefill=True)
 
     original_cwd = os.getcwd()
     try:
