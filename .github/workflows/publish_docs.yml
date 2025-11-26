@@ -1,9 +1,8 @@
-name: Publish documentation
+name: Publish docs
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
     paths:
       - "**/*.md"
       - "docs/**"
@@ -16,36 +15,21 @@ permissions:
 
 jobs:
   build:
-    name: Build MkDocs site
+    uses: ./.github/workflows/build_docs.yml
+
+  deploy:
     runs-on: ubuntu-latest
-
+    needs: build
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Download built site
+        uses: actions/download-artifact@v4
         with:
-          python-version: "3.11"
-
-      - name: Install documentation dependencies
-        run: |
-          pip install -r docs/requirements-docs.txt
-
-      - name: Build documentation
-        run: mkdocs build --strict
-
-      - name: Upload artifact
+          name: built-site
+          path: site
+      - name: Upload pages artifact
         uses: actions/upload-pages-artifact@v2
         with:
           path: site
 
-  deploy:
-    name: Deploy to GitHub Pages
-    runs-on: ubuntu-latest
-    needs: build
-
-    steps:
-      - name: Deploy
-        id: deploy
+      - name: Deploy to GitHub Pages
         uses: actions/deploy-pages@v4
