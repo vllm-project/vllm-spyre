@@ -27,7 +27,7 @@ jobs:
           name: built-site
           path: site
       - name: Upload pages artifact
-        uses: actions/upload-pages-artifact@v2
+        uses: actions/upload-pages-artifact@v4
         with:
           path: site
 
