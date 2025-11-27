@@ -16,6 +16,8 @@ from vllm.logger import init_logger
 from vllm.model_executor.layers.pooler import ClassifierPooler, Pooler
 from vllm.sampling_params import SamplingType
 from vllm.utils import is_pin_memory_available
+from vllm.v1.core.block_pool import BlockPool
+from vllm.v1.core.kv_cache_utils import KVCacheBlock
 from vllm.v1.core.sched.output import CachedRequestData
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.outputs import LogprobsTensors, SamplerOutput
@@ -813,7 +815,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.block_size = SpyrePlatform.get_block_size()
 
         # TODO: move to a KV cache manager
-        self.req_ids2blocks: dict[str, deque[int]] = {}
+        self.req_ids2blocks: dict[str, deque[KVCacheBlock]] = {}
         # max number of blocks needed (reserved) per request id
         self.req_ids2reserved_blocks: dict[str, int] = {}
 
@@ -863,7 +865,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
     def _set_blocks(self, num_blocks: int) -> None:
         # set number of available blocks and populate block_pool
         self.n_blocks = num_blocks - 1
-        self.block_pool = deque([i for i in range(1, self.n_blocks + 1)])
+        self.block_pool = BlockPool(num_gpu_blocks=self.n_blocks + 1,
+                                    enable_caching=False,
+                                    enable_kv_cache_events=False)
 
     def get_total_spyre_blocks(self) -> int:
         """Returns the total number of KV cache blocks available for spyre.
@@ -915,9 +919,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             if blocks_to_free := self.req_ids2blocks.pop(req_id, None):
                 logger.debug("Freeing request id: %s", req_id)
                 self.req_ids2reserved_blocks.pop(req_id)
-                for block_id in blocks_to_free:
-                    logger.debug("Freeing block with id: %s", block_id)
-                    self.block_pool.append(block_id)
+                for block in blocks_to_free:
+                    logger.debug("Freeing block with id: %s", block.block_id)
+                self.block_pool.free_blocks(blocks_to_free)
 
     def _prepare_prompt(
         self,
@@ -996,8 +1000,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         slots = []
         for pos_i in range(right_padding_tkv):
             if pos_i % self.block_size == 0:
-                block_number = self.block_pool.popleft()
-                blocks.append(block_number)
+                new_block = self.block_pool.get_new_blocks(1)
+                block_number = new_block[0].block_id
+                blocks.extend(new_block)
             block_offset = pos_i % self.block_size
             slot = block_number * self.block_size + block_offset
             slots.append(slot)
@@ -1094,7 +1099,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         for req_id in req_ids:
             # adding new blocks if needed
             if self.tkv % self.block_size == 0:
-                self.req_ids2blocks[req_id].append(self.block_pool.popleft())
+                self.req_ids2blocks[req_id].extend(
+                    self.block_pool.get_new_blocks(1))
             n_blocks = max(n_blocks, len(self.req_ids2blocks[req_id]))
 
         for req_id in req_ids:
@@ -1110,8 +1116,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             # actual KV cache for another (or the same) sequence.
             blocks = self.req_ids2blocks[req_id].copy()
             for i in range(n_blocks - len(self.req_ids2blocks[req_id])):
-                blocks.appendleft(0)
-            block_table.append(blocks)
+                blocks.appendleft(self.block_pool.null_block)
+            block_table.append([block.block_id for block in blocks])
 
             # slot_mapping for all blocks of sequence
             start_slot = block_table[-1][-1] * self.block_size
@@ -1856,10 +1862,12 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         input_positions_np = input_positions.numpy()
 
         # create block table tensor
-        blocks = [0] * (left_padding // self.block_size) + list(
-            self.req_ids2blocks[req_id])
+        blocks = [self.block_pool.null_block
+                  ] * (left_padding // self.block_size) + list(
+                      self.req_ids2blocks[req_id])
         block_end = (chunk_i + 1) * self.chunk_blocks_count
-        block_table = torch.tensor(blocks[:block_end],
+        block_ids = [block.block_id for block in blocks]
+        block_table = torch.tensor(block_ids[:block_end],
                                    dtype=torch.int64).unsqueeze(0)
 
         slot_mapping = []
@@ -1973,7 +1981,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             # adding new blocks if needed
             req_state = self.requests[req_id]
             if req_state.num_computed_tokens % self.block_size == 0:
-                self.req_ids2blocks[req_id].append(self.block_pool.popleft())
+                self.req_ids2blocks[req_id].extend(
+                    self.block_pool.get_new_blocks(1))
             max_n_blocks = max(max_n_blocks, len(self.req_ids2blocks[req_id]))
 
         # We'll calculate tkv on the fly, it is the max num computed tokens
@@ -1995,8 +2004,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                                      len(self.req_ids2blocks[req_id]))
 
             for _ in range(left_pad_blocks_count):
-                blocks.appendleft(0)
-            block_table.append(blocks)
+                blocks.appendleft(self.block_pool.null_block)
+            block_table.append([block.block_id for block in blocks])
 
             # slot_mapping for all blocks of sequence
             start_slot = block_table[-1][-1] * self.block_size
@@ -2077,7 +2086,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         self.req_ids2reserved_blocks[req_id] = n_reserved_blocks
 
         # allocate blocks
-        blocks = [self.block_pool.popleft() for _ in range(blocks_count)]
+        blocks = self.block_pool.get_new_blocks(blocks_count)
         self.req_ids2blocks[req_id] = deque(blocks)
 
         # Add new request to the cached states.
