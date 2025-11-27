@@ -19,9 +19,16 @@ jobs:
   build:
     uses: ./.github/workflows/build_docs.yml
 
+
   deploy:
     runs-on: ubuntu-latest
     needs: build
+
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
     steps:
       - name: Deploy to GitHub Pages
         uses: actions/deploy-pages@v4
