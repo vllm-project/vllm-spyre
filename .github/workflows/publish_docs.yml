@@ -7,6 +7,8 @@ on:
       - "**/*.md"
       - "docs/**"
       - "mkdocs.yaml"
+      - ".github/workflows/build_docs.yml"
+      - ".github/workflows/publish_docs.yml"
 
 permissions:
   contents: read
