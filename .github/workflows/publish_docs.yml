@@ -7,21 +7,25 @@ on:
       - "**/*.md"
       - "docs/**"
       - "mkdocs.yaml"
-      - ".github/workflows/build_docs.yml"
       - ".github/workflows/publish_docs.yml"
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
 jobs:
-  build:
-    uses: ./.github/workflows/build_docs.yml
-
   deploy:
     runs-on: ubuntu-latest
-    needs: build
     steps:
-      - name: Deploy to GitHub Pages
-        uses: actions/deploy-pages@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r docs/requirements-docs.txt
+      - name: Deploy docs
+        run: mkdocs gh-deploy --force
