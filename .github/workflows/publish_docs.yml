@@ -23,15 +23,5 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - name: Download built site
-        uses: actions/download-artifact@v5
-        with:
-          name: built-site
-          path: site
-      - name: Upload pages artifact
-        uses: actions/upload-pages-artifact@v4
-        with:
-          path: site
-
       - name: Deploy to GitHub Pages
         uses: actions/deploy-pages@v4
