@@ -1,5 +1,5 @@
 site_name: vLLM Spyre Plugin
-site_url: https://vllm-spyre.readthedocs.io/
+site_url: https://vllm-project.github.io/vllm-spyre/
 repo_url: https://github.com/vllm-project/vllm-spyre
 exclude_docs: |
   *.inc.md
