@@ -89,8 +89,11 @@ class SpyreCausalLM(nn.Module):
                 rank,
             )
 
-        # Check the underlying type of the FMS arch to see if it's a multimodal model
-        self.is_multimodal = spyre_mm.is_multimodal_model(self.model.model)
+        # Check the underlying type of the FMS arch to see if it's a multimodal model.
+        # NOTE: We intentionally use the config here instead of looking at the class type
+        # to prevent mismatches due to wrapper class changes, e.g., from the FMS instance
+        # to compiled Dynamo objects
+        self.is_multimodal = spyre_mm.is_multimodal_config(self.model.model.config)
 
     def forward(
         self,

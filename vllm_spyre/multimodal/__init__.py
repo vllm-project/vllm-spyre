@@ -25,5 +25,5 @@ FMS_MM_CFG_TO_ARCH = {
     models.llava_next.LlavaNextConfig: models.llava_next.LlavaNext,
 }
 
-is_multimodal_model = partial(is_multimodal, fms_mm_registry=FMS_MM_REGISTRY)
+# is_multimodal_model = partial(is_multimodal, fms_mm_registry=FMS_MM_REGISTRY)
 is_multimodal_config = partial(is_multimodal, fms_mm_registry=FMS_MM_CFG_TO_ARCH)
