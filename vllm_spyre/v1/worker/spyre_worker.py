@@ -145,6 +145,10 @@ class SpyreWorker(WorkerBase):
 
     def compile_or_warm_up_model(self) -> None:
         """Prepare model for execution through compilation/warmup."""
+        if self.model_runner.get_model().is_multimodal:
+            # TODO - pull model specific warmup info out
+            raise NotImplementedError("Warmup / compile for multimodal not implemented yet")
+        
         if envs_spyre.VLLM_SPYRE_USE_CB:
             self._warmup_spyre_dynamic_size(self.restricted_tokens)
             return
@@ -471,6 +475,7 @@ class SpyreWorker(WorkerBase):
             # unused for continuous batching: set here to use same API
             wup_prompt_lens, wup_new_tokens = (0,), (0,)
         else:
+            # TODO - handle warmup for multimodal
             wup_prompt_lens, wup_new_tokens = zip(
                 *[(s["prompt_length"], s["new_tokens"]) for s in self.spyre_warmup_shapes]
             )

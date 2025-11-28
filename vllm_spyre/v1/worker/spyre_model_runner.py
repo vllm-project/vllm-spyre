@@ -360,8 +360,12 @@ class SpyreModelRunner(
 
     @property
     def vocab_size(self) -> int:
-        # TODO: fix the typing here?
-        return self.model.model.model.config.src_vocab_size  # ty: ignore[invalid-return-type]
+        import fms
+        model_cfg = self.model.model.model.config
+        # TODO - make this generic, tie FMS configs to mm registration.
+        if isinstance(model_cfg, fms.models.llava_next.LlavaNextConfig):
+            return model_cfg.text_config.src_vocab_size
+        return model_cfg.src_vocab_size # ty: ignore[invalid-return-type]
 
     def pad_input_ids(
         self,
@@ -2524,6 +2528,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         t0 = time.time()
 
         self.update_states(scheduler_output)
+        # I think the multimodal encoder generally gets called here
+        # see _execute_mm_encoder on the vLLM gpu model runner; this is also
+        # where we batch the multimodal inputs from the scheduler etc.
 
         if not scheduler_output.total_num_scheduled_tokens:
             # Return empty ModelRunnerOutput if there's no work to do.

@@ -20,6 +20,7 @@ from vllm.v1.sample.sampler import Sampler
 
 import vllm_spyre.envs as envs_spyre
 import vllm_spyre.utils as utils_spyre
+import vllm_spyre.multimodal as spyre_mm
 from vllm_spyre.platform import SpyrePlatform
 
 try:
@@ -88,6 +89,9 @@ class SpyreCausalLM(nn.Module):
                 rank,
             )
 
+        # Check the underlying type of the FMS arch to see if it's a multimodal model
+        self.is_multimodal = spyre_mm.is_multimodal(self.model.model)
+
     def forward(
         self,
         input_ids: torch.Tensor,
@@ -97,6 +101,13 @@ class SpyreCausalLM(nn.Module):
     ) -> torch.Tensor:
         if is_prompt and not envs_spyre.VLLM_SPYRE_USE_CB:
             self.model.past_key_value_states = None
+
+        # NOTE: By this point, we should have already handled
+        # multimodel inputs (WIP) since FMS splits it out into
+        # prepare_inputs_for_generation(); we need to call the
+        # processor to expand the features, and preproc the inputs,
+        # since forward in FMS is just the LLM decode (i.e., takes
+        # embedding inputs).
 
         extra_kwargs: dict[str, Any] = {}
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn":
