@@ -9,6 +9,7 @@ from typing import Generic, Optional, TypeVar, cast
 
 import numpy as np
 import torch
+from vllm.multimodal.inputs import MultiModalFeatureSpec
 from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import SamplingParams, SamplingType
 from vllm.v1.pool.metadata import PoolingMetadata
@@ -20,7 +21,6 @@ from vllm.v1.sample.logits_processor import (BatchUpdateBuilder,
 from vllm.v1.sample.metadata import SamplingMetadata
 
 from vllm_spyre.v1.sample.spyre_logits_processor import LogitProcessorWrapper
-
 
 @dataclass
 class BaseRequestState:
@@ -193,7 +193,7 @@ class BaseInputBatch(Generic[RequestState]):
 class SamplingRequestState(BaseRequestState):
 
     num_computed_tokens: int = 0
-
+    mm_features: Optional[list[MultiModalFeatureSpec]] = None
     left_padding: int = 0  # Defaults to 0, i. e. not padding
 
     sampling_params: SamplingParams = SamplingParams()
@@ -203,6 +203,9 @@ class SamplingRequestState(BaseRequestState):
 
     @property
     def num_tokens(self) -> int:
+        # NOTE: In the case of multimodal, multimodal token expansion
+        # should be done prior to the creation of this object.
+        # i.e., "<image>" -> "<image>" * num_image_features
         return len(self.prompt_token_ids) + len(self.output_token_ids)
 
 

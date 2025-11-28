@@ -587,6 +587,21 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
         # Execute the model
         attn_metadata = self.build_attn_metadata(model_input)
         with set_forward_context(attn_metadata, self.vllm_config):
+            if self.model.is_multimodal:
+                # TODO - utils for multimodal encode and embed merge;
+                # There are probably some utils in mainline vLLM we should
+                # reuse here.
+                # NOTE: we explcitly check this here because we don't use
+                # the vLLM model registry at all; this also means we do not
+                # have the multimodal registry, which includes prompt substitution
+                # logic etc.
+                # -> As we integrate this, we should see if there is a well patterned
+                #    way to do this using the vLLM preprocessing info, because this
+                #    we do still use the HF preprocessing in FMS, so that part of the
+                #    code should be identical, but may need to be fetched a bit dynamically...
+                raise NotImplementedError("Multimodal encode not yet implemented!")
+
+
             logits = self.model(input_ids=model_input.input_tokens,
                                 positions=model_input.input_positions,
                                 masks=model_input.input_masks,
@@ -718,6 +733,8 @@ class StaticBatchingSpyreModelRunner(WarmupShapesMixin, SpyreModelRunner):
         for request_data in new_requests:
             # retrieve initial (unpadded) tokens
             prompt_tokens = request_data.prompt_token_ids
+            # Empty list for non multimodal requests
+            mm_features = request_data.mm_features
 
             input_token_list.append(
                 torch.tensor(prompt_tokens,
@@ -736,6 +753,7 @@ class StaticBatchingSpyreModelRunner(WarmupShapesMixin, SpyreModelRunner):
             req_state = SamplingRequestState(
                 req_id=req_id,
                 prompt_token_ids=request_data.prompt_token_ids,
+                mm_features=mm_features if mm_features else None,
                 sampling_params=sampling_params,
                 generator=generator,
                 output_token_ids=[],
@@ -775,6 +793,9 @@ class StaticBatchingSpyreModelRunner(WarmupShapesMixin, SpyreModelRunner):
         self,
         cached_request_data: CachedRequestData,
     ) -> SamplingForwardInputs:
+        # TODO - ensure multimodal features are dropped in decode, because
+        # we only consider the multimodal encoder during prefill
+
         assert len(cached_request_data.req_ids) > 0
         input_tokens: list[list[int]] = [
             [0] for _ in range(self._position_ids.shape[0])
