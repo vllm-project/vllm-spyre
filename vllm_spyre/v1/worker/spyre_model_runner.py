@@ -42,6 +42,10 @@ from vllm_spyre.model_executor.model_loader.spyre import (
     SpyreAttentionMetadata,
     SpyreCausalLM,
 )
+from vllm_spyre.multimodal import (
+    is_multimodal_config,
+    resolve_multimodal_vocab_size,
+)
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.utils import exact_div
 from vllm_spyre.v1.sample.spyre_logits_processor import build_logitsprocs_for_cb
@@ -360,11 +364,9 @@ class SpyreModelRunner(
 
     @property
     def vocab_size(self) -> int:
-        import fms
         model_cfg = self.model.model.model.config
-        # TODO - make this generic, tie FMS configs to mm registration.
-        if isinstance(model_cfg, fms.models.llava_next.LlavaNextConfig):
-            return model_cfg.text_config.src_vocab_size
+        if is_multimodal_config(model_cfg):
+            return resolve_multimodal_vocab_size(model_cfg)
         return model_cfg.src_vocab_size # ty: ignore[invalid-return-type]
 
     def pad_input_ids(
