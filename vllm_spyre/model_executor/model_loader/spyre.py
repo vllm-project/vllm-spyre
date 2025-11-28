@@ -90,7 +90,7 @@ class SpyreCausalLM(nn.Module):
             )
 
         # Check the underlying type of the FMS arch to see if it's a multimodal model
-        self.is_multimodal = spyre_mm.is_multimodal(self.model.model)
+        self.is_multimodal = spyre_mm.is_multimodal_model(self.model.model)
 
     def forward(
         self,
