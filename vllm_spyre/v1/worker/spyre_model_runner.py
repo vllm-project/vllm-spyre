@@ -329,6 +329,12 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
 
     def __init__(self, vllm_config: VllmConfig, is_driver_worker: bool,
                  rank: int):
+        # Normally we would check if the modelconfig supports multimodal inputs
+        # by comparing the model config against the registry here
+        
+        
+        # We also calculate the multimodal budget; this is probably important
+        # see scratch/projects/vllm/vllm/v1/worker/utils.py (in the budget)
         super().__init__(vllm_config=vllm_config,
                          is_driver_worker=is_driver_worker,
                          rank=rank)
@@ -366,7 +372,12 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
 
     @property
     def vocab_size(self) -> int:
-        return self.model.model.model.config.src_vocab_size
+        import fms
+        model_cfg = self.model.model.model.config
+        # TODO - make this generic, tie FMS configs to mm registration.
+        if isinstance(model_cfg, fms.models.llava_next.LlavaNextConfig):
+            return model_cfg.text_config.src_vocab_size
+        return model_cfg.src_vocab_size
 
     def pad_input_ids(
         self,
@@ -2472,6 +2483,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         t0 = time.time()
 
         self.update_states(scheduler_output)
+        # I think the multimodal encoder generally gets called here
+        # see _execute_mm_encoder on the vLLM gpu model runner; this is also
+        # where we batch the multimodal inputs from the scheduler etc.
 
         if not scheduler_output.total_num_scheduled_tokens:
             # Return empty ModelRunnerOuptut if there's no work to do.
