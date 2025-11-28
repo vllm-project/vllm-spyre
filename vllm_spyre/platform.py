@@ -137,6 +137,10 @@ class SpyrePlatform(Platform):
 
         cls._check_threading_config(parallel_config.world_size)
 
+        # FIXME - this is most likely not correctly correct for granite vision,
+        # because compile blows up with misconfigured sengraphs. TODO (alex) check
+        # correct opts for this model, as it's angry with both choices here
+
         # set env vars based on the model
         if is_decoder:
             os.environ["FLEX_OVERWRITE_NMB_FRAME"] = "true"

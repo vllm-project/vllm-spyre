@@ -146,9 +146,13 @@ class SpyreWorker(WorkerBase):
     def compile_or_warm_up_model(self) -> None:
         """Prepare model for execution through compilation/warmup."""
         if self.model_runner.get_model().is_multimodal:
-            # TODO - pull model specific warmup info out
-            raise NotImplementedError("Warmup / compile for multimodal not implemented yet")
-        
+            # TODO; pull correct warmup shapes out based on this model's architecture
+            # This is needed since feature size varies by model, and not solely the
+            # architecture (e.g., max tokens per image)
+            logger.error("[WARMUP] warmup for multimodal models is currently a no-op!!")
+            self.model_runner.complete_warmup() # HACK
+            return
+
         if envs_spyre.VLLM_SPYRE_USE_CB:
             self._warmup_spyre_dynamic_size(self.restricted_tokens)
             return
@@ -223,6 +227,9 @@ class SpyreWorker(WorkerBase):
         """
         # The fake kv_cache config specified by the model runner sets 4 bytes
         # per token.
+        # TODO: For multimodal, we may want to explicitly validate that the max
+        # len is less than the maximum size of one multimodal object prior to
+        # this, otherwise we can see some cryptic behaviors here.
         accurate_fake_kv_cache_size = (
             4 * self.model_config.max_model_len * self.scheduler_config.max_num_seqs
         )

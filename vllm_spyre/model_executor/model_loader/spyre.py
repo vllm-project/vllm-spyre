@@ -105,12 +105,10 @@ class SpyreCausalLM(nn.Module):
         if is_prompt and not envs_spyre.VLLM_SPYRE_USE_CB:
             self.model.past_key_value_states = None
 
-        # NOTE: By this point, we should have already handled
-        # multimodel inputs (WIP) since FMS splits it out into
-        # prepare_inputs_for_generation(); we need to call the
-        # processor to expand the features, and preproc the inputs,
-        # since forward in FMS is just the LLM decode (i.e., takes
-        # embedding inputs).
+        # TODO handle multimodal embed merging in forward();
+        # currently this does not consider multimodal at all
+        # and assumes everything is handled externally, i.e,
+        # multimodal embeddings are already merged.
 
         extra_kwargs: dict[str, Any] = {}
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn":
