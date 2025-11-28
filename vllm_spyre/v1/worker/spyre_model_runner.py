@@ -1115,9 +1115,11 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             # [0, self.n_blocks - 1]). Further, it also be a block id that holds
             # actual KV cache for another (or the same) sequence.
             blocks = self.req_ids2blocks[req_id].copy()
-            for i in range(n_blocks - len(self.req_ids2blocks[req_id])):
-                blocks.appendleft(self.block_pool.null_block)
-            block_table.append([block.block_id for block in blocks])
+            left_padding_blocks = n_blocks - len(self.req_ids2blocks[req_id])
+
+            req_block_ids = [0] * left_padding_blocks + \
+                [block.block_id for block in blocks]
+            block_table.append(req_block_ids)
 
             # slot_mapping for all blocks of sequence
             start_slot = block_table[-1][-1] * self.block_size
@@ -1862,11 +1864,10 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         input_positions_np = input_positions.numpy()
 
         # create block table tensor
-        blocks = [self.block_pool.null_block
-                  ] * (left_padding // self.block_size) + list(
-                      self.req_ids2blocks[req_id])
+        blocks = self.req_ids2blocks[req_id]
         block_end = (chunk_i + 1) * self.chunk_blocks_count
-        block_ids = [block.block_id for block in blocks]
+        block_ids = [0] * (left_padding // self.block_size) + \
+            [block.block_id for block in blocks]
         block_table = torch.tensor(block_ids[:block_end],
                                    dtype=torch.int64).unsqueeze(0)
 
@@ -2002,10 +2003,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             blocks = self.req_ids2blocks[req_id].copy()
             left_pad_blocks_count = (max_n_blocks -
                                      len(self.req_ids2blocks[req_id]))
-
-            for _ in range(left_pad_blocks_count):
-                blocks.appendleft(self.block_pool.null_block)
-            block_table.append([block.block_id for block in blocks])
+            block_ids = [0]*left_pad_blocks_count + \
+                [block.block_id for block in blocks]
+            block_table.append(block_ids)
 
             # slot_mapping for all blocks of sequence
             start_slot = block_table[-1][-1] * self.block_size
