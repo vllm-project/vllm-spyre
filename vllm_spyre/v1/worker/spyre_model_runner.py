@@ -1891,7 +1891,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         num_computed_tokens = request.num_computed_tokens
         num_cashed_tokens = request.num_computed_tokens
 
-        if num_cashed_tokens >= num_computed_tokens:
+        if num_cashed_tokens > num_computed_tokens:
             assert self.enable_prefix_caching, \
             "prefix caching has to be enabled"
             # this will be an idle step
@@ -2138,6 +2138,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         scheduler_request = Request(
             request_id=req_id,
             prompt_token_ids=prompt_token_ids,
+            sampling_params=request.sampling_params,
+            pooling_params=None,
+            eos_token_id=None,
             block_hasher=self.request_block_hasher,
         )
         if self.enable_prefix_caching:
@@ -2316,8 +2319,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                 # For now, if it is prefilling, we only need to update num of
                 # computed tokens of the request
                 req_state.num_computed_tokens = num_computed_tokens
-                self.kv_cache_manager.cache_blocks(req_state.scheduler_request,
-                                                   num_computed_tokens)
+                if self.enable_prefix_caching:
+                    self.kv_cache_manager.cache_blocks(
+                        req_state.scheduler_request, num_computed_tokens)
                 # hide the prefill request from the super class
                 scheduler_output.scheduled_cached_reqs = \
                     CachedRequestData.make_empty()
@@ -2378,7 +2382,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         #prompt_logprobs_dicts = self._get_prompt_logprobs_dict(
         #    logits=logits, model_inputs=model_input)
         # TODO: disable prefix caching for requests with prompt logprobs
-        prompt_logprobs_dicts = None
+        prompt_logprobs_dicts: dict[str, Optional[LogprobsTensors]] = {}
 
         # If the prompt is being prefilled we don't have to sample
         # and generate a new token.
@@ -2427,10 +2431,12 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         for i, req_id in enumerate(req_ids):
             req_state = self.requests[req_id]
             assert isinstance(req_state, ChunkedPrefillRequestState)
+            assert req_state.scheduler_request is not None
             req_state.scheduler_request.append_output_token_ids(sampled_ids[i])
-            self.kv_cache_manager.cache_blocks(
-                req_state.scheduler_request,
-                req_state.scheduler_request.num_tokens)
+            if self.enable_prefix_caching:
+                self.kv_cache_manager.cache_blocks(
+                    req_state.scheduler_request,
+                    req_state.scheduler_request.num_tokens)
             req_state.output_token_ids.extend(sampled_ids[i])
 
         # Only return outputs from the driver worker
