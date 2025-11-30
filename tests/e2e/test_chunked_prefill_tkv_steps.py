@@ -318,7 +318,7 @@ def test_decode_padding_to_same_block(model: ModelInfo, max_model_len: int,
     computed_tokens_dict = computed_tokens()
 
     # Save the number of free blocks to compare once we allocate a new one
-    initial_free_blocks = len(runner.block_pool)
+    initial_free_blocks = runner.block_pool.get_num_free_blocks()
 
     # Both requests are still in the first block
     # Scheduler schedules 1 token each
@@ -352,7 +352,7 @@ def test_decode_padding_to_same_block(model: ModelInfo, max_model_len: int,
     # 🌶️🌶️🌶️ short prompt gets padded, it's now the longest sequence
     assert output.tkv == short_prompt_len + steps + 64
     # We should have allocated only one new block for the long prompt entering
-    assert len(runner.block_pool) == initial_free_blocks - 1
+    assert runner.block_pool.get_num_free_blocks() == initial_free_blocks - 1
     computed_tokens_dict = computed_tokens()
 
     # The shorter request is now at the second block boundary (tkv = 128), so we
@@ -371,4 +371,4 @@ def test_decode_padding_to_same_block(model: ModelInfo, max_model_len: int,
     # 🌶️🌶️🌶️ short prompt padding removed again, tkv is back to long + steps
     assert output.tkv == long_prompt_len + steps
     # One more real block was allocated for the short request
-    assert len(runner.block_pool) == initial_free_blocks - 2
+    assert runner.block_pool.get_num_free_blocks() == initial_free_blocks - 2

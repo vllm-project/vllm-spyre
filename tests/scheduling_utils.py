@@ -220,8 +220,15 @@ def check_scheduler_inference_steps(
             n_blocks = (engine_core.model_executor.driver_worker.worker.
                         model_runner.n_blocks)
             n_reserved_blocks = n_blocks - scheduler.n_free_blocks
-            req_ids2blocks = (engine_core.model_executor.driver_worker.worker.
-                              model_runner.req_ids2blocks)
+
+            kv_cache_manager = (engine_core.model_executor.driver_worker.
+                                worker.model_runner.kv_cache_manager)
+
+            req_ids2blocks = {
+                req_id: [block.block_id for block in blocks]
+                for req_id, blocks in kv_cache_manager.req_to_blocks.items()
+                if blocks
+            }
             req_ids2reserved_blocks = (
                 engine_core.model_executor.driver_worker.worker.model_runner.
                 req_ids2reserved_blocks)
