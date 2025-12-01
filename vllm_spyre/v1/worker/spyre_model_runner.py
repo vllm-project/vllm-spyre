@@ -874,7 +874,12 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.kv_cache_manager = FullAttentionManager(
             kv_cache_spec=attn_spec,
             block_pool=self.block_pool,
+            # Currently don't support models with more than one
+            # attention type, e.g. full and sliding window, so
+            # there is only one group.
             kv_cache_group_id=0,
+            # We don't support DCP
+            # https://docs.vllm.ai/en/latest/serving/context_parallel_deployment/#decode-context-parallel
             dcp_world_size=1,
         )
 
@@ -1013,13 +1018,13 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         blocks = self.kv_cache_manager.allocate_new_blocks(
             req_id, right_padding_tkv)
 
-        slots = []
-        for pos_i in range(right_padding_tkv):
-            block_idx = pos_i // self.block_size
-            block_offset = pos_i % self.block_size
-            block_number = blocks[block_idx].block_id
-            slot = block_number * self.block_size + block_offset
-            slots.append(slot)
+        block_offsets = [block.block_id * self.block_size for block in blocks]
+        slot_mapping = torch.arange(self.block_size,
+                                    dtype=torch.int64).repeat(len(blocks))
+        slot_mapping += torch.tensor(block_offsets,
+                                     dtype=torch.int64).repeat_interleave(
+                                         self.block_size)
+        slot_mapping.unsqueeze_(0)
 
         # Add new request to the cached states.
         if sampling_params.sampling_type == SamplingType.RANDOM_SEED:
@@ -1047,7 +1052,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.prefill_batch.refresh_metadata()
 
         self.model.indices = torch.ones(1, dtype=torch.bool, device='cpu')
-        slot_mapping = torch.tensor([slots], dtype=torch.int64)
         prompt_token_ids_tensor = torch.tensor(prompt_token_ids,
                                                dtype=torch.long,
                                                device=torch.device("cpu"))
