@@ -1124,7 +1124,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
 
-            req_state: SamplingRequestState = self.requests[req_id]
+            req_state = self.requests[req_id]
 
             # filling block table with padding blocks to make it rectangular
             # Note: the padding block id 0 here is chosen arbitrarily, it can
