@@ -1810,8 +1810,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                 vllm_config.cache_config.prefix_caching_hash_algo)
             init_none_hash(caching_hash_fn)
 
-            #self.block_hasher = get_block_hasher(
-            #    self.block_size, caching_hash_fn)
             self.request_block_hasher = get_request_block_hasher(
                 self.block_size, caching_hash_fn)
         else:
@@ -1906,7 +1904,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         if num_cached_tokens > num_computed_tokens:
             assert self.enable_prefix_caching, \
-            "prefix caching has to be enabled"
+                "prefix caching has to be enabled"
             # this will be an idle step
             return SamplingForwardInputs(
                 is_prompt=True,
@@ -2161,6 +2159,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             cacheable_blocks = cacheable_chunks * self.chunk_blocks_count
 
             left_padding = chunk_count * chunk_size - padded_prompt_len
+            assert left_padding % self.block_size == 0
             left_blocks = left_padding // self.block_size
             cacheable_blocks -= left_blocks
             max_cache_hit_length = cacheable_blocks * self.block_size
@@ -2181,6 +2180,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             # trim down to chunk boundary
             usable_blocks = (((left_blocks + n_hit) // self.chunk_blocks_count)\
                 * self.chunk_blocks_count) - left_blocks
+            logger.debug("Found: %d usable blocks in cache", usable_blocks)
             computed_blocks = computed_blocks[:usable_blocks]
             num_cached_tokens = usable_blocks * self.block_size
 
@@ -2335,9 +2335,11 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                 # hide the prefill request from the super class
                 scheduler_output.scheduled_cached_reqs = \
                     CachedRequestData.make_empty()
+                super().update_states(scheduler_output)
+                scheduler_output.scheduled_cached_reqs = cached_reqs
+                return
 
         super().update_states(scheduler_output)
-        scheduler_output.scheduled_cached_reqs = cached_reqs
 
     @SpyrePlatform.inference_mode()
     def execute_model(
