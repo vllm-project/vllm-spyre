@@ -21,8 +21,7 @@
 
 # Docs
 /docs @rafvasq
-.readthedocs.yaml @rafvasq
 mkdocs.yaml @rafvasq
 
 # CI
-/.github @joerunde @ckadner
+/.github @joerunde @ckadner @rafvasq
