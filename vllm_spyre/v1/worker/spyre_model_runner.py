@@ -1902,9 +1902,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                                                device=self.device)
 
         num_computed_tokens = request.num_computed_tokens
-        num_cashed_tokens = request.num_cashed_tokens
+        num_cached_tokens = request.num_cached_tokens
 
-        if num_cashed_tokens > num_computed_tokens:
+        if num_cached_tokens > num_computed_tokens:
             assert self.enable_prefix_caching, \
             "prefix caching has to be enabled"
             # this will be an idle step
@@ -2139,7 +2139,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         self.req_ids2reserved_blocks[req_id] = n_reserved_blocks
 
-        num_cashed_tokens = 0
+        num_cached_tokens = 0
         scheduler_request = Request(
             request_id=req_id,
             prompt_token_ids=prompt_token_ids,
@@ -2182,7 +2182,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             usable_blocks = (((left_blocks + n_hit) // self.chunk_blocks_count)\
                 * self.chunk_blocks_count) - left_blocks
             computed_blocks = computed_blocks[:usable_blocks]
-            num_cashed_tokens = usable_blocks * self.block_size
+            num_cached_tokens = usable_blocks * self.block_size
 
             self.block_pool.touch((computed_blocks, ))
             self.kv_cache_manager.save_new_computed_blocks(
@@ -2209,7 +2209,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             # usage
             left_padding=0,
             scheduler_request=scheduler_request,
-            num_cashed_tokens=num_cashed_tokens,
+            num_cached_tokens=num_cached_tokens,
         )
 
         self.requests[req_id] = req_state

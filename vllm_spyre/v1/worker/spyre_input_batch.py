@@ -209,7 +209,7 @@ class SamplingRequestState(BaseRequestState):
 @dataclass
 class ChunkedPrefillRequestState(SamplingRequestState):
     scheduler_request: Optional[Request] = None
-    num_cashed_tokens: int = 0
+    num_cached_tokens: int = 0
 
 
 class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
