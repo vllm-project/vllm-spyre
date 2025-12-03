@@ -2164,17 +2164,21 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             cacheable_blocks -= left_blocks
             max_cache_hit_length = cacheable_blocks * self.block_size
 
-            computed_blocks: list[
-                KVCacheBlock] = FullAttentionManager.find_longest_cache_hit(
-                    block_hashes=scheduler_request.block_hashes,
-                    max_length=max_cache_hit_length,
-                    kv_cache_group_ids=[0],
-                    block_pool=self.block_pool,
-                    kv_cache_spec=self._attn_spec,
-                    use_eagle=False,
-                    dcp_world_size=1,
-                )[0]
-            n_hit = len(computed_blocks)
+            if max_cache_hit_length > 0:
+                computed_blocks: list[
+                    KVCacheBlock] = FullAttentionManager.find_longest_cache_hit(
+                        block_hashes=scheduler_request.block_hashes,
+                        max_length=max_cache_hit_length,
+                        kv_cache_group_ids=[0],
+                        block_pool=self.block_pool,
+                        kv_cache_spec=self._attn_spec,
+                        use_eagle=False,
+                        dcp_world_size=1,
+                    )[0]
+                n_hit = len(computed_blocks)
+            else:
+                computed_blocks = list[KVCacheBlock]()
+                n_hit = 0
             logger.debug("Found: %d cached_blocks", n_hit)
 
             # trim down to chunk boundary
