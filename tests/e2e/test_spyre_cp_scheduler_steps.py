@@ -414,7 +414,7 @@ def test_prefill_use_more_than_available_blocks(
 @pytest.mark.full_model
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [2])
-@pytest.mark.parametrize("max_model_len", [514])
+@pytest.mark.parametrize("max_model_len", [514, 1024])
 @pytest.mark.parametrize("max_num_batched_tokens", [128])
 @pytest.mark.parametrize("available_blocks", [None])
 def test_single_cp_prefill(model: ModelInfo, backend: str,
@@ -429,6 +429,13 @@ def test_single_cp_prefill(model: ModelInfo, backend: str,
         * number of prompts: 1
             * 0: len = 512, max tokens = 1, step joining = 0
     """
+    # max_model_len=514 tests an edge case in the scheduler, but does not work
+    # on sendnn
+    if backend == "sendnn" and max_model_len == 514:
+        pytest.skip("sendnn backend with 514 context length will not work")
+    if backend != "sendnn" and max_model_len == 1024:
+        pytest.skip(
+            "skipping 1024 context length test case for CPU to save test time")
 
     seqs_max_tokens = [2]
     prompts_lengths = [512]
