@@ -38,13 +38,12 @@ def augment_checked_steps(
     return all_checked_steps
 
 
-def generate_prompts(
-    model: ModelInfo,
-    steps_add_reqs: list[int],
-    seqs_max_tokens: list[int],
-    prompts_lengths: list[int],
-    from_model_vocab: bool = False,
-):
+def generate_prompts(model: ModelInfo,
+                     steps_add_reqs: list[int],
+                     seqs_max_tokens: list[int],
+                     prompts_lengths: list[int],
+                     from_model_vocab: bool = False,
+                     deterministic: bool = False):
     generated_prompts = []
 
     # Create random requests of specified lengths and max_tokens
@@ -64,7 +63,8 @@ def generate_prompts(
                                         num_tokens=prompt_length,
                                         sampling_params=sampling_params,
                                         model=model,
-                                        from_model_vocab=from_model_vocab)
+                                        from_model_vocab=from_model_vocab,
+                                        deterministic=deterministic)
         requests.append((add_step, request))
         # NOTE: It is going to be decoded later
         generated_prompts.append(request.prompt_token_ids)
@@ -87,6 +87,7 @@ def check_scheduler_inference_steps(
     use_cb: bool = True,
     max_num_batched_tokens: int = None,
     random_prompts: bool = False,
+    prefix_caching: bool = False,
 ):
     """
     Test the scheduler execution by comparing the scheduler attributes at each 
@@ -130,7 +131,8 @@ def check_scheduler_inference_steps(
                                          steps_add_reqs,
                                          seqs_max_tokens,
                                          prompts_lengths,
-                                         from_model_vocab=random_prompts)
+                                         from_model_vocab=random_prompts,
+                                         deterministic=prefix_caching)
 
     hf_results = generate_hf_output(
         model=model,
@@ -235,6 +237,15 @@ def check_scheduler_inference_steps(
             n_used_blocks = sum(
                 [len(blocks) for blocks in req_ids2blocks.values()])
 
+            if prefix_caching:
+                reqs = (engine_core.model_executor.driver_worker.worker.
+                        model_runner.requests)
+                prefix_hits = [
+                    reqs[r_id].num_cached_tokens
+                    > reqs[r_id].num_computed_tokens for r_id in req_ids2blocks
+                ]
+                n_prefix_hits = sum(prefix_hits)
+
             if step > 0:
                 if DISABLE_ASSERTS:
                     print(
@@ -247,6 +258,9 @@ def check_scheduler_inference_steps(
                 assert DISABLE_ASSERTS or (
                     n_used_blocks == step_ref["n_used_blocks"]
                 ), f"Step {step}, n_used_blocks: {n_used_blocks}"
+                assert DISABLE_ASSERTS or "n_prefix_hits" not in step_ref or (
+                    n_prefix_hits == step_ref["n_prefix_hits"]
+                ), f"Step {step}, n_prefix_hits: {n_prefix_hits}"
 
             assert DISABLE_ASSERTS or len(req_ids2blocks) == len(
                 req_ids2reserved_blocks)
