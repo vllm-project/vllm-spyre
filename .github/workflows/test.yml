@@ -7,8 +7,8 @@ on:
   pull_request:
     # add labeled and unlabeled to the default types (runs when label is added)
     types: [opened, synchronize, reopened, labeled, unlabeled, auto_merge_enabled]
-    # temporary hack: run tests on branch sched_agnostic_pc
-    branches: [main, sched_agnostic_pc]
+    # temporary hack: run tests on branch integrate_block_pool
+    branches: [main, integrate_block_pool]
 
   push:
     branches: [main]
