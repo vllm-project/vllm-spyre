@@ -93,7 +93,7 @@ jobs:
             python_version: "3.12"
           # Intermediate versions of vllm to check basic support for as well
           - vllm_version:
-              name: "vLLM:0.11.1"
+              name: "vLLM:0.11.0"
               repo: "git+https://github.com/vllm-project/vllm --tag v0.11.0"
             test_suite:
               name: "backward compat"
