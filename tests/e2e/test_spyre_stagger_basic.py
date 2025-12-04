@@ -11,6 +11,7 @@ from spyre_util import (ModelInfo, get_chicken_soup_prompts,
 from vllm import SamplingParams
 
 
+@pytest.mark.parametrize("mode", ["sb", "cb"])
 def test_stagger_output(model: ModelInfo, tp_size: int, backend: str,
                         mode: str, max_num_seqs: int, max_model_len: int,
                         warmup_shapes, monkeypatch: pytest.MonkeyPatch,

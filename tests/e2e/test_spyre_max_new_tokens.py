@@ -10,6 +10,7 @@ from vllm import SamplingParams
 
 
 @pytest.mark.parametrize("stop_last", [True, False])
+@pytest.mark.parametrize("mode", ["sb", "cb", "cp"])
 def test_output(model: ModelInfo, stop_last: bool, max_model_len: int,
                 max_num_seqs: int, warmup_shapes: DecodeWarmupShapes,
                 backend: str, mode: str, monkeypatch: pytest.MonkeyPatch,
