@@ -200,6 +200,10 @@ class EngineCache:
 
         maybe_engine = self._cache.maybe_get(runtime_config)
         if maybe_engine:
+            if use_pc:
+                # reset the prefix cache across tests
+                (maybe_engine.model_executor.driver_worker.worker.model_runner.
+                 block_pool.reset_prefix_cache())
             return maybe_engine
         self.clear()
 
