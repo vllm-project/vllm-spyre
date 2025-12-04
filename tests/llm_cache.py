@@ -11,6 +11,8 @@ from spyre_util import (DecodeWarmupShapes, ModelInfo, RemoteOpenAIServer,
 from vllm import LLM, EngineArgs
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor
+from vllm.v1.core.block_pool import BlockPool
+from vllm.v1.core.single_type_kv_cache_manager import FullAttentionManager
 
 from vllm_spyre.v1.sample.golden_token_injector import GoldenTokenInjector
 
@@ -255,6 +257,23 @@ class EngineCache:
             assert worker.model_runner.n_blocks >= available_blocks, \
                 "Cannot set available_blocks > (context * batch size // 64)"
             worker.model_runner.n_blocks = available_blocks
+            # need to overwrite the block pool and kv cache manager if the
+            # number of available blocks has changed
+            worker.model_runner.block_pool = BlockPool(
+                num_gpu_blocks=available_blocks + 1,
+                enable_caching=use_pc,
+                enable_kv_cache_events=False)
+            worker.model_runner.kv_cache_manager = FullAttentionManager(
+                kv_cache_spec=worker.model_runner._attn_spec,
+                block_pool=worker.model_runner.block_pool,
+                # Currently don't support models with more than one
+                # attention type, e.g. full and sliding window, so
+                # there is only one group.
+                kv_cache_group_id=0,
+                # We don't support DCP
+                # https://docs.vllm.ai/en/latest/serving/context_parallel_deployment/#decode-context-parallel
+                dcp_world_size=1,
+            )
 
         return self._cache.set(
             runtime_config,

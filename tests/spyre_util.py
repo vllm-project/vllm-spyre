@@ -355,7 +355,7 @@ def create_random_request(request_id: int,
                           sampling_params: SamplingParams,
                           from_model_vocab: bool = False,
                           model: Optional[ModelInfo] = None,
-                          deterministic: bool = False) -> Request:
+                          seed: int = None) -> Request:
 
     tokenizer = AutoTokenizer.from_pretrained(model.name,
                                               revision=model.revision)
@@ -367,8 +367,8 @@ def create_random_request(request_id: int,
             v for v in tokenizer.vocab.values()
             if v not in tokenizer.all_special_ids
         ])
-        if deterministic:
-            random.seed(0)
+        if seed is not None:
+            random.seed(seed)
         prompt_token_ids = random.choices(valid_token_ids, k=num_tokens)
     else:
         # start with existing prompts and tokenize them
