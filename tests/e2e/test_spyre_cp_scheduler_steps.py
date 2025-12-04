@@ -11,7 +11,6 @@ from scheduling_utils import check_scheduler_inference_steps
 from spyre_util import ModelInfo
 
 
-@pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @pytest.mark.full_model
 # These values are all parameterized for test sorting
@@ -152,7 +151,6 @@ def test_prefill_tkv_too_big(model: ModelInfo, backend: str,
     )
 
 
-@pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @pytest.mark.full_model
 @pytest.mark.parametrize("max_num_seqs", [2])
@@ -274,7 +272,6 @@ def test_requests_exceed_batch_tkv_limit(model: ModelInfo, backend: str,
     )
 
 
-@pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @pytest.mark.full_model
 # These values are all parameterized for test sorting
@@ -409,7 +406,6 @@ def test_prefill_use_more_than_available_blocks(
     )
 
 
-@pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @pytest.mark.full_model
 # These values are all parameterized for test sorting
@@ -534,7 +530,6 @@ def test_single_cp_prefill(model: ModelInfo, backend: str,
     )
 
 
-@pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @pytest.mark.full_model
 # These values are all parameterized for test sorting
@@ -731,7 +726,6 @@ def test_cp_prefill_interleave1(model: ModelInfo, backend: str,
     )
 
 
-@pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @pytest.mark.full_model
 # These values are all parameterized for test sorting
@@ -923,7 +917,6 @@ def test_cp_prefill_no_interleave(model: ModelInfo, backend: str,
     )
 
 
-@pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @pytest.mark.full_model
 # These values are all parameterized for test sorting
