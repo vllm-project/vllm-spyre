@@ -175,7 +175,7 @@ def test_max_model_len_override(model: ModelInfo, backend, warmup_shapes,
         "use_cb": True,
         "warmup_shapes": None,
         "use_chunked_prefill": mode == "cp",
-    } if mode in ["cb", "cp"] else {
+    } if mode in ["cb", "cp", "pc"] else {
         "use_cb": False,
         "warmup_shapes": warmup_shapes,
     })

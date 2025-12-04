@@ -52,6 +52,7 @@ class SortKey(NamedTuple):
     tp_size: int = 1
     use_cb: bool = False
     use_cp: bool = False
+    use_pc: bool = False
     max_model_len: int = 0
     max_num_seqs: int = 0
     num_blocks: int = 0
@@ -73,6 +74,7 @@ class SortKey(NamedTuple):
 
         use_cb = SortKey._uses_cb(item)
         use_cp = SortKey._uses_cp(item)
+        use_pc = SortKey._uses_pc(item)
         if use_cb or use_cp:
             sort_kwargs = {
                 "max_model_len": SortKey._get_max_model_len(item),
@@ -90,6 +92,7 @@ class SortKey(NamedTuple):
             tp_size=SortKey._get_tp_size(item),
             use_cb=use_cb,
             use_cp=use_cp,
+            use_pc=use_pc,
             num_blocks=SortKey._get_num_blocks(item),
             max_num_batched_tokens=SortKey._get_max_num_batched_tokens(item),
             **sort_kwargs,
@@ -131,6 +134,13 @@ class SortKey(NamedTuple):
         Checks for the pytest.mark.chunked_prefill mark."""
         markers = {mark.name for mark in item.own_markers}
         return "chunked_prefill" in markers
+
+    @staticmethod
+    def _uses_pc(item) -> bool:
+        """True if the test uses prefix caching.
+        Checks for the pytest.mark.prefix_caching mark."""
+        markers = {mark.name for mark in item.own_markers}
+        return "chunked_prefill" in markers and "prefix_caching" in markers
 
     def _get_max_num_batched_tokens(item) -> int:
         """Chunk size for chunked prefill, if enabled"""

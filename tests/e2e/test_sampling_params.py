@@ -212,6 +212,7 @@ def test_spyre_batch1_top_k(model: ModelInfo, backend, monkeypatch,
     assert token_div1 < token_div2
 
 
+@pytest.mark.parametrize("mode", ["sb", "cb", "cp"])
 def test_spyre_batch1_logit_bias(model: ModelInfo, backend, monkeypatch,
                                  use_llm_cache, warmup_shapes, max_model_len,
                                  max_num_seqs, mode: str):
@@ -253,6 +254,7 @@ def test_spyre_batch1_logit_bias(model: ModelInfo, backend, monkeypatch,
     assert output[0].outputs[0].text != output[1].outputs[0].text
 
 
+@pytest.mark.parametrize("mode", ["sb", "cb", "cp"])
 def test_spyre_batch1_min_tokens(model: ModelInfo, backend, monkeypatch,
                                  use_llm_cache, max_model_len, max_num_seqs,
                                  warmup_shapes, mode: str):
@@ -322,6 +324,7 @@ def test_spyre_batch1_ignore_eos(model: ModelInfo, backend, monkeypatch,
     assert output2.outputs[0].finish_reason != 'length'
 
 
+@pytest.mark.parametrize("mode", ["sb", "cb", "cp"])
 def test_spyre_batch1_min_p(model: ModelInfo, backend, monkeypatch,
                             use_llm_cache, max_model_len, max_num_seqs,
                             warmup_shapes, mode: str):

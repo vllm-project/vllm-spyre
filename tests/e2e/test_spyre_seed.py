@@ -14,6 +14,7 @@ from vllm import SamplingParams
 @pytest.mark.xfail(reason="Failing currently because of output mismatch")
 @pytest.mark.parametrize("temperature", [0.1, 1.0])
 @pytest.mark.parametrize("seed", [42])
+@pytest.mark.parametrize("mode", ["sb", "cb"])
 def test_seed(model: ModelInfo, temperature: float, seed: int,
               max_model_len: int, max_num_seqs: int,
               warmup_shapes: DecodeWarmupShapes, backend: str, mode: str,
