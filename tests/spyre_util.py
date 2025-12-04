@@ -25,7 +25,8 @@ def patch_environment(use_cb: bool,
                       warmup_shapes: DecodeWarmupShapes | None,
                       backend: str,
                       monkeypatch,
-                      use_chunked_prefill: bool = False):
+                      use_chunked_prefill: bool = False,
+                      max_num_batched_tokens: int | None = None):
     # Setup the environment correctly for the LLM
 
     # ---- For static batching ----
@@ -40,6 +41,10 @@ def patch_environment(use_cb: bool,
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL",
                        "1" if use_chunked_prefill else "0")
+    # NB: setting this env var explicitly is needed to set the desired value for
+    # the chunk size in the case that granite 8b TP4 is detected
+    if max_num_batched_tokens is not None:
+        monkeypatch.setenv("VLLM_DT_CHUNK_LEN", max_num_batched_tokens)
 
 
 def patch_warmup_shapes(warmup_shapes: DecodeWarmupShapes
