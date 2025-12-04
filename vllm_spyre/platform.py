@@ -13,7 +13,7 @@ if sys.platform.startswith("darwin"):
 import math
 import operator
 import os
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Optional, Union
 
 import torch
 from transformers.models.granite import GraniteConfig
@@ -21,6 +21,7 @@ from vllm.inputs import ProcessorInputs, PromptType
 from vllm.logger import init_logger
 from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import SamplingParams
+from vllm.utils import FlexibleArgumentParser
 
 if TYPE_CHECKING:
     from vllm.config import ModelConfig, VllmConfig
@@ -411,6 +412,14 @@ class SpyrePlatform(Platform):
             if prompt_len <= shape['prompt_length']
             and max_tokens <= shape['new_tokens']
         ]
+
+    @classmethod
+    def pre_register_and_update(cls,
+                                parser: Optional[FlexibleArgumentParser] = None
+                                ) -> None:
+
+        if parser is not None:
+            parser.set_defaults(enable_prefix_caching=False)
 
     @classmethod
     def _check_threading_config(cls, worker_count: int):

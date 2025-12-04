@@ -95,6 +95,7 @@ class LLMCache:
                        warmup_shapes: DecodeWarmupShapes | None = None,
                        max_num_seqs: Optional[int] = None,
                        use_cb: bool = False,
+                       use_pc: bool = False,
                        max_num_batched_tokens: Optional[int] = None) -> LLM:
         """Creates an LLM with the provided runtime configuration.
 
@@ -118,12 +119,14 @@ class LLMCache:
 
         # Always patch the environment so that it's consistent with the LLM
         # Use chunked prefill if max_num_batched_tokens is set
+        use_chunked_prefill = bool(max_num_batched_tokens)
+        if use_pc:
+            assert use_chunked_prefill
         patch_environment(use_cb,
                           warmup_shapes,
                           backend,
                           monkeypatch,
-                          use_chunked_prefill=max_num_batched_tokens
-                          is not None)
+                          use_chunked_prefill=use_chunked_prefill)
 
         maybe_llm = self._cache.maybe_get(runtime_config)
         if maybe_llm:
@@ -148,6 +151,7 @@ class LLMCache:
                 tensor_parallel_size=tensor_parallel_size,
                 max_num_batched_tokens=max_num_batched_tokens,
                 logits_processors=[GoldenTokenInjector],
+                enable_prefix_caching=use_pc,
             ),
         )
 
@@ -168,6 +172,7 @@ class EngineCache:
         max_num_seqs: int,
         available_blocks: int,
         max_num_batched_tokens: int,
+        use_pc: bool,
         backend: str,
         monkeypatch,
     ) -> EngineCore:
@@ -184,6 +189,9 @@ class EngineCache:
             use_chunked_prefill = True
         else:
             use_chunked_prefill = False
+
+        if use_pc:
+            assert use_chunked_prefill
         patch_environment(use_cb=True,
                           warmup_shapes=None,
                           backend=backend,
@@ -223,7 +231,8 @@ class EngineCache:
                                  max_num_seqs=max_num_seqs_compiled,
                                  num_gpu_blocks_override=None,
                                  logits_processors=[GoldenTokenInjector],
-                                 max_num_batched_tokens=max_num_batched_tokens)
+                                 max_num_batched_tokens=max_num_batched_tokens,
+                                 enable_prefix_caching=use_pc)
         vllm_config = engine_args.create_engine_config()
         executor_class = Executor.get_class(vllm_config)
 
@@ -351,7 +360,8 @@ def get_cached_engine(model: str,
                       available_blocks: int,
                       backend: str,
                       monkeypatch,
-                      max_num_batched_tokens: int | None = None) -> EngineCore:
+                      max_num_batched_tokens: int | None = None,
+                      use_pc: bool = False) -> EngineCore:
     # Clear other caches first
     LLM_CACHE.clear()
     API_SERVER_CACHE.clear()
@@ -362,6 +372,7 @@ def get_cached_engine(model: str,
         max_num_seqs=max_num_seqs,
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
+        use_pc=use_pc,
         backend=backend,
         monkeypatch=monkeypatch,
     )

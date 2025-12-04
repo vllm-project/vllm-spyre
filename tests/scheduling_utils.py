@@ -161,6 +161,7 @@ def check_scheduler_inference_steps(
         max_model_len=max_model_len,
         max_num_seqs=max_num_seqs,
         max_num_batched_tokens=max_num_batched_tokens,
+        use_pc=prefix_caching,
         available_blocks=available_blocks,
         backend=backend,
         monkeypatch=monkeypatch)
@@ -251,7 +252,7 @@ def check_scheduler_inference_steps(
                     print(
                         f"{step=}, {n_reserved_blocks=}, {n_used_blocks=}, "
                         f"{scheduler.tkv=}, {waiting=}, {out_reqs_finished=}, "
-                        f"{running=}, {out_reqs_ids=}")
+                        f"{running=}, {out_reqs_ids=}, {n_prefix_hits=}")
                 assert DISABLE_ASSERTS or (
                     n_reserved_blocks == step_ref["n_reserved_blocks"]
                 ), f"Step {step}, n_reserved_blocks: {n_reserved_blocks}"
