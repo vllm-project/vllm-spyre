@@ -232,9 +232,9 @@ def check_scheduler_inference_steps(
                 for req_id, blocks in kv_cache_manager.req_to_blocks.items()
                 if blocks
             }
-            req_ids2reserved_blocks = (
+            req_ids2num_reserved_blocks = (
                 engine_core.model_executor.driver_worker.worker.model_runner.
-                req_ids2reserved_blocks)
+                req_ids2num_reserved_blocks)
             n_used_blocks = sum(
                 [len(blocks) for blocks in req_ids2blocks.values()])
 
@@ -264,16 +264,16 @@ def check_scheduler_inference_steps(
                 ), f"Step {step}, n_prefix_hits: {n_prefix_hits}"
 
             assert DISABLE_ASSERTS or len(req_ids2blocks) == len(
-                req_ids2reserved_blocks)
+                req_ids2num_reserved_blocks)
             for req_id in req_ids2blocks:
                 # current number of used blocks should be less than reserved
                 assert (DISABLE_ASSERTS or len(req_ids2blocks[req_id])
-                        <= req_ids2reserved_blocks[req_id])
+                        <= req_ids2num_reserved_blocks[req_id])
                 # update requested/reserved blocks to check in last step
                 # Note: overwrite and not max
                 # because of reduce_left_padding()
                 requested_blocks[req_id] = len(req_ids2blocks[req_id])
-                reserved_blocks[req_id] = req_ids2reserved_blocks[req_id]
+                reserved_blocks[req_id] = req_ids2num_reserved_blocks[req_id]
 
         # last step: check that sequences used all their reserved blocks
         # Note: no early stopping, all sequences produce max_num_tokens

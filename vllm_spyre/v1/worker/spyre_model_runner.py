@@ -821,7 +821,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.block_size = SpyrePlatform.get_block_size()
 
         # max number of blocks needed (reserved) per request id
-        self.req_ids2reserved_blocks: dict[str, int] = {}
+        self.req_ids2num_reserved_blocks: dict[str, int] = {}
 
         self.tkv: int = 0
 
@@ -878,10 +878,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.block_pool = BlockPool(num_gpu_blocks=self.n_blocks + 1,
                                     enable_caching=self.enable_prefix_caching,
                                     enable_kv_cache_events=False)
-        self._attn_spec = FullAttentionSpec(block_size=self.block_size,
-                                            num_kv_heads=1,
-                                            head_size=1,
-                                            dtype=torch.float16)
+        self._attn_spec = KVCacheSpec(block_size=self.block_size)
         self.kv_cache_manager = FullAttentionManager(
             kv_cache_spec=self._attn_spec,
             block_pool=self.block_pool,
@@ -949,7 +946,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                 logger.debug("Freeing request id: %s", req_id)
                 for block in blocks_to_free:
                     logger.debug("Freeing block with id: %s", block.block_id)
-            self.req_ids2reserved_blocks.pop(req_id, None)
+            self.req_ids2num_reserved_blocks.pop(req_id, None)
             self.kv_cache_manager.free(req_id)
 
     def _prepare_prompt(
@@ -963,7 +960,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         req_id = request.req_id
         prompt_token_ids = request.prompt_token_ids
         sampling_params = request.sampling_params
-        is_new_batch = len(self.req_ids2reserved_blocks) == 0
+        is_new_batch = len(self.req_ids2num_reserved_blocks) == 0
         prompt_len = len(prompt_token_ids)
 
         # make sure that the current tkv of the decode batch is greater or
@@ -1022,7 +1019,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             (self.tkv - len(prompt_token_ids)) / self.block_size)
         n_reserved_blocks = math.ceil(
             n / self.block_size) - n_fully_padded_blocks
-        self.req_ids2reserved_blocks[req_id] = n_reserved_blocks
+        self.req_ids2num_reserved_blocks[req_id] = n_reserved_blocks
 
         # filling block table and slot mapping
 
@@ -1128,6 +1125,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             # adding new blocks if needed
             if self.tkv % self.block_size == 0:
                 req_state: SamplingRequestState = self.requests[req_id]
+                # we want to allocate the block for 1 next token.
+                # So we need to compute the number of tokens that the
+                # kv_cache_manager knows about: the number of computed
+                # tokens so far plus any intra-block padding.
                 total_tokens = req_state.left_padding % self.block_size \
                     + req_state.num_computed_tokens + 1
                 blocks = self.kv_cache_manager.allocate_new_blocks(
@@ -1327,7 +1328,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         return req_id_to_index
 
     def get_n_free_blocks(self) -> int:
-        return self.n_blocks - sum(self.req_ids2reserved_blocks.values())
+        return self.n_blocks - sum(self.req_ids2num_reserved_blocks.values())
 
     def no_prompt_logprob(self, is_prefill: bool) -> bool:
         if is_prefill:
@@ -2118,7 +2119,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         req_id = request.req_id
         prompt_token_ids = request.prompt_token_ids
         sampling_params = request.sampling_params
-        is_new_batch = len(self.req_ids2reserved_blocks) == 0
+        is_new_batch = len(self.req_ids2num_reserved_blocks) == 0
         prompt_len = len(prompt_token_ids)
 
         self.prefill_batch.clear_requests()
@@ -2135,7 +2136,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         # subtract the padding blocks from the reserved blocks
         n_reserved_blocks = math.ceil(total_tokens / self.block_size)
 
-        self.req_ids2reserved_blocks[req_id] = n_reserved_blocks
+        self.req_ids2num_reserved_blocks[req_id] = n_reserved_blocks
 
         num_cached_tokens = 0
         scheduler_request = Request(
