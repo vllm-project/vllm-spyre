@@ -18,6 +18,7 @@ supported-markers = [
 
 [manifest]
 overrides = [
+    { name = "intel-extension-for-pytorch", marker = "sys_platform == 'never'" },
     { name = "llvmlite", marker = "platform_machine not in 's390x, ppc64le'" },
     { name = "pyarrow", marker = "platform_machine not in 's390x, ppc64le'" },
     { name = "ray", marker = "platform_machine not in 's390x, ppc64le'" },
@@ -997,14 +998,9 @@ name = "intel-extension-for-pytorch"
 version = "2.8.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy", marker = "platform_machine != 'aarch64'" },
-    { name = "packaging", marker = "platform_machine != 'aarch64'" },
-    { name = "psutil", marker = "platform_machine != 'aarch64'" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/dc/e0/c7d9da40b767e02164ca4e846ee895ef71b3ee35b00eb620931b77907a9b/intel_extension_for_pytorch-2.8.0-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:e7b8a1daccf23ad4eccb33f4b2f6f110d65feddcecbf8aae70f351c2237fab70", size = 49936492, upload-time = "2025-08-12T05:51:37.991Z" },
-    { url = "https://files.pythonhosted.org/packages/64/2a/cb48cb2a6a0b2917c85f3489af3e4dcf8e26ca74e4ffb99b8ec80498c2d5/intel_extension_for_pytorch-2.8.0-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:4c0d6ba2c61712add4ff7a168cd80326137f7279a5496f2f9ca2922c318e0cdf", size = 49957557, upload-time = "2025-08-12T05:53:16.196Z" },
-    { url = "https://files.pythonhosted.org/packages/6c/fd/0da69378e8be2c3e867277d79928cc56bfc9638efe4582d57753d340ba32/intel_extension_for_pytorch-2.8.0-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:68a0114aaa793d87609a35b1b39ea4f6323cade48c8664626fb36bc45eb8015c", size = 49957515, upload-time = "2025-08-12T05:56:20.54Z" },
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "psutil" },
 ]
 
 [[package]]
@@ -3676,7 +3672,7 @@ dependencies = [
     { name = "fastapi", extra = ["standard"] },
     { name = "filelock" },
     { name = "gguf" },
-    { name = "intel-extension-for-pytorch", marker = "platform_machine == 'x86_64'" },
+    { name = "intel-extension-for-pytorch", marker = "sys_platform == 'never'" },
     { name = "intel-openmp", marker = "platform_machine == 'x86_64'" },
     { name = "lark" },
     { name = "llguidance", marker = "platform_machine == 'aarch64' or platform_machine == 'arm64' or platform_machine == 's390x' or platform_machine == 'x86_64'" },

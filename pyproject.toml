@@ -50,6 +50,7 @@ override-dependencies = [
     "torchaudio; sys_platform == 'never'",
     "torchvision; sys_platform == 'never'",
     "triton; sys_platform == 'never'",
+    "intel-extension-for-pytorch; sys_platform == 'never'",
     
     # Skip packages on s390x and ppc64le, expected to be pre-installed
     "vllm ; platform_machine not in 's390x, ppc64le'",
