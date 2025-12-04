@@ -867,7 +867,12 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.block_pool = BlockPool(num_gpu_blocks=self.n_blocks + 1,
                                     enable_caching=False,
                                     enable_kv_cache_events=False)
-        attn_spec = KVCacheSpec(block_size=self.block_size)
+        attn_spec = FullAttentionSpec(
+            block_size=self.block_size,
+            # dummy values
+            num_kv_heads=1,
+            head_size=1,
+            dtype=torch.float16)
         self.kv_cache_manager = FullAttentionManager(
             kv_cache_spec=attn_spec,
             block_pool=self.block_pool,
