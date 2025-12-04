@@ -43,6 +43,7 @@ def generate_prompts(
     steps_add_reqs: list[int],
     seqs_max_tokens: list[int],
     prompts_lengths: list[int],
+    from_model_vocab: bool = False,
 ):
     generated_prompts = []
 
@@ -62,7 +63,8 @@ def generate_prompts(
         request = create_random_request(request_id=i,
                                         num_tokens=prompt_length,
                                         sampling_params=sampling_params,
-                                        model=model)
+                                        model=model,
+                                        from_model_vocab=from_model_vocab)
         requests.append((add_step, request))
         # NOTE: It is going to be decoded later
         generated_prompts.append(request.prompt_token_ids)
@@ -83,6 +85,8 @@ def check_scheduler_inference_steps(
     available_blocks: int,
     max_batch_tkv_limit: int = -1,
     use_cb: bool = True,
+    max_num_batched_tokens: int = None,
+    random_prompts: bool = False,
 ):
     """
     Test the scheduler execution by comparing the scheduler attributes at each 
@@ -122,8 +126,11 @@ def check_scheduler_inference_steps(
         "tokens": []
     })
 
-    prompts, requests = generate_prompts(model, steps_add_reqs,
-                                         seqs_max_tokens, prompts_lengths)
+    prompts, requests = generate_prompts(model,
+                                         steps_add_reqs,
+                                         seqs_max_tokens,
+                                         prompts_lengths,
+                                         from_model_vocab=random_prompts)
 
     hf_results = generate_hf_output(
         model=model,
@@ -151,6 +158,7 @@ def check_scheduler_inference_steps(
         model=model,
         max_model_len=max_model_len,
         max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=max_num_batched_tokens,
         available_blocks=available_blocks,
         backend=backend,
         monkeypatch=monkeypatch)
@@ -167,6 +175,9 @@ def check_scheduler_inference_steps(
         # This default value is set by platform.py
         scheduler.max_batch_tkv_limit = int(
             os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"))
+
+    scheduler.do_interleaving = bool(
+        int(os.getenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "1")))
 
     # In-between steps are added as normal decode steps
     checked_steps = augment_checked_steps(checked_steps)
@@ -209,15 +220,27 @@ def check_scheduler_inference_steps(
             n_blocks = (engine_core.model_executor.driver_worker.worker.
                         model_runner.n_blocks)
             n_reserved_blocks = n_blocks - scheduler.n_free_blocks
-            req_ids2blocks = (engine_core.model_executor.driver_worker.worker.
-                              model_runner.req_ids2blocks)
-            req_ids2reserved_blocks = (
+
+            kv_cache_manager = (engine_core.model_executor.driver_worker.
+                                worker.model_runner.kv_cache_manager)
+
+            req_ids2blocks = {
+                req_id: [block.block_id for block in blocks]
+                for req_id, blocks in kv_cache_manager.req_to_blocks.items()
+                if blocks
+            }
+            req_ids2num_reserved_blocks = (
                 engine_core.model_executor.driver_worker.worker.model_runner.
-                req_ids2reserved_blocks)
+                req_ids2num_reserved_blocks)
             n_used_blocks = sum(
                 [len(blocks) for blocks in req_ids2blocks.values()])
 
             if step > 0:
+                if DISABLE_ASSERTS:
+                    print(
+                        f"{step=}, {n_reserved_blocks=}, {n_used_blocks=}, "
+                        f"{scheduler.tkv=}, {waiting=}, {out_reqs_finished=}, "
+                        f"{running=}, {out_reqs_ids=}")
                 assert DISABLE_ASSERTS or (
                     n_reserved_blocks == step_ref["n_reserved_blocks"]
                 ), f"Step {step}, n_reserved_blocks: {n_reserved_blocks}"
@@ -226,16 +249,16 @@ def check_scheduler_inference_steps(
                 ), f"Step {step}, n_used_blocks: {n_used_blocks}"
 
             assert DISABLE_ASSERTS or len(req_ids2blocks) == len(
-                req_ids2reserved_blocks)
+                req_ids2num_reserved_blocks)
             for req_id in req_ids2blocks:
                 # current number of used blocks should be less than reserved
                 assert (DISABLE_ASSERTS or len(req_ids2blocks[req_id])
-                        <= req_ids2reserved_blocks[req_id])
+                        <= req_ids2num_reserved_blocks[req_id])
                 # update requested/reserved blocks to check in last step
                 # Note: overwrite and not max
                 # because of reduce_left_padding()
                 requested_blocks[req_id] = len(req_ids2blocks[req_id])
-                reserved_blocks[req_id] = req_ids2reserved_blocks[req_id]
+                reserved_blocks[req_id] = req_ids2num_reserved_blocks[req_id]
 
         # last step: check that sequences used all their reserved blocks
         # Note: no early stopping, all sequences produce max_num_tokens

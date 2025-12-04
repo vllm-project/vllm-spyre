@@ -35,8 +35,8 @@ from vllm_spyre.compat_utils import dataclass_fields
 from vllm_spyre.model_executor.model_loader import spyre_setup
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import (
-    ContinuousBatchingSpyreModelRunner, SpyrePoolingModelRunner,
-    StaticBatchingSpyreModelRunner, SupportedTask)
+    ChunkedPrefillModelRunner, ContinuousBatchingSpyreModelRunner,
+    SpyrePoolingModelRunner, StaticBatchingSpyreModelRunner, SupportedTask)
 
 logger = init_logger(__name__)
 
@@ -55,7 +55,7 @@ def new_request_data_builder(
         "sampling_params": sampling_params,
         "pooling_params": pooling_params,
         "block_ids": [0],  # not actually used
-        "num_computed_tokens": 0,
+        "num_computed_tokens": len(prompt_token_ids),
         "lora_request": None,
     }
 
@@ -100,6 +100,17 @@ def _maybe_warmup_context(limit: int, world_size: int, rank: int):
         _inside_warmup_mode = True
         yield
         _inside_warmup_mode = False
+
+
+@contextlib.contextmanager
+def use_torch_fx_backed_size_oblivious():
+    # this setting is required to mark a dimension of size 1 as dynamic
+    # for pytorch >= 2.7.1 (needed to support batch size 1 for decodes)
+    # NB: this setting is disabled at the end of this function
+    from torch.fx.experimental import _config as config
+    config.backed_size_oblivious = True
+    yield
+    config.backed_size_oblivious = False
 
 
 class SpyreWorker(WorkerBase):
@@ -248,14 +259,20 @@ class SpyreWorker(WorkerBase):
             init_cached_hf_modules()
         self.model_runner: \
             Union[StaticBatchingSpyreModelRunner,
-                  ContinuousBatchingSpyreModelRunner, SpyrePoolingModelRunner]
+                  ContinuousBatchingSpyreModelRunner,
+                  ChunkedPrefillModelRunner,
+                  SpyrePoolingModelRunner]
         if self.is_pooling:
             self.model_runner = SpyrePoolingModelRunner(
                 self.vllm_config, self.is_driver_worker, self.rank)
             self.spyre_warmup_shapes = SpyrePlatform.get_warmup_shapes(
                 self.vllm_config.scheduler_config)
         else:
-            if envs_spyre.VLLM_SPYRE_USE_CB:
+            if envs_spyre.VLLM_SPYRE_USE_CB and \
+                envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
+                self.model_runner = ChunkedPrefillModelRunner(
+                    self.vllm_config, self.is_driver_worker, self.rank)
+            elif envs_spyre.VLLM_SPYRE_USE_CB:
                 self.model_runner = ContinuousBatchingSpyreModelRunner(
                     self.vllm_config, self.is_driver_worker, self.rank)
             else:
@@ -441,12 +458,6 @@ class SpyreWorker(WorkerBase):
         logger.info("load model took %.3fs", load_model_total_t)
 
     def _warmup_spyre_dynamic_size(self, special_token_ids):
-        # this setting is required to mark a dimension of size 1 as dynamic
-        # for pytorch >= 2.7.1 (needed to support batch size 1 for decodes)
-
-        from torch.fx.experimental import _config as config
-        config.backed_size_oblivious = True
-
         warmup_start_t = time.time()
 
         # satisfy mypy
@@ -500,6 +511,21 @@ class SpyreWorker(WorkerBase):
         # one additional prefill to deploy the compiled program to the device,
         # the necessary operations are included in the graph and will be removed
         # after this execution
+
+        # update sampling_params here to ensure logits processing code is also
+        # compiled during warmup
+        deploy_req.sampling_params = SamplingParams(
+            temperature=1.0,
+            top_k=10,
+            top_p=0.9,
+            min_p=0.9,
+            presence_penalty=0.5,
+            frequency_penalty=0.5,
+            repetition_penalty=1.2,
+            max_tokens=4,
+            min_tokens=1,
+            logprobs=1,
+        )
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=[deploy_req],
             scheduled_cached_reqs=CachedRequestData.make_empty(),
@@ -607,8 +633,10 @@ class SpyreWorker(WorkerBase):
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=dummy_requests,
             scheduled_cached_reqs=cached_request_data,
-            num_scheduled_tokens={i: prompt_len
-                                  for i in range(batch_size)},
+            num_scheduled_tokens={
+                r.req_id: len(r.prompt_token_ids)
+                for r in dummy_requests
+            },
             total_num_scheduled_tokens=sum(prompt_len
                                            for _ in range(batch_size)),
             scheduled_spec_decode_tokens={},
@@ -652,6 +680,7 @@ class SpyreWorker(WorkerBase):
             num_decode_tokens, warmup_total_t, compile_cache_str)
         maybe_override_signals_handler()
 
+    @use_torch_fx_backed_size_oblivious()
     def _dynamic_warmup(
         self,
         requests: list[NewRequestData],
@@ -727,11 +756,16 @@ class SpyreWorker(WorkerBase):
         """Handle a complete forward pass"""
         scheduler_output.scheduled_new_reqs = requests
         scheduler_output.scheduled_cached_reqs = CachedRequestData.make_empty()
+        scheduler_output.num_scheduled_tokens = {
+            r.req_id: len(r.prompt_token_ids)
+            for r in requests
+        }
         self.execute_model(scheduler_output)  # Prefill
 
         # Switch to cached requests to trigger decoding steps
         scheduler_output.scheduled_new_reqs = []
         scheduler_output.scheduled_cached_reqs = cached_request_data
+        scheduler_output.num_scheduled_tokens = {r.req_id: 1 for r in requests}
         for _ in range(num_decode_tokens - 1):
             self.execute_model(scheduler_output)
 

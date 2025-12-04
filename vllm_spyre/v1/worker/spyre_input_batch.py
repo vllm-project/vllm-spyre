@@ -191,6 +191,8 @@ class BaseInputBatch(Generic[RequestState]):
 @dataclass
 class SamplingRequestState(BaseRequestState):
 
+    num_computed_tokens: int = 0
+
     left_padding: int = 0  # Defaults to 0, i. e. not padding
 
     sampling_params: SamplingParams = SamplingParams()

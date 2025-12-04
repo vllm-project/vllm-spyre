@@ -214,16 +214,17 @@ def test_spyre_batch1_top_k(model: ModelInfo, backend, monkeypatch,
 
 def test_spyre_batch1_logit_bias(model: ModelInfo, backend, monkeypatch,
                                  use_llm_cache, warmup_shapes, max_model_len,
-                                 max_num_seqs, cb: int):
+                                 max_num_seqs, mode: str):
     spyre_model = get_cached_llm(
         model=model,
         max_model_len=max_model_len,
-        max_num_seqs=max_num_seqs,
         tensor_parallel_size=1,
         backend=backend,
         monkeypatch=monkeypatch,
-        warmup_shapes=warmup_shapes if cb == 0 else None,
-        use_cb=cb == 1)
+        warmup_shapes=warmup_shapes if mode == "sb" else None,
+        max_num_seqs=max_num_seqs if mode == "cb" or mode == "cp" else None,
+        max_num_batched_tokens=128 if mode == "cp" else None,
+        use_cb=mode == "cb" or mode == "cp")
     tokenizer = spyre_model.get_tokenizer()
     banned_word = "train"
     forced_word = "plane"
@@ -254,16 +255,17 @@ def test_spyre_batch1_logit_bias(model: ModelInfo, backend, monkeypatch,
 
 def test_spyre_batch1_min_tokens(model: ModelInfo, backend, monkeypatch,
                                  use_llm_cache, max_model_len, max_num_seqs,
-                                 warmup_shapes, cb: int):
+                                 warmup_shapes, mode: str):
     spyre_model = get_cached_llm(
         model=model,
         max_model_len=max_model_len,
         tensor_parallel_size=1,
         backend=backend,
         monkeypatch=monkeypatch,
-        warmup_shapes=warmup_shapes if cb != 1 else None,
-        max_num_seqs=max_num_seqs if cb == 1 else None,
-        use_cb=cb == 1)
+        warmup_shapes=warmup_shapes if mode == "sb" else None,
+        max_num_seqs=max_num_seqs if mode == "cb" or mode == "cp" else None,
+        max_num_batched_tokens=128 if mode == "cp" else None,
+        use_cb=mode == "cb" or mode == "cp")
     prompt = "What is the capital of the USA?"
     tokenizer = spyre_model.get_tokenizer()
     eos_id = tokenizer.eos_token_id
@@ -322,16 +324,17 @@ def test_spyre_batch1_ignore_eos(model: ModelInfo, backend, monkeypatch,
 
 def test_spyre_batch1_min_p(model: ModelInfo, backend, monkeypatch,
                             use_llm_cache, max_model_len, max_num_seqs,
-                            warmup_shapes, cb: int):
+                            warmup_shapes, mode: str):
     spyre_model = get_cached_llm(
         model=model,
         max_model_len=max_model_len,
-        max_num_seqs=max_num_seqs,
         tensor_parallel_size=1,
         backend=backend,
         monkeypatch=monkeypatch,
-        warmup_shapes=warmup_shapes if cb == 0 else None,
-        use_cb=cb == 1)
+        warmup_shapes=warmup_shapes if mode == "sb" else None,
+        max_num_seqs=max_num_seqs if mode == "cb" or mode == "cp" else None,
+        max_num_batched_tokens=128 if mode == "cp" else None,
+        use_cb=mode == "cb" or mode == "cp")
     prompt = "The opposite of black is"
     params1 = SamplingParams(min_p=0.5, temperature=1, max_tokens=5)
     params2 = SamplingParams(temperature=1, max_tokens=5)

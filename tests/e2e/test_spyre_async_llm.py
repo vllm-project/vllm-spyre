@@ -47,7 +47,7 @@ async def generate(
 @pytest.mark.parametrize(
     "output_kind", [RequestOutputKind.DELTA, RequestOutputKind.FINAL_ONLY])
 @pytest.mark.asyncio
-async def test_abort(model: ModelInfo, backend: str, cb: int,
+async def test_abort(model: ModelInfo, backend: str, mode: str,
                      max_model_len: int, max_num_seqs: int,
                      warmup_shapes: DecodeWarmupShapes,
                      output_kind: RequestOutputKind,
@@ -55,8 +55,11 @@ async def test_abort(model: ModelInfo, backend: str, cb: int,
     """Test handling of cancelled requests"""
     with monkeypatch.context() as m, ExitStack() as after:
         m.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
-        if cb == 1:
+        if mode == "cb":
             m.setenv("VLLM_SPYRE_USE_CB", "1")
+        elif mode == "cp":
+            m.setenv("VLLM_SPYRE_USE_CB", "1")
+            m.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", "1")
         else:
             warmup_prompt_length = [t[0] for t in warmup_shapes]
             warmup_new_tokens = [t[1] for t in warmup_shapes]

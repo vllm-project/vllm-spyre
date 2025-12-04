@@ -1,0 +1,31 @@
+name: Publish docs
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - "**/*.md"
+      - "docs/**"
+      - "mkdocs.yaml"
+      - ".github/workflows/publish_docs.yml"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r docs/requirements-docs.txt
+      - name: Deploy docs
+        run: mkdocs gh-deploy --force

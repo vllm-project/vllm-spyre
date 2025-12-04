@@ -131,9 +131,18 @@ class SpyrePlatform(Platform):
             os.environ["FLEX_OVERWRITE_NMB_FRAME"] = "false"
             os.environ["COMPILATION_MODE"] = "offline"
 
+        assert (envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL \
+            and envs_spyre.VLLM_SPYRE_USE_CB) or \
+                not envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL, \
+            "Cannot use chunked prefill without continuous batching."
+
         if envs_spyre.VLLM_SPYRE_USE_CB and is_decoder:
-            scheduler_config.scheduler_cls = "vllm_spyre.v1.core."\
-                "scheduler.ContinuousBatchingSpyreScheduler"
+            if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
+                scheduler_config.scheduler_cls = "vllm_spyre.v1.core."\
+                    "scheduler.ChunkedPrefillSpyreScheduler"
+            else:
+                scheduler_config.scheduler_cls = "vllm_spyre.v1.core."\
+                    "scheduler.ContinuousBatchingSpyreScheduler"
             if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
                 raise ValueError("Prompt logprobs not supported with " \
                 "continuous batching")
@@ -170,6 +179,10 @@ class SpyrePlatform(Platform):
                     "vllm_spyre.v1.core.scheduler."\
                         "StaticBatchingSpyreScheduler")
 
+        # Hardcode some things for granite-3.3-8b-instruct
+        if cls.is_granite_3_8b(vllm_config.model_config):
+            cls.configure_granite_3_8b(vllm_config)
+
         # To disable any paged attention ops in the base scheduler, we:
         # - Set the block size (in tokens) to the maximum sequence length
         #       so that the scheduler thinks an entire sequence will fit in
@@ -179,8 +192,31 @@ class SpyrePlatform(Platform):
         #       budget available to schedule a full batch
         if cache_config is not None:
             cache_config.block_size = model_config.max_model_len
-            scheduler_config.max_num_batched_tokens = (
-                model_config.max_model_len * scheduler_config.max_num_seqs)
+            if not envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
+                scheduler_config.max_num_batched_tokens = (
+                    model_config.max_model_len * scheduler_config.max_num_seqs)
+            else:
+                # TODO: ideally, this would be user-configurable from CLI/engine
+                # args instead of with the internal env var, but that requires a
+                # way to detect if value set by vllm or by the user
+                if (chunk_len := os.getenv("VLLM_DT_CHUNK_LEN")) is None:
+                    os.environ["VLLM_DT_CHUNK_LEN"] = \
+                        str(scheduler_config.max_num_batched_tokens)
+                else:
+                    try:
+                        chunk_len_int = int(chunk_len)
+                    except (ValueError, TypeError) as e:
+                        raise Exception(
+                            "VLLM_DT_CHUNK_LEN must be an integer") from e
+                    scheduler_config.max_num_batched_tokens = chunk_len_int
+
+                assert scheduler_config.max_num_batched_tokens % \
+                    cls._block_size == 0, ("`max_num_batched_tokens` must"
+                    f" be divisible by the block size ({cls._block_size}) "
+                    "to enable chunked prefill. It was set to "
+                    f"`{scheduler_config.max_num_batched_tokens}`. Please "
+                    "set `--max-num-batched-tokens` to a number that satisfy "
+                    "this constraint.")
 
         logger.info(
             "Overriding configurations based on warmup shapes. "
@@ -205,10 +241,6 @@ class SpyrePlatform(Platform):
         os.environ["VLLM_DT_MAX_BATCH_SIZE"] = str(
             max(vllm_config.scheduler_config.max_num_seqs, 2))
 
-        # Hardcode some things for granite-3.3-8b-instruct
-        if cls.is_granite_3_8b(vllm_config.model_config):
-            cls.configure_granite_3_8b(vllm_config)
-
         if not os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"):
             # max product of batch size x tkv supported by the Spyre compiler
             default_max_batch_tkv_limit = \
@@ -220,20 +252,6 @@ class SpyrePlatform(Platform):
             logger.info("No model / tensor parallel size specific value for " \
             "VLLM_DT_MAX_BATCH_TKV_LIMIT found. Using the default value " \
             "(max_model_len * max_batch_size): %d", default_max_batch_tkv_limit)
-
-        # scheduling heuristic: prefill vs decode prioritization
-        if envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO == -1:
-            logger.info(
-                "Env var VLLM_SPYRE_N_TOKENS_PREFILL_PRIO for prefill/decode "
-                "balancing unset. Defaulting to -1, which always prioritizes "
-                "prefills (no scheduler heuristic/ balancing at all).")
-        else:
-            logger.info(
-                "Env var VLLM_SPYRE_N_TOKENS_PREFILL_PRIO for prefill/decode "
-                "balancing is set to %s. This means that prefills using up to "
-                " %s tokens will always be prioritized over decodes.",
-                envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO,
-                envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO)
 
         # Compare requested runtime configuration with supported configurations
         # Don't use top-level import to avoid circular import error
@@ -599,6 +617,15 @@ class SpyrePlatform(Platform):
                 "granite-3.3-8b-instruct default of %d",
                 vllm_config.cache_config.num_gpu_blocks_override,
                 blocks_override)
+
+        # hard-coded value for max_num_batched_tokens with chunked prefill
+        if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL \
+            and envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn" \
+            and os.getenv("VLLM_DT_CHUNK_LEN") is None:
+            logger.info("Model granite-3.3-8b-instruct and tensor " \
+            "parallel size 4 with chunked prefill detected. Setting " \
+            "--max-num-batched-tokens 4096")
+            vllm_config.scheduler_config.max_num_batched_tokens = 4096
 
     @classmethod
     def is_granite_3_8b(cls, model_config: ModelConfig):
