@@ -308,6 +308,7 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT,
             sampled_token_ids = [x for x in sampled_token_ids.numpy()]
         else:
             sampled_token_ids = sampled_token_ids.tolist()
+        return sampled_token_ids
 
 
 class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
