@@ -32,6 +32,7 @@ def pytest_generate_tests(metafunc):
     default_warmup_shape = [[(64, 20, 4)]]
     default_max_num_seqs = [4]
     default_max_model_len = [512]
+    default_max_num_batched_tokens = [128]
 
     existing_markers = [
         marker.name if marker.name != "parametrize" else marker.args[0]
@@ -87,6 +88,13 @@ def pytest_generate_tests(metafunc):
     _add_param(
         "max_num_seqs",
         default_max_num_seqs,
+        metafunc,
+        existing_markers,
+    )
+
+    _add_param(
+        "max_num_batched_tokens",
+        default_max_num_batched_tokens,
         metafunc,
         existing_markers,
     )
