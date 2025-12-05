@@ -351,7 +351,8 @@ class SpyrePlatform(Platform):
     ) -> None:
         """Raises if this request is unsupported on this platform"""
 
-        # TODO: fix
+        # The PoolingParams import is lazy here because it imports vllm.config,
+        # which will in turn import this file again.
         from vllm.pooling_params import PoolingParams
         if isinstance(params, PoolingParams):
             # Only validating generation requests for now

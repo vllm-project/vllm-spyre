@@ -18,9 +18,9 @@ from vllm.v1.engine.core import EngineCore
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request, SamplingParams
 
-from vllm_spyre.compat_utils import dataclass_fields
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import SpyreModelRunner
+from vllm_spyre.v1.worker.spyre_worker import _get_extra_args
 
 
 ########## Assuming that we have:
@@ -108,12 +108,7 @@ def make_scheduler_output(
     if finished_req_ids is None:
         finished_req_ids = set()
 
-    extra_args = {}
-    if "structured_output_request_ids" in dataclass_fields(SchedulerOutput):
-        extra_args["structured_output_request_ids"] = {}
-    if "grammar_bitmask" in dataclass_fields(SchedulerOutput):
-        extra_args["grammar_bitmask"] = None
-
+    extra_args = _get_extra_args()
     return SchedulerOutput(scheduled_new_reqs=scheduled_new_reqs,
                            scheduled_cached_reqs=scheduled_cached_reqs,
                            num_scheduled_tokens=num_scheduled_tokens,
