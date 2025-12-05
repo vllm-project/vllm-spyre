@@ -13,7 +13,7 @@ license = {text = "Apache 2"}
 dependencies = [
     "fms-model-optimizer[fp8]>=0.6.0",
     "ibm-fms>=1.5.0,<2.0",
-    "vllm>=0.10.2,<=0.11.0",
+    "vllm>=0.10.2,<=0.11.1",
     "pytest-mock>=3.15.0",
 ]
 requires-python = ">=3.11"
@@ -50,6 +50,7 @@ override-dependencies = [
     "torchaudio; sys_platform == 'never'",
     "torchvision; sys_platform == 'never'",
     "triton; sys_platform == 'never'",
+    "intel-extension-for-pytorch; sys_platform == 'never'",
     
     # Skip packages on s390x and ppc64le, expected to be pre-installed
     "vllm ; platform_machine not in 's390x, ppc64le'",
@@ -61,6 +62,12 @@ override-dependencies = [
 environments = [
     "python_version > '3.9'"
 ]
+
+[tool.uv.sources]
+vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.11.1" }
+# fms-mo 0.7.0 does not work with CPU, but it does still work on spyre.
+# The e3f1310 commit works for both- awaiting a release with the cpu bugfix
+fms-model-optimizer = { git = "https://github.com/foundation-model-stack/fms-model-optimizer", rev = "e3f13101858b5b210b07bba460c5055b45ff6967" }
 
 [tool.ruff]
 # Allow lines to be as long as 80.

@@ -37,7 +37,10 @@ def test_cb_max_tokens(model: ModelInfo, backend: str, max_model_len: int,
                                           ignore_eos=True,
                                           logprobs=0)
 
-    with pytest.raises(ValueError, match="max model context length"):
+    # The text of the error raised by vllm changed from 0.11.0 to 0.11.1
+    with pytest.raises(
+            ValueError,
+            match="(max model context length|maximum model length)"):
         generate_spyre_vllm_output(
             model=model,
             prompts=overflow_prompt,
