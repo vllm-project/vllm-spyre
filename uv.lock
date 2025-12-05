@@ -735,8 +735,8 @@ wheels = [
 
 [[package]]
 name = "fms-model-optimizer"
-version = "0.7.0"
-source = { registry = "https://pypi.org/simple" }
+version = "0.7.1.dev8"
+source = { git = "https://github.com/foundation-model-stack/fms-model-optimizer?rev=e3f13101858b5b210b07bba460c5055b45ff6967#e3f13101858b5b210b07bba460c5055b45ff6967" }
 dependencies = [
     { name = "accelerate" },
     { name = "datasets" },
@@ -747,10 +747,6 @@ dependencies = [
     { name = "torch", marker = "sys_platform == 'never'" },
     { name = "tqdm" },
     { name = "transformers" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/94/77/a3ceb52b16a4cd8949c1d15618fb4da03917de1af2ebb4d05be62736d669/fms_model_optimizer-0.7.0.tar.gz", hash = "sha256:826b8db920c98f260f6bbdb051c1b7c082cf57366eaac6458a47ad48ce4b3a6f", size = 5183969, upload-time = "2025-10-28T18:40:50.759Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/fb/1a/76c78c9a3702e6a533e32a403b742e9ae90e07b6965117afe647e1ca5502/fms_model_optimizer-0.7.0-py3-none-any.whl", hash = "sha256:f9b02b05f207dc1e55cf04030a5db11614dfc37c79e67ea466d68f00526210f2", size = 361388, upload-time = "2025-10-28T18:40:48.676Z" },
 ]
 
 [package.optional-dependencies]
@@ -3757,7 +3753,7 @@ lint = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fms-model-optimizer", extras = ["fp8"], specifier = ">=0.6.0" },
+    { name = "fms-model-optimizer", extras = ["fp8"], git = "https://github.com/foundation-model-stack/fms-model-optimizer?rev=e3f13101858b5b210b07bba460c5055b45ff6967" },
     { name = "ibm-fms", specifier = ">=1.5.0,<2.0" },
     { name = "pytest-mock", specifier = ">=3.15.0" },
     { name = "vllm", git = "https://github.com/vllm-project/vllm?rev=v0.11.1" },
