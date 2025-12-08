@@ -25,7 +25,8 @@ def patch_environment(use_cb: bool,
                       warmup_shapes: DecodeWarmupShapes | None,
                       backend: str,
                       monkeypatch,
-                      use_chunked_prefill: bool = False):
+                      use_chunked_prefill: bool = False,
+                      max_num_batched_tokens: int | None = None):
     # Setup the environment correctly for the LLM
 
     # ---- For static batching ----
@@ -40,6 +41,10 @@ def patch_environment(use_cb: bool,
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL",
                        "1" if use_chunked_prefill else "0")
+    # NB: setting this env var explicitly is needed to set the desired value for
+    # the chunk size in the case that granite 8b TP4 is detected
+    if max_num_batched_tokens is not None:
+        monkeypatch.setenv("VLLM_DT_CHUNK_LEN", max_num_batched_tokens)
 
 
 def patch_warmup_shapes(warmup_shapes: DecodeWarmupShapes
@@ -355,7 +360,7 @@ def create_random_request(request_id: int,
                           sampling_params: SamplingParams,
                           from_model_vocab: bool = False,
                           model: Optional[ModelInfo] = None,
-                          deterministic: bool = False) -> Request:
+                          seed: int = None) -> Request:
 
     tokenizer = AutoTokenizer.from_pretrained(model.name,
                                               revision=model.revision)
@@ -367,8 +372,8 @@ def create_random_request(request_id: int,
             v for v in tokenizer.vocab.values()
             if v not in tokenizer.all_special_ids
         ])
-        if deterministic:
-            random.seed(0)
+        if seed is not None:
+            random.seed(seed)
         prompt_token_ids = random.choices(valid_token_ids, k=num_tokens)
     else:
         # start with existing prompts and tokenize them

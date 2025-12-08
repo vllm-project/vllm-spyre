@@ -2,7 +2,8 @@ import asyncio
 from contextlib import ExitStack
 
 import pytest
-from spyre_util import DecodeWarmupShapes, ModelInfo, get_chicken_soup_prompts
+from spyre_util import (DecodeWarmupShapes, ModelInfo,
+                        get_chicken_soup_prompts, patch_environment)
 from vllm import PromptType, SamplingParams
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
@@ -49,28 +50,25 @@ async def generate(
 @pytest.mark.asyncio
 async def test_abort(model: ModelInfo, backend: str, mode: str,
                      max_model_len: int, max_num_seqs: int,
+                     max_num_batched_tokens: int,
                      warmup_shapes: DecodeWarmupShapes,
                      output_kind: RequestOutputKind,
                      monkeypatch: pytest.MonkeyPatch):
     """Test handling of cancelled requests"""
     with monkeypatch.context() as m, ExitStack() as after:
-        m.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
-        if mode == "cb":
-            m.setenv("VLLM_SPYRE_USE_CB", "1")
-        elif mode == "cp":
-            m.setenv("VLLM_SPYRE_USE_CB", "1")
-            m.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", "1")
-        else:
-            warmup_prompt_length = [t[0] for t in warmup_shapes]
-            warmup_new_tokens = [t[1] for t in warmup_shapes]
-            warmup_batch_size = [t[2] for t in warmup_shapes]
-
-            m.setenv('VLLM_SPYRE_WARMUP_PROMPT_LENS',
-                     ','.join(str(val) for val in warmup_prompt_length))
-            m.setenv('VLLM_SPYRE_WARMUP_NEW_TOKENS',
-                     ','.join(str(val) for val in warmup_new_tokens))
-            m.setenv('VLLM_SPYRE_WARMUP_BATCH_SIZES',
-                     ','.join(str(val) for val in warmup_batch_size))
+        patch_kwargs = ({
+            "use_cb": True,
+            "warmup_shapes": None,
+            "use_chunked_prefill": mode == "cp",
+        } if mode in ["cb", "cp"] else {
+            "use_cb": False,
+            "warmup_shapes": warmup_shapes,
+        })
+        patch_environment(
+            **patch_kwargs,
+            backend=backend,
+            monkeypatch=m,
+        )
 
         # Async LLM API is a little different between v0 and V1
         engine = AsyncLLM.from_engine_args(
@@ -78,6 +76,8 @@ async def test_abort(model: ModelInfo, backend: str, mode: str,
                             tokenizer=model.name,
                             max_model_len=max_model_len,
                             max_num_seqs=max_num_seqs,
+                            max_num_batched_tokens=max_num_batched_tokens
+                            if mode == "cp" else None,
                             revision=model.revision))
         has_unfinished_requests = \
             engine.output_processor.has_unfinished_requests

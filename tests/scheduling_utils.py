@@ -43,7 +43,7 @@ def generate_prompts(model: ModelInfo,
                      seqs_max_tokens: list[int],
                      prompts_lengths: list[int],
                      from_model_vocab: bool = False,
-                     deterministic: bool = False):
+                     seeds: list[int] = None):
     generated_prompts = []
 
     # Create random requests of specified lengths and max_tokens
@@ -51,6 +51,16 @@ def generate_prompts(model: ModelInfo,
     # will be overridden
     sorted_reqs_params = zip(steps_add_reqs, seqs_max_tokens, prompts_lengths)
     requests: deque[tuple[int, EngineCoreRequest]] = deque()
+
+    # seeds for random (repeated) prompts generation to test prefix caching
+    if seeds:
+        assert from_model_vocab, \
+            "when providing seeds we create random prompts"
+        assert len(seeds) == len(steps_add_reqs), \
+            "number of seeds must be equal to the number of prompts"
+    else:
+        seeds = [None] * len(steps_add_reqs)
+
     for i, (add_step, max_tokens,
             prompt_length) in enumerate(sorted_reqs_params):
         # ignoring eos because we want to force the decoding to finish
@@ -64,7 +74,7 @@ def generate_prompts(model: ModelInfo,
                                         sampling_params=sampling_params,
                                         model=model,
                                         from_model_vocab=from_model_vocab,
-                                        deterministic=deterministic)
+                                        seed=seeds[i])
         requests.append((add_step, request))
         # NOTE: It is going to be decoded later
         generated_prompts.append(request.prompt_token_ids)
@@ -88,6 +98,7 @@ def check_scheduler_inference_steps(
     max_num_batched_tokens: int = None,
     random_prompts: bool = False,
     prefix_caching: bool = False,
+    seeds: list[int] = None,
 ):
     """
     Test the scheduler execution by comparing the scheduler attributes at each 
@@ -132,7 +143,7 @@ def check_scheduler_inference_steps(
                                          seqs_max_tokens,
                                          prompts_lengths,
                                          from_model_vocab=random_prompts,
-                                         deterministic=prefix_caching)
+                                         seeds=seeds)
 
     hf_results = generate_hf_output(
         model=model,
