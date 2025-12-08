@@ -7,6 +7,10 @@ from vllm import LLM
 
 
 def force_engine_shutdown(llm: LLM):
+    force_engine_core_shutdown(llm.llm_engine.engine_core)
+
+
+def force_engine_core_shutdown(engine_core):
     """
     🌶️🌶️🌶️
     This hack is here because of an issue in vllm 0.9.2+ where a circular
@@ -20,7 +24,7 @@ def force_engine_shutdown(llm: LLM):
     new engine will fail with an EADDRINUSE error.
     🌶️🌶️🌶️
     """
-    llm.llm_engine.engine_core.shutdown()
+    engine_core.shutdown()
 
 
 def sort_tests_for_llm_caching(items: list) -> None:

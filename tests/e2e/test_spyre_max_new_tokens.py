@@ -8,9 +8,13 @@ from output_util import validate_vllm_vs_hf_output
 from spyre_util import DecodeWarmupShapes, ModelInfo, get_chicken_soup_prompts
 from vllm import SamplingParams
 
+sb_mark = pytest.param("sb", marks=pytest.mark.sb, id="sb")
+cb_mark = pytest.param("cb", marks=pytest.mark.cb, id="cb")
+cp_mark = pytest.param("cp", marks=pytest.mark.chunked_prefill, id="cp")
+
 
 @pytest.mark.parametrize("stop_last", [True, False])
-@pytest.mark.parametrize("mode", ["sb", "cb", "cp"])
+@pytest.mark.parametrize("mode", [sb_mark, cb_mark, cp_mark])
 def test_output(model: ModelInfo, stop_last: bool, max_model_len: int,
                 max_num_seqs: int, warmup_shapes: DecodeWarmupShapes,
                 backend: str, mode: str, monkeypatch: pytest.MonkeyPatch,

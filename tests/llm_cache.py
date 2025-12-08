@@ -5,7 +5,7 @@ import os
 from typing import Callable, Generic, Optional, TypeVar
 
 import pytest
-from llm_cache_util import force_engine_shutdown
+from llm_cache_util import force_engine_core_shutdown, force_engine_shutdown
 from spyre_util import (DecodeWarmupShapes, ModelInfo, RemoteOpenAIServer,
                         patch_environment)
 from vllm import LLM, EngineArgs
@@ -107,6 +107,7 @@ class LLMCache:
             "tensor_parallel_size": tensor_parallel_size,
             "backend": backend,
             "use_cb": use_cb,
+            "use_pc": use_pc,
             "max_num_batched_tokens": max_num_batched_tokens
         }
         if use_cb:
@@ -163,7 +164,8 @@ class EngineCache:
     """Cache for continuous batching engines"""
 
     def __init__(self):
-        self._cache: ModelCache[EngineCore] = ModelCache[EngineCore]()
+        self._cache: ModelCache[EngineCore] = ModelCache[EngineCore](
+            teardown_method=lambda x: force_engine_core_shutdown(x))
 
     def get_engine(
         self,
@@ -181,6 +183,7 @@ class EngineCache:
             "max_model_len": max_model_len,
             "max_num_seqs": max_num_seqs,
             "available_blocks": available_blocks,
+            "use_pc": use_pc,
             "max_num_batched_tokens": max_num_batched_tokens,
         }
 

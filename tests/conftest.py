@@ -96,17 +96,13 @@ def pytest_generate_tests(metafunc):
     # markers
     if ("mode" in metafunc.fixturenames and "cb" not in existing_markers
             and "chunked_prefill" not in existing_markers
+            and "cp" not in existing_markers and "pc" not in existing_markers
             and "mode" not in existing_markers):
         metafunc.parametrize("mode", [
             "sb",
             pytest.param("cb", marks=pytest.mark.cb, id="cb"),
             pytest.param("cp", marks=pytest.mark.chunked_prefill, id="cp"),
-            pytest.param("pc",
-                         marks=[
-                             pytest.mark.chunked_prefill,
-                             pytest.mark.prefix_caching
-                         ],
-                         id="pc")
+            pytest.param("pc", marks=pytest.mark.prefix_caching, id="pc")
         ])
 
 
