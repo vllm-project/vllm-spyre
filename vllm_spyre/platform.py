@@ -617,8 +617,8 @@ class SpyrePlatform(Platform):
             and os.getenv("VLLM_DT_CHUNK_LEN") is None:
             logger.info("Model granite-3.3-8b-instruct and tensor " \
             "parallel size 4 with chunked prefill detected. Setting " \
-            "--max-num-batched-tokens 4096")
-            vllm_config.scheduler_config.max_num_batched_tokens = 4096
+            "--max-num-batched-tokens 1024")
+            vllm_config.scheduler_config.max_num_batched_tokens = 1024
 
     @classmethod
     def is_granite_3_8b(cls, model_config: ModelConfig):
