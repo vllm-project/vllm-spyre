@@ -2105,7 +2105,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         new_tokens = (sampling_params.max_tokens
                       if sampling_params is not None else 0)
         total_tokens = prompt_len + new_tokens - 1
-        # subtract the padding blocks from the reserved blocks
+        # calculate the number of reserved blocks
         n_reserved_blocks = math.ceil(total_tokens / self.block_size)
 
         self.req_ids2num_reserved_blocks[req_id] = n_reserved_blocks
@@ -2216,8 +2216,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             return False
 
         # possible prefill
-        req_id = new_reqs[0].req_id if\
-                len(new_reqs) == 1 else \
+        req_id = new_reqs[0].req_id if len(new_reqs) == 1 else \
                 cached_reqs.req_ids[0]
 
         num_scheduled_tokens =\
@@ -2328,8 +2327,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         # prefill, we'll generate a token and we should get from the prefill
         # batch because input_batch may have other request that are were
         # not processed at this step.
-        batch = self.prefill_batch if is_prefill \
-            else self.input_batch
+        batch = self.prefill_batch if is_prefill else self.input_batch
 
         # Add the sampled token(s) to the request cache
         req_ids = ([r.req_id for r in scheduler_output.scheduled_new_reqs]
