@@ -2302,6 +2302,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             if not self.is_driver_worker:
                 return self.get_empty_output()
 
+            t1 = time.time() - t0
+            logger.debug("t_forward_pass: %.2fms [prefill single chunk]", (t1 * 1000))
             return CPSpyreModelRunnerOutput(
                 req_ids=list(req_id_to_index.keys()),
                 req_id_to_index=req_id_to_index,
@@ -2319,12 +2321,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             sampling_metadata=self.get_sampling_metadata(is_prefill),
         )
         t1 = time.time() - t0
-        logger.debug("t_token: %.2fms", (t1 * 1000))
-
-        # Add the sampled token(s) to the request cache
-        req_ids = ([r.req_id for r in scheduler_output.scheduled_new_reqs]
-                   if len(scheduler_output.scheduled_new_reqs) > 0 \
-                    else self.input_batch.sorted_requests_ids)
+        step_type = "[prefill last chunk]" if is_prefill else "[decode]"
+        logger.debug("t_token: %.2fms %s", (t1 * 1000), step_type)
 
         # Get the right batch, if this is the last chunk to conclude the
         # prefill, we'll generate a token and we should get from the prefill
