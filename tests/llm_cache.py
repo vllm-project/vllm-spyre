@@ -128,7 +128,8 @@ class LLMCache:
                           warmup_shapes,
                           backend,
                           monkeypatch,
-                          use_chunked_prefill=use_chunked_prefill)
+                          use_chunked_prefill=use_chunked_prefill,
+                          max_num_batched_tokens=max_num_batched_tokens)
 
         maybe_llm = self._cache.maybe_get(runtime_config)
         if maybe_llm:
