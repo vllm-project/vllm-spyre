@@ -2190,6 +2190,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             # trim down to chunk boundary
             usable_blocks = (((left_blocks + n_hit) // self.chunk_blocks_count)\
                 * self.chunk_blocks_count) - left_blocks
+            usable_blocks = max(usable_blocks, 0)
             logger.debug("Found: %d usable blocks in cache", usable_blocks)
             computed_blocks = computed_blocks[:usable_blocks]
             num_cached_tokens = usable_blocks * self.block_size
