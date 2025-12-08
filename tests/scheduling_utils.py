@@ -231,12 +231,13 @@ def check_scheduler_inference_steps(
             ), f"Step {step}, finished request output: {out_reqs_finished}"
 
             # checking the scheduler handling of free and reserved blocks
-            n_blocks = (engine_core.model_executor.driver_worker.worker.
-                        model_runner.n_blocks)
+            model_runner = (
+                engine_core.model_executor.driver_worker.worker.model_runner)
+            n_blocks = model_runner.n_blocks
+            block_size = model_runner.block_size
             n_reserved_blocks = n_blocks - scheduler.n_free_blocks
 
-            kv_cache_manager = (engine_core.model_executor.driver_worker.
-                                worker.model_runner.kv_cache_manager)
+            kv_cache_manager = model_runner.kv_cache_manager
 
             req_ids2blocks = {
                 req_id: [block.block_id for block in blocks]
@@ -244,18 +245,24 @@ def check_scheduler_inference_steps(
                 if blocks
             }
             req_ids2num_reserved_blocks = (
-                engine_core.model_executor.driver_worker.worker.model_runner.
-                req_ids2num_reserved_blocks)
+                model_runner.req_ids2num_reserved_blocks)
             n_used_blocks = sum(
                 [len(blocks) for blocks in req_ids2blocks.values()])
 
+            n_cached_blocks = n_prefix_hits = 0
             if prefix_caching:
-                reqs = (engine_core.model_executor.driver_worker.worker.
-                        model_runner.requests)
+                reqs = model_runner.requests
                 prefix_hits = [
                     reqs[r_id].num_cached_tokens
                     > reqs[r_id].num_computed_tokens for r_id in req_ids2blocks
                 ]
+                cached_blocks = [
+                    reqs[r_id].num_cached_tokens // block_size
+                    for r_id in req_ids2blocks
+                ]
+                n_cached_blocks = sum(cached_blocks)
+                for r_id in req_ids2blocks:
+                    print(f"{reqs[r_id].num_cached_tokens=}")
                 n_prefix_hits = sum(prefix_hits)
 
             if step > 0:
@@ -263,7 +270,8 @@ def check_scheduler_inference_steps(
                     print(
                         f"{step=}, {n_reserved_blocks=}, {n_used_blocks=}, "
                         f"{scheduler.tkv=}, {waiting=}, {out_reqs_finished=}, "
-                        f"{running=}, {out_reqs_ids=}, {n_prefix_hits=}")
+                        f"{running=}, {out_reqs_ids=}, {n_prefix_hits=}"
+                        f"{n_cached_blocks=}")
                 assert DISABLE_ASSERTS or (
                     n_reserved_blocks == step_ref["n_reserved_blocks"]
                 ), f"Step {step}, n_reserved_blocks: {n_reserved_blocks}"
@@ -273,6 +281,9 @@ def check_scheduler_inference_steps(
                 assert DISABLE_ASSERTS or "n_prefix_hits" not in step_ref or (
                     n_prefix_hits == step_ref["n_prefix_hits"]
                 ), f"Step {step}, n_prefix_hits: {n_prefix_hits}"
+                assert DISABLE_ASSERTS or "n_cached_blocks" not in step_ref or (
+                    n_cached_blocks == step_ref["n_cached_blocks"]
+                ), f"Step {step}, n_cached_blocks: {n_cached_blocks}"
 
             assert DISABLE_ASSERTS or len(req_ids2blocks) == len(
                 req_ids2num_reserved_blocks)
