@@ -117,7 +117,6 @@ def make_scheduler_output(
                            scheduled_encoder_inputs={},
                            num_common_prefix_blocks=[],
                            finished_req_ids=finished_req_ids,
-                           free_encoder_mm_hashes=[],
                            kv_connector_metadata=None,
                            **extra_args)
 
