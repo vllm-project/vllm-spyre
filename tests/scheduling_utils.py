@@ -231,8 +231,8 @@ def check_scheduler_inference_steps(
             ), f"Step {step}, finished request output: {out_reqs_finished}"
 
             # checking the scheduler handling of free and reserved blocks
-            model_runner = (engine_core.model_executor.driver_worker.worker.
-                        model_runner)
+            model_runner = (
+                engine_core.model_executor.driver_worker.worker.model_runner)
             n_blocks = model_runner.n_blocks
             block_size = model_runner.block_size
             n_reserved_blocks = n_blocks - scheduler.n_free_blocks

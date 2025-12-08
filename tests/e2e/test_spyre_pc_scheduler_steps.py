@@ -642,8 +642,6 @@ def test_limit_blocks_prefix_hit(model: ModelInfo, backend: str,
         seeds=seeds)
 
 
-
-
 @pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @pytest.mark.full_model
@@ -654,11 +652,9 @@ def test_limit_blocks_prefix_hit(model: ModelInfo, backend: str,
 @pytest.mark.parametrize("max_num_batched_tokens", [128])
 @pytest.mark.parametrize("available_blocks", [None])
 def test_full_match(model: ModelInfo, backend: str,
-                                 monkeypatch: pytest.MonkeyPatch,
-                                 set_random_seed, max_num_seqs: int,
-                                 max_model_len: int,
-                                 max_num_batched_tokens: int,
-                                 available_blocks: int):
+                    monkeypatch: pytest.MonkeyPatch, set_random_seed,
+                    max_num_seqs: int, max_model_len: int,
+                    max_num_batched_tokens: int, available_blocks: int):
     """ Scenario where two equal sequences are scheduled.
     Both sequences have exactly 3 chunks worth of tokens, thus
     resulting in a 100% match up to the last token. This test

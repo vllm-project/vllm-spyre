@@ -9,10 +9,10 @@ from llm_cache_util import force_engine_core_shutdown, force_engine_shutdown
 from spyre_util import (DecodeWarmupShapes, ModelInfo, RemoteOpenAIServer,
                         patch_environment)
 from vllm import LLM, EngineArgs
-from vllm.v1.engine.core import EngineCore
-from vllm.v1.executor.abstract import Executor
 from vllm.v1.core.block_pool import BlockPool
 from vllm.v1.core.single_type_kv_cache_manager import FullAttentionManager
+from vllm.v1.engine.core import EngineCore
+from vllm.v1.executor.abstract import Executor
 
 from vllm_spyre.v1.sample.golden_token_injector import GoldenTokenInjector
 
