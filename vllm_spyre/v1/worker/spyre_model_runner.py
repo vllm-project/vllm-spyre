@@ -1851,7 +1851,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         
         # Case III 
 
-        No left paddings and more than one chunk
+        No left padding and more than one chunk
 
         13 tokens
         4 blocks
@@ -1862,8 +1862,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         NOTE: The goal of this "illustration" is to depics strategies to write
         code to create the chunks, not necessarily enumerate the possible 
-        scenario. Of course there are interpretations where these cases 
-        overlaps. 
+        scenarios. Of course there are interpretations where these cases 
+        overlap. 
         
         '''
 
@@ -2302,7 +2302,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                 return self.get_empty_output()
 
             t1 = time.time() - t0
-            logger.debug("t_forward_pass: %.2fms [prefill single chunk]", (t1 * 1000))
+            logger.debug("t_forward_pass: %.2fms [prefill single chunk]",
+                         (t1 * 1000))
             return CPSpyreModelRunnerOutput(
                 req_ids=list(req_id_to_index.keys()),
                 req_id_to_index=req_id_to_index,
