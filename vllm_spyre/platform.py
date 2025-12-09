@@ -211,7 +211,7 @@ class SpyrePlatform(Platform):
                     f" be divisible by the block size ({cls._block_size}) "
                     "to enable chunked prefill. It was set to "
                     f"`{scheduler_config.max_num_batched_tokens}`. Please "
-                    "set `--max-num-batched-tokens` to a number that satisfy "
+                    "set `--max-num-batched-tokens` to a number that satisfies "
                     "this constraint.")
 
         logger.info(
