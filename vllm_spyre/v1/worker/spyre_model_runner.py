@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass, field
 from logging import DEBUG
 from typing import TYPE_CHECKING, Any, Generic, Optional, TypeVar, Union, cast
 
+import numpy
 import torch
 from torch import nn
 from transformers import (AutoModel, AutoModelForSequenceClassification,
@@ -15,7 +16,13 @@ from vllm.forward_context import set_forward_context
 from vllm.logger import init_logger
 from vllm.model_executor.layers.pooler import ClassifierPooler, Pooler
 from vllm.sampling_params import SamplingType
-from vllm.utils import is_pin_memory_available
+
+try:
+    # pre 0.11.1 compatibility
+    from vllm.utils import is_pin_memory_available
+except ImportError:
+    from vllm.utils.platform_utils import is_pin_memory_available
+
 from vllm.v1.core.block_pool import BlockPool
 from vllm.v1.core.kv_cache_utils import KVCacheBlock
 from vllm.v1.core.sched.output import CachedRequestData
@@ -285,6 +292,23 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT,
         **kwargs,
     ) -> ModelRunnerOutput:
         raise NotImplementedError
+
+    def _make_compatible_sampled_token_ids(
+        self, sampled_token_ids: torch.Tensor
+    ) -> list[list[int]] | list[numpy.ndarray]:
+        """Some versions of vllm required a list of numpy arrays as output.
+        This was ultimately rejected, see:
+        https://github.com/vllm-project/vllm/pull/29121
+
+        This can be removed once the *lower bound* of the vllm dependency is
+        >= 0.12.0
+        """
+        if ModelRunnerOutput.__dataclass_fields__[
+                "sampled_token_ids"].type == list[numpy.ndarray]:
+            sampled_token_ids = [x for x in sampled_token_ids.numpy()]
+        else:
+            sampled_token_ids = sampled_token_ids.tolist()
+        return sampled_token_ids
 
 
 class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
@@ -572,10 +596,13 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
         if not self.is_driver_worker:
             return EMPTY_MODEL_RUNNER_OUTPUT
 
+        sampled_token_ids = self._make_compatible_sampled_token_ids(
+            output.sampled_token_ids)
+
         model_output = ModelRunnerOutput(
             req_ids=list(req_id_to_index.keys()),
             req_id_to_index=req_id_to_index,
-            sampled_token_ids=output.sampled_token_ids.tolist(),
+            sampled_token_ids=sampled_token_ids,
             logprobs=(output.logprobs_tensors.tolists()
                       if output.logprobs_tensors else None),
             prompt_logprobs_dict=prompt_logprobs_dicts,
@@ -898,7 +925,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         cache_config.num_gpu_blocks_override
         """
         max_batch_size = self.scheduler_config.max_num_seqs
-        max_model_len = self.scheduler_config.max_model_len
+        max_model_len = self.model_config.max_model_len
         block_size = SpyrePlatform.get_block_size()
         min_req_num_blocks = max_model_len // block_size
 
@@ -2344,10 +2371,13 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         if not self.is_driver_worker:
             return self.get_empty_output()
 
+        sampled_token_ids = self._make_compatible_sampled_token_ids(
+            output.sampled_token_ids)
+
         model_output = CPSpyreModelRunnerOutput(
             req_ids=list(req_id_to_index.keys()),
             req_id_to_index=req_id_to_index,
-            sampled_token_ids=output.sampled_token_ids.tolist(),
+            sampled_token_ids=sampled_token_ids,
             logprobs=(output.logprobs_tensors.tolists()
                       if output.logprobs_tensors else None),
             prompt_logprobs_dict=prompt_logprobs_dicts,

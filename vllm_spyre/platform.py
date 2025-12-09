@@ -19,14 +19,18 @@ import torch
 from transformers.models.granite import GraniteConfig
 from vllm.inputs import ProcessorInputs, PromptType
 from vllm.logger import init_logger
-from vllm.pooling_params import PoolingParams
-from vllm.sampling_params import SamplingParams
 
 if TYPE_CHECKING:
+    # NB: We can't eagerly import many things from vllm since vllm.config
+    # will import this file. These would lead to circular imports
     from vllm.config import ModelConfig, VllmConfig
+    from vllm.pooling_params import PoolingParams
+    from vllm.sampling_params import SamplingParams
 else:
     ModelConfig = None
     VllmConfig = None
+    SamplingParams = None
+    PoolingParams = None
 from vllm.platforms import Platform, PlatformEnum
 
 import vllm_spyre.envs as envs_spyre
@@ -346,6 +350,10 @@ class SpyrePlatform(Platform):
         processed_inputs: ProcessorInputs | None = None,
     ) -> None:
         """Raises if this request is unsupported on this platform"""
+
+        # The PoolingParams import is lazy here because it imports vllm.config,
+        # which will in turn import this file again.
+        from vllm.pooling_params import PoolingParams
         if isinstance(params, PoolingParams):
             # Only validating generation requests for now
             return None
@@ -379,13 +387,13 @@ class SpyrePlatform(Platform):
             prompt_padding_len = math.ceil(
                 prompt_len / cls._block_size) * cls._block_size
             if (prompt_padding_len + max_tokens
-                    > cls._config.scheduler_config.max_model_len):
+                    > cls._config.model_config.max_model_len):
                 raise ValueError(
                     "Could not add request: prompt length is "
                     f"{prompt_len} tokens, which gets padded to "
                     f"{prompt_padding_len} tokens, maximum number of output "
                     f"tokens is {max_tokens} tokens, but max model context "
-                    f"length is {cls._config.scheduler_config.max_model_len}.")
+                    f"length is {cls._config.model_config.max_model_len}.")
         else:
             # For non-continuous batching, check if the request matches a warmup
             # shape
@@ -545,7 +553,7 @@ class SpyrePlatform(Platform):
             # ceil division to pad to next block boundary
             padded_prompt_len = math.ceil(
                 prompt_len / self._block_size) * self._block_size
-            max_new_tokens = (self._config.scheduler_config.max_model_len -
+            max_new_tokens = (self._config.model_config.max_model_len -
                               padded_prompt_len)
             return max_new_tokens
 

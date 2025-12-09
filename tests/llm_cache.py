@@ -234,7 +234,7 @@ class EngineCache:
 
         # Set scheduler configs for max_model_len and max_num_seqs to the
         # original values. They were changed for more robust compilation only.
-        engine_core.scheduler.scheduler_config.max_model_len = max_model_len
+        engine_core.scheduler.model_config.max_model_len = max_model_len
         engine_core.scheduler.scheduler_config.max_num_seqs = max_num_seqs
 
         if available_blocks is not None:
