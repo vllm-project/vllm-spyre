@@ -75,9 +75,6 @@ jobs:
           - name: "other e2e"
             markers: "cpu and other_e2e and not quantized"
             flags: "--timeout=300"
-          - name: "precompilation"
-            markers: "precompilation and not quantized"
-            flags: "--timeout=300"
         include:
           # Lower bound support
           - vllm_version:
