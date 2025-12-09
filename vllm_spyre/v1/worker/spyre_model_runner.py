@@ -925,7 +925,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         cache_config.num_gpu_blocks_override
         """
         max_batch_size = self.scheduler_config.max_num_seqs
-        max_model_len = self.scheduler_config.max_model_len
+        max_model_len = self.model_config.max_model_len
         block_size = SpyrePlatform.get_block_size()
         min_req_num_blocks = max_model_len // block_size
 

@@ -387,13 +387,13 @@ class SpyrePlatform(Platform):
             prompt_padding_len = math.ceil(
                 prompt_len / cls._block_size) * cls._block_size
             if (prompt_padding_len + max_tokens
-                    > cls._config.scheduler_config.max_model_len):
+                    > cls._config.model_config.max_model_len):
                 raise ValueError(
                     "Could not add request: prompt length is "
                     f"{prompt_len} tokens, which gets padded to "
                     f"{prompt_padding_len} tokens, maximum number of output "
                     f"tokens is {max_tokens} tokens, but max model context "
-                    f"length is {cls._config.scheduler_config.max_model_len}.")
+                    f"length is {cls._config.model_config.max_model_len}.")
         else:
             # For non-continuous batching, check if the request matches a warmup
             # shape
@@ -553,7 +553,7 @@ class SpyrePlatform(Platform):
             # ceil division to pad to next block boundary
             padded_prompt_len = math.ceil(
                 prompt_len / self._block_size) * self._block_size
-            max_new_tokens = (self._config.scheduler_config.max_model_len -
+            max_new_tokens = (self._config.model_config.max_model_len -
                               padded_prompt_len)
             return max_new_tokens
 

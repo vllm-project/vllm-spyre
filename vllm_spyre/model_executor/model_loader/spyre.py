@@ -316,7 +316,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         rank: int,
     ) -> None:
         BLOCK_SIZE = SpyrePlatform.get_block_size()
-        max_model_len = vllm_config.scheduler_config.max_model_len
+        max_model_len = vllm_config.model_config.max_model_len
 
         # edge case: prompt fills model length: can produce 1 token with prefill
         max_prompt_length = max_model_len
@@ -363,6 +363,12 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         self.current_scale: Optional[list[tuple]] = None
 
     def set_past_key_value_states(self, num_blocks) -> None:
+
+        print("\n\n\n\n\t\tNUM BLOCKS:", num_blocks)
+        print("\t\tBLOCK SIZE:", self.kv_cache_specs['block_size'])
+        print("\t\tNUM KV HEADS:", self.kv_cache_specs['num_kv_heads'])
+        print("\t\tHEAD DIM:", self.kv_cache_specs['head_dim'])
+
         # List[layers] of Tuple[k,v] of
         # Tensor[num_blocks, block_size, num_kv_heads, head_dim]
         if not self.model_config.quantization:

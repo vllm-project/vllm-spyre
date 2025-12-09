@@ -204,8 +204,7 @@ class SpyreWorker(WorkerBase):
         """
         # The fake kv_cache config specified by the model runner sets 4 bytes
         # per token.
-        accurate_fake_kv_cache_size = (4 *
-                                       self.scheduler_config.max_model_len *
+        accurate_fake_kv_cache_size = (4 * self.model_config.max_model_len *
                                        self.scheduler_config.max_num_seqs)
 
         # The vLLM scheduler reserves a null block in its kv-cache, so we need
