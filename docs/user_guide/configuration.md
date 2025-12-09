@@ -69,3 +69,35 @@ This parameter should be tuned according to your infrastructure, it is recommend
 `torch_sendnn` supports caching compiled model graphs, which can vastly speed up warmup time when loading models in a distributed setting.
 
 To enable this, set `TORCH_SENDNN_CACHE_ENABLE=1` and configure `TORCH_SENDNN_CACHE_DIR` to a directory to hold the cache files. By default, this feature is disabled.
+
+### Require Precompiled Decoders
+
+Model compilation can be resource intensive and disruptive in production environments. To mitigate this, artifacts stored in `TORCH_SENDNN_CACHE_DIR` can be persisted to a shared volume during pre-deployment. Requiring the server to load from the cache avoids unexpected recompilation on the inference server.
+
+To enforce the use of precompiled models, set:
+
+```sh
+VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS=1
+```
+
+and create an empty catalog file:
+
+```sh
+echo '{}' > ${TORCH_SENDNN_CACHE_DIR}/pre_compiled_cache_catalog.json
+```
+
+This configuration ensures that if a precompiled model is not found, an error will be raised. The catalog file is mandatory and serves as metadata for precompiled models in the cache. It enables the server to surface useful information and warnings in logs tagged with `[PRECOMPILED_WARN]`.
+
+Catalog checks inspect metadata of the launch configuration that affect the cached artifacts including:
+
+- vLLM configurations (tensor parallelism, batch size, static vs. continuous batching)
+- Library versions used during precompilation
+- Model name
+
+If a matching entry is not found in the catalog, the server will still attempt to load from the cache. This allows precompiled models without catalog metadata to be used. However, if no precompiled model exists in the cache, the system will raise:
+
+```text
+RuntimeError: Compilation disabled
+```
+
+Scripts to generate and update pre_compiled_cache_catalog.json will be provided in future releases.
