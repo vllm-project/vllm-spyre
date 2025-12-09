@@ -139,7 +139,7 @@ wheels = [
 
 [[package]]
 name = "aiu-fms-testing-utils"
-version = "0.4.3"
+version = "0.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fms-model-optimizer", extra = ["fp8"] },
@@ -150,7 +150,7 @@ dependencies = [
     { name = "transformers" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/24/1d/4c06643a03e1179e28178617f1b66c07b2c1b3e772dd2aad2c3551b2f74b/aiu_fms_testing_utils-0.4.3-py3-none-any.whl", hash = "sha256:a73ef722b5f34d6694b0f75e4eb6d4073c263f7236283972fe963a563c25d3ab", size = 83940, upload-time = "2025-10-28T22:08:17.676Z" },
+    { url = "https://files.pythonhosted.org/packages/c1/48/bf6e176c2dfa8b624f7ff1987dff5b64db105edfac42a24a1c0dd0177b98/aiu_fms_testing_utils-0.5.0-py3-none-any.whl", hash = "sha256:ddc9384d72598b4356b10c0da7098ff64fc3dc4c9ee85c10d918b9fc34ab231d", size = 85447, upload-time = "2025-12-09T18:31:24.362Z" },
 ]
 
 [[package]]
