@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass, field
 from logging import DEBUG
 from typing import TYPE_CHECKING, Any, Generic, Optional, TypeVar, Union, cast
 
+import numpy
 import torch
 from torch import nn
 from transformers import (AutoModel, AutoModelForSequenceClassification,
@@ -15,7 +16,14 @@ from vllm.forward_context import set_forward_context
 from vllm.logger import init_logger
 from vllm.model_executor.layers.pooler import ClassifierPooler, Pooler
 from vllm.sampling_params import SamplingType
-from vllm.utils import get_hash_fn_by_name, is_pin_memory_available
+
+try:
+    # pre 0.11.1 compatibility
+    from vllm.utils import get_hash_fn_by_name, is_pin_memory_available
+except ImportError:
+    from vllm.utils.platform_utils import is_pin_memory_available
+    from vllm.utils.hashing import get_hash_fn_by_name
+
 from vllm.v1.core.block_pool import BlockPool
 from vllm.v1.core.kv_cache_utils import (KVCacheBlock,
                                          get_request_block_hasher,
@@ -289,6 +297,23 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT,
         **kwargs,
     ) -> ModelRunnerOutput:
         raise NotImplementedError
+
+    def _make_compatible_sampled_token_ids(
+        self, sampled_token_ids: torch.Tensor
+    ) -> list[list[int]] | list[numpy.ndarray]:
+        """Some versions of vllm required a list of numpy arrays as output.
+        This was ultimately rejected, see:
+        https://github.com/vllm-project/vllm/pull/29121
+
+        This can be removed once the *lower bound* of the vllm dependency is
+        >= 0.12.0
+        """
+        if ModelRunnerOutput.__dataclass_fields__[
+                "sampled_token_ids"].type == list[numpy.ndarray]:
+            sampled_token_ids = [x for x in sampled_token_ids.numpy()]
+        else:
+            sampled_token_ids = sampled_token_ids.tolist()
+        return sampled_token_ids
 
 
 class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
@@ -576,10 +601,13 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
         if not self.is_driver_worker:
             return EMPTY_MODEL_RUNNER_OUTPUT
 
+        sampled_token_ids = self._make_compatible_sampled_token_ids(
+            output.sampled_token_ids)
+
         model_output = ModelRunnerOutput(
             req_ids=list(req_id_to_index.keys()),
             req_id_to_index=req_id_to_index,
-            sampled_token_ids=output.sampled_token_ids.tolist(),
+            sampled_token_ids=sampled_token_ids,
             logprobs=(output.logprobs_tensors.tolists()
                       if output.logprobs_tensors else None),
             prompt_logprobs_dict=prompt_logprobs_dicts,
@@ -909,7 +937,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         cache_config.num_gpu_blocks_override
         """
         max_batch_size = self.scheduler_config.max_num_seqs
-        max_model_len = self.scheduler_config.max_model_len
+        max_model_len = self.model_config.max_model_len
         block_size = SpyrePlatform.get_block_size()
         min_req_num_blocks = max_model_len // block_size
 
@@ -1872,7 +1900,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         
         # Case III 
 
-        No left paddings and more than one chunk
+        No left padding and more than one chunk
 
         13 tokens
         4 blocks
@@ -1883,8 +1911,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         NOTE: The goal of this "illustration" is to depics strategies to write
         code to create the chunks, not necessarily enumerate the possible 
-        scenario. Of course there are interpretations where these cases 
-        overlaps. 
+        scenarios. Of course there are interpretations where these cases 
+        overlap. 
         
         '''
 
@@ -2189,7 +2217,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         new_tokens = (sampling_params.max_tokens
                       if sampling_params is not None else 0)
         total_tokens = prompt_len + new_tokens - 1
-        # subtract the padding blocks from the reserved blocks
+        # calculate the number of reserved blocks
         n_reserved_blocks = math.ceil(total_tokens / self.block_size)
 
         self.req_ids2num_reserved_blocks[req_id] = n_reserved_blocks
@@ -2314,8 +2342,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             return False
 
         # possible prefill
-        req_id = new_reqs[0].req_id if\
-                len(new_reqs) == 1 else \
+        req_id = new_reqs[0].req_id if len(new_reqs) == 1 else \
                 cached_reqs.req_ids[0]
 
         num_scheduled_tokens =\
@@ -2424,6 +2451,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             if not self.is_driver_worker:
                 return self.get_empty_output()
 
+            t1 = time.time() - t0
+            logger.debug("t_forward_pass: %.2fms [prefill single chunk]",
+                         (t1 * 1000))
             return CPSpyreModelRunnerOutput(
                 req_ids=list(req_id_to_index.keys()),
                 req_id_to_index=req_id_to_index,
@@ -2441,19 +2471,14 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             sampling_metadata=self.get_sampling_metadata(is_prefill),
         )
         t1 = time.time() - t0
-        logger.debug("t_token: %.2fms", (t1 * 1000))
-
-        # Add the sampled token(s) to the request cache
-        req_ids = ([r.req_id for r in scheduler_output.scheduled_new_reqs]
-                   if len(scheduler_output.scheduled_new_reqs) > 0 \
-                    else self.input_batch.sorted_requests_ids)
+        step_type = "[prefill last chunk]" if is_prefill else "[decode]"
+        logger.debug("t_token: %.2fms %s", (t1 * 1000), step_type)
 
         # Get the right batch, if this is the last chunk to conclude the
         # prefill, we'll generate a token and we should get from the prefill
         # batch because input_batch may have other request that are were
         # not processed at this step.
-        batch = self.prefill_batch if is_prefill \
-            else self.input_batch
+        batch = self.prefill_batch if is_prefill else self.input_batch
 
         # Add the sampled token(s) to the request cache
         req_ids = ([r.req_id for r in scheduler_output.scheduled_new_reqs]
@@ -2476,10 +2501,13 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         if not self.is_driver_worker:
             return self.get_empty_output()
 
+        sampled_token_ids = self._make_compatible_sampled_token_ids(
+            output.sampled_token_ids)
+
         model_output = CPSpyreModelRunnerOutput(
             req_ids=list(req_id_to_index.keys()),
             req_id_to_index=req_id_to_index,
-            sampled_token_ids=output.sampled_token_ids.tolist(),
+            sampled_token_ids=sampled_token_ids,
             logprobs=(output.logprobs_tensors.tolists()
                       if output.logprobs_tensors else None),
             prompt_logprobs_dict=prompt_logprobs_dicts,

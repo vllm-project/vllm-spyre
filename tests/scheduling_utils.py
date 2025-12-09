@@ -1,7 +1,7 @@
 import copy
 import os
 from collections import defaultdict, deque
-from typing import Any
+from typing import Any, Union
 
 import pytest
 from llm_cache import get_cached_engine
@@ -13,7 +13,8 @@ from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
 
-from vllm_spyre.v1.core.scheduler import ContinuousBatchingSpyreScheduler
+from vllm_spyre.v1.core.scheduler import (ChunkedPrefillSpyreScheduler,
+                                          ContinuousBatchingSpyreScheduler)
 
 DISABLE_ASSERTS = False  # used for debugging
 
@@ -176,7 +177,8 @@ def check_scheduler_inference_steps(
         available_blocks=available_blocks,
         backend=backend,
         monkeypatch=monkeypatch)
-    scheduler: ContinuousBatchingSpyreScheduler = engine_core.scheduler
+    scheduler: Union[ContinuousBatchingSpyreScheduler,
+                     ChunkedPrefillSpyreScheduler] = engine_core.scheduler
 
     tokenizer = get_tokenizer(model.name, revision=model.revision)
     # clear the cache of function scheduler.check_batch_tkv_limit()

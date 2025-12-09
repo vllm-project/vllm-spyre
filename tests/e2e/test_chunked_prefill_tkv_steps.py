@@ -20,6 +20,7 @@ from vllm.v1.request import Request, SamplingParams
 
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import SpyreModelRunner
+from vllm_spyre.v1.worker.spyre_worker import _get_extra_args
 
 
 ########## Assuming that we have:
@@ -107,6 +108,7 @@ def make_scheduler_output(
     if finished_req_ids is None:
         finished_req_ids = set()
 
+    extra_args = _get_extra_args()
     return SchedulerOutput(scheduled_new_reqs=scheduled_new_reqs,
                            scheduled_cached_reqs=scheduled_cached_reqs,
                            num_scheduled_tokens=num_scheduled_tokens,
@@ -115,10 +117,8 @@ def make_scheduler_output(
                            scheduled_encoder_inputs={},
                            num_common_prefix_blocks=[],
                            finished_req_ids=finished_req_ids,
-                           free_encoder_mm_hashes=[],
-                           structured_output_request_ids={},
-                           grammar_bitmask=None,
-                           kv_connector_metadata=None)
+                           kv_connector_metadata=None,
+                           **extra_args)
 
 
 def make_new_request_data(req_id, prompt_len):
