@@ -2345,9 +2345,12 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                 if self.enable_prefix_caching:
                     num_cached_blocks = self.kv_cache_manager.\
                         num_cached_block[req_id]
+                    # if the number of cached tokens is larger or equal to the
+                    # number of computed tokens, it means that during this call
+                    # to execute_model we're just loading blocks from the KV
+                    # cache and can't call `cache_blocks()`
                     if num_computed_tokens > \
                         num_cached_blocks * self.block_size:
-                        # otherwise we're in a dummy iteration
                         self.kv_cache_manager.cache_blocks(
                             req_state.scheduler_request, num_computed_tokens)
                 # hide the prefill request from the super class
