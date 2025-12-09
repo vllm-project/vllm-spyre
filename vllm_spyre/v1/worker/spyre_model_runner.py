@@ -2120,39 +2120,11 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         return model_inputs
 
-    def add_new_request(self, request: NewRequestData):
-        req_id = request.req_id
-        prompt_token_ids = request.prompt_token_ids
-        sampling_params = request.sampling_params
-        is_new_batch = len(self.req_ids2num_reserved_blocks) == 0
-        prompt_len = len(prompt_token_ids)
-
-        self.prefill_batch.clear_requests()
-
-        # set the new tkv to the prompt length if starting a new decode batch
-        if is_new_batch:
-            self.tkv = prompt_len
-
-        # Reserve the number of blocks that this new sequence requires in the
-        # worst case (it might always stop early by producing the EOS token)
-        new_tokens = (sampling_params.max_tokens
-                      if sampling_params is not None else 0)
-        total_tokens = prompt_len + new_tokens - 1
-        # subtract the padding blocks from the reserved blocks
-        n_reserved_blocks = math.ceil(total_tokens / self.block_size)
-
-        self.req_ids2num_reserved_blocks[req_id] = n_reserved_blocks
-
+    def _maybe_load_prefix_from_cache(self, scheduler_request: Request) -> int:
         num_cached_tokens = 0
-        scheduler_request = Request(
-            request_id=req_id,
-            prompt_token_ids=prompt_token_ids,
-            sampling_params=request.sampling_params,
-            pooling_params=None,
-            eos_token_id=None,
-            block_hasher=self.request_block_hasher,
-        )
         if self.enable_prefix_caching:
+
+            prompt_len = len(scheduler_request.prompt_token_ids)
 
             chunk_size = self.chunk_size
             padded_prompt_len = math.ceil(
@@ -2197,7 +2169,44 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
             self.block_pool.touch((computed_blocks, ))
             self.kv_cache_manager.save_new_computed_blocks(
-                req_id, computed_blocks)
+                scheduler_request.request_id, computed_blocks)
+
+        return num_cached_tokens
+
+    def add_new_request(self, request: NewRequestData):
+        req_id = request.req_id
+        prompt_token_ids = request.prompt_token_ids
+        sampling_params = request.sampling_params
+        is_new_batch = len(self.req_ids2num_reserved_blocks) == 0
+        prompt_len = len(prompt_token_ids)
+
+        self.prefill_batch.clear_requests()
+
+        # set the new tkv to the prompt length if starting a new decode batch
+        if is_new_batch:
+            self.tkv = prompt_len
+
+        # Reserve the number of blocks that this new sequence requires in the
+        # worst case (it might always stop early by producing the EOS token)
+        new_tokens = (sampling_params.max_tokens
+                      if sampling_params is not None else 0)
+        total_tokens = prompt_len + new_tokens - 1
+        # subtract the padding blocks from the reserved blocks
+        n_reserved_blocks = math.ceil(total_tokens / self.block_size)
+
+        self.req_ids2num_reserved_blocks[req_id] = n_reserved_blocks
+
+        num_cached_tokens = 0
+        scheduler_request = Request(
+            request_id=req_id,
+            prompt_token_ids=prompt_token_ids,
+            sampling_params=request.sampling_params,
+            pooling_params=None,
+            eos_token_id=None,
+            block_hasher=self.request_block_hasher,
+        )
+        num_cached_tokens = self._maybe_load_prefix_from_cache(
+            scheduler_request)
 
         # allocate blocks
         self.kv_cache_manager.allocate_new_blocks(req_id, prompt_len)
@@ -2378,7 +2387,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             is_cached_chunk = model_input.input_tokens is None
             if is_cached_chunk:
                 assert incomplete_prefill, \
-                    "cached chunks can only be used with incomplete prefill"
+                    "can't apply caching on the last chunked prefill"
 
         if not is_cached_chunk:
             # Execute the model
