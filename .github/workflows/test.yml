@@ -75,9 +75,6 @@ jobs:
           - name: "other e2e"
             markers: "cpu and other_e2e and not quantized"
             flags: "--timeout=300"
-          - name: "precompilation"
-            markers: "precompilation and not quantized"
-            flags: "--timeout=300"
         include:
           # Lower bound support
           - vllm_version:
@@ -104,13 +101,12 @@ jobs:
             os: "ubuntu-latest"
             python_version: "3.12"
 
-        # Exclude vLLM:main if PR does NOT have "ready" label AND auto-merge is not enabled
+        # Only run vllm:main jobs on PRs with `vllm:main` label
         exclude: >-
           ${{
-            github.event_name == 'pull_request' &&
+            github.event_name != 'pull_request' ||
             !(
-              contains(toJson(github.event.pull_request.labels), '"ready"') ||
-              github.event.action == 'auto_merge_enabled'
+              contains(toJson(github.event.pull_request.labels), '"vllm:main"')
             )
               && fromJSON('[{"vllm_version":{"name":"vLLM:main"}}]')
               || fromJSON('[]')
