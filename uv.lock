@@ -3757,7 +3757,7 @@ lint = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fms-model-optimizer", extras = ["fp8"], specifier = "==0.8.0" },
+    { name = "fms-model-optimizer", extras = ["fp8"], specifier = ">=0.8.0" },
     { name = "ibm-fms", specifier = ">=1.5.0,<2.0" },
     { name = "pytest-mock", specifier = ">=3.15.0" },
     { name = "vllm", git = "https://github.com/vllm-project/vllm?rev=v0.11.1" },
