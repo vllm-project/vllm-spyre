@@ -104,11 +104,10 @@ jobs:
         # Only run vllm:main jobs on PRs with `vllm:main` label
         exclude: >-
           ${{
-            github.event_name != 'pull_request' ||
-            !(
-              contains(toJson(github.event.pull_request.labels), '"vllm:main"')
-            )
-              && fromJSON('[{"vllm_version":{"name":"vLLM:main"}}]')
+            (
+              github.event_name != 'pull_request' ||
+              !(contains(toJson(github.event.pull_request.labels), '"vllm:main"'))
+            ) && fromJSON('[{"vllm_version":{"name":"vLLM:main"}}]')
               || fromJSON('[]')
           }}
 
