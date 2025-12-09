@@ -33,6 +33,7 @@ class SpyreScheduler(Scheduler):
     def __init__(self, *args, **kwargs) -> None:
         # Initialize vLLM scheduler
         super().__init__(*args, **kwargs)
+        self.model_config = self.vllm_config.model_config
 
 
 class StaticBatchingSpyreScheduler(SpyreScheduler):
