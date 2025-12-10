@@ -14,6 +14,8 @@ from vllm.v1.core.single_type_kv_cache_manager import FullAttentionManager
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor
 
+from vllm_spyre.compat_utils import has_argument
+from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.sample.golden_token_injector import GoldenTokenInjector
 
 T = TypeVar("T")
@@ -263,10 +265,14 @@ class EngineCache:
             worker.model_runner.n_blocks = available_blocks
             # need to overwrite the block pool and kv cache manager if the
             # number of available blocks has changed
+            kwargs = {
+                "hash_block_size": SpyrePlatform.get_block_size()
+            } if has_argument(BlockPool, "hash_block_size") else {}
             worker.model_runner.block_pool = BlockPool(
                 num_gpu_blocks=available_blocks + 1,
                 enable_caching=use_pc,
-                enable_kv_cache_events=False)
+                enable_kv_cache_events=False,
+                **kwargs)
             worker.model_runner.kv_cache_manager = FullAttentionManager(
                 kv_cache_spec=worker.model_runner._attn_spec,
                 block_pool=worker.model_runner.block_pool,
