@@ -122,3 +122,10 @@ jobs:
 
       - name: "Run test action"
         uses: ./.github/actions/test
+        with:
+          python_version: ${{ matrix.python_version }}
+          vllm_version_name: ${{ matrix.vllm_version.name }}
+          vllm_version_repo: ${{ matrix.vllm_version.repo }}
+          markers: ${{ matrix.test_suite.markers }}
+          flags: ${{ matrix.test_suite.flags }}
+          # TODO: need to conditionally set the model info
