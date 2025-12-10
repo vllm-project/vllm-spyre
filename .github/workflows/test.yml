@@ -129,3 +129,7 @@ jobs:
           markers: ${{ matrix.test_suite.markers }}
           flags: ${{ matrix.test_suite.flags }}
           # TODO: need to conditionally set the model info
+          hf_model: ${{ matrix.test_suite.hf_model }}
+          hf_model_rev: ${{ matrix.test_suite.hf_model_rev }}
+          hf_model_2: ${{ matrix.test_suite.hf_model_2 }}
+          hf_model_2_rev: ${{ matrix.test_suite.hf_model_2_rev }}
