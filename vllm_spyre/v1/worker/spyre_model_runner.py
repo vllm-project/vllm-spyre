@@ -1961,9 +1961,20 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         block_table = torch.tensor(block_ids[:block_end],
                                    dtype=torch.int64).unsqueeze(0)
 
+        # last chunk
+        blocks_to_recompute = 0
+        if chunk_i + 1 == chunk_count:
+            num_cached_blocks = self.kv_cache_manager.\
+                num_cached_block.get(req_id, 0)
+            blocks_to_recompute = num_cached_blocks % \
+                self.chunk_blocks_count
+
         slot_mapping = []
         for i in range(self.chunk_blocks_count):
             block = block_table[0][-self.chunk_blocks_count + i]
+            # if we're recomputing a cached block, set the slot
+            # mapping to the padding block (0)
+            block *= int(i >= blocks_to_recompute)
             slot_mapping += list(
                 range(block * self.block_size,
                       block * self.block_size + self.block_size))
@@ -2175,21 +2186,31 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
             logger.debug("Found: %d cached_blocks", n_hit)
 
-            # trim down to chunk boundary
-            usable_blocks = (math.ceil(
-                (left_blocks + n_hit) / self.chunk_blocks_count)\
-                * self.chunk_blocks_count) \
-                    - left_blocks - self.chunk_blocks_count
-            usable_blocks = max(usable_blocks, 0)
-            blocks_to_recompute = padded_prompt_len // self.block_size \
+            chunks_with_cached_blocks = math.ceil(
+                (left_blocks + n_hit) /
+                self.chunk_blocks_count) if n_hit > 0 else 0
+
+            if chunks_with_cached_blocks == chunk_count:
+                chunks_with_cached_blocks -= 1
+
+            usable_blocks = max(
+                0, (chunks_with_cached_blocks * self.chunk_blocks_count) -
+                left_blocks)
+
+            # blocks to compute from scratch or recompute in the last
+            # chunk
+            blocks_to_compute = padded_prompt_len // self.block_size \
                 - usable_blocks
             logger.debug(
                 "Found: %d usable blocks in cache. "
-                "%d blocks will be recomputed", usable_blocks,
-                blocks_to_recompute)
-            computed_blocks = computed_blocks[:usable_blocks]
+                "%d blocks will be computed", usable_blocks, blocks_to_compute)
             num_cached_tokens = usable_blocks * self.block_size
 
+            # Save all of the computed blocks and not only the usable
+            # ones because we will make a dummy recomputation of computed
+            # blocks in the last chunk to deduplicate the used blocks. So
+            # although we will recompute, we'll still point the block table
+            # to the cached blocks.
             self.block_pool.touch((computed_blocks, ))
             self.kv_cache_manager.save_new_computed_blocks(
                 scheduler_request.request_id, computed_blocks)
