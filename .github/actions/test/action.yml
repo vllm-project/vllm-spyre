@@ -78,18 +78,18 @@ runs:
       uses: astral-sh/setup-uv@v5
       with:
         version: "latest"
-        python-version: ${{ matrix.python_version }}
+        python-version: ${{ inputs.python_version }}
         enable-cache: true
         ignore-nothing-to-cache: true
         cache-dependency-glob: |
           pyproject.toml
 
     - name: "Set vLLM version"
-      if: ( steps.changed-src-files.outputs.any_changed == 'true' && matrix.vllm_version.repo )
+      if: ( steps.changed-src-files.outputs.any_changed == 'true' && inputs.vllm_version.repo )
       shell: bash
       run: |
-        uv add ${{ matrix.vllm_version.repo }}
-        echo "TEST_VLLM_VERSION=${{ matrix.vllm_version.name }}" >> "$GITHUB_ENV"
+        uv add ${{ inputs.vllm_version_repo }}
+        echo "TEST_VLLM_VERSION=${{ inputs.vllm_version_name }}" >> "$GITHUB_ENV"
 
     - name: "Install vLLM with Spyre plugin"
       if: steps.changed-src-files.outputs.any_changed == 'true'
@@ -113,25 +113,16 @@ runs:
         # replace '/' characters in HF_MODEL with '--' for GHA cache keys and
         # in model file names in local HF hub cache
         
-        # don't use in-line default values for variable expansion here to not
-        # use the default model revision with a non-default model like this:
-        #   model="${{ matrix.test_suite.hf_model || env.DEFAULT_HF_MODEL }}"
-        #   revision="${{ matrix.test_suite.hf_model_rev || env.DEFAULT_HF_MODEL_REV }}"
-        
-        if [[ -n "${{ matrix.test_suite.hf_model }}" ]]; then
-          model="${{ matrix.test_suite.hf_model }}"
-          revision="${{ matrix.test_suite.hf_model_rev }}"
-        else
-          model="${{ env.DEFAULT_HF_MODEL }}"
-          revision="${{ env.DEFAULT_HF_MODEL_REV }}"
-        fi
+        model="${{ inputs.hf_model }}"
+        revision="${{ inputs.hf_model_rev }}"
+
         safe_name="${model//\//--}"
         echo "model_key=${safe_name}_${revision}"              >> "$GITHUB_ENV"
         echo "model_path=${HF_HUB_CACHE}/models--${safe_name}" >> "$GITHUB_ENV"
         
-        if [[ -n "${{ matrix.test_suite.hf_model_2 }}" ]]; then
-          model_2="${{ matrix.test_suite.hf_model_2 }}"
-          revision_2="${{ matrix.test_suite.hf_model_2_rev}}"
+        if [[ -n "${{ inputs.hf_model_2 }}" ]]; then
+          model_2="${{ inputs.hf_model_2 }}"
+          revision_2="${{ inputs.hf_model_2_rev}}"
           safe_name_2="${model_2//\//--}"
           echo "model_2_key=${safe_name_2}_${revision_2}"            >> "$GITHUB_ENV"
           echo "model_2_path=${HF_HUB_CACHE}/models--${safe_name_2}" >> "$GITHUB_ENV"
@@ -147,7 +138,7 @@ runs:
 
     - name: "Restore HF models cache for additional model"
       id: cache_restore_2
-      if: ( steps.changed-src-files.outputs.any_changed == 'true' && matrix.test_suite.hf_model_2 )
+      if: ( steps.changed-src-files.outputs.any_changed == 'true' && inputs.hf_model_2 )
       uses: actions/cache/restore@v4
       with:
         path: ${{ env.model_2_path }}
@@ -165,15 +156,15 @@ runs:
         # previous cache blob can then be removed by an admin or can be left
         # to expire after 7 days.
 
-        if [[ -n "${{ matrix.test_suite.hf_model }}" ]]; then
-          model="${{ matrix.test_suite.hf_model }}"
-          revision="${{ matrix.test_suite.hf_model_rev }}"
+        if [[ -n "${{ inputs.hf_model }}" ]]; then
+          model="${{ inputs.hf_model }}"
+          revision="${{ inputs.hf_model_rev }}"
         else
           model="${{ env.DEFAULT_HF_MODEL }}"
           revision="${{ env.DEFAULT_HF_MODEL_REV }}"
         fi
-        model_2="${{ matrix.test_suite.hf_model_2 }}"
-        revision_2="${{ matrix.test_suite.hf_model_2_rev }}"
+        model_2="${{ inputs.hf_model_2 }}"
+        revision_2="${{ inputs.hf_model_2_rev }}"
 
         python3 tools/download_model.py -m "$model" -r "${revision:-main}" &
 
@@ -191,7 +182,7 @@ runs:
         key: ${{ runner.os }}-hf-model-${{ env.model_key }}
 
     - name: "Save HF models cache for additional model"
-      if: ( steps.changed-src-files.outputs.any_changed == 'true' && matrix.test_suite.hf_model_2 && github.event_name != 'pull_request' && steps.cache_restore_2.outputs.cache-hit != 'true' )
+      if: ( steps.changed-src-files.outputs.any_changed == 'true' && inputs.hf_model_2 && github.event_name != 'pull_request' && steps.cache_restore_2.outputs.cache-hit != 'true' )
       uses: actions/cache/save@v4
       with:
         path: ${{ env.model_2_path }}
@@ -203,7 +194,6 @@ runs:
         MASTER_PORT: 12355
         MASTER_ADDR: localhost
         DISTRIBUTED_STRATEGY_IGNORE_MODULES: WordEmbedding
-        VLLM_SPYRE_TEST_MODEL_LIST: "${{ matrix.test_suite.name == 'static batching' && 'JackFram/llama-160m' || '' }}"
         HF_HUB_OFFLINE: 1
       shell: bash
       run: |
@@ -215,7 +205,7 @@ runs:
         # re-install the vllm_sypre package from source
         source .venv/bin/activate
 
-        python3 -m pytest ${{ matrix.test_suite.flags }} \
-          tests -v -m "${{ matrix.test_suite.markers }}"
+        python3 -m pytest ${{ inputs.flags }} \
+          tests -v -m "${{ inputs.markers }}"
 
 
