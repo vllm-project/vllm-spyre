@@ -363,13 +363,12 @@ def create_seq_prompt(model: ModelInfo, token_length: int) -> str:
     return tokenizer.decode(tokens)
 
 
-def create_random_request(
-    request_id: int,
-    num_tokens: int,
-    sampling_params: SamplingParams,
-    from_model_vocab: bool = False,
-    model: Optional[ModelInfo] = None,
-) -> Request:
+def create_random_request(request_id: int,
+                          num_tokens: int,
+                          sampling_params: SamplingParams,
+                          from_model_vocab: bool = False,
+                          model: Optional[ModelInfo] = None,
+                          seed: int = None) -> Request:
 
     tokenizer = AutoTokenizer.from_pretrained(model.name,
                                               revision=model.revision)
@@ -381,6 +380,8 @@ def create_random_request(
             v for v in tokenizer.vocab.values()
             if v not in tokenizer.all_special_ids
         ])
+        if seed is not None:
+            random.seed(seed)
         prompt_token_ids = random.choices(valid_token_ids, k=num_tokens)
     else:
         # start with existing prompts and tokenize them

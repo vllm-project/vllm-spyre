@@ -5,10 +5,12 @@ import os
 from typing import Callable, Generic, Optional, TypeVar
 
 import pytest
-from llm_cache_util import force_engine_shutdown
+from llm_cache_util import force_engine_core_shutdown, force_engine_shutdown
 from spyre_util import (DecodeWarmupShapes, ModelInfo, RemoteOpenAIServer,
                         patch_environment)
 from vllm import LLM, EngineArgs
+from vllm.v1.core.block_pool import BlockPool
+from vllm.v1.core.single_type_kv_cache_manager import FullAttentionManager
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor
 
@@ -95,6 +97,7 @@ class LLMCache:
                        warmup_shapes: DecodeWarmupShapes | None = None,
                        max_num_seqs: Optional[int] = None,
                        use_cb: bool = False,
+                       use_pc: bool = False,
                        max_num_batched_tokens: Optional[int] = None) -> LLM:
         """Creates an LLM with the provided runtime configuration.
 
@@ -106,6 +109,7 @@ class LLMCache:
             "tensor_parallel_size": tensor_parallel_size,
             "backend": backend,
             "use_cb": use_cb,
+            "use_pc": use_pc,
             "max_num_batched_tokens": max_num_batched_tokens
         }
         if use_cb:
@@ -118,12 +122,14 @@ class LLMCache:
 
         # Always patch the environment so that it's consistent with the LLM
         # Use chunked prefill if max_num_batched_tokens is set
+        use_chunked_prefill = bool(max_num_batched_tokens)
+        if use_pc:
+            assert use_chunked_prefill
         patch_environment(use_cb,
                           warmup_shapes,
                           backend,
                           monkeypatch,
-                          use_chunked_prefill=max_num_batched_tokens
-                          is not None,
+                          use_chunked_prefill=use_chunked_prefill,
                           max_num_batched_tokens=max_num_batched_tokens)
 
         maybe_llm = self._cache.maybe_get(runtime_config)
@@ -149,6 +155,7 @@ class LLMCache:
                 tensor_parallel_size=tensor_parallel_size,
                 max_num_batched_tokens=max_num_batched_tokens,
                 logits_processors=[GoldenTokenInjector],
+                enable_prefix_caching=use_pc,
             ),
         )
 
@@ -160,7 +167,8 @@ class EngineCache:
     """Cache for continuous batching engines"""
 
     def __init__(self):
-        self._cache: ModelCache[EngineCore] = ModelCache[EngineCore]()
+        self._cache: ModelCache[EngineCore] = ModelCache[EngineCore](
+            teardown_method=lambda x: force_engine_core_shutdown(x))
 
     def get_engine(
         self,
@@ -169,6 +177,7 @@ class EngineCache:
         max_num_seqs: int,
         available_blocks: int,
         max_num_batched_tokens: int,
+        use_pc: bool,
         backend: str,
         monkeypatch,
     ) -> EngineCore:
@@ -177,6 +186,7 @@ class EngineCache:
             "max_model_len": max_model_len,
             "max_num_seqs": max_num_seqs,
             "available_blocks": available_blocks,
+            "use_pc": use_pc,
             "max_num_batched_tokens": max_num_batched_tokens,
         }
 
@@ -185,6 +195,9 @@ class EngineCache:
             use_chunked_prefill = True
         else:
             use_chunked_prefill = False
+
+        if use_pc:
+            assert use_chunked_prefill
         patch_environment(use_cb=True,
                           warmup_shapes=None,
                           backend=backend,
@@ -193,6 +206,10 @@ class EngineCache:
 
         maybe_engine = self._cache.maybe_get(runtime_config)
         if maybe_engine:
+            if use_pc:
+                # reset the prefix cache across tests
+                (maybe_engine.model_executor.driver_worker.worker.model_runner.
+                 block_pool.reset_prefix_cache())
             return maybe_engine
         self.clear()
 
@@ -224,7 +241,8 @@ class EngineCache:
                                  max_num_seqs=max_num_seqs_compiled,
                                  num_gpu_blocks_override=None,
                                  logits_processors=[GoldenTokenInjector],
-                                 max_num_batched_tokens=max_num_batched_tokens)
+                                 max_num_batched_tokens=max_num_batched_tokens,
+                                 enable_prefix_caching=use_pc)
         vllm_config = engine_args.create_engine_config()
         executor_class = Executor.get_class(vllm_config)
 
@@ -243,6 +261,23 @@ class EngineCache:
             assert worker.model_runner.n_blocks >= available_blocks, \
                 "Cannot set available_blocks > (context * batch size // 64)"
             worker.model_runner.n_blocks = available_blocks
+            # need to overwrite the block pool and kv cache manager if the
+            # number of available blocks has changed
+            worker.model_runner.block_pool = BlockPool(
+                num_gpu_blocks=available_blocks + 1,
+                enable_caching=use_pc,
+                enable_kv_cache_events=False)
+            worker.model_runner.kv_cache_manager = FullAttentionManager(
+                kv_cache_spec=worker.model_runner._attn_spec,
+                block_pool=worker.model_runner.block_pool,
+                # Currently don't support models with more than one
+                # attention type, e.g. full and sliding window, so
+                # there is only one group.
+                kv_cache_group_id=0,
+                # We don't support DCP
+                # https://docs.vllm.ai/en/latest/serving/context_parallel_deployment/#decode-context-parallel
+                dcp_world_size=1,
+            )
 
         return self._cache.set(
             runtime_config,
@@ -352,7 +387,8 @@ def get_cached_engine(model: str,
                       available_blocks: int,
                       backend: str,
                       monkeypatch,
-                      max_num_batched_tokens: int | None = None) -> EngineCore:
+                      max_num_batched_tokens: int | None = None,
+                      use_pc: bool = False) -> EngineCore:
     # Clear other caches first
     LLM_CACHE.clear()
     API_SERVER_CACHE.clear()
@@ -363,6 +399,7 @@ def get_cached_engine(model: str,
         max_num_seqs=max_num_seqs,
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
+        use_pc=use_pc,
         backend=backend,
         monkeypatch=monkeypatch,
     )

@@ -3,6 +3,7 @@ from typing import Optional
 import pytest
 import torch
 from llm_cache import patch_environment
+from llm_cache_util import force_engine_shutdown
 from spyre_util import ModelInfo
 from vllm import LLM, SamplingParams
 from vllm.config import VllmConfig
@@ -57,6 +58,7 @@ def test_custom_logits_processor(model: ModelInfo, backend, monkeypatch,
     params = SamplingParams(max_tokens=5, temperature=0, logprobs=0)
 
     spyre_model.generate(prompt, params)
+    force_engine_shutdown(spyre_model)
 
     assert has_invoked_logits_processor
 
@@ -154,6 +156,7 @@ def test_cb_logits_processor(model: ModelInfo, backend, monkeypatch,
     spy_outputs = {}
     params = [params0, params1, params2]
     outputs = spyre_model.generate(prompt, params)
+    force_engine_shutdown(spyre_model)
 
     assert spy_outputs[5] == outputs[0].outputs[0].token_ids
     assert spy_outputs[10] == outputs[1].outputs[0].token_ids

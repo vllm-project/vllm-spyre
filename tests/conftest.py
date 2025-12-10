@@ -104,11 +104,13 @@ def pytest_generate_tests(metafunc):
     # markers
     if ("mode" in metafunc.fixturenames and "cb" not in existing_markers
             and "chunked_prefill" not in existing_markers
+            and "cp" not in existing_markers and "pc" not in existing_markers
             and "mode" not in existing_markers):
         metafunc.parametrize("mode", [
             "sb",
             pytest.param("cb", marks=pytest.mark.cb, id="cb"),
-            pytest.param("cp", marks=pytest.mark.chunked_prefill, id="cp")
+            pytest.param("cp", marks=pytest.mark.chunked_prefill, id="cp"),
+            pytest.param("pc", marks=pytest.mark.prefix_caching, id="pc")
         ])
 
 
@@ -252,7 +254,7 @@ def remote_openai_server(request):
             skip_unsupported_tp_size(int(tp_size), backend)
             server_args.extend(["--tensor-parallel-size", str(tp_size)])
 
-    if "mode" in params and params["mode"] in ["cb", "cp"]:
+    if "mode" in params and params["mode"] in ["cb", "cp", "pc"]:
         max_model_len = params["max_model_len"]
         max_num_seqs = params["max_num_seqs"]
         env_dict = {
@@ -265,11 +267,15 @@ def remote_openai_server(request):
             str(max_model_len)
         ])
         # Chunked prefill extra
-        if params["mode"] == "cp":
+        if params["mode"] in ["cp", "pc"]:
             env_dict.update({"VLLM_SPYRE_USE_CHUNKED_PREFILL": "1"})
             server_args.extend([
                 "--max_num_batched_tokens",
                 str(128),
+            ])
+        if params["mode"] == "pc":
+            server_args.extend([
+                "--enable-prefix-caching",
             ])
 
     else:
