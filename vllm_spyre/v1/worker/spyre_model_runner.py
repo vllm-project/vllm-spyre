@@ -2186,15 +2186,16 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
             logger.debug("Found: %d cached_blocks", n_hit)
 
-            chunks_with_cached_blocks = math.ceil(
-                (left_blocks + n_hit) /
-                self.chunk_blocks_count) if n_hit > 0 else 0
+            full_chunks_with_cached_blocks = ((left_blocks + n_hit) //
+                                              self.chunk_blocks_count)
 
-            if chunks_with_cached_blocks == chunk_count:
-                chunks_with_cached_blocks -= 1
+            # the last chunk of the prompt must always be
+            # recomputed
+            if full_chunks_with_cached_blocks == chunk_count:
+                full_chunks_with_cached_blocks -= 1
 
             usable_blocks = max(
-                0, (chunks_with_cached_blocks * self.chunk_blocks_count) -
+                0, (full_chunks_with_cached_blocks * self.chunk_blocks_count) -
                 left_blocks)
 
             # blocks to compute from scratch or recompute in the last
