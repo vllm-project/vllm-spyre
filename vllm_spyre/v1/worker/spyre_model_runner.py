@@ -1909,7 +1909,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         T T T T | T T T T || T T T T | T O O O || 
 
-        NOTE: The goal of this "illustration" is to depics strategies to write
+        NOTE: The goal of this "illustration" is to depict strategies to write
         code to create the chunks, not necessarily enumerate the possible 
         scenarios. Of course there are interpretations where these cases 
         overlap. 
@@ -2157,39 +2157,36 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                 prompt_len / self.block_size) * self.block_size
             chunk_count = math.ceil(prompt_len / chunk_size)
 
-            # chunks that we can fill from cache
-            # we can't reuse the last chunk even with a full hit
-            cacheable_chunks = chunk_count - 1
-            cacheable_blocks = cacheable_chunks * self.chunk_blocks_count
-
             left_padding = chunk_count * chunk_size - padded_prompt_len
             assert left_padding % self.block_size == 0
             left_blocks = left_padding // self.block_size
-            cacheable_blocks -= left_blocks
-            max_cache_hit_length = cacheable_blocks * self.block_size
 
-            if max_cache_hit_length > 0:
-                computed_blocks: list[
-                    KVCacheBlock] = FullAttentionManager.find_longest_cache_hit(
-                        block_hashes=scheduler_request.block_hashes,
-                        max_length=max_cache_hit_length,
-                        kv_cache_group_ids=[0],
-                        block_pool=self.block_pool,
-                        kv_cache_spec=self._attn_spec,
-                        use_eagle=False,
-                        dcp_world_size=1,
-                    )[0]
-                n_hit = len(computed_blocks)
-            else:
-                computed_blocks = list[KVCacheBlock]()
-                n_hit = 0
+            computed_blocks: list[
+                KVCacheBlock] = FullAttentionManager.find_longest_cache_hit(
+                    block_hashes=scheduler_request.block_hashes,
+                    max_length=prompt_len,
+                    kv_cache_group_ids=[0],
+                    block_pool=self.block_pool,
+                    kv_cache_spec=self._attn_spec,
+                    use_eagle=False,
+                    dcp_world_size=1,
+                )[0]
+            n_hit = len(computed_blocks)
+
             logger.debug("Found: %d cached_blocks", n_hit)
 
             # trim down to chunk boundary
-            usable_blocks = (((left_blocks + n_hit) // self.chunk_blocks_count)\
-                * self.chunk_blocks_count) - left_blocks
+            usable_blocks = (math.ceil(
+                (left_blocks + n_hit) / self.chunk_blocks_count)\
+                * self.chunk_blocks_count) \
+                    - left_blocks - self.chunk_blocks_count
             usable_blocks = max(usable_blocks, 0)
-            logger.debug("Found: %d usable blocks in cache", usable_blocks)
+            blocks_to_recompute = padded_prompt_len // self.block_size \
+                - usable_blocks
+            logger.debug(
+                "Found: %d usable blocks in cache. "
+                "%d blocks will be recomputed", usable_blocks,
+                blocks_to_recompute)
             computed_blocks = computed_blocks[:usable_blocks]
             num_cached_tokens = usable_blocks * self.block_size
 
