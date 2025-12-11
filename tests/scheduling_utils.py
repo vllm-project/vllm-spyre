@@ -89,6 +89,8 @@ def generate_prompts(model: ModelInfo,
                     prefix_len, n_lookahead, prompt_len in \
                         zip(prefix_lens, n_lookaheads, prompts_lengths)]), \
             "the prefix length must be less or equal than the prompt length"
+    else:
+        n_lookaheads = [None] * len(steps_add_reqs)
 
     for i, (add_step, max_tokens,
             prompt_length) in enumerate(sorted_reqs_params):
