@@ -11,6 +11,41 @@ from scheduling_utils import check_scheduler_inference_steps
 from spyre_util import ModelInfo
 
 
+def get_block_tables(engine_core):
+
+    model_runner = (
+        engine_core.model_executor.driver_worker.worker.model_runner)
+    req_to_blocks = model_runner.kv_cache_manager.req_to_blocks
+
+    block_tables = {
+        req_id: [block.block_id for block in blocks]
+        for req_id, blocks in req_to_blocks.items()
+    }
+
+    block_ref_count = {}
+
+    for blocks in req_to_blocks.values():
+        for block in blocks:
+            block_ref_count[block.block_id] = block.ref_cnt
+
+    return block_tables, block_ref_count
+
+
+def verify_block_tables(engine_core, step_num, step_ref, disable_asserts):
+
+    block_tables, block_ref_count = get_block_tables(engine_core)
+
+    if not disable_asserts:
+        if "block_tables" in step_ref:
+            assert step_ref["block_tables"] == block_tables
+
+        if "block_ref_count" in step_ref:
+            assert step_ref["block_ref_count"] == block_ref_count
+    else:
+        print(f"{block_tables=}")
+        print(f"{block_ref_count=}")
+
+
 @pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @pytest.mark.full_model
@@ -55,7 +90,7 @@ def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "n_reserved_blocks": 0,
             "n_used_blocks": 0
         },
-        {   # prefill chunk 1 seq 0
+        {  # prefill chunk 1 seq 0
             "step": 1,
             "tkv": 192,
             "waiting": ["1"],
@@ -64,8 +99,16 @@ def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "n_reserved_blocks": 4,
             "n_used_blocks": 3,
             "n_prefix_hits": 0,
+            "block_tables": {
+                '0': [1, 2, 3]
+            },
+            "block_ref_count": {
+                1: 1,
+                2: 1,
+                3: 1
+            }
         },
-        {   # prefill chunk 2 seq 0
+        {  # prefill chunk 2 seq 0
             "step": 2,
             "tkv": 192,
             "waiting": ["1"],
@@ -74,8 +117,16 @@ def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "n_reserved_blocks": 4,
             "n_used_blocks": 3,
             "n_prefix_hits": 0,
+            "block_tables": {
+                '0': [1, 2, 3]
+            },
+            "block_ref_count": {
+                1: 1,
+                2: 1,
+                3: 1
+            }
         },
-        {   # prefill chunk 1 seq 1
+        {  # prefill chunk 1 seq 1
             # prefix hit!
             "step": 3,
             "tkv": 192,
@@ -87,9 +138,18 @@ def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "n_prefix_hits": 1,
             # each chunk has two blocks. Due to padding, the first chunk has
             # only one usable block
-            "n_cached_blocks": 1
+            "n_cached_blocks": 1,
+            "block_tables": {
+                '0': [1, 2, 3],
+                '1': [1, 2, 3]
+            },
+            "block_ref_count": {
+                1: 2,
+                2: 2,
+                3: 2
+            }
         },
-        {   # prefill chunk 2 seq 1
+        {  # prefill chunk 2 seq 1
             # cannot use prefix, as the last chunk has to always be recomputed
             "step": 4,
             "tkv": 192,
@@ -99,9 +159,17 @@ def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "n_reserved_blocks": 8,
             "n_used_blocks": 6,
             "n_prefix_hits": 0,
-            "n_cached_blocks": 1
+            "n_cached_blocks": 1,
+            "block_tables": {
+                '0': [1, 2, 3],
+                '1': [1, 2, 3]
+            },
+            "block_ref_count": {
+                1: 2,
+                2: 2,
+                3: 2
+            }
         },
-
         {
             # Decode 1 of request 0.
             # Decode 1 of request 1.
@@ -113,11 +181,137 @@ def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "finished_requests": ["1", "0"],
             "n_reserved_blocks": 8,
             "n_used_blocks": 8,
-            "n_cached_blocks": 1
+            "n_cached_blocks": 1,
+            "block_tables": {
+                '0': [1, 2, 3, 4],
+                '1': [1, 2, 3, 5]
+            },
+            "block_ref_count": {
+                1: 2,
+                2: 2,
+                3: 2,
+                4: 1,
+                5: 1
+            }
         },
         {
             # Tkv should be cleared one step later
             "step": 6,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0,
+            "block_tables": {},
+            "block_ref_count": {}
+        },
+    ]
+
+    check_scheduler_inference_steps(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        seqs_max_tokens=seqs_max_tokens,
+        prompts_lengths=prompts_lengths,
+        steps_add_reqs=steps_add_reqs,
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
+        available_blocks=available_blocks,
+        use_cb=False,
+        random_prompts=True,
+        max_num_batched_tokens=max_num_batched_tokens,
+        prefix_caching=True,
+        seeds=seeds,
+        extra_assert_func=verify_block_tables)
+
+
+@pytest.mark.cpu
+@pytest.mark.chunked_prefill
+@pytest.mark.full_model
+@pytest.mark.prefix_caching
+# These values are all parameterized for test sorting
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_model_len", [256])
+@pytest.mark.parametrize("max_num_batched_tokens", [128])
+@pytest.mark.parametrize("available_blocks", [None])
+def test_block_deduplication_within_batch(model: ModelInfo, backend: str,
+                                          monkeypatch: pytest.MonkeyPatch,
+                                          set_random_seed, max_num_seqs: int,
+                                          max_model_len: int,
+                                          max_num_batched_tokens: int,
+                                          available_blocks: int):
+    """ Scenario where two equal sequences are scheduled. As both sequences
+    fit in a single chunk they have to be recomputed. However, we can write
+    the KV cache into the same first block as the prompts are identical.
+    Therefore we end up with a duplicated block in the block table despite
+    not having a prefix hit for this example. 
+
+    Configuration:
+        * max_num_seqs: 2
+        * number of prompts: 2
+            * 0: len = 70,  max tokens = 2, step joining = 0
+            * 1: len = 70, max tokens = 2, step joining = 0
+    """
+    monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
+
+    seqs_max_tokens = [2, 2]
+    prompts_lengths = [70, 70]
+    steps_add_reqs = [0, 0]
+    seeds = [0, 0]  # twice the same sequence
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0", "1"],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+        {  # prefill chunk 1 seq 0
+            "step": 1,
+            "tkv": 70,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 2,
+            "n_used_blocks": 2,
+            "n_prefix_hits": 0,
+            "n_cached_blocks": 0
+        },
+        {  # prefill chunk 1 seq 1
+            # cannot use prefix, as the last chunk has to always be recomputed
+            "step": 2,
+            "tkv": 70,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 4,
+            "n_prefix_hits": 0,
+            "n_cached_blocks": 0,
+            # assert here that the block table has only 3 distinct block ids,
+            # e.g. the first block is shared among the two sequences 0 and 1
+            "n_shared_blocks": 1  # TODO
+        },
+        {
+            # Decode 1 of request 0.
+            # Decode 1 of request 1.
+            "step": 3,
+            "tkv": 71,
+            "waiting": [],
+            "running": [],
+            "request_outputs": ["1", "0"],
+            "finished_requests": ["1", "0"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 4
+        },
+        {
+            # Tkv should be cleared one step later
+            "step": 4,
             "tkv": 0,
             "waiting": [],
             "running": [],
