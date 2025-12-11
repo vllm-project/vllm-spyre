@@ -8,9 +8,7 @@
 </p>
 
 !!! info "The vLLM-Spyre site is moving."
-    The vLLM-Spyre documentation is migrating to: **[blog.vllm.ai/vllm-spyre/](https://blog.vllm.ai/vllm-spyre/)**. Please update any bookmarks.
-
-    `vllm-spyre.readthedocs.io` will be retired soon.
+    The vLLM-Spyre documentation is now hosted at: **[blog.vllm.ai/vllm-spyre/](https://blog.vllm.ai/vllm-spyre)**. Please update any bookmarks - `vllm-spyre.readthedocs.io` has been retired.
 
 **IBM Spyre** is the first production-grade Artificial Intelligence Unit (AIU) accelerator born out of the IBM Research AIU family. It is part of a long-term strategy of developing novel architectures and full-stack technology solutions for the emerging space of generative AI. Spyre builds on the foundation of IBM’s internal AIU research and delivers a scalable, efficient architecture for accelerating AI in enterprise environments.
 
