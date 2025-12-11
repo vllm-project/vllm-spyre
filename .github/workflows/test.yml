@@ -7,8 +7,7 @@ on:
   pull_request:
     # add labeled and unlabeled to the default types (runs when label is added)
     types: [opened, synchronize, reopened, labeled, unlabeled, auto_merge_enabled]
-    # tmp hack
-    branches: [main, sched_agnostic_pc]
+    branches: [main]
 
   push:
     branches: [main]
