@@ -84,4 +84,4 @@ def test_alignment_tokens():
     if VLLM_VERSION == "vLLM:lowest":
         # Can supply `alignment_tokens` everywhere, this was added in 0.12.0
         assert not has_argument(FullAttentionManager.find_longest_cache_hit,
-                            "alignment_tokens")
+                                "alignment_tokens")
