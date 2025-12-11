@@ -1963,11 +1963,17 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         # last chunk
         blocks_to_recompute = 0
-        if chunk_i + 1 == chunk_count:
+        if self.enable_prefix_caching and chunk_i + 1 == chunk_count:
             num_cached_blocks = self.kv_cache_manager.\
                 num_cached_block.get(req_id, 0)
-            blocks_to_recompute = num_cached_blocks % \
-                self.chunk_blocks_count
+            total_blocks = left_padding + num_cached_blocks
+
+            # full match
+            if total_blocks == chunk_count * self.chunk_blocks_count:
+                blocks_to_recompute = self.chunk_blocks_count
+            else:
+                blocks_to_recompute = total_blocks % \
+                    self.chunk_blocks_count
 
         slot_mapping = []
         for i in range(self.chunk_blocks_count):
@@ -2203,8 +2209,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             blocks_to_compute = padded_prompt_len // self.block_size \
                 - usable_blocks
             logger.debug(
-                "Found: %d usable blocks in cache. "
-                "%d blocks will be computed", usable_blocks, blocks_to_compute)
+                "Found: %d reusable blocks in cache. "
+                "%d blocks will be (re)computed", usable_blocks,
+                blocks_to_compute)
             num_cached_tokens = usable_blocks * self.block_size
 
             # Save all of the computed blocks and not only the usable

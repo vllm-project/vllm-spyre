@@ -269,8 +269,6 @@ def check_scheduler_inference_steps(
                     for r_id in req_ids2blocks
                 ]
                 n_cached_blocks = sum(cached_blocks)
-                for r_id in req_ids2blocks:
-                    print(f"{reqs[r_id].num_cached_tokens=}")
                 n_prefix_hits = sum(prefix_hits)
 
             if step > 0:
