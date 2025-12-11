@@ -840,7 +840,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         vllm_config: VllmConfig,
         is_driver_worker: bool,
         rank: int,
-        enable_prefix_caching: bool = False,
     ):
         super().__init__(vllm_config=vllm_config,
                          is_driver_worker=is_driver_worker,
@@ -1833,9 +1832,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
     ):
         super().__init__(vllm_config=vllm_config,
                          is_driver_worker=is_driver_worker,
-                         rank=rank,
-                         enable_prefix_caching=\
-                            vllm_config.cache_config.enable_prefix_caching)
+                         rank=rank)
 
         self.chunk_size = self.scheduler_config.max_num_batched_tokens
         self.chunk_blocks_count = self.chunk_size // self.block_size

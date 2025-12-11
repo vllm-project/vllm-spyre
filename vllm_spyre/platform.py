@@ -19,8 +19,6 @@ import torch
 from transformers.models.granite import GraniteConfig
 from vllm.inputs import ProcessorInputs, PromptType
 from vllm.logger import init_logger
-from vllm.pooling_params import PoolingParams
-from vllm.sampling_params import SamplingParams
 
 try:
     # pre 0.11.1 compatibility
