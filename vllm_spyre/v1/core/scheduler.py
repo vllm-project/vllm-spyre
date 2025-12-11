@@ -33,6 +33,7 @@ class SpyreScheduler(Scheduler):
     def __init__(self, *args, **kwargs) -> None:
         # Initialize vLLM scheduler
         super().__init__(*args, **kwargs)
+        self.model_config = self.vllm_config.model_config
 
 
 class StaticBatchingSpyreScheduler(SpyreScheduler):
@@ -222,7 +223,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
 
     def can_schedule(self, request) -> bool:
         max_prompt_batch_size = 1
-        max_context_len = self.scheduler_config.max_model_len
+        max_context_len = self.model_config.max_model_len
 
         # running and waiting queues are both empty -> start a new batch
         # which can always be scheduled
@@ -629,7 +630,7 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         decoding_requests = [
             r for r in self.running if r not in self.ongoing_prefills
         ]
-        max_context_len = self.scheduler_config.max_model_len
+        max_context_len = self.model_config.max_model_len
 
         # check that there is space in the current decode batch
         num_running = len(decoding_requests)
