@@ -44,7 +44,8 @@ def generate_prompts(model: ModelInfo,
                      prompts_lengths: list[int],
                      from_model_vocab: bool = False,
                      seeds: list[int] = None,
-                     prefix_lens: list[int] = None):
+                     prefix_lens: list[int] = None,
+                     n_lookaheads: list[int] = None):
     generated_prompts = []
 
     # Create random requests of specified lengths and max_tokens
@@ -68,10 +69,25 @@ def generate_prompts(model: ModelInfo,
             "when providing prefix_lens we must also provide seeds"
         assert len(prefix_lens) == len(steps_add_reqs), \
             "number of prefix_lens must be equal to the number of prompts"
-        assert all([prefix_len <= prompt_len for prefix_len, prompt_len in zip(prefix_lens, prompts_lengths)]), \
+        assert all([prefix_len <= prompt_len for prefix_len, prompt_len in zip(
+            prefix_lens, prompts_lengths)]), \
             "the prefix length must be less or equal than the prompt length"
     else:
         prefix_lens = [None] * len(steps_add_reqs)
+
+    # number of (pseudo) generated/sampled tokens after the prefix
+    # this is used to test prefix caching of blocks filled during decode
+    if n_lookaheads:
+        assert seeds[0] is not None, \
+            "when providing n_lookahead we must also provide seeds"
+        assert prefix_lens[0] is not None, \
+            "when providing n_lookahead we must also provide prefix_lens"
+        assert len(n_lookaheads) == len(steps_add_reqs), \
+            "number of n_lookahead must be equal to the number of prompts"
+        assert all([prefix_len + n_lookahead <= prompt_len for \
+                    prefix_len, n_lookahead, prompt_len in \
+                        zip(prefix_lens, n_lookaheads, prompts_lengths)]), \
+            "the prefix length must be less or equal than the prompt length"
 
     for i, (add_step, max_tokens,
             prompt_length) in enumerate(sorted_reqs_params):
@@ -81,13 +97,16 @@ def generate_prompts(model: ModelInfo,
                                          temperature=0.0,
                                          logprobs=0,
                                          ignore_eos=True)
-        request = create_random_request(request_id=i,
-                                        num_tokens=prompt_length,
-                                        sampling_params=sampling_params,
-                                        model=model,
-                                        from_model_vocab=from_model_vocab,
-                                        seed=seeds[i],
-                                        prefix_len=prefix_lens[i])
+        request = create_random_request(
+            request_id=i,
+            num_tokens=prompt_length,
+            sampling_params=sampling_params,
+            model=model,
+            from_model_vocab=from_model_vocab,
+            seed=seeds[i],
+            prefix_len=prefix_lens[i],
+            n_lookahead=n_lookaheads[i],
+        )
         requests.append((add_step, request))
         # NOTE: It is going to be decoded later
         generated_prompts.append(request.prompt_token_ids)
@@ -113,6 +132,7 @@ def check_scheduler_inference_steps(
     prefix_caching: bool = False,
     seeds: list[int] = None,
     prefix_lens: list[int] = None,
+    n_lookaheads: list[int] = None,
 ):
     """
     Test the scheduler execution by comparing the scheduler attributes at each 
@@ -152,13 +172,16 @@ def check_scheduler_inference_steps(
         "tokens": []
     })
 
-    prompts, requests = generate_prompts(model,
-                                         steps_add_reqs,
-                                         seqs_max_tokens,
-                                         prompts_lengths,
-                                         from_model_vocab=random_prompts,
-                                         seeds=seeds,
-                                         prefix_lens=prefix_lens)
+    prompts, requests = generate_prompts(
+        model,
+        steps_add_reqs,
+        seqs_max_tokens,
+        prompts_lengths,
+        from_model_vocab=random_prompts,
+        seeds=seeds,
+        prefix_lens=prefix_lens,
+        n_lookaheads=n_lookaheads,
+    )
 
     hf_results = generate_hf_output(
         model=model,

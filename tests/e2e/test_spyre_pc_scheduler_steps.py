@@ -155,6 +155,170 @@ def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
 @pytest.mark.parametrize("max_model_len", [256])
 @pytest.mark.parametrize("max_num_batched_tokens", [128])
 @pytest.mark.parametrize("available_blocks", [None])
+def test_prefix_hit_decoded_block_within_batch(
+        model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
+        set_random_seed, max_num_seqs: int, max_model_len: int,
+        max_num_batched_tokens: int, available_blocks: int):
+    """ Scenario where two sequences are scheduled. We set the second
+    sequence to be the entire first sequence plus some generated tokens.
+    While prefilling the second sequence we have a prefix cache
+    hit and can reuse the first chunk which consists of two blocks. The first
+    block is entirely prompt while the second block is a mix of prompt and
+    decoded tokens. Note that the fetched prefix blocks are still part of the 
+    existing decode batch. Hence we have duplicated blocks in the block table 
+    for this example. Also note that we cannot fetch a prefix and this test 
+    fails when we set n_lookaheads = [0, 0].
+
+    Configuration:
+        * max_num_seqs: 2
+        * number of prompts: 2
+            * 0: len = 126,  max tokens = 68, step joining = 0
+            * 1: len = 193, max tokens = 2, step joining = 67
+    """
+    monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
+
+    seqs_max_tokens = [68, 2]
+    prompts_lengths = [126, 193]
+    steps_add_reqs = [0, 67]
+    seeds = [0, 0]  # twice the same sequence
+    prefix_lens = [126, 126]
+    # number of generated/sampled tokens after the prefix:
+    # prompt 0: no sampled tokens after the 126 prefix tokens
+    # prompt 0: 2 sampled token after the 126 prefix tokens
+    n_lookaheads = [0, 2]
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0"],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+        {   # prefill chunk 1 seq 0
+            "step": 1,
+            "tkv": 126,
+            "waiting": [],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 2,
+            "n_prefix_hits": 0,
+        },
+        {
+            # Decode 1 of request 0.
+            "step": 2,
+            "tkv": 127,
+            "waiting": [],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 2,
+        },
+        {
+            # Decode 3 of request 0.
+            # need an additional block
+            "step": 4,
+            "tkv": 129,
+            "waiting": [],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 3,
+        },
+        {
+            # Decode 66 of request 0.
+            "step": 67,
+            "tkv": 192,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 3,
+        },
+        {   # prefill chunk 1 seq 1
+            # prefix hit of the two blocks in the first chunk
+            "step": 68,
+            "tkv": 192, # why not 193
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": [],
+            "n_reserved_blocks": 8,
+            "n_used_blocks": 7,
+            "n_prefix_hits": 1,
+            # 1st block (prompt)
+            # 2nd block (prompt + 2 decodes) <- what we want to test
+            "n_cached_blocks": 2
+        },
+        {   # prefill chunk 2 seq 1
+            # no prefix hit, always recompute last chunk
+            "step": 69,
+            "tkv": 192, # why not 193
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 8,
+            "n_used_blocks": 7,
+            "n_prefix_hits": 0,
+            "n_cached_blocks": 2
+        },
+        {
+            # Decode 1 of request 0.
+            # Decode 1 of request 1.
+            "step": 70,
+            "tkv": 194,
+            "waiting": [],
+            "running": [],
+            "request_outputs": ["1", "0"],
+            "finished_requests": ["1", "0"],
+            "n_reserved_blocks": 8,
+            "n_used_blocks": 8,
+            "n_cached_blocks": 2
+        },
+        {
+            # Tkv should be cleared one step later
+            "step": 71,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+    ]
+
+    check_scheduler_inference_steps(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        seqs_max_tokens=seqs_max_tokens,
+        prompts_lengths=prompts_lengths,
+        steps_add_reqs=steps_add_reqs,
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
+        available_blocks=available_blocks,
+        use_cb=False,
+        random_prompts=True,
+        max_num_batched_tokens=max_num_batched_tokens,
+        prefix_caching=True,
+        seeds=seeds,
+        prefix_lens=prefix_lens,
+        n_lookaheads=n_lookaheads,
+    )
+
+
+@pytest.mark.cpu
+@pytest.mark.chunked_prefill
+@pytest.mark.full_model
+@pytest.mark.prefix_caching
+# These values are all parameterized for test sorting
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_model_len", [256])
+@pytest.mark.parametrize("max_num_batched_tokens", [128])
+@pytest.mark.parametrize("available_blocks", [None])
 def test_prefix_hit_not_in_batch(model: ModelInfo, backend: str,
                                  monkeypatch: pytest.MonkeyPatch,
                                  set_random_seed, max_num_seqs: int,
