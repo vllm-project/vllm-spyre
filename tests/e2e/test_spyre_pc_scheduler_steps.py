@@ -11,6 +11,41 @@ from scheduling_utils import check_scheduler_inference_steps
 from spyre_util import ModelInfo
 
 
+def get_block_tables(engine_core):
+
+    model_runner = (
+        engine_core.model_executor.driver_worker.worker.model_runner)
+    req_to_blocks = model_runner.kv_cache_manager.req_to_blocks
+
+    block_tables = {
+        req_id: [block.block_id for block in blocks]
+        for req_id, blocks in req_to_blocks.items()
+    }
+
+    block_ref_count = {}
+
+    for blocks in req_to_blocks.values():
+        for block in blocks:
+            block_ref_count[block.block_id] = block.ref_cnt
+
+    return block_tables, block_ref_count
+
+
+def verify_block_tables(engine_core, step_num, step_ref, disable_asserts):
+
+    block_tables, block_ref_count = get_block_tables(engine_core)
+
+    if not disable_asserts:
+        if "block_tables" in step_ref:
+            assert step_ref["block_tables"] == block_tables
+
+        if "block_ref_count" in step_ref:
+            assert step_ref["block_ref_count"] == block_ref_count
+    else:
+        print(f"{block_tables=}")
+        print(f"{block_ref_count=}")
+
+
 @pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @pytest.mark.full_model
@@ -55,7 +90,7 @@ def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "n_reserved_blocks": 0,
             "n_used_blocks": 0
         },
-        {   # prefill chunk 1 seq 0
+        {  # prefill chunk 1 seq 0
             "step": 1,
             "tkv": 192,
             "waiting": ["1"],
@@ -64,8 +99,16 @@ def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "n_reserved_blocks": 4,
             "n_used_blocks": 3,
             "n_prefix_hits": 0,
+            "block_tables": {
+                '0': [1, 2, 3]
+            },
+            "block_ref_count": {
+                1: 1,
+                2: 1,
+                3: 1
+            }
         },
-        {   # prefill chunk 2 seq 0
+        {  # prefill chunk 2 seq 0
             "step": 2,
             "tkv": 192,
             "waiting": ["1"],
@@ -74,8 +117,16 @@ def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "n_reserved_blocks": 4,
             "n_used_blocks": 3,
             "n_prefix_hits": 0,
+            "block_tables": {
+                '0': [1, 2, 3]
+            },
+            "block_ref_count": {
+                1: 1,
+                2: 1,
+                3: 1
+            }
         },
-        {   # prefill chunk 1 seq 1
+        {  # prefill chunk 1 seq 1
             # prefix hit!
             "step": 3,
             "tkv": 192,
@@ -87,9 +138,18 @@ def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "n_prefix_hits": 1,
             # each chunk has two blocks. Due to padding, the first chunk has
             # only one usable block
-            "n_cached_blocks": 1
+            "n_cached_blocks": 1,
+            "block_tables": {
+                '0': [1, 2, 3],
+                '1': [1, 2, 3]
+            },
+            "block_ref_count": {
+                1: 2,
+                2: 2,
+                3: 2
+            }
         },
-        {   # prefill chunk 2 seq 1
+        {  # prefill chunk 2 seq 1
             # cannot use prefix, as the last chunk has to always be recomputed
             "step": 4,
             "tkv": 192,
@@ -99,9 +159,17 @@ def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "n_reserved_blocks": 8,
             "n_used_blocks": 6,
             "n_prefix_hits": 0,
-            "n_cached_blocks": 1
+            "n_cached_blocks": 1,
+            "block_tables": {
+                '0': [1, 2, 3],
+                '1': [1, 2, 3]
+            },
+            "block_ref_count": {
+                1: 2,
+                2: 2,
+                3: 2
+            }
         },
-
         {
             # Decode 1 of request 0.
             # Decode 1 of request 1.
@@ -113,7 +181,18 @@ def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "finished_requests": ["1", "0"],
             "n_reserved_blocks": 8,
             "n_used_blocks": 8,
-            "n_cached_blocks": 1
+            "n_cached_blocks": 1,
+            "block_tables": {
+                '0': [1, 2, 3, 4],
+                '1': [1, 2, 3, 5]
+            },
+            "block_ref_count": {
+                1: 2,
+                2: 2,
+                3: 2,
+                4: 1,
+                5: 1
+            }
         },
         {
             # Tkv should be cleared one step later
@@ -123,7 +202,9 @@ def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "running": [],
             "request_outputs": [],
             "n_reserved_blocks": 0,
-            "n_used_blocks": 0
+            "n_used_blocks": 0,
+            "block_tables": {},
+            "block_ref_count": {}
         },
     ]
 
@@ -143,7 +224,7 @@ def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
         seeds=seeds,
-    )
+        extra_assert_func=verify_block_tables)
 
 
 @pytest.mark.cpu

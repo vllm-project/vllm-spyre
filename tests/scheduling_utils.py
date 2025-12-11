@@ -1,7 +1,7 @@
 import copy
 import os
 from collections import defaultdict, deque
-from typing import Any, Union
+from typing import Any, Callable, Union
 
 import pytest
 from llm_cache import get_cached_engine
@@ -83,6 +83,11 @@ def generate_prompts(model: ModelInfo,
     return generated_prompts, requests
 
 
+def dummy_assert_func(engine_core: EngineCore, step_num: int,
+                      step_ref: dict[str, Any], disable_asserts: bool):
+    pass
+
+
 def check_scheduler_inference_steps(
     model: ModelInfo,
     backend: str,
@@ -100,7 +105,8 @@ def check_scheduler_inference_steps(
     random_prompts: bool = False,
     prefix_caching: bool = False,
     seeds: list[int] = None,
-):
+    extra_assert_func: Callable[[EngineCore, int, dict[str, Any], bool],
+                                Any] = dummy_assert_func):
     """
     Test the scheduler execution by comparing the scheduler attributes at each 
     step with the provided reference values in 'checked_steps'.
@@ -298,6 +304,8 @@ def check_scheduler_inference_steps(
                 # because of reduce_left_padding()
                 requested_blocks[req_id] = len(req_ids2blocks[req_id])
                 reserved_blocks[req_id] = req_ids2num_reserved_blocks[req_id]
+
+            extra_assert_func(engine_core, step, step_ref, DISABLE_ASSERTS)
 
         # last step: check that sequences used all their reserved blocks
         # Note: no early stopping, all sequences produce max_num_tokens
