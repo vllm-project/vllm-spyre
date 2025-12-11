@@ -76,12 +76,12 @@ def test_structured_output_request_ids():
 
 def test_hash_block_size():
     if VLLM_VERSION == "vLLM:lowest":
-        # Can supply `hash_block_size` everywhere
-        assert has_argument(BlockPool, "hash_block_size")
+        # Can supply `hash_block_size` everywhere, this was added in 0.12.0
+        assert not has_argument(BlockPool, "hash_block_size")
 
 
 def test_alignment_tokens():
     if VLLM_VERSION == "vLLM:lowest":
-        # Can supply `alignment_tokens` everywhere
-        assert has_argument(FullAttentionManager.find_longest_cache_hit,
+        # Can supply `alignment_tokens` everywhere, this was added in 0.12.0
+        assert not has_argument(FullAttentionManager.find_longest_cache_hit,
                             "alignment_tokens")
