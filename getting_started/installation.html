@@ -1,0 +1,1259 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://vllm-project.github.io/vllm-spyre/getting_started/installation.html">
+      
+      
+        <link rel="prev" href="../contributing/continuous_batching/tests/other_tests.html">
+      
+      
+        <link rel="next" href="../deploying/docker.html">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.0">
+    
+    
+      
+        <title>Installation - vLLM Spyre Plugin</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.618322db.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#installation" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="vLLM Spyre Plugin" class="md-header__button md-logo" aria-label="vLLM Spyre Plugin" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            vLLM Spyre Plugin
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Installation
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m14.3 16-.7-2h-3.2l-.7 2H7.8L11 7h2l3.2 9zM20 8.69V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12zm-9.15 3.96h2.3L12 9z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="white" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_2" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="indigo"  aria-label="Switch to system preference"  type="radio" name="__palette" id="__palette_2">
+    
+      <label class="md-header__button md-icon" title="Switch to system preference" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 2c-1.82 0-3.53.5-5 1.35C8 5.08 10 8.3 10 12s-2 6.92-5 8.65C6.47 21.5 8.18 22 10 22a10 10 0 0 0 10-10A10 10 0 0 0 10 2"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/vllm-project/vllm-spyre" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../index.html" class="md-tabs__link">
+          
+  
+  
+  Home
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="installation.html" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../deploying/docker.html" class="md-tabs__link">
+          
+  
+  
+  Deploying
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../user_guide/configuration.html" class="md-tabs__link">
+          
+  
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../contributing/index.html" class="md-tabs__link">
+          
+  
+  
+  Developer Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="vLLM Spyre Plugin" class="md-nav__button md-logo" aria-label="vLLM Spyre Plugin" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    vLLM Spyre Plugin
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/vllm-project/vllm-spyre" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../index.html" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+      
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="installation.html" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#install-uv" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Install uv
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#create-a-python-virtual-environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Create a Python Virtual Environment
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#install-vllm-with-the-vllm-spyre-plugin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Install vLLM with the vLLM-Spyre Plugin
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#install-pytorch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Install PyTorch
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Troubleshooting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#installation-using-pip-instead-of-uv" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Installation using pip (instead of uv)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#failed-to-activate-the-virtual-environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Failed to activate the Virtual Environment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#no-module-named-torch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        No module named torch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#no-solution-found-when-resolving-dependencies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        No solution found when resolving dependencies
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../deploying/docker.html" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deploying
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../user_guide/configuration.html" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../contributing/index.html" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Guide
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#install-uv" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Install uv
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#create-a-python-virtual-environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Create a Python Virtual Environment
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#install-vllm-with-the-vllm-spyre-plugin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Install vLLM with the vLLM-Spyre Plugin
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#install-pytorch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Install PyTorch
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Troubleshooting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#installation-using-pip-instead-of-uv" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Installation using pip (instead of uv)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#failed-to-activate-the-virtual-environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Failed to activate the Virtual Environment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#no-module-named-torch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        No module named torch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#no-solution-found-when-resolving-dependencies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        No solution found when resolving dependencies
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h1>
+<p>We use the <a href="https://docs.astral.sh/uv/">uv</a> package manager to manage the
+installation of the plugin and its dependencies. <code>uv</code> provides advanced
+dependency resolution which is required to properly install dependencies like
+<code>vllm</code> without overwriting critical dependencies like <code>torch</code>.</p>
+<h2 id="install-uv">Install <code>uv</code><a class="headerlink" href="#install-uv" title="Permanent link">&para;</a></h2>
+<p>You can <a href="https://docs.astral.sh/uv/guides/install-python/">install <code>uv</code></a> using <code>pip</code>:</p>
+<div class="language-sh highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>pip<span class="w"> </span>install<span class="w"> </span>uv
+</span></code></pre></div>
+<h2 id="create-a-python-virtual-environment">Create a Python Virtual Environment<a class="headerlink" href="#create-a-python-virtual-environment" title="Permanent link">&para;</a></h2>
+<p>Now create and activate a new Python (3.12) <a href="https://docs.astral.sh/uv/pip/environments/">virtual environment</a>:</p>
+<div class="language-sh highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>uv<span class="w"> </span>venv<span class="w"> </span>--python<span class="w"> </span><span class="m">3</span>.12<span class="w"> </span>--seed<span class="w"> </span>.venv<span class="w"> </span>--system-site-packages
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nb">source</span><span class="w"> </span>.venv/bin/activate
+</span></code></pre></div>
+<details class="question">
+<summary>Why do I want the <code>--system-site-packages</code>?</summary>
+<p>Because the full <code>torch_sendnn</code> stack is only available pre-installed in a
+base environment, we need to add the <code>--system-site-packages</code> to the new
+virtual environment in order to fully support the Spyre hardware.</p>
+<p><strong>Note</strong>, pulling in the system site packages is not required for CPU-only
+installations.</p>
+</details>
+<h2 id="install-vllm-with-the-vllm-spyre-plugin">Install vLLM with the vLLM-Spyre Plugin<a class="headerlink" href="#install-vllm-with-the-vllm-spyre-plugin" title="Permanent link">&para;</a></h2>
+<p>You can either install a released version of the vLLM-Spyre plugin directly from
+<a href="https://pypi.org/project/vllm-spyre/">PyPI</a> or you can install from source by
+cloning the <a href="https://github.com/vllm-project/vllm-spyre">vLLM-Spyre</a> repo from
+GitHub.</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="release-pypi" name="__tabbed_1" type="radio" /><input id="source-github" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="release-pypi">Release (PyPI)</label><label for="source-github">Source (GitHub)</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="language-sh highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;torch; sys_platform == &#39;never&#39;</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="s2">torchaudio; sys_platform == &#39;never&#39;</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="s2">torchvision; sys_platform == &#39;never&#39;</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="s2">triton; sys_platform == &#39;never&#39;&quot;</span><span class="w"> </span>&gt;<span class="w"> </span>overrides.txt
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>vllm-spyre<span class="w"> </span>--overrides<span class="w"> </span>overrides.txt
+</span></code></pre></div>
+<details class="question">
+<summary>Why do I need the <code>--overrides</code>?</summary>
+<p>To avoid dependency resolution errors, we need to install <code>torch</code>
+separately and tell <code>uv</code> to ignore any of it's dependencies while
+installing the <code>vllm-spyre</code> plugin.</p>
+</details>
+</div>
+<div class="tabbed-block">
+<p>First, clone the <code>vllm-spyre</code> repo:</p>
+<div class="language-sh highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/vllm-project/vllm-spyre.git
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nb">cd</span><span class="w"> </span>vllm-spyre
+</span></code></pre></div>
+<p>To install <code>vllm-spyre</code> locally with development dependencies, use the following command:</p>
+<div class="language-sh highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>uv<span class="w"> </span>sync<span class="w"> </span>--frozen<span class="w"> </span>--active<span class="w"> </span>--inexact
+</span></code></pre></div>
+<p>To include optional linting dependencies, include <code>--group lint</code>:</p>
+<div class="language-sh highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>uv<span class="w"> </span>sync<span class="w"> </span>--frozen<span class="w"> </span>--active<span class="w"> </span>--inexact<span class="w"> </span>--group<span class="w"> </span>lint
+</span></code></pre></div>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>The <code>dev</code> group (i.e. <code>--group dev</code>) is enabled by default.</p>
+</div>
+</div>
+</div>
+</div>
+<h2 id="install-pytorch">Install PyTorch<a class="headerlink" href="#install-pytorch" title="Permanent link">&para;</a></h2>
+<p>Finally, <code>torch</code> is needed to run examples and tests. If it is not already installed,
+install it using <code>pip</code>.</p>
+<p>The Spyre runtime stack supports specific <code>torch</code> versions. Use the compatible version for each <code>torch_sendnn</code> release:</p>
+<table>
+<thead>
+<tr>
+<th>torch_sendnn</th>
+<th>torch</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1.0.0</td>
+<td>2.7.1</td>
+</tr>
+</tbody>
+</table>
+<div class="tabbed-set tabbed-alternate" data-tabs="2:2"><input checked="checked" id="linux" name="__tabbed_2" type="radio" /><input id="windowsmacos" name="__tabbed_2" type="radio" /><div class="tabbed-labels"><label for="linux">Linux</label><label for="windowsmacos">Windows/macOS</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="language-sh highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="nv">torch</span><span class="o">==</span><span class="s2">&quot;2.7.1+cpu&quot;</span><span class="w"> </span>--index-url<span class="w"> </span><span class="s2">&quot;https://download.pytorch.org/whl/cpu&quot;</span>
+</span></code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="language-sh highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="nv">torch</span><span class="o">==</span><span class="s2">&quot;2.7.1&quot;</span>
+</span></code></pre></div>
+</div>
+</div>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>On Linux the <code>+cpu</code> package should be installed, since we don't need any of
+the <code>cuda</code> dependencies which are included by default for Linux installs.
+This requires <code>--index-url https://download.pytorch.org/whl/cpu</code> on Linux.
+On Windows and macOS the CPU package is the default one.</p>
+</div>
+<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
+<p>As the installation process is evolving over time, you may have arrived here after
+following outdated installation steps. If you encountered any of the errors below,
+it may be easiest to start over with a new Python virtual environment (<code>.venv</code>)
+as outlined above.</p>
+<h3 id="installation-using-pip-instead-of-uv">Installation using <code>pip</code> (instead of <code>uv</code>)<a class="headerlink" href="#installation-using-pip-instead-of-uv" title="Permanent link">&para;</a></h3>
+<p>If you happen to have followed the pre-<code>uv</code> installation instructions, you might
+encounter an error like this:</p>
+<div class="language-sh highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>LookupError:<span class="w"> </span>setuptools-scm<span class="w"> </span>was<span class="w"> </span>unable<span class="w"> </span>to<span class="w"> </span>detect<span class="w"> </span>version<span class="w"> </span><span class="k">for</span><span class="w"> </span>/home/senuser/multi-aiu-dev/_dev/sentient-ci-cd/_dev/sen_latest/vllm-spyre.
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">    </span>Make<span class="w"> </span>sure<span class="w"> </span>you<span class="s1">&#39;re either building from a fully intact git repository or PyPI tarballs. Most other sources (such as GitHub&#39;</span>s<span class="w"> </span>tarballs,<span class="w"> </span>a<span class="w"> </span>git<span class="w"> </span>checkout<span class="w"> </span>without<span class="w"> </span>the<span class="w"> </span>.git<span class="w"> </span>folder<span class="o">)</span><span class="w"> </span>don<span class="s1">&#39;t contain the necessary metadata and will not work.</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="s1">    For example, if you&#39;</span>re<span class="w"> </span>using<span class="w"> </span>pip,<span class="w"> </span>instead<span class="w"> </span>of<span class="w"> </span>https://github.com/user/proj/archive/master.zip<span class="w"> </span>use<span class="w"> </span>git+https://github.com/user/proj.git#egg<span class="o">=</span>proj
+</span></code></pre></div>
+<p>Make sure the follow the latest installation steps outlined above.</p>
+<h3 id="failed-to-activate-the-virtual-environment">Failed to activate the Virtual Environment<a class="headerlink" href="#failed-to-activate-the-virtual-environment" title="Permanent link">&para;</a></h3>
+<p>If you encounter any of the following errors, it's likely you forgot to activate
+the (correct) Python Virtual Environment:</p>
+<div class="language-sh highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="w">  </span>File<span class="w"> </span><span class="s2">&quot;/home/senuser/.local/lib/python3.12/site-packages/vllm/config.py&quot;</span>,<span class="w"> </span>line<span class="w"> </span><span class="m">2260</span>,<span class="w"> </span><span class="k">in</span><span class="w"> </span>__post_init__
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">    </span>self.device<span class="w"> </span><span class="o">=</span><span class="w"> </span>torch.device<span class="o">(</span>self.device_type<span class="o">)</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">                  </span>^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>RuntimeError:<span class="w"> </span>Device<span class="w"> </span>string<span class="w"> </span>must<span class="w"> </span>not<span class="w"> </span>be<span class="w"> </span>empty
+</span></code></pre></div>
+<h3 id="no-module-named-torch">No module named <code>torch</code><a class="headerlink" href="#no-module-named-torch" title="Permanent link">&para;</a></h3>
+<p>You may have installed PyTorch into the system-wide Python environment, not into
+the virtual environment used for vLLM-Spyre:</p>
+<div class="language-sh highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="w">  </span>File<span class="w"> </span><span class="s2">&quot;/home/senuser/multi-aiu-dev/_dev/sentient-ci-cd/_dev/sen_latest/vllm-spyre/.venv/lib64/python3.12/site-packages/vllm/env_override.py&quot;</span>,<span class="w"> </span>line<span class="w"> </span><span class="m">4</span>,<span class="w"> </span><span class="k">in</span><span class="w"> </span>&lt;module&gt;
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">    </span>import<span class="w"> </span>torch
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>ModuleNotFoundError:<span class="w"> </span>No<span class="w"> </span>module<span class="w"> </span>named<span class="w"> </span><span class="s1">&#39;torch&#39;</span>
+</span></code></pre></div>
+<p>Make sure to activate the same virtual environment for installing <code>torch</code> that
+was used to install <code>vllm-spyre</code>. If you already have a system-wide <code>torch</code>
+installation and want to reuse that for your <code>vllm-spyre</code> environment, you can
+create a new virtual environment and add the <code>--system-site-packages</code> flag to
+pull in the <code>torch</code> dependencies from the base Python environment:</p>
+<div class="language-sh highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>rm<span class="w"> </span>-rf<span class="w"> </span>.venv
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>uv<span class="w"> </span>venv<span class="w"> </span>--python<span class="w"> </span><span class="m">3</span>.12<span class="w"> </span>--seed<span class="w"> </span>.venv<span class="w"> </span>--system-site-packages
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="nb">source</span><span class="w"> </span>.venv/bin/activate
+</span></code></pre></div>
+<p>If you forget to override the <code>torch</code> dependencies when installing a released
+version from PyPI, you will likely see a dependency resolution error like this:</p>
+<div class="language-sh highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>$<span class="w"> </span>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>vllm-spyre
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>
+</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>Using<span class="w"> </span>Python<span class="w"> </span><span class="m">3</span>.12.11<span class="w"> </span>environment<span class="w"> </span>at:<span class="w"> </span>.venv3
+</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>Resolved<span class="w"> </span><span class="m">155</span><span class="w"> </span>packages<span class="w"> </span><span class="k">in</span><span class="w"> </span>45ms
+</span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="w">  </span>×<span class="w"> </span>Failed<span class="w"> </span>to<span class="w"> </span>build<span class="w"> </span><span class="sb">`</span><span class="nv">xformers</span><span class="o">==</span><span class="m">0</span>.0.28.post1<span class="sb">`</span>
+</span><span id="__span-12-6"><a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="w">  </span>├─▶<span class="w"> </span>The<span class="w"> </span>build<span class="w"> </span>backend<span class="w"> </span>returned<span class="w"> </span>an<span class="w"> </span>error
+</span><span id="__span-12-7"><a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="w">  </span>╰─▶<span class="w"> </span>Call<span class="w"> </span>to<span class="w"> </span><span class="sb">`</span>setuptools.build_meta:__legacy__.build_wheel<span class="sb">`</span><span class="w"> </span>failed<span class="w"> </span><span class="o">(</span><span class="nb">exit</span><span class="w"> </span>status:<span class="w"> </span><span class="m">1</span><span class="o">)</span>
+</span><span id="__span-12-8"><a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a>
+</span><span id="__span-12-9"><a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="w">      </span><span class="o">[</span>stderr<span class="o">]</span>
+</span><span id="__span-12-10"><a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a><span class="w">      </span>Traceback<span class="w"> </span><span class="o">(</span>most<span class="w"> </span>recent<span class="w"> </span>call<span class="w"> </span>last<span class="o">)</span>:
+</span><span id="__span-12-11"><a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a><span class="w">        </span>File<span class="w"> </span><span class="s2">&quot;&lt;string&gt;&quot;</span>,<span class="w"> </span>line<span class="w"> </span><span class="m">14</span>,<span class="w"> </span><span class="k">in</span><span class="w"> </span>&lt;module&gt;
+</span><span id="__span-12-12"><a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a><span class="w">        </span>File<span class="w"> </span><span class="s2">&quot;~.cache/uv/builds-v0/.tmpo0aEXS/lib/python3.12/site-packages/setuptools/build_meta.py&quot;</span>,<span class="w"> </span>line<span class="w"> </span><span class="m">331</span>,<span class="w"> </span><span class="k">in</span><span class="w"> </span>get_requires_for_build_wheel
+</span><span id="__span-12-13"><a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a><span class="w">          </span><span class="k">return</span><span class="w"> </span>self._get_build_requires<span class="o">(</span>config_settings,<span class="w"> </span><span class="nv">requirements</span><span class="o">=[])</span>
+</span><span id="__span-12-14"><a id="__codelineno-12-14" name="__codelineno-12-14" href="#__codelineno-12-14"></a><span class="w">                 </span>^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+</span><span id="__span-12-15"><a id="__codelineno-12-15" name="__codelineno-12-15" href="#__codelineno-12-15"></a><span class="w">        </span>File<span class="w"> </span><span class="s2">&quot;~.cache/uv/builds-v0/.tmpo0aEXS/lib/python3.12/site-packages/setuptools/build_meta.py&quot;</span>,<span class="w"> </span>line<span class="w"> </span><span class="m">301</span>,<span class="w"> </span><span class="k">in</span><span class="w"> </span>_get_build_requires
+</span><span id="__span-12-16"><a id="__codelineno-12-16" name="__codelineno-12-16" href="#__codelineno-12-16"></a><span class="w">          </span>self.run_setup<span class="o">()</span>
+</span><span id="__span-12-17"><a id="__codelineno-12-17" name="__codelineno-12-17" href="#__codelineno-12-17"></a><span class="w">        </span>File<span class="w"> </span><span class="s2">&quot;~.cache/uv/builds-v0/.tmpo0aEXS/lib/python3.12/site-packages/setuptools/build_meta.py&quot;</span>,<span class="w"> </span>line<span class="w"> </span><span class="m">512</span>,<span class="w"> </span><span class="k">in</span><span class="w"> </span>run_setup
+</span><span id="__span-12-18"><a id="__codelineno-12-18" name="__codelineno-12-18" href="#__codelineno-12-18"></a><span class="w">          </span>super<span class="o">()</span>.run_setup<span class="o">(</span><span class="nv">setup_script</span><span class="o">=</span>setup_script<span class="o">)</span>
+</span><span id="__span-12-19"><a id="__codelineno-12-19" name="__codelineno-12-19" href="#__codelineno-12-19"></a><span class="w">        </span>File<span class="w"> </span><span class="s2">&quot;~.cache/uv/builds-v0/.tmpo0aEXS/lib/python3.12/site-packages/setuptools/build_meta.py&quot;</span>,<span class="w"> </span>line<span class="w"> </span><span class="m">317</span>,<span class="w"> </span><span class="k">in</span><span class="w"> </span>run_setup
+</span><span id="__span-12-20"><a id="__codelineno-12-20" name="__codelineno-12-20" href="#__codelineno-12-20"></a><span class="w">          </span>exec<span class="o">(</span>code,<span class="w"> </span>locals<span class="o">())</span>
+</span><span id="__span-12-21"><a id="__codelineno-12-21" name="__codelineno-12-21" href="#__codelineno-12-21"></a><span class="w">        </span>File<span class="w"> </span><span class="s2">&quot;&lt;string&gt;&quot;</span>,<span class="w"> </span>line<span class="w"> </span><span class="m">24</span>,<span class="w"> </span><span class="k">in</span><span class="w"> </span>&lt;module&gt;
+</span><span id="__span-12-22"><a id="__codelineno-12-22" name="__codelineno-12-22" href="#__codelineno-12-22"></a><span class="w">      </span>ModuleNotFoundError:<span class="w"> </span>No<span class="w"> </span>module<span class="w"> </span>named<span class="w"> </span><span class="s1">&#39;torch&#39;</span>
+</span><span id="__span-12-23"><a id="__codelineno-12-23" name="__codelineno-12-23" href="#__codelineno-12-23"></a>
+</span><span id="__span-12-24"><a id="__codelineno-12-24" name="__codelineno-12-24" href="#__codelineno-12-24"></a><span class="w">      </span>hint:<span class="w"> </span>This<span class="w"> </span>error<span class="w"> </span>likely<span class="w"> </span>indicates<span class="w"> </span>that<span class="w"> </span><span class="sb">`</span>xformers@0.0.28.post1<span class="sb">`</span><span class="w"> </span>depends<span class="w"> </span>on<span class="w"> </span><span class="sb">`</span>torch<span class="sb">`</span>,<span class="w"> </span>but<span class="w"> </span>doesn<span class="err">&#39;</span>t<span class="w"> </span><span class="nb">declare</span><span class="w"> </span>it<span class="w"> </span>as<span class="w"> </span>a<span class="w"> </span>build<span class="w"> </span>dependency.<span class="w"> </span>If<span class="w"> </span><span class="sb">`</span>xformers<span class="sb">`</span><span class="w"> </span>is<span class="w"> </span>a<span class="w"> </span>first-party<span class="w"> </span>package,<span class="w"> </span>consider<span class="w"> </span>adding
+</span><span id="__span-12-25"><a id="__codelineno-12-25" name="__codelineno-12-25" href="#__codelineno-12-25"></a><span class="w">      </span><span class="sb">`</span>torch<span class="sb">`</span><span class="w"> </span>to<span class="w"> </span>its<span class="w"> </span><span class="sb">`</span>build-system.requires<span class="sb">`</span>.<span class="w"> </span>Otherwise,<span class="w"> </span><span class="sb">`</span>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>torch<span class="sb">`</span><span class="w"> </span>into<span class="w"> </span>the<span class="w"> </span>environment<span class="w"> </span>and<span class="w"> </span>re-run<span class="w"> </span>with<span class="w"> </span><span class="sb">`</span>--no-build-isolation<span class="sb">`</span>.
+</span><span id="__span-12-26"><a id="__codelineno-12-26" name="__codelineno-12-26" href="#__codelineno-12-26"></a><span class="w">  </span>help:<span class="w"> </span><span class="sb">`</span>xformers<span class="sb">`</span><span class="w"> </span><span class="o">(</span>v0.0.28.post1<span class="o">)</span><span class="w"> </span>was<span class="w"> </span>included<span class="w"> </span>because<span class="w"> </span><span class="sb">`</span>vllm-spyre<span class="sb">`</span><span class="w"> </span><span class="o">(</span>v0.1.0<span class="o">)</span><span class="w"> </span>depends<span class="w"> </span>on<span class="w"> </span><span class="sb">`</span>vllm<span class="sb">`</span><span class="w"> </span><span class="o">(</span>v0.2.5<span class="o">)</span><span class="w"> </span>which<span class="w"> </span>depends<span class="w"> </span>on<span class="w"> </span><span class="sb">`</span>xformers<span class="sb">`</span>
+</span></code></pre></div>
+<p>To avoid this error, make sure to include the dependency <code>--overrides</code> as described
+in the installation from a <a href="#release-pypi">Release (PyPI)</a> section.</p>
+<h3 id="no-solution-found-when-resolving-dependencies">No solution found when resolving dependencies<a class="headerlink" href="#no-solution-found-when-resolving-dependencies" title="Permanent link">&para;</a></h3>
+<p>If you forget to override the <code>torch</code> dependencies when installing from PyPI you
+will likely see a dependency resolution error like this:</p>
+<div class="language-sh highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>$<span class="w"> </span>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>vllm-spyre<span class="o">==</span><span class="m">0</span>.4.1
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="w">  </span>...
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">  </span>×<span class="w"> </span>No<span class="w"> </span>solution<span class="w"> </span>found<span class="w"> </span>when<span class="w"> </span>resolving<span class="w"> </span>dependencies:
+</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="w">  </span>╰─▶<span class="w"> </span>Because<span class="w"> </span>fms-model-optimizer<span class="o">==</span><span class="m">0</span>.2.0<span class="w"> </span>depends<span class="w"> </span>on<span class="w"> </span>torch&gt;<span class="o">=</span><span class="m">2</span>.1,&lt;<span class="m">2</span>.5<span class="w"> </span>and<span class="w"> </span>only<span class="w"> </span>the<span class="w"> </span>following<span class="w"> </span>versions<span class="w"> </span>of<span class="w"> </span>fms-model-optimizer<span class="w"> </span>are<span class="w"> </span>available:
+</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="w">          </span>fms-model-optimizer&lt;<span class="o">=</span><span class="m">0</span>.2.0
+</span><span id="__span-13-6"><a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="w">          </span>fms-model-optimizer<span class="o">==</span><span class="m">0</span>.3.0
+</span><span id="__span-13-7"><a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="w">      </span>we<span class="w"> </span>can<span class="w"> </span>conclude<span class="w"> </span>that<span class="w"> </span>fms-model-optimizer&lt;<span class="m">0</span>.3.0<span class="w"> </span>depends<span class="w"> </span>on<span class="w"> </span>torch&gt;<span class="o">=</span><span class="m">2</span>.1,&lt;<span class="m">2</span>.5.
+</span><span id="__span-13-8"><a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a><span class="w">      </span>And<span class="w"> </span>because<span class="w"> </span>fms-model-optimizer<span class="o">==</span><span class="m">0</span>.3.0<span class="w"> </span>depends<span class="w"> </span>on<span class="w"> </span>torch&gt;<span class="o">=</span><span class="m">2</span>.2.0,&lt;<span class="m">2</span>.6<span class="w"> </span>and<span class="w"> </span>all<span class="w"> </span>of:
+</span><span id="__span-13-9"><a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a><span class="w">          </span>vllm&gt;<span class="o">=</span><span class="m">0</span>.9.0,&lt;<span class="o">=</span><span class="m">0</span>.9.0.1
+</span><span id="__span-13-10"><a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a><span class="w">          </span>vllm&gt;<span class="o">=</span><span class="m">0</span>.9.2
+</span><span id="__span-13-11"><a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a><span class="w">      </span>depend<span class="w"> </span>on<span class="w"> </span><span class="nv">torch</span><span class="o">==</span><span class="m">2</span>.7.0,<span class="w"> </span>we<span class="w"> </span>can<span class="w"> </span>conclude<span class="w"> </span>that<span class="w"> </span>all<span class="w"> </span>versions<span class="w"> </span>of<span class="w"> </span>fms-model-optimizer<span class="w"> </span>and<span class="w"> </span>all<span class="w"> </span>of:
+</span><span id="__span-13-12"><a id="__codelineno-13-12" name="__codelineno-13-12" href="#__codelineno-13-12"></a><span class="w">          </span>vllm&gt;<span class="o">=</span><span class="m">0</span>.9.0,&lt;<span class="o">=</span><span class="m">0</span>.9.0.1
+</span><span id="__span-13-13"><a id="__codelineno-13-13" name="__codelineno-13-13" href="#__codelineno-13-13"></a><span class="w">          </span>vllm&gt;<span class="o">=</span><span class="m">0</span>.9.2
+</span><span id="__span-13-14"><a id="__codelineno-13-14" name="__codelineno-13-14" href="#__codelineno-13-14"></a><span class="w">       </span>are<span class="w"> </span>incompatible.
+</span><span id="__span-13-15"><a id="__codelineno-13-15" name="__codelineno-13-15" href="#__codelineno-13-15"></a><span class="w">      </span>And<span class="w"> </span>because<span class="w"> </span>only<span class="w"> </span>the<span class="w"> </span>following<span class="w"> </span>versions<span class="w"> </span>of<span class="w"> </span>vllm<span class="w"> </span>are<span class="w"> </span>available:
+</span><span id="__span-13-16"><a id="__codelineno-13-16" name="__codelineno-13-16" href="#__codelineno-13-16"></a><span class="w">          </span>vllm&lt;<span class="o">=</span><span class="m">0</span>.9.0
+</span><span id="__span-13-17"><a id="__codelineno-13-17" name="__codelineno-13-17" href="#__codelineno-13-17"></a><span class="w">          </span><span class="nv">vllm</span><span class="o">==</span><span class="m">0</span>.9.0.1
+</span><span id="__span-13-18"><a id="__codelineno-13-18" name="__codelineno-13-18" href="#__codelineno-13-18"></a><span class="w">          </span><span class="nv">vllm</span><span class="o">==</span><span class="m">0</span>.9.1
+</span><span id="__span-13-19"><a id="__codelineno-13-19" name="__codelineno-13-19" href="#__codelineno-13-19"></a><span class="w">          </span><span class="nv">vllm</span><span class="o">==</span><span class="m">0</span>.9.2
+</span><span id="__span-13-20"><a id="__codelineno-13-20" name="__codelineno-13-20" href="#__codelineno-13-20"></a><span class="w">      </span>and<span class="w"> </span>vllm-spyre<span class="o">==</span><span class="m">0</span>.4.1<span class="w"> </span>depends<span class="w"> </span>on<span class="w"> </span>fms-model-optimizer,<span class="w"> </span>we<span class="w"> </span>can<span class="w"> </span>conclude<span class="w"> </span>that<span class="w"> </span>all<span class="w"> </span>of:
+</span><span id="__span-13-21"><a id="__codelineno-13-21" name="__codelineno-13-21" href="#__codelineno-13-21"></a><span class="w">          </span>vllm&gt;<span class="o">=</span><span class="m">0</span>.9.0,&lt;<span class="m">0</span>.9.1
+</span><span id="__span-13-22"><a id="__codelineno-13-22" name="__codelineno-13-22" href="#__codelineno-13-22"></a><span class="w">          </span>vllm&gt;0.9.1
+</span><span id="__span-13-23"><a id="__codelineno-13-23" name="__codelineno-13-23" href="#__codelineno-13-23"></a><span class="w">       </span>and<span class="w"> </span>vllm-spyre<span class="o">==</span><span class="m">0</span>.4.1<span class="w"> </span>are<span class="w"> </span>incompatible.
+</span><span id="__span-13-24"><a id="__codelineno-13-24" name="__codelineno-13-24" href="#__codelineno-13-24"></a><span class="w">      </span>And<span class="w"> </span>because<span class="w"> </span>vllm-spyre<span class="o">==</span><span class="m">0</span>.4.1<span class="w"> </span>depends<span class="w"> </span>on<span class="w"> </span>one<span class="w"> </span>of:
+</span><span id="__span-13-25"><a id="__codelineno-13-25" name="__codelineno-13-25" href="#__codelineno-13-25"></a><span class="w">          </span>vllm&gt;<span class="o">=</span><span class="m">0</span>.9.0,&lt;<span class="m">0</span>.9.1
+</span><span id="__span-13-26"><a id="__codelineno-13-26" name="__codelineno-13-26" href="#__codelineno-13-26"></a><span class="w">          </span>vllm&gt;0.9.1
+</span><span id="__span-13-27"><a id="__codelineno-13-27" name="__codelineno-13-27" href="#__codelineno-13-27"></a><span class="w">      </span>and<span class="w"> </span>you<span class="w"> </span>require<span class="w"> </span>vllm-spyre<span class="o">==</span><span class="m">0</span>.4.1,<span class="w"> </span>we<span class="w"> </span>can<span class="w"> </span>conclude<span class="w"> </span>that<span class="w"> </span>your<span class="w"> </span>requirements<span class="w"> </span>are<span class="w"> </span>unsatisfiable.
+</span></code></pre></div>
+<p>To avoid this error, make sure to include the dependency <code>--overrides</code> as described
+in the installation from a <a href="#release-pypi">Release (PyPI)</a> section.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.code.copy", "content.tabs.link", "navigation.tracking", "navigation.tabs", "navigation.sections", "navigation.prune", "navigation.top", "search.highlight", "search.share", "toc.follow"], "search": "../assets/javascripts/workers/search.7a47a382.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.e71a0d61.min.js"></script>
+      
+        <script src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS_HTML"></script>
+      
+    
+  </body>
+</html>
