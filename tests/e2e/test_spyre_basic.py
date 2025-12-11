@@ -16,6 +16,7 @@ from vllm_spyre.v1.core.scheduler import StaticBatchingSpyreScheduler
 
 
 @pytest.mark.full_model
+@pytest.mark.basic
 def test_output(model: ModelInfo, tp_size: int, backend: str, mode: str,
                 max_num_seqs: int, max_model_len: int,
                 warmup_shapes: DecodeWarmupShapes,
