@@ -906,12 +906,20 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.block_pool = BlockPool(num_gpu_blocks=self.n_blocks + 1,
                                     enable_caching=self.enable_prefix_caching,
                                     enable_kv_cache_events=False)
+
+        if "use_mla" in dataclass_fields(FullAttentionSpec):
+            ## Temporary backwards compatibility for 0.10.2
+            kwargs = {"use_mla": False}
+        else:
+            kwargs = {}
+
         self._attn_spec = FullAttentionSpec(
             block_size=self.block_size,
             # dummy values
             num_kv_heads=1,
             head_size=1,
-            dtype=torch.float16)
+            dtype=torch.float16,
+            **kwargs)
         self.kv_cache_manager = FullAttentionManager(
             kv_cache_spec=self._attn_spec,
             block_pool=self.block_pool,
