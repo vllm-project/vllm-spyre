@@ -10,10 +10,14 @@ from spyre_util import (ModelInfo, get_chicken_soup_prompts,
                         skip_unsupported_tp_size)
 from vllm import SamplingParams
 
+sb_mark = pytest.param("sb", marks=pytest.mark.sb, id="sb")
+cb_mark = pytest.param("cb", marks=pytest.mark.cb, id="cb")
 
-def test_stagger_output(model: ModelInfo, tp_size: int, backend: str, cb: int,
-                        max_num_seqs: int, max_model_len: int, warmup_shapes,
-                        monkeypatch: pytest.MonkeyPatch,
+
+@pytest.mark.parametrize("mode", [sb_mark, cb_mark])
+def test_stagger_output(model: ModelInfo, tp_size: int, backend: str,
+                        mode: str, max_num_seqs: int, max_model_len: int,
+                        warmup_shapes, monkeypatch: pytest.MonkeyPatch,
                         use_llm_cache) -> None:
     '''
     This test verifies that generated output is still correct
@@ -32,7 +36,7 @@ def test_stagger_output(model: ModelInfo, tp_size: int, backend: str, cb: int,
     kwargs = ({
         "max_num_seqs": max_num_seqs,
         "use_cb": True,
-    } if cb == 1 else {
+    } if mode == "cb" else {
         "warmup_shapes": warmup_shapes
     })
 

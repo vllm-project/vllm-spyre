@@ -14,7 +14,15 @@ import requests
 from transformers import AutoTokenizer
 from vllm import SamplingParams
 from vllm.entrypoints.openai.cli_args import make_arg_parser
-from vllm.utils import FlexibleArgumentParser, get_open_port
+
+try:
+    # old
+    from vllm.utils import FlexibleArgumentParser, get_open_port
+except ImportError:
+    # new
+    from vllm.utils.argparse_utils import FlexibleArgumentParser
+    from vllm.utils.network_utils import get_open_port
+
 from vllm.v1.request import Request
 
 EmbeddingWarmupShapes = list[tuple[int, int]]
@@ -25,7 +33,8 @@ def patch_environment(use_cb: bool,
                       warmup_shapes: DecodeWarmupShapes | None,
                       backend: str,
                       monkeypatch,
-                      use_chunked_prefill: bool = False):
+                      use_chunked_prefill: bool = False,
+                      max_num_batched_tokens: int | None = None):
     # Setup the environment correctly for the LLM
 
     # ---- For static batching ----
@@ -40,6 +49,10 @@ def patch_environment(use_cb: bool,
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL",
                        "1" if use_chunked_prefill else "0")
+    # NB: setting this env var explicitly is needed to set the desired value for
+    # the chunk size in the case that granite 8b TP4 is detected
+    if max_num_batched_tokens is not None:
+        monkeypatch.setenv("VLLM_DT_CHUNK_LEN", max_num_batched_tokens)
 
 
 def patch_warmup_shapes(warmup_shapes: DecodeWarmupShapes
@@ -350,13 +363,12 @@ def create_seq_prompt(model: ModelInfo, token_length: int) -> str:
     return tokenizer.decode(tokens)
 
 
-def create_random_request(
-    request_id: int,
-    num_tokens: int,
-    sampling_params: SamplingParams,
-    from_model_vocab: bool = False,
-    model: Optional[ModelInfo] = None,
-) -> Request:
+def create_random_request(request_id: int,
+                          num_tokens: int,
+                          sampling_params: SamplingParams,
+                          from_model_vocab: bool = False,
+                          model: Optional[ModelInfo] = None,
+                          seed: int = None) -> Request:
 
     tokenizer = AutoTokenizer.from_pretrained(model.name,
                                               revision=model.revision)
@@ -368,6 +380,8 @@ def create_random_request(
             v for v in tokenizer.vocab.values()
             if v not in tokenizer.all_special_ids
         ])
+        if seed is not None:
+            random.seed(seed)
         prompt_token_ids = random.choices(valid_token_ids, k=num_tokens)
     else:
         # start with existing prompts and tokenize them

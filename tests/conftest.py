@@ -32,6 +32,7 @@ def pytest_generate_tests(metafunc):
     default_warmup_shape = [[(64, 20, 4)]]
     default_max_num_seqs = [4]
     default_max_model_len = [512]
+    default_max_num_batched_tokens = [128]
 
     existing_markers = [
         marker.name if marker.name != "parametrize" else marker.args[0]
@@ -91,12 +92,27 @@ def pytest_generate_tests(metafunc):
         existing_markers,
     )
 
+    _add_param(
+        "max_num_batched_tokens",
+        default_max_num_batched_tokens,
+        metafunc,
+        existing_markers,
+    )
+
     # TODO: add both these using _add_param too
     # Will need to do some fancy stuff to add custom
     # markers
-    if "cb" in metafunc.fixturenames and "cb" not in existing_markers:
-        metafunc.parametrize(
-            "cb", [pytest.param(1, marks=pytest.mark.cb, id="cb"), 0])
+    if ("mode" in metafunc.fixturenames and "cb" not in existing_markers
+            and "chunked_prefill" not in existing_markers
+            and "cp" not in existing_markers and "pc" not in existing_markers
+            and "mode" not in existing_markers):
+        metafunc.parametrize("mode", [
+            "sb",
+            pytest.param("cb", marks=pytest.mark.cb, id="cb"),
+            pytest.param("cp", marks=pytest.mark.chunked_prefill, id="cp"),
+            pytest.param("pc", marks=pytest.mark.prefix_caching, id="pc")
+        ])
+
 
     if "tp_size" in metafunc.fixturenames and \
         "tp_size" not in existing_markers:
@@ -238,7 +254,7 @@ def remote_openai_server(request):
             skip_unsupported_tp_size(int(tp_size), backend)
             server_args.extend(["--tensor-parallel-size", str(tp_size)])
 
-    if "cb" in params and params["cb"] == 1:
+    if "mode" in params and params["mode"] in ["cb", "cp", "pc"]:
         max_model_len = params["max_model_len"]
         max_num_seqs = params["max_num_seqs"]
         env_dict = {
@@ -250,6 +266,18 @@ def remote_openai_server(request):
             str(max_num_seqs), "--max-model-len",
             str(max_model_len)
         ])
+        # Chunked prefill extra
+        if params["mode"] in ["cp", "pc"]:
+            env_dict.update({"VLLM_SPYRE_USE_CHUNKED_PREFILL": "1"})
+            server_args.extend([
+                "--max_num_batched_tokens",
+                str(128),
+            ])
+        if params["mode"] == "pc":
+            server_args.extend([
+                "--enable-prefix-caching",
+            ])
+
     else:
         warmup_shapes = params['warmup_shapes']
         warmup_prompt_length = [t[0] for t in warmup_shapes]

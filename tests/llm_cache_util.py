@@ -7,6 +7,10 @@ from vllm import LLM
 
 
 def force_engine_shutdown(llm: LLM):
+    force_engine_core_shutdown(llm.llm_engine.engine_core)
+
+
+def force_engine_core_shutdown(engine_core):
     """
     🌶️🌶️🌶️
     This hack is here because of an issue in vllm 0.9.2+ where a circular
@@ -20,7 +24,7 @@ def force_engine_shutdown(llm: LLM):
     new engine will fail with an EADDRINUSE error.
     🌶️🌶️🌶️
     """
-    llm.llm_engine.engine_core.shutdown()
+    engine_core.shutdown()
 
 
 def sort_tests_for_llm_caching(items: list) -> None:
@@ -51,6 +55,8 @@ class SortKey(NamedTuple):
     model: str = ""
     tp_size: int = 1
     use_cb: bool = False
+    use_cp: bool = False
+    use_pc: bool = False
     max_model_len: int = 0
     max_num_seqs: int = 0
     num_blocks: int = 0
@@ -71,7 +77,9 @@ class SortKey(NamedTuple):
             return SortKey(cache_type="")
 
         use_cb = SortKey._uses_cb(item)
-        if use_cb:
+        use_cp = SortKey._uses_cp(item)
+        use_pc = SortKey._uses_pc(item)
+        if use_cb or use_cp:
             sort_kwargs = {
                 "max_model_len": SortKey._get_max_model_len(item),
                 "max_num_seqs": SortKey._get_max_num_seqs(item),
@@ -86,7 +94,9 @@ class SortKey(NamedTuple):
             model=SortKey._get_model(item),
             backend=SortKey._get_backend(item),
             tp_size=SortKey._get_tp_size(item),
-            use_cb=SortKey._uses_cb(item),
+            use_cb=use_cb,
+            use_cp=use_cp,
+            use_pc=use_pc,
             num_blocks=SortKey._get_num_blocks(item),
             max_num_batched_tokens=SortKey._get_max_num_batched_tokens(item),
             **sort_kwargs,
@@ -121,6 +131,20 @@ class SortKey(NamedTuple):
         Checks for the pytest.mark.cb mark."""
         markers = {mark.name for mark in item.own_markers}
         return "cb" in markers
+
+    @staticmethod
+    def _uses_cp(item) -> bool:
+        """True if the test uses chunked prefill.
+        Checks for the pytest.mark.chunked_prefill mark."""
+        markers = {mark.name for mark in item.own_markers}
+        return "chunked_prefill" in markers
+
+    @staticmethod
+    def _uses_pc(item) -> bool:
+        """True if the test uses prefix caching.
+        Checks for the pytest.mark.prefix_caching mark."""
+        markers = {mark.name for mark in item.own_markers}
+        return "chunked_prefill" in markers and "prefix_caching" in markers
 
     def _get_max_num_batched_tokens(item) -> int:
         """Chunk size for chunked prefill, if enabled"""

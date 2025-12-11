@@ -1,0 +1,37 @@
+name: Preview docs
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - "**/*.md"
+      - "docs/**"
+      - "mkdocs.yaml"
+      - ".github/workflows/preview_docs.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          
+      - name: Install dependencies
+        run: pip install -r docs/requirements-docs.txt
+        
+      - name: Build MkDocs site
+        run: mkdocs build --strict
+
+      - name: Upload artifact for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: downloadable-preview-site
+          path: site

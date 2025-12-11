@@ -1,11 +1,12 @@
 import math
 import time
 from abc import ABC, abstractmethod
-from collections import deque
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
+from logging import DEBUG
 from typing import TYPE_CHECKING, Any, Generic, Optional, TypeVar, Union, cast
 
+import numpy
 import torch
 from torch import nn
 from transformers import (AutoModel, AutoModelForSequenceClassification,
@@ -15,10 +16,24 @@ from vllm.forward_context import set_forward_context
 from vllm.logger import init_logger
 from vllm.model_executor.layers.pooler import ClassifierPooler, Pooler
 from vllm.sampling_params import SamplingType
-from vllm.utils import is_pin_memory_available
+
+try:
+    # pre 0.11.1 compatibility
+    from vllm.utils import get_hash_fn_by_name, is_pin_memory_available
+except ImportError:
+    from vllm.utils.platform_utils import is_pin_memory_available
+    from vllm.utils.hashing import get_hash_fn_by_name
+
+from vllm.v1.core.block_pool import BlockPool
+from vllm.v1.core.kv_cache_utils import (KVCacheBlock,
+                                         get_request_block_hasher,
+                                         init_none_hash)
+from vllm.v1.core.sched.output import CachedRequestData
+from vllm.v1.core.single_type_kv_cache_manager import FullAttentionManager
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.outputs import LogprobsTensors, SamplerOutput
 from vllm.v1.pool.metadata import PoolingMetadata
+from vllm.v1.request import Request
 from vllm.v1.sample.logits_processor import build_logitsprocs
 
 import vllm_spyre.envs as envs_spyre
@@ -33,6 +48,7 @@ from vllm_spyre.v1.sample.spyre_logits_processor import (
 # yapf: disable
 from vllm_spyre.v1.worker.spyre_input_batch import (BaseInputBatch,
                                                     BaseRequestState,
+                                                    ChunkedPrefillRequestState,
                                                     PoolingInputBatch,
                                                     PoolingRequestState,
                                                     SamplingInputBatch,
@@ -40,11 +56,9 @@ from vllm_spyre.v1.worker.spyre_input_batch import (BaseInputBatch,
 
 # yapf: enable
 if TYPE_CHECKING:
-    from vllm.v1.core.sched.output import (CachedRequestData, NewRequestData,
-                                           SchedulerOutput)
+    from vllm.v1.core.sched.output import NewRequestData, SchedulerOutput
     from vllm.v1.sample.metadata import SamplingMetadata
 else:
-    CachedRequestData = None
     SchedulerOutput = None
     NewRequestData = None
     SamplingMetadata = None
@@ -283,6 +297,23 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT,
         **kwargs,
     ) -> ModelRunnerOutput:
         raise NotImplementedError
+
+    def _make_compatible_sampled_token_ids(
+        self, sampled_token_ids: torch.Tensor
+    ) -> list[list[int]] | list[numpy.ndarray]:
+        """Some versions of vllm required a list of numpy arrays as output.
+        This was ultimately rejected, see:
+        https://github.com/vllm-project/vllm/pull/29121
+
+        This can be removed once the *lower bound* of the vllm dependency is
+        >= 0.12.0
+        """
+        if ModelRunnerOutput.__dataclass_fields__[
+                "sampled_token_ids"].type == list[numpy.ndarray]:
+            sampled_token_ids = [x for x in sampled_token_ids.numpy()]
+        else:
+            sampled_token_ids = sampled_token_ids.tolist()
+        return sampled_token_ids
 
 
 class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
@@ -570,10 +601,13 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
         if not self.is_driver_worker:
             return EMPTY_MODEL_RUNNER_OUTPUT
 
+        sampled_token_ids = self._make_compatible_sampled_token_ids(
+            output.sampled_token_ids)
+
         model_output = ModelRunnerOutput(
             req_ids=list(req_id_to_index.keys()),
             req_id_to_index=req_id_to_index,
-            sampled_token_ids=output.sampled_token_ids.tolist(),
+            sampled_token_ids=sampled_token_ids,
             logprobs=(output.logprobs_tensors.tolists()
                       if output.logprobs_tensors else None),
             prompt_logprobs_dict=prompt_logprobs_dicts,
@@ -813,12 +847,13 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         self.block_size = SpyrePlatform.get_block_size()
 
-        # TODO: move to a KV cache manager
-        self.req_ids2blocks: dict[str, deque[int]] = {}
         # max number of blocks needed (reserved) per request id
-        self.req_ids2reserved_blocks: dict[str, int] = {}
+        self.req_ids2num_reserved_blocks: dict[str, int] = {}
 
         self.tkv: int = 0
+
+        self._enable_prefix_caching = (
+            vllm_config.cache_config.enable_prefix_caching)
 
         # TODO: Remove this once we can prefill and decode in the same step
         self.prefill_batch = SamplingInputBatch(
@@ -829,6 +864,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             device=self.device,
             pin_memory=self.pin_memory,
             vocab_size=vllm_config.model_config.get_vocab_size())
+
+    @property
+    def enable_prefix_caching(self):
+        return self._enable_prefix_caching and not self.warmup_mode
 
     def pre_warmup(self) -> None:
         # Set the number of kv cache blocks to the minimal value of 2 which is
@@ -864,7 +903,37 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
     def _set_blocks(self, num_blocks: int) -> None:
         # set number of available blocks and populate block_pool
         self.n_blocks = num_blocks - 1
-        self.block_pool = deque([i for i in range(1, self.n_blocks + 1)])
+        self.block_pool = BlockPool(num_gpu_blocks=self.n_blocks + 1,
+                                    enable_caching=self.enable_prefix_caching,
+                                    enable_kv_cache_events=False)
+
+        if "use_mla" in dataclass_fields(FullAttentionSpec):
+            ## Temporary backwards compatibility for 0.10.2
+            kwargs = {"use_mla": False}
+        else:
+            kwargs = {}
+
+        self._attn_spec = FullAttentionSpec(
+            block_size=self.block_size,
+            # dummy values
+            num_kv_heads=1,
+            head_size=1,
+            dtype=torch.float16,
+            **kwargs)
+        self.kv_cache_manager = FullAttentionManager(
+            kv_cache_spec=self._attn_spec,
+            block_pool=self.block_pool,
+            # Currently don't support models with more than one
+            # attention type, e.g. full and sliding window, so
+            # there is only one group.
+            kv_cache_group_id=0,
+            # We don't support DCP
+            # https://docs.vllm.ai/en/latest/serving/context_parallel_deployment/#decode-context-parallel
+            dcp_world_size=1,
+        )
+
+    def _get_blocks(self, request_id: str) -> list[KVCacheBlock]:
+        return self.kv_cache_manager.req_to_blocks[request_id]
 
     def get_total_spyre_blocks(self) -> int:
         """Returns the total number of KV cache blocks available for spyre.
@@ -876,7 +945,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         cache_config.num_gpu_blocks_override
         """
         max_batch_size = self.scheduler_config.max_num_seqs
-        max_model_len = self.scheduler_config.max_model_len
+        max_model_len = self.model_config.max_model_len
         block_size = SpyrePlatform.get_block_size()
         min_req_num_blocks = max_model_len // block_size
 
@@ -913,12 +982,13 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # TODO: move to kv cache manager
         # Continuous batching: free blocks
         for req_id in scheduler_output.finished_req_ids:
-            if blocks_to_free := self.req_ids2blocks.pop(req_id, None):
+            if logger.isEnabledFor(DEBUG) and (blocks_to_free :=
+                                               self._get_blocks(req_id)):
                 logger.debug("Freeing request id: %s", req_id)
-                self.req_ids2reserved_blocks.pop(req_id)
-                for block_id in blocks_to_free:
-                    logger.debug("Freeing block with id: %s", block_id)
-                    self.block_pool.append(block_id)
+                for block in blocks_to_free:
+                    logger.debug("Freeing block with id: %s", block.block_id)
+            self.req_ids2num_reserved_blocks.pop(req_id, None)
+            self.kv_cache_manager.free(req_id)
 
     def _prepare_prompt(
         self,
@@ -931,7 +1001,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         req_id = request.req_id
         prompt_token_ids = request.prompt_token_ids
         sampling_params = request.sampling_params
-        is_new_batch = len(self.req_ids2blocks) == 0
+        is_new_batch = len(self.req_ids2num_reserved_blocks) == 0
         prompt_len = len(prompt_token_ids)
 
         # make sure that the current tkv of the decode batch is greater or
@@ -990,19 +1060,20 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             (self.tkv - len(prompt_token_ids)) / self.block_size)
         n_reserved_blocks = math.ceil(
             n / self.block_size) - n_fully_padded_blocks
-        self.req_ids2reserved_blocks[req_id] = n_reserved_blocks
+        self.req_ids2num_reserved_blocks[req_id] = n_reserved_blocks
 
         # filling block table and slot mapping
-        blocks = []
-        slots = []
-        for pos_i in range(right_padding_tkv):
-            if pos_i % self.block_size == 0:
-                block_number = self.block_pool.popleft()
-                blocks.append(block_number)
-            block_offset = pos_i % self.block_size
-            slot = block_number * self.block_size + block_offset
-            slots.append(slot)
-        self.req_ids2blocks[req_id] = deque(blocks)
+
+        blocks = self.kv_cache_manager.allocate_new_blocks(
+            req_id, right_padding_tkv)
+
+        block_offsets = [block.block_id * self.block_size for block in blocks]
+        slot_mapping = torch.arange(self.block_size,
+                                    dtype=torch.int64).repeat(len(blocks))
+        slot_mapping += torch.tensor(block_offsets,
+                                     dtype=torch.int64).repeat_interleave(
+                                         self.block_size)
+        slot_mapping.unsqueeze_(0)
 
         # Add new request to the cached states.
         if sampling_params.sampling_type == SamplingType.RANDOM_SEED:
@@ -1030,7 +1101,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.prefill_batch.refresh_metadata()
 
         self.model.indices = torch.ones(1, dtype=torch.bool, device='cpu')
-        slot_mapping = torch.tensor([slots], dtype=torch.int64)
         prompt_token_ids_tensor = torch.tensor(prompt_token_ids,
                                                dtype=torch.long,
                                                device=torch.device("cpu"))
@@ -1050,7 +1120,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         current_tkv_mask = None
         # left padding info is stored in CachedRequestState of self.requests
         left_padded_prompt_mask = None
-        # block table is stored in self.req_ids2blocks (only passed for decode)
+        # block table is only passed for decode
         block_table = None
 
         model_inputs = SamplingForwardInputs(
@@ -1095,24 +1165,35 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         for req_id in req_ids:
             # adding new blocks if needed
             if self.tkv % self.block_size == 0:
-                self.req_ids2blocks[req_id].append(self.block_pool.popleft())
-            n_blocks = max(n_blocks, len(self.req_ids2blocks[req_id]))
+                req_state: SamplingRequestState = self.requests[req_id]
+                # we want to allocate the block for 1 next token.
+                # So we need to compute the number of tokens that the
+                # kv_cache_manager knows about: the number of computed
+                # tokens so far plus any intra-block padding.
+                total_tokens = req_state.left_padding % self.block_size \
+                    + req_state.num_computed_tokens + 1
+                blocks = self.kv_cache_manager.allocate_new_blocks(
+                    req_id, total_tokens)
+                assert len(blocks) == 1
+            n_blocks = max(n_blocks, len(self._get_blocks(req_id)))
 
         for req_id in req_ids:
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
 
-            req_state: SamplingRequestState = self.requests[req_id]
+            req_state = self.requests[req_id]
 
             # filling block table with padding blocks to make it rectangular
             # Note: the padding block id 0 here is chosen arbitrarily, it can
             # be any allocated block id on the Sypre card (has to be in range
             # [0, self.n_blocks - 1]). Further, it also be a block id that holds
             # actual KV cache for another (or the same) sequence.
-            blocks = self.req_ids2blocks[req_id].copy()
-            for i in range(n_blocks - len(self.req_ids2blocks[req_id])):
-                blocks.appendleft(0)
-            block_table.append(blocks)
+            blocks = self._get_blocks(req_id)
+            left_padding_blocks = n_blocks - len(blocks)
+
+            req_block_ids = [0] * left_padding_blocks + \
+                [block.block_id for block in blocks]
+            block_table.append(req_block_ids)
 
             # slot_mapping for all blocks of sequence
             start_slot = block_table[-1][-1] * self.block_size
@@ -1288,7 +1369,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         return req_id_to_index
 
     def get_n_free_blocks(self) -> int:
-        return self.n_blocks - sum(self.req_ids2reserved_blocks.values())
+        return self.n_blocks - sum(self.req_ids2num_reserved_blocks.values())
 
     def no_prompt_logprob(self, is_prefill: bool) -> bool:
         if is_prefill:
@@ -1761,8 +1842,18 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                          is_driver_worker=is_driver_worker,
                          rank=rank)
 
-        self.chunk_blocks_count = \
-            self.scheduler_config.max_num_batched_tokens // self.block_size
+        self.chunk_size = self.scheduler_config.max_num_batched_tokens
+        self.chunk_blocks_count = self.chunk_size // self.block_size
+
+        if vllm_config.cache_config.enable_prefix_caching:
+            caching_hash_fn = get_hash_fn_by_name(
+                vllm_config.cache_config.prefix_caching_hash_algo)
+            init_none_hash(caching_hash_fn)
+
+            self.request_block_hasher = get_request_block_hasher(
+                self.block_size, caching_hash_fn)
+        else:
+            self.request_block_hasher = None
 
     def _prepare_prompt(self, _):
         AssertionError(
@@ -1817,7 +1908,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         
         # Case III 
 
-        No left paddings and more than one chunk
+        No left padding and more than one chunk
 
         13 tokens
         4 blocks
@@ -1828,24 +1919,38 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         NOTE: The goal of this "illustration" is to depics strategies to write
         code to create the chunks, not necessarily enumerate the possible 
-        scenario. Of course there are interpretations where these cases 
-        overlaps. 
+        scenarios. Of course there are interpretations where these cases 
+        overlap. 
         
         '''
 
         request = self.requests[req_id]
+        assert isinstance(request, ChunkedPrefillRequestState)
+
         prompt_token_ids = request.prompt_token_ids
-
-        chunk_size = self.scheduler_config.max_num_batched_tokens
-        num_computed_tokens = request.num_computed_tokens
-
         prompt_len = len(prompt_token_ids)
         padded_prompt_len = math.ceil(
             prompt_len / self.block_size) * self.block_size
 
-        chunk_i = math.ceil(num_computed_tokens / chunk_size)
+        chunk_size = self.chunk_size
         chunk_count = math.ceil(prompt_len / chunk_size)
         left_padding = chunk_count * chunk_size - padded_prompt_len
+        left_padded_prompt_mask = torch.tensor([left_padding],
+                                               dtype=torch.int64,
+                                               device=self.device)
+
+        num_computed_tokens = request.num_computed_tokens
+        num_cached_tokens = request.num_cached_tokens
+
+        if num_cached_tokens > num_computed_tokens:
+            assert self.enable_prefix_caching, \
+                "prefix caching has to be enabled"
+            # this will be an idle step
+            return SamplingForwardInputs(
+                is_prompt=True,
+                left_padded_prompt_mask=left_padded_prompt_mask)
+
+        chunk_i = math.ceil(num_computed_tokens / chunk_size)
 
         input_tokens = torch.zeros(chunk_size,
                                    dtype=torch.int64,
@@ -1857,10 +1962,11 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         input_positions_np = input_positions.numpy()
 
         # create block table tensor
-        blocks = [0] * (left_padding // self.block_size) + list(
-            self.req_ids2blocks[req_id])
+        blocks = self._get_blocks(req_id)
         block_end = (chunk_i + 1) * self.chunk_blocks_count
-        block_table = torch.tensor(blocks[:block_end],
+        block_ids = [0] * (left_padding // self.block_size) + \
+            [block.block_id for block in blocks]
+        block_table = torch.tensor(block_ids[:block_end],
                                    dtype=torch.int64).unsqueeze(0)
 
         slot_mapping = []
@@ -1901,10 +2007,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         input_tokens = input_tokens.unsqueeze(0).clone()
         input_positions = input_positions.unsqueeze(0).clone()
-
-        left_padded_prompt_mask = torch.tensor([left_padding],
-                                               dtype=torch.int64,
-                                               device=self.device)
 
         # NOTE(wallas): Looks like we need to use multiple of blocks for prefill
         # so, later we use model.n_pads_right to get right logits.
@@ -1974,8 +2076,10 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             # adding new blocks if needed
             req_state = self.requests[req_id]
             if req_state.num_computed_tokens % self.block_size == 0:
-                self.req_ids2blocks[req_id].append(self.block_pool.popleft())
-            max_n_blocks = max(max_n_blocks, len(self.req_ids2blocks[req_id]))
+                blocks = self.kv_cache_manager.allocate_new_blocks(
+                    req_id, req_state.num_computed_tokens + 1)
+                assert len(blocks) == 1
+            max_n_blocks = max(max_n_blocks, len(self._get_blocks(req_id)))
 
         # We'll calculate tkv on the fly, it is the max num computed tokens
         # of a request since there is no tokens left padding, only for blocks
@@ -1991,13 +2095,11 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             # be any allocated block id on the Sypre card (has to be in range
             # [0, self.n_blocks - 1]). Further, it also be a block id that holds
             # actual KV cache for another (or the same) sequence.
-            blocks = self.req_ids2blocks[req_id].copy()
-            left_pad_blocks_count = (max_n_blocks -
-                                     len(self.req_ids2blocks[req_id]))
-
-            for _ in range(left_pad_blocks_count):
-                blocks.appendleft(0)
-            block_table.append(blocks)
+            blocks = self._get_blocks(req_id)
+            left_pad_blocks_count = (max_n_blocks - len(blocks))
+            block_ids = [0]*left_pad_blocks_count + \
+                [block.block_id for block in blocks]
+            block_table.append(block_ids)
 
             # slot_mapping for all blocks of sequence
             start_slot = block_table[-1][-1] * self.block_size
@@ -2052,16 +2154,67 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         return model_inputs
 
+    def _maybe_load_prefix_from_cache(self, scheduler_request: Request) -> int:
+        num_cached_tokens = 0
+        if self.enable_prefix_caching:
+
+            prompt_len = len(scheduler_request.prompt_token_ids)
+
+            chunk_size = self.chunk_size
+            padded_prompt_len = math.ceil(
+                prompt_len / self.block_size) * self.block_size
+            chunk_count = math.ceil(prompt_len / chunk_size)
+
+            # chunks that we can fill from cache
+            # we can't reuse the last chunk even with a full hit
+            cacheable_chunks = chunk_count - 1
+            cacheable_blocks = cacheable_chunks * self.chunk_blocks_count
+
+            left_padding = chunk_count * chunk_size - padded_prompt_len
+            assert left_padding % self.block_size == 0
+            left_blocks = left_padding // self.block_size
+            cacheable_blocks -= left_blocks
+            max_cache_hit_length = cacheable_blocks * self.block_size
+
+            if max_cache_hit_length > 0:
+                computed_blocks: list[
+                    KVCacheBlock] = FullAttentionManager.find_longest_cache_hit(
+                        block_hashes=scheduler_request.block_hashes,
+                        max_length=max_cache_hit_length,
+                        kv_cache_group_ids=[0],
+                        block_pool=self.block_pool,
+                        kv_cache_spec=self._attn_spec,
+                        use_eagle=False,
+                        dcp_world_size=1,
+                    )[0]
+                n_hit = len(computed_blocks)
+            else:
+                computed_blocks = list[KVCacheBlock]()
+                n_hit = 0
+            logger.debug("Found: %d cached_blocks", n_hit)
+
+            # trim down to chunk boundary
+            usable_blocks = (((left_blocks + n_hit) // self.chunk_blocks_count)\
+                * self.chunk_blocks_count) - left_blocks
+            usable_blocks = max(usable_blocks, 0)
+            logger.debug("Found: %d usable blocks in cache", usable_blocks)
+            computed_blocks = computed_blocks[:usable_blocks]
+            num_cached_tokens = usable_blocks * self.block_size
+
+            self.block_pool.touch((computed_blocks, ))
+            self.kv_cache_manager.save_new_computed_blocks(
+                scheduler_request.request_id, computed_blocks)
+
+        return num_cached_tokens
+
     def add_new_request(self, request: NewRequestData):
         req_id = request.req_id
         prompt_token_ids = request.prompt_token_ids
         sampling_params = request.sampling_params
-        is_new_batch = len(self.req_ids2blocks) == 0
+        is_new_batch = len(self.req_ids2num_reserved_blocks) == 0
         prompt_len = len(prompt_token_ids)
 
         self.prefill_batch.clear_requests()
-
-        blocks_count = math.ceil(prompt_len / self.block_size)
 
         # set the new tkv to the prompt length if starting a new decode batch
         if is_new_batch:
@@ -2072,14 +2225,25 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         new_tokens = (sampling_params.max_tokens
                       if sampling_params is not None else 0)
         total_tokens = prompt_len + new_tokens - 1
-        # subtract the padding blocks from the reserved blocks
+        # calculate the number of reserved blocks
         n_reserved_blocks = math.ceil(total_tokens / self.block_size)
 
-        self.req_ids2reserved_blocks[req_id] = n_reserved_blocks
+        self.req_ids2num_reserved_blocks[req_id] = n_reserved_blocks
+
+        num_cached_tokens = 0
+        scheduler_request = Request(
+            request_id=req_id,
+            prompt_token_ids=prompt_token_ids,
+            sampling_params=request.sampling_params,
+            pooling_params=None,
+            eos_token_id=None,
+            block_hasher=self.request_block_hasher,
+        )
+        num_cached_tokens = self._maybe_load_prefix_from_cache(
+            scheduler_request)
 
         # allocate blocks
-        blocks = [self.block_pool.popleft() for _ in range(blocks_count)]
-        self.req_ids2blocks[req_id] = deque(blocks)
+        self.kv_cache_manager.allocate_new_blocks(req_id, prompt_len)
 
         # Add new request to the cached states.
         if sampling_params.sampling_type == SamplingType.RANDOM_SEED:
@@ -2088,7 +2252,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         else:
             generator = None
 
-        req_state = SamplingRequestState(
+        req_state = ChunkedPrefillRequestState(
             req_id=req_id,
             prompt_token_ids=prompt_token_ids,
             sampling_params=sampling_params,
@@ -2098,6 +2262,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             # to always use the optimizations of blocks
             # usage
             left_padding=0,
+            scheduler_request=scheduler_request,
+            num_cached_tokens=num_cached_tokens,
         )
 
         self.requests[req_id] = req_state
@@ -2184,8 +2350,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             return False
 
         # possible prefill
-        req_id = new_reqs[0].req_id if\
-                len(new_reqs) == 1 else \
+        req_id = new_reqs[0].req_id if len(new_reqs) == 1 else \
                 cached_reqs.req_ids[0]
 
         num_scheduled_tokens =\
@@ -2204,15 +2369,30 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         if cached_reqs.num_reqs == 1:
             # NOTE: while prefilling the request is not yet in the
             # input batch, and update states try to access it there.
-            # For now, if it is prefilling, we only need to update
-            # num of computed tokens of the request
             req_id = cached_reqs.req_ids[0]
             req_state = self.requests[req_id]
+            assert isinstance(req_state, ChunkedPrefillRequestState)
             num_computed_tokens = cached_reqs.num_computed_tokens[0]
             if num_computed_tokens < len(req_state.prompt_token_ids):
+                # For now, if it is prefilling, we only need to update num of
+                # computed tokens of the request
                 req_state.num_computed_tokens = num_computed_tokens
-                # num_computed_tokens updated, don't call
-                # update_states in the super class.
+                if self.enable_prefix_caching:
+                    num_cached_blocks = self.kv_cache_manager.\
+                        num_cached_block[req_id]
+                    # if the number of cached tokens is larger or equal to the
+                    # number of computed tokens, it means that during this call
+                    # to execute_model we're just loading blocks from the KV
+                    # cache and can't call `cache_blocks()`
+                    if num_computed_tokens > \
+                        num_cached_blocks * self.block_size:
+                        self.kv_cache_manager.cache_blocks(
+                            req_state.scheduler_request, num_computed_tokens)
+                # hide the prefill request from the super class
+                scheduler_output.scheduled_cached_reqs = \
+                    CachedRequestData.make_empty()
+                super().update_states(scheduler_output)
+                scheduler_output.scheduled_cached_reqs = cached_reqs
                 return
 
         super().update_states(scheduler_output)
@@ -2234,15 +2414,25 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         model_input = self.prepare_model_input(scheduler_output)
 
-        # Execute the model
-        attn_metadata = self.build_attn_metadata(model_input)
-        with set_forward_context(attn_metadata, self.vllm_config):
-            logits = self.model(input_ids=model_input.input_tokens,
-                                positions=model_input.input_positions,
-                                masks=model_input.input_masks,
-                                is_prompt=model_input.is_prompt)
-
+        incomplete_prefill = False
+        is_cached_chunk = False
         is_prefill = cast(bool, model_input.is_prompt)
+        if is_prefill:
+            incomplete_prefill = self.check_incomplete_prefill(
+                scheduler_output)
+            is_cached_chunk = model_input.input_tokens is None
+            if is_cached_chunk:
+                assert incomplete_prefill, \
+                    "can't apply caching on the last chunked prefill"
+
+        if not is_cached_chunk:
+            # Execute the model
+            attn_metadata = self.build_attn_metadata(model_input)
+            with set_forward_context(attn_metadata, self.vllm_config):
+                logits = self.model(input_ids=model_input.input_tokens,
+                                    positions=model_input.input_positions,
+                                    masks=model_input.input_masks,
+                                    is_prompt=model_input.is_prompt)
 
         # Get mapping between requests ids to the index within the batch
         req_id_to_index = self.get_req_id_to_index(is_prefill)
@@ -2257,8 +2447,10 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         # TODO: dead code, this only works for SB with bs=1, either
         # fix it or remove it.
-        prompt_logprobs_dicts = self._get_prompt_logprobs_dict(
-            logits=logits, model_inputs=model_input)
+        #prompt_logprobs_dicts = self._get_prompt_logprobs_dict(
+        #    logits=logits, model_inputs=model_input)
+        # TODO: disable prefix caching for requests with prompt logprobs
+        prompt_logprobs_dicts: dict[str, Optional[LogprobsTensors]] = {}
 
         # If the prompt is being prefilled we don't have to sample
         # and generate a new token.
@@ -2267,6 +2459,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             if not self.is_driver_worker:
                 return self.get_empty_output()
 
+            t1 = time.time() - t0
+            logger.debug("t_forward_pass: %.2fms [prefill single chunk]",
+                         (t1 * 1000))
             return CPSpyreModelRunnerOutput(
                 req_ids=list(req_id_to_index.keys()),
                 req_id_to_index=req_id_to_index,
@@ -2284,19 +2479,14 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             sampling_metadata=self.get_sampling_metadata(is_prefill),
         )
         t1 = time.time() - t0
-        logger.debug("t_token: %.2fms", (t1 * 1000))
-
-        # Add the sampled token(s) to the request cache
-        req_ids = ([r.req_id for r in scheduler_output.scheduled_new_reqs]
-                   if len(scheduler_output.scheduled_new_reqs) > 0 \
-                    else self.input_batch.sorted_requests_ids)
+        step_type = "[prefill last chunk]" if is_prefill else "[decode]"
+        logger.debug("t_token: %.2fms %s", (t1 * 1000), step_type)
 
         # Get the right batch, if this is the last chunk to conclude the
         # prefill, we'll generate a token and we should get from the prefill
         # batch because input_batch may have other request that are were
         # not processed at this step.
-        batch = self.prefill_batch if is_prefill \
-            else self.input_batch
+        batch = self.prefill_batch if is_prefill else self.input_batch
 
         # Add the sampled token(s) to the request cache
         req_ids = ([r.req_id for r in scheduler_output.scheduled_new_reqs]
@@ -2306,16 +2496,26 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         for i, req_id in enumerate(req_ids):
             req_state = self.requests[req_id]
+            assert isinstance(req_state, ChunkedPrefillRequestState)
+            assert req_state.scheduler_request is not None
+            req_state.scheduler_request.append_output_token_ids(sampled_ids[i])
+            if self.enable_prefix_caching:
+                self.kv_cache_manager.cache_blocks(
+                    req_state.scheduler_request,
+                    req_state.scheduler_request.num_tokens)
             req_state.output_token_ids.extend(sampled_ids[i])
 
         # Only return outputs from the driver worker
         if not self.is_driver_worker:
             return self.get_empty_output()
 
+        sampled_token_ids = self._make_compatible_sampled_token_ids(
+            output.sampled_token_ids)
+
         model_output = CPSpyreModelRunnerOutput(
             req_ids=list(req_id_to_index.keys()),
             req_id_to_index=req_id_to_index,
-            sampled_token_ids=output.sampled_token_ids.tolist(),
+            sampled_token_ids=sampled_token_ids,
             logprobs=(output.logprobs_tensors.tolists()
                       if output.logprobs_tensors else None),
             prompt_logprobs_dict=prompt_logprobs_dicts,

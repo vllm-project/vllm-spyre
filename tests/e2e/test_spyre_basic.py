@@ -16,7 +16,7 @@ from vllm_spyre.v1.core.scheduler import StaticBatchingSpyreScheduler
 
 
 @pytest.mark.full_model
-def test_output(model: ModelInfo, tp_size: int, backend: str, cb: int,
+def test_output(model: ModelInfo, tp_size: int, backend: str, mode: str,
                 max_num_seqs: int, max_model_len: int,
                 warmup_shapes: DecodeWarmupShapes,
                 monkeypatch: pytest.MonkeyPatch, use_llm_cache) -> None:
@@ -36,12 +36,16 @@ def test_output(model: ModelInfo, tp_size: int, backend: str, cb: int,
 
     skip_unsupported_tp_size(tp_size, backend)
 
+    if mode == "cp" and model.is_quantized:
+        pytest.skip("Chunked prefill and FP8 not supported at the moment.")
+
     prompts = get_chicken_soup_prompts(4)
 
     kwargs = ({
         "max_num_seqs": max_num_seqs,
         "use_cb": True,
-    } if cb == 1 else {
+        "max_num_batched_tokens": 128 if mode == "cp" else None,
+    } if mode == "cb" or mode == "cp" else {
         "warmup_shapes": warmup_shapes,
     })
 
@@ -64,8 +68,8 @@ def test_output(model: ModelInfo, tp_size: int, backend: str, cb: int,
                                **kwargs)
 
 
-def test_batch_handling(model: ModelInfo, backend: str, cb: int, warmup_shapes,
-                        max_num_seqs: int, max_model_len: int,
+def test_batch_handling(model: ModelInfo, backend: str, mode: str,
+                        warmup_shapes, max_num_seqs: int, max_model_len: int,
                         monkeypatch: pytest.MonkeyPatch, use_llm_cache):
     """Test that the spyre worker correctly handles
     continuous batches of requests that
@@ -91,8 +95,9 @@ def test_batch_handling(model: ModelInfo, backend: str, cb: int, warmup_shapes,
 
     kwargs = {
         "max_num_seqs": max_num_seqs,
-        "use_cb": True
-    } if cb == 1 else {
+        "use_cb": True,
+        "max_num_batched_tokens": 128 if mode == "cp" else None,
+    } if mode == "cb" or mode == "cp" else {
         "warmup_shapes": warmup_shapes
     }
 
@@ -159,8 +164,8 @@ def test_full_batch_scheduling(model: ModelInfo, backend: str, monkeypatch):
     assert len(schedule.scheduled_new_reqs) == batch_size
 
 
-def test_max_model_len_override(model: ModelInfo, backend, warmup_shapes, cb,
-                                monkeypatch):
+def test_max_model_len_override(model: ModelInfo, backend, warmup_shapes,
+                                mode: str, monkeypatch):
     """Test that makes sure that --max-model-len
     doesn't affect SB, instead it is picked up from
     warmup shapes"""
@@ -168,8 +173,9 @@ def test_max_model_len_override(model: ModelInfo, backend, warmup_shapes, cb,
     max_model_len = 64
     kwargs = ({
         "use_cb": True,
-        "warmup_shapes": None
-    } if cb == 1 else {
+        "warmup_shapes": None,
+        "use_chunked_prefill": mode == "cp",
+    } if mode in ["cb", "cp", "pc"] else {
         "use_cb": False,
         "warmup_shapes": warmup_shapes,
     })
@@ -180,7 +186,7 @@ def test_max_model_len_override(model: ModelInfo, backend, warmup_shapes, cb,
         max_model_len=max_model_len).create_engine_config()
     model_config = vllm_config.model_config
 
-    if not cb:
+    if mode == "sb":
         assert model_config.max_model_len == max([
             prompt_length + new_tokens
             for prompt_length, new_tokens, _ in warmup_shapes

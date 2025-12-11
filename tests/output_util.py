@@ -422,19 +422,19 @@ def maybe_xfail(func):
 
 @maybe_xfail
 def validate_vllm_vs_hf_output(
-    model: ModelInfo,
-    prompts: Union[list[str], list[list[int]]],
-    max_model_len: int,
-    max_new_tokens: Union[int, list[int]],
-    sampling_params: Union[SamplingParams, list[SamplingParams]],
-    tensor_parallel_size: int,
-    backend: str,
-    monkeypatch: pytest.MonkeyPatch,
-    warmup_shapes: DecodeWarmupShapes | None = None,
-    max_num_seqs: Optional[int] = None,
-    use_cb: bool = False,
-    use_golden_token=True,
-) -> None:
+        model: ModelInfo,
+        prompts: Union[list[str], list[list[int]]],
+        max_model_len: int,
+        max_new_tokens: Union[int, list[int]],
+        sampling_params: Union[SamplingParams, list[SamplingParams]],
+        tensor_parallel_size: int,
+        backend: str,
+        monkeypatch: pytest.MonkeyPatch,
+        warmup_shapes: DecodeWarmupShapes | None = None,
+        max_num_seqs: Optional[int] = None,
+        use_cb: bool = False,
+        use_golden_token=True,
+        max_num_batched_tokens: Optional[int] = None) -> None:
     hf_outputs = generate_hf_output(
         model=model,
         prompts=prompts,
@@ -456,6 +456,7 @@ def validate_vllm_vs_hf_output(
         monkeypatch=monkeypatch,
         warmup_shapes=warmup_shapes,
         max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=max_num_batched_tokens,
         use_cb=use_cb,
     )
 
@@ -479,6 +480,7 @@ def generate_spyre_vllm_output(
     warmup_shapes: DecodeWarmupShapes | None = None,
     max_num_seqs: Optional[int] = None,
     use_cb: bool = False,
+    max_num_batched_tokens: Optional[int] = None,
 ) -> list[dict[str, Any]]:
     # Allows to run multiprocess V1 engine without dumping meaningless logs at
     # shutdown engine this context.
@@ -492,6 +494,7 @@ def generate_spyre_vllm_output(
         monkeypatch=monkeypatch,
         warmup_shapes=warmup_shapes,
         max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=max_num_batched_tokens,
         use_cb=use_cb,
     )
 
