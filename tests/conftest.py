@@ -107,7 +107,7 @@ def pytest_generate_tests(metafunc):
             and "cp" not in existing_markers and "pc" not in existing_markers
             and "mode" not in existing_markers):
         metafunc.parametrize("mode", [
-            pytest.param("sb", marks=pytest.mark.static_batching, id="sb"),
+            pytest.param("sb", marks=pytest.mark.sb, id="sb"),
             pytest.param("cb", marks=pytest.mark.cb, id="cb"),
             pytest.param("cp", marks=pytest.mark.chunked_prefill, id="cp"),
             pytest.param("pc", marks=pytest.mark.prefix_caching, id="pc")
