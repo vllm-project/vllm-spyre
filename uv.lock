@@ -26,7 +26,7 @@ overrides = [
     { name = "torchaudio", marker = "sys_platform == 'never'" },
     { name = "torchvision", marker = "sys_platform == 'never'" },
     { name = "triton", marker = "sys_platform == 'never'" },
-    { name = "vllm", marker = "platform_machine not in 's390x, ppc64le'", git = "https://github.com/vllm-project/vllm?rev=v0.11.1" },
+    { name = "vllm", marker = "platform_machine not in 's390x, ppc64le'", git = "https://github.com/vllm-project/vllm?rev=v0.11.2" },
 ]
 
 [[package]]
@@ -3655,8 +3655,8 @@ wheels = [
 
 [[package]]
 name = "vllm"
-version = "0.11.1"
-source = { git = "https://github.com/vllm-project/vllm?rev=v0.11.1#439368496db48d8f992ba8c606a0c0b1eebbfa69" }
+version = "0.11.2"
+source = { git = "https://github.com/vllm-project/vllm?rev=v0.11.2#275de34170654274616082721348b7edd9741d32" }
 dependencies = [
     { name = "aiohttp" },
     { name = "anthropic" },
@@ -3760,7 +3760,7 @@ requires-dist = [
     { name = "fms-model-optimizer", extras = ["fp8"], specifier = ">=0.8.0" },
     { name = "ibm-fms", specifier = ">=1.5.0,<2.0" },
     { name = "pytest-mock", specifier = ">=3.15.0" },
-    { name = "vllm", git = "https://github.com/vllm-project/vllm?rev=v0.11.1" },
+    { name = "vllm", git = "https://github.com/vllm-project/vllm?rev=v0.11.2" },
 ]
 
 [package.metadata.requires-dev]
