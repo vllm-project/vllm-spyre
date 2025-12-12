@@ -622,10 +622,11 @@ class SpyrePlatform(Platform):
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
             try:
                 from torch_sendnn import torch_sendnn  # noqa: F401
+                version_str = torch_sendnn._version.__version__
+                version = tuple(map(int, version_str.split(".")))
             except ImportError:
                 print("WARNING: Disabled: torch_sendnn")
-            version_str = torch_sendnn._version.__version__
-            version = tuple(map(int, version_str.split(".")))
+                version = (0, 0, 0)
 
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn" and \
                 (0, 0, 0) < version < (1, 0, 3):
