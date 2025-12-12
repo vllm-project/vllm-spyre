@@ -7,6 +7,7 @@ from unittest import mock
 import pytest
 from vllm.config import CacheConfig, ModelConfig, ParallelConfig, VllmConfig
 
+import vllm_spyre.envs as envs_spyre
 from vllm_spyre.platform import SpyrePlatform
 
 FIXTURES_PATH = Path(__file__).parent.parent / "fixtures" / "model_configs"
@@ -49,8 +50,23 @@ def test_granite_3_8b_overrides():
             parallel_config=tp4_config,
             cache_config=NO_SWAP_CONFIG,
         )
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
+            try:
+                from torch_sendnn import torch_sendnn  # noqa: F401
+                version_str = torch_sendnn._version.__version__
+                version = tuple(map(int, version_str.split(".")))
+            except ImportError:
+                print("WARNING: Disabled: torch_sendnn")
+                version = (0, 0, 0)
 
-        assert granite_3_8b_config.cache_config.num_gpu_blocks_override == 2080
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn" and \
+                (0, 0, 0) < version < (1, 0, 3):
+            blocks_override_expected = 2080
+        else:
+            blocks_override_expected = 8192
+
+        assert (granite_3_8b_config.cache_config.num_gpu_blocks_override ==
+                blocks_override_expected)
 
         assert int(os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT")) == 128 * 1024
         assert int(os.getenv("FLEX_HDMA_P2PSIZE")) == 256 * 1024 * 1024

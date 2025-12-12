@@ -618,7 +618,22 @@ class SpyrePlatform(Platform):
         # Override the total number of KV cache blocks based on what we know
         # will fit. (Unless user already set `--num-gpu-blocks-override`)
         # TODO: remove this once we have correct free memory info available
-        blocks_override = 2080
+
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
+            try:
+                from torch_sendnn import torch_sendnn  # noqa: F401
+                version_str = torch_sendnn._version.__version__
+                version = tuple(map(int, version_str.split(".")))
+            except ImportError:
+                print("WARNING: Disabled: torch_sendnn")
+                version = (0, 0, 0)
+
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn" and \
+                (0, 0, 0) < version < (1, 0, 3):
+            blocks_override = 2080
+        else:
+            blocks_override = 8192
+
         if vllm_config.cache_config.num_gpu_blocks_override is None:
             vllm_config.cache_config.num_gpu_blocks_override = blocks_override
             logger.info(
