@@ -147,7 +147,8 @@ def test_long_context_batches(
                      max_model_len=max_model_len,
                      max_num_seqs=max_num_seqs,
                      tensor_parallel_size=tp_size,
-                     revision=model.revision)
+                     revision=model.revision,
+                     tokenizer_revision=model.revision)
 
     sampling_params = SamplingParams(
         max_tokens=max_tokens,

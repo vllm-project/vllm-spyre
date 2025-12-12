@@ -90,7 +90,8 @@ def test_scheduling_invariance(
                      tokenizer=model.name,
                      max_model_len=256,
                      tensor_parallel_size=1,
-                     revision=model.revision)
+                     revision=model.revision,
+                     tokenizer_revision=model.revision)
 
     def batch_embeds(step):
         vllm_outputs = []

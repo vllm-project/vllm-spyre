@@ -359,6 +359,7 @@ def spyre_vllm_embeddings(
         max_model_len=max_model_len,
         tensor_parallel_size=tensor_parallel_size,
         revision=revision,
+        tokenizer_revision=revision,
     )
 
     vllm_outputs = vllm_model.embed(prompts)
