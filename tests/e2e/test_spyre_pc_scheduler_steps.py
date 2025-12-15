@@ -301,8 +301,8 @@ def test_prefix_hit_decoded_block_within_batch(
         model=model,
         request_id=1,
         add_step=67,
-        max_tokens=2,
-        prompt=request1.request.prompt_token_ids + request1.output +
+        max_tokens=193,
+        prompt=request1.request.prompt_token_ids + request1.output[:2] +
         random_prompt(model=model, seed=0, length=65),
         use_golden_token_injection=True)
 
