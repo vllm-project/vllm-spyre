@@ -7,7 +7,7 @@ Run `python -m pytest tests/e2e/test_spyre_pc_inference_steps.py`.
 """
 
 import pytest
-from scheduling_utils import check_scheduler_inference_steps
+from scheduling_utils import check_scheduler_inference_steps, create_request_for_scheduler_test, new_check_scheduler_inference_steps, random_prompt
 from spyre_util import ModelInfo, create_random_request
 
 
@@ -289,24 +289,36 @@ def test_prefix_hit_decoded_block_within_batch(
         },
     ]
 
-    check_scheduler_inference_steps(
+    request1 = create_request_for_scheduler_test(
+            model=model,
+            request_id=0,
+            add_step=0,
+            max_tokens=68,
+            prompt=random_prompt(model=model, seed=0, length=126)
+        )
+    
+    request2 = create_request_for_scheduler_test(
+            model=model,
+            request_id=0,
+            add_step=67,
+            max_tokens=2,
+            prompt=random_prompt(model=model, seed=0, length=193),
+            use_golden_token_injection=True
+        )
+
+    new_check_scheduler_inference_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
-        seqs_max_tokens=seqs_max_tokens,
-        prompts_lengths=prompts_lengths,
-        steps_add_reqs=steps_add_reqs,
+        requests=[request1, request2],
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
+        max_batch_tkv_limit=-1,
         use_cb=False,
-        random_prompts=True,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        seeds=seeds,
-        prefix_lens=prefix_lens,
-        n_lookaheads=n_lookaheads,
     )
 
 
