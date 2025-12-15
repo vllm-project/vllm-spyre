@@ -7,11 +7,12 @@ Run `python -m pytest tests/e2e/test_spyre_pc_inference_steps.py`.
 """
 
 import pytest
-from scheduling_utils import check_scheduler_inference_steps, create_request_for_scheduler_test, new_check_scheduler_inference_steps, random_prompt
-from spyre_util import ModelInfo, create_random_request
+from scheduling_utils import (check_scheduler_inference_steps,
+                              create_request_for_scheduler_test, random_prompt,
+                              validate_scheduler_steps)
+from spyre_util import ModelInfo
 
 
-@pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @pytest.mark.full_model
 @pytest.mark.prefix_caching
@@ -146,7 +147,6 @@ def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
     )
 
 
-@pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @pytest.mark.full_model
 @pytest.mark.prefix_caching
@@ -177,15 +177,15 @@ def test_prefix_hit_decoded_block_within_batch(
     """
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
 
-    seqs_max_tokens = [68, 2]
-    prompts_lengths = [126, 193]
-    steps_add_reqs = [0, 67]
-    seeds = [0, 0]  # twice the same sequence
-    prefix_lens = [126, 126]
-    # number of generated/sampled tokens after the prefix:
-    # prompt 0: no sampled tokens after the 126 prefix tokens
-    # prompt 0: 2 sampled token after the 126 prefix tokens
-    n_lookaheads = [0, 2]
+    # seqs_max_tokens = [68, 2]
+    # prompts_lengths = [126, 193]
+    # steps_add_reqs = [0, 67]
+    # seeds = [0, 0]  # twice the same sequence
+    # prefix_lens = [126, 126]
+    # # number of generated/sampled tokens after the prefix:
+    # # prompt 0: no sampled tokens after the 126 prefix tokens
+    # # prompt 0: 2 sampled token after the 126 prefix tokens
+    # n_lookaheads = [0, 2]
 
     checked_steps = [
         {
@@ -289,24 +289,24 @@ def test_prefix_hit_decoded_block_within_batch(
         },
     ]
 
-    request1 = create_request_for_scheduler_test(
-            model=model,
-            request_id=0,
-            add_step=0,
-            max_tokens=68,
-            prompt=random_prompt(model=model, seed=0, length=126)
-        )
-    
-    request2 = create_request_for_scheduler_test(
-            model=model,
-            request_id=0,
-            add_step=67,
-            max_tokens=2,
-            prompt=random_prompt(model=model, seed=0, length=193),
-            use_golden_token_injection=True
-        )
+    request1 = create_request_for_scheduler_test(model=model,
+                                                 request_id=0,
+                                                 add_step=0,
+                                                 max_tokens=68,
+                                                 prompt=random_prompt(
+                                                     model=model,
+                                                     seed=0,
+                                                     length=126))
 
-    new_check_scheduler_inference_steps(
+    request2 = create_request_for_scheduler_test(
+        model=model,
+        request_id=1,
+        add_step=67,
+        max_tokens=2,
+        prompt=random_prompt(model=model, seed=0, length=193),
+        use_golden_token_injection=True)
+
+    validate_scheduler_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
@@ -322,7 +322,6 @@ def test_prefix_hit_decoded_block_within_batch(
     )
 
 
-@pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @pytest.mark.full_model
 @pytest.mark.prefix_caching
@@ -467,7 +466,6 @@ def test_prefix_hit_not_in_batch(model: ModelInfo, backend: str,
     )
 
 
-@pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @pytest.mark.full_model
 @pytest.mark.prefix_caching
@@ -641,7 +639,6 @@ def test_limit_blocks_no_prefix_hit(model: ModelInfo, backend: str,
         seeds=seeds)
 
 
-@pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @pytest.mark.full_model
 @pytest.mark.prefix_caching
@@ -814,7 +811,6 @@ def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
     )
 
 
-@pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @pytest.mark.full_model
 @pytest.mark.prefix_caching
@@ -991,7 +987,6 @@ def test_limit_blocks_prefix_hit(model: ModelInfo, backend: str,
         seeds=seeds)
 
 
-@pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @pytest.mark.full_model
 @pytest.mark.prefix_caching
@@ -1145,7 +1140,6 @@ def test_multi_chunk_full_match(model: ModelInfo, backend: str,
     )
 
 
-@pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @pytest.mark.full_model
 @pytest.mark.prefix_caching
