@@ -1956,7 +1956,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         # create block table tensor
         blocks = self._get_blocks(req_id)
         block_end = (chunk_i + 1) * self.chunk_blocks_count
-        block_ids = [0] * (left_padding // self.block_size) + \
+        left_padding_blocks = (left_padding // self.block_size)
+        block_ids = [0] * left_padding_blocks + \
             [block.block_id for block in blocks]
         block_table = torch.tensor(block_ids[:block_end],
                                    dtype=torch.int64).unsqueeze(0)
@@ -1966,7 +1967,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         if self.enable_prefix_caching and chunk_i + 1 == chunk_count:
             num_cached_blocks = self.kv_cache_manager.\
                 num_cached_block.get(req_id, 0)
-            total_blocks = left_padding + num_cached_blocks
+
+            total_blocks = left_padding_blocks + num_cached_blocks
 
             # full match
             if total_blocks == chunk_count * self.chunk_blocks_count:
