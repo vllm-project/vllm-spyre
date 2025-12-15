@@ -289,21 +289,21 @@ def test_prefix_hit_decoded_block_within_batch(
         },
     ]
 
-    request1 = create_request_for_scheduler_test(model=model,
-                                                 request_id=0,
-                                                 add_step=0,
-                                                 max_tokens=68,
-                                                 prompt=random_prompt(
-                                                     model=model,
-                                                     seed=0,
-                                                     length=126))
+    request1 = create_request_for_scheduler_test(
+        model=model,
+        request_id=0,
+        add_step=0,
+        max_tokens=68,
+        prompt=random_prompt(model=model, seed=0, length=126),
+        use_golden_token_injection=True)
 
     request2 = create_request_for_scheduler_test(
         model=model,
         request_id=1,
         add_step=67,
         max_tokens=2,
-        prompt=random_prompt(model=model, seed=0, length=193),
+        prompt=request1.request.prompt_token_ids + request1.output +
+        random_prompt(model=model, seed=0, length=65),
         use_golden_token_injection=True)
 
     validate_scheduler_steps(
