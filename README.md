@@ -22,7 +22,7 @@ For more information, check out the following:
 
 Visit our [documentation](https://vllm-project.github.io/vllm-spyre/):
 
-- [Installation](httsp://vllm-project.github.io/vllm-spyre/getting_started/installation.html)
+- [Installation](https://vllm-project.github.io/vllm-spyre/getting_started/installation.html)
 - [List of Supported Models](https://vllm-project.github.io/vllm-spyre/user_guide/supported_models.html)
 - [List of Supported Features](https://vllm-project.github.io/vllm-spyre/user_guide/supported_features.html)
 

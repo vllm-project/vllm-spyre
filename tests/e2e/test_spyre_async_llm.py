@@ -72,13 +72,16 @@ async def test_abort(model: ModelInfo, backend: str, mode: str,
 
         # Async LLM API is a little different between v0 and V1
         engine = AsyncLLM.from_engine_args(
-            AsyncEngineArgs(model=model.name,
-                            tokenizer=model.name,
-                            max_model_len=max_model_len,
-                            max_num_seqs=max_num_seqs,
-                            max_num_batched_tokens=max_num_batched_tokens
-                            if mode == "cp" else None,
-                            revision=model.revision))
+            AsyncEngineArgs(
+                model=model.name,
+                tokenizer=model.name,
+                max_model_len=max_model_len,
+                max_num_seqs=max_num_seqs,
+                max_num_batched_tokens=max_num_batched_tokens
+                if mode == "cp" else None,
+                revision=model.revision,
+                tokenizer_revision=model.revision,
+            ))
         has_unfinished_requests = \
             engine.output_processor.has_unfinished_requests
         after.callback(engine.shutdown)
