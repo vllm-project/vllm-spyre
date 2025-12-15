@@ -48,7 +48,7 @@ class SchedulerTestRequest:
     """
     add_step: int  # Step that the request will be added to the engine
     request: Request
-    output: Any
+    hf_output: Any  # hf transformers output for this request
 
 
 def random_prompt(model: ModelInfo, seed: int, length: int) -> list[int]:
@@ -74,16 +74,16 @@ def create_request_for_scheduler_test(
                                      temperature=0.0,
                                      logprobs=0,
                                      ignore_eos=True)
+
+    hf_results = generate_hf_output(
+        model=model,
+        prompts=[prompt],
+        max_new_tokens=max_tokens,
+        ignore_eos=True,
+    )
+    hf = hf_results[0]
+
     if use_golden_token_injection:
-
-        hf_results = generate_hf_output(
-            model=model,
-            prompts=[prompt],
-            max_new_tokens=max_tokens,
-            ignore_eos=True,
-        )
-        hf = hf_results[0]
-
         abs_tol = ISCLOSE_ABS_TOL_QUANTIZATION if model.is_quantized \
             else ISCLOSE_ABS_TOL
 
@@ -102,7 +102,9 @@ def create_request_for_scheduler_test(
         prompt_token_ids=prompt,
         # TODO
     )
-    return SchedulerTestRequest(add_step=add_step, request=request, output=hf)
+    return SchedulerTestRequest(add_step=add_step,
+                                request=request,
+                                hf_output=hf)
 
 
 def generate_prompts(model: ModelInfo,
@@ -267,7 +269,10 @@ def check_scheduler_inference_steps(
         }
 
     requests = [
-        SchedulerTestRequest(add_step=r[0], request=r[1]) for r in requests
+        SchedulerTestRequest(add_step=r[0],
+                             request=r[1],
+                             hf_output=hf_results[i])
+        for i, r in enumerate(requests)
     ]
 
     validate_scheduler_steps(model=model,
@@ -307,13 +312,7 @@ def validate_scheduler_steps(
         for r in requests)), "duplicate request IDs detected"
 
     prompts = [r.request.prompt_token_ids for r in requests]
-    hf_results = generate_hf_output(model=model,
-                                    prompts=prompts,
-                                    max_new_tokens=[
-                                        r.request.sampling_params.max_tokens
-                                        for r in requests
-                                    ],
-                                    ignore_eos=True)
+    hf_results = [r.hf_output for r in requests]
 
     # Setup the engine
     engine_core: EngineCore = get_cached_engine(
@@ -359,7 +358,7 @@ def validate_scheduler_steps(
     for step in range(checked_steps[-1]['step'] + 1):
         # Add requests for this step
         while requests and requests[0].add_step == step:
-            engine_core.add_request(requests.popleft().request)
+            engine_core.add_request(requests.pop(0).request)
 
         # Check step if it is in the provided list of steps to check
         if checked_steps and step == checked_steps[0]["step"]:
