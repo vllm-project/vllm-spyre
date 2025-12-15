@@ -8,7 +8,7 @@ Run `python -m pytest tests/e2e/test_spyre_pc_inference_steps.py`.
 
 import pytest
 from scheduling_utils import check_scheduler_inference_steps
-from spyre_util import ModelInfo
+from spyre_util import ModelInfo, create_random_request
 
 
 @pytest.mark.cpu

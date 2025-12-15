@@ -1,4 +1,5 @@
 import copy
+import dataclasses
 import os
 from collections import defaultdict, deque
 from typing import Any, Union
@@ -15,6 +16,7 @@ from vllm.v1.engine.core import EngineCore
 
 from vllm_spyre.v1.core.scheduler import (ChunkedPrefillSpyreScheduler,
                                           ContinuousBatchingSpyreScheduler)
+from vllm.v1.request import Request
 
 DISABLE_ASSERTS = False  # used for debugging
 
@@ -37,6 +39,92 @@ def augment_checked_steps(
             all_checked_steps.append(new_step)
             prev_step = new_step
     return all_checked_steps
+
+@dataclasses.dataclass
+class SchedulerTestRequest:
+    add_step: int # Step that the request will be added to the engine
+    request: Request
+
+def random_prompt(
+    model: ModelInfo,
+    seed: int,
+    length: int
+) -> list[int]:
+    # Generate a random prompt with valid token ids for this model
+    return create_random_request(
+        request_id=0,
+        model=model,
+        sampling_params=SamplingParams.from_optional(),
+        seed=seed,
+        num_tokens=length
+    ).prompt_token_ids
+
+def create_request_for_scheduler_test(
+    model: ModelInfo,
+    request_id: int,
+    add_step: int,
+    max_tokens: int,
+    prompt: list[int],
+    use_golden_token_injection: bool
+) -> SchedulerTestRequest:
+    # Creates a request out of a prompt, for use with the scheduler tests.
+    # Can add golden token injection, which will ensure that the vllm output
+    # matches the hf output so that we can do logits comparisons on identical
+    # token outputs.
+
+    sampling_params = SamplingParams(max_tokens=max_tokens,
+                                    temperature=0.0,
+                                    logprobs=0,
+                                    ignore_eos=True)
+    if use_golden_token_injection:
+
+        hf_results = generate_hf_output(
+            model=model,
+            prompts=[prompt],
+            max_new_tokens=max_tokens,
+            ignore_eos=True,
+        )
+        hf = hf_results[0]
+
+        abs_tol = ISCLOSE_ABS_TOL_QUANTIZATION if model.is_quantized \
+            else ISCLOSE_ABS_TOL
+
+        sampling_params.extra_args = {
+            "golden_token_injector": {
+                "expected_token_ids": hf['token_ids'],
+                "expected_logprobs": hf['logprobs'],
+                "error_threshold": abs_tol,
+                "label": f"#{request_id}"
+            }
+        }
+
+    request = Request(
+        request_id=str(request_id),
+        sampling_params=sampling_params,
+        prompt_token_ids=prompt,
+        # TODO
+    )
+    return SchedulerTestRequest(
+        add_step=add_step,
+        request=request
+    )
+
+def new_check_scheduler_inference_steps(
+    model: ModelInfo,
+    backend: str,
+    monkeypatch: pytest.MonkeyPatch,
+    requests: list[SchedulerTestRequest],
+    checked_steps: list[dict[str, Any]],
+    max_num_seqs: int,
+    max_model_len: int,
+    available_blocks: int,
+    max_batch_tkv_limit: int = -1,
+    use_cb: bool = True,
+    max_num_batched_tokens: int = None,
+    prefix_caching: bool = False,
+):
+    # TODO: rename and implement
+    pass
 
 
 def generate_prompts(model: ModelInfo,
