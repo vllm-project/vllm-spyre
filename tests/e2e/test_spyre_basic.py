@@ -16,6 +16,7 @@ from vllm_spyre.v1.core.scheduler import StaticBatchingSpyreScheduler
 
 
 @pytest.mark.full_model
+@pytest.mark.basic
 def test_output(model: ModelInfo, tp_size: int, backend: str, mode: str,
                 max_num_seqs: int, max_model_len: int,
                 warmup_shapes: DecodeWarmupShapes,
@@ -140,7 +141,8 @@ def test_full_batch_scheduling(model: ModelInfo, backend: str, monkeypatch):
                              tokenizer=model.name,
                              max_num_batched_tokens=max_batched_tokens,
                              max_num_seqs=batch_size,
-                             revision=model.revision)
+                             revision=model.revision,
+                             tokenizer_revision=model.revision)
     vllm_config = engine_args.create_engine_config()
     executor_class = Executor.get_class(vllm_config)
     engine_core = EngineCore(vllm_config=vllm_config,

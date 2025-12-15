@@ -1,10 +1,12 @@
 import os
 
 import pytest
+from vllm.v1.core.block_pool import BlockPool
 from vllm.v1.core.sched.output import NewRequestData, SchedulerOutput
+from vllm.v1.core.single_type_kv_cache_manager import FullAttentionManager
 from vllm.v1.kv_cache_interface import FullAttentionSpec
 
-from vllm_spyre.compat_utils import dataclass_fields
+from vllm_spyre.compat_utils import dataclass_fields, has_argument
 
 pytestmark = pytest.mark.compat
 
@@ -70,3 +72,16 @@ def test_structured_output_request_ids():
         # from backwards compat
         assert 'structured_output_request_ids' in dataclass_fields(
             SchedulerOutput)
+
+
+def test_hash_block_size():
+    if VLLM_VERSION == "vLLM:lowest":
+        # Can supply `hash_block_size` everywhere, this was added in 0.12.0
+        assert not has_argument(BlockPool, "hash_block_size")
+
+
+def test_alignment_tokens():
+    if VLLM_VERSION == "vLLM:lowest":
+        # Can supply `alignment_tokens` everywhere, this was added in 0.12.0
+        assert not has_argument(FullAttentionManager.find_longest_cache_hit,
+                                "alignment_tokens")
