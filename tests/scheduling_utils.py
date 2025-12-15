@@ -48,6 +48,7 @@ class SchedulerTestRequest:
     """
     add_step: int  # Step that the request will be added to the engine
     request: Request
+    output: Any
 
 
 def random_prompt(model: ModelInfo, seed: int, length: int) -> list[int]:
@@ -101,7 +102,7 @@ def create_request_for_scheduler_test(
         prompt_token_ids=prompt,
         # TODO
     )
-    return SchedulerTestRequest(add_step=add_step, request=request)
+    return SchedulerTestRequest(add_step=add_step, request=request, output=hf)
 
 
 def generate_prompts(model: ModelInfo,
