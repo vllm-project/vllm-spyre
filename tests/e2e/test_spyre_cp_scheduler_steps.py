@@ -1131,17 +1131,17 @@ def test_cp_prefill_full_decode_batch(model: ModelInfo, backend: str,
                                       max_model_len: int,
                                       max_num_batched_tokens: int,
                                       available_blocks: int):
-    """ This verifies the logic allowing to start prefilling a new request even
-    if the decode batch is full. There are three requests for a batch size of 2.
-    The third request can start prefilling for the first chunk when the first
-    two requests are decoding, but it needs to wait for the first request to
-    finish before doing the second chunk and start decoding.
+    """Tests that a new request can start prefilling even when the decode batch
+    is full. With a batch size of 2 and three requests, the third request begins
+    prefilling while two other requests are decoding, but must wait for the 
+    first request to finish before prefilling the last chunk.
 
     Configuration:
         * max_num_seqs: 2
-        * number of prompts: 1
-            * 0: len = 10,  max tokens = 8, step joining = 0
-            * 1: len = 512, max tokens = 4, step joining = 3
+        * number of prompts: 3
+            * 0: len = 10,  max tokens = 5, step joining = 0
+            * 1: len = 10, max tokens = 5, step joining = 0
+            * 2: len = 133, max tokens = 3, step joining = 0
     """
 
     seqs_max_tokens = [5, 5, 3]
