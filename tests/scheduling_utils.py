@@ -56,6 +56,7 @@ def random_prompt(model: ModelInfo, seed: int, length: int) -> list[int]:
     return create_random_request(
         request_id=0,
         model=model,
+        from_model_vocab=True,
         sampling_params=SamplingParams.from_optional(),
         seed=seed,
         num_tokens=length).prompt_token_ids
@@ -96,12 +97,14 @@ def create_request_for_scheduler_test(
             }
         }
 
-    request = Request(
-        request_id=str(request_id),
-        sampling_params=sampling_params,
-        prompt_token_ids=prompt,
-        # TODO
-    )
+    request = Request(request_id=str(request_id),
+                      sampling_params=sampling_params,
+                      prompt_token_ids=prompt,
+                      eos_token_id=None,
+                      arrival_time=0,
+                      lora_request=None,
+                      pooling_params=None,
+                      cache_salt=None)
     return SchedulerTestRequest(add_step=add_step,
                                 request=request,
                                 hf_output=hf)
@@ -372,7 +375,7 @@ def validate_scheduler_steps(
             ]
 
             assert DISABLE_ASSERTS or (scheduler.tkv == step_ref["tkv"]
-                                       ), f"Step {step}, tkv: {scheduler.tkv}"
+                                       ), f"Step {step}, tkv: {scheduler.tkv}. Expected: {step_ref}, Actual: {scheduler}"
             assert (DISABLE_ASSERTS or waiting
                     == step_ref["waiting"]), f"Step {step}, waiting: {waiting}"
             assert (DISABLE_ASSERTS or running

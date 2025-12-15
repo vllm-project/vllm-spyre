@@ -302,7 +302,7 @@ def test_prefix_hit_decoded_block_within_batch(
         request_id=1,
         add_step=67,
         max_tokens=193,
-        prompt=request1.request.prompt_token_ids + request1.hf_output[:2] +
+        prompt=request1.request.prompt_token_ids + request1.hf_output["token_ids"][:2] +
         random_prompt(model=model, seed=0, length=65),
         use_golden_token_injection=True)
 
@@ -316,7 +316,6 @@ def test_prefix_hit_decoded_block_within_batch(
         max_model_len=max_model_len,
         available_blocks=available_blocks,
         max_batch_tkv_limit=-1,
-        use_cb=False,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
     )
