@@ -3,6 +3,7 @@ import dataclasses
 import os
 from collections import defaultdict, deque
 from typing import Any, Union
+from warnings import deprecated
 
 import pytest
 from llm_cache import get_cached_engine
@@ -156,6 +157,8 @@ def generate_prompts(model: ModelInfo,
     return generated_prompts, requests
 
 
+@deprecated(
+    "This function is deprecated. Use validate_scheduler_steps instead.")
 def check_scheduler_inference_steps(
     model: ModelInfo,
     backend: str,
