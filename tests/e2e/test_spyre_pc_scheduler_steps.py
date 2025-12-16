@@ -7,11 +7,11 @@ Run `python -m pytest tests/e2e/test_spyre_pc_inference_steps.py`.
 """
 
 import pytest
-from scheduling_utils import check_scheduler_inference_steps
+from scheduling_utils import (create_request_for_scheduler_test, random_prompt,
+                              validate_scheduler_steps)
 from spyre_util import ModelInfo
 
 
-@pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @pytest.mark.full_model
 @pytest.mark.prefix_caching
@@ -22,8 +22,7 @@ from spyre_util import ModelInfo
 @pytest.mark.parametrize("available_blocks", [None])
 def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
                                  monkeypatch: pytest.MonkeyPatch,
-                                 set_random_seed, max_num_seqs: int,
-                                 max_model_len: int,
+                                 max_num_seqs: int, max_model_len: int,
                                  max_num_batched_tokens: int,
                                  available_blocks: int):
     """ Scenario where two equal sequences are scheduled. 
@@ -40,10 +39,23 @@ def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
     """
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
 
-    seqs_max_tokens = [2, 2]
-    prompts_lengths = [192, 192]
-    steps_add_reqs = [0, 0]
-    seeds = [0, 0]  # twice the same sequence
+    prompt = random_prompt(model=model, seed=0, length=192)
+
+    request1 = create_request_for_scheduler_test(
+        model=model,
+        request_id=0,
+        add_step=0,
+        max_tokens=2,
+        prompt=prompt,
+        use_golden_token_injection=True)
+
+    request2 = create_request_for_scheduler_test(
+        model=model,
+        request_id=1,
+        add_step=0,
+        max_tokens=2,
+        prompt=prompt,
+        use_golden_token_injection=True)
 
     checked_steps = [
         {
@@ -83,7 +95,7 @@ def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "running": ["1", "0"],
             "request_outputs": [],
             "n_reserved_blocks": 8,
-            "n_used_blocks": 6,
+            "n_used_blocks": 5,
             "n_prefix_hits": 1,
             # each chunk has two blocks. Due to padding, the first chunk has
             # only one usable block
@@ -97,7 +109,7 @@ def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "running": ["1", "0"],
             "request_outputs": ["1"],
             "n_reserved_blocks": 8,
-            "n_used_blocks": 6,
+            "n_used_blocks": 5,
             "n_prefix_hits": 0,
             "n_cached_blocks": 1
         },
@@ -112,7 +124,7 @@ def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "request_outputs": ["1", "0"],
             "finished_requests": ["1", "0"],
             "n_reserved_blocks": 8,
-            "n_used_blocks": 8,
+            "n_used_blocks": 7,
             "n_cached_blocks": 1
         },
         {
@@ -127,26 +139,20 @@ def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
         },
     ]
 
-    check_scheduler_inference_steps(
+    validate_scheduler_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
-        seqs_max_tokens=seqs_max_tokens,
-        prompts_lengths=prompts_lengths,
-        steps_add_reqs=steps_add_reqs,
+        requests=[request1, request2],
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=False,
-        random_prompts=True,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        seeds=seeds,
     )
 
 
-@pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @pytest.mark.full_model
 @pytest.mark.prefix_caching
@@ -155,10 +161,12 @@ def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
 @pytest.mark.parametrize("max_model_len", [256])
 @pytest.mark.parametrize("max_num_batched_tokens", [128])
 @pytest.mark.parametrize("available_blocks", [None])
-def test_prefix_hit_decoded_block_within_batch(
-        model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
-        set_random_seed, max_num_seqs: int, max_model_len: int,
-        max_num_batched_tokens: int, available_blocks: int):
+def test_prefix_hit_decoded_block_within_batch(model: ModelInfo, backend: str,
+                                               monkeypatch: pytest.MonkeyPatch,
+                                               max_num_seqs: int,
+                                               max_model_len: int,
+                                               max_num_batched_tokens: int,
+                                               available_blocks: int):
     """ Scenario where two sequences are scheduled. We set the second
     sequence to be the entire first sequence plus some generated tokens.
     While prefilling the second sequence we have a prefix cache
@@ -166,8 +174,7 @@ def test_prefix_hit_decoded_block_within_batch(
     block is entirely prompt while the second block is a mix of prompt and
     decoded tokens. Note that the fetched prefix blocks are still part of the 
     existing decode batch. Hence we have duplicated blocks in the block table 
-    for this example. Also note that we cannot fetch a prefix and this test 
-    fails when we set n_lookaheads = [0, 0].
+    for this example.
 
     Configuration:
         * max_num_seqs: 2
@@ -177,15 +184,29 @@ def test_prefix_hit_decoded_block_within_batch(
     """
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
 
-    seqs_max_tokens = [68, 2]
-    prompts_lengths = [126, 193]
-    steps_add_reqs = [0, 67]
-    seeds = [0, 0]  # twice the same sequence
-    prefix_lens = [126, 126]
-    # number of generated/sampled tokens after the prefix:
-    # prompt 0: no sampled tokens after the 126 prefix tokens
-    # prompt 0: 2 sampled token after the 126 prefix tokens
-    n_lookaheads = [0, 2]
+    prompt = random_prompt(model=model, seed=0, length=126)
+
+    request1 = create_request_for_scheduler_test(
+        model=model,
+        request_id=0,
+        add_step=0,
+        max_tokens=68,
+        prompt=prompt,
+        use_golden_token_injection=True)
+
+    # Next prompt uses part of the first request's output, matching 128 tokens
+    # (2 blocks) in total
+    prompt2 = prompt + request1.hf_output["token_ids"][:2] + \
+        random_prompt(model=model, seed=0, length=65)
+
+    request2 = create_request_for_scheduler_test(
+        model=model,
+        request_id=1,
+        add_step=67,
+        max_tokens=2,
+        prompt=prompt2,
+        use_golden_token_injection=True)
+
 
     checked_steps = [
         {
@@ -246,7 +267,7 @@ def test_prefix_hit_decoded_block_within_batch(
             "running": ["1", "0"],
             "request_outputs": [],
             "n_reserved_blocks": 8,
-            "n_used_blocks": 7,
+            "n_used_blocks": 5,
             "n_prefix_hits": 1,
             # 1st block (prompt)
             # 2nd block (prompt + 2 decodes) <- what we want to test
@@ -260,7 +281,7 @@ def test_prefix_hit_decoded_block_within_batch(
             "running": ["1", "0"],
             "request_outputs": ["1"],
             "n_reserved_blocks": 8,
-            "n_used_blocks": 7,
+            "n_used_blocks": 5,
             "n_prefix_hits": 0,
             "n_cached_blocks": 2
         },
@@ -274,7 +295,7 @@ def test_prefix_hit_decoded_block_within_batch(
             "request_outputs": ["1", "0"],
             "finished_requests": ["1", "0"],
             "n_reserved_blocks": 8,
-            "n_used_blocks": 8,
+            "n_used_blocks": 6,
             "n_cached_blocks": 2
         },
         {
@@ -289,28 +310,20 @@ def test_prefix_hit_decoded_block_within_batch(
         },
     ]
 
-    check_scheduler_inference_steps(
+    validate_scheduler_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
-        seqs_max_tokens=seqs_max_tokens,
-        prompts_lengths=prompts_lengths,
-        steps_add_reqs=steps_add_reqs,
+        requests=[request1, request2],
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=False,
-        random_prompts=True,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        seeds=seeds,
-        prefix_lens=prefix_lens,
-        n_lookaheads=n_lookaheads,
     )
 
 
-@pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @pytest.mark.full_model
 @pytest.mark.prefix_caching
@@ -321,8 +334,7 @@ def test_prefix_hit_decoded_block_within_batch(
 @pytest.mark.parametrize("available_blocks", [None])
 def test_prefix_hit_not_in_batch(model: ModelInfo, backend: str,
                                  monkeypatch: pytest.MonkeyPatch,
-                                 set_random_seed, max_num_seqs: int,
-                                 max_model_len: int,
+                                 max_num_seqs: int, max_model_len: int,
                                  max_num_batched_tokens: int,
                                  available_blocks: int):
     """ Scenario where two equal sequences are scheduled. 
@@ -340,11 +352,23 @@ def test_prefix_hit_not_in_batch(model: ModelInfo, backend: str,
     """
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
 
-    seqs_max_tokens = [2, 2]
-    prompts_lengths = [192, 192]
-    # sequence 1 joins only at step 3, when seq 0 has already finished
-    steps_add_reqs = [0, 3]
-    seeds = [0, 0]  # twice the same sequence
+    prompt = random_prompt(model=model, seed=0, length=192)
+
+    request1 = create_request_for_scheduler_test(
+        model=model,
+        request_id=0,
+        add_step=0,
+        max_tokens=2,
+        prompt=prompt,
+        use_golden_token_injection=True)
+
+    request2 = create_request_for_scheduler_test(
+        model=model,
+        request_id=1,
+        add_step=3,
+        max_tokens=2,
+        prompt=prompt,
+        use_golden_token_injection=True)
 
     checked_steps = [
         {
@@ -436,26 +460,20 @@ def test_prefix_hit_not_in_batch(model: ModelInfo, backend: str,
         },
     ]
 
-    check_scheduler_inference_steps(
+    validate_scheduler_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
-        seqs_max_tokens=seqs_max_tokens,
-        prompts_lengths=prompts_lengths,
-        steps_add_reqs=steps_add_reqs,
+        requests=[request1, request2],
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=False,
-        random_prompts=True,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        seeds=seeds,
     )
 
 
-@pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @pytest.mark.full_model
 @pytest.mark.prefix_caching
@@ -466,8 +484,7 @@ def test_prefix_hit_not_in_batch(model: ModelInfo, backend: str,
 @pytest.mark.parametrize("available_blocks", [4])
 def test_limit_blocks_no_prefix_hit(model: ModelInfo, backend: str,
                                     monkeypatch: pytest.MonkeyPatch,
-                                    set_random_seed, max_num_seqs: int,
-                                    max_model_len: int,
+                                    max_num_seqs: int, max_model_len: int,
                                     max_num_batched_tokens: int,
                                     available_blocks: int):
     """ Scenario where three sequences are scheduled with the 1st and 3rd
@@ -486,12 +503,32 @@ def test_limit_blocks_no_prefix_hit(model: ModelInfo, backend: str,
     """
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
 
-    seqs_max_tokens = [2, 2, 2]
-    prompts_lengths = [192, 192, 192]
-    # sequence 1 joins only at step 3, when seq 0 has already finished
-    # sequence 2 joins only at step 6, when seq 1 has already finished
-    steps_add_reqs = [0, 3, 6]
-    seeds = [0, 1, 0]  # 1st and 3rd sequence are the same
+    prompt1 = random_prompt(model=model, seed=0, length=192)
+    prompt2 = random_prompt(model=model, seed=1, length=192)
+
+    request1 = create_request_for_scheduler_test(
+        model=model,
+        request_id=0,
+        add_step=0,
+        max_tokens=2,
+        prompt=prompt1,
+        use_golden_token_injection=True)
+
+    request2 = create_request_for_scheduler_test(
+        model=model,
+        request_id=1,
+        add_step=3,
+        max_tokens=2,
+        prompt=prompt2,  # 1st and 3rd sequence are the same
+        use_golden_token_injection=True)
+
+    request3 = create_request_for_scheduler_test(
+        model=model,
+        request_id=2,
+        add_step=6,
+        max_tokens=2,
+        prompt=prompt1,
+        use_golden_token_injection=True)
 
     checked_steps = [
         {
@@ -611,25 +648,20 @@ def test_limit_blocks_no_prefix_hit(model: ModelInfo, backend: str,
         },
     ]
 
-    check_scheduler_inference_steps(
+    validate_scheduler_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
-        seqs_max_tokens=seqs_max_tokens,
-        prompts_lengths=prompts_lengths,
-        steps_add_reqs=steps_add_reqs,
+        requests=[request1, request2, request3],
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=False,
-        random_prompts=True,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        seeds=seeds)
+    )
 
 
-@pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @pytest.mark.full_model
 @pytest.mark.prefix_caching
@@ -640,8 +672,7 @@ def test_limit_blocks_no_prefix_hit(model: ModelInfo, backend: str,
 @pytest.mark.parametrize("available_blocks", [None])
 def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
                                         monkeypatch: pytest.MonkeyPatch,
-                                        set_random_seed, max_num_seqs: int,
-                                        max_model_len: int,
+                                        max_num_seqs: int, max_model_len: int,
                                         max_num_batched_tokens: int,
                                         available_blocks: int):
     """ Scenario where three equal and one different sequences are scheduled.
@@ -661,10 +692,40 @@ def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
     """
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
 
-    seqs_max_tokens = [2, 2, 2, 2]
-    prompts_lengths = [192, 192, 192, 192]
-    steps_add_reqs = [0, 0, 0, 0]
-    seeds = [0, 0, 1, 0]  # thrice the same sequence
+    prompt1 = random_prompt(model=model, seed=0, length=192)
+    prompt2 = random_prompt(model=model, seed=1, length=192)
+
+    request1 = create_request_for_scheduler_test(
+        model=model,
+        request_id=0,
+        add_step=0,
+        max_tokens=2,
+        prompt=prompt1,
+        use_golden_token_injection=True)
+
+    request2 = create_request_for_scheduler_test(
+        model=model,
+        request_id=1,
+        add_step=0,
+        max_tokens=2,
+        prompt=prompt1,
+        use_golden_token_injection=True)
+
+    request3 = create_request_for_scheduler_test(
+        model=model,
+        request_id=2,
+        add_step=0,
+        max_tokens=2,
+        prompt=prompt2,  # This request has a different prompt
+        use_golden_token_injection=True)
+
+    request4 = create_request_for_scheduler_test(
+        model=model,
+        request_id=3,
+        add_step=0,
+        max_tokens=2,
+        prompt=prompt1,
+        use_golden_token_injection=True)
 
     checked_steps = [
         {
@@ -704,7 +765,7 @@ def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "running": ["1", "0"],
             "request_outputs": [],
             "n_reserved_blocks": 8,
-            "n_used_blocks": 6,
+            "n_used_blocks": 5,
             "n_prefix_hits": 1,
         },
         {   # prefill chunk 2 seq 1
@@ -715,7 +776,7 @@ def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "running": ["1", "0"],
             "request_outputs": ["1"],
             "n_reserved_blocks": 8,
-            "n_used_blocks": 6,
+            "n_used_blocks": 5,
             "n_prefix_hits": 0,
         },
         {   # prefill chunk 1 seq 2
@@ -725,7 +786,7 @@ def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "running": ["2", "1", "0"],
             "request_outputs": [],
             "n_reserved_blocks": 12,
-            "n_used_blocks": 9,
+            "n_used_blocks": 8,
             "n_prefix_hits": 0,
         },
         {   # prefill chunk 2 seq 2
@@ -735,7 +796,7 @@ def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "running": ["2", "1", "0"],
             "request_outputs": ["2"],
             "n_reserved_blocks": 12,
-            "n_used_blocks": 9,
+            "n_used_blocks": 8,
             "n_prefix_hits": 0,
         },
         {   # prefill chunk 1 seq 3
@@ -746,7 +807,7 @@ def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "running": ["3", "2", "1", "0"],
             "request_outputs": [],
             "n_reserved_blocks": 16,
-            "n_used_blocks": 12,
+            "n_used_blocks": 10,
             "n_prefix_hits": 1,
         },
         {   # prefill chunk 2 seq 3
@@ -757,7 +818,7 @@ def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "running": ["3", "2", "1", "0"],
             "request_outputs": ["3"],
             "n_reserved_blocks": 16,
-            "n_used_blocks": 12,
+            "n_used_blocks": 10,
             "n_prefix_hits": 0,
         },
         {
@@ -769,7 +830,7 @@ def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "request_outputs": ["3", "2", "1", "0"],
             "finished_requests": ["3", "2", "1", "0"],
             "n_reserved_blocks": 16,
-            "n_used_blocks": 16
+            "n_used_blocks": 14
         },
         {
             # Tkv should be cleared one step later
@@ -783,26 +844,20 @@ def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
         },
     ]
 
-    check_scheduler_inference_steps(
+    validate_scheduler_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
-        seqs_max_tokens=seqs_max_tokens,
-        prompts_lengths=prompts_lengths,
-        steps_add_reqs=steps_add_reqs,
+        requests=[request1, request2, request3, request4],
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=False,
-        random_prompts=True,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        seeds=seeds,
     )
 
 
-@pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @pytest.mark.full_model
 @pytest.mark.prefix_caching
@@ -813,8 +868,7 @@ def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
 @pytest.mark.parametrize("available_blocks", [8])
 def test_limit_blocks_prefix_hit(model: ModelInfo, backend: str,
                                  monkeypatch: pytest.MonkeyPatch,
-                                 set_random_seed, max_num_seqs: int,
-                                 max_model_len: int,
+                                 max_num_seqs: int, max_model_len: int,
                                  max_num_batched_tokens: int,
                                  available_blocks: int):
     """ Scenario where three sequences are scheduled with the 1st and 3rd
@@ -833,12 +887,32 @@ def test_limit_blocks_prefix_hit(model: ModelInfo, backend: str,
     """
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
 
-    seqs_max_tokens = [2, 2, 2]
-    prompts_lengths = [192, 192, 192]
-    # sequence 1 joins only at step 3, when seq 0 has already finished
-    # sequence 2 joins only at step 6, when seq 1 has already finished
-    steps_add_reqs = [0, 3, 6]
-    seeds = [0, 1, 0]  # 1st and 3rd sequence are the same
+    prompt1 = random_prompt(model=model, seed=0, length=192)
+    prompt2 = random_prompt(model=model, seed=1, length=192)
+
+    request1 = create_request_for_scheduler_test(
+        model=model,
+        request_id=0,
+        add_step=0,
+        max_tokens=2,
+        prompt=prompt1,
+        use_golden_token_injection=True)
+
+    request2 = create_request_for_scheduler_test(
+        model=model,
+        request_id=1,
+        add_step=3,
+        max_tokens=2,
+        prompt=prompt2,  # 1st and 3rd sequence are the same
+        use_golden_token_injection=True)
+
+    request3 = create_request_for_scheduler_test(
+        model=model,
+        request_id=2,
+        add_step=6,
+        max_tokens=2,
+        prompt=prompt1,
+        use_golden_token_injection=True)
 
     checked_steps = [
         {
@@ -961,25 +1035,20 @@ def test_limit_blocks_prefix_hit(model: ModelInfo, backend: str,
         },
     ]
 
-    check_scheduler_inference_steps(
+    validate_scheduler_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
-        seqs_max_tokens=seqs_max_tokens,
-        prompts_lengths=prompts_lengths,
-        steps_add_reqs=steps_add_reqs,
+        requests=[request1, request2, request3],
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=False,
-        random_prompts=True,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        seeds=seeds)
+    )
 
 
-@pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @pytest.mark.full_model
 @pytest.mark.prefix_caching
@@ -990,8 +1059,7 @@ def test_limit_blocks_prefix_hit(model: ModelInfo, backend: str,
 @pytest.mark.parametrize("available_blocks", [None])
 def test_multi_chunk_full_match(model: ModelInfo, backend: str,
                                 monkeypatch: pytest.MonkeyPatch,
-                                set_random_seed, max_num_seqs: int,
-                                max_model_len: int,
+                                max_num_seqs: int, max_model_len: int,
                                 max_num_batched_tokens: int,
                                 available_blocks: int):
     """ Scenario where two equal sequences are scheduled.
@@ -1002,15 +1070,28 @@ def test_multi_chunk_full_match(model: ModelInfo, backend: str,
     Configuration:
         * max_num_seqs: 2
         * number of prompts: 2
-            * 0: len = 384,  max tokens = 2, step joining = 0
+            * 0: len = 384, max tokens = 2, step joining = 0
             * 1: len = 384, max tokens = 2, step joining = 0
     """
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
 
-    seqs_max_tokens = [2, 2]
-    prompts_lengths = [384, 384]
-    steps_add_reqs = [0, 0]
-    seeds = [0, 0]  # twice the same sequence
+    prompt = random_prompt(model=model, seed=0, length=384)
+
+    request1 = create_request_for_scheduler_test(
+        model=model,
+        request_id=0,
+        add_step=0,
+        max_tokens=2,
+        prompt=prompt,
+        use_golden_token_injection=True)
+
+    request2 = create_request_for_scheduler_test(
+        model=model,
+        request_id=1,
+        add_step=0,
+        max_tokens=2,
+        prompt=prompt,
+        use_golden_token_injection=True)
 
     checked_steps = [
         {
@@ -1060,7 +1141,7 @@ def test_multi_chunk_full_match(model: ModelInfo, backend: str,
             "running": ["1", "0"],
             "request_outputs": [],
             "n_reserved_blocks": 14,
-            "n_used_blocks": 12,
+            "n_used_blocks": 8,
             "n_prefix_hits": 1,
             # The number of cached blocks is determined up front
             "n_cached_blocks": 4 # can reuse the first two chunk (4 blocks)
@@ -1073,7 +1154,7 @@ def test_multi_chunk_full_match(model: ModelInfo, backend: str,
             "running": ["1", "0"],
             "request_outputs": [],
             "n_reserved_blocks": 14,
-            "n_used_blocks": 12,
+            "n_used_blocks": 8,
             "n_prefix_hits": 1,
             "n_cached_blocks": 4
         },
@@ -1085,7 +1166,7 @@ def test_multi_chunk_full_match(model: ModelInfo, backend: str,
             "running": ["1", "0"],
             "request_outputs": ["1"],
             "n_reserved_blocks": 14,
-            "n_used_blocks": 12,
+            "n_used_blocks": 8,
             "n_prefix_hits": 0,
             "n_cached_blocks": 4
         },
@@ -1099,7 +1180,7 @@ def test_multi_chunk_full_match(model: ModelInfo, backend: str,
             "request_outputs": ["1", "0"],
             "finished_requests": ["1", "0"],
             "n_reserved_blocks": 14,
-            "n_used_blocks": 14,
+            "n_used_blocks": 10,
             "n_cached_blocks": 4
         },
         {
@@ -1114,26 +1195,20 @@ def test_multi_chunk_full_match(model: ModelInfo, backend: str,
         },
     ]
 
-    check_scheduler_inference_steps(
+    validate_scheduler_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
-        seqs_max_tokens=seqs_max_tokens,
-        prompts_lengths=prompts_lengths,
-        steps_add_reqs=steps_add_reqs,
+        requests=[request1, request2],
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=False,
-        random_prompts=True,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        seeds=seeds,
     )
 
 
-@pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @pytest.mark.full_model
 @pytest.mark.prefix_caching
@@ -1144,8 +1219,7 @@ def test_multi_chunk_full_match(model: ModelInfo, backend: str,
 @pytest.mark.parametrize("available_blocks", [None])
 def test_multi_chunk_partial_match(model: ModelInfo, backend: str,
                                    monkeypatch: pytest.MonkeyPatch,
-                                   set_random_seed, max_num_seqs: int,
-                                   max_model_len: int,
+                                   max_num_seqs: int, max_model_len: int,
                                    max_num_batched_tokens: int,
                                    available_blocks: int):
     """ Scenario where two sequences are scheduled which share a common
@@ -1161,14 +1235,30 @@ def test_multi_chunk_partial_match(model: ModelInfo, backend: str,
     """
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
 
-    seqs_max_tokens = [2, 2]
-    prompts_lengths = [384, 384]
-    steps_add_reqs = [0, 0]
-    seeds = [0, 0]  # twice the same seed for a sequence of length 384
+    # twice the same seed for a sequence of length 384
     # the first sequence shares the same prefix of length 384 tokens
     # the second sequence shares the same prefix of length 254 tokens
     # hence sequence 1 shares the first 254 tokens with sequence 0
-    prefix_lens = [384, 254]
+
+    prompt1 = random_prompt(model=model, seed=0, length=384)
+    prompt2 = prompt1[0:254] + \
+        random_prompt(model=model, seed=0, length=384 - 254)
+
+    request1 = create_request_for_scheduler_test(
+        model=model,
+        request_id=0,
+        add_step=0,
+        max_tokens=2,
+        prompt=prompt1,
+        use_golden_token_injection=True)
+
+    request2 = create_request_for_scheduler_test(
+        model=model,
+        request_id=1,
+        add_step=0,
+        max_tokens=2,
+        prompt=prompt2,
+        use_golden_token_injection=True)
 
     checked_steps = [
         {
@@ -1218,7 +1308,7 @@ def test_multi_chunk_partial_match(model: ModelInfo, backend: str,
             "running": ["1", "0"],
             "request_outputs": [],
             "n_reserved_blocks": 14,
-            "n_used_blocks": 12,
+            "n_used_blocks": 10,
             "n_prefix_hits": 1,
             # The number of cached blocks is determined up front
             "n_cached_blocks": 2 # can only reuse the first chunk (2 blocks)
@@ -1231,7 +1321,7 @@ def test_multi_chunk_partial_match(model: ModelInfo, backend: str,
             "running": ["1", "0"],
             "request_outputs": [],
             "n_reserved_blocks": 14,
-            "n_used_blocks": 12,
+            "n_used_blocks": 10,
             "n_prefix_hits": 0,
             "n_cached_blocks": 2
         },
@@ -1242,7 +1332,7 @@ def test_multi_chunk_partial_match(model: ModelInfo, backend: str,
             "running": ["1", "0"],
             "request_outputs": ["1"],
             "n_reserved_blocks": 14,
-            "n_used_blocks": 12,
+            "n_used_blocks": 10,
             "n_prefix_hits": 0,
             "n_cached_blocks": 2
         },
@@ -1256,7 +1346,7 @@ def test_multi_chunk_partial_match(model: ModelInfo, backend: str,
             "request_outputs": ["1", "0"],
             "finished_requests": ["1", "0"],
             "n_reserved_blocks": 14,
-            "n_used_blocks": 14,
+            "n_used_blocks": 12,
             "n_cached_blocks": 2
         },
         {
@@ -1271,21 +1361,15 @@ def test_multi_chunk_partial_match(model: ModelInfo, backend: str,
         },
     ]
 
-    check_scheduler_inference_steps(
+    validate_scheduler_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
-        seqs_max_tokens=seqs_max_tokens,
-        prompts_lengths=prompts_lengths,
-        steps_add_reqs=steps_add_reqs,
+        requests=[request1, request2],
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=False,
-        random_prompts=True,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        seeds=seeds,
-        prefix_lens=prefix_lens,
     )

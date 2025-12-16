@@ -1,4 +1,5 @@
 import copy
+import dataclasses
 import os
 from collections import defaultdict, deque
 from typing import Any, Union
@@ -8,10 +9,12 @@ from llm_cache import get_cached_engine
 from output_util import (ISCLOSE_ABS_TOL, ISCLOSE_ABS_TOL_QUANTIZATION,
                          compare_results, generate_hf_output)
 from spyre_util import ModelInfo, create_random_request
+from typing_extensions import deprecated
 from vllm import SamplingParams
 from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
+from vllm.v1.request import Request
 
 from vllm_spyre.v1.core.scheduler import (ChunkedPrefillSpyreScheduler,
                                           ContinuousBatchingSpyreScheduler)
@@ -39,14 +42,81 @@ def augment_checked_steps(
     return all_checked_steps
 
 
+@dataclasses.dataclass
+class SchedulerTestRequest:
+    """Little struct for passing around vllm.v1.Requests for scheduler tests.
+    The tests often need to know at which step a request is added to the engine.
+    """
+    add_step: int  # Step that the request will be added to the engine
+    request: Request
+    hf_output: Any  # hf transformers output for this request
+
+
+def random_prompt(model: ModelInfo, seed: int, length: int) -> list[int]:
+    # Generate a random prompt with valid token ids for this model
+    return create_random_request(
+        request_id=0,
+        model=model,
+        from_model_vocab=True,
+        sampling_params=SamplingParams.from_optional(),
+        seed=seed,
+        num_tokens=length).prompt_token_ids
+
+
+def create_request_for_scheduler_test(
+        model: ModelInfo, request_id: int, add_step: int, max_tokens: int,
+        prompt: list[int],
+        use_golden_token_injection: bool) -> SchedulerTestRequest:
+    # Creates a request out of a prompt, for use with the scheduler tests.
+    # Can add golden token injection, which will ensure that the vllm output
+    # matches the hf output so that we can do logits comparisons on identical
+    # token outputs.
+
+    sampling_params = SamplingParams(max_tokens=max_tokens,
+                                     temperature=0.0,
+                                     logprobs=0,
+                                     ignore_eos=True)
+
+    hf_results = generate_hf_output(
+        model=model,
+        prompts=[prompt],
+        max_new_tokens=max_tokens,
+        ignore_eos=True,
+    )
+    hf = hf_results[0]
+
+    if use_golden_token_injection:
+        abs_tol = ISCLOSE_ABS_TOL_QUANTIZATION if model.is_quantized \
+            else ISCLOSE_ABS_TOL
+
+        sampling_params.extra_args = {
+            "golden_token_injector": {
+                "expected_token_ids": hf['token_ids'],
+                "expected_logprobs": hf['logprobs'],
+                "error_threshold": abs_tol,
+                "label": f"#{request_id}"
+            }
+        }
+
+    request = Request(request_id=str(request_id),
+                      sampling_params=sampling_params,
+                      prompt_token_ids=prompt,
+                      eos_token_id=None,
+                      arrival_time=0,
+                      lora_request=None,
+                      pooling_params=None,
+                      cache_salt=None)
+    return SchedulerTestRequest(add_step=add_step,
+                                request=request,
+                                hf_output=hf)
+
+
 def generate_prompts(model: ModelInfo,
                      steps_add_reqs: list[int],
                      seqs_max_tokens: list[int],
                      prompts_lengths: list[int],
                      from_model_vocab: bool = False,
-                     seeds: list[int] = None,
-                     prefix_lens: list[int] = None,
-                     n_lookaheads: list[int] = None):
+                     seeds: list[int] = None):
     generated_prompts = []
 
     # Create random requests of specified lengths and max_tokens
@@ -64,34 +134,6 @@ def generate_prompts(model: ModelInfo,
     else:
         seeds = [None] * len(steps_add_reqs)
 
-    # prefix lengths for random (repeated) prompts generation
-    if prefix_lens:
-        assert seeds[0] is not None, \
-            "when providing prefix_lens we must also provide seeds"
-        assert len(prefix_lens) == len(steps_add_reqs), \
-            "number of prefix_lens must be equal to the number of prompts"
-        assert all([prefix_len <= prompt_len for prefix_len, prompt_len in zip(
-            prefix_lens, prompts_lengths)]), \
-            "the prefix length must be less or equal than the prompt length"
-    else:
-        prefix_lens = [None] * len(steps_add_reqs)
-
-    # number of (pseudo) generated/sampled tokens after the prefix
-    # this is used to test prefix caching of blocks filled during decode
-    if n_lookaheads:
-        assert seeds[0] is not None, \
-            "when providing n_lookahead we must also provide seeds"
-        assert prefix_lens[0] is not None, \
-            "when providing n_lookahead we must also provide prefix_lens"
-        assert len(n_lookaheads) == len(steps_add_reqs), \
-            "number of n_lookahead must be equal to the number of prompts"
-        assert all([prefix_len + n_lookahead <= prompt_len for \
-                    prefix_len, n_lookahead, prompt_len in \
-                        zip(prefix_lens, n_lookaheads, prompts_lengths)]), \
-            "the prefix length must be less or equal than the prompt length"
-    else:
-        n_lookaheads = [None] * len(steps_add_reqs)
-
     for i, (add_step, max_tokens,
             prompt_length) in enumerate(sorted_reqs_params):
         # ignoring eos because we want to force the decoding to finish
@@ -107,8 +149,6 @@ def generate_prompts(model: ModelInfo,
             model=model,
             from_model_vocab=from_model_vocab,
             seed=seeds[i],
-            prefix_len=prefix_lens[i],
-            n_lookahead=n_lookaheads[i],
         )
         requests.append((add_step, request))
         # NOTE: It is going to be decoded later
@@ -117,6 +157,8 @@ def generate_prompts(model: ModelInfo,
     return generated_prompts, requests
 
 
+@deprecated(
+    "This function is deprecated. Use validate_scheduler_steps instead.")
 def check_scheduler_inference_steps(
     model: ModelInfo,
     backend: str,
@@ -134,8 +176,6 @@ def check_scheduler_inference_steps(
     random_prompts: bool = False,
     prefix_caching: bool = False,
     seeds: list[int] = None,
-    prefix_lens: list[int] = None,
-    n_lookaheads: list[int] = None,
 ):
     """
     Test the scheduler execution by comparing the scheduler attributes at each 
@@ -168,23 +208,12 @@ def check_scheduler_inference_steps(
             "List of checked steps needs to be of increasing order of step")
     # ------
 
-    collected_outputs = defaultdict(lambda: {
-        "token_ids": [],
-        "logprobs": [],
-        "text": "",
-        "tokens": []
-    })
-
-    prompts, requests = generate_prompts(
-        model,
-        steps_add_reqs,
-        seqs_max_tokens,
-        prompts_lengths,
-        from_model_vocab=random_prompts,
-        seeds=seeds,
-        prefix_lens=prefix_lens,
-        n_lookaheads=n_lookaheads,
-    )
+    prompts, requests = generate_prompts(model,
+                                         steps_add_reqs,
+                                         seqs_max_tokens,
+                                         prompts_lengths,
+                                         from_model_vocab=random_prompts,
+                                         seeds=seeds)
 
     hf_results = generate_hf_output(
         model=model,
@@ -206,6 +235,52 @@ def check_scheduler_inference_steps(
                 "label": f"#{idx}"
             }
         }
+
+    requests = [
+        SchedulerTestRequest(add_step=r[0],
+                             request=r[1],
+                             hf_output=hf_results[i])
+        for i, r in enumerate(requests)
+    ]
+
+    validate_scheduler_steps(model=model,
+                             backend=backend,
+                             monkeypatch=monkeypatch,
+                             requests=requests,
+                             checked_steps=checked_steps,
+                             max_num_seqs=max_num_seqs,
+                             max_model_len=max_model_len,
+                             available_blocks=available_blocks,
+                             max_batch_tkv_limit=max_batch_tkv_limit,
+                             max_num_batched_tokens=max_num_batched_tokens,
+                             prefix_caching=prefix_caching)
+
+
+def validate_scheduler_steps(
+    model: ModelInfo,
+    backend: str,
+    monkeypatch: pytest.MonkeyPatch,
+    requests: list[SchedulerTestRequest],
+    checked_steps: list[dict[str, Any]],
+    max_num_seqs: int,
+    max_model_len: int,
+    available_blocks: int,
+    max_batch_tkv_limit: int = -1,
+    max_num_batched_tokens: int = None,
+    prefix_caching: bool = False,
+):
+    """
+    Creates a vllm.v1.engine and runs it step-by-step for the provided requests.
+    Validates that the engine state matches the state given in `checked_steps`,
+    and validates that the resulting output logprobs for each request is within
+    an acceptable tolerance of hf output.
+    """
+    assert len(requests) == len(set(
+        r.request.request_id
+        for r in requests)), "duplicate request IDs detected"
+
+    prompts = [r.request.prompt_token_ids for r in requests]
+    hf_results = [r.hf_output for r in requests]
 
     # Setup the engine
     engine_core: EngineCore = get_cached_engine(
@@ -238,13 +313,20 @@ def check_scheduler_inference_steps(
     # In-between steps are added as normal decode steps
     checked_steps = augment_checked_steps(checked_steps)
 
+    collected_outputs = defaultdict(lambda: {
+        "token_ids": [],
+        "logprobs": [],
+        "text": "",
+        "tokens": []
+    })
+
     # Run steps, until last step from 'checked_steps' is reached
     request_outputs = []
     requested_blocks, reserved_blocks = {}, {}
     for step in range(checked_steps[-1]['step'] + 1):
         # Add requests for this step
-        while requests and requests[0][0] == step:
-            engine_core.add_request(requests.popleft()[1])
+        while requests and requests[0].add_step == step:
+            engine_core.add_request(requests.pop(0).request)
 
         # Check step if it is in the provided list of steps to check
         if checked_steps and step == checked_steps[0]["step"]:
@@ -288,8 +370,11 @@ def check_scheduler_inference_steps(
             }
             req_ids2num_reserved_blocks = (
                 model_runner.req_ids2num_reserved_blocks)
-            n_used_blocks = sum(
-                [len(blocks) for blocks in req_ids2blocks.values()])
+            # Account for blocks reused via prefix caching
+            used_blocks = set()
+            for blocks in req_ids2blocks.values():
+                used_blocks = used_blocks.union(blocks)
+            n_used_blocks = len(used_blocks)
 
             n_cached_blocks = n_prefix_hits = 0
             if prefix_caching:
