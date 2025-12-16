@@ -22,8 +22,7 @@ from spyre_util import ModelInfo
 @pytest.mark.parametrize("available_blocks", [None])
 def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
                                  monkeypatch: pytest.MonkeyPatch,
-                                 set_random_seed, max_num_seqs: int,
-                                 max_model_len: int,
+                                 max_num_seqs: int, max_model_len: int,
                                  max_num_batched_tokens: int,
                                  available_blocks: int):
     """ Scenario where two equal sequences are scheduled. 
@@ -161,10 +160,12 @@ def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
 @pytest.mark.parametrize("max_model_len", [256])
 @pytest.mark.parametrize("max_num_batched_tokens", [128])
 @pytest.mark.parametrize("available_blocks", [None])
-def test_prefix_hit_decoded_block_within_batch(
-        model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
-        set_random_seed, max_num_seqs: int, max_model_len: int,
-        max_num_batched_tokens: int, available_blocks: int):
+def test_prefix_hit_decoded_block_within_batch(model: ModelInfo, backend: str,
+                                               monkeypatch: pytest.MonkeyPatch,
+                                               max_num_seqs: int,
+                                               max_model_len: int,
+                                               max_num_batched_tokens: int,
+                                               available_blocks: int):
     """ Scenario where two sequences are scheduled. We set the second
     sequence to be the entire first sequence plus some generated tokens.
     While prefilling the second sequence we have a prefix cache
@@ -329,8 +330,7 @@ def test_prefix_hit_decoded_block_within_batch(
 @pytest.mark.parametrize("available_blocks", [None])
 def test_prefix_hit_not_in_batch(model: ModelInfo, backend: str,
                                  monkeypatch: pytest.MonkeyPatch,
-                                 set_random_seed, max_num_seqs: int,
-                                 max_model_len: int,
+                                 max_num_seqs: int, max_model_len: int,
                                  max_num_batched_tokens: int,
                                  available_blocks: int):
     """ Scenario where two equal sequences are scheduled. 
@@ -479,8 +479,7 @@ def test_prefix_hit_not_in_batch(model: ModelInfo, backend: str,
 @pytest.mark.parametrize("available_blocks", [4])
 def test_limit_blocks_no_prefix_hit(model: ModelInfo, backend: str,
                                     monkeypatch: pytest.MonkeyPatch,
-                                    set_random_seed, max_num_seqs: int,
-                                    max_model_len: int,
+                                    max_num_seqs: int, max_model_len: int,
                                     max_num_batched_tokens: int,
                                     available_blocks: int):
     """ Scenario where three sequences are scheduled with the 1st and 3rd
@@ -667,8 +666,7 @@ def test_limit_blocks_no_prefix_hit(model: ModelInfo, backend: str,
 @pytest.mark.parametrize("available_blocks", [None])
 def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
                                         monkeypatch: pytest.MonkeyPatch,
-                                        set_random_seed, max_num_seqs: int,
-                                        max_model_len: int,
+                                        max_num_seqs: int, max_model_len: int,
                                         max_num_batched_tokens: int,
                                         available_blocks: int):
     """ Scenario where three equal and one different sequences are scheduled.
@@ -861,8 +859,7 @@ def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
 @pytest.mark.parametrize("available_blocks", [8])
 def test_limit_blocks_prefix_hit(model: ModelInfo, backend: str,
                                  monkeypatch: pytest.MonkeyPatch,
-                                 set_random_seed, max_num_seqs: int,
-                                 max_model_len: int,
+                                 max_num_seqs: int, max_model_len: int,
                                  max_num_batched_tokens: int,
                                  available_blocks: int):
     """ Scenario where three sequences are scheduled with the 1st and 3rd
@@ -1052,8 +1049,7 @@ def test_limit_blocks_prefix_hit(model: ModelInfo, backend: str,
 @pytest.mark.parametrize("available_blocks", [None])
 def test_multi_chunk_full_match(model: ModelInfo, backend: str,
                                 monkeypatch: pytest.MonkeyPatch,
-                                set_random_seed, max_num_seqs: int,
-                                max_model_len: int,
+                                max_num_seqs: int, max_model_len: int,
                                 max_num_batched_tokens: int,
                                 available_blocks: int):
     """ Scenario where two equal sequences are scheduled.
@@ -1212,8 +1208,7 @@ def test_multi_chunk_full_match(model: ModelInfo, backend: str,
 @pytest.mark.parametrize("available_blocks", [None])
 def test_multi_chunk_partial_match(model: ModelInfo, backend: str,
                                    monkeypatch: pytest.MonkeyPatch,
-                                   set_random_seed, max_num_seqs: int,
-                                   max_model_len: int,
+                                   max_num_seqs: int, max_model_len: int,
                                    max_num_batched_tokens: int,
                                    available_blocks: int):
     """ Scenario where two sequences are scheduled which share a common
