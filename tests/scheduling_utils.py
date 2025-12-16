@@ -115,9 +115,7 @@ def generate_prompts(model: ModelInfo,
                      seqs_max_tokens: list[int],
                      prompts_lengths: list[int],
                      from_model_vocab: bool = False,
-                     seeds: list[int] = None,
-                     prefix_lens: list[int] = None,
-                     n_lookaheads: list[int] = None):
+                     seeds: list[int] = None):
     generated_prompts = []
 
     # Create random requests of specified lengths and max_tokens
@@ -135,34 +133,6 @@ def generate_prompts(model: ModelInfo,
     else:
         seeds = [None] * len(steps_add_reqs)
 
-    # prefix lengths for random (repeated) prompts generation
-    if prefix_lens:
-        assert seeds[0] is not None, \
-            "when providing prefix_lens we must also provide seeds"
-        assert len(prefix_lens) == len(steps_add_reqs), \
-            "number of prefix_lens must be equal to the number of prompts"
-        assert all([prefix_len <= prompt_len for prefix_len, prompt_len in zip(
-            prefix_lens, prompts_lengths)]), \
-            "the prefix length must be less or equal than the prompt length"
-    else:
-        prefix_lens = [None] * len(steps_add_reqs)
-
-    # number of (pseudo) generated/sampled tokens after the prefix
-    # this is used to test prefix caching of blocks filled during decode
-    if n_lookaheads:
-        assert seeds[0] is not None, \
-            "when providing n_lookahead we must also provide seeds"
-        assert prefix_lens[0] is not None, \
-            "when providing n_lookahead we must also provide prefix_lens"
-        assert len(n_lookaheads) == len(steps_add_reqs), \
-            "number of n_lookahead must be equal to the number of prompts"
-        assert all([prefix_len + n_lookahead <= prompt_len for \
-                    prefix_len, n_lookahead, prompt_len in \
-                        zip(prefix_lens, n_lookaheads, prompts_lengths)]), \
-            "the prefix length must be less or equal than the prompt length"
-    else:
-        n_lookaheads = [None] * len(steps_add_reqs)
-
     for i, (add_step, max_tokens,
             prompt_length) in enumerate(sorted_reqs_params):
         # ignoring eos because we want to force the decoding to finish
@@ -178,8 +148,6 @@ def generate_prompts(model: ModelInfo,
             model=model,
             from_model_vocab=from_model_vocab,
             seed=seeds[i],
-            prefix_len=prefix_lens[i],
-            n_lookahead=n_lookaheads[i],
         )
         requests.append((add_step, request))
         # NOTE: It is going to be decoded later
@@ -205,8 +173,6 @@ def check_scheduler_inference_steps(
     random_prompts: bool = False,
     prefix_caching: bool = False,
     seeds: list[int] = None,
-    prefix_lens: list[int] = None,
-    n_lookaheads: list[int] = None,
 ):
     """
     Test the scheduler execution by comparing the scheduler attributes at each 
@@ -239,16 +205,12 @@ def check_scheduler_inference_steps(
             "List of checked steps needs to be of increasing order of step")
     # ------
 
-    prompts, requests = generate_prompts(
-        model,
-        steps_add_reqs,
-        seqs_max_tokens,
-        prompts_lengths,
-        from_model_vocab=random_prompts,
-        seeds=seeds,
-        prefix_lens=prefix_lens,
-        n_lookaheads=n_lookaheads,
-    )
+    prompts, requests = generate_prompts(model,
+                                         steps_add_reqs,
+                                         seqs_max_tokens,
+                                         prompts_lengths,
+                                         from_model_vocab=random_prompts,
+                                         seeds=seeds)
 
     hf_results = generate_hf_output(
         model=model,
@@ -375,7 +337,7 @@ def validate_scheduler_steps(
             ]
 
             assert DISABLE_ASSERTS or (scheduler.tkv == step_ref["tkv"]
-                                       ), f"Step {step}, tkv: {scheduler.tkv}. Expected: {step_ref}, Actual: {scheduler}"
+                                       ), f"Step {step}, tkv: {scheduler.tkv}"
             assert (DISABLE_ASSERTS or waiting
                     == step_ref["waiting"]), f"Step {step}, waiting: {waiting}"
             assert (DISABLE_ASSERTS or running

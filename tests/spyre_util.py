@@ -363,16 +363,12 @@ def create_seq_prompt(model: ModelInfo, token_length: int) -> str:
     return tokenizer.decode(tokens)
 
 
-def create_random_request(
-    request_id: int,
-    num_tokens: int,
-    sampling_params: SamplingParams,
-    from_model_vocab: bool = False,
-    model: Optional[ModelInfo] = None,
-    seed: int = None,
-    prefix_len: int = None,
-    n_lookahead: int = None,
-) -> Request:
+def create_random_request(request_id: int,
+                          num_tokens: int,
+                          sampling_params: SamplingParams,
+                          from_model_vocab: bool = False,
+                          model: Optional[ModelInfo] = None,
+                          seed: int = None) -> Request:
 
     tokenizer = AutoTokenizer.from_pretrained(model.name,
                                               revision=model.revision)
@@ -388,23 +384,6 @@ def create_random_request(
             random.seed(seed)
         prompt_token_ids = random.choices(valid_token_ids, k=num_tokens)
 
-        if prefix_len is not None and prefix_len < num_tokens:
-            token_id_to_replace = prompt_token_ids[prefix_len]
-            # resample a token to diverge the prompt after prefix_len
-            while True:
-                token_id_replacement = random.choices(valid_token_ids, k=1)[0]
-                if token_id_replacement != token_id_to_replace:
-                    prompt_token_ids[prefix_len] = token_id_replacement
-                    break
-        if n_lookahead is not None and n_lookahead > 0:
-            # import here to prevent circular import
-            from output_util import generate_hf_output
-            generated_token_ids = generate_hf_output(
-                model=model,
-                prompts=[prompt_token_ids[0:prefix_len]],
-                max_new_tokens=n_lookahead)[0]["token_ids"]
-            for i in range(n_lookahead):
-                prompt_token_ids[prefix_len + i] = generated_token_ids[i]
     else:
         # start with existing prompts and tokenize them
         prompts = get_longer_chicken_soup_prompts(1)
