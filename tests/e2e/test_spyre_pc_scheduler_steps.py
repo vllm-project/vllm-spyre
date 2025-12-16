@@ -280,7 +280,14 @@ def test_block_deduplication_within_batch(model: ModelInfo, backend: str,
             "n_reserved_blocks": 2,
             "n_used_blocks": 2,
             "n_prefix_hits": 0,
-            "n_cached_blocks": 0
+            "n_cached_blocks": 0,
+            "block_tables": {
+                '0': [1, 2]
+            },
+            "block_ref_count": {
+                1: 1,
+                2: 1
+            }
         },
         {  # prefill chunk 1 seq 1
             # cannot use prefix, as the last chunk has to always be recomputed
@@ -293,9 +300,15 @@ def test_block_deduplication_within_batch(model: ModelInfo, backend: str,
             "n_used_blocks": 4,
             "n_prefix_hits": 0,
             "n_cached_blocks": 0,
-            # assert here that the block table has only 3 distinct block ids,
-            # e.g. the first block is shared among the two sequences 0 and 1
-            "n_shared_blocks": 1  # TODO
+            "block_tables": {
+                '0': [1, 2],
+                '1': [1, 3]
+            },
+            "block_ref_count": {
+                1: 2,
+                2: 1,
+                3: 1
+            }
         },
         {
             # Decode 1 of request 0.
@@ -307,7 +320,16 @@ def test_block_deduplication_within_batch(model: ModelInfo, backend: str,
             "request_outputs": ["1", "0"],
             "finished_requests": ["1", "0"],
             "n_reserved_blocks": 4,
-            "n_used_blocks": 4
+            "n_used_blocks": 4,
+            "block_tables": {
+                '0': [1, 2],
+                '1': [1, 3]
+            },
+            "block_ref_count": {
+                1: 2,
+                2: 1,
+                3: 1
+            }
         },
         {
             # Tkv should be cleared one step later
@@ -337,6 +359,7 @@ def test_block_deduplication_within_batch(model: ModelInfo, backend: str,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
         seeds=seeds,
+        extra_assert_func=verify_block_tables,
     )
 
 
@@ -906,6 +929,10 @@ def test_full_match(model: ModelInfo, backend: str,
             "n_reserved_blocks": 7,
             "n_used_blocks": 6,
             "n_prefix_hits": 0,
+            # up until this point nothing interesting happened
+            # with the block table
+            "block_tables": {'0': [1, 2, 3, 4, 5, 6]},
+            "block_ref_count": {1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1}
         },
         {   # prefill chunk 1 seq 1
             # prefix hit!
@@ -918,7 +945,11 @@ def test_full_match(model: ModelInfo, backend: str,
             "n_used_blocks": 12,
             "n_prefix_hits": 1,
             # The number of cached blocks is determined up front
-            "n_cached_blocks": 4
+            "n_cached_blocks": 4,
+            # Now, although the last chunk has to be recomputed,
+            # the blocks are still shared.
+            "block_tables": {'0': [1, 2, 3, 4, 5, 6], '1': [1, 2, 3, 4, 5, 6]},
+            "block_ref_count": {1: 2, 2: 2, 3: 2, 4: 2, 5: 2, 6: 2}
         },
         {   # prefill chunk 2 seq 1
             # cannot use prefix, as the last chunk has to always be recomputed
@@ -955,7 +986,13 @@ def test_full_match(model: ModelInfo, backend: str,
             "finished_requests": ["1", "0"],
             "n_reserved_blocks": 14,
             "n_used_blocks": 14,
-            "n_cached_blocks": 4
+            "n_cached_blocks": 4,
+            # when decode starts, we see the tables diverge
+            "block_tables": {
+                '0': [1, 2, 3, 4, 5, 6, 7],
+                '1': [1, 2, 3, 4, 5, 6, 8]
+            },
+            "block_ref_count": {1: 2, 2: 2, 3: 2, 4: 2, 5: 2, 6: 2, 7: 1, 8: 1}
         },
         {
             # Tkv should be cleared one step later
@@ -985,4 +1022,5 @@ def test_full_match(model: ModelInfo, backend: str,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
         seeds=seeds,
+        extra_assert_func=verify_block_tables,
     )
