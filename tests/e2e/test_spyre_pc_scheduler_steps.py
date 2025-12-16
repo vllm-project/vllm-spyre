@@ -39,12 +39,14 @@ def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
     """
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
 
+    prompt = random_prompt(model=model, seed=0, length=192)
+
     request1 = create_request_for_scheduler_test(
         model=model,
         request_id=0,
         add_step=0,
         max_tokens=2,
-        prompt=random_prompt(model=model, seed=0, length=192),
+        prompt=prompt,
         use_golden_token_injection=True)
 
     request2 = create_request_for_scheduler_test(
@@ -52,7 +54,7 @@ def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
         request_id=1,
         add_step=0,
         max_tokens=2,
-        prompt=random_prompt(model=model, seed=0, length=192),
+        prompt=prompt,
         use_golden_token_injection=True)
 
     checked_steps = [
@@ -172,8 +174,7 @@ def test_prefix_hit_decoded_block_within_batch(model: ModelInfo, backend: str,
     block is entirely prompt while the second block is a mix of prompt and
     decoded tokens. Note that the fetched prefix blocks are still part of the 
     existing decode batch. Hence we have duplicated blocks in the block table 
-    for this example. Also note that we cannot fetch a prefix and this test 
-    fails when we set n_lookaheads = [0, 0].
+    for this example.
 
     Configuration:
         * max_num_seqs: 2
@@ -183,22 +184,27 @@ def test_prefix_hit_decoded_block_within_batch(model: ModelInfo, backend: str,
     """
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
 
+    prompt = random_prompt(model=model, seed=0, length=126)
+
     request1 = create_request_for_scheduler_test(
         model=model,
         request_id=0,
         add_step=0,
         max_tokens=68,
-        prompt=random_prompt(model=model, seed=0, length=126),
+        prompt=prompt,
         use_golden_token_injection=True)
+
+    # Next prompt uses part of the first request's output, matching 128 tokens
+    # (2 blocks) in total
+    prompt2 = prompt + request1.hf_output["token_ids"][:2] + \
+        random_prompt(model=model, seed=0, length=65)
 
     request2 = create_request_for_scheduler_test(
         model=model,
         request_id=1,
         add_step=67,
         max_tokens=2,
-        prompt=request1.request.prompt_token_ids +
-        request1.hf_output["token_ids"][:2] +
-        random_prompt(model=model, seed=0, length=65),
+        prompt=prompt2,
         use_golden_token_injection=True)
 
 
@@ -346,12 +352,14 @@ def test_prefix_hit_not_in_batch(model: ModelInfo, backend: str,
     """
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
 
+    prompt = random_prompt(model=model, seed=0, length=192)
+
     request1 = create_request_for_scheduler_test(
         model=model,
         request_id=0,
         add_step=0,
         max_tokens=2,
-        prompt=random_prompt(model=model, seed=0, length=192),
+        prompt=prompt,
         use_golden_token_injection=True)
 
     request2 = create_request_for_scheduler_test(
@@ -359,7 +367,7 @@ def test_prefix_hit_not_in_batch(model: ModelInfo, backend: str,
         request_id=1,
         add_step=3,
         max_tokens=2,
-        prompt=random_prompt(model=model, seed=0, length=192),
+        prompt=prompt,
         use_golden_token_injection=True)
 
     checked_steps = [
@@ -495,12 +503,15 @@ def test_limit_blocks_no_prefix_hit(model: ModelInfo, backend: str,
     """
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
 
+    prompt1 = random_prompt(model=model, seed=0, length=192)
+    prompt2 = random_prompt(model=model, seed=1, length=192)
+
     request1 = create_request_for_scheduler_test(
         model=model,
         request_id=0,
         add_step=0,
         max_tokens=2,
-        prompt=random_prompt(model=model, seed=0, length=192),
+        prompt=prompt1,
         use_golden_token_injection=True)
 
     request2 = create_request_for_scheduler_test(
@@ -508,8 +519,7 @@ def test_limit_blocks_no_prefix_hit(model: ModelInfo, backend: str,
         request_id=1,
         add_step=3,
         max_tokens=2,
-        prompt=random_prompt(model=model, seed=1,
-                             length=192),  # 1st and 3rd sequence are the same
+        prompt=prompt2,  # 1st and 3rd sequence are the same
         use_golden_token_injection=True)
 
     request3 = create_request_for_scheduler_test(
@@ -517,7 +527,7 @@ def test_limit_blocks_no_prefix_hit(model: ModelInfo, backend: str,
         request_id=2,
         add_step=6,
         max_tokens=2,
-        prompt=random_prompt(model=model, seed=0, length=192),
+        prompt=prompt1,
         use_golden_token_injection=True)
 
     checked_steps = [
@@ -682,12 +692,15 @@ def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
     """
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
 
+    prompt1 = random_prompt(model=model, seed=0, length=192)
+    prompt2 = random_prompt(model=model, seed=1, length=192)
+
     request1 = create_request_for_scheduler_test(
         model=model,
         request_id=0,
         add_step=0,
         max_tokens=2,
-        prompt=random_prompt(model=model, seed=0, length=192),
+        prompt=prompt1,
         use_golden_token_injection=True)
 
     request2 = create_request_for_scheduler_test(
@@ -695,22 +708,23 @@ def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
         request_id=1,
         add_step=0,
         max_tokens=2,
-        prompt=random_prompt(model=model, seed=0, length=192),
+        prompt=prompt1,
         use_golden_token_injection=True)
+
     request3 = create_request_for_scheduler_test(
         model=model,
         request_id=2,
         add_step=0,
         max_tokens=2,
-        prompt=random_prompt(model=model, seed=1, length=192),
-        use_golden_token_injection=True)  # thrice the same sequence
+        prompt=prompt2,  # This request has a different prompt
+        use_golden_token_injection=True)
 
     request4 = create_request_for_scheduler_test(
         model=model,
         request_id=3,
         add_step=0,
         max_tokens=2,
-        prompt=random_prompt(model=model, seed=0, length=192),
+        prompt=prompt1,
         use_golden_token_injection=True)
 
     checked_steps = [
@@ -873,12 +887,15 @@ def test_limit_blocks_prefix_hit(model: ModelInfo, backend: str,
     """
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
 
+    prompt1 = random_prompt(model=model, seed=0, length=192)
+    prompt2 = random_prompt(model=model, seed=1, length=192)
+
     request1 = create_request_for_scheduler_test(
         model=model,
         request_id=0,
         add_step=0,
         max_tokens=2,
-        prompt=random_prompt(model=model, seed=0, length=192),
+        prompt=prompt1,
         use_golden_token_injection=True)
 
     request2 = create_request_for_scheduler_test(
@@ -886,8 +903,7 @@ def test_limit_blocks_prefix_hit(model: ModelInfo, backend: str,
         request_id=1,
         add_step=3,
         max_tokens=2,
-        prompt=random_prompt(model=model, seed=1,
-                             length=192),  # 1st and 3rd sequence are the same
+        prompt=prompt2,  # 1st and 3rd sequence are the same
         use_golden_token_injection=True)
 
     request3 = create_request_for_scheduler_test(
@@ -895,7 +911,7 @@ def test_limit_blocks_prefix_hit(model: ModelInfo, backend: str,
         request_id=2,
         add_step=6,
         max_tokens=2,
-        prompt=random_prompt(model=model, seed=0, length=192),
+        prompt=prompt1,
         use_golden_token_injection=True)
 
     checked_steps = [
@@ -1054,17 +1070,19 @@ def test_multi_chunk_full_match(model: ModelInfo, backend: str,
     Configuration:
         * max_num_seqs: 2
         * number of prompts: 2
-            * 0: len = 384,  max tokens = 2, step joining = 0
+            * 0: len = 384, max tokens = 2, step joining = 0
             * 1: len = 384, max tokens = 2, step joining = 0
     """
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
+
+    prompt = random_prompt(model=model, seed=0, length=384)
 
     request1 = create_request_for_scheduler_test(
         model=model,
         request_id=0,
         add_step=0,
         max_tokens=2,
-        prompt=random_prompt(model=model, seed=0, length=384),
+        prompt=prompt,
         use_golden_token_injection=True)
 
     request2 = create_request_for_scheduler_test(
@@ -1072,7 +1090,7 @@ def test_multi_chunk_full_match(model: ModelInfo, backend: str,
         request_id=1,
         add_step=0,
         max_tokens=2,
-        prompt=random_prompt(model=model, seed=0, length=384),
+        prompt=prompt,
         use_golden_token_injection=True)
 
     checked_steps = [
@@ -1222,12 +1240,16 @@ def test_multi_chunk_partial_match(model: ModelInfo, backend: str,
     # the second sequence shares the same prefix of length 254 tokens
     # hence sequence 1 shares the first 254 tokens with sequence 0
 
+    prompt1 = random_prompt(model=model, seed=0, length=384)
+    prompt2 = prompt1[0:254] + \
+        random_prompt(model=model, seed=0, length=384 - 254)
+
     request1 = create_request_for_scheduler_test(
         model=model,
         request_id=0,
         add_step=0,
         max_tokens=2,
-        prompt=random_prompt(model=model, seed=0, length=384),
+        prompt=prompt1,
         use_golden_token_injection=True)
 
     request2 = create_request_for_scheduler_test(
@@ -1235,8 +1257,7 @@ def test_multi_chunk_partial_match(model: ModelInfo, backend: str,
         request_id=1,
         add_step=0,
         max_tokens=2,
-        prompt=request1.request.prompt_token_ids[0:254] +
-        random_prompt(model=model, seed=0, length=384 - 254),
+        prompt=prompt2,
         use_golden_token_injection=True)
 
     checked_steps = [
