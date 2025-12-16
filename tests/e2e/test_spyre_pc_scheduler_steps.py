@@ -7,8 +7,7 @@ Run `python -m pytest tests/e2e/test_spyre_pc_inference_steps.py`.
 """
 
 import pytest
-from scheduling_utils import (check_scheduler_inference_steps,
-                              create_request_for_scheduler_test, random_prompt,
+from scheduling_utils import (create_request_for_scheduler_test, random_prompt,
                               validate_scheduler_steps)
 from spyre_util import ModelInfo
 
@@ -41,10 +40,21 @@ def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
     """
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
 
-    seqs_max_tokens = [2, 2]
-    prompts_lengths = [192, 192]
-    steps_add_reqs = [0, 0]
-    seeds = [0, 0]  # twice the same sequence
+    request1 = create_request_for_scheduler_test(
+        model=model,
+        request_id=0,
+        add_step=0,
+        max_tokens=2,
+        prompt=random_prompt(model=model, seed=0, length=192),
+        use_golden_token_injection=True)
+
+    request2 = create_request_for_scheduler_test(
+        model=model,
+        request_id=1,
+        add_step=0,
+        max_tokens=2,
+        prompt=random_prompt(model=model, seed=0, length=192),
+        use_golden_token_injection=True)
 
     checked_steps = [
         {
@@ -128,22 +138,18 @@ def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
         },
     ]
 
-    check_scheduler_inference_steps(
+    validate_scheduler_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
-        seqs_max_tokens=seqs_max_tokens,
-        prompts_lengths=prompts_lengths,
-        steps_add_reqs=steps_add_reqs,
+        requests=[request1, request2],
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=False,
-        random_prompts=True,
+        max_batch_tkv_limit=-1,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        seeds=seeds,
     )
 
 
@@ -177,15 +183,24 @@ def test_prefix_hit_decoded_block_within_batch(
     """
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
 
-    # seqs_max_tokens = [68, 2]
-    # prompts_lengths = [126, 193]
-    # steps_add_reqs = [0, 67]
-    # seeds = [0, 0]  # twice the same sequence
-    # prefix_lens = [126, 126]
-    # # number of generated/sampled tokens after the prefix:
-    # # prompt 0: no sampled tokens after the 126 prefix tokens
-    # # prompt 0: 2 sampled token after the 126 prefix tokens
-    # n_lookaheads = [0, 2]
+    request1 = create_request_for_scheduler_test(
+        model=model,
+        request_id=0,
+        add_step=0,
+        max_tokens=68,
+        prompt=random_prompt(model=model, seed=0, length=126),
+        use_golden_token_injection=True)
+
+    request2 = create_request_for_scheduler_test(
+        model=model,
+        request_id=1,
+        add_step=67,
+        max_tokens=2,
+        prompt=request1.request.prompt_token_ids +
+        request1.hf_output["token_ids"][:2] +
+        random_prompt(model=model, seed=0, length=65),
+        use_golden_token_injection=True)
+
 
     checked_steps = [
         {
@@ -289,23 +304,6 @@ def test_prefix_hit_decoded_block_within_batch(
         },
     ]
 
-    request1 = create_request_for_scheduler_test(
-        model=model,
-        request_id=0,
-        add_step=0,
-        max_tokens=68,
-        prompt=random_prompt(model=model, seed=0, length=126),
-        use_golden_token_injection=True)
-
-    request2 = create_request_for_scheduler_test(
-        model=model,
-        request_id=1,
-        add_step=67,
-        max_tokens=2,
-        prompt=request1.request.prompt_token_ids + request1.hf_output["token_ids"][:2] +
-        random_prompt(model=model, seed=0, length=65),
-        use_golden_token_injection=True)
-
     validate_scheduler_steps(
         model=model,
         backend=backend,
@@ -350,11 +348,21 @@ def test_prefix_hit_not_in_batch(model: ModelInfo, backend: str,
     """
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
 
-    seqs_max_tokens = [2, 2]
-    prompts_lengths = [192, 192]
-    # sequence 1 joins only at step 3, when seq 0 has already finished
-    steps_add_reqs = [0, 3]
-    seeds = [0, 0]  # twice the same sequence
+    request1 = create_request_for_scheduler_test(
+        model=model,
+        request_id=0,
+        add_step=0,
+        max_tokens=2,
+        prompt=random_prompt(model=model, seed=0, length=192),
+        use_golden_token_injection=True)
+
+    request2 = create_request_for_scheduler_test(
+        model=model,
+        request_id=1,
+        add_step=3,
+        max_tokens=2,
+        prompt=random_prompt(model=model, seed=0, length=192),
+        use_golden_token_injection=True)
 
     checked_steps = [
         {
@@ -446,22 +454,18 @@ def test_prefix_hit_not_in_batch(model: ModelInfo, backend: str,
         },
     ]
 
-    check_scheduler_inference_steps(
+    validate_scheduler_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
-        seqs_max_tokens=seqs_max_tokens,
-        prompts_lengths=prompts_lengths,
-        steps_add_reqs=steps_add_reqs,
+        requests=[request1, request2],
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=False,
-        random_prompts=True,
+        max_batch_tkv_limit=-1,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        seeds=seeds,
     )
 
 
@@ -495,12 +499,30 @@ def test_limit_blocks_no_prefix_hit(model: ModelInfo, backend: str,
     """
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
 
-    seqs_max_tokens = [2, 2, 2]
-    prompts_lengths = [192, 192, 192]
-    # sequence 1 joins only at step 3, when seq 0 has already finished
-    # sequence 2 joins only at step 6, when seq 1 has already finished
-    steps_add_reqs = [0, 3, 6]
-    seeds = [0, 1, 0]  # 1st and 3rd sequence are the same
+    request1 = create_request_for_scheduler_test(
+        model=model,
+        request_id=0,
+        add_step=0,
+        max_tokens=2,
+        prompt=random_prompt(model=model, seed=0, length=192),
+        use_golden_token_injection=True)
+
+    request2 = create_request_for_scheduler_test(
+        model=model,
+        request_id=1,
+        add_step=3,
+        max_tokens=2,
+        prompt=random_prompt(model=model, seed=1,
+                             length=192),  # 1st and 3rd sequence are the same
+        use_golden_token_injection=True)
+
+    request3 = create_request_for_scheduler_test(
+        model=model,
+        request_id=2,
+        add_step=6,
+        max_tokens=2,
+        prompt=random_prompt(model=model, seed=0, length=192),
+        use_golden_token_injection=True)
 
     checked_steps = [
         {
@@ -620,22 +642,19 @@ def test_limit_blocks_no_prefix_hit(model: ModelInfo, backend: str,
         },
     ]
 
-    check_scheduler_inference_steps(
+    validate_scheduler_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
-        seqs_max_tokens=seqs_max_tokens,
-        prompts_lengths=prompts_lengths,
-        steps_add_reqs=steps_add_reqs,
+        requests=[request1, request2, request3],
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=False,
-        random_prompts=True,
+        max_batch_tkv_limit=-1,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        seeds=seeds)
+    )
 
 
 @pytest.mark.chunked_prefill
@@ -669,10 +688,36 @@ def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
     """
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
 
-    seqs_max_tokens = [2, 2, 2, 2]
-    prompts_lengths = [192, 192, 192, 192]
-    steps_add_reqs = [0, 0, 0, 0]
-    seeds = [0, 0, 1, 0]  # thrice the same sequence
+    request1 = create_request_for_scheduler_test(
+        model=model,
+        request_id=0,
+        add_step=0,
+        max_tokens=2,
+        prompt=random_prompt(model=model, seed=0, length=192),
+        use_golden_token_injection=True)
+
+    request2 = create_request_for_scheduler_test(
+        model=model,
+        request_id=1,
+        add_step=0,
+        max_tokens=2,
+        prompt=random_prompt(model=model, seed=0, length=192),
+        use_golden_token_injection=True)
+    request3 = create_request_for_scheduler_test(
+        model=model,
+        request_id=2,
+        add_step=0,
+        max_tokens=2,
+        prompt=random_prompt(model=model, seed=1, length=192),
+        use_golden_token_injection=True)  # thrice the same sequence
+
+    request4 = create_request_for_scheduler_test(
+        model=model,
+        request_id=3,
+        add_step=0,
+        max_tokens=2,
+        prompt=random_prompt(model=model, seed=0, length=192),
+        use_golden_token_injection=True)
 
     checked_steps = [
         {
@@ -791,22 +836,18 @@ def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
         },
     ]
 
-    check_scheduler_inference_steps(
+    validate_scheduler_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
-        seqs_max_tokens=seqs_max_tokens,
-        prompts_lengths=prompts_lengths,
-        steps_add_reqs=steps_add_reqs,
+        requests=[request1, request2, request3, request4],
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=False,
-        random_prompts=True,
+        max_batch_tkv_limit=-1,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        seeds=seeds,
     )
 
 
@@ -840,12 +881,30 @@ def test_limit_blocks_prefix_hit(model: ModelInfo, backend: str,
     """
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
 
-    seqs_max_tokens = [2, 2, 2]
-    prompts_lengths = [192, 192, 192]
-    # sequence 1 joins only at step 3, when seq 0 has already finished
-    # sequence 2 joins only at step 6, when seq 1 has already finished
-    steps_add_reqs = [0, 3, 6]
-    seeds = [0, 1, 0]  # 1st and 3rd sequence are the same
+    request1 = create_request_for_scheduler_test(
+        model=model,
+        request_id=0,
+        add_step=0,
+        max_tokens=2,
+        prompt=random_prompt(model=model, seed=0, length=192),
+        use_golden_token_injection=True)
+
+    request2 = create_request_for_scheduler_test(
+        model=model,
+        request_id=1,
+        add_step=3,
+        max_tokens=2,
+        prompt=random_prompt(model=model, seed=1,
+                             length=192),  # 1st and 3rd sequence are the same
+        use_golden_token_injection=True)
+
+    request3 = create_request_for_scheduler_test(
+        model=model,
+        request_id=2,
+        add_step=6,
+        max_tokens=2,
+        prompt=random_prompt(model=model, seed=0, length=192),
+        use_golden_token_injection=True)
 
     checked_steps = [
         {
@@ -968,22 +1027,19 @@ def test_limit_blocks_prefix_hit(model: ModelInfo, backend: str,
         },
     ]
 
-    check_scheduler_inference_steps(
+    validate_scheduler_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
-        seqs_max_tokens=seqs_max_tokens,
-        prompts_lengths=prompts_lengths,
-        steps_add_reqs=steps_add_reqs,
+        requests=[request1, request2, request3],
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=False,
-        random_prompts=True,
+        max_batch_tkv_limit=-1,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        seeds=seeds)
+    )
 
 
 @pytest.mark.chunked_prefill
@@ -1013,10 +1069,21 @@ def test_multi_chunk_full_match(model: ModelInfo, backend: str,
     """
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
 
-    seqs_max_tokens = [2, 2]
-    prompts_lengths = [384, 384]
-    steps_add_reqs = [0, 0]
-    seeds = [0, 0]  # twice the same sequence
+    request1 = create_request_for_scheduler_test(
+        model=model,
+        request_id=0,
+        add_step=0,
+        max_tokens=2,
+        prompt=random_prompt(model=model, seed=0, length=384),
+        use_golden_token_injection=True)
+
+    request2 = create_request_for_scheduler_test(
+        model=model,
+        request_id=1,
+        add_step=0,
+        max_tokens=2,
+        prompt=random_prompt(model=model, seed=0, length=384),
+        use_golden_token_injection=True)
 
     checked_steps = [
         {
@@ -1120,22 +1187,18 @@ def test_multi_chunk_full_match(model: ModelInfo, backend: str,
         },
     ]
 
-    check_scheduler_inference_steps(
+    validate_scheduler_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
-        seqs_max_tokens=seqs_max_tokens,
-        prompts_lengths=prompts_lengths,
-        steps_add_reqs=steps_add_reqs,
+        requests=[request1, request2],
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=False,
-        random_prompts=True,
+        max_batch_tkv_limit=-1,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        seeds=seeds,
     )
 
 
@@ -1166,14 +1229,26 @@ def test_multi_chunk_partial_match(model: ModelInfo, backend: str,
     """
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
 
-    seqs_max_tokens = [2, 2]
-    prompts_lengths = [384, 384]
-    steps_add_reqs = [0, 0]
-    seeds = [0, 0]  # twice the same seed for a sequence of length 384
+    # twice the same seed for a sequence of length 384
     # the first sequence shares the same prefix of length 384 tokens
     # the second sequence shares the same prefix of length 254 tokens
     # hence sequence 1 shares the first 254 tokens with sequence 0
-    prefix_lens = [384, 254]
+
+    request1 = create_request_for_scheduler_test(
+        model=model,
+        request_id=0,
+        add_step=0,
+        max_tokens=2,
+        prompt=random_prompt(model=model, seed=0, length=384),
+        use_golden_token_injection=True)
+
+    request2 = create_request_for_scheduler_test(
+        model=model,
+        request_id=1,
+        add_step=0,
+        max_tokens=2,
+        prompt=random_prompt(model=model, seed=0, length=384),
+        use_golden_token_injection=True)
 
     checked_steps = [
         {
@@ -1276,21 +1351,16 @@ def test_multi_chunk_partial_match(model: ModelInfo, backend: str,
         },
     ]
 
-    check_scheduler_inference_steps(
+    validate_scheduler_steps(
         model=model,
         backend=backend,
         monkeypatch=monkeypatch,
-        seqs_max_tokens=seqs_max_tokens,
-        prompts_lengths=prompts_lengths,
-        steps_add_reqs=steps_add_reqs,
+        requests=[request1, request2],
         checked_steps=checked_steps,
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=False,
-        random_prompts=True,
+        max_batch_tkv_limit=-1,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        seeds=seeds,
-        prefix_lens=prefix_lens,
     )
