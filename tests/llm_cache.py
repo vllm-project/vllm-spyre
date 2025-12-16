@@ -211,8 +211,13 @@ class EngineCache:
         if maybe_engine:
             if use_pc:
                 # reset the prefix cache across tests
-                (maybe_engine.model_executor.driver_worker.worker.model_runner.
-                 block_pool.reset_prefix_cache())
+                block_pool = (maybe_engine.model_executor.driver_worker.worker.
+                              model_runner.block_pool)
+                # need to completely reset the block pool, otherwise
+                # the ordering of tests influences the block ids
+                # each test sees
+                block_pool.__init__(num_gpu_blocks=block_pool.num_gpu_blocks,
+                                    enable_caching=block_pool.enable_caching)
             return maybe_engine
         self.clear()
 
