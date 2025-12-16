@@ -1247,7 +1247,8 @@ def test_multi_chunk_partial_match(model: ModelInfo, backend: str,
         request_id=1,
         add_step=0,
         max_tokens=2,
-        prompt=random_prompt(model=model, seed=0, length=384),
+        prompt=request1.request.prompt_token_ids[0:254] +
+        random_prompt(model=model, seed=0, length=384 - 254),
         use_golden_token_injection=True)
 
     checked_steps = [
