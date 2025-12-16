@@ -370,8 +370,11 @@ def validate_scheduler_steps(
             }
             req_ids2num_reserved_blocks = (
                 model_runner.req_ids2num_reserved_blocks)
-            n_used_blocks = sum(
-                [len(blocks) for blocks in req_ids2blocks.values()])
+            # Account for blocks reused via prefix caching
+            used_blocks = set()
+            for blocks in req_ids2blocks.values():
+                used_blocks = used_blocks.union(blocks)
+            n_used_blocks = len(used_blocks)
 
             n_cached_blocks = n_prefix_hits = 0
             if prefix_caching:
