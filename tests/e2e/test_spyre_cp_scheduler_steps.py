@@ -176,13 +176,13 @@ def test_prefill_tkv_too_big2(model: ModelInfo, backend: str,
         * number of prompts: 3
             * 0: len = 20, max tokens = 17, step joining = 0
             * 1: len = 80, max tokens = 17, step joining = 0
-            * 2: len = 10, max tokens = 50, step joining = 0
+            * 2: len = 16, max tokens = 50, step joining = 0
     """
 
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
 
     seqs_max_tokens = [17, 17, 50]
-    prompts_lengths = [20, 80, 10]
+    prompts_lengths = [20, 80, 16]
     steps_add_reqs = [0, 0, 0]
 
     checked_steps = [
@@ -218,13 +218,17 @@ def test_prefill_tkv_too_big2(model: ModelInfo, backend: str,
         },
         {
             # Prefill sequence 2
+            # Sequence 2 shouldn't be able to get scheduled in this step:
+            # hidden tkv is 84, which is in the second block.
+            # The remaining space (64 tokens), isn't enough to accomodate 16
+            # prompts tokens + 50 decode tokens (16 + 50 > 64)
             "step": 3,
             "tkv": 20,
             "waiting": [],
             "running": ["2", "1", "0"],
             "request_outputs": ["2"],
-            # 3 + 1 (prefill (1 block) + 50 decodes in the last block)
-            "n_reserved_blocks": 4,
+            # 3 + 1 (prefill (1 block) + 50 decodes spanning new block)
+            "n_reserved_blocks": 5,
             "n_used_blocks": 4
         },
         {
@@ -236,7 +240,7 @@ def test_prefill_tkv_too_big2(model: ModelInfo, backend: str,
             "waiting": [],
             "running": ["2", "1", "0"],
             "request_outputs": ["2", "1", "0"],
-            "n_reserved_blocks": 4,
+            "n_reserved_blocks": 5,
             "n_used_blocks": 4
         },
     ]
