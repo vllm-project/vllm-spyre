@@ -383,6 +383,7 @@ def create_random_request(request_id: int,
         if seed is not None:
             random.seed(seed)
         prompt_token_ids = random.choices(valid_token_ids, k=num_tokens)
+
     else:
         # start with existing prompts and tokenize them
         prompts = get_longer_chicken_soup_prompts(1)
