@@ -3,13 +3,13 @@ import dataclasses
 import os
 from collections import defaultdict, deque
 from typing import Any, Union
-from warnings import deprecated
 
 import pytest
 from llm_cache import get_cached_engine
 from output_util import (ISCLOSE_ABS_TOL, ISCLOSE_ABS_TOL_QUANTIZATION,
                          compare_results, generate_hf_output)
 from spyre_util import ModelInfo, create_random_request
+from typing_extensions import deprecated
 from vllm import SamplingParams
 from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.v1.engine import EngineCoreRequest
