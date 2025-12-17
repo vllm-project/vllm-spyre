@@ -157,8 +157,8 @@ def generate_prompts(model: ModelInfo,
     return generated_prompts, requests
 
 
-def dummy_assert_func(engine_core: EngineCore, step_num: int,
-                      step_ref: dict[str, Any], disable_asserts: bool):
+def dummy_assert_func(engine_core: EngineCore, step_ref: dict[str, Any],
+                      disable_asserts: bool):
     pass
 
 
@@ -181,7 +181,7 @@ def check_scheduler_inference_steps(
     random_prompts: bool = False,
     prefix_caching: bool = False,
     seeds: list[int] = None,
-    extra_assert_func: Callable[[EngineCore, int, dict[str, Any], bool],
+    extra_assert_func: Callable[[EngineCore, dict[str, Any], bool],
                                 Any] = dummy_assert_func):
     """
     Test the scheduler execution by comparing the scheduler attributes at each 
@@ -275,7 +275,7 @@ def validate_scheduler_steps(
     max_batch_tkv_limit: int = -1,
     max_num_batched_tokens: int = None,
     prefix_caching: bool = False,
-    extra_assert_func: Callable[[EngineCore, int, dict[str, Any], bool],
+    extra_assert_func: Callable[[EngineCore, dict[str, Any], bool],
                                 Any] = dummy_assert_func,
 ):
     """
@@ -431,7 +431,7 @@ def validate_scheduler_steps(
                 requested_blocks[req_id] = len(req_ids2blocks[req_id])
                 reserved_blocks[req_id] = req_ids2num_reserved_blocks[req_id]
 
-            extra_assert_func(engine_core, step, step_ref, DISABLE_ASSERTS)
+            extra_assert_func(engine_core, step_ref, DISABLE_ASSERTS)
 
         # last step: check that sequences used all their reserved blocks
         # Note: no early stopping, all sequences produce max_num_tokens

@@ -9,42 +9,7 @@ Run `python -m pytest tests/e2e/test_spyre_pc_inference_steps.py`.
 import pytest
 from scheduling_utils import (create_request_for_scheduler_test, random_prompt,
                               validate_scheduler_steps)
-from spyre_util import ModelInfo
-
-
-def get_block_tables(engine_core):
-
-    model_runner = (
-        engine_core.model_executor.driver_worker.worker.model_runner)
-    req_to_blocks = model_runner.kv_cache_manager.req_to_blocks
-
-    block_tables = {
-        req_id: [block.block_id for block in blocks]
-        for req_id, blocks in req_to_blocks.items()
-    }
-
-    block_ref_count = {}
-
-    for blocks in req_to_blocks.values():
-        for block in blocks:
-            block_ref_count[block.block_id] = block.ref_cnt
-
-    return block_tables, block_ref_count
-
-
-def verify_block_tables(engine_core, step_num, step_ref, disable_asserts):
-
-    block_tables, block_ref_count = get_block_tables(engine_core)
-
-    if not disable_asserts:
-        if "block_tables" in step_ref:
-            assert step_ref["block_tables"] == block_tables
-
-        if "block_ref_count" in step_ref:
-            assert step_ref["block_ref_count"] == block_ref_count
-    else:
-        print(f"{block_tables=}")
-        print(f"{block_ref_count=}")
+from spyre_util import ModelInfo, verify_block_tables
 
 
 @pytest.mark.chunked_prefill
@@ -959,7 +924,7 @@ def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "n_reserved_blocks": 0,
             "n_used_blocks": 0
         },
-        {   # prefill chunk 1 seq 0
+        {  # prefill chunk 1 seq 0
             "step": 1,
             "tkv": 192,
             "waiting": ["1", "2", "3"],
@@ -968,8 +933,16 @@ def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "n_reserved_blocks": 4,
             "n_used_blocks": 3,
             "n_prefix_hits": 0,
+            "block_tables": {
+                '0': [1, 2, 3]
+            },
+            "block_ref_count": {
+                1: 1,
+                2: 1,
+                3: 1
+            }
         },
-        {   # prefill chunk 2 seq 0
+        {  # prefill chunk 2 seq 0
             "step": 2,
             "tkv": 192,
             "waiting": ["1", "2", "3"],
@@ -978,8 +951,16 @@ def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "n_reserved_blocks": 4,
             "n_used_blocks": 3,
             "n_prefix_hits": 0,
+            "block_tables": {
+                '0': [1, 2, 3]
+            },
+            "block_ref_count": {
+                1: 1,
+                2: 1,
+                3: 1
+            }
         },
-        {   # prefill chunk 1 seq 1
+        {  # prefill chunk 1 seq 1
             # prefix hit!
             "step": 3,
             "tkv": 192,
@@ -989,8 +970,17 @@ def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "n_reserved_blocks": 8,
             "n_used_blocks": 3,
             "n_prefix_hits": 1,
+            "block_tables": {
+                '0': [1, 2, 3],
+                '1': [1, 2, 3]
+            },
+            "block_ref_count": {
+                1: 2,
+                2: 2,
+                3: 2
+            }
         },
-        {   # prefill chunk 2 seq 1
+        {  # prefill chunk 2 seq 1
             # cannot use prefix, as the last chunk has to always be recomputed
             "step": 4,
             "tkv": 192,
@@ -1000,8 +990,17 @@ def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "n_reserved_blocks": 8,
             "n_used_blocks": 3,
             "n_prefix_hits": 0,
+            "block_tables": {
+                '0': [1, 2, 3],
+                '1': [1, 2, 3]
+            },
+            "block_ref_count": {
+                1: 2,
+                2: 2,
+                3: 2
+            }
         },
-        {   # prefill chunk 1 seq 2
+        {  # prefill chunk 1 seq 2
             "step": 5,
             "tkv": 192,
             "waiting": ["3"],
@@ -1010,8 +1009,21 @@ def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "n_reserved_blocks": 12,
             "n_used_blocks": 6,
             "n_prefix_hits": 0,
+            "block_tables": {
+                '0': [1, 2, 3],
+                '1': [1, 2, 3],
+                '2': [4, 5, 6]
+            },
+            "block_ref_count": {
+                1: 2,
+                2: 2,
+                3: 2,
+                4: 1,
+                5: 1,
+                6: 1
+            }
         },
-        {   # prefill chunk 2 seq 2
+        {  # prefill chunk 2 seq 2
             "step": 6,
             "tkv": 192,
             "waiting": ["3"],
@@ -1020,8 +1032,21 @@ def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "n_reserved_blocks": 12,
             "n_used_blocks": 6,
             "n_prefix_hits": 0,
+            "block_tables": {
+                '0': [1, 2, 3],
+                '1': [1, 2, 3],
+                '2': [4, 5, 6]
+            },
+            "block_ref_count": {
+                1: 2,
+                2: 2,
+                3: 2,
+                4: 1,
+                5: 1,
+                6: 1
+            }
         },
-        {   # prefill chunk 1 seq 3
+        {  # prefill chunk 1 seq 3
             # prefix hit!
             "step": 7,
             "tkv": 192,
@@ -1031,8 +1056,22 @@ def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "n_reserved_blocks": 16,
             "n_used_blocks": 6,
             "n_prefix_hits": 1,
+            "block_tables": {
+                '0': [1, 2, 3],
+                '1': [1, 2, 3],
+                '2': [4, 5, 6],
+                '3': [1, 2, 3]
+            },
+            "block_ref_count": {
+                1: 3,
+                2: 3,
+                3: 3,
+                4: 1,
+                5: 1,
+                6: 1
+            }
         },
-        {   # prefill chunk 2 seq 3
+        {  # prefill chunk 2 seq 3
             # cannot use prefix, as the last chunk has to always be recomputed
             "step": 8,
             "tkv": 192,
@@ -1042,6 +1081,20 @@ def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "n_reserved_blocks": 16,
             "n_used_blocks": 6,
             "n_prefix_hits": 0,
+            "block_tables": {
+                '0': [1, 2, 3],
+                '1': [1, 2, 3],
+                '2': [4, 5, 6],
+                '3': [1, 2, 3]
+            },
+            "block_ref_count": {
+                1: 3,
+                2: 3,
+                3: 3,
+                4: 1,
+                5: 1,
+                6: 1
+            }
         },
         {
             # Decode 1 of request 0, 1, 2, 3
@@ -1053,7 +1106,24 @@ def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "finished_requests": ["3", "2", "1", "0"],
             "n_reserved_blocks": 16,
             "n_used_blocks": 10,
-            "n_used_btests/e2e/test_spyre_pc_scheduler_steps.pylocks": 10
+            "block_tables": {
+                '0': [1, 2, 3, 7],
+                '1': [1, 2, 3, 8],
+                '2': [4, 5, 6, 9],
+                '3': [1, 2, 3, 10]
+            },
+            "block_ref_count": {
+                1: 3,
+                2: 3,
+                3: 3,
+                7: 1,
+                8: 1,
+                4: 1,
+                5: 1,
+                6: 1,
+                9: 1,
+                10: 1
+            }
         },
         {
             # Tkv should be cleared one step later
@@ -1078,6 +1148,7 @@ def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
+        extra_assert_func=verify_block_tables,
     )
 
 
@@ -1357,8 +1428,17 @@ def test_multi_chunk_full_match(model: ModelInfo, backend: str,
             "n_prefix_hits": 0,
             # up until this point nothing interesting happened
             # with the block table
-            "block_tables": {'0': [1, 2, 3, 4, 5, 6]},
-            "block_ref_count": {1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1}
+            "block_tables": {
+                '0': [1, 2, 3, 4, 5, 6]
+            },
+            "block_ref_count": {
+                1: 1,
+                2: 1,
+                3: 1,
+                4: 1,
+                5: 1,
+                6: 1
+            }
         },
         {   # prefill chunk 1 seq 1
             # prefix hit!
@@ -1374,8 +1454,18 @@ def test_multi_chunk_full_match(model: ModelInfo, backend: str,
             "n_cached_blocks": 4, # can reuse the first two chunk (4 blocks)
             # Now, although the last chunk has to be recomputed,
             # the blocks are still shared.
-            "block_tables": {'0': [1, 2, 3, 4, 5, 6], '1': [1, 2, 3, 4, 5, 6]},
-            "block_ref_count": {1: 2, 2: 2, 3: 2, 4: 2, 5: 2, 6: 2}
+            "block_tables": {
+                '0': [1, 2, 3, 4, 5, 6],
+                '1': [1, 2, 3, 4, 5, 6]
+            },
+            "block_ref_count": {
+                1: 2,
+                2: 2,
+                3: 2,
+                4: 2,
+                5: 2,
+                6: 2
+            }
         },
         {   # prefill chunk 2 seq 1
             # prefix hit!
@@ -1418,7 +1508,16 @@ def test_multi_chunk_full_match(model: ModelInfo, backend: str,
                 '0': [1, 2, 3, 4, 5, 6, 7],
                 '1': [1, 2, 3, 4, 5, 6, 8]
             },
-            "block_ref_count": {1: 2, 2: 2, 3: 2, 4: 2, 5: 2, 6: 2, 7: 1, 8: 1}
+            "block_ref_count": {
+                1: 2,
+                2: 2,
+                3: 2,
+                4: 2,
+                5: 2,
+                6: 2,
+                7: 1,
+                8: 1
+            }
         },
         {
             # Tkv should be cleared one step later
