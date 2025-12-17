@@ -1586,7 +1586,10 @@ def test_multi_chunk_partial_match_misaligned(model: ModelInfo, backend: str,
     """ Scenario where two sequences are scheduled which share a common
     prefix. The second sequence shares 254 tokens with the first sequence,
     which is less than two chunks. We can therefore reuse only one chunk
-    (254 < 2*128 = 256).
+    (254 < 2*128 = 256). This leads to recomputation of the third block.
+
+    p1 = [AB|CD|EF]
+    p2 = [AB|CX|EF]
 
     Configuration:
         * max_num_seqs: 2
@@ -1763,7 +1766,7 @@ def test_multi_chunk_partial_match_aligned(model: ModelInfo, backend: str,
     Configuration:
         * max_num_seqs: 2
         * number of prompts: 2
-            * 0: len = 384,  max tokens = 2, step joining = 0
+            * 0: len = 384, max tokens = 2, step joining = 0
             * 1: len = 384, max tokens = 2, step joining = 0
     """
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")

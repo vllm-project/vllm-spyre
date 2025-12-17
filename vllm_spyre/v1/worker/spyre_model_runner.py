@@ -1991,18 +1991,29 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         # last chunk
         blocks_to_recompute = 0
-        if self.enable_prefix_caching and chunk_i + 1 == chunk_count:
-            num_cached_blocks = self.kv_cache_manager.\
+        if num_cached_tokens > 0:
+            assert (left_padding + num_cached_tokens) % self.chunk_size == 0
+            chunks_from_cache = (left_padding +
+                                 num_cached_tokens) // self.chunk_size
+
+            num_cached_blocks = num_cached_tokens // self.block_size
+
+            # num_allocated_blocks will be > 0 after the first
+            # chunk is computed because as we compute, we commit
+            # to cache
+            num_allocated_blocks = self.kv_cache_manager.\
                 num_cached_block.get(req_id, 0)
 
-            total_blocks = left_padding_blocks + num_cached_blocks
-
-            # full match
-            if total_blocks == chunk_count * self.chunk_blocks_count:
-                blocks_to_recompute = self.chunk_blocks_count
-            else:
-                blocks_to_recompute = total_blocks % \
-                    self.chunk_blocks_count
+            # When the current chunk has passed the number
+            # of chunk loaded entirely from cache, the difference
+            # between the blocks from cache and the allocated
+            # blocks will the the number of blocks to recompute.
+            # We could use more direct ways such as getting
+            # all blocks with a ref count > 1, but then it will
+            # make it more difficult to migrate to the engine core
+            # KV cache manager.
+            if chunk_i == chunks_from_cache:
+                blocks_to_recompute = num_allocated_blocks - num_cached_blocks
 
         slot_mapping = []
         for i in range(self.chunk_blocks_count):
