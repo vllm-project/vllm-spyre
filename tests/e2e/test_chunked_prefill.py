@@ -15,6 +15,7 @@ from spyre_util import (ModelInfo, get_chicken_soup_prompts,
                         get_longer_chicken_soup_prompts)
 from vllm import LLM, SamplingParams
 
+from tests.scheduling_utils import random_prompt
 from vllm_spyre.v1.worker.spyre_model_runner import SamplingForwardInputs
 
 
@@ -124,3 +125,61 @@ def test_chunked_prefill_correctness(model: ModelInfo, backend: str,
                     vllm_results=vllm_results,
                     hf_results=hf_outputs,
                     prompts=[prompt])
+
+
+# chunked prefill too? Or just prefix cachhing?
+@pytest.mark.parametrize(
+    "mode", [pytest.param("pc", marks=pytest.mark.prefix_caching, id="pc")])
+def test_chunked_prefill_kv_cache_stats(
+    remote_openai_server,
+    model,
+    warmup_shapes,
+    backend,
+    tp_size,
+    mode,
+    max_num_seqs,
+    max_model_len,
+):
+    # Test that vllm metrics include prefix caching data
+    client = remote_openai_server.get_client()
+
+    prompt = random_prompt(
+        model=model,
+        seed=0,
+        length=max_model_len // 2  # try to span multiple chunks
+    )
+
+    # send duplicate requests
+    for _ in range(2):
+        response = client.completions.create(model=model.name,
+                                             prompt=prompt,
+                                             max_tokens=5)
+        assert len(response.choices) > 0
+
+    # check metrics output
+    import requests
+    metrics_response = requests.get(
+        f"http://localhost:{remote_openai_server.port}/metrics")
+    assert metrics_response.status_code == 200
+    metrics = metrics_response.text
+
+    # Metrics should look like this:
+
+    # vllm:prefix_cache_queries_total{engine="0",model_name="model"} 20200.0
+    # vllm:prefix_cache_hits_total{engine="0",model_name="model"} 15680.0
+
+    total_tokens_line = [
+        line for line in metrics.splitlines()
+        if line.startswith("vllm:prefix_cache_queries_total")
+    ][0]
+    total_tokens = float(total_tokens_line.split(" ")[-1])
+
+    hit_tokens_line = [
+        line for line in metrics.splitlines()
+        if line.startswith("vllm:prefix_cache_hits_total")
+    ][0]
+    hit_tokens = float(hit_tokens_line.split(" ")[-1])
+
+    # Prefix cache rate won't be 100% because of chunking, but we should still
+    # hit _some_ cache
+    assert (hit_tokens / total_tokens > 0.1)
