@@ -220,17 +220,19 @@ def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
         },
     ]
 
-    validate_scheduler_steps(model=model,
-                             backend=backend,
-                             monkeypatch=monkeypatch,
-                             requests=[request1, request2],
-                             checked_steps=checked_steps,
-                             max_num_seqs=max_num_seqs,
-                             max_model_len=max_model_len,
-                             available_blocks=available_blocks,
-                             max_num_batched_tokens=max_num_batched_tokens,
-                             prefix_caching=True,
-                             extra_assert_func=verify_block_tables)
+    validate_scheduler_steps(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        requests=[request1, request2],
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
+        available_blocks=available_blocks,
+        max_num_batched_tokens=max_num_batched_tokens,
+        prefix_caching=True,
+        extra_assert_func=verify_block_tables,
+    )
 
 
 @pytest.mark.cpu
@@ -362,17 +364,19 @@ def test_block_deduplication_within_batch(model: ModelInfo, backend: str,
         },
     ]
 
-    validate_scheduler_steps(model=model,
-                             backend=backend,
-                             monkeypatch=monkeypatch,
-                             requests=[request1, request2],
-                             checked_steps=checked_steps,
-                             max_num_seqs=max_num_seqs,
-                             max_model_len=max_model_len,
-                             available_blocks=available_blocks,
-                             max_num_batched_tokens=max_num_batched_tokens,
-                             prefix_caching=True,
-                             extra_assert_func=verify_block_tables)
+    validate_scheduler_steps(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        requests=[request1, request2],
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
+        available_blocks=available_blocks,
+        max_num_batched_tokens=max_num_batched_tokens,
+        prefix_caching=True,
+        extra_assert_func=verify_block_tables,
+    )
 
 
 @pytest.mark.chunked_prefill
