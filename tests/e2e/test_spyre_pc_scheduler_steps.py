@@ -505,7 +505,14 @@ def test_prefix_hit_decoded_block_within_batch(model: ModelInfo, backend: str,
             "n_reserved_blocks": 8,
             "n_used_blocks": 5,
             "n_prefix_hits": 0,
-            "n_cached_blocks": 2
+            "n_cached_blocks": 2,
+            "block_tables": {
+                '0': [1, 2, 3],
+                '1': [1, 2, 4, 5],
+                # Note: new block id 4 instead of 3 here as vLLM does not
+                # currently deduplicate decoded blocks and so do we:
+                # https://github.com/vllm-project/vllm/blob/1166c31cc78073378a16509fbbbed4cb4f040a4d/vllm/v1/core/block_pool.py#L46
+            },
         },
         {
             # Decode 1 of request 0.
@@ -518,7 +525,11 @@ def test_prefix_hit_decoded_block_within_batch(model: ModelInfo, backend: str,
             "finished_requests": ["1", "0"],
             "n_reserved_blocks": 8,
             "n_used_blocks": 6,
-            "n_cached_blocks": 2
+            "n_cached_blocks": 2,
+            "block_tables": {
+                '0': [1, 2, 3, 6],
+                '1': [1, 2, 4, 5],
+            },
         },
         {
             # Tkv should be cleared one step later
@@ -543,6 +554,7 @@ def test_prefix_hit_decoded_block_within_batch(model: ModelInfo, backend: str,
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
+        extra_assert_func=verify_block_tables,
     )
 
 
@@ -621,6 +633,9 @@ def test_prefix_hit_not_in_batch(model: ModelInfo, backend: str,
             "n_reserved_blocks": 4,
             "n_used_blocks": 3,
             "n_prefix_hits": 0,
+            "block_tables": {
+                '0': [1, 2, 3],
+            },
         },
         {
             # Decode 1 of request 0.
@@ -656,7 +671,10 @@ def test_prefix_hit_not_in_batch(model: ModelInfo, backend: str,
             "n_reserved_blocks": 4,
             "n_used_blocks": 3,
             "n_prefix_hits": 0,
-            "n_cached_blocks": 1
+            "n_cached_blocks": 1,
+            "block_tables": {
+                '1': [1, 2, 3],
+            },
         },
         {
             # Decode 1 of request 0.
@@ -693,6 +711,7 @@ def test_prefix_hit_not_in_batch(model: ModelInfo, backend: str,
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
+        extra_assert_func=verify_block_tables,
     )
 
 
@@ -1042,6 +1061,12 @@ def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
             "n_reserved_blocks": 16,
             "n_used_blocks": 6,
             "n_prefix_hits": 0,
+            "block_tables": {
+                '0': [1, 2, 3],
+                '1': [1, 2, 3],
+                '2': [4, 5, 6],
+                '3': [1, 2, 3],
+            },
         },
         {
             # Decode 1 of request 0, 1, 2, 3
@@ -1078,6 +1103,7 @@ def test_double_prefix_hit_within_batch(model: ModelInfo, backend: str,
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
+        extra_assert_func=verify_block_tables,
     )
 
 
@@ -1443,7 +1469,7 @@ def test_multi_chunk_full_match(model: ModelInfo, backend: str,
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        extra_assert_func=verify_block_tables
+        extra_assert_func=verify_block_tables,
     )
 
 
@@ -1573,7 +1599,11 @@ def test_multi_chunk_partial_match_misaligned(model: ModelInfo, backend: str,
             "n_reserved_blocks": 14,
             "n_used_blocks": 9,
             "n_prefix_hits": 0,
-            "n_cached_blocks": 2
+            "n_cached_blocks": 2,
+            "block_tables": {
+                '0': [1, 2, 3, 4, 5, 6],
+                '1': [1, 2, 3, 7, 8, 9],
+            }
         },
         {
             # Decode 1 of request 0.
@@ -1739,7 +1769,11 @@ def test_multi_chunk_partial_match_aligned(model: ModelInfo, backend: str,
             "n_reserved_blocks": 14,
             "n_used_blocks": 8,
             "n_prefix_hits": 0,
-            "n_cached_blocks": 4
+            "n_cached_blocks": 4,
+            "block_tables": {
+                '0': [1, 2, 3, 4, 5, 6],
+                '1': [1, 2, 3, 4, 7, 8],
+            }
         },
         {
             # Decode 1 of request 0.
@@ -1777,4 +1811,5 @@ def test_multi_chunk_partial_match_aligned(model: ModelInfo, backend: str,
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
+        extra_assert_func=verify_block_tables,
     )
