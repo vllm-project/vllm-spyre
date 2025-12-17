@@ -901,12 +901,24 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.model.model.set_past_key_value_states(num_blocks=n_blocks_avail)
 
     def _set_blocks(self, num_blocks: int) -> None:
-        # set number of available blocks and populate block_pool
+        # set number of available blocks, populate block_pool and
+        # create the kv_cache_manager
         self.n_blocks = num_blocks - 1
         self.block_pool = self._make_block_pool()
+        self.kv_cache_manager = self._make_kv_cache_manager()
 
+    def _make_block_pool(self) -> BlockPool:
+        kwargs = {}
+        if has_argument(BlockPool, "hash_block_size"):
+            kwargs["hash_block_size"] = self.block_size
+        return BlockPool(num_gpu_blocks=self.n_blocks + 1,
+                         enable_caching=self.enable_prefix_caching,
+                         enable_kv_cache_events=False,
+                         **kwargs)
+
+    def _make_kv_cache_manager(self) -> FullAttentionManager:
+        ## Temporary backwards compatibility for 0.10.2
         if "use_mla" in dataclass_fields(FullAttentionSpec):
-            ## Temporary backwards compatibility for 0.10.2
             kwargs = {"use_mla": False}
         else:
             kwargs = {}
@@ -918,7 +930,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             head_size=1,
             dtype=torch.float16,
             **kwargs)
-        self.kv_cache_manager = FullAttentionManager(
+
+        kv_cache_manager = FullAttentionManager(
             kv_cache_spec=self._attn_spec,
             block_pool=self.block_pool,
             # Currently don't support models with more than one
@@ -927,17 +940,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             kv_cache_group_id=0,
             # We don't support DCP
             # https://docs.vllm.ai/en/latest/serving/context_parallel_deployment/#decode-context-parallel
-            dcp_world_size=1,
-        )
-
-    def _make_block_pool(self) -> BlockPool:
-        kwargs = {}
-        if has_argument(BlockPool, "hash_block_size"):
-            kwargs["hash_block_size"] = self.block_size
-        return BlockPool(num_gpu_blocks=self.n_blocks + 1,
-                         enable_caching=self.enable_prefix_caching,
-                         enable_kv_cache_events=False,
-                         **kwargs)
+            dcp_world_size=1)
+        return kv_cache_manager
 
     def _get_blocks(self, request_id: str) -> list[KVCacheBlock]:
         return self.kv_cache_manager.req_to_blocks[request_id]
