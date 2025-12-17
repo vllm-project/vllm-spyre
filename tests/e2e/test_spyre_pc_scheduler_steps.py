@@ -418,7 +418,7 @@ def test_prefix_hit_decoded_block_within_batch(model: ModelInfo, backend: str,
 
     # Next prompt uses part of the first request's output, matching 128 tokens
     # (2 blocks) in total
-    prompt2 = prompt + request1.hf_output["token_ids"][:2] + \
+    prompt2 = prompt + list(request1.hf_output["token_ids"][:2]) + \
         random_prompt(model=model, seed=0, length=65)
 
     request2 = create_request_for_scheduler_test(
