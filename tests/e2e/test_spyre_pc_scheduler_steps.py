@@ -1454,11 +1454,12 @@ def test_multi_chunk_full_match(model: ModelInfo, backend: str,
 @pytest.mark.parametrize("max_model_len", [512])
 @pytest.mark.parametrize("max_num_batched_tokens", [128])
 @pytest.mark.parametrize("available_blocks", [None])
-def test_multi_chunk_partial_match(model: ModelInfo, backend: str,
-                                   monkeypatch: pytest.MonkeyPatch,
-                                   max_num_seqs: int, max_model_len: int,
-                                   max_num_batched_tokens: int,
-                                   available_blocks: int):
+def test_multi_chunk_partial_match_misaligned(model: ModelInfo, backend: str,
+                                              monkeypatch: pytest.MonkeyPatch,
+                                              max_num_seqs: int,
+                                              max_model_len: int,
+                                              max_num_batched_tokens: int,
+                                              available_blocks: int):
     """ Scenario where two sequences are scheduled which share a common
     prefix. The second sequence shares 254 tokens with the first sequence,
     which is less than two chunks. We can therefore reuse only one chunk
@@ -1610,4 +1611,169 @@ def test_multi_chunk_partial_match(model: ModelInfo, backend: str,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
         extra_assert_func=verify_block_tables,
+    )
+
+
+@pytest.mark.chunked_prefill
+@pytest.mark.full_model
+@pytest.mark.prefix_caching
+# These values are all parameterized for test sorting
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_model_len", [512])
+@pytest.mark.parametrize("max_num_batched_tokens", [128])
+@pytest.mark.parametrize("available_blocks", [None])
+def test_multi_chunk_partial_match_aligned(model: ModelInfo, backend: str,
+                                           monkeypatch: pytest.MonkeyPatch,
+                                           max_num_seqs: int,
+                                           max_model_len: int,
+                                           max_num_batched_tokens: int,
+                                           available_blocks: int):
+    """ Scenario where two sequences are scheduled which share a common
+    prefix. The second sequence shares 256 tokens with the first sequence,
+    which is exactly two chunks. We can therefore reuse both chunks as the
+    second chunk is not the last chunk (3rd) which needs to be recomputed.
+
+    Configuration:
+        * max_num_seqs: 2
+        * number of prompts: 2
+            * 0: len = 384,  max tokens = 2, step joining = 0
+            * 1: len = 384, max tokens = 2, step joining = 0
+    """
+    monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
+
+    # two sequences spanning exactly three chunks each. The
+    # second sequence shares a two chunk prefix with the first
+
+    prompt1 = random_prompt(model=model, seed=0, length=384)
+    prompt2 = prompt1[0:256] + \
+        random_prompt(model=model, seed=0, length=384 - 256)
+
+    request1 = create_request_for_scheduler_test(
+        model=model,
+        request_id=0,
+        add_step=0,
+        max_tokens=2,
+        prompt=prompt1,
+        use_golden_token_injection=True)
+
+    request2 = create_request_for_scheduler_test(
+        model=model,
+        request_id=1,
+        add_step=0,
+        max_tokens=2,
+        prompt=prompt2,
+        use_golden_token_injection=True)
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0", "1"],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+        {   # prefill chunk 1 seq 0
+            "step": 1,
+            "tkv": 384,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": [],
+            "n_reserved_blocks": 7,
+            "n_used_blocks": 6,
+            "n_prefix_hits": 0,
+        },
+        {   # prefill chunk 2 seq 0
+            "step": 2,
+            "tkv": 384,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": [],
+            "n_reserved_blocks": 7,
+            "n_used_blocks": 6,
+            "n_prefix_hits": 0,
+        },
+        {   # prefill chunk 3 seq 0
+            "step": 3,
+            "tkv": 384,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 7,
+            "n_used_blocks": 6,
+            "n_prefix_hits": 0,
+        },
+        {   # prefill chunk 1 seq 1
+            # prefix hit!
+            "step": 4,
+            "tkv": 384,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": [],
+            "n_reserved_blocks": 14,
+            "n_used_blocks": 8,
+            "n_prefix_hits": 1,
+            # The number of cached blocks is determined up front
+            "n_cached_blocks": 4 # can only reuse the first chunk (2 blocks)
+        },
+        {   # prefill chunk 2 seq 1
+            # prefix hit! <- this is what we want to test
+            "step": 5,
+            "tkv": 384,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": [],
+            "n_reserved_blocks": 14,
+            "n_used_blocks": 8,
+            "n_prefix_hits": 1,
+            "n_cached_blocks": 4
+        },
+        {   # prefill chunk 3 seq 1
+            "step": 6,
+            "tkv": 384,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 14,
+            "n_used_blocks": 8,
+            "n_prefix_hits": 0,
+            "n_cached_blocks": 4
+        },
+        {
+            # Decode 1 of request 0.
+            # Decode 1 of request 1.
+            "step": 7,
+            "tkv": 385,
+            "waiting": [],
+            "running": [],
+            "request_outputs": ["1", "0"],
+            "finished_requests": ["1", "0"],
+            "n_reserved_blocks": 14,
+            "n_used_blocks": 10,
+            "n_cached_blocks": 4
+        },
+        {
+            # Tkv should be cleared one step later
+            "step": 8,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
+        },
+    ]
+
+    validate_scheduler_steps(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        requests=[request1, request2],
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
+        available_blocks=available_blocks,
+        max_num_batched_tokens=max_num_batched_tokens,
+        prefix_caching=True,
     )
