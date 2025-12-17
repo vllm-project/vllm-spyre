@@ -85,7 +85,7 @@ runs:
           pyproject.toml
 
     - name: "Set vLLM version"
-      if: ( steps.changed-src-files.outputs.any_changed == 'true' && inputs.vllm_version.repo )
+      if: ( steps.changed-src-files.outputs.any_changed == 'true' && inputs.vllm_version_repo )
       shell: bash
       run: |
         uv add ${{ inputs.vllm_version_repo }}
