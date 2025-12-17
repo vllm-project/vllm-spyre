@@ -1443,6 +1443,7 @@ def test_multi_chunk_full_match(model: ModelInfo, backend: str,
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
+        extra_assert_func=verify_block_tables
     )
 
 
