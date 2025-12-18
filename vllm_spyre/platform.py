@@ -62,6 +62,16 @@ class _StreamPlaceholder:
         self.synchronize = lambda: None
 
 
+def sendnn_configured() -> bool:
+    if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
+        try:
+            from torch_sendnn import torch_sendnn  # noqa: F401
+            return True
+        except ImportError as err:
+            raise RuntimeError("sendnn backend requires torch_sendnn") from err
+    return False
+
+
 class SpyrePlatform(Platform):
     _enum = PlatformEnum.OOT
 
@@ -619,20 +629,14 @@ class SpyrePlatform(Platform):
         # will fit. (Unless user already set `--num-gpu-blocks-override`)
         # TODO: remove this once we have correct free memory info available
 
-        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
-            try:
-                from torch_sendnn import torch_sendnn  # noqa: F401
-                version_str = torch_sendnn._version.__version__
-                version = tuple(map(int, version_str.split(".")))
-            except ImportError:
-                print("WARNING: Disabled: torch_sendnn")
-                version = (0, 0, 0)
-
-        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn" and \
-                (0, 0, 0) < version < (1, 0, 3):
-            blocks_override = 2080
+        if sendnn_configured():
+            from torch_sendnn import torch_sendnn  # noqa: F401
+            version_str = torch_sendnn._version.__version__
+            version = tuple(map(int, version_str.split(".")))
         else:
-            blocks_override = 8192
+            version = (0, 0, 0)
+
+        blocks_override = 2080 if (0, 0, 0) < version < (1, 0, 3) else 8192
 
         if vllm_config.cache_config.num_gpu_blocks_override is None:
             vllm_config.cache_config.num_gpu_blocks_override = blocks_override

@@ -7,8 +7,7 @@ from unittest import mock
 import pytest
 from vllm.config import CacheConfig, ModelConfig, ParallelConfig, VllmConfig
 
-import vllm_spyre.envs as envs_spyre
-from vllm_spyre.platform import SpyrePlatform
+from vllm_spyre.platform import SpyrePlatform, sendnn_configured
 
 FIXTURES_PATH = Path(__file__).parent.parent / "fixtures" / "model_configs"
 
@@ -50,23 +49,18 @@ def test_granite_3_8b_overrides():
             parallel_config=tp4_config,
             cache_config=NO_SWAP_CONFIG,
         )
-        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
-            try:
-                from torch_sendnn import torch_sendnn  # noqa: F401
-                version_str = torch_sendnn._version.__version__
-                version = tuple(map(int, version_str.split(".")))
-            except ImportError:
-                print("WARNING: Disabled: torch_sendnn")
-                version = (0, 0, 0)
 
-        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn" and \
-                (0, 0, 0) < version < (1, 0, 3):
-            blocks_override_expected = 2080
+        if sendnn_configured():
+            from torch_sendnn import torch_sendnn  # noqa: F401
+            version_str = torch_sendnn._version.__version__
+            version = tuple(map(int, version_str.split(".")))
         else:
-            blocks_override_expected = 8192
+            version = (0, 0, 0)
+
+        blocks_override_exp = 2080 if (0, 0, 0) < version < (1, 0, 3) else 8192
 
         assert (granite_3_8b_config.cache_config.num_gpu_blocks_override ==
-                blocks_override_expected)
+                blocks_override_exp)
 
         assert int(os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT")) == 128 * 1024
         assert int(os.getenv("FLEX_HDMA_P2PSIZE")) == 256 * 1024 * 1024
