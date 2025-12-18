@@ -4,6 +4,7 @@ from vllm_spyre.multimodal.mm_model_info import MultiModalMappingInfo
 from vllm_spyre.multimodal.utils import (
     is_multimodal,
     resolve_multimodal_vocab_size,
+    unwrap_mm_kv_cache_opts,
 )
 
 # TODO - we can definitely consolidate and combine some of this stuff,

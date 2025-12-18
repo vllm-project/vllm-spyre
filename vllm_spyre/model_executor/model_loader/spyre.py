@@ -365,6 +365,14 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         elif self.config.model_type == "gpt_bigcode":
             self.kv_cache_specs["num_layers"] = self.config.n_layer
             self.kv_cache_specs["head_dim"] = self.config.n_embd // self.config.n_head
+        elif spyre_mm.is_multimodal_config(self.model.config):
+            # Handle multimodal separately for now since we need to unwrap the
+            # text configs and technically (outside FMS) the LLM could be generic.
+            unwrapped_opts = spyre_mm.unwrap_mm_kv_cache_opts(
+                self.model.config, # FMS model config
+                self.config, # Transformers config
+            )
+            self.kv_cache_specs.update(unwrapped_opts)
         else:
             raise NotImplementedError(
                 f"[SpyreCausalLM] model type {self.config.model_type} "
