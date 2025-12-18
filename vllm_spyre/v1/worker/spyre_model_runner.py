@@ -41,7 +41,7 @@ import vllm_spyre.utils as utils_spyre
 from vllm_spyre.compat_utils import dataclass_fields, has_argument
 from vllm_spyre.model_executor.model_loader.spyre import (
     BACKEND_LIST, SpyreAttentionMetadata, SpyreCausalLM)
-from vllm_spyre.platform import SpyrePlatform, sendnn_configured
+from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.sample.spyre_logits_processor import (
     build_logitsprocs_for_cb)
 # yapf conflicts with ruff for this block
@@ -1573,7 +1573,7 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
             # some resources from parent to children which can have problems
             # of caching even though the test run in isolated subprocesses.
 
-            if sendnn_configured():
+            if SpyrePlatform.sendnn_configured():
                 from torch_sendnn import torch_sendnn  # noqa: F401
 
             with utils_spyre.stagger_region(

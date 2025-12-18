@@ -20,7 +20,7 @@ from vllm.v1.sample.sampler import Sampler
 
 import vllm_spyre.envs as envs_spyre
 import vllm_spyre.utils as utils_spyre
-from vllm_spyre.platform import SpyrePlatform, sendnn_configured
+from vllm_spyre.platform import SpyrePlatform
 
 try:
     import backends.dynamo_tracer  # noqa: F401
@@ -266,7 +266,7 @@ class FmsModelBase(nn.Module):
             # some resources from parent to children which can have problems
             # of caching even though the test run in isolated subprocesses.
 
-            if sendnn_configured():
+            if SpyrePlatform.sendnn_configured():
                 from torch_sendnn import torch_sendnn  # noqa: F401
 
             self.model = torch.compile(

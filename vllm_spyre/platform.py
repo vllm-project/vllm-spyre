@@ -62,16 +62,6 @@ class _StreamPlaceholder:
         self.synchronize = lambda: None
 
 
-def sendnn_configured() -> bool:
-    if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
-        try:
-            from torch_sendnn import torch_sendnn  # noqa: F401
-            return True
-        except ImportError as err:
-            raise RuntimeError("sendnn backend requires torch_sendnn") from err
-    return False
-
-
 class SpyrePlatform(Platform):
     _enum = PlatformEnum.OOT
 
@@ -84,6 +74,7 @@ class SpyrePlatform(Platform):
     _warmup_shapes: tuple[dict[str, int], ...] | None = None
     _block_size: int = 64  # hardcoded Spyre constraint for now
     _config: VllmConfig = None
+    _torch_sendnn_version = None
 
     # Backend for dynamic compilation ops
     # See vllm batched_count_greater_than method
@@ -628,15 +619,18 @@ class SpyrePlatform(Platform):
         # Override the total number of KV cache blocks based on what we know
         # will fit. (Unless user already set `--num-gpu-blocks-override`)
         # TODO: remove this once we have correct free memory info available
-
-        if sendnn_configured():
-            from torch_sendnn import torch_sendnn  # noqa: F401
-            version_str = torch_sendnn._version.__version__
-            version = tuple(map(int, version_str.split(".")))
+        if cls.sendnn_configured() and ((0, 0, 0) < cls.sendnn_version() <
+                                        (1, 0, 3)):
+            # Older versions of torch_sendnn use the previous override of ~2k
+            # blocks.
+            # NB: A version of (0, 0, 0) means that the version of torch_sendnn
+            # could not be determined, and we assume this means we have a dev
+            # install of newer code.
+            blocks_override = 2080
         else:
-            version = (0, 0, 0)
-
-        blocks_override = 2080 if (0, 0, 0) < version < (1, 0, 3) else 8192
+            # If torch_sendnn is not configured or we have a newer torch_sendnn
+            # install, use the newer 8k override.
+            blocks_override = 8192
 
         if vllm_config.cache_config.num_gpu_blocks_override is None:
             vllm_config.cache_config.num_gpu_blocks_override = blocks_override
@@ -675,3 +669,23 @@ class SpyrePlatform(Platform):
                 and model_config.hf_config.vocab_size == 49159
                 and model_config.hf_config.num_key_value_heads == 8
                 and model_config.hf_config.num_attention_heads == 32)
+
+    @classmethod
+    def sendnn_configured(cls) -> bool:
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
+            try:
+                from torch_sendnn import torch_sendnn
+                version_str = torch_sendnn._version.__version__
+                cls._torch_sendnn_version = tuple(
+                    map(int, version_str.split(".")))
+                return True
+            except ImportError as err:
+                raise RuntimeError(
+                    "sendnn backend requires torch_sendnn") from err
+        return False
+
+    @classmethod
+    def sendnn_version(cls):
+        if cls.sendnn_configured():
+            return cls._torch_sendnn_version
+        return (0, 0, 0)
