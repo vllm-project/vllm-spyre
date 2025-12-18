@@ -2304,11 +2304,13 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         # Last prefill: we might need to update the tkv
         req_n_blocks = len(self._get_blocks(req_id))
-        max_n_blocks = max(req_n_blocks,
-                           max(0, self.tkv - 1) // self.block_size)
-        n_left_padding = (max_n_blocks - req_n_blocks) * self.block_size
-        req_tkv = n_left_padding + prompt_len
-        self.tkv = max(self.tkv, req_tkv)
+        cur_n_blocks = math.ceil(self.tkv / self.block_size)
+        new_n_blocks = max(req_n_blocks, cur_n_blocks)
+        assert new_n_blocks > 0
+        base_n_tokens = (new_n_blocks - 1) * self.block_size
+        req_tkv_new_block = base_n_tokens + prompt_len % self.block_size
+        cur_tkv_new_block = base_n_tokens + self.tkv % self.block_size
+        self.tkv = max(req_tkv_new_block, cur_tkv_new_block)
 
         # Last prefill we need to setup the logitsprocessors to sampling
         prefill_index = self.input_batch.add_request(request)
