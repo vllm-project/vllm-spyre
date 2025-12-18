@@ -38,7 +38,7 @@ from vllm.v1.sample.logits_processor import build_logitsprocs
 
 import vllm_spyre.envs as envs_spyre
 import vllm_spyre.utils as utils_spyre
-from vllm_spyre.compat_utils import dataclass_fields
+from vllm_spyre.compat_utils import dataclass_fields, has_argument
 from vllm_spyre.model_executor.model_loader.spyre import (
     BACKEND_LIST, SpyreAttentionMetadata, SpyreCausalLM)
 from vllm_spyre.platform import SpyrePlatform
@@ -903,9 +903,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
     def _set_blocks(self, num_blocks: int) -> None:
         # set number of available blocks and populate block_pool
         self.n_blocks = num_blocks - 1
-        self.block_pool = BlockPool(num_gpu_blocks=self.n_blocks + 1,
-                                    enable_caching=self.enable_prefix_caching,
-                                    enable_kv_cache_events=False)
+        self.block_pool = self._make_block_pool()
 
         if "use_mla" in dataclass_fields(FullAttentionSpec):
             ## Temporary backwards compatibility for 0.10.2
@@ -931,6 +929,15 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             # https://docs.vllm.ai/en/latest/serving/context_parallel_deployment/#decode-context-parallel
             dcp_world_size=1,
         )
+
+    def _make_block_pool(self) -> BlockPool:
+        kwargs = {}
+        if has_argument(BlockPool, "hash_block_size"):
+            kwargs["hash_block_size"] = self.block_size
+        return BlockPool(num_gpu_blocks=self.n_blocks + 1,
+                         enable_caching=self.enable_prefix_caching,
+                         enable_kv_cache_events=False,
+                         **kwargs)
 
     def _get_blocks(self, request_id: str) -> list[KVCacheBlock]:
         return self.kv_cache_manager.req_to_blocks[request_id]
@@ -1845,6 +1852,14 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         self.chunk_size = self.scheduler_config.max_num_batched_tokens
         self.chunk_blocks_count = self.chunk_size // self.block_size
 
+        # For hybrid KV caches, the `alignment_tokens` arg needs to be set to
+        # the lowest common multiple of kv cache block sizes. Currently we only
+        # support homogeneous kv caches with a single block size though.
+        self._alignment_token_kwargs = {
+            "alignment_tokens": self.block_size
+        } if has_argument(FullAttentionManager.find_longest_cache_hit,
+                          "alignment_tokens") else {}
+
         if vllm_config.cache_config.enable_prefix_caching:
             caching_hash_fn = get_hash_fn_by_name(
                 vllm_config.cache_config.prefix_caching_hash_algo)
@@ -2186,6 +2201,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                         kv_cache_spec=self._attn_spec,
                         use_eagle=False,
                         dcp_world_size=1,
+                        **self._alignment_token_kwargs,
                     )[0]
                 n_hit = len(computed_blocks)
             else:
