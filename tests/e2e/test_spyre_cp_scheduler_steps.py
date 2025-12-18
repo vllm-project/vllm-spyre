@@ -249,6 +249,13 @@ def test_prefill_tkv_too_big2(model: ModelInfo, backend: str,
             # Prefill sequence 2
             # Left padding due to long prompt 1 can be removed, tkv is shifted
             # back to the first block
+            #
+            # TODO: This step is failing because the tkv is still 86 right now even after the long prompt request 1 finishes
+            # so condition 2 (tkv too big condition) is still evaluated as False and 
+            # sequence 2 cannot be scheduled.
+            # I am confused when/where the removed sequence should update the tkv, in the 
+            # tests of continuous batching, it looks like the tkv was also one step 
+            # behind, but the new request could still be scheduled
             "step": 5,
             "tkv": 23,  # correspond to tkv of req 0 (prompt 20 + 2 decode = 22)
             "waiting": [],
