@@ -1876,6 +1876,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         else:
             self.request_block_hasher = None
 
+        self.prefix_cache_stats = None
+
     def _prepare_prompt(self, _):
         AssertionError(
             "Should not call this method on chunked prefill implementation")
