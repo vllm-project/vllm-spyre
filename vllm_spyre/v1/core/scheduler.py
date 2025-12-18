@@ -475,16 +475,15 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         ]
 
         # Update KV Cache info
-        if model_runner_output.kv_cache_stats is not None:
-            self.kv_cache_usage_percent = \
-                model_runner_output.kv_cache_stats.kv_cache_usage
-            prefix_cache_stats = \
-                model_runner_output.kv_cache_stats.prefix_cache_stats
-            if prefix_cache_stats is not None:
-                self.prefix_cache_stats.record(
-                    num_tokens=prefix_cache_stats.queries,
-                    num_hits=prefix_cache_stats.hits,
-                    preempted=False)
+        self.kv_cache_usage_percent = model_runner_output.kv_cache_usage
+        prefix_cache_stats = model_runner_output.prefix_cache_stats
+        if prefix_cache_stats is not None:
+            # We don't use PrefixCacheStats.record because:
+            # 1. It's not supported in vllm v0.11.0
+            # 2. It could eventually be the case that requests > 1
+            self.prefix_cache_stats.requests += prefix_cache_stats.requests
+            self.prefix_cache_stats.queries += prefix_cache_stats.queries
+            self.prefix_cache_stats.hits += prefix_cache_stats.hits
 
         return super().update_from_output(scheduler_output,
                                           model_runner_output)
@@ -809,9 +808,10 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         """
         base_stats = super().make_stats(*args, **kwargs)
 
-        base_stats.kv_cache_usage = self.kv_cache_usage_percent
-        base_stats.prefix_cache_stats = self.prefix_cache_stats
-        self._reset_prefix_cache_stats()
+        if base_stats is not None:
+            base_stats.kv_cache_usage = self.kv_cache_usage_percent
+            base_stats.prefix_cache_stats = self.prefix_cache_stats
+            self._reset_prefix_cache_stats()
 
         return base_stats
 
