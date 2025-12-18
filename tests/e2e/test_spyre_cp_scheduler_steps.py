@@ -181,7 +181,7 @@ def test_prefill_tkv_too_big2(model: ModelInfo, backend: str,
 
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
 
-    seqs_max_tokens = [17, 17, 50]
+    seqs_max_tokens = [4, 3, 50]
     prompts_lengths = [20, 80, 16]
     steps_add_reqs = [0, 0, 0]
 
@@ -205,43 +205,81 @@ def test_prefill_tkv_too_big2(model: ModelInfo, backend: str,
             "n_reserved_blocks": 1,
             "n_used_blocks": 1
         },
+        # tkv should be updated at the end of the last chunked prefill
+        # here we have only one chunk, so it will be updated directly
         {
             # Prefill sequence 1
             "step": 2,
-            "tkv": 20,
+            "tkv": 84,  # 64 (1 block padding) + 20 (prompt of seq 0) = 84
             "waiting": ["2"],
             "running": ["1", "0"],
             "request_outputs": ["1"],
-            # 1 + 2 (prefill (2 block) + 17 decodes in the last block)
+            # 1 + 2 (prefill (2 block) + 3 decodes in the last block)
+            "n_reserved_blocks": 3,
+            "n_used_blocks": 3
+        },
+        # Here we cannot schedule sequence 2. Current tkv being in the second 
+        # block, the number of requested tokens can't fit in the remaining space 
+        # (64 (full block left padding) + 16 (prompt) + 50 (decode) = 130 > 128)
+        {
+            # Decode 1 of sequence 0
+            # Decode 1 of sequence 1
+            "step": 3,
+            "tkv": 85,
+            "waiting": ["2"],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"],
+            "n_reserved_blocks": 3,
+            "n_used_blocks": 3
+        },
+        {
+            # Decode 2 of sequence 0
+            # Decode 2 of sequence 1
+            # Sequence 1 finishes
+            "step": 4,
+            "tkv": 86,
+            "waiting": ["2"],
+            "running": ["0"],
+            "request_outputs": ["1", "0"],
+            "finished_requests": ["1"],
             "n_reserved_blocks": 3,
             "n_used_blocks": 3
         },
         {
             # Prefill sequence 2
-            # Sequence 2 shouldn't be able to get scheduled in this step:
-            # hidden tkv is 84, which is in the second block.
-            # The remaining space (64 tokens), isn't enough to accomodate 16
-            # prompts tokens + 50 decode tokens (16 + 50 > 64)
-            "step": 3,
-            "tkv": 20,
+            # Left padding due to long prompt 1 can be removed, tkv is shifted
+            # back to the first block
+            "step": 5,
+            "tkv": 23,  # correspond to tkv of req 0 (prompt 20 + 2 decode = 22)
             "waiting": [],
-            "running": ["2", "1", "0"],
+            "running": ["2", "0"],
             "request_outputs": ["2"],
-            # 3 + 1 (prefill (1 block) + 50 decodes spanning new block)
-            "n_reserved_blocks": 5,
-            "n_used_blocks": 4
+            # 3 - 2 (finished seq 1) + 2 (prefill + 50 decodes in new block)
+            "n_reserved_blocks": 3,
+            "n_used_blocks": 3
         },
         {
-            # Decode 1 of request 0.
-            # Decode 1 of request 1.
+            # Decode 3 of request 0.
             # Decode 1 of request 2.
-            "step": 4,
-            "tkv": 85,
+            # Sequence 0 finishes
+            "step": 6,
+            "tkv": 24,
             "waiting": [],
-            "running": ["2", "1", "0"],
-            "request_outputs": ["2", "1", "0"],
-            "n_reserved_blocks": 5,
-            "n_used_blocks": 4
+            "running": ["2", "0"],
+            "request_outputs": ["2", "0"],
+            "finished_requests": ["0"],
+            "n_reserved_blocks": 3,
+            "n_used_blocks": 3
+        },
+        {
+            # Decode 2 of request 2.
+            "step": 7,
+            "tkv": 25,
+            "waiting": [],
+            "running": ["2"],
+            "request_outputs": ["2"],
+            "n_reserved_blocks": 2,
+            "n_used_blocks": 1
         },
     ]
 
