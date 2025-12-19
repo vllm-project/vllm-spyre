@@ -2401,7 +2401,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         # clear the prefix cache stats so that we only record them on the first
         # chunk of any prefill
-        self.reset_prefix_cache_stats()
+        self.prefix_cache_stats = None
 
         if cached_reqs.num_reqs == 1:
             # NOTE: while prefilling the request is not yet in the
@@ -2569,10 +2569,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
     def get_kv_cache_usage(self) -> float:
         return self.kv_cache_manager.block_pool.get_usage()
-
-    def reset_prefix_cache_stats(self):
-        if self.prefix_cache_stats:
-            self.prefix_cache_stats = None
 
     def _mark_input_tensors(self, model_input: SamplingForwardInputs) -> None:
 

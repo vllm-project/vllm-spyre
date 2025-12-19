@@ -811,11 +811,10 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         if base_stats is not None:
             base_stats.kv_cache_usage = self.kv_cache_usage_percent
             base_stats.prefix_cache_stats = self.prefix_cache_stats
+            # Every time `make_stats` is called we reset the prefix cache stats.
+            # This mimics how the base scheduler handles the kv cache stats
+            self.prefix_cache_stats = PrefixCacheStats()
+
             self._reset_prefix_cache_stats()
 
         return base_stats
-
-    def _reset_prefix_cache_stats(self):
-        # Every time `make_stats` is called we reset the prefix cache stats.
-        # This mimics how the base scheduler handles the kv cache stats
-        self.prefix_cache_stats = PrefixCacheStats()
