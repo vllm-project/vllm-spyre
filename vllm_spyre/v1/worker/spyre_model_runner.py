@@ -1218,11 +1218,12 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # In the case of multimodal models, always use embeddings
         # as inputs, even in the case where we only have texts.
         if self.model.is_multimodal:
-            input_embeds = self.model.get_text_embeddings(input_tokens)
-            if mm_features is not None:
-                logger.warning("TODO: call visual encoder!")
-            # For now, ignore the mm features, but we should get the same result from
-            # the embeddings case.
+            # NOTE: This will call the mulitimodal encoder and merge the embeddings
+            # if we have multimodal features, e.g., for granite vision.
+            input_embeds = self.model.get_maybe_mm_embeddings(
+                input_tokens,
+                mm_features,
+            )
         else:
             input_embeds = None
 

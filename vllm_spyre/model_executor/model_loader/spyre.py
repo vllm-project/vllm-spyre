@@ -134,21 +134,44 @@ class SpyreCausalLM(nn.Module):
 
         return logits
 
-    def get_text_embeddings(self, input_ids):
+    def get_maybe_mm_embeddings(self, input_ids, mm_features):
         if not self.is_multimodal:
             # In general, we should not use input embeddings if it's a pure text
             # model, but we do for compatability with text only inputs on multimodal
             # models. This behavior is consistent with the v1 GPU runner.
-            logger.warning("Embeddings retrieved, but model is not multimodal.")
+            logger.warning("We should not use embeddings as inputs for non-multimodal models")
+
         fms_model = self.model.model
         if isinstance(fms_model.prepare_inputs_for_generation, torch.Tensor):
             raise TypeError("Prepare inputs for generation must be a callable!")
+
+        # NOTE: This is very likely super brittle, and we will almost certainly need to
+        # change things in the future as more models, but this is on the FMS side to
+        # standardize this interface.
+        fms_kwargs = {"use_cache": True}
+        if mm_features:
+            if len(mm_features) != 1:
+                raise ValueError("Currently we assume we only embed one mm request at a time")
+
+            mm_spec = mm_features[0].data
+            # TODO: We can probably do this generically assuming that FMS models
+            # line up with the outputs of the processors on HF, but for now hardcode
+            # to match llava next.
+            assert "pixel_values" in mm_spec and "image_sizes" in mm_spec
+            fms_kwargs["pixel_values"] = mm_spec["pixel_values"].data
+            image_sizes = mm_spec["image_sizes"].data
+            # Careful about this; if it's 1D, we'll a tensor of shape [x, y],
+            # which will break in a weird way in image packing, since it assumes
+            # it's 2D and will get sad about getting an int instead of an iterable
+            if image_sizes.ndim == 1:
+                image_sizes = image_sizes.unsqueeze(0)
+            fms_kwargs["image_sizes"] = image_sizes
 
         # NOTE: use_cache is actually not used here, but currently it's required.
         input_embeds, _ = fms_model.prepare_inputs_for_generation(
             iteration=0,
             input_ids=input_ids,
-            kwargs={"use_cache": True}
+            kwargs=fms_kwargs
         )
         return input_embeds
 

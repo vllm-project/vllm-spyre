@@ -197,8 +197,10 @@ class SamplingRequestState(BaseRequestState):
     @property
     def num_tokens(self) -> int:
         # NOTE: In the case of multimodal, multimodal token expansion
-        # should be done prior to the creation of this object.
+        # is done prior to the creation of this object.
         # i.e., "<image>" -> "<image>" * num_image_features
+        #
+        # This is done by vLLM, *not* in the spyre plugin.
         return len(self.prompt_token_ids) + len(self.output_token_ids)
 
 
