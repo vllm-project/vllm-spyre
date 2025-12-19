@@ -97,18 +97,13 @@ class SpyreCausalLM(nn.Module):
 
     def forward(
         self,
-        input_ids: torch.Tensor,
+        input_ids_or_embeds: torch.Tensor,
         positions: torch.Tensor,
         masks: torch.Tensor,
         is_prompt: bool,
     ) -> torch.Tensor:
         if is_prompt and not envs_spyre.VLLM_SPYRE_USE_CB:
             self.model.past_key_value_states = None
-
-        # TODO handle multimodal embed merging in forward();
-        # currently this does not consider multimodal at all
-        # and assumes everything is handled externally, i.e,
-        # multimodal embeddings are already merged.
 
         extra_kwargs: dict[str, Any] = {}
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn":
@@ -118,7 +113,7 @@ class SpyreCausalLM(nn.Module):
 
         # normal prefill or decoding step
         logits = self.model(
-            input_ids,
+            input_ids_or_embeds,
             position_ids=positions,
             mask=masks,
             use_cache=True,
@@ -138,6 +133,24 @@ class SpyreCausalLM(nn.Module):
             logits = logits[self.indices]
 
         return logits
+
+    def get_text_embeddings(self, input_ids):
+        if not self.is_multimodal:
+            # In general, we should not use input embeddings if it's a pure text
+            # model, but we do for compatability with text only inputs on multimodal
+            # models. This behavior is consistent with the v1 GPU runner.
+            logger.warning("Embeddings retrieved, but model is not multimodal.")
+        fms_model = self.model.model
+        if isinstance(fms_model.prepare_inputs_for_generation, torch.Tensor):
+            raise TypeError("Prepare inputs for generation must be a callable!")
+
+        # NOTE: use_cache is actually not used here, but currently it's required.
+        input_embeds, _ = fms_model.prepare_inputs_for_generation(
+            iteration=0,
+            input_ids=input_ids,
+            kwargs={"use_cache": True}
+        )
+        return input_embeds
 
     def sample(
         self,
