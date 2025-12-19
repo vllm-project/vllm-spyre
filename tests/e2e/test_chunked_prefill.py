@@ -3,18 +3,22 @@
 Run `python -m pytest tests/e2e/test_spyre_basic.py`.
 """
 
+import asyncio
 from typing import cast
 from unittest.mock import patch
 
 import pytest
+import requests
 from llm_cache import get_cached_llm
 from output_util import (compare_results, extract_output, generate_hf_output,
                          setup_golden_token)
 from pytest_mock.plugin import MockerFixture
-from spyre_util import (ModelInfo, get_chicken_soup_prompts,
+from spyre_util import (ModelInfo, RemoteOpenAIServer,
+                        get_chicken_soup_prompts,
                         get_longer_chicken_soup_prompts)
 from vllm import LLM, SamplingParams
 
+from tests.scheduling_utils import random_prompt
 from vllm_spyre.v1.worker.spyre_model_runner import SamplingForwardInputs
 
 
@@ -124,3 +128,87 @@ def test_chunked_prefill_correctness(model: ModelInfo, backend: str,
                     vllm_results=vllm_results,
                     hf_results=hf_outputs,
                     prompts=[prompt])
+
+
+@pytest.mark.parametrize(
+    "mode", [pytest.param("pc", marks=pytest.mark.prefix_caching, id="pc")])
+@pytest.mark.asyncio
+async def test_chunked_prefill_kv_cache_stats(
+    remote_openai_server: RemoteOpenAIServer,
+    model,
+    warmup_shapes,
+    backend,
+    tp_size,
+    mode,
+    max_num_seqs,
+    max_model_len,
+):
+    # Test that vllm metrics include prefix caching data
+    client = remote_openai_server.get_async_client()
+
+    prompt = random_prompt(
+        model=model,
+        seed=0,
+        length=max_model_len // 2  # try to span multiple chunks
+    )
+
+    # Start a bunch of duplicate requests so that we hit prefix cache:
+    request_tasks: list[asyncio.Task] = []
+    # 2x max batch size so that there's some queueing
+    for _ in range(2 * max_num_seqs):
+        request_tasks.append(
+            asyncio.create_task(
+                client.completions.create(model=model.name,
+                                          prompt=prompt,
+                                          max_tokens=5)))
+
+    # Wait for the first request to finish to ensure that requests are
+    # processing
+    requests_finished = 0
+    while requests_finished < 1:
+        done, pending = await asyncio.wait(request_tasks,
+                                           return_when=asyncio.FIRST_COMPLETED)
+        requests_finished += len(done)
+        request_tasks = pending
+
+    # Now that requests are processing, check metrics for KV cache usage.
+    # This must be done while requests are in-flight, once they finish this
+    # gauge will be 0.
+    metrics = get_metrics(remote_openai_server)
+    kv_cache_usage = get_metric_value(metrics, "vllm:kv_cache_usage_perc")
+    assert kv_cache_usage > 0
+
+    # Wait for at least 2 requests to finish to ensure the prefix cache was used
+    while requests_finished < 2:
+        done, pending = await asyncio.wait(request_tasks,
+                                           return_when=asyncio.FIRST_COMPLETED)
+        requests_finished += len(done)
+        request_tasks = pending
+
+    # Cancel the rest
+    for task in request_tasks:
+        task.cancel()
+
+    # Check the prefix cache counters
+    # vLLM should be reporting these counters based on the last 1000 requests
+    # (as of v0.12.0)
+    metrics = get_metrics(remote_openai_server)
+    total_tokens = get_metric_value(metrics, "vllm:prefix_cache_queries_total")
+    hit_tokens = get_metric_value(metrics, "vllm:prefix_cache_hits_total")
+
+    # Prefix cache rate won't be 100% because of chunking, but we should still
+    # hit _some_ cache
+    assert (hit_tokens / total_tokens > 0.1)
+
+
+def get_metrics(remote_openai_server: RemoteOpenAIServer) -> list[str]:
+    metrics_response = requests.get(
+        f"http://localhost:{remote_openai_server.port}/metrics")
+    assert metrics_response.status_code == 200
+    metrics = metrics_response.text
+    return metrics.splitlines()
+
+
+def get_metric_value(metrics: list[str], metric_name: str) -> float:
+    metric_line = [line for line in metrics if line.startswith(metric_name)][0]
+    return float(metric_line.split(" ")[-1])
