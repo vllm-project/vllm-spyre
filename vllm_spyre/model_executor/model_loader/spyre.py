@@ -258,6 +258,10 @@ class FmsModelBase(nn.Module):
                 allow_patterns=["*.safetensors", "*.bin", "*.pt"],
                 revision=model_config.revision)
 
+        # Currently this is {} for anything except llava next, which
+        # needs to apply a head_dim fix to unbreak AIU compile.
+        model_kwargs = spyre_mm.get_mm_specific_load_overrides(self.config)
+
         with utils_spyre.stagger_region(
                 envs_spyre.VLLM_SPYRE_MAX_LOAD_PROCESSES,
                 kwargs["world_size"],
@@ -269,6 +273,7 @@ class FmsModelBase(nn.Module):
                 distributed_strategy=distributed_strategy,
                 group=dist.group.WORLD,
                 fused_weights=False,
+                **model_kwargs,
             )
 
         self.model.eval()

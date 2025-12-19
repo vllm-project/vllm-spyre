@@ -3,6 +3,7 @@ from functools import partial
 from vllm_spyre.multimodal.mm_model_info import MultiModalMappingInfo
 from vllm_spyre.multimodal.utils import (
     is_multimodal,
+    get_mm_specific_load_overrides,
     resolve_multimodal_vocab_size,
     unwrap_mm_kv_cache_opts,
 )

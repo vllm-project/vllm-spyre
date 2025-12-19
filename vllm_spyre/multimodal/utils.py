@@ -2,7 +2,9 @@
 Super hacky utils for multimodal model stuff.
 """
 from fms import models
+from fms.utils import serialization
 from fms.utils.config import ModelConfig
+from transformers import LlavaNextConfig
 
 MULITMODAL_ARCHITECTURES = ["llava_next"]
 
@@ -47,3 +49,22 @@ def unwrap_mm_kv_cache_opts(fms_config, hf_config):
         fms_config.text_config, "head_dim",
         hf_config.text_config.hidden_size // hf_config.text_config.num_attention_heads)
     return kv_cache_specs
+
+def get_mm_specific_load_overrides(model_config):
+    """Get any overrides needed for fixing compile with current multimodal models.
+    This is technically not specific to multimodal, but currently surfaces for 2b
+    variants of granite 3.x LLMs, which is all of the granite vision models, so we
+    put it here.
+    """
+    # head_dim expansion is required for current granite vision models.
+    get_model_kwargs = {}
+    if isinstance(model_config, LlavaNextConfig):
+        # TODO: we should probably only do this for 2b granite models
+        serialization.extend_adapter(
+            "llava_next", "hf", ["weight_expansion_for_mismatched_head_dim"]
+        )
+        get_model_kwargs = {
+            "override_hf_pretrained_config": True,
+            "text_config": {"head_dim": 128},
+        }
+    return get_model_kwargs
