@@ -31,6 +31,7 @@ from vllm.v1.core.kv_cache_utils import (KVCacheBlock,
 from vllm.v1.core.sched.output import CachedRequestData
 from vllm.v1.core.single_type_kv_cache_manager import FullAttentionManager
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
+from vllm.v1.metrics.stats import PrefixCacheStats
 from vllm.v1.outputs import LogprobsTensors, SamplerOutput
 from vllm.v1.pool.metadata import PoolingMetadata
 from vllm.v1.request import Request
@@ -107,6 +108,11 @@ class CBSpyreModelRunnerOutput(ModelRunnerOutput):
 class CPSpyreModelRunnerOutput(CBSpyreModelRunnerOutput):
     # Left padding of each request that was calculated by model runner
     left_padding: dict[str, int] = field(default_factory=dict)
+    # Percentage of kv cache blocks allocated from our internal kv cache
+    # management
+    kv_cache_usage: float = 0.0
+    # Prefix cache stats, set whenever prefills are happening
+    prefix_cache_stats: Optional[PrefixCacheStats] = None
 
 
 InputBatchT = TypeVar("InputBatchT", bound=BaseInputBatch)
@@ -1874,6 +1880,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         else:
             self.request_block_hasher = None
 
+        self.prefix_cache_stats = None
+
     def _prepare_prompt(self, _):
         AssertionError(
             "Should not call this method on chunked prefill implementation")
@@ -1996,14 +2004,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             chunks_from_cache = (left_padding +
                                  num_cached_tokens) // self.chunk_size
 
-            num_cached_blocks = num_cached_tokens // self.block_size
-
-            # num_allocated_blocks will be > 0 after the first
-            # chunk is computed because as we compute, we commit
-            # to cache
-            num_allocated_blocks = self.kv_cache_manager.\
-                num_cached_block.get(req_id, 0)
-
             # When the current chunk has passed the number
             # of chunk loaded entirely from cache, the difference
             # between the blocks from cache and the allocated
@@ -2013,6 +2013,12 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             # make it more difficult to migrate to the engine core
             # KV cache manager.
             if chunk_i == chunks_from_cache:
+                num_cached_blocks = num_cached_tokens // self.block_size
+                # num_allocated_blocks will be > 0 after the first
+                # chunk is computed because as we compute, we commit
+                # to cache
+                num_allocated_blocks = self.kv_cache_manager.\
+                    num_cached_block.get(req_id, 0)
                 blocks_to_recompute = num_allocated_blocks - num_cached_blocks
 
         slot_mapping = []
@@ -2236,8 +2242,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             full_chunks_with_cached_blocks = ((left_blocks + n_hit) //
                                               self.chunk_blocks_count)
 
-            # the last chunk of the prompt must always be
-            # recomputed
+            # the last chunk of the prompt must always be recomputed
             if full_chunks_with_cached_blocks == chunk_count:
                 full_chunks_with_cached_blocks -= 1
 
@@ -2245,8 +2250,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                 0, (full_chunks_with_cached_blocks * self.chunk_blocks_count) -
                 left_blocks)
 
-            # blocks to compute from scratch or recompute in the last
-            # chunk
+            # blocks to compute from scratch or recompute in the last chunk
             blocks_to_compute = padded_prompt_len // self.block_size \
                 - usable_blocks
             logger.debug(
@@ -2300,6 +2304,12 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         )
         num_cached_tokens = self._maybe_load_prefix_from_cache(
             scheduler_request)
+
+        self.prefix_cache_stats = PrefixCacheStats(
+            # We only support single-request chunked prefill so this is always 1
+            requests=1,
+            queries=prompt_len,
+            hits=num_cached_tokens)
 
         # allocate blocks
         self.kv_cache_manager.allocate_new_blocks(req_id, prompt_len)
@@ -2389,16 +2399,19 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             return self._prepare_decode(scheduler_output.scheduled_cached_reqs)
 
     def get_empty_output(self):
-        return CPSpyreModelRunnerOutput(req_ids=[],
-                                        req_id_to_index={},
-                                        sampled_token_ids=[],
-                                        logprobs=None,
-                                        prompt_logprobs_dict={},
-                                        pooler_output=[],
-                                        num_nans_in_logits=None,
-                                        tkv=0,
-                                        n_free_blocks=self.get_n_free_blocks(),
-                                        left_padding={})
+        return CPSpyreModelRunnerOutput(
+            req_ids=[],
+            req_id_to_index={},
+            sampled_token_ids=[],
+            logprobs=None,
+            prompt_logprobs_dict={},
+            pooler_output=[],
+            num_nans_in_logits=None,
+            tkv=0,
+            n_free_blocks=self.get_n_free_blocks(),
+            left_padding={},
+            kv_cache_usage=self.get_kv_cache_usage(),
+            prefix_cache_stats=None)
 
     def check_incomplete_prefill(self, scheduler_output: SchedulerOutput):
         cached_reqs = scheduler_output.scheduled_cached_reqs
@@ -2424,6 +2437,10 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
     def update_states(self, scheduler_output: SchedulerOutput):
         cached_reqs = scheduler_output.scheduled_cached_reqs
+
+        # clear the prefix cache stats so that we only record them on the first
+        # chunk of any prefill
+        self.prefix_cache_stats = None
 
         if cached_reqs.num_reqs == 1:
             # NOTE: while prefilling the request is not yet in the
@@ -2530,7 +2547,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                 pooler_output=[],
                 tkv=self.tkv,
                 n_free_blocks=self.get_n_free_blocks(),
-                left_padding=left_padding)
+                left_padding=left_padding,
+                kv_cache_usage=self.get_kv_cache_usage(),
+                prefix_cache_stats=self.prefix_cache_stats)
 
         # Sample the next token.
         output: SamplerOutput = self.model.sample(
@@ -2581,9 +2600,14 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             pooler_output=[],
             tkv=self.tkv,
             n_free_blocks=self.get_n_free_blocks(),
-            left_padding=left_padding)
+            left_padding=left_padding,
+            kv_cache_usage=self.get_kv_cache_usage(),
+            prefix_cache_stats=self.prefix_cache_stats)
 
         return model_output
+
+    def get_kv_cache_usage(self) -> float:
+        return self.kv_cache_manager.block_pool.get_usage()
 
     def _mark_input_tensors(self, model_input: SamplingForwardInputs) -> None:
 
