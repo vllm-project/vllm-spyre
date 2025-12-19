@@ -2015,7 +2015,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         slot_mapping = []
         for i in range(self.chunk_blocks_count):
-            block = block_table[0][-self.chunk_blocks_count + i]
+            block = block_table[0][-self.chunk_blocks_count + i].item()
             # if we're recomputing a cached block, set the slot
             # mapping to the padding block (0)
             block *= int(i >= blocks_to_recompute)
