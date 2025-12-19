@@ -815,6 +815,4 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
             # This mimics how the base scheduler handles the kv cache stats
             self.prefix_cache_stats = PrefixCacheStats()
 
-            self._reset_prefix_cache_stats()
-
         return base_stats
