@@ -43,7 +43,7 @@ jobs:
             repo: "git+https://github.com/vllm-project/vllm --branch main"
         test_suite:
           - name: "chunked prefill"
-            markers: "cpu and chunked_prefill and not quantized"
+            markers: "cpu and (chunked_prefill or prefix_caching) and not quantized"
           - name: "static batching"
             markers: "cpu and decoder and not cb and not other_e2e and not chunked_prefill and not prefix_caching and not quantized"
             flags: "--timeout=300"
