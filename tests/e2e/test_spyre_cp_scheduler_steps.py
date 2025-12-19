@@ -81,7 +81,8 @@ def test_prefill_tkv_too_big(model: ModelInfo, backend: str,
             # Prefill sequence 1, tkv large enough to prefill w/o tkv shift
             # total blocks in use: 1 + 2
             "step": 17,
-            "tkv": 64,  # @Wallas, should be max(64, 70) here? 
+            # add 64 to tkv of seq 0 (64) to have it in the same block as seq 1
+            "tkv": 128,
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": ["1"],
@@ -93,7 +94,10 @@ def test_prefill_tkv_too_big(model: ModelInfo, backend: str,
             # Decode sequences 0 and 1
             # Sequence 0 finishes
             "step": 18,
-            "tkv": 71,  # tkv of seq 1 is now max
+            # remove left padding of seq 0, and keep its tkv in the same block
+            # as seq 1: 129 - 64 = 65
+            # tkv of seq 1 is now max
+            "tkv": 71,
             "waiting": [],
             "running": ["1"],
             "request_outputs": ["1", "0"],
@@ -166,7 +170,7 @@ def test_prefill_tkv_too_big2(model: ModelInfo, backend: str,
                               available_blocks: int):
     """ Scenario where the requested number of output is too big for current 
     tkv value. We need to wait for a previous long prompt request to finish and
-    have tkv reduced to the first block before being able to schedule the 
+    have tkv reduced to a previous block before being able to schedule the 
     new request.
 
     Configuration:
@@ -836,7 +840,7 @@ def test_cp_prefill_interleave1(model: ModelInfo, backend: str,
             # Chunk 3 of request 1 prefill.
             # First token is generated
             "step": 9,
-            "tkv": 14,
+            "tkv": 512,
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": ["1"],
@@ -990,7 +994,7 @@ def test_cp_prefill_no_interleave(model: ModelInfo, backend: str,
             # Chunk 3 of request 1 prefill.
             # First token is generated
             "step": 5,
-            "tkv": 10,
+            "tkv": 512,
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": ["1"],
@@ -1230,7 +1234,7 @@ def test_cp_prefill_interleave2(model: ModelInfo, backend: str,
             # Chunk 3 of request 1 prefill.
             # First token is generated
             "step": 10,
-            "tkv": 15,
+            "tkv": 512,
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": ["1"],
