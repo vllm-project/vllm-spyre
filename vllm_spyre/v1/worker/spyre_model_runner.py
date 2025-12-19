@@ -2308,8 +2308,10 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         new_n_blocks = max(req_n_blocks, cur_n_blocks)
         assert new_n_blocks > 0
         base_n_tokens = (new_n_blocks - 1) * self.block_size
-        req_tkv_new_block = base_n_tokens + prompt_len % self.block_size
-        cur_tkv_new_block = base_n_tokens + self.tkv % self.block_size
+        req_tkv_new_block = base_n_tokens + (prompt_len -
+                                             1) % self.block_size + 1
+        cur_tkv_new_block = base_n_tokens + (self.tkv -
+                                             1) % self.block_size + 1
         self.tkv = max(req_tkv_new_block, cur_tkv_new_block)
 
         # Last prefill we need to setup the logitsprocessors to sampling
