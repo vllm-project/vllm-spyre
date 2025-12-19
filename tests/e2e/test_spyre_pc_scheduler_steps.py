@@ -195,7 +195,7 @@ def test_prefix_hit_decoded_block_within_batch(model: ModelInfo, backend: str,
         use_golden_token_injection=True)
 
     # Next prompt uses part of the first request's output, matching 128 tokens
-    # (2 blocks) in total
+    # (2 blocks) in total, prompt_len = 126 + 2 + 65 = 193
     prompt2 = prompt + request1.hf_output["token_ids"][:2] + \
         random_prompt(model=model, seed=0, length=65)
 
@@ -262,7 +262,8 @@ def test_prefix_hit_decoded_block_within_batch(model: ModelInfo, backend: str,
         {   # prefill chunk 1 seq 1
             # prefix hit of the two blocks in the first chunk
             "step": 68,
-            "tkv": 192, # why not 193
+            # use unchanged tkv of seq 0, since seq 1 is still prefilling
+            "tkv": 192,
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": [],
@@ -276,7 +277,9 @@ def test_prefix_hit_decoded_block_within_batch(model: ModelInfo, backend: str,
         {   # prefill chunk 2 seq 1
             # no prefix hit, always recompute last chunk
             "step": 69,
-            "tkv": 192, # why not 193
+            # seq 1 tkv (193) is in 4th block. Need to pad seq 0 tkv to 4th
+            # block as well: 192 + 64 = 256
+            "tkv": 256,
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": ["1"],
