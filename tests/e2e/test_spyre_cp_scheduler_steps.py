@@ -164,24 +164,22 @@ def test_prefill_tkv_too_big2(model: ModelInfo, backend: str,
                               max_num_seqs: int, max_model_len: int,
                               max_num_batched_tokens: int,
                               available_blocks: int):
-    """ Scenario where the requested prompt is too long for current tkv value
-   
-    Note that as we could prefill the prompt straight away, however,
-    in this test the max model length is decreased to a value where
-    the tkv of the decode batch would be shifted beyond the max model length, 
-    we therefore have to wait with scheduling.
+    """ Scenario where the requested number of output is too big for current 
+    tkv value. We need to wait for a previous long prompt request to finish and
+    have tkv reduced to the first block before being able to schedule the 
+    new request.
 
     Configuration:
         * max_num_seqs: 4
         * number of prompts: 3
-            * 0: len = 20, max tokens = 17, step joining = 0
-            * 1: len = 80, max tokens = 17, step joining = 0
+            * 0: len = 20, max tokens = 5, step joining = 0
+            * 1: len = 80, max tokens = 3, step joining = 0
             * 2: len = 16, max tokens = 50, step joining = 0
     """
 
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
 
-    seqs_max_tokens = [4, 3, 50]
+    seqs_max_tokens = [5, 3, 50]
     prompts_lengths = [20, 80, 16]
     steps_add_reqs = [0, 0, 0]
 
@@ -218,8 +216,8 @@ def test_prefill_tkv_too_big2(model: ModelInfo, backend: str,
             "n_reserved_blocks": 3,
             "n_used_blocks": 3
         },
-        # Here we cannot schedule sequence 2. Current tkv being in the second 
-        # block, the number of requested tokens can't fit in the remaining space 
+        # Here we cannot schedule sequence 2. Current tkv being in the second
+        # block, the number of requested tokens can't fit in the remaining space
         # (64 (full block left padding) + 16 (prompt) + 50 (decode) = 130 > 128)
         {
             # Decode 1 of sequence 0
@@ -245,48 +243,76 @@ def test_prefill_tkv_too_big2(model: ModelInfo, backend: str,
             "n_reserved_blocks": 3,
             "n_used_blocks": 3
         },
+        # tkv is one step behind the theoretical tkv that should be considered
+        # for the next input. Therefore, sequence 2 still cannot be prefilled
+        # at this step, since tkv=86 were used for evaluation
+        {
+            # Decode 3 of sequence 0
+            "step": 5,
+            "tkv": 23,  # 20 (prompt len) + 3 (decodes) = 23
+            "waiting": ["2"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 1,
+            "n_used_blocks": 1
+        },
+        # Sequence 2 can be scheduled for prefill, now that tkv is moved back to
+        # block 0.
         {
             # Prefill sequence 2
-            # Left padding due to long prompt 1 can be removed, tkv is shifted
-            # back to the first block
-            #
-            # TODO: This step is failing because the tkv is still 86 right now even after the long prompt request 1 finishes
-            # so condition 2 (tkv too big condition) is still evaluated as False and 
-            # sequence 2 cannot be scheduled.
-            # I am confused when/where the removed sequence should update the tkv, in the 
-            # tests of continuous batching, it looks like the tkv was also one step 
-            # behind, but the new request could still be scheduled
-            "step": 5,
-            "tkv": 23,  # correspond to tkv of req 0 (prompt 20 + 2 decode = 22)
+            "step": 6,
+            "tkv": 23,
             "waiting": [],
             "running": ["2", "0"],
             "request_outputs": ["2"],
             # 3 - 2 (finished seq 1) + 2 (prefill + 50 decodes in new block)
             "n_reserved_blocks": 3,
-            "n_used_blocks": 3
+            "n_used_blocks": 2
         },
         {
-            # Decode 3 of request 0.
-            # Decode 1 of request 2.
+            # Decode 4 of sequence 0
+            # Decode 1 of sequence 2
             # Sequence 0 finishes
-            "step": 6,
+            "step": 7,
             "tkv": 24,
             "waiting": [],
-            "running": ["2", "0"],
+            "running": ["2"],
             "request_outputs": ["2", "0"],
             "finished_requests": ["0"],
             "n_reserved_blocks": 3,
-            "n_used_blocks": 3
+            "n_used_blocks": 2
         },
         {
-            # Decode 2 of request 2.
-            "step": 7,
-            "tkv": 25,
+            # Decode 2 of sequence 2
+            "step": 8,
+            "tkv": 18,  # 16 (prompt len) + 2 (decodes) = 18
             "waiting": [],
             "running": ["2"],
             "request_outputs": ["2"],
             "n_reserved_blocks": 2,
             "n_used_blocks": 1
+        },
+        {
+            # Decode 49 of sequence 2
+            # Sequence 2 finishes
+            "step": 55,
+            "tkv": 65,  # 16 (prompt len) + 49 (decodes) = 65
+            "waiting": [],
+            "running": [],
+            "request_outputs": ["2"],
+            "finished_requests": ["2"],
+            "n_reserved_blocks": 2,
+            "n_used_blocks": 2
+        },
+        {
+            # tkv should be cleared one step later
+            "step": 56,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0
         },
     ]
 
