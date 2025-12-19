@@ -46,6 +46,7 @@ from vllm_spyre.multimodal import (
     is_multimodal_config,
     resolve_multimodal_vocab_size,
 )
+import vllm_spyre.multimodal as spyre_mm
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.utils import exact_div
 from vllm_spyre.v1.sample.spyre_logits_processor import build_logitsprocs_for_cb
@@ -77,7 +78,8 @@ logger = init_logger(__name__)
 
 @dataclass(frozen=True)
 class ModelForwardInputs:
-    input_tokens: torch.Tensor
+    input_tokens: torch.Tensor | None # For non multimodal
+    input_embeds: torch.Tensor | None # For multimodal
     input_positions: torch.Tensor
     input_masks: torch.Tensor | None  # pooling and static batching only
     is_prompt: bool
@@ -529,13 +531,13 @@ class SpyreModelRunner(
     def prepare_model_input(self, scheduler_output: SchedulerOutput) -> SamplingForwardInputs:
         # NOTE: We assume that all sequences in the group are all prompts or
         # all decodes. Also assuming that new sequences are prefills
-        is_prompt = len(scheduler_output.scheduled_new_reqs) > 0
 
+        is_prompt = len(scheduler_output.scheduled_new_reqs) > 0
         # Prepare input tensors.
         if is_prompt:
             # Assert no running requests
             assert len(scheduler_output.scheduled_cached_reqs.req_ids) == 0
-
+            # NOTE: This will call mm encoders and create merged embeds if needed
             return self._prepare_prompt(scheduler_output.scheduled_new_reqs)
         else:
             return self._prepare_decode(scheduler_output.scheduled_cached_reqs)
@@ -569,6 +571,8 @@ class SpyreModelRunner(
 
         # Execute the model
         attn_metadata = self.build_attn_metadata(model_input)
+        # Embeddings take priority [used bymultimodal models only]
+        input_ids_or_embeds = model_input.input_embeds if model_input.input_embeds is not None else model_input.input_tokens
         with set_forward_context(attn_metadata, self.vllm_config):
             if self.model.is_multimodal:
                 # TODO - utils for multimodal encode and embed merge;
@@ -586,7 +590,7 @@ class SpyreModelRunner(
 
 
             logits = self.model(
-                input_ids=model_input.input_tokens,
+                input_ids_or_embeds=input_ids_or_embeds,
                 positions=model_input.input_positions,
                 masks=model_input.input_masks,
                 is_prompt=model_input.is_prompt,
@@ -895,6 +899,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.prefill_batch = SamplingInputBatch(
             # TODO: review this, currently we only support prefill for
             # `batch_size=1`
+            # TODO: when considering multimodal inputs for larger batches, we
+            # should also ensure that prefill correctly handles the case in which
+            # we mix multimodal and text-only requests in the same prefill batch.
             max_num_reqs=1,
             max_model_len=vllm_config.model_config.max_model_len,
             device=self.device,
@@ -1087,6 +1094,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         sampling_params = request.sampling_params
         is_new_batch = len(self.req_ids2num_reserved_blocks) == 0
         prompt_len = len(prompt_token_ids)  # ty: ignore[invalid-argument-type]
+        mm_features = request.mm_features
 
         # make sure that the current tkv of the decode batch is greater or
         # equal to the prompt length of the new joining sequence
@@ -1165,6 +1173,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         req_state = SamplingRequestState(
             req_id=req_id,
             prompt_token_ids=prompt_token_ids,  # ty: ignore[invalid-argument-type]
+            mm_features=mm_features,
             sampling_params=sampling_params,  # ty: ignore[invalid-argument-type]
             generator=generator,
             output_token_ids=[],
@@ -1206,8 +1215,20 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # block table is only passed for decode
         block_table = None
 
+        # In the case of multimodal models, always use embeddings
+        # as inputs, even in the case where we only have texts.
+        if self.model.is_multimodal:
+            input_embeds = self.model.get_text_embeddings(input_tokens)
+            if mm_features is not None:
+                logger.warning("TODO: call visual encoder!")
+            # For now, ignore the mm features, but we should get the same result from
+            # the embeddings case.
+        else:
+            input_embeds = None
+
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
+            input_embeds=input_embeds,
             input_positions=position_ids,
             input_masks=mask,
             current_tkv_mask=current_tkv_mask,  # ty: ignore[invalid-argument-type]
