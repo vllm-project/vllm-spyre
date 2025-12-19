@@ -1996,14 +1996,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             chunks_from_cache = (left_padding +
                                  num_cached_tokens) // self.chunk_size
 
-            num_cached_blocks = num_cached_tokens // self.block_size
-
-            # num_allocated_blocks will be > 0 after the first
-            # chunk is computed because as we compute, we commit
-            # to cache
-            num_allocated_blocks = self.kv_cache_manager.\
-                num_cached_block.get(req_id, 0)
-
             # When the current chunk has passed the number
             # of chunk loaded entirely from cache, the difference
             # between the blocks from cache and the allocated
@@ -2013,6 +2005,12 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             # make it more difficult to migrate to the engine core
             # KV cache manager.
             if chunk_i == chunks_from_cache:
+                num_cached_blocks = num_cached_tokens // self.block_size
+                # num_allocated_blocks will be > 0 after the first
+                # chunk is computed because as we compute, we commit
+                # to cache
+                num_allocated_blocks = self.kv_cache_manager.\
+                    num_cached_block.get(req_id, 0)
                 blocks_to_recompute = num_allocated_blocks - num_cached_blocks
 
         slot_mapping = []
@@ -2236,8 +2234,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             full_chunks_with_cached_blocks = ((left_blocks + n_hit) //
                                               self.chunk_blocks_count)
 
-            # the last chunk of the prompt must always be
-            # recomputed
+            # the last chunk of the prompt must always be recomputed
             if full_chunks_with_cached_blocks == chunk_count:
                 full_chunks_with_cached_blocks -= 1
 
@@ -2245,8 +2242,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                 0, (full_chunks_with_cached_blocks * self.chunk_blocks_count) -
                 left_blocks)
 
-            # blocks to compute from scratch or recompute in the last
-            # chunk
+            # blocks to compute from scratch or recompute in the last chunk
             blocks_to_compute = padded_prompt_len // self.block_size \
                 - usable_blocks
             logger.debug(
