@@ -1,18 +1,23 @@
+from copy import deepcopy
 from typing import Optional
 
 import pytest
 import torch
+#from torch import nn
 from scheduling_utils import create_request_for_scheduler_test, random_prompt
 from spyre_util import ModelInfo
 from vllm import EngineArgs
 from vllm.config import VllmConfig
+from vllm.v1.core.sched.output import (CachedRequestData, NewRequestData,
+                                       SchedulerOutput)
 from vllm.v1.outputs import SamplerOutput
+from vllm.v1.request import Request
 from vllm.v1.sample.metadata import SamplingMetadata
 from vllm.v1.sample.sampler import Sampler
 
 import vllm_spyre.envs as envs_spyre
-from vllm_spyre.v1.sample.golden_token_injector import GoldenTokenInjector
-from vllm_spyre.v1.worker.spyre_model_runner import ChunkedPrefillModelRunner
+from vllm_spyre.v1.worker.spyre_model_runner import (ChunkedPrefillModelRunner,
+                                                     SamplingForwardInputs)
 
 
 class MockContinuousBatchingFmsModel:
@@ -50,6 +55,9 @@ class MockSpyreCausalLM:
         self.model = MockContinuousBatchingFmsModel()
 
         self.vocab_size = vllm_config.model_config.get_vocab_size()
+
+    def __call__(self, *args, **kwargs):
+        return self.forward(*args, **kwargs)
 
     def forward(
         self,
@@ -91,7 +99,7 @@ def pc_model_runner(
                              max_model_len=max_model_len,
                              max_num_seqs=max_num_seqs,
                              num_gpu_blocks_override=available_blocks,
-                             logits_processors=[GoldenTokenInjector],
+                             logits_processors=[],
                              max_num_batched_tokens=max_num_batched_tokens,
                              enable_prefix_caching=True)
     vllm_config = engine_args.create_engine_config()
@@ -166,3 +174,276 @@ def test_block_sharing_for_2_chunks(
     # it's 3 because we touch all blocks due to the deduplication
     # of blocks in the last chunk
     assert num_shared_blocks == 3
+
+
+def _schedule_new_request(request: Request,
+                          tokens_to_schedule: int) -> SchedulerOutput:
+    new_reqs = [NewRequestData.from_request(request=request, block_ids=[])]
+    num_scheduled_tokens = {request.request_id: tokens_to_schedule}
+
+    return SchedulerOutput(
+        scheduled_new_reqs=new_reqs,
+        scheduled_cached_reqs=CachedRequestData.make_empty(),
+        num_scheduled_tokens=num_scheduled_tokens,
+        total_num_scheduled_tokens=tokens_to_schedule,
+        scheduled_spec_decode_tokens={},
+        scheduled_encoder_inputs={},
+        num_common_prefix_blocks=[],
+        finished_req_ids=set(),
+        free_encoder_mm_hashes=[],
+    )
+
+
+def _schedule_running_requests(
+    req_ids: list[int],
+    num_computed_tokens: list[int],
+    num_output_tokens: list[int],
+    tokens_to_schedule: list[int],
+) -> SchedulerOutput:
+
+    cached_reqs = CachedRequestData(
+        req_ids=req_ids,
+        resumed_req_ids=set(),
+        new_token_ids=[],
+        all_token_ids={},
+        new_block_ids=[],
+        num_computed_tokens=num_computed_tokens,
+        num_output_tokens=num_output_tokens,
+    )
+
+    num_scheduled_tokens = {}
+    total_num_scheduled_tokens = 0
+    for req_id, tokens in zip(req_ids, tokens_to_schedule):
+        num_scheduled_tokens[req_id] = tokens
+        total_num_scheduled_tokens += tokens
+
+    return SchedulerOutput(
+        scheduled_new_reqs=[],
+        scheduled_cached_reqs=cached_reqs,
+        num_scheduled_tokens=num_scheduled_tokens,
+        total_num_scheduled_tokens=total_num_scheduled_tokens,
+        scheduled_spec_decode_tokens={},
+        scheduled_encoder_inputs={},
+        num_common_prefix_blocks=[],
+        finished_req_ids=set(),
+        free_encoder_mm_hashes=[],
+    )
+
+
+def _get_model_input(
+        model_runner: ChunkedPrefillModelRunner,
+        scheduler_output: SchedulerOutput) -> SamplingForwardInputs:
+    model_runner_copy = deepcopy(model_runner)
+    model_runner_copy.update_states(scheduler_output)
+    return model_runner_copy.prepare_model_input(scheduler_output)
+
+
+ALL_SLICE = slice(None)
+
+
+def _assert_block_tables_and_slot_mappings(
+        model_input: SamplingForwardInputs,
+        block_tables: list[list[int]],
+        # just the first slot index divided by the block_size,
+        # will be expanded until the 64th
+        slot_mappings: list[list[int]],
+        block_size: int = 64,
+        slot_slice: slice = ALL_SLICE) -> None:
+
+    expected_block_table = torch.tensor(block_tables)
+
+    assert torch.equal(model_input.block_table, expected_block_table)
+
+    slot_mapping_tensor_list = []
+    for slot_mapping in slot_mappings:
+        slot_mapping_tensor = torch.arange(block_size,
+                                           dtype=torch.int64).repeat(
+                                               len(slot_mapping))
+        slot_mapping_tensor += torch.tensor(
+            slot_mapping,
+            dtype=torch.int64).repeat_interleave(block_size).mul_(block_size)
+        slot_mapping_tensor_list.append(slot_mapping_tensor[slot_slice])
+    expected_slot_mapping = torch.stack(slot_mapping_tensor_list)
+
+    assert torch.equal(model_input.slot_mapping, expected_slot_mapping)
+
+
+@pytest.mark.cpu
+@pytest.mark.worker
+@pytest.mark.prefix_caching
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_model_len", [512])
+@pytest.mark.parametrize("max_num_batched_tokens", [128])
+@pytest.mark.parametrize("available_blocks", [16])
+def test_multi_chunk_partial_match_misaligned(
+        model: ModelInfo, monkeypatch: pytest.MonkeyPatch, max_num_seqs: int,
+        max_model_len: int, max_num_batched_tokens: int,
+        available_blocks: Optional[int],
+        pc_model_runner: ChunkedPrefillModelRunner):
+    """ Scenario where two sequences are scheduled which share a common
+    prefix. The second sequence shares 254 tokens with the first sequence,
+    which is less than two chunks. We can therefore reuse only one chunk
+    (254 < 2*128 = 256). This leads to recomputation of the third block.
+
+    p1 = [AB|CD|EF]
+    p2 = [AB|CX|EF]
+
+    Configuration:
+        * max_num_seqs: 2
+        * number of prompts: 2
+            * 0: len = 384,  max tokens = 2, step joining = 0
+            * 1: len = 384, max tokens = 2, step joining = 0
+    """
+    monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
+
+    # twice the same seed for a sequence of length 384
+    # the first sequence shares the same prefix of length 384 tokens
+    # the second sequence shares the same prefix of length 254 tokens
+    # hence sequence 1 shares the first 254 tokens with sequence 0
+
+    prompt1 = random_prompt(model=model, seed=0, length=384)
+    prompt2 = prompt1[0:254] + \
+        random_prompt(model=model, seed=0, length=384 - 254)
+
+    request1 = create_request_for_scheduler_test(
+        model=model,
+        request_id=0,
+        add_step=0,
+        max_tokens=2,
+        prompt=prompt1,
+        use_golden_token_injection=False,
+        block_hasher=pc_model_runner.request_block_hasher)
+
+    request2 = create_request_for_scheduler_test(
+        model=model,
+        request_id=1,
+        add_step=0,
+        max_tokens=2,
+        prompt=prompt2,
+        use_golden_token_injection=False,
+        block_hasher=pc_model_runner.request_block_hasher)
+
+    # Schedule chunk 0 of request 0
+    step_1_sched_output = _schedule_new_request(request1.request, 128)
+    model_input1 = _get_model_input(pc_model_runner, step_1_sched_output)
+    _assert_block_tables_and_slot_mappings(model_input=model_input1,
+                                           block_tables=[[1, 2]],
+                                           slot_mappings=[[1, 2]])
+    model_runner_output_1 = pc_model_runner.execute_model(step_1_sched_output)
+
+    assert model_runner_output_1.req_ids == ['0']
+    assert model_runner_output_1.sampled_token_ids == []
+    assert model_runner_output_1.tkv == 384
+    assert model_runner_output_1.n_free_blocks == 8
+    assert model_runner_output_1.left_padding == {'0': 0}
+
+    # Schedule chunk 1 of request 0
+    step_2_sched_output = _schedule_running_requests(
+        req_ids=['0'],
+        num_computed_tokens=[128],
+        num_output_tokens=[0],
+        tokens_to_schedule=[128],
+    )
+    model_input2 = _get_model_input(pc_model_runner, step_2_sched_output)
+    _assert_block_tables_and_slot_mappings(model_input=model_input2,
+                                           block_tables=[[1, 2, 3, 4]],
+                                           slot_mappings=[[3, 4]])
+    model_runner_output_2 = pc_model_runner.execute_model(step_2_sched_output)
+
+    assert model_runner_output_2.req_ids == ['0']
+    assert model_runner_output_2.sampled_token_ids == []
+    assert model_runner_output_2.tkv == 384
+    assert model_runner_output_2.n_free_blocks == 8
+    assert model_runner_output_2.left_padding == {'0': 0}
+
+    # Schedule chunk 2 of request 0
+    step_3_sched_output = _schedule_running_requests(
+        req_ids=['0'],
+        num_computed_tokens=[256],
+        num_output_tokens=[0],
+        tokens_to_schedule=[128],
+    )
+    model_input3 = _get_model_input(pc_model_runner, step_3_sched_output)
+    _assert_block_tables_and_slot_mappings(model_input=model_input3,
+                                           block_tables=[[1, 2, 3, 4, 5, 6]],
+                                           slot_mappings=[[5, 6]])
+    model_runner_output_3 = pc_model_runner.execute_model(step_3_sched_output)
+
+    assert model_runner_output_3.req_ids == ['0']
+    assert len(model_runner_output_3.sampled_token_ids) == 1
+    assert model_runner_output_3.tkv == 384
+    assert model_runner_output_3.n_free_blocks == 8
+    assert model_runner_output_3.left_padding == {'0': 0}
+
+    # Schedule chunk 0 of request 1
+    step_4_sched_output = _schedule_new_request(request2.request, 128)
+    model_input4 = _get_model_input(pc_model_runner, step_4_sched_output)
+    assert model_input4.block_table is None  # <- chunk loaded from cache
+    model_runner_output_4 = pc_model_runner.execute_model(step_4_sched_output)
+
+    assert model_runner_output_4.req_ids == ['1']
+    assert model_runner_output_4.sampled_token_ids == []
+    assert model_runner_output_4.tkv == 384
+    assert model_runner_output_4.n_free_blocks == 1
+    assert model_runner_output_4.left_padding == {'1': 0}
+
+    # Schedule chunk 1 of request 1
+    step_5_sched_output = _schedule_running_requests(
+        req_ids=['1'],
+        num_computed_tokens=[128],
+        num_output_tokens=[0],
+        tokens_to_schedule=[128],
+    )
+    model_input5 = _get_model_input(pc_model_runner, step_5_sched_output)
+    _assert_block_tables_and_slot_mappings(
+        model_input=model_input5,
+        block_tables=[[1, 2, 3, 7]],
+        slot_mappings=[[0, 7]])  # <-- HERE: the block table and slot mapping
+    # point to different places when a block is recomputed
+    model_runner_output_5 = pc_model_runner.execute_model(step_5_sched_output)
+
+    assert model_runner_output_5.req_ids == ['1']
+    assert model_runner_output_5.sampled_token_ids == []
+    assert model_runner_output_5.tkv == 384
+    assert model_runner_output_5.n_free_blocks == 1
+    assert model_runner_output_5.left_padding == {'1': 0}
+
+    # Schedule chunk 2 of request 1
+    step_6_sched_output = _schedule_running_requests(
+        req_ids=['1'],
+        num_computed_tokens=[256],
+        num_output_tokens=[0],
+        tokens_to_schedule=[128],
+    )
+    model_input6 = _get_model_input(pc_model_runner, step_6_sched_output)
+    _assert_block_tables_and_slot_mappings(model_input=model_input6,
+                                           block_tables=[[1, 2, 3, 7, 8, 9]],
+                                           slot_mappings=[[8, 9]])
+    model_runner_output_6 = pc_model_runner.execute_model(step_6_sched_output)
+
+    assert model_runner_output_6.req_ids == ['1']
+    assert len(model_runner_output_6.sampled_token_ids) == 1
+    assert model_runner_output_6.tkv == 384
+    assert model_runner_output_6.n_free_blocks == 1
+    assert model_runner_output_6.left_padding == {'1': 0}
+
+    # Schedule decodes of requests 0 and 1
+    step_7_sched_output = _schedule_running_requests(
+        req_ids=['1', '0'],
+        num_computed_tokens=[384, 384],
+        num_output_tokens=[1, 1],
+        tokens_to_schedule=[1, 1],
+    )
+    model_input7 = _get_model_input(pc_model_runner, step_7_sched_output)
+    _assert_block_tables_and_slot_mappings(
+        model_input=model_input7,
+        block_tables=[[1, 2, 3, 4, 5, 6, 10], [1, 2, 3, 7, 8, 9, 11]],
+        slot_mappings=[[10], [11]],
+        slot_slice=slice(0, 1))
+    model_runner_output_7 = pc_model_runner.execute_model(step_7_sched_output)
+
+    assert model_runner_output_7.req_ids == ['0', '1']
+    assert len(model_runner_output_7.sampled_token_ids) == 2
+    assert model_runner_output_7.tkv == 385
+    assert model_runner_output_7.n_free_blocks == 1
+    assert model_runner_output_7.left_padding == {'0': 0, '1': 0}
