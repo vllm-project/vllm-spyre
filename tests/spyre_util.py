@@ -6,7 +6,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import NamedTuple, Optional
+from typing import Any, NamedTuple, Optional
 
 import openai
 import pytest
@@ -14,6 +14,7 @@ import requests
 from transformers import AutoTokenizer
 from vllm import SamplingParams
 from vllm.entrypoints.openai.cli_args import make_arg_parser
+from vllm.v1.engine.core import EngineCore
 
 try:
     # old
@@ -484,3 +485,41 @@ def write_sample_model_config(tmp_path,
     config_path = tmp_path / filename
     config_path.write_text(json.dumps(data))
     return config_path
+
+
+def get_block_tables(
+        engine_core: EngineCore
+) -> tuple[dict[str, list[int]], dict[int, int]]:
+
+    model_runner = (
+        engine_core.model_executor.driver_worker.worker.model_runner)
+    req_to_blocks = model_runner.kv_cache_manager.req_to_blocks
+
+    block_tables = {
+        req_id: [block.block_id for block in blocks]
+        for req_id, blocks in req_to_blocks.items()
+    }
+
+    block_ref_count = {}
+
+    for blocks in req_to_blocks.values():
+        for block in blocks:
+            block_ref_count[block.block_id] = block.ref_cnt
+
+    return block_tables, block_ref_count
+
+
+def verify_block_tables(engine_core: EngineCore, step_ref: dict[str, Any],
+                        disable_asserts: bool):
+
+    block_tables, block_ref_count = get_block_tables(engine_core)
+
+    if not disable_asserts:
+        if "block_tables" in step_ref:
+            assert step_ref["block_tables"] == block_tables
+
+        if "block_ref_count" in step_ref:
+            assert step_ref["block_ref_count"] == block_ref_count
+    else:
+        print(f"{block_tables=}")
+        print(f"{block_ref_count=}")

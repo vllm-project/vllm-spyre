@@ -2,7 +2,7 @@ import copy
 import dataclasses
 import os
 from collections import defaultdict, deque
-from typing import Any, Union
+from typing import Any, Callable, Union
 
 import pytest
 from llm_cache import get_cached_engine
@@ -157,6 +157,11 @@ def generate_prompts(model: ModelInfo,
     return generated_prompts, requests
 
 
+def dummy_assert_func(engine_core: EngineCore, step_ref: dict[str, Any],
+                      disable_asserts: bool):
+    pass
+
+
 @deprecated(
     "This function is deprecated. Use validate_scheduler_steps instead.")
 def check_scheduler_inference_steps(
@@ -176,7 +181,8 @@ def check_scheduler_inference_steps(
     random_prompts: bool = False,
     prefix_caching: bool = False,
     seeds: list[int] = None,
-):
+    extra_assert_func: Callable[[EngineCore, dict[str, Any], bool],
+                                Any] = dummy_assert_func):
     """
     Test the scheduler execution by comparing the scheduler attributes at each 
     step with the provided reference values in 'checked_steps'.
@@ -253,7 +259,8 @@ def check_scheduler_inference_steps(
                              available_blocks=available_blocks,
                              max_batch_tkv_limit=max_batch_tkv_limit,
                              max_num_batched_tokens=max_num_batched_tokens,
-                             prefix_caching=prefix_caching)
+                             prefix_caching=prefix_caching,
+                             extra_assert_func=extra_assert_func)
 
 
 def validate_scheduler_steps(
@@ -268,6 +275,8 @@ def validate_scheduler_steps(
     max_batch_tkv_limit: int = -1,
     max_num_batched_tokens: int = None,
     prefix_caching: bool = False,
+    extra_assert_func: Callable[[EngineCore, dict[str, Any], bool],
+                                Any] = dummy_assert_func,
 ):
     """
     Creates a vllm.v1.engine and runs it step-by-step for the provided requests.
@@ -380,16 +389,13 @@ def validate_scheduler_steps(
             if prefix_caching:
                 reqs = model_runner.requests
                 prefix_hits = [
-                    reqs[r_id].num_cached_tokens
+                    reqs[r_id].usable_blocks * block_size
                     > reqs[r_id].num_computed_tokens for r_id in req_ids2blocks
                 ]
                 cached_blocks = [
-                    reqs[r_id].num_cached_tokens // block_size
-                    for r_id in req_ids2blocks
+                    reqs[r_id].usable_blocks for r_id in req_ids2blocks
                 ]
                 n_cached_blocks = sum(cached_blocks)
-                for r_id in req_ids2blocks:
-                    print(f"{reqs[r_id].num_cached_tokens=}")
                 n_prefix_hits = sum(prefix_hits)
 
             if step > 0:
@@ -397,7 +403,7 @@ def validate_scheduler_steps(
                     print(
                         f"{step=}, {n_reserved_blocks=}, {n_used_blocks=}, "
                         f"{scheduler.tkv=}, {waiting=}, {out_reqs_finished=}, "
-                        f"{running=}, {out_reqs_ids=}, {n_prefix_hits=}"
+                        f"{running=}, {out_reqs_ids=}, {n_prefix_hits=}, "
                         f"{n_cached_blocks=}")
                 assert DISABLE_ASSERTS or (
                     n_reserved_blocks == step_ref["n_reserved_blocks"]
@@ -423,6 +429,8 @@ def validate_scheduler_steps(
                 # because of reduce_left_padding()
                 requested_blocks[req_id] = len(req_ids2blocks[req_id])
                 reserved_blocks[req_id] = req_ids2num_reserved_blocks[req_id]
+
+            extra_assert_func(engine_core, step_ref, DISABLE_ASSERTS)
 
         # last step: check that sequences used all their reserved blocks
         # Note: no early stopping, all sequences produce max_num_tokens
