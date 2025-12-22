@@ -674,10 +674,9 @@ class SpyrePlatform(Platform):
     def sendnn_configured(cls) -> bool:
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
             try:
-                from torch_sendnn import torch_sendnn
-                version_str = torch_sendnn._version.__version__
-                cls._torch_sendnn_version = tuple(
-                    map(int, version_str.split(".")))
+                from torch_sendnn._version import __version__ as version_str
+                sem_ver = version_str.split('+')[0]
+                cls._torch_sendnn_version = tuple(map(int, sem_ver.split(".")))
                 return True
             except ImportError as err:
                 raise RuntimeError(
