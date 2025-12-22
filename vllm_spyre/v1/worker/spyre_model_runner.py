@@ -1218,11 +1218,11 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # In the case of multimodal models, always use embeddings
         # as inputs, even in the case where we only have texts.
         if self.model.is_multimodal:
-            # NOTE: This will call the mulitimodal encoder and merge the embeddings
+            # NOTE: This will call the multimodal encoder and merge the embeddings
             # if we have multimodal features, e.g., for granite vision.
             input_embeds = self.model.get_maybe_mm_embeddings(
                 input_tokens,
-                mm_features,
+                mm_features, # FIXME - currently breaks due to not warming up vision encoder correctly
             )
         else:
             input_embeds = None
@@ -1331,8 +1331,20 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # mask not needed during decode
         mask = None
 
+        if self.model.is_multimodal:
+            # TODO: check if we really need to do this, seems like compile may get grumpy otherwise.
+            # In decode, we have no multimodal features, because they are already merged in prefill.
+            input_embeds = self.model.get_maybe_mm_embeddings(
+                input_tokens,
+                mm_features=None,
+            )
+        else:
+            input_embeds = None
+
+
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
+            input_embeds=input_embeds,
             input_positions=position_ids,
             input_masks=mask,
             current_tkv_mask=current_tkv_mask,
@@ -1501,24 +1513,40 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # Marking dimensions static/dynamic
         if model_input.is_prompt:
             # batch static (batch size 1)
-            torch._dynamo.mark_static(model_input.input_tokens, 0)
             torch._dynamo.mark_static(model_input.slot_mapping, 0)
             torch._dynamo.mark_static(model_input.input_positions, 0)
             torch._dynamo.mark_static(model_input.input_masks, 0)
 
             # sequence dynamic
-            torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
             torch._dynamo.mark_dynamic(model_input.slot_mapping, 1)
             torch._dynamo.mark_dynamic(model_input.input_positions, 1)
             torch._dynamo.mark_dynamic(model_input.input_masks, 2)
             torch._dynamo.mark_dynamic(model_input.input_masks, 3)
 
+            # In the case that the input tokens are 3D, i.e., they're actually
+            # embeddings, The last dimension (embedding dimension) is static.
+            # This is mostly for multimodal models.
+            if model_input.input_embeds is not None:
+                torch._dynamo.mark_static(model_input.input_embeds, 0)
+                torch._dynamo.mark_dynamic(model_input.input_embeds, 1)
+                torch._dynamo.mark_static(model_input.input_embeds, 2)
+            else:
+                torch._dynamo.mark_static(model_input.input_tokens, 0)
+                torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
+
         # decode
         else:
             # mask is no longer used here
+            # for multimodal models, we also don't use input_embeds
+            if model_input.input_embeds is not None:
+                torch._dynamo.mark_dynamic(model_input.input_embeds, 0)
+                torch._dynamo.mark_static(model_input.input_embeds, 1)  # always 1
+                torch._dynamo.mark_static(model_input.input_embeds, 2)
+            else:
+                torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
+                torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
 
             # batch dynamic
-            torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
             torch._dynamo.mark_dynamic(model_input.block_table, 0)
             torch._dynamo.mark_dynamic(model_input.slot_mapping, 0)
             torch._dynamo.mark_dynamic(model_input.input_positions, 0)
