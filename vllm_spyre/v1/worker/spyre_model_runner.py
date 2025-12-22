@@ -2504,7 +2504,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
             t1 = time.time() - t0
             logger.debug(
-                "t_forward_pass: %.2fms [prefill single chunk]"
+                "t_forward_pass: %.2fms [prefill single chunk]" \
                 "[batch size 1]", (t1 * 1000))
             return CPSpyreModelRunnerOutput(
                 req_ids=list(req_id_to_index.keys()),
