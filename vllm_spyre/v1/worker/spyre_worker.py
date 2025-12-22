@@ -47,11 +47,13 @@ _inside_warmup_mode = False
 def new_request_data_builder(
         req_id: str, prompt_token_ids: list[int],
         sampling_params: Optional[SamplingParams],
-        pooling_params: Optional[PoolingParams]) -> NewRequestData:
+        pooling_params: Optional[PoolingParams],
+        prompt_embeds: Optional[torch.Tensor]) -> NewRequestData:
 
     kwargs = {
         "req_id": req_id,
         "prompt_token_ids": prompt_token_ids,
+        "prompt_embeds": prompt_embeds,
         "sampling_params": sampling_params,
         "pooling_params": pooling_params,
         "block_ids": [0],  # not actually used
@@ -138,13 +140,6 @@ class SpyreWorker(WorkerBase):
 
     def compile_or_warm_up_model(self) -> None:
         """Prepare model for execution through compilation/warmup."""
-        if self.model_runner.get_model().is_multimodal:
-            # TODO; pull correct warmup shapes out based on this model's architecture
-            # This is needed since feature size varies by model, and not solely the
-            # architecture (e.g., max tokens per image)
-            logger.error("[WARMUP] warmup for multimodal models is currently a no-op!!")
-            self.model_runner.complete_warmup() # HACK
-            return
 
         if envs_spyre.VLLM_SPYRE_USE_CB:
             self._warmup_spyre_dynamic_size(self.restricted_tokens)
@@ -492,6 +487,12 @@ class SpyreWorker(WorkerBase):
         warmup_tokens_tensor = valid_token_ids_tensor[torch.randint(
             0, len(valid_token_ids_tensor), (3, prompt_len))]
 
+        # FIXME (alex)
+        # 1. Infer embed dim from the model
+        # 2. Pass multimodal data in warmup to correctly warm up vision encoder
+        # 3. Disable this for all non-multimodal (here and in model runner)
+        warmup_embeds_tensor = torch.rand((3, prompt_len, 4096))
+
         # TODO: we need 2 requests for warmup on FP8+CB
         # Check if model is quantized
         is_fp8_plus_cb = self.model_config.quantization is not None and \
@@ -503,6 +504,7 @@ class SpyreWorker(WorkerBase):
                 prompt_token_ids=warmup_tokens_tensor[i].tolist(),
                 sampling_params=SamplingParams(max_tokens=num_decode_tokens),
                 pooling_params=None,
+                prompt_embeds=warmup_embeds_tensor,
             ) for i in range(req_count)
         ]
 
@@ -617,7 +619,8 @@ class SpyreWorker(WorkerBase):
                 req_id="warmup",
                 prompt_token_ids=warmup_tokens_tensor[i].tolist(),
                 sampling_params=sampling_params,
-                pooling_params=pooling_params) for i in range(batch_size)
+                pooling_params=pooling_params,
+                prompt_embeds=None) for i in range(batch_size)
         ]
 
         # Set up dummy cached_requests for decode steps
