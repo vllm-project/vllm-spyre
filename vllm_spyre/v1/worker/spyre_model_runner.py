@@ -2012,16 +2012,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         prompt_token_ids = request.prompt_token_ids
         prompt_len = len(prompt_token_ids)
-        if prompt_len <= chunk_size:
-            # Case I - Prompt fits in a single chunk
+        if num_computed_tokens == 0:
             chunk_start = 0
-            chunk_end = prompt_len
-            chunk_left_offset = left_padding
-        elif left_padding > 0 and num_computed_tokens == 0:
-            # Case II - First chunk, but it contains some padding blocks at
-            # the left
-            chunk_start = 0
-            chunk_end = chunk_size - left_padding
+            chunk_end = min(chunk_size - left_padding, prompt_len)
             chunk_left_offset = left_padding
         else:
             chunk_start = chunk_i * chunk_size - left_padding
