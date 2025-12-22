@@ -43,6 +43,7 @@ from vllm_spyre.compat_utils import dataclass_fields, has_argument
 from vllm_spyre.model_executor.model_loader.spyre import (
     BACKEND_LIST, SpyreAttentionMetadata, SpyreCausalLM)
 from vllm_spyre.platform import SpyrePlatform
+from vllm_spyre.utils import exact_div
 from vllm_spyre.v1.sample.spyre_logits_processor import (
     build_logitsprocs_for_cb)
 # yapf conflicts with ruff for this block
@@ -1950,26 +1951,19 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         overlap. 
         
         '''
-
         request = self.requests[req_id]
         assert isinstance(request, ChunkedPrefillRequestState)
 
-        prompt_token_ids = request.prompt_token_ids
-        prompt_len = len(prompt_token_ids)
-        padded_prompt_len = math.ceil(
-            prompt_len / self.block_size) * self.block_size
-
         chunk_size = self.chunk_size
-        chunk_count = math.ceil(prompt_len / chunk_size)
-        left_padding = chunk_count * chunk_size - padded_prompt_len
+        left_padding = request.padding_blocks * self.block_size
         left_padded_prompt_mask = torch.tensor([left_padding],
                                                dtype=torch.int64,
                                                device=self.device)
 
         num_computed_tokens = request.num_computed_tokens
-        num_cached_tokens = request.num_cached_tokens
+        num_computed_blocks = exact_div(num_computed_tokens, self.block_size)
 
-        if num_cached_tokens > num_computed_tokens:
+        if request.usable_blocks > num_computed_blocks:
             assert self.enable_prefix_caching, \
                 "prefix caching has to be enabled"
             # this will be an idle step
@@ -1977,49 +1971,31 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                 is_prompt=True,
                 left_padded_prompt_mask=left_padded_prompt_mask)
 
+        # round up due to possible padding
         chunk_i = math.ceil(num_computed_tokens / chunk_size)
-
-        input_tokens = torch.zeros(chunk_size,
-                                   dtype=torch.int64,
-                                   device=self.device)
-        input_tokens_np = input_tokens.numpy()
-        input_positions = torch.zeros(chunk_size,
-                                      dtype=torch.int64,
-                                      device=self.device)
-        input_positions_np = input_positions.numpy()
 
         # create block table tensor
         blocks = self._get_blocks(req_id)
         block_end = (chunk_i + 1) * self.chunk_blocks_count
-        left_padding_blocks = (left_padding // self.block_size)
-        block_ids = [0] * left_padding_blocks + \
+        block_ids = [0] * request.padding_blocks + \
             [block.block_id for block in blocks]
         block_table = torch.tensor(block_ids[:block_end],
                                    dtype=torch.int64).unsqueeze(0)
 
         # last chunk
         blocks_to_recompute = 0
-        if num_cached_tokens > 0:
-            assert (left_padding + num_cached_tokens) % self.chunk_size == 0
-            chunks_from_cache = (left_padding +
-                                 num_cached_tokens) // self.chunk_size
+        if request.total_hit_blocks > 0:
+            chunks_from_cache = exact_div(
+                request.padding_blocks + request.usable_blocks,
+                self.chunk_blocks_count)
 
             # When the current chunk has passed the number
             # of chunk loaded entirely from cache, the difference
             # between the blocks from cache and the allocated
             # blocks will the the number of blocks to recompute.
-            # We could use more direct ways such as getting
-            # all blocks with a ref count > 1, but then it will
-            # make it more difficult to migrate to the engine core
-            # KV cache manager.
             if chunk_i == chunks_from_cache:
-                num_cached_blocks = num_cached_tokens // self.block_size
-                # num_allocated_blocks will be > 0 after the first
-                # chunk is computed because as we compute, we commit
-                # to cache
-                num_allocated_blocks = self.kv_cache_manager.\
-                    num_cached_block.get(req_id, 0)
-                blocks_to_recompute = num_allocated_blocks - num_cached_blocks
+                blocks_to_recompute = request.total_hit_blocks \
+                    - request.usable_blocks
 
         slot_mapping = []
         for i in range(self.chunk_blocks_count):
@@ -2034,6 +2010,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                                     device=self.device,
                                     dtype=torch.int64).unsqueeze(0)
 
+        prompt_token_ids = request.prompt_token_ids
+        prompt_len = len(prompt_token_ids)
         if prompt_len <= chunk_size:
             # Case I - Prompt fits in a single chunk
             chunk_start = 0
@@ -2049,6 +2027,15 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             chunk_start = chunk_i * chunk_size - left_padding
             chunk_end = min(chunk_start + chunk_size, prompt_len)
             chunk_left_offset = 0
+
+        input_tokens = torch.zeros(chunk_size,
+                                   dtype=torch.int64,
+                                   device=self.device)
+        input_tokens_np = input_tokens.numpy()
+        input_positions = torch.zeros(chunk_size,
+                                      dtype=torch.int64,
+                                      device=self.device)
+        input_positions_np = input_positions.numpy()
 
         # Create tensors based on slice
         input_tokens_np[chunk_left_offset:chunk_left_offset + chunk_end -
@@ -2209,20 +2196,20 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         return model_inputs
 
-    def _maybe_load_prefix_from_cache(self, scheduler_request: Request) -> int:
-        num_cached_tokens = 0
+    def _plan_chunking(
+            self, scheduler_request: Request) -> tuple[int, int, int, int]:
+
+        prompt_len = len(scheduler_request.prompt_token_ids)
+
+        chunk_size = self.chunk_size
+        padded_prompt_len = math.ceil(
+            prompt_len / self.block_size) * self.block_size
+        chunk_count = math.ceil(prompt_len / chunk_size)
+
+        left_padding = chunk_count * chunk_size - padded_prompt_len
+        left_blocks = exact_div(left_padding, self.block_size)
+
         if self.enable_prefix_caching:
-
-            prompt_len = len(scheduler_request.prompt_token_ids)
-
-            chunk_size = self.chunk_size
-            padded_prompt_len = math.ceil(
-                prompt_len / self.block_size) * self.block_size
-            chunk_count = math.ceil(prompt_len / chunk_size)
-
-            left_padding = chunk_count * chunk_size - padded_prompt_len
-            assert left_padding % self.block_size == 0
-            left_blocks = left_padding // self.block_size
 
             computed_blocks: list[
                 KVCacheBlock] = FullAttentionManager.find_longest_cache_hit(
@@ -2257,7 +2244,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                 "Found: %d reusable blocks in cache. "
                 "%d blocks will be (re)computed", usable_blocks,
                 blocks_to_compute)
-            num_cached_tokens = usable_blocks * self.block_size
 
             # Save all of the computed blocks and not only the usable
             # ones because we will make a dummy recomputation of computed
@@ -2267,8 +2253,11 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             self.block_pool.touch((computed_blocks, ))
             self.kv_cache_manager.save_new_computed_blocks(
                 scheduler_request.request_id, computed_blocks)
+        else:
+            usable_blocks = 0
+            n_hit = 0
 
-        return num_cached_tokens
+        return chunk_count, left_blocks, usable_blocks, n_hit
 
     def add_new_request(self, request: NewRequestData):
         req_id = request.req_id
@@ -2293,7 +2282,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         self.req_ids2num_reserved_blocks[req_id] = n_reserved_blocks
 
-        num_cached_tokens = 0
         scheduler_request = Request(
             request_id=req_id,
             prompt_token_ids=prompt_token_ids,
@@ -2302,8 +2290,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             eos_token_id=None,
             block_hasher=self.request_block_hasher,
         )
-        num_cached_tokens = self._maybe_load_prefix_from_cache(
-            scheduler_request)
+        (chunk_count, left_blocks, usable_blocks,
+         total_hit_blocks) = self._plan_chunking(scheduler_request)
+        num_cached_tokens = usable_blocks * self.block_size
 
         self.prefix_cache_stats = PrefixCacheStats(
             # We only support single-request chunked prefill so this is always 1
@@ -2332,7 +2321,10 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             # usage
             left_padding=0,
             scheduler_request=scheduler_request,
-            num_cached_tokens=num_cached_tokens,
+            chunk_count=chunk_count,
+            padding_blocks=left_blocks,
+            usable_blocks=usable_blocks,
+            total_hit_blocks=total_hit_blocks,
         )
 
         self.requests[req_id] = req_state

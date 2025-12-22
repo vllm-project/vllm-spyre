@@ -389,12 +389,11 @@ def validate_scheduler_steps(
             if prefix_caching:
                 reqs = model_runner.requests
                 prefix_hits = [
-                    reqs[r_id].num_cached_tokens
+                    reqs[r_id].usable_blocks * block_size
                     > reqs[r_id].num_computed_tokens for r_id in req_ids2blocks
                 ]
                 cached_blocks = [
-                    reqs[r_id].num_cached_tokens // block_size
-                    for r_id in req_ids2blocks
+                    reqs[r_id].usable_blocks for r_id in req_ids2blocks
                 ]
                 n_cached_blocks = sum(cached_blocks)
                 n_prefix_hits = sum(prefix_hits)
