@@ -454,19 +454,23 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
             "Expecting an instance of CPSpyreModelRunnerOutput when doing "
             "chunked prefill.")
 
-        # Update the correct num_computed_tokens value given left-padding info
+        # Update the correct num_computed_tokens value given left-padding and
+        # prefix cache hit info
         for req in self.ongoing_prefills:
-            if req.request_id not in model_runner_output.left_padding:
-                continue
+            left_padding = model_runner_output.left_padding.get(
+                req.request_id, 0)
+            prefix_cache_len = model_runner_output.prefix_cache_hit_len.get(
+                req.request_id, 0)
 
             # The number of computed tokens only need to be adapted when it is
             # the first chunk of a multi-chunk prefill
             is_first_chunk = req.num_computed_tokens <= self.chunk_size
             is_last_chunk = req.num_computed_tokens == req.num_prompt_tokens
             if is_first_chunk and not is_last_chunk:
-                req_left_padding = model_runner_output.left_padding[
-                    req.request_id]
-                req.num_computed_tokens -= req_left_padding
+                req.num_computed_tokens = self.adjust_computed_tokens(
+                    computed_tokens=req.num_computed_tokens,
+                    left_padding=left_padding,
+                    prefix_cache_len=prefix_cache_len)
 
         # Remove completed prefills
         self.ongoing_prefills = [
@@ -487,6 +491,22 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
 
         return super().update_from_output(scheduler_output,
                                           model_runner_output)
+
+    def adjust_computed_tokens(self, computed_tokens: int, left_padding: int,
+                               prefix_cache_len: int) -> int:
+        """
+        Returns an adjusted `num_computed_tokens` given left padding and prefix
+        cache hit info.
+        """
+        # Get the number of full chunks that hit prefix cache
+        padded_prefix_chunks = (prefix_cache_len +
+                                left_padding) // self.chunk_size
+        if padded_prefix_chunks > 1:
+            # If the prefix cache hit consumes multiple full chunks, then we
+            # advance the schedule to the first incomplete chunk
+            return padded_prefix_chunks * self.chunk_size - left_padding
+        # Otherwise just account for the left padding
+        return computed_tokens - left_padding
 
     def schedule(self) -> "SchedulerOutput":
         """

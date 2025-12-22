@@ -113,6 +113,10 @@ class CPSpyreModelRunnerOutput(CBSpyreModelRunnerOutput):
     kv_cache_usage: float = 0.0
     # Prefix cache stats, set whenever prefills are happening
     prefix_cache_stats: Optional[PrefixCacheStats] = None
+    # In the case of prefix caching, we may have a much larger cached prefix
+    # available than the number of scheduled tokens. In that case, the scheduler
+    # needs to update its state to reflect the correct number of computed tokens
+    prefix_cache_hit_len: dict[str, int] = field(default_factory=dict)
 
 
 InputBatchT = TypeVar("InputBatchT", bound=BaseInputBatch)
@@ -2510,7 +2514,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                 n_free_blocks=self.get_n_free_blocks(),
                 left_padding=left_padding,
                 kv_cache_usage=self.get_kv_cache_usage(),
-                prefix_cache_stats=self.prefix_cache_stats)
+                prefix_cache_stats=self.prefix_cache_stats,
+                prefix_cache_hit_len=self.get_prefix_cache_len(
+                    self.prefill_batch))
 
         # Sample the next token.
         output: SamplerOutput = self.model.sample(
@@ -2569,6 +2575,24 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
     def get_kv_cache_usage(self) -> float:
         return self.kv_cache_manager.block_pool.get_usage()
+
+    def get_prefix_cache_len(self,
+                             batch: SamplingInputBatch) -> dict[str, int]:
+        """Get the prefix cache hit length for a prefilling request."""
+        if batch != self.prefill_batch:
+            return {}
+
+        # We only support serial chunked prefill
+        assert len(batch.requests_ids) == 1
+
+        req_id = batch.requests_ids[0]
+        request = self.requests[req_id]
+        assert isinstance(request, ChunkedPrefillRequestState)
+
+        # Prefix cache hits happen on first prefill iteration
+        if request.num_computed_tokens == 0:
+            return {req_id: request.num_cached_tokens}
+        return {}
 
     def _mark_input_tensors(self, model_input: SamplingForwardInputs) -> None:
 
