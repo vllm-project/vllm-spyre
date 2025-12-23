@@ -134,7 +134,7 @@ class SpyreCausalLM(nn.Module):
 
         return logits
 
-    def get_maybe_mm_embeddings(self, input_ids, mm_features):
+    def get_maybe_mm_embeddings(self, input_ids, mm_features, is_decode):
         fms_model = self.model.model
         
         if not hasattr(fms_model, "prepare_inputs_for_generation"):
@@ -155,7 +155,6 @@ class SpyreCausalLM(nn.Module):
             if mm_features:
                 if len(mm_features) != 1:
                     raise ValueError("Currently we assume we only embed one mm request at a time")
-
                 mm_spec = mm_features[0].data
                 # TODO: We can probably do this generically assuming that FMS models
                 # line up with the outputs of the processors on HF, but for now hardcode
@@ -171,10 +170,12 @@ class SpyreCausalLM(nn.Module):
                 fms_kwargs["image_sizes"] = image_sizes
 
             # NOTE: use_cache is actually not used here, but currently it's required.
+            # The value of iteration doesn't matter in decode as long as it's above 0,
+            # because this will still cause us to embed correctly
             input_embeds, _ = fms_model.prepare_inputs_for_generation(
-                iteration=0,
+                iteration=0 if not is_decode else 1,
                 input_ids=input_ids,
-                kwargs=fms_kwargs
+                kwargs= fms_kwargs
             )
         return input_embeds
 
