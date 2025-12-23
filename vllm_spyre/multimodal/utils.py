@@ -17,6 +17,7 @@ from vllm.multimodal.inputs import (
 
 MULITMODAL_ARCHITECTURES = ["llava_next"]
 
+
 def is_multimodal(fms_obj, fms_mm_registry):
     """Used to check in an object is multimodal; This could be a
     ModelConfig or a model object, depending on the wrapping partial
@@ -28,16 +29,22 @@ def is_multimodal(fms_obj, fms_mm_registry):
             return True
     return False
 
+
 def resolve_multimodal_vocab_size(fms_config: ModelConfig):
     """Parse the FMS config for the underlying LLM's src vocab size.
     Currently this is only for Llava Next / granite vision, but as
     this is likely to vary by model, we abstract it here.
     """
     if not isinstance(fms_config, ModelConfig):
-        raise TypeError("Provided config is of type %s, not an FMS ModelConfig", type(fms_config))
+        raise TypeError(
+            "Provided config is of type %s, not an FMS ModelConfig",
+            type(fms_config))
     if isinstance(fms_config, models.llava_next.LlavaNextConfig):
         return fms_config.text_config.src_vocab_size
-    raise ValueError("Unable to resolve vocab size for multimodal config of type %s", type(fms_config))
+    raise ValueError(
+        "Unable to resolve vocab size for multimodal config of type %s",
+        type(fms_config))
+
 
 def unwrap_mm_kv_cache_opts(fms_config, hf_config):
     """Unwrap options to be passed for the kv cache from the underlying
@@ -50,14 +57,18 @@ def unwrap_mm_kv_cache_opts(fms_config, hf_config):
     logic to make it generic for LLMs so that we can abstract it here.
     """
     if hf_config.model_type != "llava_next" or hf_config.text_config.model_type != "granite":
-        raise TypeError("Currently multimodal only supports granite vision with granite llms")
+        raise TypeError(
+            "Currently multimodal only supports granite vision with granite llms"
+        )
 
     kv_cache_specs = {}
     kv_cache_specs['num_layers'] = hf_config.text_config.num_hidden_layers
     kv_cache_specs['head_dim'] = getattr(
         fms_config.text_config, "head_dim",
-        hf_config.text_config.hidden_size // hf_config.text_config.num_attention_heads)
+        hf_config.text_config.hidden_size //
+        hf_config.text_config.num_attention_heads)
     return kv_cache_specs
+
 
 def get_mm_specific_load_overrides(model_config):
     """Get any overrides needed for fixing compile with current multimodal models.
@@ -70,13 +81,15 @@ def get_mm_specific_load_overrides(model_config):
     if isinstance(model_config, LlavaNextConfig):
         # TODO: we should probably only do this for 2b granite models
         serialization.extend_adapter(
-            "llava_next", "hf", ["weight_expansion_for_mismatched_head_dim"]
-        )
+            "llava_next", "hf", ["weight_expansion_for_mismatched_head_dim"])
         get_model_kwargs = {
             "override_hf_pretrained_config": True,
-            "text_config": {"head_dim": 128},
+            "text_config": {
+                "head_dim": 128
+            },
         }
     return get_model_kwargs
+
 
 def get_multimodal_warmup_features(valid_token_ids):
     # Multimodal models take embeddings as inputs
@@ -89,6 +102,7 @@ def get_multimodal_warmup_features(valid_token_ids):
 
     # Input features for the visual encoder
     return mm_features, warmup_input_ids, warmup_embeds_tensor
+
 
 def get_llava_next_image_features():
     # This is the minimal (small) image case in granite vision;
@@ -103,21 +117,19 @@ def get_llava_next_image_features():
     mm_features = [
         MultiModalFeatureSpec(
             data=MultiModalKwargsItem({
-                "pixel_values": MultiModalFieldElem(
-                    modality="image",
-                    key="pixel_values",
-                    data=torch.rand(
-                        pixel_values_shape,
-                        dtype=torch.bfloat16,
-                    ),
-                    field=MultiModalBatchedField()
-                ),
-                "image_sizes": MultiModalFieldElem(
-                    modality="image",
-                    key="image_sizes",
-                    data=image_sizes,
-                    field=MultiModalBatchedField()
-                )
+                "pixel_values":
+                MultiModalFieldElem(modality="image",
+                                    key="pixel_values",
+                                    data=torch.rand(
+                                        pixel_values_shape,
+                                        dtype=torch.bfloat16,
+                                    ),
+                                    field=MultiModalBatchedField()),
+                "image_sizes":
+                MultiModalFieldElem(modality="image",
+                                    key="image_sizes",
+                                    data=image_sizes,
+                                    field=MultiModalBatchedField())
             }),
             modality="image",
             identifier="MM-warmup-llava-next",
@@ -126,8 +138,13 @@ def get_llava_next_image_features():
     ]
     return mm_features
 
+
 def get_llava_next_text_features():
     # TODO make this less hacky, build dynamically, don't hardcode image token
     img_toks = [49155] * 1836
-    return torch.tensor([46, 110, 2946, 28318, 203, 51, 11210, 3733, 312, 39489, 1256, 461, 600, 5549, 31251, 629, 21488, 47330, 32, 886, 47330, 13344, 17247, 30, 16360, 30, 461, 7743, 659, 19969, 372, 322, 1256, 1182, 10017, 32, 203, 46, 110, 496, 28318, 203]
-                        + img_toks + [203, 7628, 458, 1778, 32, 203, 46, 110, 17594, 28318, 203])
+    return torch.tensor([
+        46, 110, 2946, 28318, 203, 51, 11210, 3733, 312, 39489, 1256, 461, 600,
+        5549, 31251, 629, 21488, 47330, 32, 886, 47330, 13344, 17247, 30,
+        16360, 30, 461, 7743, 659, 19969, 372, 322, 1256, 1182, 10017, 32, 203,
+        46, 110, 496, 28318, 203
+    ] + img_toks + [203, 7628, 458, 1778, 32, 203, 46, 110, 17594, 28318, 203])

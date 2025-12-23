@@ -1,6 +1,8 @@
-ALLOWED_MULTIMODAL_KEYS = ["image"] # TODO expand
+ALLOWED_MULTIMODAL_KEYS = ["image"]  # TODO expand
+
 
 class MultiModalMappingInfo:
+
     def __init__(self, special_token_map):
         """Initializes multimodal mapping information for this FMS model;
         generally this includes things like mapping the multimodal token
@@ -18,7 +20,7 @@ class MultiModalMappingInfo:
         # we need to do this since practically, things like <image> are essentially
         # expanded to be their actual feature size, as opposed to a single token.
         # As such, when profiling, we should replace any multimodal tokens with the
-        # maximum number of features per multimiodal input for that model. 
+        # maximum number of features per multimiodal input for that model.
         #
         # E.g., in the case of llava next / granite vision, each <image> tag should be
         # expanded to the case in which we have the maximum number of tiles resolved
@@ -29,4 +31,5 @@ class MultiModalMappingInfo:
         #
         # This is still TODO, and for now I am just setting shape sizes to be 8k,
         # which is bigger than the max features per image (~5k) in granite vision
-        raise NotImplementedError("multimodal warmup shape resolution not implemented")
+        raise NotImplementedError(
+            "multimodal warmup shape resolution not implemented")

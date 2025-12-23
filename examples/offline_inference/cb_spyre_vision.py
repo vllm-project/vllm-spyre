@@ -16,7 +16,7 @@ parser.add_argument("--model",
 parser.add_argument("--max_model_len",
                     "--max-model-len",
                     type=int,
-                    default=8192) # one image has a max context of ~5k
+                    default=8192)  # one image has a max context of ~5k
 parser.add_argument("--max_num_seqs", "--max-num-seqs", type=int, default=2)
 parser.add_argument("--tp", type=int, default=1)
 parser.add_argument("--num-prompts", "-n", type=int, default=10)
@@ -49,8 +49,7 @@ template = "<|system|>\nA chat between a curious user and an artificial intellig
 images = [
     ImageAsset('cherry_blossom').pil_image,
     ImageAsset('stop_sign').pil_image,
-]   
-
+]
 
 instructions = [
     "describe this image.",
@@ -58,22 +57,18 @@ instructions = [
     "what kind of flowers are these?",
 ]
 
-
 prompts = []
 for img in images:
     width, height = img.size
     for instr in instructions:
         new_width = int(.1 * width)
         new_height = int(.1 * height)
-        prompts.append(
-            {
-                "prompt": template.format(instr),
-                "multi_modal_data": {
-                    "image": img.resize((new_width, new_height)),
-                }    
+        prompts.append({
+            "prompt": template.format(instr),
+            "multi_modal_data": {
+                "image": img.resize((new_width, new_height)),
             }
-        )
-
+        })
 
 prompts = prompts * (args.num_prompts // len(prompts) + 1)
 prompts = prompts[0:args.num_prompts]
@@ -112,6 +107,6 @@ for output in outputs:
     generated_text = output.outputs[0].text
     # Prompt contains expanded image tokens, so just print
     # what's after the last one for readability
-    print(f"\nPrompt:\n {prompt.split("<image>")[-1].split("<assistant>")[0].strip()}")
+    print(f"\nPrompt:\n {prompt.split("<image >")[-1].split("<|assistant|>")[0].strip()}")
     print(f"\nGenerated text:\n {generated_text!r}\n")
     print("-----------------------------------")
