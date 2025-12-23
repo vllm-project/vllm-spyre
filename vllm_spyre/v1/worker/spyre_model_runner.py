@@ -2341,7 +2341,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             return
 
         # Last prefill: we might need to update the tkv
-        req_n_blocks = len(self._get_blocks(req_id))
+        req_n_blocks = math.ceil(prompt_len / self.block_size)
         cur_n_blocks = math.ceil(self.tkv / self.block_size)
         new_n_blocks = max(req_n_blocks, cur_n_blocks)
         assert new_n_blocks > 0
