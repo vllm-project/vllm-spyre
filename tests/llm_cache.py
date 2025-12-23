@@ -9,13 +9,9 @@ from llm_cache_util import force_engine_core_shutdown, force_engine_shutdown
 from spyre_util import (DecodeWarmupShapes, ModelInfo, RemoteOpenAIServer,
                         patch_environment)
 from vllm import LLM, EngineArgs
-from vllm.v1.core.block_pool import BlockPool
-from vllm.v1.core.single_type_kv_cache_manager import FullAttentionManager
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor
 
-from vllm_spyre.compat_utils import has_argument
-from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.sample.golden_token_injector import GoldenTokenInjector
 
 T = TypeVar("T")
@@ -210,9 +206,15 @@ class EngineCache:
         maybe_engine = self._cache.maybe_get(runtime_config)
         if maybe_engine:
             if use_pc:
-                # reset the prefix cache across tests
-                (maybe_engine.model_executor.driver_worker.worker.model_runner.
-                 block_pool.reset_prefix_cache())
+                # reset the blockpool across tests: this will erase any seen
+                # prefixes and makes sure that the used block ids in each test
+                # are independent of the test ordering.
+                model_runner = (maybe_engine.model_executor.driver_worker.
+                                worker.model_runner)
+                model_runner.block_pool = model_runner._make_block_pool()
+                model_runner.kv_cache_manager = (
+                    model_runner._make_kv_cache_manager())
+
             return maybe_engine
         self.clear()
 
@@ -267,25 +269,10 @@ class EngineCache:
             worker.model_runner.n_blocks = available_blocks
             # need to overwrite the block pool and kv cache manager if the
             # number of available blocks has changed
-            kwargs = {
-                "hash_block_size": SpyrePlatform.get_block_size()
-            } if has_argument(BlockPool, "hash_block_size") else {}
-            worker.model_runner.block_pool = BlockPool(
-                num_gpu_blocks=available_blocks + 1,
-                enable_caching=use_pc,
-                enable_kv_cache_events=False,
-                **kwargs)
-            worker.model_runner.kv_cache_manager = FullAttentionManager(
-                kv_cache_spec=worker.model_runner._attn_spec,
-                block_pool=worker.model_runner.block_pool,
-                # Currently don't support models with more than one
-                # attention type, e.g. full and sliding window, so
-                # there is only one group.
-                kv_cache_group_id=0,
-                # We don't support DCP
-                # https://docs.vllm.ai/en/latest/serving/context_parallel_deployment/#decode-context-parallel
-                dcp_world_size=1,
-            )
+            worker.model_runner.block_pool = (
+                worker.model_runner._make_block_pool())
+            worker.model_runner.kv_cache_manager = (
+                worker.model_runner._make_kv_cache_manager())
 
         return self._cache.set(
             runtime_config,
