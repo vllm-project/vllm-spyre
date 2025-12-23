@@ -1,23 +1,25 @@
-from copy import deepcopy
-from typing import Optional
+from dataclasses import fields
+from typing import Any, Optional
 
 import pytest
 import torch
 #from torch import nn
 from scheduling_utils import create_request_for_scheduler_test, random_prompt
-from spyre_util import ModelInfo
+from spyre_util import ModelInfo, patch_environment
 from vllm import EngineArgs
 from vllm.config import VllmConfig
+from vllm.forward_context import get_forward_context
 from vllm.v1.core.sched.output import (CachedRequestData, NewRequestData,
                                        SchedulerOutput)
-from vllm.v1.outputs import SamplerOutput
+from vllm.v1.outputs import ModelRunnerOutput, SamplerOutput
 from vllm.v1.request import Request
 from vllm.v1.sample.metadata import SamplingMetadata
 from vllm.v1.sample.sampler import Sampler
 
 import vllm_spyre.envs as envs_spyre
-from vllm_spyre.v1.worker.spyre_model_runner import (ChunkedPrefillModelRunner,
-                                                     SamplingForwardInputs)
+from vllm_spyre.model_executor.model_loader.spyre import SpyreAttentionMetadata
+from vllm_spyre.platform import SpyrePlatform
+from vllm_spyre.v1.worker.spyre_model_runner import ChunkedPrefillModelRunner
 
 
 class MockContinuousBatchingFmsModel:
@@ -56,6 +58,12 @@ class MockSpyreCausalLM:
 
         self.vocab_size = vllm_config.model_config.get_vocab_size()
 
+        self.last_input_ids: Optional[torch.Tensor] = None
+        self.last_positions: Optional[torch.Tensor] = None
+        self.last_masks: Optional[torch.Tensor] = None
+        self.last_is_prompt: Optional[bool] = None
+        self.last_attn_metadata: Optional[SpyreAttentionMetadata] = None
+
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
 
@@ -66,6 +74,17 @@ class MockSpyreCausalLM:
         masks: torch.Tensor,
         is_prompt: bool,
     ) -> torch.Tensor:
+
+        self.last_input_ids = input_ids
+        self.last_positions = positions
+        self.last_masks = masks
+        self.last_is_prompt = is_prompt
+
+        forward_context = get_forward_context()
+
+        assert isinstance(forward_context.attn_metadata,
+                          SpyreAttentionMetadata)
+        self.last_attn_metadata = forward_context.attn_metadata
 
         batch_size = input_ids.shape[0]
 
@@ -85,12 +104,49 @@ class MockSpyreCausalLM:
         return self._mask_dtype
 
 
+class InstrumentedModelRunner(ChunkedPrefillModelRunner):
+
+    def __init__(
+        self,
+        vllm_config: VllmConfig,
+        is_driver_worker: bool,
+        rank: int,
+    ):
+        super().__init__(vllm_config=vllm_config,
+                         is_driver_worker=is_driver_worker,
+                         rank=rank)
+
+        self.model = MockSpyreCausalLM(vllm_config=vllm_config)
+
+    @SpyrePlatform.inference_mode()
+    def execute_model(
+        self,
+        scheduler_output: SchedulerOutput,
+        **kwargs,
+    ) -> ModelRunnerOutput:
+
+        self.model.last_input_ids = None
+        self.model.last_positions = None
+        self.model.last_masks = None
+        self.model.last_is_prompt = None
+        self.model.last_attn_metadata = None
+
+        return super().execute_model(scheduler_output, **kwargs)
+
+
 @pytest.fixture
 def pc_model_runner(
-        model: ModelInfo, max_num_seqs: int, max_model_len: int,
-        max_num_batched_tokens: int,
+        monkeypatch: pytest.MonkeyPatch, model: ModelInfo, max_num_seqs: int,
+        max_model_len: int, max_num_batched_tokens: int,
         available_blocks: Optional[int]) -> ChunkedPrefillModelRunner:
     """A fixture that returns a model runner configured for prefix caching."""
+
+    patch_environment(use_cb=True,
+                      warmup_shapes=None,
+                      backend="eager",
+                      monkeypatch=monkeypatch,
+                      use_chunked_prefill=True,
+                      max_num_batched_tokens=max_num_batched_tokens)
 
     engine_args = EngineArgs(model=model.name,
                              tokenizer=model.name,
@@ -104,15 +160,11 @@ def pc_model_runner(
                              enable_prefix_caching=True)
     vllm_config = engine_args.create_engine_config()
 
-    mock_model = MockSpyreCausalLM(vllm_config=vllm_config)
-
-    model_runner = ChunkedPrefillModelRunner(
+    model_runner = InstrumentedModelRunner(
         vllm_config=vllm_config,
         is_driver_worker=True,
         rank=0,
     )
-
-    model_runner.model = mock_model
 
     model_runner.pre_warmup()
     model_runner.complete_warmup()
@@ -152,9 +204,13 @@ def test_block_sharing_for_2_chunks(
         use_golden_token_injection=True,
         block_hasher=pc_model_runner.request_block_hasher)
 
-    num_cached_tokens = pc_model_runner._maybe_load_prefix_from_cache(
-        request1.request)
-    assert num_cached_tokens == 0
+    (chunk_count, left_blocks, usable_blocks,
+     n_hit) = pc_model_runner._plan_chunking(request1.request)
+
+    assert chunk_count == 2
+    assert left_blocks == 1
+    assert usable_blocks == 0
+    assert n_hit == 0
 
     kv_cache_manager = pc_model_runner.kv_cache_manager
 
@@ -162,18 +218,23 @@ def test_block_sharing_for_2_chunks(
     kv_cache_manager.cache_blocks(request1.request, 192)
     kv_cache_manager.free(request1.request.request_id)
 
-    num_cached_tokens = pc_model_runner._maybe_load_prefix_from_cache(
-        request2.request)
+    (chunk_count, left_blocks, usable_blocks,
+     n_hit) = pc_model_runner._plan_chunking(request2.request)
 
-    # it's 64 because only the first chunk has 1 block of padding
-    assert num_cached_tokens == 64
+    assert chunk_count == 2
+    assert left_blocks == 1
+    assert usable_blocks == 1
+    assert n_hit == 3
 
-    num_shared_blocks = kv_cache_manager.num_cached_block.get(
-        request2.request.request_id, 0)
 
-    # it's 3 because we touch all blocks due to the deduplication
-    # of blocks in the last chunk
-    assert num_shared_blocks == 3
+def _compat_sched_output_kwargs() -> dict[str, Any]:
+    field_names = [field.name for field in fields(SchedulerOutput)]
+    kwargs: dict[str, Any] = {}
+    if "structured_output_request_ids" in field_names:
+        kwargs["structured_output_request_ids"] = {}
+    if "grammar_bitmask" in field_names:
+        kwargs["grammar_bitmask"] = None
+    return kwargs
 
 
 def _schedule_new_request(request: Request,
@@ -191,25 +252,34 @@ def _schedule_new_request(request: Request,
         num_common_prefix_blocks=[],
         finished_req_ids=set(),
         free_encoder_mm_hashes=[],
-    )
+        **_compat_sched_output_kwargs())
+
+
+def _compat_request_data_kwargs() -> dict[str, Any]:
+    field_names = [field.name for field in fields(CachedRequestData)]
+    kwargs: dict[str, Any] = {}
+    if "resumed_req_ids" in field_names:
+        kwargs["resumed_req_ids"] = set()
+    if "all_token_ids" in field_names:
+        kwargs["all_token_ids"] = {}
+    if "num_output_tokens" in field_names:
+        kwargs["num_output_tokens"] = {}
+    if "resumed_from_preemption" in field_names:
+        kwargs["resumed_from_preemption"] = []
+    return kwargs
 
 
 def _schedule_running_requests(
     req_ids: list[int],
     num_computed_tokens: list[int],
-    num_output_tokens: list[int],
     tokens_to_schedule: list[int],
 ) -> SchedulerOutput:
 
-    cached_reqs = CachedRequestData(
-        req_ids=req_ids,
-        resumed_req_ids=set(),
-        new_token_ids=[],
-        all_token_ids={},
-        new_block_ids=[],
-        num_computed_tokens=num_computed_tokens,
-        num_output_tokens=num_output_tokens,
-    )
+    cached_reqs = CachedRequestData(req_ids=req_ids,
+                                    new_token_ids=[],
+                                    new_block_ids=[],
+                                    num_computed_tokens=num_computed_tokens,
+                                    **_compat_request_data_kwargs())
 
     num_scheduled_tokens = {}
     total_num_scheduled_tokens = 0
@@ -227,22 +297,14 @@ def _schedule_running_requests(
         num_common_prefix_blocks=[],
         finished_req_ids=set(),
         free_encoder_mm_hashes=[],
-    )
-
-
-def _get_model_input(
-        model_runner: ChunkedPrefillModelRunner,
-        scheduler_output: SchedulerOutput) -> SamplingForwardInputs:
-    model_runner_copy = deepcopy(model_runner)
-    model_runner_copy.update_states(scheduler_output)
-    return model_runner_copy.prepare_model_input(scheduler_output)
+        **_compat_sched_output_kwargs())
 
 
 ALL_SLICE = slice(None)
 
 
 def _assert_block_tables_and_slot_mappings(
-        model_input: SamplingForwardInputs,
+        attn_metadata: SpyreAttentionMetadata,
         block_tables: list[list[int]],
         # just the first slot index divided by the block_size,
         # will be expanded until the 64th
@@ -252,7 +314,7 @@ def _assert_block_tables_and_slot_mappings(
 
     expected_block_table = torch.tensor(block_tables)
 
-    assert torch.equal(model_input.block_table, expected_block_table)
+    assert torch.equal(attn_metadata.block_table, expected_block_table)
 
     slot_mapping_tensor_list = []
     for slot_mapping in slot_mappings:
@@ -265,7 +327,7 @@ def _assert_block_tables_and_slot_mappings(
         slot_mapping_tensor_list.append(slot_mapping_tensor[slot_slice])
     expected_slot_mapping = torch.stack(slot_mapping_tensor_list)
 
-    assert torch.equal(model_input.slot_mapping, expected_slot_mapping)
+    assert torch.equal(attn_metadata.slot_mapping, expected_slot_mapping)
 
 
 @pytest.mark.cpu
@@ -325,11 +387,11 @@ def test_multi_chunk_partial_match_misaligned(
 
     # Schedule chunk 0 of request 0
     step_1_sched_output = _schedule_new_request(request1.request, 128)
-    model_input1 = _get_model_input(pc_model_runner, step_1_sched_output)
-    _assert_block_tables_and_slot_mappings(model_input=model_input1,
-                                           block_tables=[[1, 2]],
-                                           slot_mappings=[[1, 2]])
     model_runner_output_1 = pc_model_runner.execute_model(step_1_sched_output)
+    _assert_block_tables_and_slot_mappings(
+        attn_metadata=pc_model_runner.model.last_attn_metadata,
+        block_tables=[[1, 2]],
+        slot_mappings=[[1, 2]])
 
     assert model_runner_output_1.req_ids == ['0']
     assert model_runner_output_1.sampled_token_ids == []
@@ -341,14 +403,13 @@ def test_multi_chunk_partial_match_misaligned(
     step_2_sched_output = _schedule_running_requests(
         req_ids=['0'],
         num_computed_tokens=[128],
-        num_output_tokens=[0],
         tokens_to_schedule=[128],
     )
-    model_input2 = _get_model_input(pc_model_runner, step_2_sched_output)
-    _assert_block_tables_and_slot_mappings(model_input=model_input2,
-                                           block_tables=[[1, 2, 3, 4]],
-                                           slot_mappings=[[3, 4]])
     model_runner_output_2 = pc_model_runner.execute_model(step_2_sched_output)
+    _assert_block_tables_and_slot_mappings(
+        attn_metadata=pc_model_runner.model.last_attn_metadata,
+        block_tables=[[1, 2, 3, 4]],
+        slot_mappings=[[3, 4]])
 
     assert model_runner_output_2.req_ids == ['0']
     assert model_runner_output_2.sampled_token_ids == []
@@ -360,14 +421,13 @@ def test_multi_chunk_partial_match_misaligned(
     step_3_sched_output = _schedule_running_requests(
         req_ids=['0'],
         num_computed_tokens=[256],
-        num_output_tokens=[0],
         tokens_to_schedule=[128],
     )
-    model_input3 = _get_model_input(pc_model_runner, step_3_sched_output)
-    _assert_block_tables_and_slot_mappings(model_input=model_input3,
-                                           block_tables=[[1, 2, 3, 4, 5, 6]],
-                                           slot_mappings=[[5, 6]])
     model_runner_output_3 = pc_model_runner.execute_model(step_3_sched_output)
+    _assert_block_tables_and_slot_mappings(
+        attn_metadata=pc_model_runner.model.last_attn_metadata,
+        block_tables=[[1, 2, 3, 4, 5, 6]],
+        slot_mappings=[[5, 6]])
 
     assert model_runner_output_3.req_ids == ['0']
     assert len(model_runner_output_3.sampled_token_ids) == 1
@@ -377,9 +437,9 @@ def test_multi_chunk_partial_match_misaligned(
 
     # Schedule chunk 0 of request 1
     step_4_sched_output = _schedule_new_request(request2.request, 128)
-    model_input4 = _get_model_input(pc_model_runner, step_4_sched_output)
-    assert model_input4.block_table is None  # <- chunk loaded from cache
     model_runner_output_4 = pc_model_runner.execute_model(step_4_sched_output)
+    # chunk loaded from cache
+    assert pc_model_runner.model.last_attn_metadata is None
 
     assert model_runner_output_4.req_ids == ['1']
     assert model_runner_output_4.sampled_token_ids == []
@@ -391,16 +451,14 @@ def test_multi_chunk_partial_match_misaligned(
     step_5_sched_output = _schedule_running_requests(
         req_ids=['1'],
         num_computed_tokens=[128],
-        num_output_tokens=[0],
         tokens_to_schedule=[128],
     )
-    model_input5 = _get_model_input(pc_model_runner, step_5_sched_output)
+    model_runner_output_5 = pc_model_runner.execute_model(step_5_sched_output)
     _assert_block_tables_and_slot_mappings(
-        model_input=model_input5,
+        attn_metadata=pc_model_runner.model.last_attn_metadata,
         block_tables=[[1, 2, 3, 7]],
         slot_mappings=[[0, 7]])  # <-- HERE: the block table and slot mapping
     # point to different places when a block is recomputed
-    model_runner_output_5 = pc_model_runner.execute_model(step_5_sched_output)
 
     assert model_runner_output_5.req_ids == ['1']
     assert model_runner_output_5.sampled_token_ids == []
@@ -412,14 +470,13 @@ def test_multi_chunk_partial_match_misaligned(
     step_6_sched_output = _schedule_running_requests(
         req_ids=['1'],
         num_computed_tokens=[256],
-        num_output_tokens=[0],
         tokens_to_schedule=[128],
     )
-    model_input6 = _get_model_input(pc_model_runner, step_6_sched_output)
-    _assert_block_tables_and_slot_mappings(model_input=model_input6,
-                                           block_tables=[[1, 2, 3, 7, 8, 9]],
-                                           slot_mappings=[[8, 9]])
     model_runner_output_6 = pc_model_runner.execute_model(step_6_sched_output)
+    _assert_block_tables_and_slot_mappings(
+        attn_metadata=pc_model_runner.model.last_attn_metadata,
+        block_tables=[[1, 2, 3, 7, 8, 9]],
+        slot_mappings=[[8, 9]])
 
     assert model_runner_output_6.req_ids == ['1']
     assert len(model_runner_output_6.sampled_token_ids) == 1
@@ -431,16 +488,14 @@ def test_multi_chunk_partial_match_misaligned(
     step_7_sched_output = _schedule_running_requests(
         req_ids=['1', '0'],
         num_computed_tokens=[384, 384],
-        num_output_tokens=[1, 1],
         tokens_to_schedule=[1, 1],
     )
-    model_input7 = _get_model_input(pc_model_runner, step_7_sched_output)
+    model_runner_output_7 = pc_model_runner.execute_model(step_7_sched_output)
     _assert_block_tables_and_slot_mappings(
-        model_input=model_input7,
+        attn_metadata=pc_model_runner.model.last_attn_metadata,
         block_tables=[[1, 2, 3, 4, 5, 6, 10], [1, 2, 3, 7, 8, 9, 11]],
         slot_mappings=[[10], [11]],
         slot_slice=slice(0, 1))
-    model_runner_output_7 = pc_model_runner.execute_model(step_7_sched_output)
 
     assert model_runner_output_7.req_ids == ['0', '1']
     assert len(model_runner_output_7.sampled_token_ids) == 2
