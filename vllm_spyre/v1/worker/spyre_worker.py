@@ -29,6 +29,7 @@ from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.worker.worker_base import WorkerBase
 
 import vllm_spyre.envs as envs_spyre
+from vllm_spyre.multimodal import get_multimodal_warmup_features
 import vllm_spyre.perf_metrics as perf_metrics
 import vllm_spyre.utils as utils_spyre
 from vllm_spyre.compat_utils import dataclass_fields
@@ -48,7 +49,8 @@ def new_request_data_builder(
         req_id: str, prompt_token_ids: list[int],
         sampling_params: Optional[SamplingParams],
         pooling_params: Optional[PoolingParams],
-        prompt_embeds: Optional[torch.Tensor]) -> NewRequestData:
+        prompt_embeds: Optional[torch.Tensor],
+        mm_features: Optional[list]) -> NewRequestData:
 
     kwargs = {
         "req_id": req_id,
@@ -62,6 +64,8 @@ def new_request_data_builder(
     }
 
     ## Temporary backwards compatibility for 0.10.2
+    # NOTE: currently multimodal only works on 0.11.0+
+    # If this is expected to be around a while, add bc
     if 'mm_kwargs' in dataclass_fields(NewRequestData):
         kwargs["mm_kwargs"] = []
     if 'mm_hashes' in dataclass_fields(NewRequestData):
@@ -71,7 +75,10 @@ def new_request_data_builder(
 
     # Newly required in 0.11.0
     if "mm_features" in dataclass_fields(NewRequestData):
-        kwargs["mm_features"] = []
+        if not mm_features:
+            kwargs["mm_features"] = []
+        else:
+            kwargs["mm_features"] = mm_features
 
     return NewRequestData(**kwargs)
 
@@ -483,15 +490,12 @@ class SpyreWorker(WorkerBase):
         prompt_len = 42
         num_decode_tokens = 2
 
-        # Sample from the valid token ids
-        warmup_tokens_tensor = valid_token_ids_tensor[torch.randint(
-            0, len(valid_token_ids_tensor), (3, prompt_len))]
+        # FIXME - make this more dynamic
+        mm_features, warmup_input_ids, warmup_embeds_tensor = get_multimodal_warmup_features(
+            valid_token_ids,
+        )
+        prompt_len = warmup_input_ids.shape[-1] # 1889 for multimodal...
 
-        # FIXME (alex)
-        # 1. Infer embed dim from the model
-        # 2. Pass multimodal data in warmup to correctly warm up vision encoder
-        # 3. Disable this for all non-multimodal (here and in model runner)
-        warmup_embeds_tensor = torch.rand((3, prompt_len, 4096))
 
         # TODO: we need 2 requests for warmup on FP8+CB
         # Check if model is quantized
@@ -501,10 +505,11 @@ class SpyreWorker(WorkerBase):
         requests = [
             new_request_data_builder(
                 req_id="warmup-%d" % (i),
-                prompt_token_ids=warmup_tokens_tensor[i].tolist(),
+                prompt_token_ids=warmup_input_ids.tolist(),#warmup_tokens_tensor[i].tolist(),
                 sampling_params=SamplingParams(max_tokens=num_decode_tokens),
                 pooling_params=None,
                 prompt_embeds=warmup_embeds_tensor,
+                mm_features=mm_features,
             ) for i in range(req_count)
         ]
 
