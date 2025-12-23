@@ -586,7 +586,12 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
             sampling_metadata=self.get_sampling_metadata(is_prefill),
         )
         t1 = time.time() - t0
-        logger.debug("t_token: %.2fms", (t1 * 1000))
+
+        assert model_input.input_tokens is not None  # satisfy mypy
+        batch_size = model_input.input_tokens.shape[0]
+        step_type = "[prefill]" if is_prefill else "[decode]"
+        logger.debug("t_token: %.2fms %s[batch size %d]", (t1 * 1000),
+                     step_type, batch_size)
 
         # Get mapping between requests ids to the index within the batch
         req_id_to_index = self.get_req_id_to_index(is_prefill)
@@ -2037,7 +2042,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         input_positions_np[chunk_left_offset:chunk_left_offset + chunk_end -
                            chunk_start] = range(chunk_start, chunk_end)
 
-        logger.debug("Chunked prefill of request %s %d:%d of %d tokens",
+        logger.debug("Chunked prefill of request '%s' %d:%d of %d tokens",
                      req_id, chunk_start, chunk_end, prompt_len)
 
         input_tokens = input_tokens.unsqueeze(0).clone()
@@ -2203,7 +2208,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         left_blocks = exact_div(left_padding, self.block_size)
 
         if self.enable_prefix_caching:
-
             computed_blocks: list[
                 KVCacheBlock] = FullAttentionManager.find_longest_cache_hit(
                     block_hashes=scheduler_request.block_hashes,
@@ -2217,7 +2221,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                 )[0]
             n_hit = len(computed_blocks)
 
-            logger.debug("Found: %d cached_blocks", n_hit)
+            logger.debug("Prefix caching found: %d cached blocks", n_hit)
 
             full_chunks_with_cached_blocks = ((left_blocks + n_hit) //
                                               self.chunk_blocks_count)
@@ -2234,7 +2238,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             blocks_to_compute = padded_prompt_len // self.block_size \
                 - usable_blocks
             logger.debug(
-                "Found: %d reusable blocks in cache. "
+                "Prefix caching found: %d reusable blocks in cache. "
                 "%d blocks will be (re)computed", usable_blocks,
                 blocks_to_compute)
 
@@ -2521,8 +2525,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                 return self.get_empty_output()
 
             t1 = time.time() - t0
-            logger.debug("t_forward_pass: %.2fms [prefill single chunk]",
-                         (t1 * 1000))
+            logger.debug(
+                "t_forward_pass: %.2fms [prefill single chunk]" \
+                "[batch size 1]", (t1 * 1000))
             return CPSpyreModelRunnerOutput(
                 req_ids=list(req_id_to_index.keys()),
                 req_id_to_index=req_id_to_index,
@@ -2542,8 +2547,10 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             sampling_metadata=self.get_sampling_metadata(is_prefill),
         )
         t1 = time.time() - t0
+        batch_size = model_input.input_tokens.shape[0]
         step_type = "[prefill last chunk]" if is_prefill else "[decode]"
-        logger.debug("t_token: %.2fms %s", (t1 * 1000), step_type)
+        logger.debug("t_token: %.2fms %s[batch size %d]", (t1 * 1000),
+                     step_type, batch_size)
 
         # Get the right batch, if this is the last chunk to conclude the
         # prefill, we'll generate a token and we should get from the prefill

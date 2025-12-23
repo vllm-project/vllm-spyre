@@ -104,7 +104,7 @@ class StaticBatchingSpyreScheduler(SpyreScheduler):
                         break
 
             logger.debug(
-                "Scheduling a new batch of %d requests, holding back %d "
+                "Scheduling a new batch of %d requests, holding back %d " \
                 "requests", len(self.waiting), len(holdback_queue))
         else:
             logger.debug("Scheduling a running batch of %d requests",
@@ -205,8 +205,9 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             running_holdback = self.running
             self.running = []
             logger.debug(
-                "Scheduling a prefill step of %d requests, holding back %d "
-                "requests", len(self.waiting), len(holdback_queue))
+                "Scheduling a prefill step (%d prompt tokens), holding back " \
+                "%d requests", self.waiting[-1].num_prompt_tokens,
+                len(holdback_queue))
         else:
             running_holdback = []
             logger.debug("Scheduling a decode step of %d requests",
@@ -507,8 +508,9 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
             if self.can_schedule_prefill(holdback_queue[0]):
                 new_request = holdback_queue.popleft()
                 logger.debug(
-                    "Next scheduled request: '%s' with %d prompt tokens",
-                    new_request.request_id, new_request.num_prompt_tokens)
+                    "Scheduling a new request (%d prompt tokens), " \
+                    "holding back %d requests", new_request.num_prompt_tokens,
+                    len(holdback_queue))
 
                 # Add request to the waiting queue
                 self.waiting.append(new_request)
@@ -574,7 +576,7 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         if self.ongoing_prefills or any(
                 r.num_computed_tokens <= r.num_prompt_tokens + 1
                 for r in self.running):
-            logger.debug("Scheduled chunked prefills tokens: %s",
+            logger.debug("Scheduled tokens in this step: %s",
                          outputs.num_scheduled_tokens)
         return outputs
 
