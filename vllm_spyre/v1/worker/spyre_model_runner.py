@@ -333,7 +333,23 @@ class SpyreModelRunner(
     def __init__(self, vllm_config: VllmConfig, is_driver_worker: bool, rank: int):
         super().__init__(vllm_config=vllm_config, is_driver_worker=is_driver_worker, rank=rank)
 
+<<<<<<< HEAD
     def load_model(self, prompt_lens: Iterable[int], num_decode_tokens: Iterable[int]) -> None:
+=======
+    def __init__(self, vllm_config: VllmConfig, is_driver_worker: bool,
+                 rank: int):
+        # Normally we would check if the modelconfig supports multimodal inputs
+        # by comparing the model config against the registry here
+
+        # We also calculate the multimodal budget; this is probably important
+        # see scratch/projects/vllm/vllm/v1/worker/utils.py (in the budget)
+        super().__init__(vllm_config=vllm_config,
+                         is_driver_worker=is_driver_worker,
+                         rank=rank)
+
+    def load_model(self, prompt_lens: Iterable[int],
+                   num_decode_tokens: Iterable[int]) -> None:
+>>>>>>> 4b111eb (run formatting)
         max_pad_length = max(prompt_lens)
         max_decode_length = max(num_decode_tokens)
         self._model = SpyreCausalLM(
@@ -1346,7 +1362,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         else:
             input_embeds = None
 
-
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
             input_embeds=input_embeds,
@@ -1545,11 +1560,13 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             # for multimodal models, we also don't use input_embeds
             if model_input.input_embeds is not None:
                 torch._dynamo.mark_dynamic(model_input.input_embeds, 0)
-                torch._dynamo.mark_static(model_input.input_embeds, 1)  # always 1
+                torch._dynamo.mark_static(model_input.input_embeds,
+                                          1)  # always 1
                 torch._dynamo.mark_static(model_input.input_embeds, 2)
             else:
                 torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
-                torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
+                torch._dynamo.mark_static(model_input.input_tokens,
+                                          1)  # always 1
 
             # batch dynamic
             torch._dynamo.mark_dynamic(model_input.block_table, 0)

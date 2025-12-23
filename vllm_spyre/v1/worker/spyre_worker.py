@@ -515,10 +515,8 @@ class SpyreWorker(WorkerBase):
 
         # FIXME - make this more dynamic
         mm_features, warmup_input_ids, warmup_embeds_tensor = get_multimodal_warmup_features(
-            valid_token_ids,
-        )
-        prompt_len = warmup_input_ids.shape[-1] # 1889 for multimodal...
-
+            valid_token_ids, )
+        prompt_len = warmup_input_ids.shape[-1]  # 1889 for multimodal...
 
         # TODO: we need 2 requests for warmup on FP8+CB
         # Check if model is quantized
@@ -527,7 +525,8 @@ class SpyreWorker(WorkerBase):
         requests = [
             new_request_data_builder(
                 req_id="warmup-%d" % (i),
-                prompt_token_ids=warmup_input_ids.tolist(),#warmup_tokens_tensor[i].tolist(),
+                prompt_token_ids=warmup_input_ids.tolist(
+                ),  #warmup_tokens_tensor[i].tolist(),
                 sampling_params=SamplingParams(max_tokens=num_decode_tokens),
                 pooling_params=None,
                 prompt_embeds=warmup_embeds_tensor,

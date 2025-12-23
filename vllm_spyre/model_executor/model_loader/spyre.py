@@ -93,7 +93,8 @@ class SpyreCausalLM(nn.Module):
         # NOTE: We intentionally use the config here instead of looking at the class type
         # to prevent mismatches due to wrapper class changes, e.g., from the FMS instance
         # to compiled Dynamo objects
-        self.is_multimodal = spyre_mm.is_multimodal_config(self.model.model.config)
+        self.is_multimodal = spyre_mm.is_multimodal_config(
+            self.model.model.config)
 
     def forward(
         self,
@@ -136,25 +137,31 @@ class SpyreCausalLM(nn.Module):
 
     def get_maybe_mm_embeddings(self, input_ids, mm_features, is_decode):
         fms_model = self.model.model
-        
+
         if not hasattr(fms_model, "prepare_inputs_for_generation"):
             if mm_features:
-                raise AttributeError("FMS Model does not have prepare_inputs_for_generation model & multimodal features were provided")
+                raise AttributeError(
+                    "FMS Model does not have prepare_inputs_for_generation model & multimodal features were provided"
+                )
             # Assume it's a non-composite model, and fall back to calling the LLM embedding directly
             input_embeds = fms_model.base_model.embedding(input_ids)
         else:
-            if isinstance(fms_model.prepare_inputs_for_generation, torch.Tensor):
-                raise TypeError("Prepare inputs for generation must be a callable!")
+            if isinstance(fms_model.prepare_inputs_for_generation,
+                          torch.Tensor):
+                raise TypeError(
+                    "Prepare inputs for generation must be a callable!")
 
             # NOTE: This is very likely super brittle, and we will almost certainly need to
             # change things in the future as more models, but this is on the FMS side to
             # standardize this interface.
             fms_kwargs = {"use_cache": True}
-            
+
             # Only merge multimodal features in prefill; nothing mm in decode
             if mm_features:
                 if len(mm_features) != 1:
-                    raise ValueError("Currently we assume we only embed one mm request at a time")
+                    raise ValueError(
+                        "Currently we assume we only embed one mm request at a time"
+                    )
                 mm_spec = mm_features[0].data
                 # TODO: We can probably do this generically assuming that FMS models
                 # line up with the outputs of the processors on HF, but for now hardcode
@@ -175,8 +182,7 @@ class SpyreCausalLM(nn.Module):
             input_embeds, _ = fms_model.prepare_inputs_for_generation(
                 iteration=0 if not is_decode else 1,
                 input_ids=input_ids,
-                kwargs= fms_kwargs
-            )
+                kwargs=fms_kwargs)
         return input_embeds
 
     def sample(
@@ -414,8 +420,8 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             # Handle multimodal separately for now since we need to unwrap the
             # text configs and technically (outside FMS) the LLM could be generic.
             unwrapped_opts = spyre_mm.unwrap_mm_kv_cache_opts(
-                self.model.config, # FMS model config
-                self.config, # Transformers config
+                self.model.config,  # FMS model config
+                self.config,  # Transformers config
             )
             self.kv_cache_specs.update(unwrapped_opts)
         else:

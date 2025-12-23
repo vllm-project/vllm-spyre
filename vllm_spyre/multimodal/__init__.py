@@ -16,9 +16,8 @@ from vllm_spyre.multimodal.utils import (
 # Multimodal architectures; currently this maps FMS architectures
 # to additional info needed to process multimodal inputs.
 FMS_MM_REGISTRY = {
-    models.llava_next.LlavaNext: MultiModalMappingInfo(
-        special_token_map={"image": "<image>"},
-    )
+    models.llava_next.LlavaNext:
+    MultiModalMappingInfo(special_token_map={"image": "<image>"}, )
 }
 
 # Maps FMS ModelConfig classes to the corresponding
@@ -29,4 +28,5 @@ FMS_MM_CFG_TO_ARCH = {
 }
 
 # is_multimodal_model = partial(is_multimodal, fms_mm_registry=FMS_MM_REGISTRY)
-is_multimodal_config = partial(is_multimodal, fms_mm_registry=FMS_MM_CFG_TO_ARCH)
+is_multimodal_config = partial(is_multimodal,
+                               fms_mm_registry=FMS_MM_CFG_TO_ARCH)
