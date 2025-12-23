@@ -1222,7 +1222,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             # if we have multimodal features, e.g., for granite vision.
             input_embeds = self.model.get_maybe_mm_embeddings(
                 input_tokens,
-                mm_features, # FIXME - currently breaks due to not warming up vision encoder correctly
+                mm_features=mm_features,
+                is_decode=False,
             )
         else:
             input_embeds = None
@@ -1332,11 +1333,15 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         mask = None
 
         if self.model.is_multimodal:
-            # TODO: check if we really need to do this, seems like compile may get grumpy otherwise.
-            # In decode, we have no multimodal features, because they are already merged in prefill.
+            # NOTE: this is opaque, but is_decode causes the underlying FMS
+            # model to call the language model when preparing its embedding.
+            # by setting iteration > 0; failing to do this will cause it to
+            # return the raw input id and try to embed in the forward call,
+            # which may break on AIU due to misalignment with prefill embed call.
             input_embeds = self.model.get_maybe_mm_embeddings(
                 input_tokens,
                 mm_features=None,
+                is_decode=True,
             )
         else:
             input_embeds = None
