@@ -617,6 +617,7 @@ def test_cp_prefill_interleave1(model: ModelInfo, backend: str,
         },
         {
             # Chunk 1 of request 1 prefill
+            # tkv of decode batch (tkv not updated until last chunk)
             "step": 5,
             "tkv": 12,
             "waiting": [],
@@ -637,6 +638,7 @@ def test_cp_prefill_interleave1(model: ModelInfo, backend: str,
         },
         {
             # Chunk 2 of request 1 prefill
+            # tkv of decode batch (tkv not updated until last chunk)
             "step": 7,
             "tkv": 13,
             "waiting": [],
@@ -658,6 +660,7 @@ def test_cp_prefill_interleave1(model: ModelInfo, backend: str,
         {
             # Chunk 3 of request 1 prefill.
             # First token is generated
+            # tkv updated for last chunk
             "step": 9,
             "tkv": 512,
             "waiting": [],
@@ -781,6 +784,7 @@ def test_cp_prefill_no_interleave(model: ModelInfo, backend: str,
         },
         {
             # Chunk 0 of request 1 prefill
+            # tkv of decode batch (tkv not updated until last chunk)
             "step": 2,
             "tkv": 10,
             "waiting": [],
@@ -791,6 +795,7 @@ def test_cp_prefill_no_interleave(model: ModelInfo, backend: str,
         },
         {
             # Chunk 1 of request 1 prefill
+            # tkv of decode batch (tkv not updated until last chunk)
             "step": 3,
             "tkv": 10,
             "waiting": [],
@@ -801,6 +806,7 @@ def test_cp_prefill_no_interleave(model: ModelInfo, backend: str,
         },
         {
             # Chunk 2 of request 1 prefill
+            # tkv of decode batch (tkv not updated until last chunk)
             "step": 4,
             "tkv": 10,
             "waiting": [],
@@ -812,6 +818,7 @@ def test_cp_prefill_no_interleave(model: ModelInfo, backend: str,
         {
             # Chunk 3 of request 1 prefill.
             # First token is generated
+            # tkv updated for last chunk
             "step": 5,
             "tkv": 512,
             "waiting": [],
@@ -991,6 +998,7 @@ def test_cp_prefill_interleave2(model: ModelInfo, backend: str,
         },
         {
             # Chunk 0 of request 1 prefill
+            # tkv of decode batch (tkv not updated until last chunk)
             "step": 4,
             "tkv": 12,
             "waiting": [],
@@ -1011,6 +1019,7 @@ def test_cp_prefill_interleave2(model: ModelInfo, backend: str,
         },
         {
             # Chunk 1 of request 1 prefill
+            # tkv of decode batch (tkv not updated until last chunk)
             "step": 6,
             "tkv": 13,
             "waiting": [],
@@ -1031,6 +1040,7 @@ def test_cp_prefill_interleave2(model: ModelInfo, backend: str,
         },
         {
             # Chunk 2 of request 1 prefill
+            # tkv of decode batch (tkv not updated until last chunk)
             "step": 8,
             "tkv": 14,
             "waiting": [],
@@ -1052,6 +1062,7 @@ def test_cp_prefill_interleave2(model: ModelInfo, backend: str,
         {
             # Chunk 3 of request 1 prefill.
             # First token is generated
+            # tkv updated for last chunk
             "step": 10,
             "tkv": 512,
             "waiting": [],
@@ -1217,9 +1228,12 @@ def test_prefill_tkv_too_big2(model: ModelInfo, backend: str,
             "n_reserved_blocks": 3,
             "n_used_blocks": 3
         },
-        # tkv is one step behind the theoretical tkv that should be considered
-        # for the next input. Therefore, sequence 2 still cannot be prefilled
-        # at this step, since tkv=86 were used for evaluation
+        # The tkv value used here is computed before the model forward pass and
+        # token sampling of this step. As a result, it does not yet reflect
+        # sequences that finish in the current step. In this case, tkv=86 still
+        # includes sequence 1, which completes in this step, and this will only
+        # be accounted for in the next step. Therefore, sequence 2 cannot be
+        # prefilled yet at this point.
         {
             # Decode 3 of sequence 0
             "step": 5,
@@ -1231,7 +1245,7 @@ def test_prefill_tkv_too_big2(model: ModelInfo, backend: str,
             "n_used_blocks": 1
         },
         # Sequence 2 can be scheduled for prefill, now that tkv is moved back to
-        # block 0.
+        # the first block.
         {
             # Prefill sequence 2
             "step": 6,
