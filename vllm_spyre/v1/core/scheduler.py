@@ -498,13 +498,12 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         Returns an adjusted `num_computed_tokens` given left padding and prefix
         cache hit info.
         """
-        # Get the number of full chunks that hit prefix cache
-        padded_prefix_chunks = (prefix_cache_len +
-                                left_padding) // self.chunk_size
-        if padded_prefix_chunks > 1:
-            # If the prefix cache hit consumes multiple full chunks, then we
-            # advance the schedule to the first incomplete chunk
-            return padded_prefix_chunks * self.chunk_size - left_padding
+        # The prefix cache length is already adjusted for left padding.
+        # If it's bigger than the number of computed tokens, then we hit more
+        # prefix cache than we scheduled.
+        if prefix_cache_len > computed_tokens:
+            assert (prefix_cache_len + left_padding) % self.chunk_size == 0
+            return prefix_cache_len
         # Otherwise just account for the left padding
         return computed_tokens - left_padding
 

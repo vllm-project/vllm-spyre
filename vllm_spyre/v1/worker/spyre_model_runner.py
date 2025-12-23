@@ -2602,7 +2602,10 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
     def get_prefix_cache_len(self,
                              batch: SamplingInputBatch) -> dict[str, int]:
-        """Get the prefix cache hit length for a prefilling request."""
+        """Get the prefix cache hit length for a prefilling request.
+        This is in the number of usable cache tokens: Including the left padding
+        this will always land at a chunk boundary.
+        """
         if batch != self.prefill_batch:
             return {}
 
@@ -2615,7 +2618,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         # Prefix cache hits happen on first prefill iteration
         if request.num_computed_tokens == 0:
-            return {req_id: request.num_cached_tokens}
+            num_cached_tokens = request.usable_blocks * self.block_size
+            return {req_id: num_cached_tokens}
+
         return {}
 
     def _mark_input_tensors(self, model_input: SamplingForwardInputs) -> None:
