@@ -3,7 +3,6 @@ from typing import Any, Optional
 
 import pytest
 import torch
-#from torch import nn
 from scheduling_utils import create_request_for_scheduler_test, random_prompt
 from spyre_util import ModelInfo, patch_environment
 from vllm import EngineArgs
