@@ -1824,7 +1824,7 @@ def test_multi_chunk_partial_match_aligned(model: ModelInfo, backend: str,
             "n_used_blocks": 6,
             "n_prefix_hits": 0,
         },
-        {   # prefill chunk 1 seq 1
+        {   # prefill chunk 1 and 2 seq 1
             # prefix hit!
             "step": 4,
             "tkv": 384,
@@ -1835,22 +1835,10 @@ def test_multi_chunk_partial_match_aligned(model: ModelInfo, backend: str,
             "n_used_blocks": 8,
             "n_prefix_hits": 1,
             # The number of cached blocks is determined up front
-            "n_cached_blocks": 4 # can only reuse the first chunk (2 blocks)
-        },
-        {   # prefill chunk 2 seq 1
-            # prefix hit! <- this is what we want to test
-            "step": 5,
-            "tkv": 384,
-            "waiting": [],
-            "running": ["1", "0"],
-            "request_outputs": [],
-            "n_reserved_blocks": 14,
-            "n_used_blocks": 8,
-            "n_prefix_hits": 1,
-            "n_cached_blocks": 4
+            "n_cached_blocks": 4 # Reusing two chunks (4 blocks)
         },
         {   # prefill chunk 3 seq 1
-            "step": 6,
+            "step": 5,
             "tkv": 384,
             "waiting": [],
             "running": ["1", "0"],
@@ -1867,7 +1855,7 @@ def test_multi_chunk_partial_match_aligned(model: ModelInfo, backend: str,
         {
             # Decode 1 of request 0.
             # Decode 1 of request 1.
-            "step": 7,
+            "step": 6,
             "tkv": 385,
             "waiting": [],
             "running": [],
@@ -1879,7 +1867,7 @@ def test_multi_chunk_partial_match_aligned(model: ModelInfo, backend: str,
         },
         {
             # Tkv should be cleared one step later
-            "step": 8,
+            "step": 7,
             "tkv": 0,
             "waiting": [],
             "running": [],
