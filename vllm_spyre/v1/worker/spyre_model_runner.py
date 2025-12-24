@@ -46,7 +46,6 @@ from vllm_spyre.multimodal import (
     is_multimodal_config,
     resolve_multimodal_vocab_size,
 )
-import vllm_spyre.multimodal as spyre_mm
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.utils import exact_div
 from vllm_spyre.v1.sample.spyre_logits_processor import build_logitsprocs_for_cb
@@ -193,6 +192,22 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
         assert self._model is not None, "model accessed before loading"
         return self._model
 
+    def is_multimodal(self) -> bool:
+        """Indicates whether or not a model is loaded & multimodal.
+        If the model is not initialized yet, this will return False.
+        """
+        if self.model and getattr(self.model, "is_multimodal", None):
+            return True
+        return False
+
+    def get_mm_utils(self):
+        """If the [loaded] model is multimodal, grab the instance of
+        the mm utils for the corresponding wrapper class.
+        """
+        if not self.is_multimodal:
+            return None
+        return self.model.mm_model_utils
+
     @abstractmethod
     def load_model(self, prompt_lens: Iterable[int], num_decode_tokens: Iterable[int]) -> None:
         raise NotImplementedError
@@ -333,23 +348,7 @@ class SpyreModelRunner(
     def __init__(self, vllm_config: VllmConfig, is_driver_worker: bool, rank: int):
         super().__init__(vllm_config=vllm_config, is_driver_worker=is_driver_worker, rank=rank)
 
-<<<<<<< HEAD
     def load_model(self, prompt_lens: Iterable[int], num_decode_tokens: Iterable[int]) -> None:
-=======
-    def __init__(self, vllm_config: VllmConfig, is_driver_worker: bool,
-                 rank: int):
-        # Normally we would check if the modelconfig supports multimodal inputs
-        # by comparing the model config against the registry here
-
-        # We also calculate the multimodal budget; this is probably important
-        # see scratch/projects/vllm/vllm/v1/worker/utils.py (in the budget)
-        super().__init__(vllm_config=vllm_config,
-                         is_driver_worker=is_driver_worker,
-                         rank=rank)
-
-    def load_model(self, prompt_lens: Iterable[int],
-                   num_decode_tokens: Iterable[int]) -> None:
->>>>>>> 4b111eb (run formatting)
         max_pad_length = max(prompt_lens)
         max_decode_length = max(num_decode_tokens)
         self._model = SpyreCausalLM(
@@ -383,8 +382,8 @@ class SpyreModelRunner(
     @property
     def vocab_size(self) -> int:
         model_cfg = self.model.model.model.config
-        if is_multimodal_config(model_cfg):
-            return resolve_multimodal_vocab_size(model_cfg)
+        if self.model.is_multimodal:
+            return self.model.mm_model_utils.resolve_multimodal_vocab_size()
         return model_cfg.src_vocab_size # ty: ignore[invalid-return-type]
 
     def pad_input_ids(

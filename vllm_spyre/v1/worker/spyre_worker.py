@@ -28,7 +28,6 @@ from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.worker.worker_base import WorkerBase
 
 import vllm_spyre.envs as envs_spyre
-from vllm_spyre.multimodal import get_multimodal_warmup_features
 import vllm_spyre.perf_metrics as perf_metrics
 import vllm_spyre.utils as utils_spyre
 from vllm_spyre.compat_utils import dataclass_fields
@@ -512,24 +511,36 @@ class SpyreWorker(WorkerBase):
         )
         prompt_len = 42
         num_decode_tokens = 2
-
-        # FIXME - make this more dynamic
-        mm_features, warmup_input_ids, warmup_embeds_tensor = get_multimodal_warmup_features(
-            valid_token_ids, )
-        prompt_len = warmup_input_ids.shape[-1]  # 1889 for multimodal...
-
         # TODO: we need 2 requests for warmup on FP8+CB
         # Check if model is quantized
         is_fp8_plus_cb = self.model_config.quantization is not None and envs_spyre.VLLM_SPYRE_USE_CB
         req_count = 3 if is_fp8_plus_cb else 2
+
+        # FIXME - this is tedious, clean it up
+        mm_model_utils = self.model_runner.get_mm_utils()
+        if mm_model_utils:
+            mm_features, warmup_input_ids, warmup_embeds_tensor = mm_model_utils.get_multimodal_warmup_features(
+                valid_token_ids
+            )
+            prompt_len = warmup_input_ids.shape[-1]
+            # HACK -
+            warmup_embeds_tensor = [warmup_embeds_tensor] * req_count
+            warmup_tokens_tensor = [warmup_input_ids] * req_count
+        else:
+            prompt_len = 42
+            mm_features = []
+            warmup_embeds_tensor = [None] * req_count
+            warmup_tokens_tensor = valid_token_ids_tensor[torch.randint(
+                0, len(valid_token_ids_tensor), (3, prompt_len))]
+
+
         requests = [
             new_request_data_builder(
                 req_id="warmup-%d" % (i),
-                prompt_token_ids=warmup_input_ids.tolist(
-                ),  #warmup_tokens_tensor[i].tolist(),
+                prompt_token_ids=warmup_tokens_tensor[i].tolist(),
                 sampling_params=SamplingParams(max_tokens=num_decode_tokens),
                 pooling_params=None,
-                prompt_embeds=warmup_embeds_tensor,
+                prompt_embeds=warmup_embeds_tensor[i],
                 mm_features=mm_features,
             ) for i in range(req_count)
         ]

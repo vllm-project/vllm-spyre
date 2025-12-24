@@ -1,0 +1,76 @@
+from fms.utils.config import ModelConfig
+from transformers import PretrainedConfig
+
+from abc import ABC, abstractmethod
+
+class MMUtilsBase(ABC):
+    """
+    Helpers utilities that are typically model architecture specific,
+    and may be needed for properly integrating multimodal models from
+    FMS.
+    
+    Note that by convention, to avoid confusion, we use fms_config to
+    refer to the FMS model config & hf_config to refer to the transformers
+    config (i.e., avoid ambiguous terms like model_config for readability).
+    """
+
+    def __init__(self, fms_config: ModelConfig, hf_config: PretrainedConfig):
+        self._validate_configs(fms_config, hf_config)
+        self.fms_config = fms_config
+        self.hf_config = hf_config
+    
+    @staticmethod
+    def _validate_configs(fms_config: ModelConfig, hf_config: PretrainedConfig):
+        """Ensure that configs are properly typed. Additional validation, e.g.,
+        validating subconfig attrs should generally be done within subclasses.
+        """
+        if not isinstance(fms_config, ModelConfig):
+            raise TypeError(
+                "Provided fms_config is of type %s, not an FMS ModelConfig",
+                type(fms_config))
+
+        if not isinstance(hf_config, PretrainedConfig):
+            raise TypeError(
+                "Provided hf_config is of type %s, not a PretrainedConfig",
+                type(fms_config))
+
+    def resolve_multimodal_vocab_size(self) -> int:
+        """Determine the vocabulary size of the underlying LLM, which
+        is wrapped by a composite multimodal model.
+        """
+        # Try to look for the src_vocab_size in the sub text_config.
+        # This will work for models like granite vision, but ultimately
+        # depends on the wrapping vLM and underlying LLM.
+        if (text_config := getattr(self.fms_config, "text_config", None)):
+            if (vocab_sz := getattr(text_config, "src_vocab_size", None)):
+                return vocab_sz
+            raise ValueError("Provided FMS config has a sub text_config, but no src_vocab_size!")            
+        raise ValueError("Provided FMS config has no sub text config!")
+
+    def unwrap_mm_kv_cache_opts(self):
+        """Unwrap options to be passed for the kv cache from the underlying
+        text configs and return the resulting dictionary, which is used to
+        .update() the common kv cache opts that don't need unwrapping.
+        """
+        return {}
+
+    @staticmethod
+    def get_mm_specific_load_overrides(hf_config: PretrainedConfig):
+        """Get any overrides needed for fixing compile with current multimodal models
+        when calling from fms.models.get_model(); this should largely remain as static
+        since it should only be used when initialized the FMS model, which will give us
+        the FMS config.
+        """
+        return {}
+
+    @abstractmethod
+    def get_multimodal_warmup_features(self, *args, **kwargs):
+        pass
+
+    @abstractmethod
+    def get_multimodal_token(self) -> str:
+        pass
+
+    @abstractmethod
+    def get_multimodal_token_id(self) -> int:
+        pass

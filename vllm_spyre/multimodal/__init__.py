@@ -1,32 +1,49 @@
 from fms import models
-from functools import partial
-from vllm_spyre.multimodal.mm_model_info import MultiModalMappingInfo
-from vllm_spyre.multimodal.utils import (
-    is_multimodal,
-    get_mm_specific_load_overrides,
-    get_multimodal_warmup_features,
-    resolve_multimodal_vocab_size,
-    unwrap_mm_kv_cache_opts,
-)
+from fms.utils.config import ModelConfig
+from vllm_spyre.multimodal.mm_mappings import LlavaNextMMUtils, MMUtilsBase
+from typing import Optional, Union
+import transformers
 
-# TODO - we can definitely consolidate and combine some of this stuff,
-# but for now, leaving as is, and just trying to contain as many mm
-# details within this package as possible for the first pass.
 
-# Multimodal architectures; currently this maps FMS architectures
-# to additional info needed to process multimodal inputs.
-FMS_MM_REGISTRY = {
-    models.llava_next.LlavaNext:
-    MultiModalMappingInfo(special_token_map={"image": "<image>"}, )
+MM_CFG_MAPPING = {
+    # FMS configs
+    models.llava_next.LlavaNextConfig: LlavaNextMMUtils,
+    # Analogous mappings for Transformers configs
+    transformers.LlavaNextConfig: LlavaNextMMUtils,
 }
 
-# Maps FMS ModelConfig classes to the corresponding
-# FMS model class this is mostly used for convenience
-# for getting things like the source vocab.
-FMS_MM_CFG_TO_ARCH = {
-    models.llava_next.LlavaNextConfig: models.llava_next.LlavaNext,
-}
 
-# is_multimodal_model = partial(is_multimodal, fms_mm_registry=FMS_MM_REGISTRY)
-is_multimodal_config = partial(is_multimodal,
-                               fms_mm_registry=FMS_MM_CFG_TO_ARCH)
+def is_multimodal_config(cfg: Union[transformers.PretrainedConfig, ModelConfig]):
+    """Used to check if a config is multimodal; this can be either a transformers
+    PretrainedConfig or an FMS ModelConfig.
+    """
+    if not MM_CFG_MAPPING:
+        return False
+    for mm_type in MM_CFG_MAPPING:
+        if isinstance(cfg, mm_type):
+            return True
+    return False
+
+
+def get_mm_specific_load_overrides(hf_config: transformers.PretrainedConfig):
+    # Ensure the model is multimodal, otherwise we have no overrides
+    cfg_type = type(hf_config)
+    if cfg_type not in MM_CFG_MAPPING:
+        return {}
+    return MM_CFG_MAPPING[cfg_type].get_mm_specific_load_overrides(hf_config)
+
+
+def maybe_get_mm_utils(fms_config, hf_config) -> Optional[MMUtilsBase]:
+    """Create an instance of the corresponding multimodal model's utils
+    if one exists; if it doesn't, the model is not multimodal.
+    """
+    fms_config_cls = type(fms_config)
+    hf_config_cls = type(hf_config)
+
+    if fms_config_cls in MM_CFG_MAPPING:
+        util_cls = MM_CFG_MAPPING[fms_config_cls]
+    elif hf_config_cls in MM_CFG_MAPPING:
+        util_cls = MM_CFG_MAPPING[hf_config_cls]
+    else:
+        return None # Not multimodal
+    return util_cls(fms_config=fms_config, hf_config=hf_config)

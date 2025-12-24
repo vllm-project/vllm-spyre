@@ -89,12 +89,9 @@ class SpyreCausalLM(nn.Module):
                 rank,
             )
 
-        # Check the underlying type of the FMS arch to see if it's a multimodal model.
-        # NOTE: We intentionally use the config here instead of looking at the class type
-        # to prevent mismatches due to wrapper class changes, e.g., from the FMS instance
-        # to compiled Dynamo objects
-        self.is_multimodal = spyre_mm.is_multimodal_config(
-            self.model.model.config)
+        # Pull mm model utils / is_multimodal up a level for convenience
+        self.mm_model_utils = self.model.mm_model_utils
+        self.is_multimodal = self.model.is_multimodal
 
     def forward(
         self,
@@ -218,6 +215,10 @@ class FmsModelBase(nn.Module):
         self.scheduler_config = vllm_config.scheduler_config
         self.dtype = self.get_dtype()
 
+        # Wrappers for utils for multimodal
+        self.mm_model_utils: Optional[spyre_mm.MMUtilsBase] = None
+        self.is_multimodal = False
+
         # Load the weights from the cached or downloaded files.
         self.load_weights(
             model_config=self.model_config,
@@ -270,8 +271,8 @@ class FmsModelBase(nn.Module):
                 revision=model_config.revision,
             )
 
-        # Currently this is {} for anything except llava next, which
-        # needs to apply a head_dim fix to unbreak AIU compile.
+        # Get any fixes needed that must be patched into the kwargs;
+        # currently this is only use for multimodal models / llava next
         model_kwargs = spyre_mm.get_mm_specific_load_overrides(self.config)
 
         with utils_spyre.stagger_region(
@@ -351,6 +352,13 @@ class FmsModelBase(nn.Module):
                 assert self.dtype == torch.float32
                 self._cast_to_f32()
 
+        # If it's multimodal, create an instance of the
+        # corresponding mm utils helper; this is arch specific.
+        self.mm_model_utils = spyre_mm.maybe_get_mm_utils(
+            fms_config=self.model.config,
+            hf_config=self.config,
+        )
+        self.is_multimodal = self.mm_model_utils is not None
         logger.debug("Model weights loaded successfully.")
 
     def _cast_bf16_to_f16(self):
@@ -416,13 +424,12 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         elif self.config.model_type == "gpt_bigcode":
             self.kv_cache_specs["num_layers"] = self.config.n_layer
             self.kv_cache_specs["head_dim"] = self.config.n_embd // self.config.n_head
-        elif spyre_mm.is_multimodal_config(self.model.config):
+        elif self.is_multimodal and self.mm_model_utils is not None:
             # Handle multimodal separately for now since we need to unwrap the
-            # text configs and technically (outside FMS) the LLM could be generic.
-            unwrapped_opts = spyre_mm.unwrap_mm_kv_cache_opts(
-                self.model.config,  # FMS model config
-                self.config,  # Transformers config
-            )
+            # text configs and technically (outside FMS) the LLM could be generic;
+            # the instance of mm_model_utils encapsulates the configs, so no need
+            # to pass them again.
+            unwrapped_opts = self.mm_model_utils.unwrap_mm_kv_cache_opts()
             self.kv_cache_specs.update(unwrapped_opts)
         else:
             raise NotImplementedError(
