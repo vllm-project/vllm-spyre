@@ -42,11 +42,6 @@ import vllm_spyre.utils as utils_spyre
 from vllm_spyre.compat_utils import dataclass_fields, has_argument
 from vllm_spyre.model_executor.model_loader.spyre import (
     BACKEND_LIST, SpyreAttentionMetadata, SpyreCausalLM)
-from vllm_spyre.multimodal import (
-    is_multimodal_config,
-    resolve_multimodal_vocab_size,
-)
-import vllm_spyre.multimodal as spyre_mm
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.utils import exact_div
 from vllm_spyre.v1.sample.spyre_logits_processor import (
@@ -185,6 +180,22 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT,
 
     def get_model(self) -> nn.Module:
         return self.model
+
+    def is_multimodal(self) -> bool:
+        """Indicates whether or not a model is loaded & multimodal.
+        If the model is not initialized yet, this will return False.
+        """
+        if self.model and getattr(self.model, "is_multimodal", None):
+            return True
+        return False
+
+    def get_mm_utils(self):
+        """If the [loaded] model is multimodal, grab the instance of
+        the mm utils for the corresponding wrapper class.
+        """
+        if not self.is_multimodal:
+            return None
+        return self.model.mm_model_utils
 
     @abstractmethod
     def load_model(self, prompt_lens: Iterable[int],
@@ -377,9 +388,8 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
     @property
     def vocab_size(self) -> int:
         model_cfg = self.model.model.model.config
-        # TODO (alex) - clean this up
-        if is_multimodal_config(model_cfg):
-            return resolve_multimodal_vocab_size(model_cfg)
+        if self.model.is_multimodal:
+            return self.model.mm_model_utils.resolve_multimodal_vocab_size()
         return model_cfg.src_vocab_size
 
     def pad_input_ids(
