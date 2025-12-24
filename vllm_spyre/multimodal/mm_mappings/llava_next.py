@@ -60,6 +60,50 @@ class LlavaNextMMUtils(MMUtilsBase):
             },
         }
 
+    @staticmethod
+    def get_maybe_mm_embeddings(
+        fms_model: torch.nn.Module,
+        input_ids: torch.Tensor,
+        mm_features: list[MultiModalFeatureSpec],
+        is_decode: bool,
+    ) -> torch.Tensor:
+        """Get the text or multimodal embeddings for Llava Next using
+        the (potentially compiled) FMS model.
+        """
+        fms_kwargs = {"use_cache": True}
+
+        # Only merge multimodal features in prefill; nothing mm in decode
+        if mm_features:
+            if len(mm_features) != 1:
+                raise ValueError(
+                    "Currently we assume we only embed one mm request at a time"
+                )
+            mm_spec = mm_features[0].data
+            if mm_spec is not None:
+                # NOTE: This should be pretty safe as it's dependent on the vLLM/HF
+                # processor objects, but we check it anyway to be safe for now,
+                # since transformers 5.0 is just around the corner.
+                if "pixel_values" not in mm_spec or "image_sizes" not in mm_spec:
+                    raise KeyError("Llava Next requires kwargs: ['pixel_values', 'image_sizes']")
+
+                fms_kwargs["pixel_values"] = mm_spec["pixel_values"].data
+                image_sizes = mm_spec["image_sizes"].data
+
+                # Careful about this; if it's 1D, we'll a tensor of shape [x, y],
+                # which will break in a weird way in image packing, since it assumes
+                # it's 2D and will get sad about getting an int instead of an iterable
+                if image_sizes.ndim == 1:
+                    image_sizes = image_sizes.unsqueeze(0)
+                fms_kwargs["image_sizes"] = image_sizes
+
+        # NOTE: use_cache is actually not used here, but currently it's
+        # required. Also, the value of iteration for decode as long as it's > 0.
+        input_embeds, _ = fms_model.prepare_inputs_for_generation(
+            iteration=0 if not is_decode else 1,
+            input_ids=input_ids,
+            kwargs=fms_kwargs)
+        return input_embeds
+
     def get_warmup_mm_features(self): # get_llava_next_image_features
         # This is the minimal (small) image case in granite vision;
         # The maximal shape has 11 tiles. Careful to handle the offsets
