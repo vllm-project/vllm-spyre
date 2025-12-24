@@ -60,21 +60,7 @@ class LlavaNextMMUtils(MMUtilsBase):
             },
         }
 
-    def get_multimodal_warmup_features(self, *args, **kwargs):
-        # TODO split this up and just get the features directly post refactor
-        # Multimodal models take embeddings as inputs
-        # since we merge multimodal features with them;
-        # these take priority over input toks and skip
-        # embed in the FMS model.
-        mm_features = self.get_llava_next_image_features()
-        warmup_input_ids = self.get_llava_next_text_features()
-        warmup_embeds_tensor = torch.rand(
-            (3, warmup_input_ids.shape[-1], 4096))
-
-        # Input features for the visual encoder
-        return mm_features, warmup_input_ids, warmup_embeds_tensor
-
-    def get_llava_next_image_features(self):
+    def get_warmup_mm_features(self): # get_llava_next_image_features
         # This is the minimal (small) image case in granite vision;
         # The maximal shape has 11 tiles. Careful to handle the offsets
         # correctly if this is modified!
@@ -108,9 +94,9 @@ class LlavaNextMMUtils(MMUtilsBase):
         ]
         return mm_features
 
-    def get_llava_next_text_features(self):
+    def get_warmup_tokens(self) -> torch.Tensor:
         # TODO make this less hacky, build dynamically, don't hardcode image token
-        img_toks = [self.get_multimodal_token_id()] * 1  #1836
+        img_toks = [self.get_multimodal_token_id()] * 1836
         return torch.tensor(
             [
                 46, 110, 2946, 28318, 203, 51, 11210, 3733, 312, 39489, 1256,
@@ -120,8 +106,9 @@ class LlavaNextMMUtils(MMUtilsBase):
             ] + img_toks +
             [203, 7628, 458, 1778, 32, 203, 46, 110, 17594, 28318, 203])
 
-    def get_multimodal_token(self) -> str:
-        return "<image>"  # TODO pull from cfg; this is mostly for convenience
+    def get_warmup_embeds_tensor(self) -> torch.Tensor:
+        warmup_input_ids = self.get_warmup_tokens()
+        return torch.rand((3, warmup_input_ids.shape[-1], 4096))
 
     def get_multimodal_token_id(self) -> int:
         return 49155  #TODO pull from cfg

@@ -1,4 +1,7 @@
+from vllm.multimodal.inputs import MultiModalFeatureSpec
+
 from fms.utils.config import ModelConfig
+import torch
 from transformers import PretrainedConfig
 
 from abc import ABC, abstractmethod
@@ -68,11 +71,15 @@ class MMUtilsBase(ABC):
         return {}
 
     @abstractmethod
-    def get_multimodal_warmup_features(self, *args, **kwargs):
+    def get_warmup_mm_features(self) -> list[MultiModalFeatureSpec]:
         pass
 
     @abstractmethod
-    def get_multimodal_token(self) -> str:
+    def get_warmup_tokens(self) -> torch.Tensor:
+        pass
+
+    @abstractmethod
+    def get_warmup_embeds_tensor(self) -> torch.Tensor:
         pass
 
     @abstractmethod

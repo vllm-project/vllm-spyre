@@ -519,23 +519,23 @@ class SpyreWorker(WorkerBase):
         # FIXME - this is tedious, clean it up
         mm_model_utils = self.model_runner.get_mm_utils()
         if mm_model_utils:
-            mm_features, warmup_input_ids, warmup_embeds_tensor = mm_model_utils.get_multimodal_warmup_features(
-                valid_token_ids)
-            prompt_len = warmup_input_ids.shape[-1]
-            # HACK -
-            warmup_embeds_tensor = [warmup_embeds_tensor] * req_count
-            warmup_tokens_tensor = [warmup_input_ids] * req_count
+            # MM only uses embedding inputs, so no need to pass tokens
+            warmup_tokens = [mm_model_utils.get_warmup_tokens()] * req_count
+            mm_features = mm_model_utils.get_warmup_mm_features()
+            warmup_embeds_tensor = [mm_model_utils.get_warmup_embeds_tensor()] * req_count
+            prompt_len = warmup_tokens[0].shape[-1]
         else:
             prompt_len = 42
-            mm_features = []
+            mm_features = None
             warmup_embeds_tensor = [None] * req_count
             warmup_tokens_tensor = valid_token_ids_tensor[torch.randint(
                 0, len(valid_token_ids_tensor), (3, prompt_len))]
+            warmup_tokens = [wt.tolist() for wt in warmup_tokens_tensor]
 
         requests = [
             new_request_data_builder(
                 req_id="warmup-%d" % (i),
-                prompt_token_ids=warmup_tokens_tensor[i].tolist(),
+                prompt_token_ids=warmup_tokens[i],
                 sampling_params=SamplingParams(max_tokens=num_decode_tokens),
                 pooling_params=None,
                 prompt_embeds=warmup_embeds_tensor[i],
