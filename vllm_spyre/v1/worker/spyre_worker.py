@@ -520,8 +520,7 @@ class SpyreWorker(WorkerBase):
         mm_model_utils = self.model_runner.get_mm_utils()
         if mm_model_utils:
             mm_features, warmup_input_ids, warmup_embeds_tensor = mm_model_utils.get_multimodal_warmup_features(
-                valid_token_ids
-            )
+                valid_token_ids)
             prompt_len = warmup_input_ids.shape[-1]
             # HACK -
             warmup_embeds_tensor = [warmup_embeds_tensor] * req_count
@@ -532,7 +531,6 @@ class SpyreWorker(WorkerBase):
             warmup_embeds_tensor = [None] * req_count
             warmup_tokens_tensor = valid_token_ids_tensor[torch.randint(
                 0, len(valid_token_ids_tensor), (3, prompt_len))]
-
 
         requests = [
             new_request_data_builder(

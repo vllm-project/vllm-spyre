@@ -3,6 +3,7 @@ from transformers import PretrainedConfig
 
 from abc import ABC, abstractmethod
 
+
 class MMUtilsBase(ABC):
     """
     Helpers utilities that are typically model architecture specific,
@@ -18,9 +19,10 @@ class MMUtilsBase(ABC):
         self._validate_configs(fms_config, hf_config)
         self.fms_config = fms_config
         self.hf_config = hf_config
-    
+
     @staticmethod
-    def _validate_configs(fms_config: ModelConfig, hf_config: PretrainedConfig):
+    def _validate_configs(fms_config: ModelConfig,
+                          hf_config: PretrainedConfig):
         """Ensure that configs are properly typed. Additional validation, e.g.,
         validating subconfig attrs should generally be done within subclasses.
         """
@@ -44,7 +46,9 @@ class MMUtilsBase(ABC):
         if (text_config := getattr(self.fms_config, "text_config", None)):
             if (vocab_sz := getattr(text_config, "src_vocab_size", None)):
                 return vocab_sz
-            raise ValueError("Provided FMS config has a sub text_config, but no src_vocab_size!")            
+            raise ValueError(
+                "Provided FMS config has a sub text_config, but no src_vocab_size!"
+            )
         raise ValueError("Provided FMS config has no sub text config!")
 
     def unwrap_mm_kv_cache_opts(self):
