@@ -4,16 +4,18 @@ from vllm_spyre.multimodal.mm_mappings import LlavaNextMMUtils, MMUtilsBase
 from typing import Optional, Union
 import transformers
 
-
 MM_CFG_MAPPING = {
     # FMS configs
-    models.llava_next.LlavaNextConfig: LlavaNextMMUtils,
+    models.llava_next.LlavaNextConfig:
+    LlavaNextMMUtils,
     # Analogous mappings for Transformers configs
-    transformers.LlavaNextConfig: LlavaNextMMUtils,
+    transformers.LlavaNextConfig:
+    LlavaNextMMUtils,
 }
 
 
-def is_multimodal_config(cfg: Union[transformers.PretrainedConfig, ModelConfig]):
+def is_multimodal_config(cfg: Union[transformers.PretrainedConfig,
+                                    ModelConfig]):
     """Used to check if a config is multimodal; this can be either a transformers
     PretrainedConfig or an FMS ModelConfig.
     """
@@ -45,5 +47,5 @@ def maybe_get_mm_utils(fms_config, hf_config) -> Optional[MMUtilsBase]:
     elif hf_config_cls in MM_CFG_MAPPING:
         util_cls = MM_CFG_MAPPING[hf_config_cls]
     else:
-        return None # Not multimodal
+        return None  # Not multimodal
     return util_cls(fms_config=fms_config, hf_config=hf_config)
