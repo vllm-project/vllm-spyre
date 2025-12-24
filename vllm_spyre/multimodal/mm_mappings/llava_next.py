@@ -111,4 +111,4 @@ class LlavaNextMMUtils(MMUtilsBase):
         return torch.rand((3, warmup_input_ids.shape[-1], 4096))
 
     def get_multimodal_token_id(self) -> int:
-        return 49155  #TODO pull from cfg
+        return self.hf_config.image_token_index
