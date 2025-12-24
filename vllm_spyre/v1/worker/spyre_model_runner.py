@@ -586,7 +586,7 @@ class SpyreModelRunner(
 
         # Execute the model
         attn_metadata = self.build_attn_metadata(model_input)
-        # Embeddings take priority [used bymultimodal models only]
+        # Embeddings take priority [used by multimodal models only]
         input_ids_or_embeds = model_input.input_embeds if model_input.input_embeds is not None else model_input.input_tokens
         with set_forward_context(attn_metadata, self.vllm_config):
             if self.model.is_multimodal:
@@ -1556,16 +1556,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # decode
         else:
             # mask is no longer used here
-            # for multimodal models, we also don't use input_embeds
-            if model_input.input_embeds is not None:
-                torch._dynamo.mark_dynamic(model_input.input_embeds, 0)
-                torch._dynamo.mark_static(model_input.input_embeds,
-                                          1)  # always 1
-                torch._dynamo.mark_static(model_input.input_embeds, 2)
-            else:
-                torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
-                torch._dynamo.mark_static(model_input.input_tokens,
-                                          1)  # always 1
 
             # batch dynamic
             torch._dynamo.mark_dynamic(model_input.block_table, 0)
@@ -1575,10 +1565,19 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             torch._dynamo.mark_dynamic(model_input.left_padded_prompt_mask, 0)
 
             # sequence
-            torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
             torch._dynamo.mark_dynamic(model_input.block_table, 1)
             torch._dynamo.mark_static(model_input.slot_mapping, 1)  # always 1
             torch._dynamo.mark_static(model_input.input_positions, 1)  # always 1
+
+            # for multimodal models, we also don't use input_embeds
+            if model_input.input_embeds is not None:
+                torch._dynamo.mark_dynamic(model_input.input_embeds, 0)
+                torch._dynamo.mark_static(model_input.input_embeds, 1)  # always 1
+                torch._dynamo.mark_static(model_input.input_embeds, 2)
+            else:
+                torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
+                torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
+
 
     def build_input_batch(self) -> SamplingInputBatch:
         # Define logits processors.
@@ -2622,9 +2621,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         t0 = time.time()
 
         self.update_states(scheduler_output)
-        # I think the multimodal encoder generally gets called here
-        # see _execute_mm_encoder on the vLLM gpu model runner; this is also
-        # where we batch the multimodal inputs from the scheduler etc.
 
         if not scheduler_output.total_num_scheduled_tokens:
             # Return empty ModelRunnerOutput if there's no work to do.
@@ -2651,9 +2647,10 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         # Execute the model
         attn_metadata = self.build_attn_metadata(model_input)
+        input_ids_or_embeds = model_input.input_embeds if model_input.input_embeds is not None else model_input.input_tokens
         with set_forward_context(attn_metadata, self.vllm_config):
             logits = self.model(
-                input_ids=model_input.input_tokens,
+                input_ids=input_ids_or_embeds,
                 positions=model_input.input_positions,
                 masks=model_input.input_masks,
                 is_prompt=model_input.is_prompt,
@@ -2786,23 +2783,32 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         # Marking dimensions static/dynamic
         if model_input.is_prompt:
             # batch static (batch size 1)
-            torch._dynamo.mark_static(model_input.input_tokens, 0)
             torch._dynamo.mark_static(model_input.slot_mapping, 0)
             torch._dynamo.mark_static(model_input.input_positions, 0)
             torch._dynamo.mark_static(model_input.block_table, 0)
 
             # sequence dynamic
-            torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
             torch._dynamo.mark_dynamic(model_input.slot_mapping, 1)
             torch._dynamo.mark_dynamic(model_input.input_positions, 1)
             torch._dynamo.mark_dynamic(model_input.block_table, 1)
+
+            # In the case that the input tokens are 3D, i.e., they're actually
+            # embeddings, The last dimension (embedding dimension) is static.
+            # This is mostly for multimodal models.
+            if model_input.input_embeds is not None:
+                torch._dynamo.mark_static(model_input.input_embeds, 0)
+                torch._dynamo.mark_dynamic(model_input.input_embeds, 1)
+                torch._dynamo.mark_static(model_input.input_embeds, 2)
+            else:
+                torch._dynamo.mark_static(model_input.input_tokens, 0)
+                torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
+
 
         # decode
         else:
             # mask is no longer used here
 
             # batch dynamic
-            torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
             torch._dynamo.mark_dynamic(model_input.block_table, 0)
             torch._dynamo.mark_dynamic(model_input.slot_mapping, 0)
             torch._dynamo.mark_dynamic(model_input.input_positions, 0)
@@ -2810,7 +2816,14 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             torch._dynamo.mark_dynamic(model_input.left_padded_prompt_mask, 0)
 
             # sequence
-            torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
             torch._dynamo.mark_dynamic(model_input.block_table, 1)
             torch._dynamo.mark_static(model_input.slot_mapping, 1)  # always 1
             torch._dynamo.mark_static(model_input.input_positions, 1)  # always 1
+
+            if model_input.input_embeds is not None:
+                torch._dynamo.mark_dynamic(model_input.input_embeds, 0)
+                torch._dynamo.mark_static(model_input.input_embeds, 1)  # always 1
+                torch._dynamo.mark_static(model_input.input_embeds, 2)
+            else:
+                torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
+                torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
