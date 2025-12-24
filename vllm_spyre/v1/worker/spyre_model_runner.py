@@ -2049,6 +2049,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                                                dtype=torch.int64,
                                                device=self.device)
 
+        mm_features = request.mm_features
+        prompt_token_ids = request.prompt_token_ids
         num_computed_tokens = request.num_computed_tokens
         num_computed_blocks = exact_div(num_computed_tokens, self.block_size)
 
@@ -2162,8 +2164,22 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             (request_tkv - 1) % self.block_size) + 1)
         self.model.indices = torch.ones(1, dtype=torch.bool, device='cpu')
 
+        # In the case of multimodal models, always use embeddings
+        # as inputs, even in the case where we only have texts.
+        if self.model.is_multimodal:
+            # NOTE: This will call the multimodal encoder and merge the embeddings
+            # if we have multimodal features, e.g., for granite vision.
+            input_embeds = self.model.get_maybe_mm_embeddings(
+                input_tokens,
+                mm_features=mm_features,
+                is_decode=False,
+            )
+        else:
+            input_embeds = None
+
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
+            input_embeds=input_embeds,
             input_positions=input_positions,
             current_tkv_mask=current_tkv_mask,
             left_padded_prompt_mask=left_padded_prompt_mask,
@@ -2264,8 +2280,23 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                                         dtype=torch.bool,
                                         device="cpu")
 
+        if self.model.is_multimodal:
+            # NOTE: this is opaque, but is_decode causes the underlying FMS
+            # model to call the language model when preparing its embedding.
+            # by setting iteration > 0; failing to do this will cause it to
+            # return the raw input id and try to embed in the forward call,
+            # which may break on AIU due to misalignment with prefill embed call.
+            input_embeds = self.model.get_maybe_mm_embeddings(
+                input_tokens,
+                mm_features=None,
+                is_decode=True,
+            )
+        else:
+            input_embeds = None
+
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
+            input_embeds=input_embeds,
             input_positions=position_ids,
             current_tkv_mask=current_tkv_mask,
             left_padded_prompt_mask=left_padded_prompt_mask,
@@ -2346,6 +2377,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         sampling_params = request.sampling_params
         is_new_batch = len(self.req_ids2num_reserved_blocks) == 0
         prompt_len = len(prompt_token_ids)
+        mm_features = request.mm_features
 
         self.prefill_batch.clear_requests()
 
@@ -2394,6 +2426,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         req_state = ChunkedPrefillRequestState(
             req_id=req_id,
             prompt_token_ids=prompt_token_ids,
+            mm_features=mm_features,
             sampling_params=sampling_params,
             generator=generator,
             output_token_ids=[],
