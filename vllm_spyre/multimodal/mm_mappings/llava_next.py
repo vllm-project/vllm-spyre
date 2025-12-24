@@ -34,6 +34,7 @@ class LlavaNextMMUtils(MMUtilsBase):
         .update() the common kv cache opts that don't need unwrapping.
         """
         kv_cache_specs = {}
+        # NOTE: For now this is the same as granite since we only support granite vision.
         kv_cache_specs[
             'num_layers'] = self.hf_config.text_config.num_hidden_layers
         kv_cache_specs['head_dim'] = getattr(
@@ -139,7 +140,7 @@ class LlavaNextMMUtils(MMUtilsBase):
         return mm_features
 
     def get_warmup_tokens(self) -> torch.Tensor:
-        # TODO make this less hacky, build dynamically, don't hardcode image token
+        # TODO make this less hacky, build dynamically using vLLM image feature calcs
         img_toks = [self.get_multimodal_token_id()] * 1836
         return torch.tensor(
             [
@@ -150,9 +151,11 @@ class LlavaNextMMUtils(MMUtilsBase):
             ] + img_toks +
             [203, 7628, 458, 1778, 32, 203, 46, 110, 17594, 28318, 203])
 
-    def get_warmup_embeds_tensor(self) -> torch.Tensor:
+    def get_warmup_embeds_tensor(self, num_requests=3) -> torch.Tensor:
         warmup_input_ids = self.get_warmup_tokens()
-        return torch.rand((3, warmup_input_ids.shape[-1], 4096))
+        emb_dim = self.hf_config.text_config.hidden_size
+        seq_len = warmup_input_ids.shape[-1]
+        return torch.rand((num_requests, seq_len, emb_dim))
 
     def get_multimodal_token_id(self) -> int:
         return self.hf_config.image_token_index
