@@ -133,54 +133,27 @@ class SpyreCausalLM(nn.Module):
         return logits
 
     def get_maybe_mm_embeddings(self, input_ids, mm_features, is_decode):
+        """Retrieve the embeddings corresponding to the input_ids and mm_features,
+        if any are provided.
+        """
         fms_model = self.model.model
 
-        if not hasattr(fms_model, "prepare_inputs_for_generation"):
+        if not self.is_multimodal or self.mm_model_utils is None:
             if mm_features:
-                raise AttributeError(
-                    "FMS Model does not have prepare_inputs_for_generation model & multimodal features were provided"
-                )
-            # Assume it's a non-composite model, and fall back to calling the LLM embedding directly
-            input_embeds = fms_model.base_model.embedding(input_ids)
-        else:
-            if isinstance(fms_model.prepare_inputs_for_generation,
-                          torch.Tensor):
-                raise TypeError(
-                    "Prepare inputs for generation must be a callable!")
+                raise ValueError("Multimodal features were provided, but this model is not multimodal!")
+            # Fall back to direct embedding otherwise for compatibility.
+            # This should generally not happen in current codepaths since
+            # only multimodal models should use embeddings for prefill/decode.
+            return fms_model.base_model.embedding(input_ids)
 
-            # NOTE: This is very likely super brittle, and we will almost certainly need to
-            # change things in the future as more models, but this is on the FMS side to
-            # standardize this interface.
-            fms_kwargs = {"use_cache": True}
-
-            # Only merge multimodal features in prefill; nothing mm in decode
-            if mm_features:
-                if len(mm_features) != 1:
-                    raise ValueError(
-                        "Currently we assume we only embed one mm request at a time"
-                    )
-                mm_spec = mm_features[0].data
-                # TODO: We can probably do this generically assuming that FMS models
-                # line up with the outputs of the processors on HF, but for now hardcode
-                # to match llava next.
-                assert "pixel_values" in mm_spec and "image_sizes" in mm_spec
-                fms_kwargs["pixel_values"] = mm_spec["pixel_values"].data
-                image_sizes = mm_spec["image_sizes"].data
-                # Careful about this; if it's 1D, we'll a tensor of shape [x, y],
-                # which will break in a weird way in image packing, since it assumes
-                # it's 2D and will get sad about getting an int instead of an iterable
-                if image_sizes.ndim == 1:
-                    image_sizes = image_sizes.unsqueeze(0)
-                fms_kwargs["image_sizes"] = image_sizes
-
-            # NOTE: use_cache is actually not used here, but currently it's required.
-            # The value of iteration doesn't matter in decode as long as it's above 0,
-            # because this will still cause us to embed correctly
-            input_embeds, _ = fms_model.prepare_inputs_for_generation(
-                iteration=0 if not is_decode else 1,
-                input_ids=input_ids,
-                kwargs=fms_kwargs)
-        return input_embeds
+        # Delegate to this model architecture's multimodal helpers to
+        # get the (potentially) multimodal embeddings from the FMS model.
+        return self.mm_model_utils.get_maybe_mm_embeddings(
+            fms_model,
+            input_ids,
+            mm_features,
+            is_decode,
+        )
 
     def sample(
         self,

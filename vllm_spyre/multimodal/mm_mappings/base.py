@@ -70,6 +70,19 @@ class MMUtilsBase(ABC):
         """
         return {}
 
+    @staticmethod
+    @abstractmethod
+    def get_maybe_mm_embeddings(
+        fms_model: torch.nn.Module,
+        input_ids: torch.Tensor,
+        mm_features: list[MultiModalFeatureSpec],
+        is_decode: bool,
+    ) -> torch.Tensor:
+        """Get the (potentially) multimodal embeddings for this model architecture.
+        Produced tensors should be of shape [bsz, seq_len, emb_dim].
+        """
+        pass
+
     @abstractmethod
     def get_warmup_mm_features(self) -> list[MultiModalFeatureSpec]:
         pass
