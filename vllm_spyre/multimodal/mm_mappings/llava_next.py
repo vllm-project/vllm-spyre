@@ -105,13 +105,17 @@ class LlavaNextMMUtils(MMUtilsBase):
             kwargs=fms_kwargs)
         return input_embeds
 
-    def get_warmup_mm_features(self): # get_llava_next_image_features
+    def get_warmup_mm_features(self):
+        """Get warmup features for Llava Next / Granite Vision."""
         # This is the minimal (small) image case in granite vision;
         # The maximal shape has 11 tiles. Careful to handle the offsets
         # correctly if this is modified!
-        pixel_values_shape = [3, 3, 384, 384]
+        tile_size = self.hf_config.vision_config.image_size
+        img_size = [118, 177]
+        # TODO: Make this more dynamic and calc based on vLLM utils
+        pixel_values_shape = [3, 3, tile_size, tile_size]
         # Image size (px, not tokens)
-        image_sizes = torch.tensor([118, 177], dtype=torch.int64)
+        image_sizes = torch.tensor(img_size, dtype=torch.int64)
         # offsets wrt text prompt
         mm_position = PlaceholderRange(offset=42, length=1836)
 
