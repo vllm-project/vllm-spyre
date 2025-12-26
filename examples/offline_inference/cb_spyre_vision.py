@@ -19,17 +19,19 @@ parser.add_argument("--max_model_len",
                     default=8192)  # one image has a max context of ~5k
 parser.add_argument("--max_num_seqs", "--max-num-seqs", type=int, default=2)
 parser.add_argument("--tp", type=int, default=1)
-parser.add_argument("--num-prompts", "-n", type=int, default=10)
+parser.add_argument("--num-prompts", "-n", type=int, default=1)
 parser.add_argument(
     "--max-tokens",
     type=str,
-    default="65",
+    default="8",
     help="Comma separated list of max tokens to use for each prompt. "
     "This list is repeated until prompts are exhausted.")
 parser.add_argument("--backend",
                     type=str,
                     default='sendnn',
                     choices=['eager', 'sendnn'])
+parser.add_argument("--compare-with-cpu",
+                    action=argparse.BooleanOptionalAction)
 args = parser.parse_args()
 
 max_num_seqs = args.max_num_seqs  # defines the max batch size
@@ -102,11 +104,61 @@ print("===============")
 for output in outputs:
     print(output.outputs[0])
 print("===============")
-for output in outputs:
-    prompt = output.prompt
+for prompt, output in zip(prompts, outputs):
+    prompt = prompt["prompt"]
     generated_text = output.outputs[0].text
     # Prompt contains expanded image tokens, so just print
     # what's after the last one for readability
-    print(f"\nPrompt:\n {prompt.split("<image >")[-1].split("<|assistant|>")[0].strip()}")
+    print(f"\nPrompt:\n {prompt}")
     print(f"\nGenerated text:\n {generated_text!r}\n")
     print("-----------------------------------")
+
+
+# NOTE: Compare with CPU currently compares against transformers,
+# but we have seen some differences here. It may be better to check
+# parity against the FMS implementation for now.
+#
+# This may be due to compounding precision issues in layer normalization,
+# which Alex has seen in granite vision emebeddings in the visual encoder.
+if args.compare_with_cpu:
+    print("Comparing results with HF on cpu")
+    print("===============")
+    any_differ = False
+
+    from transformers import AutoProcessor, AutoModelForVision2Seq
+
+    processor = AutoProcessor.from_pretrained(args.model)
+    model = AutoModelForVision2Seq.from_pretrained(args.model)
+
+    for i in range(args.num_prompts):
+        # Assume prompts are preformatted and that we don't need to use chat template
+        vllm_req = prompts[i]
+
+        inputs = processor(
+            text=vllm_req["prompt"],
+            images=vllm_req["multi_modal_data"]["image"],
+            return_tensors="pt"
+        )
+
+        hf_output = model.generate(**inputs, max_new_tokens=max_tokens[i])
+        # NOTE: Image tokens are expanded in the llava next preprocessor;
+        # be sure to check this depending on the model if this is used for
+        # others, especially if they bundle their own code!
+        num_expanded_toks = inputs.input_ids.shape[1]
+        hf_out_toks = hf_output[0][num_expanded_toks:]
+
+        hf_generated_text = processor.decode(hf_out_toks)
+        print(hf_generated_text)
+
+
+        if hf_generated_text != outputs[i].outputs[0].text:
+            any_differ = True
+            print(f"Results for prompt {i} differ on cpu")
+            print(f"\nPrompt:\n {prompts[i]["prompt"]!r}")
+            print(
+                f"\nSpyre generated text:\n {outputs[i].outputs[0].text!r}\n")
+            print(f"\nCPU generated text:\n {hf_generated_text!r}\n")
+            print("-----------------------------------")
+
+    if not any_differ:
+        print("\nAll results match!\n")
