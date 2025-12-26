@@ -41,8 +41,12 @@ from vllm.platforms import Platform, PlatformEnum
 
 import vllm_spyre.envs as envs_spyre
 from vllm_spyre.compilation_utils import handle_disable_compilation
+from vllm_spyre.config_patcher import patch_arg_utils, patch_at_import
 
 logger = init_logger(__name__)
+
+# Install some patches at import time to apply them as early as possible
+patch_at_import()
 
 THREADING_ENVS = [
     "OMP_NUM_THREADS",
@@ -431,6 +435,7 @@ class SpyrePlatform(Platform):
                                 parser: Optional[FlexibleArgumentParser] = None
                                 ) -> None:
 
+        patch_arg_utils()
         if parser is not None:
             parser.set_defaults(enable_prefix_caching=False)
 
