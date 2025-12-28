@@ -30,7 +30,7 @@ parser.add_argument("--backend",
                     type=str,
                     default='sendnn',
                     choices=['eager', 'sendnn'])
-parser.add_argument("--compare-with-cpu",
+parser.add_argument("--compare-with-transformers",
                     action=argparse.BooleanOptionalAction)
 args = parser.parse_args()
 
@@ -97,40 +97,37 @@ llm = LLM(model=args.model,
 # that contain the prompt, generated text, and other information.
 print("=============== GENERATE")
 t0 = time.time()
-outputs = llm.generate(prompts, sampling_params)
+vllm_outputs = llm.generate(prompts, sampling_params)
+vllm_results = [x.outputs[0].text for x  in vllm_outputs] # raw texts
+raw_prompts = [prompt["prompt"] for prompt in prompts]
+
 print("Time elaspsed for %d tokens is %.2f sec" %
-      (len(outputs[0].outputs[0].token_ids), time.time() - t0))
+      (len(vllm_outputs[0].outputs[0].token_ids), time.time() - t0))
 print("===============")
-for output in outputs:
-    print(output.outputs[0])
+for output in vllm_results:
+    print(output)
 print("===============")
-for prompt, output in zip(prompts, outputs):
+for prompt, generated_text in zip(prompts, vllm_results):
     prompt = prompt["prompt"]
-    generated_text = output.outputs[0].text
     # Prompt contains expanded image tokens, so just print
     # what's after the last one for readability
     print(f"\nPrompt:\n {prompt}")
     print(f"\nGenerated text:\n {generated_text!r}\n")
     print("-----------------------------------")
 
-
-# NOTE: Compare with CPU currently compares against transformers,
-# but we have seen some differences here. It may be better to check
-# parity against the FMS implementation for now.
-#
-# This may be due to compounding precision issues in layer normalization,
-# which Alex has seen in granite vision emebeddings in the visual encoder.
-if args.compare_with_cpu:
-    print("Comparing results with HF on cpu")
-    print("===============")
-    any_differ = False
-
+# Alternate implentatinos to compare against; we have seen mismatches for parity
+# between FMS and Transformers, so for completeness, we allow comparison against
+# both Transformers on CPU and FMS.
+def get_transformers_results(model_path, vllm_prompts):
+    """Process the results for HF Trasformers running on CPU."""
     from transformers import AutoProcessor, AutoModelForVision2Seq
 
-    processor = AutoProcessor.from_pretrained(args.model)
-    model = AutoModelForVision2Seq.from_pretrained(args.model)
+    hf_results = []
+    processor = AutoProcessor.from_pretrained(model_path)
+    model = AutoModelForVision2Seq.from_pretrained(model_path)
+    num_prompts = len(vllm_prompts)
 
-    for i in range(args.num_prompts):
+    for i in range(num_prompts):
         # Assume prompts are preformatted and that we don't need to use chat template
         vllm_req = prompts[i]
 
@@ -148,17 +145,43 @@ if args.compare_with_cpu:
         hf_out_toks = hf_output[0][num_expanded_toks:]
 
         hf_generated_text = processor.decode(hf_out_toks)
-        print(hf_generated_text)
+        hf_results.append(hf_generated_text)
+    return hf_results
 
+def compare_results(prompts: list[str], outputs_a: list[str], outputs_b: list[str], name_a: str, name_b: str):
+    print(f"Comparing {name_a} results with {name_b}")
+    print("===============")
+    any_differ = False
+    for idx, (result_a, result_b) in enumerate(zip(outputs_a, outputs_b)):
+        # Assume prompts are preformatted and that we don't need to use chat template
 
-        if hf_generated_text != outputs[i].outputs[0].text:
+        if result_a != result_b:
+            img_tok_idx = prompts[idx].index("<image>")
+            gen_prompt_idx = prompts[idx].index("<|assistant|>")
+            raw_prompt = prompts[idx][img_tok_idx:gen_prompt_idx].strip()
+
             any_differ = True
-            print(f"Results for prompt {i} differ on cpu")
-            print(f"\nPrompt:\n {prompts[i]["prompt"]!r}")
+            print(f"Results for prompt {idx} differ!")
+            print(f"\nPrompt (excluding system/generation prompt):\n {repr(raw_prompt)}")
             print(
-                f"\nSpyre generated text:\n {outputs[i].outputs[0].text!r}\n")
-            print(f"\nCPU generated text:\n {hf_generated_text!r}\n")
+                f"\n{name_a} generated text:\n {result_a}\n")
+            print(f"\n{name_b} generated text:\n {result_b}\n")
             print("-----------------------------------")
 
     if not any_differ:
         print("\nAll results match!\n")
+
+if args.compare_with_transformers:
+    transformers_results = get_transformers_results(
+        model_path=args.model,
+        vllm_prompts=prompts,
+    )
+
+    if args.compare_with_transformers:
+        compare_results(
+            prompts=raw_prompts,
+            outputs_a=transformers_results,
+            outputs_b=vllm_results,
+            name_a="transformers [cpu]",
+            name_b="vllm [spyre]",
+        )
