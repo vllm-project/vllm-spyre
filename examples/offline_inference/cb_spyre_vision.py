@@ -1,12 +1,18 @@
 """
 This example shows how to run offline inference using continuous batching.
 """
-from vllm.assets.image import ImageAsset
 import argparse
 import os
 import platform
 import time
 
+from fms.utils.spyre import paged
+from fms.models import get_model
+from fms.utils import serialization
+from fms.utils.generation import generate as fms_generate
+import torch
+from transformers import AutoProcessor, AutoModelForVision2Seq
+from vllm.assets.image import ImageAsset
 from vllm import LLM, SamplingParams
 
 parser = argparse.ArgumentParser()
@@ -31,6 +37,8 @@ parser.add_argument("--backend",
                     default='sendnn',
                     choices=['eager', 'sendnn'])
 parser.add_argument("--compare-with-transformers",
+                    action=argparse.BooleanOptionalAction)
+parser.add_argument("--compare-with-fms",
                     action=argparse.BooleanOptionalAction)
 args = parser.parse_args()
 
@@ -86,7 +94,6 @@ sampling_params = [
     for m in max_tokens
 ]
 
-# Create an LLM.
 llm = LLM(model=args.model,
           tokenizer=args.model,
           max_model_len=args.max_model_len,
@@ -119,9 +126,7 @@ for prompt, generated_text in zip(prompts, vllm_results):
 # between FMS and Transformers, so for completeness, we allow comparison against
 # both Transformers on CPU and FMS.
 def get_transformers_results(model_path, vllm_prompts):
-    """Process the results for HF Trasformers running on CPU."""
-    from transformers import AutoProcessor, AutoModelForVision2Seq
-
+    """Process the results for HF Transformers running on CPU."""
     hf_results = []
     processor = AutoProcessor.from_pretrained(model_path)
     model = AutoModelForVision2Seq.from_pretrained(model_path)
@@ -147,6 +152,62 @@ def get_transformers_results(model_path, vllm_prompts):
         hf_generated_text = processor.decode(hf_out_toks)
         hf_results.append(hf_generated_text)
     return hf_results
+
+def get_fms_results(model_path, vllm_prompts):
+    """Process the results for FMS running on CPU."""
+    fms_results = []
+    processor = AutoProcessor.from_pretrained(model_path)
+    num_prompts = len(vllm_prompts)
+
+    # head_dim expansion required for granite vision
+    serialization.extend_adapter(
+        "llava_next", "hf", ["weight_expansion_for_mismatched_head_dim"]
+    )
+    config_dict = {}
+    config_dict["head_dim"] = 128
+
+    # Load, but don't compile (compare to CPU)
+    model = get_model(
+        "hf_pretrained",
+        model_path,
+        data_type=torch.float32,
+        device_type="cpu",
+        fused_weights=False,
+        override_hf_pretrained_config=True,
+        text_config=config_dict,
+    )
+
+
+    for i in range(num_prompts):
+        # Assume prompts are preformatted and that we don't need to use chat template
+        vllm_req = prompts[i]
+
+        inputs = processor(
+            text=vllm_req["prompt"],
+            images=vllm_req["multi_modal_data"]["image"],
+            return_tensors="pt"
+        )
+
+        input_ids = inputs.pop("input_ids")
+        inputs["attn_name"] = "sdpa_causal" # TODO need to handle padding for paged attn
+
+        fms_output = fms_generate(
+            model,
+            input_ids,
+            max_new_tokens=max_tokens[i],
+            use_cache=True,
+            do_sample=False,
+            max_seq_len=input_ids.shape[1] + max_tokens[i],
+            extra_kwargs=inputs,
+            prepare_model_inputs_hook=model.prepare_inputs_for_generation,
+        )
+        num_expanded_toks = input_ids.shape[1]
+        fms_out_toks = fms_output[0][num_expanded_toks:]
+
+        fms_generated_text = processor.decode(fms_out_toks)
+        fms_results.append(fms_generated_text)
+    return fms_results
+
 
 def compare_results(prompts: list[str], outputs_a: list[str], outputs_b: list[str], name_a: str, name_b: str):
     print(f"Comparing {name_a} results with {name_b}")
@@ -177,11 +238,24 @@ if args.compare_with_transformers:
         vllm_prompts=prompts,
     )
 
-    if args.compare_with_transformers:
-        compare_results(
-            prompts=raw_prompts,
-            outputs_a=transformers_results,
-            outputs_b=vllm_results,
-            name_a="transformers [cpu]",
-            name_b="vllm [spyre]",
-        )
+    compare_results(
+        prompts=raw_prompts,
+        outputs_a=transformers_results,
+        outputs_b=vllm_results,
+        name_a="transformers [cpu]",
+        name_b="vllm [spyre]",
+    )
+
+if args.compare_with_fms:
+    fms_results = get_fms_results(
+        model_path=args.model,
+        vllm_prompts=prompts,
+    )
+
+    compare_results(
+        prompts=raw_prompts,
+        outputs_a=fms_results,
+        outputs_b=vllm_results,
+        name_a="FMS [cpu]",
+        name_b="vllm [spyre]",
+    )
