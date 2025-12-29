@@ -3,6 +3,7 @@
 In order to understand how to get multimodal models running through vLLM Spyre, it is important to understand the differences between how models are implemented in vLLM & vLLM Spyre. To illustrate this, we use `llava_next` as an example, because `granite vision` is the only multimodal model currently supported.
 
 ## For vLLM
+
 In vLLM, models are implemented as their own model class. The class implementation generally inherits from `SupportsMultiModal`, and importantly, it registers multimodal processing information.
 
 ```python
@@ -36,17 +37,35 @@ This has a few implications that may be nonobvious. Namely:
 
 For more extensive documentation in how to implement multimodal in vLLM, see the docs [here](https://docs.vllm.ai/en/latest/contributing/model/multimodal/#prompt-updates) - the above is mostly meant as context for how think of these models with respect to vLLM Spyre.
 
-### Extending to vLLM Spyre
+## Extending to vLLM Spyre
+
 In vLLM Spyre, models are implemented with a generic wrapper around FMS; the implementation is *not* model specific. This adds several points of awkwardness in porting multimodal FMS wrappers into vLLM Spyre. In general, the best way to get the model working is as follows:
 
 1. Make sure it runs correctly with vLLM and the HuggingFace implementation *before* porting the FMS implementation into vLLM Spyre.*
 
-2. Ensure the config is being correctly unwrapped and that the model instance is being recognized as `is_multimodal`. This will cause prefill/decode to use embeddings as inputs instead of token IDs.
+2. In `vllm_spyre.multimodal.mm_mappings`, create a new utils class for the model architecture and map FMS/Transformers configs to it in `MM_CFG_MAPPING`.
 
-3. Ensure that the results of prefill/decode are actually embeddings; the interfaces are not very solidifed yet, so if misconfigured, e.g., underneath it's prepared wrong or the incorrect `iteration` is passed to FMS, it is easy to do things like accidentally getting input IDs instead of embeddings in decode, which can cause cryptic compiler failures. In the future we will warn about this if things aren't looking quite right.
-
-4. Ensure that the preprocessed kwargs are correctly handled and preprocessed (e.g., `pixel_values`). This is currently very model specific and needs to be made generic in the future.
-
-5. When configuring the warmup, ensure that you provide multimodal inputs so that you warm up *all* parts of the model; e.g., in the case of granite vision, providing only input IDs/text embeddings will only warm up the LLM. This will cause crashes when running the compiled model with multimodal inputs, since the multimodal encoder / projector need to be warmed up as well.
+3. Implement the abstract methods for warmup features, multimodal embedding creation and so on.
 
 ** Aside from uniformity, the main reason it's desirable to get the model running in vLLM *before* vLLM Spyre is that even though the model implementation is different, the preprocessor that vLLM uses to intialize it when it is running through vLLM Spyre is based on the underlying config, and is the *same*. This means that to implement the model in FMS, we do not have to reimplement any of the preprocessing wrapping or prompt substitution/multimodal token expansion logic, which is very well patterned in vLLM. This is ideal for keeping changes for specific model architectures in our generic wrapper to a minimum.
+
+### FAQ
+
+- If things aren't working correctly, where should I start?
+    - Ensure the text config is being correctly unwrapped and that the model instance is being recognized as `is_multimodal`. This will cause prefill/decode to use embeddings as inputs instead of token IDs, even in the case when only text is provided.
+
+    - Ensure that the preprocessor object being used by the wrapping LLM class is the correct one, otherwise your inputs may be prepared incorrectly.
+
+    - Based on the above, verify that you are handling the dictionary (e.g., `pixel_values` etc) to be passed to FMS in its input preparation correctly; as FMS currently only has one multimodal model, the interface and design patterns may not be stable yet.
+
+    - Ensure that the results of prefill/decode are actually embeddings; if you pass things like the wrong `iteration` to FMS, it is easy to do things like getting embeddings in prefill, then getting input IDs in decode by mistake, which can cause confusing compiler errors.
+
+    - Test without compile first. If all of the above are correct and compile is still running into issues, ensure that your warmup features also include multimodal inputs and not just embeddings, because you need to ensure all parts of the model are traced properly. If you pass something like pre-merged embeddings, it's the same as just passing text embeddings since the vision encoder won't be used, so it's important to pass the raw multimodal objects.
+
+- What is the state of multimodal support with respect to model runners?
+    - Currently it's supported for continuous batching with and without chunked prefill. It is *not* yet enabled for static batching.
+
+- There is a new model runner! How do I add multimodal support to it?
+    - Ensure multimodal features are passed all the way through
+    - Conditionally use embeddings in prefill if it's multimodal; you should do this after all of the runner specific manipulation for padding etc.
+    - Conditionally use embeddings in decode; careful not to re-encode multimodal features in decode steps, since we should typically *only* consider multimodality at prefill time.
