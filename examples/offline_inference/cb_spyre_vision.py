@@ -43,115 +43,8 @@ parser.add_argument("--compare-target",
                     choices=['transformers', 'fms'],
                     help="Target to compare results against on CPU.")
 
-
-# Alternate implementations to compare against; we have seen mismatches for parity
-# between FMS and Transformers, so for completeness, we allow comparison against
-# both Transformers on CPU and FMS.
-def get_transformers_results(model_path, vllm_prompts):
-    """Process the results for HF Transformers running on CPU."""
-    hf_results = []
-    processor = AutoProcessor.from_pretrained(model_path)
-    model = AutoModelForVision2Seq.from_pretrained(model_path)
-    num_prompts = len(vllm_prompts)
-
-    for i in range(num_prompts):
-        # Assume prompts are preformatted and that we don't need to use chat template
-        vllm_req = prompts[i]
-
-        inputs = processor(
-            text=vllm_req["prompt"],
-            images=vllm_req["multi_modal_data"]["image"],
-            return_tensors="pt"
-        )
-
-        hf_output = model.generate(**inputs, max_new_tokens=max_tokens[i])
-        # NOTE: Image tokens are expanded in the llava next preprocessor;
-        # be sure to check this depending on the model if this is used for
-        # others, especially if they bundle their own code!
-        num_expanded_toks = inputs.input_ids.shape[1]
-        hf_out_toks = hf_output[0][num_expanded_toks:]
-
-        hf_generated_text = processor.decode(hf_out_toks)
-        hf_results.append(hf_generated_text)
-    return hf_results
-
-def get_fms_results(model_path, vllm_prompts):
-    """Process the results for FMS running on CPU."""
-    fms_results = []
-    processor = AutoProcessor.from_pretrained(model_path)
-    num_prompts = len(vllm_prompts)
-
-    # head_dim expansion required for granite vision
-    serialization.extend_adapter(
-        "llava_next", "hf", ["weight_expansion_for_mismatched_head_dim"]
-    )
-    config_dict = {}
-    config_dict["head_dim"] = 128
-
-    # Load, but don't compile (compare to CPU)
-    model = get_model(
-        "hf_pretrained",
-        model_path,
-        data_type=torch.bfloat16, # Matches default in vLLM for this model
-        fused_weights=False,
-        override_hf_pretrained_config=True,
-        text_config=config_dict,
-    )
-
-    for i in range(num_prompts):
-        # Assume prompts are preformatted and that we don't need to use chat template
-        vllm_req = prompts[i]
-
-        inputs = processor(
-            text=vllm_req["prompt"],
-            images=vllm_req["multi_modal_data"]["image"],
-            return_tensors="pt"
-        )
-
-        input_ids = inputs.pop("input_ids")
-        inputs["attn_name"] = "sdpa_causal" # TODO would be best to compare against paged attn
-
-        fms_output = fms_generate(
-            model,
-            input_ids,
-            max_new_tokens=max_tokens[i],
-            use_cache=True,
-            do_sample=False, # Greedy decode
-            extra_kwargs=inputs,
-            prepare_model_inputs_hook=model.prepare_inputs_for_generation,
-        )
-        num_expanded_toks = input_ids.shape[1]
-        fms_out_toks = fms_output[0][num_expanded_toks:]
-
-        fms_generated_text = processor.decode(fms_out_toks)
-        fms_results.append(fms_generated_text)
-    return fms_results
-
-
-def compare_results(prompts: list[str], outputs_a: list[str], outputs_b: list[str], name_a: str, name_b: str):
-    print(f"Comparing {name_a} results with {name_b}")
-    print("===============")
-    any_differ = False
-    for idx, (result_a, result_b) in enumerate(zip(outputs_a, outputs_b)):
-        # Assume prompts are preformatted and that we don't need to use chat template
-
-        if result_a != result_b:
-            img_tok_idx = prompts[idx].index("<image>")
-            gen_prompt_idx = prompts[idx].index("<|assistant|>")
-            raw_prompt = prompts[idx][img_tok_idx:gen_prompt_idx].strip()
-
-            any_differ = True
-            print(f"Results for prompt {idx} differ!")
-            print(f"\nPrompt (excluding system/generation prompt):\n {repr(raw_prompt)}")
-            print(
-                f"\n{name_a} generated text:\n {result_a}\n")
-            print(f"\n{name_b} generated text:\n {result_b}\n")
-            print("-----------------------------------")
-
-    if not any_differ:
-        print("\nAll results match!\n")
-
 def get_vllm_prompts(num_prompts):
+    """Get the vLLM prompts to be processed."""
     template = "<|system|>\nA chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions.\n<|user|>\n<image>\n{}\n<|assistant|>\n"
 
     images = [
@@ -184,6 +77,117 @@ def get_vllm_prompts(num_prompts):
     prompts = prompts * (num_prompts // len(prompts) + 1)
     return prompts[:num_prompts]
 
+def compare_results(prompts: list[str], outputs_a: list[str], outputs_b: list[str], name_a: str, name_b: str):
+    """Utils for comparing outputs from differing engines/implementations, e.g., transformers & vLLM."""
+    print(f"Comparing {name_a} results with {name_b}")
+    print("===============")
+    any_differ = False
+    for idx, (result_a, result_b) in enumerate(zip(outputs_a, outputs_b)):
+        # Assume prompts are preformatted and that we don't need to use chat template
+
+        if result_a != result_b:
+            img_tok_idx = prompts[idx].index("<image>")
+            gen_prompt_idx = prompts[idx].index("<|assistant|>")
+            raw_prompt = prompts[idx][img_tok_idx:gen_prompt_idx].strip()
+
+            any_differ = True
+            print(f"Results for prompt {idx} differ!")
+            print(f"\nPrompt (excluding system/generation prompt):\n {repr(raw_prompt)}")
+            print(
+                f"\n{name_a} generated text:\n {result_a}\n")
+            print(f"\n{name_b} generated text:\n {result_b}\n")
+            print("-----------------------------------")
+
+    if not any_differ:
+        print("\nAll results match!\n")
+
+# Alternate implementations to compare against; we have seen mismatches for parity
+# between FMS and Transformers, so for completeness, we allow comparison against
+# both Transformers on CPU and FMS.
+def get_transformers_results(model_path, vllm_prompts):
+    """Process the results for HF Transformers running on CPU."""
+    model = AutoModelForVision2Seq.from_pretrained(model_path)
+    return process_prompts(
+        model_path,
+        model,
+        vllm_prompts,
+        process_prompt_transformers,
+    )
+
+def process_prompt_transformers(model, max_tokens, inputs):
+    """Process a single prompt using a transformers model."""
+    return model.generate(**inputs, max_new_tokens=max_tokens)
+
+def get_fms_results(model_path, vllm_prompts):
+    """Process the results for FMS running on CPU."""
+    # head_dim expansion required for granite vision
+    serialization.extend_adapter(
+        "llava_next", "hf", ["weight_expansion_for_mismatched_head_dim"]
+    )
+    config_dict = {}
+    config_dict["head_dim"] = 128
+
+    # Load, but don't compile (compare to CPU)
+    model = get_model(
+        "hf_pretrained",
+        model_path,
+        data_type=torch.bfloat16, # Matches default in vLLM for this model
+        fused_weights=False,
+        override_hf_pretrained_config=True,
+        text_config=config_dict,
+    )
+
+    return process_prompts(
+        model_path,
+        model,
+        vllm_prompts,
+        process_prompt_fms,
+    )
+
+def process_prompt_fms(model, max_tokens, inputs):
+    """Process a single prompt using an FMS model."""
+    input_ids = inputs.pop("input_ids")
+    # TODO would be best to compare against paged attn
+    inputs["attn_name"] = "sdpa_causal"
+
+    return fms_generate(
+        model,
+        input_ids,
+        max_new_tokens=max_tokens,
+        use_cache=True,
+        do_sample=False, # Greedy decode
+        extra_kwargs=inputs,
+        prepare_model_inputs_hook=model.prepare_inputs_for_generation,
+    )
+
+def process_prompts(model_path, model, vllm_prompts, process_prompt):
+    """Generic wrapper for running generate on either transformers or FMS."""
+    processor = AutoProcessor.from_pretrained(model_path)
+    num_prompts = len(vllm_prompts)
+    generated_texts = []
+    for i in range(num_prompts):
+        # Assume prompts are preformatted and that we don't need to use chat template
+        vllm_req = vllm_prompts[i]
+
+        inputs = processor(
+            text=vllm_req["prompt"],
+            images=vllm_req["multi_modal_data"]["image"],
+            return_tensors="pt"
+        )
+        # NOTE: Image tokens are expanded in the llava next preprocessor
+        num_expanded_toks = inputs.input_ids.shape[1]
+
+        target_output = process_prompt(
+            model,
+            max_tokens[i],
+            inputs,
+        )
+
+        out_toks = target_output[0][num_expanded_toks:]
+        generated_text = processor.decode(out_toks)
+        generated_texts.append(generated_text)
+
+    return generated_texts
 
 if __name__ == "__main__":
     args = parser.parse_args()
