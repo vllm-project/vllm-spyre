@@ -183,6 +183,12 @@ class SpyreWorker(WorkerBase):
                 num_decode_tokens,
                 batch_size,
             )
+            if self.model_runner.is_multimodal():
+                logger.warning(
+                    "[WARMUP] - this model is multimodal, but mm features are "
+                    "currently not being handled correctly for static batching! "
+                    "Things will probably break due to mm encoders not warming up!"
+                )
             self._warmup_spyre_fixed_size(
                 prompt_len, num_decode_tokens, self.restricted_tokens, batch_size
             )
@@ -663,6 +669,7 @@ class SpyreWorker(WorkerBase):
                 sampling_params=sampling_params,
                 pooling_params=pooling_params,
                 prompt_embeds=None,
+                mm_features=None,
             )
             for i in range(batch_size)
         ]
