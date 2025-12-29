@@ -147,7 +147,9 @@ def get_fms_results(model_path, vllm_prompts):
 def process_prompt_fms(model, max_tokens, inputs):
     """Process a single prompt using an FMS model."""
     input_ids = inputs.pop("input_ids")
-    # TODO would be best to compare against paged attn
+    # May be better to use paged attn later on, but for now
+    # we just use sdpa to avoid having to deal with padding
+    # utils & position id management here
     inputs["attn_name"] = "sdpa_causal"
 
     return fms_generate(
@@ -184,7 +186,12 @@ def process_prompts(model_path, model, vllm_prompts, process_prompt):
         )
 
         out_toks = target_output[0][num_expanded_toks:]
-        generated_text = processor.decode(out_toks)
+        # Make sure not to include EOS, since vLLM
+        # doesn't return them, but FMS might.
+        generated_text = processor.decode(
+            out_toks,
+            skip_special_tokens=True,
+        )
         generated_texts.append(generated_text)
 
     return generated_texts
