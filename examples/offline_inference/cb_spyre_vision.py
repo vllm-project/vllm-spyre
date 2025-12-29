@@ -36,93 +36,15 @@ parser.add_argument("--backend",
                     type=str,
                     default='sendnn',
                     choices=['eager', 'sendnn'])
-parser.add_argument("--compare-with-transformers",
-                    action=argparse.BooleanOptionalAction)
-parser.add_argument("--compare-with-fms",
-                    action=argparse.BooleanOptionalAction)
-args = parser.parse_args()
 
-max_num_seqs = args.max_num_seqs  # defines the max batch size
+parser.add_argument("--compare-target",
+                    type=str,
+                    default='fms',
+                    choices=['transformers', 'fms'],
+                    help="Target to compare results against on CPU.")
 
-if platform.machine() == "arm64":
-    print("Detected arm64 running environment. "
-          "Setting HF_HUB_OFFLINE=1 otherwise vllm tries to download a "
-          "different version of the model using HF API which might not work "
-          "locally on arm64.")
-    os.environ["HF_HUB_OFFLINE"] = "1"
 
-os.environ['VLLM_SPYRE_DYNAMO_BACKEND'] = args.backend
-os.environ['VLLM_SPYRE_USE_CB'] = '1'
-
-template = "<|system|>\nA chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions.\n<|user|>\n<image>\n{}\n<|assistant|>\n"
-
-images = [
-    ImageAsset('cherry_blossom').pil_image,
-    ImageAsset('stop_sign').pil_image,
-]
-
-instructions = [
-    "describe this image.",
-    "what is shown in this image?",
-    "what kind of flowers are these?",
-]
-
-prompts = []
-for img in images:
-    width, height = img.size
-    for instr in instructions:
-        new_width = int(.1 * width)
-        new_height = int(.1 * height)
-        prompts.append({
-            "prompt": template.format(instr),
-            "multi_modal_data": {
-                "image": img.resize((new_width, new_height)),
-            }
-        })
-
-prompts = prompts * (args.num_prompts // len(prompts) + 1)
-prompts = prompts[0:args.num_prompts]
-
-# Set differring max_tokens so that the requests drop out of the batch at
-# different times
-max_tokens = [int(v) for v in args.max_tokens.split(",")]
-max_tokens = max_tokens * (args.num_prompts // len(max_tokens) + 1)
-max_tokens = max_tokens[0:args.num_prompts]
-
-sampling_params = [
-    SamplingParams(max_tokens=m, temperature=0.0, ignore_eos=True)
-    for m in max_tokens
-]
-
-llm = LLM(model=args.model,
-          tokenizer=args.model,
-          max_model_len=args.max_model_len,
-          max_num_seqs=max_num_seqs,
-          tensor_parallel_size=args.tp)
-
-# Generate texts from the prompts. The output is a list of RequestOutput objects
-# that contain the prompt, generated text, and other information.
-print("=============== GENERATE")
-t0 = time.time()
-vllm_outputs = llm.generate(prompts, sampling_params)
-vllm_results = [x.outputs[0].text for x  in vllm_outputs] # raw texts
-raw_prompts = [prompt["prompt"] for prompt in prompts]
-
-print("Time elaspsed for %d tokens is %.2f sec" %
-      (len(vllm_outputs[0].outputs[0].token_ids), time.time() - t0))
-print("===============")
-for output in vllm_results:
-    print(output)
-print("===============")
-for prompt, generated_text in zip(prompts, vllm_results):
-    prompt = prompt["prompt"]
-    # Prompt contains expanded image tokens, so just print
-    # what's after the last one for readability
-    print(f"\nPrompt:\n {prompt}")
-    print(f"\nGenerated text:\n {generated_text!r}\n")
-    print("-----------------------------------")
-
-# Alternate implentatinos to compare against; we have seen mismatches for parity
+# Alternate implementations to compare against; we have seen mismatches for parity
 # between FMS and Transformers, so for completeness, we allow comparison against
 # both Transformers on CPU and FMS.
 def get_transformers_results(model_path, vllm_prompts):
@@ -170,13 +92,11 @@ def get_fms_results(model_path, vllm_prompts):
     model = get_model(
         "hf_pretrained",
         model_path,
-        data_type=torch.float32,
-        device_type="cpu",
+        data_type=torch.bfloat16, # Matches default in vLLM for this model
         fused_weights=False,
         override_hf_pretrained_config=True,
         text_config=config_dict,
     )
-
 
     for i in range(num_prompts):
         # Assume prompts are preformatted and that we don't need to use chat template
@@ -189,15 +109,14 @@ def get_fms_results(model_path, vllm_prompts):
         )
 
         input_ids = inputs.pop("input_ids")
-        inputs["attn_name"] = "sdpa_causal" # TODO need to handle padding for paged attn
+        inputs["attn_name"] = "sdpa_causal" # TODO would be best to compare against paged attn
 
         fms_output = fms_generate(
             model,
             input_ids,
             max_new_tokens=max_tokens[i],
             use_cache=True,
-            do_sample=False,
-            max_seq_len=input_ids.shape[1] + max_tokens[i],
+            do_sample=False, # Greedy decode
             extra_kwargs=inputs,
             prepare_model_inputs_hook=model.prepare_inputs_for_generation,
         )
@@ -232,30 +151,99 @@ def compare_results(prompts: list[str], outputs_a: list[str], outputs_b: list[st
     if not any_differ:
         print("\nAll results match!\n")
 
-if args.compare_with_transformers:
-    transformers_results = get_transformers_results(
+def get_vllm_prompts(num_prompts):
+    template = "<|system|>\nA chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions.\n<|user|>\n<image>\n{}\n<|assistant|>\n"
+
+    images = [
+        ImageAsset('cherry_blossom').pil_image,
+        ImageAsset('stop_sign').pil_image,
+    ]
+
+    instructions = [
+        "describe this image.",
+        "what is shown in this image?",
+        "what kind of flowers are these?",
+    ]
+
+    prompts = []
+    for img in images:
+        width, height = img.size
+        for instr in instructions:
+            # Make the images smol so that this example can run faster,
+            # since we are not using a toy model here, and big images
+            # can take up tons of tokens
+            new_width = int(.1 * width)
+            new_height = int(.1 * height)
+            prompts.append({
+                "prompt": template.format(instr),
+                "multi_modal_data": {
+                    "image": img.resize((new_width, new_height)),
+                }
+            })
+
+    prompts = prompts * (num_prompts // len(prompts) + 1)
+    return prompts[:num_prompts]
+
+
+if __name__ == "__main__":
+    args = parser.parse_args()
+
+    max_num_seqs = args.max_num_seqs  # defines the max batch size
+
+    if platform.machine() == "arm64":
+        print("Detected arm64 running environment. "
+            "Setting HF_HUB_OFFLINE=1 otherwise vllm tries to download a "
+            "different version of the model using HF API which might not work "
+            "locally on arm64.")
+        os.environ["HF_HUB_OFFLINE"] = "1"
+
+    os.environ['VLLM_SPYRE_DYNAMO_BACKEND'] = args.backend
+    os.environ['VLLM_SPYRE_USE_CB'] = '1'
+
+    prompts = get_vllm_prompts(args.num_prompts)
+
+    # Set differring max_tokens so that the requests drop out of the batch at
+    # different times
+    max_tokens = [int(v) for v in args.max_tokens.split(",")]
+    max_tokens = max_tokens * (args.num_prompts // len(max_tokens) + 1)
+    max_tokens = max_tokens[:args.num_prompts]
+
+    sampling_params = [
+        SamplingParams(max_tokens=m, temperature=0.0, ignore_eos=True)
+        for m in max_tokens
+    ]
+
+    llm = LLM(model=args.model,
+            tokenizer=args.model,
+            max_model_len=args.max_model_len,
+            max_num_seqs=max_num_seqs,
+            tensor_parallel_size=args.tp)
+
+    # Generate texts from the prompts. The output is a list of RequestOutput objects
+    # that contain the prompt, generated text, and other information.
+    print("=============== GENERATE")
+    t0 = time.time()
+    vllm_outputs = llm.generate(prompts, sampling_params)
+    vllm_results = [x.outputs[0].text for x  in vllm_outputs] # raw texts
+    raw_prompts = [prompt["prompt"] for prompt in prompts]
+
+    compare_target_map = {
+        "transformers": get_transformers_results,
+        "fms": get_fms_results,
+    }
+
+    # Since we always compare the results here, we don't bother
+    # printing thge raw results yet, since the head_dim patch
+    # in FMS init tends to flood the logs anyway.
+    cpu_results = compare_target_map[args.compare_target](
         model_path=args.model,
         vllm_prompts=prompts,
     )
 
     compare_results(
         prompts=raw_prompts,
-        outputs_a=transformers_results,
+        outputs_a=cpu_results,
         outputs_b=vllm_results,
-        name_a="transformers [cpu]",
-        name_b="vllm [spyre]",
-    )
-
-if args.compare_with_fms:
-    fms_results = get_fms_results(
-        model_path=args.model,
-        vllm_prompts=prompts,
-    )
-
-    compare_results(
-        prompts=raw_prompts,
-        outputs_a=fms_results,
-        outputs_b=vllm_results,
-        name_a="FMS [cpu]",
+        name_a=f"{args.compare_target} [cpu]",
         name_b="vllm [spyre]",
     )
