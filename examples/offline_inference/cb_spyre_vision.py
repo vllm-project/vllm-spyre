@@ -99,7 +99,7 @@ def compare_results(prompts: list[str], outputs_a: list[str],
 
             any_differ = True
             print(f"Results for prompt {idx} differ!")
-            print(f"\nPrompt (w/o system/gen prompt):\n {repr(raw_prompt)}")
+            print(f"\nPrompt (no system/gen prompt):\n {repr(raw_prompt)}")
             print(f"\n{name_a} generated text:\n {result_a}\n")
             print(f"\n{name_b} generated text:\n {result_b}\n")
             print("-----------------------------------")

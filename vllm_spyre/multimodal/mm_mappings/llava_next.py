@@ -110,13 +110,14 @@ class LlavaNextMMUtils(MMUtilsBase):
         # The maximal shape has 11 tiles. Careful to handle the offsets
         # correctly if this is modified!
         tile_size = self.hf_config.vision_config.image_size
-        img_size = [118, 177]
+        img_size = [tile_size // 2, tile_size // 2]
         # TODO: Make this more dynamic and calc based on vLLM utils
         pixel_values_shape = [3, 3, tile_size, tile_size]
         # Image size (px, not tokens)
         image_sizes = torch.tensor(img_size, dtype=torch.int64)
-        # offsets wrt text prompt
-        mm_position = PlaceholderRange(offset=42, length=1836)
+        # offsets wrt text prompt; since we just throw a raw expanded
+        # image through, it's the entire expanded text prompt.
+        mm_position = PlaceholderRange(offset=0, length=1512)
 
         mm_features = [
             MultiModalFeatureSpec(
@@ -144,21 +145,14 @@ class LlavaNextMMUtils(MMUtilsBase):
 
     def get_warmup_tokens(self) -> torch.Tensor:
         # TODO make this less hacky, build dynamically
-        img_toks = [self.get_multimodal_token_id()] * 1836
-        return torch.tensor(
-            [
-                46, 110, 2946, 28318, 203, 51, 11210, 3733, 312, 39489, 1256,
-                461, 600, 5549, 31251, 629, 21488, 47330, 32, 886, 47330,
-                13344, 17247, 30, 16360, 30, 461, 7743, 659, 19969, 372, 322,
-                1256, 1182, 10017, 32, 203, 46, 110, 496, 28318, 203
-            ] + img_toks +
-            [203, 7628, 458, 1778, 32, 203, 46, 110, 17594, 28318, 203])
+        img_toks = [self.get_multimodal_token_id()] * 1512
+        return torch.tensor(img_toks)
 
-    def get_warmup_embeds_tensor(self, num_requests=3) -> torch.Tensor:
+    def get_warmup_embeds_tensor(self) -> torch.Tensor:
         warmup_input_ids = self.get_warmup_tokens()
         emb_dim = self.hf_config.text_config.hidden_size
         seq_len = warmup_input_ids.shape[-1]
-        return torch.rand((num_requests, seq_len, emb_dim))
+        return torch.rand((seq_len, emb_dim))
 
     def get_multimodal_token_id(self) -> int:
         return self.hf_config.image_token_index
