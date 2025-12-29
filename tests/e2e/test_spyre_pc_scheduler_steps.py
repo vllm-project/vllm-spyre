@@ -200,7 +200,6 @@ def test_prefix_hit_within_batch(model: ModelInfo, backend: str,
     )
 
 
-@pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @pytest.mark.full_model
 @pytest.mark.prefix_caching
