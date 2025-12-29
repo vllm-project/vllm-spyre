@@ -2606,8 +2606,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         This is in the number of usable cache tokens: Including the left padding
         this will always land at a chunk boundary.
         """
-        if batch != self.prefill_batch:
-            return {}
+        # Must be called with the prefill batch
+        assert batch == self.prefill_batch
 
         # We only support serial chunked prefill
         assert len(batch.requests_ids) == 1
