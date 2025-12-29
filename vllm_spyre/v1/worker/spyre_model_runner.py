@@ -185,15 +185,15 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT,
         """Indicates whether or not a model is loaded & multimodal.
         If the model is not initialized yet, this will return False.
         """
-        if self.model and getattr(self.model, "is_multimodal", None):
-            return True
-        return False
+        return bool(
+            hasattr(self, "model")
+            and getattr(self.model, "is_multimodal", False))
 
     def get_mm_utils(self):
         """If the [loaded] model is multimodal, grab the instance of
         the mm utils for the corresponding wrapper class.
         """
-        if not self.is_multimodal:
+        if not self.is_multimodal():
             return None
         return self.model.mm_model_utils
 
@@ -561,7 +561,7 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
         if is_prompt:
             # Assert no running requests
             assert len(scheduler_output.scheduled_cached_reqs.req_ids) == 0
-            # NOTE: This will call mm encoders and create merged embeds if needed
+            # NOTE: This will encode multimodal features if we have them
             return self._prepare_prompt(scheduler_output.scheduled_new_reqs)
         else:
             return self._prepare_decode(scheduler_output.scheduled_cached_reqs)
@@ -594,10 +594,13 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
 
         model_input = self.prepare_model_input(scheduler_output)
 
-        # Execute the model
         attn_metadata = self.build_attn_metadata(model_input)
         # Embeddings take priority [used by multimodal models only]
-        input_ids_or_embeds = model_input.input_embeds if model_input.input_embeds is not None else model_input.input_tokens
+        input_ids_or_embeds = (model_input.input_embeds
+                               if model_input.input_embeds is not None else
+                               model_input.input_tokens)
+
+        # Execute the model
         with set_forward_context(attn_metadata, self.vllm_config):
             logits = self.model(input_ids_or_embeds=input_ids_or_embeds,
                                 positions=model_input.input_positions,
@@ -904,8 +907,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             # TODO: review this, currently we only support prefill for
             # `batch_size=1`
             # TODO: when considering multimodal inputs for larger batches, we
-            # should also ensure that prefill correctly handles the case in which
-            # we mix multimodal and text-only requests in the same prefill batch.
+            # should also ensure that prefill correctly handles the case in
+            # which we mix mm + text-only requests in the same prefill batch.
             max_num_reqs=1,
             max_model_len=vllm_config.model_config.max_model_len,
             device=self.device,
@@ -1186,8 +1189,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # In the case of multimodal models, always use embeddings
         # as inputs, even in the case where we only have texts.
         if self.model.is_multimodal:
-            # NOTE: This will call the multimodal encoder and merge the embeddings
-            # if we have multimodal features, e.g., for granite vision.
             input_embeds = self.model.get_maybe_mm_embeddings(
                 input_tokens,
                 mm_features=mm_features,
@@ -1315,7 +1316,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             # model to call the language model when preparing its embedding.
             # by setting iteration > 0; failing to do this will cause it to
             # return the raw input id and try to embed in the forward call,
-            # which may break on AIU due to misalignment with prefill embed call.
+            # which may break on AIU due to misalignment with prefill
+            # embed call.
             input_embeds = self.model.get_maybe_mm_embeddings(
                 input_tokens,
                 mm_features=None,
@@ -1883,12 +1885,13 @@ class SpyrePoolingModelRunner(WarmupShapesMixin,
 
         model_input = self.prepare_model_input(scheduler_output)
 
-        # Execute the model
         attn_metadata = self.build_attn_metadata(model_input)
 
         model_kwargs = {}
         if self.use_token_type_ids:
             model_kwargs["token_type_ids"] = model_input.token_type_ids
+
+        # Execute the model
         with set_forward_context(attn_metadata, self.vllm_config):
             outputs = self.model(input_ids=model_input.input_tokens,
                                  position_ids=model_input.input_positions,
@@ -2167,7 +2170,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         # In the case of multimodal models, always use embeddings
         # as inputs, even in the case where we only have texts.
         if self.model.is_multimodal:
-            # NOTE: This will call the multimodal encoder and merge the embeddings
+            # NOTE: This will call the mm encoder and merge the embeddings
             # if we have multimodal features, e.g., for granite vision.
             input_embeds = self.model.get_maybe_mm_embeddings(
                 input_tokens,
@@ -2285,7 +2288,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             # model to call the language model when preparing its embedding.
             # by setting iteration > 0; failing to do this will cause it to
             # return the raw input id and try to embed in the forward call,
-            # which may break on AIU due to misalignment with prefill embed call.
+            # which may break on AIU due to misalignment with prefill
+            # embed call.
             input_embeds = self.model.get_maybe_mm_embeddings(
                 input_tokens,
                 mm_features=None,
@@ -2607,10 +2611,13 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                     "can't apply caching on the last chunked prefill"
 
         if not is_cached_chunk:
-            # Execute the model
             attn_metadata = self.build_attn_metadata(model_input)
             # Embeddings take priority [used by multimodal models only]
-            input_ids_or_embeds = model_input.input_embeds if model_input.input_embeds is not None else model_input.input_tokens
+            input_ids_or_embeds = (model_input.input_embeds
+                                   if model_input.input_embeds is not None else
+                                   model_input.input_tokens)
+
+            # Execute the model
             with set_forward_context(attn_metadata, self.vllm_config):
                 logits = self.model(input_ids_or_embeds=input_ids_or_embeds,
                                     positions=model_input.input_positions,
@@ -2744,7 +2751,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             else:
                 torch._dynamo.mark_static(model_input.input_tokens, 0)
                 torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
-
 
         # decode
         else:

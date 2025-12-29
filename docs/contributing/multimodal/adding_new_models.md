@@ -2,7 +2,7 @@
 
 In order to understand how to get multimodal models running through vLLM Spyre, it is important to understand the differences between how models are implemented in vLLM & vLLM Spyre. To illustrate this, we use `llava_next` as an example, because `granite vision` is the only multimodal model currently supported.
 
-### For vLLM
+## For vLLM
 In vLLM, models are implemented as their own model class. The class implementation generally inherits from `SupportsMultiModal`, and importantly, it registers multimodal processing information.
 
 ```python
@@ -35,7 +35,6 @@ This has a few implications that may be nonobvious. Namely:
 5. As a result of ^, we must be careful to handle warmup correctly with respect to `torch.compile`, *especially* when it comes to AIU. More details on this below.
 
 For more extensive documentation in how to implement multimodal in vLLM, see the docs [here](https://docs.vllm.ai/en/latest/contributing/model/multimodal/#prompt-updates) - the above is mostly meant as context for how think of these models with respect to vLLM Spyre.
-
 
 ### Extending to vLLM Spyre
 In vLLM Spyre, models are implemented with a generic wrapper around FMS; the implementation is *not* model specific. This adds several points of awkwardness in porting multimodal FMS wrappers into vLLM Spyre. In general, the best way to get the model working is as follows:
