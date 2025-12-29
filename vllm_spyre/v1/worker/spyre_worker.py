@@ -187,7 +187,7 @@ class SpyreWorker(WorkerBase):
                 logger.warning(
                     "[WARMUP] - this model is multimodal, but mm features are "
                     "currently not being handled correctly for static batching! "
-                    "Things will probably break due to mm encoders not warming up!"
+                    "This will probably break compiled models!"
                 )
             self._warmup_spyre_fixed_size(
                 prompt_len, num_decode_tokens, self.restricted_tokens, batch_size
@@ -528,7 +528,8 @@ class SpyreWorker(WorkerBase):
             # MM only uses embedding inputs, so no need to pass tokens
             warmup_tokens = [mm_model_utils.get_warmup_tokens()] * req_count
             mm_features = mm_model_utils.get_warmup_mm_features()
-            warmup_embeds_tensor = [mm_model_utils.get_warmup_embeds_tensor()] * req_count
+            warmup_embeds_tensor = [mm_model_utils.get_warmup_embeds_tensor()
+                                    ] * req_count
             prompt_len = warmup_tokens[0].shape[-1]
         else:
             prompt_len = 42

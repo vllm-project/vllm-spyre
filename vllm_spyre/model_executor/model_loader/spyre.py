@@ -19,8 +19,8 @@ from vllm.v1.sample.metadata import SamplingMetadata
 from vllm.v1.sample.sampler import Sampler
 
 import vllm_spyre.envs as envs_spyre
-import vllm_spyre.utils as utils_spyre
 import vllm_spyre.multimodal as spyre_mm
+import vllm_spyre.utils as utils_spyre
 from vllm_spyre.platform import SpyrePlatform
 
 try:
@@ -133,14 +133,15 @@ class SpyreCausalLM(nn.Module):
         return logits
 
     def get_maybe_mm_embeddings(self, input_ids, mm_features, is_decode):
-        """Retrieve the embeddings corresponding to the input_ids and mm_features,
-        if any are provided.
+        """Retrieve the embeddings corresponding to the input_ids and
+        mm_features, if any are provided.
         """
         fms_model = self.model.model
 
         if not self.is_multimodal or self.mm_model_utils is None:
             if mm_features:
-                raise ValueError("Multimodal features were provided, but this model is not multimodal!")
+                raise ValueError(
+                    "mm_features were provided, but model is not multimodal!")
             # Fall back to direct embedding otherwise for compatibility.
             # This should generally not happen in current codepaths since
             # only multimodal models should use embeddings for prefill/decode.
@@ -399,9 +400,9 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             self.kv_cache_specs["head_dim"] = self.config.n_embd // self.config.n_head
         elif self.is_multimodal and self.mm_model_utils is not None:
             # Handle multimodal separately for now since we need to unwrap the
-            # text configs and technically (outside FMS) the LLM could be generic;
-            # the instance of mm_model_utils encapsulates the configs, so no need
-            # to pass them again.
+            # text configs and technically (outside FMS) the LLM could be
+            # generic; the instance of mm_model_utils encapsulates the configs,
+            # so no need to pass them again.
             unwrapped_opts = self.mm_model_utils.unwrap_mm_kv_cache_opts()
             self.kv_cache_specs.update(unwrapped_opts)
         else:

@@ -1,10 +1,9 @@
-from vllm.multimodal.inputs import MultiModalFeatureSpec
-
-from fms.utils.config import ModelConfig
-import torch
-from transformers import PretrainedConfig
-
 from abc import ABC, abstractmethod
+
+import torch
+from fms.utils.config import ModelConfig
+from transformers import PretrainedConfig
+from vllm.multimodal.inputs import MultiModalFeatureSpec
 
 
 class MMUtilsBase(ABC):
@@ -50,9 +49,9 @@ class MMUtilsBase(ABC):
             if (vocab_sz := getattr(text_config, "src_vocab_size", None)):
                 return vocab_sz
             raise ValueError(
-                "Provided FMS config has a sub text_config, but no src_vocab_size!"
+                "Provided FMS config has a text_config, but no src_vocab_size!"
             )
-        raise ValueError("Provided FMS config has no sub text config!")
+        raise ValueError("Provided FMS config has no text config!")
 
     def unwrap_mm_kv_cache_opts(self):
         """Unwrap options to be passed for the kv cache from the underlying
@@ -63,10 +62,10 @@ class MMUtilsBase(ABC):
 
     @staticmethod
     def get_mm_specific_load_overrides(hf_config: PretrainedConfig):
-        """Get any overrides needed for fixing compile with current multimodal models
-        when calling from fms.models.get_model(); this should largely remain as static
-        since it should only be used when initialized the FMS model, which will give us
-        the FMS config.
+        """Get any overrides needed for fixing compile with current multimodal
+        models when calling from fms.models.get_model(); this should largely
+        remain as static since it should only be used when initialized the FMS
+        model, which will give us the FMS config.
         """
         return {}
 
@@ -78,8 +77,9 @@ class MMUtilsBase(ABC):
         mm_features: list[MultiModalFeatureSpec],
         is_decode: bool,
     ) -> torch.Tensor:
-        """Get the (potentially) multimodal embeddings for this model architecture.
-        Produced tensors should be of shape [bsz, seq_len, emb_dim].
+        """Get the (potentially) multimodal embeddings for this model
+        architecture. Produced tensors should be of shape
+        [bsz, seq_len, emb_dim].
         """
         pass
 

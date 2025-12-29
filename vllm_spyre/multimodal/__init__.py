@@ -1,8 +1,9 @@
-from fms import models
-from fms.utils.config import ModelConfig
-from vllm_spyre.multimodal.mm_mappings import LlavaNextMMUtils, MMUtilsBase
-from typing import Optional, Union
+from typing import Optional
+
 import transformers
+from fms import models
+
+from vllm_spyre.multimodal.mm_mappings import LlavaNextMMUtils, MMUtilsBase
 
 MM_CFG_MAPPING = {
     # FMS configs
@@ -12,19 +13,6 @@ MM_CFG_MAPPING = {
     transformers.LlavaNextConfig:
     LlavaNextMMUtils,
 }
-
-
-def is_multimodal_config(cfg: Union[transformers.PretrainedConfig,
-                                    ModelConfig]):
-    """Used to check if a config is multimodal; this can be either a transformers
-    PretrainedConfig or an FMS ModelConfig.
-    """
-    if not MM_CFG_MAPPING:
-        return False
-    for mm_type in MM_CFG_MAPPING:
-        if isinstance(cfg, mm_type):
-            return True
-    return False
 
 
 def get_mm_specific_load_overrides(hf_config: transformers.PretrainedConfig):

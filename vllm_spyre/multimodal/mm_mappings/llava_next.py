@@ -2,16 +2,11 @@ import torch
 from fms.utils import serialization
 from fms.utils.config import ModelConfig
 from transformers import PretrainedConfig
+from vllm.multimodal.inputs import (MultiModalBatchedField,
+                                    MultiModalFeatureSpec, MultiModalFieldElem,
+                                    MultiModalKwargsItem, PlaceholderRange)
 
-from vllm.multimodal.inputs import (
-    MultiModalFeatureSpec,
-    MultiModalKwargsItem,
-    MultiModalBatchedField,
-    MultiModalFieldElem,
-    PlaceholderRange,
-)
-
-from vllm_spyre.multimodal.mm_mappings.base import MMUtilsBase
+from vllm_spyre.multimodal.mm_mappings import MMUtilsBase
 
 
 class LlavaNextMMUtils(MMUtilsBase):
@@ -23,10 +18,9 @@ class LlavaNextMMUtils(MMUtilsBase):
         validating subconfig attrs should generally be done within subclasses.
         """
         MMUtilsBase._validate_configs(fms_config, hf_config)
-        if hf_config.model_type != "llava_next" or hf_config.text_config.model_type != "granite":
-            raise TypeError(
-                "Currently llava next / granite vision only supports granite LLMs!"
-            )
+        if (hf_config.model_type != "llava_next"
+                or hf_config.text_config.model_type != "granite"):
+            raise TypeError("llava next currently only supports granite LLMs!")
 
     def unwrap_mm_kv_cache_opts(self):
         """Unwrap options to be passed for the kv cache from the underlying
@@ -34,7 +28,8 @@ class LlavaNextMMUtils(MMUtilsBase):
         .update() the common kv cache opts that don't need unwrapping.
         """
         kv_cache_specs = {}
-        # NOTE: For now this is the same as granite since we only support granite vision.
+        # NOTE: this is granite LLM specific, since the only llava next
+        # variant supported in FMS is currently granite vision.
         kv_cache_specs[
             'num_layers'] = self.hf_config.text_config.num_hidden_layers
         kv_cache_specs['head_dim'] = getattr(
@@ -45,12 +40,13 @@ class LlavaNextMMUtils(MMUtilsBase):
 
     @staticmethod
     def get_mm_specific_load_overrides(hf_config: PretrainedConfig):
-        """Get any overrides needed for initializing the FMS model from the transformers
-        config. For this model, we need to fix the head_dim, which currently surfaces
-        as a problem for all 2b variants of granite 3.x LLMs when running through FMS.
+        """Get any overrides needed for initializing the FMS model from the
+        transformers config. For this model, we need to fix the head_dim, which
+        currently surfaces as a problem for all 2b variants of granite 3.x LLMs
+        when running through FMS.
         
-        TODO: If additional variants of granite vision are added, or broader llava
-        next support is added, we should be sure to handle it properly here.
+        TODO: If additional variants of granite vision are added, or broader
+        llava next support is added in FMS, handle it properly here.
         """
         serialization.extend_adapter(
             "llava_next", "hf", ["weight_expansion_for_mismatched_head_dim"])
@@ -72,6 +68,7 @@ class LlavaNextMMUtils(MMUtilsBase):
         the (potentially compiled) FMS model.
         """
         fms_kwargs = {"use_cache": True}
+        mm_spec_keys = ["pixel_values", "image_sizes"]
 
         # Only merge multimodal features in prefill; nothing mm in decode
         if mm_features:
@@ -81,18 +78,20 @@ class LlavaNextMMUtils(MMUtilsBase):
                 )
             mm_spec = mm_features[0].data
             if mm_spec is not None:
-                # NOTE: This should be pretty safe as it's dependent on the vLLM/HF
-                # processor objects, but we check it anyway to be safe for now,
-                # since transformers 5.0 is just around the corner.
-                if "pixel_values" not in mm_spec or "image_sizes" not in mm_spec:
-                    raise KeyError("Llava Next requires kwargs: ['pixel_values', 'image_sizes']")
+                # NOTE: This should be pretty safe as it's dependent on the
+                # vLLM/HF processor objects, but we check it anyway to be safe
+                # for now, since transformers 5.0 is just around the corner.
+                if any(k not in mm_spec for k in mm_spec_keys):
+                    raise KeyError(
+                        f"Llava Next requires kwargs: {mm_spec_keys}")
 
                 fms_kwargs["pixel_values"] = mm_spec["pixel_values"].data
                 image_sizes = mm_spec["image_sizes"].data
 
-                # Careful about this; if it's 1D, we'll a tensor of shape [x, y],
-                # which will break in a weird way in image packing, since it assumes
-                # it's 2D and will get sad about getting an int instead of an iterable
+                # Careful about this; if it's 1D, we'll a tensor of shape
+                # [x, y], which will break in a weird way in image packing,
+                # since it assumes it's 2D and will get sad about getting
+                # an int instead of an iterable
                 if image_sizes.ndim == 1:
                     image_sizes = image_sizes.unsqueeze(0)
                 fms_kwargs["image_sizes"] = image_sizes
@@ -144,7 +143,7 @@ class LlavaNextMMUtils(MMUtilsBase):
         return mm_features
 
     def get_warmup_tokens(self) -> torch.Tensor:
-        # TODO make this less hacky, build dynamically using vLLM image feature calcs
+        # TODO make this less hacky, build dynamically
         img_toks = [self.get_multimodal_token_id()] * 1836
         return torch.tensor(
             [
