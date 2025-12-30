@@ -59,8 +59,8 @@ async def test_abort(model: ModelInfo, backend: str, mode: str,
         patch_kwargs = ({
             "use_cb": True,
             "warmup_shapes": None,
-            "use_chunked_prefill": mode == "cp",
-        } if mode in ["cb", "cp"] else {
+            "use_chunked_prefill": mode in ["cp", "pc"],
+        } if mode in ["cb", "cp", "pc"] else {
             "use_cb": False,
             "warmup_shapes": warmup_shapes,
         })
@@ -78,7 +78,8 @@ async def test_abort(model: ModelInfo, backend: str, mode: str,
                 max_model_len=max_model_len,
                 max_num_seqs=max_num_seqs,
                 max_num_batched_tokens=max_num_batched_tokens
-                if mode == "cp" else None,
+                if mode in ["cp", "pc"] else None,
+                enable_prefix_caching=mode == "pc",
                 revision=model.revision,
                 tokenizer_revision=model.revision,
             ))

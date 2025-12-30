@@ -41,19 +41,21 @@ def test_custom_logits_processor(model: ModelInfo, backend, monkeypatch,
             return logits
 
     patch_environment(
-        use_cb=mode in ["cb", "cp"],
+        use_cb=mode in ["cb", "cp", "pc"],
         warmup_shapes=warmup_shapes if mode == "sb" else None,
         backend=backend,
-        use_chunked_prefill=mode == "cp",
+        use_chunked_prefill=mode in ["cp", "pc"],
         monkeypatch=monkeypatch,
     )
 
-    spyre_model = LLM(model=model.name,
-                      revision=model.revision,
-                      max_model_len=max_model_len,
-                      max_num_seqs=max_num_seqs,
-                      max_num_batched_tokens=128 if mode == "cp" else None,
-                      logits_processors=[DummyLogitsProcessor])
+    spyre_model = LLM(
+        model=model.name,
+        revision=model.revision,
+        max_model_len=max_model_len,
+        max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=128 if mode in ["cp", "pc"] else None,
+        enable_prefix_caching=mode == "pc",
+        logits_processors=[DummyLogitsProcessor])
     prompt = "Hello Logits Processors"
     params = SamplingParams(max_tokens=5, temperature=0, logprobs=0)
 
