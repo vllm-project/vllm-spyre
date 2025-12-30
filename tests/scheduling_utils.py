@@ -12,6 +12,7 @@ from spyre_util import ModelInfo, create_random_request
 from typing_extensions import deprecated
 from vllm import SamplingParams
 from vllm.transformers_utils.tokenizer import get_tokenizer
+from vllm.v1.core.kv_cache_utils import BlockHash
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.request import Request
@@ -64,9 +65,14 @@ def random_prompt(model: ModelInfo, seed: int, length: int) -> list[int]:
 
 
 def create_request_for_scheduler_test(
-        model: ModelInfo, request_id: int, add_step: int, max_tokens: int,
-        prompt: list[int],
-        use_golden_token_injection: bool) -> SchedulerTestRequest:
+    model: ModelInfo,
+    request_id: int,
+    add_step: int,
+    max_tokens: int,
+    prompt: list[int],
+    use_golden_token_injection: bool,
+    block_hasher: Callable[["Request"], list["BlockHash"]] | None = None,
+) -> SchedulerTestRequest:
     # Creates a request out of a prompt, for use with the scheduler tests.
     # Can add golden token injection, which will ensure that the vllm output
     # matches the hf output so that we can do logits comparisons on identical
@@ -105,7 +111,8 @@ def create_request_for_scheduler_test(
                       arrival_time=0,
                       lora_request=None,
                       pooling_params=None,
-                      cache_salt=None)
+                      cache_salt=None,
+                      block_hasher=block_hasher)
     return SchedulerTestRequest(add_step=add_step,
                                 request=request,
                                 hf_output=hf)

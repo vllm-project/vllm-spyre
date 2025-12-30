@@ -53,7 +53,7 @@ def patch_environment(use_cb: bool,
     # NB: setting this env var explicitly is needed to set the desired value for
     # the chunk size in the case that granite 8b TP4 is detected
     if max_num_batched_tokens is not None:
-        monkeypatch.setenv("VLLM_DT_CHUNK_LEN", max_num_batched_tokens)
+        monkeypatch.setenv("VLLM_DT_CHUNK_LEN", str(max_num_batched_tokens))
 
 
 def patch_warmup_shapes(warmup_shapes: DecodeWarmupShapes
