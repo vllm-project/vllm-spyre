@@ -115,11 +115,10 @@ class SortKey(NamedTuple):
         if "use_llm_cache" in item.fixturenames:
             return "llm"
 
-        if "test_spyre_cb_scheduler_steps.py" in item.listnames():
-            # Not currently cached and needs updating to fixture name
-            # CB step tests require a raw engine for scheduler access
-            return "engine"
-        if "test_chunked_prefill_tkv_steps.py" in item.listnames():
+        # All of the *_steps.py tests use cached engines to test scheduling
+        # logic
+        filename = [i for i in item.listnames() if i.endswith(".py")][0]
+        if "steps.py" in filename:
             return "engine"
 
         # Else shouldn't be using any cache
