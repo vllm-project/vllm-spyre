@@ -8,7 +8,6 @@ from vllm.multimodal.inputs import (MultiModalBatchedField,
 
 from vllm_spyre.multimodal.mm_mappings import MMUtilsBase, MMWarmupInputs
 
-
 # Extend the adapter as part of the head dim fix; this is needed to
 # load 2b models correctly, but we do it here since this class is
 # currently initialized only once and the adapter extension does not
@@ -16,11 +15,12 @@ from vllm_spyre.multimodal.mm_mappings import MMUtilsBase, MMWarmupInputs
 #
 # NOTE: If this is made idempotent, we can move this into
 # get_mm_specific_load_overrides(), since it's needed to load.
-serialization.extend_adapter(
-    "llava_next", "hf", ["weight_expansion_for_mismatched_head_dim"])
+serialization.extend_adapter("llava_next", "hf",
+                             ["weight_expansion_for_mismatched_head_dim"])
 
 
 class LlavaNextMMUtils(MMUtilsBase):
+
     @staticmethod
     def _validate_configs(fms_config: ModelConfig,
                           hf_config: PretrainedConfig):
