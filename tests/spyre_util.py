@@ -480,11 +480,11 @@ def get_chicken_soup_prompts(num_prompts: int) -> list[str]:
     return prompts[:num_prompts]
 
 
-def get_single_image_prompts(num_prompts: int, image_token: str) -> list[str]:
-    size_factors = [1, .5, .25]
+def get_single_image_prompts(num_prompts: int, image_token: str, tile_size: int) -> list[str]:
     # NOTE: this prompt is pretty specific to granite vision, and mm models are
     # often VERY sensitive to template changes; if we use this for other archs,
     # we should probably abstract the template.
+    new_size = (tile_size, tile_size)
 
     template = (
         "<|system|>\nA chat between a curious user and an artificial "
@@ -492,8 +492,8 @@ def get_single_image_prompts(num_prompts: int, image_token: str) -> list[str]:
         " polite answers to the user's questions.\n<|user|>\n"
         "{}\n{}\n<|assistant|>\n")
 
-    img = ImageAsset('cherry_blossom').pil_image
-    orig_width, orig_height = img.size
+    # Make it smol
+    resized_img = ImageAsset('cherry_blossom').pil_image.resize(new_size)
 
     raw_prompts = [
         "Describe this image.",
@@ -506,16 +506,13 @@ def get_single_image_prompts(num_prompts: int, image_token: str) -> list[str]:
     # Build multimodal prompts by mixing potentially
     # rescaled images with each of text prompts
     for raw_prompt in raw_prompts:
-        for sz_factor in size_factors:
-            new_width = int(sz_factor * orig_width)
-            new_height = int(sz_factor * orig_height)
-            mm_prompts.append({
-                "prompt":
-                template.format(image_token, raw_prompt),
-                "multi_modal_data": {
-                    "image": img.resize((new_width, new_height)),
-                }
-            })
+        mm_prompts.append({
+            "prompt":
+            template.format(image_token, raw_prompt),
+            "multi_modal_data": {
+                "image": resized_img,
+            }
+        })
 
     num_diff_prompts = len(mm_prompts)
     if num_prompts > num_diff_prompts:
