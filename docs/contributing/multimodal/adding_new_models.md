@@ -2,6 +2,11 @@
 
 In order to understand how to get multimodal models running through vLLM Spyre, it is important to understand the differences between how models are implemented in vLLM & vLLM Spyre. To illustrate this, we use `llava_next` as an example, because `granite vision` is the only multimodal model currently supported.
 
+NOTE: for those unfamiliar, granite vision is a special instance of llava next, and tends to run as an instance of llava next. The primary differences are:
+- For the LLM, we use a granite LLM.
+- For the vision encoder, we use SigLIP instead of CLIP.
+- Instead of taking the output of one feature layer from the vision encoder to form the visual features, we instead take the output of multiple layers and concatenate them.
+
 ## For vLLM
 
 In vLLM, models are implemented as their own model class. The class implementation generally inherits from `SupportsMultiModal`, and importantly, it registers multimodal processing information.
@@ -35,7 +40,7 @@ This has a few implications that may be nonobvious. Namely:
 
 5. As a result of ^, we must be careful to handle warmup correctly with respect to `torch.compile`, *especially* when it comes to AIU. More details on this below.
 
-For more extensive documentation in how to implement multimodal in vLLM, see the docs [here](https://docs.vllm.ai/en/latest/contributing/model/multimodal/#prompt-updates) - the above is mostly meant as context for how think of these models with respect to vLLM Spyre.
+For more extensive documentation in how to implement multimodal in vLLM, see the docs [here](https://docs.vllm.ai/en/latest/contributing/model/multimodal) - the above is mostly meant as context for how think of these models with respect to vLLM Spyre.
 
 ## Extending to vLLM Spyre
 
