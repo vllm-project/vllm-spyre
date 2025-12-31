@@ -19,13 +19,15 @@ def get_mm_specific_load_overrides(hf_config: transformers.PretrainedConfig):
         hf_config)
 
 
-def maybe_get_mm_utils(fms_config, hf_config) -> Optional[MMUtilsBase]:
+def maybe_get_mm_utils(model_path, fms_config,
+                       hf_config) -> Optional[MMUtilsBase]:
     """Create an instance of the corresponding multimodal model's utils
     if one exists; if it doesn't, the model is not multimodal.
     """
     if type(hf_config) in MM_HF_CFG_REGISTRY:
         util_cls = MM_HF_CFG_REGISTRY[type(hf_config)]
         return util_cls(
+            model_path=model_path,
             fms_config=fms_config,
             hf_config=hf_config,
         )

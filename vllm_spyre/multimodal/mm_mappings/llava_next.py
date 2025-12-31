@@ -6,7 +6,7 @@ from vllm.multimodal.inputs import (MultiModalBatchedField,
                                     MultiModalFeatureSpec, MultiModalFieldElem,
                                     MultiModalKwargsItem, PlaceholderRange)
 
-from vllm_spyre.multimodal.mm_mappings import MMUtilsBase
+from vllm_spyre.multimodal.mm_mappings import MMUtilsBase, MMWarmupInputs
 
 
 class LlavaNextMMUtils(MMUtilsBase):
@@ -104,55 +104,72 @@ class LlavaNextMMUtils(MMUtilsBase):
             kwargs=fms_kwargs)
         return input_embeds
 
-    def get_warmup_mm_features(self):
-        """Get warmup features for Llava Next / Granite Vision."""
-        # This is the minimal (small) image case in granite vision;
-        # The maximal shape has 11 tiles. Careful to handle the offsets
-        # correctly if this is modified!
-        tile_size = self.hf_config.vision_config.image_size
-        img_size = [tile_size // 2, tile_size // 2]
-        # TODO: Make this more dynamic and calc based on vLLM utils
-        pixel_values_shape = [3, 3, tile_size, tile_size]
-        # Image size (px, not tokens)
-        image_sizes = torch.tensor(img_size, dtype=torch.int64)
-        # offsets wrt text prompt; since we just throw a raw expanded
-        # image through, it's the entire expanded text prompt.
-        mm_position = PlaceholderRange(offset=0, length=1512)
+    def get_warmup_inputs(self, req_count: int) -> MMWarmupInputs:
+        """Get the inputs to the huggingface processor to create the warmup
+        features or feature shapes.
+        """
+        # Warmup text is just an image token
+        dummy_tokens = [
+            self.hf_processor.decode(self.get_multimodal_token_id())
+        ]
 
-        mm_features = [
+        # number of image tokens only depends on shape;
+        # using a smaller image here uses less context.
+        tile_size = self.hf_config.vision_config.image_size
+        side_dim = tile_size // 2
+        dummy_img = torch.zeros((3, side_dim, side_dim), dtype=torch.uint8)
+
+        proc_res = self.hf_processor(
+            text=dummy_tokens,
+            images=dummy_img,
+            return_tensors="pt",
+        )
+
+        seq_len = proc_res.input_ids.shape[-1]
+        # Get the input tokens and embeddings; currently embeddings are used,
+        # but tokens are still required for the interfaces to be happy.
+        warmup_input_ids = proc_res.input_ids.squeeze(0)
+        emb_dim = self.hf_config.text_config.hidden_size
+        warmup_embeds = torch.rand((seq_len, emb_dim))
+        # Get the multimodal features spec
+        warmup_mm_features = LlavaNextMMUtils._build_multimodal_spec(proc_res)
+
+        return MMWarmupInputs(
+            input_ids=[warmup_input_ids] * req_count,
+            input_embeds=[warmup_embeds] * req_count,
+            mm_features=warmup_mm_features,
+        )
+
+    @staticmethod
+    def _build_multimodal_spec(proc_res):
+        """Given output of the processor on warmup data, build MM features"""
+
+        # Squeeze down batch dim here; all token inputs are image tokens
+        num_img_toks = proc_res.input_ids.shape[-1]
+
+        # Multimodal features / feature spec
+        mm_position = PlaceholderRange(offset=0, length=num_img_toks)
+        mm_data = {
+            "pixel_values": proc_res.pixel_values.squeeze(axis=0),
+            "image_sizes": proc_res.image_sizes.squeeze(axis=0),
+        }
+        mm_fields = MultiModalKwargsItem({
+            mm_key:
+            MultiModalFieldElem(modality="image",
+                                key=mm_key,
+                                data=mm_data,
+                                field=MultiModalBatchedField())
+            for mm_key, mm_data in mm_data.items()
+        })
+
+        return [
             MultiModalFeatureSpec(
-                data=MultiModalKwargsItem({
-                    "pixel_values":
-                    MultiModalFieldElem(modality="image",
-                                        key="pixel_values",
-                                        data=torch.rand(
-                                            pixel_values_shape,
-                                            dtype=torch.bfloat16,
-                                        ),
-                                        field=MultiModalBatchedField()),
-                    "image_sizes":
-                    MultiModalFieldElem(modality="image",
-                                        key="image_sizes",
-                                        data=image_sizes,
-                                        field=MultiModalBatchedField())
-                }),
+                data=mm_fields,
                 modality="image",
                 identifier="MM-warmup-llava-next",
                 mm_position=mm_position,
             )
         ]
-        return mm_features
-
-    def get_warmup_tokens(self) -> torch.Tensor:
-        # TODO make this less hacky, build dynamically
-        img_toks = [self.get_multimodal_token_id()] * 1512
-        return torch.tensor(img_toks)
-
-    def get_warmup_embeds_tensor(self) -> torch.Tensor:
-        warmup_input_ids = self.get_warmup_tokens()
-        emb_dim = self.hf_config.text_config.hidden_size
-        seq_len = warmup_input_ids.shape[-1]
-        return torch.rand((seq_len, emb_dim))
 
     def get_multimodal_token_id(self) -> int:
         return self.hf_config.image_token_index

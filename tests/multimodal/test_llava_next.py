@@ -50,6 +50,7 @@ def fms_config():
 @pytest.fixture(scope="module")
 def llava_next_mm_utils(fms_config, hf_config):
     return spyre_mm.maybe_get_mm_utils(
+        model_path=GRANITE_VISION_MODEL,
         fms_config=fms_config,
         hf_config=hf_config,
     )
@@ -83,8 +84,9 @@ def test_warmup_embed_types_and_shape(llava_next_mm_utils):
     through, so these should exist for sanity even though the model processes
     the embeddings.
     """
-    warmup_toks = llava_next_mm_utils.get_warmup_tokens()
-    warmup_embeds_tensor = llava_next_mm_utils.get_warmup_embeds_tensor()
+    warmup_inputs = llava_next_mm_utils.get_warmup_inputs(req_count=1)
+    warmup_toks = warmup_inputs.input_ids[0]
+    warmup_embeds_tensor = warmup_inputs.input_embeds[0]
 
     assert isinstance(warmup_toks, torch.Tensor)
     # Ensure embeddings and tokens have the same dims except the embed dim
@@ -97,7 +99,8 @@ def test_warmup_embed_types_and_shape(llava_next_mm_utils):
 
 def test_warmup_mm_features_types(llava_next_mm_utils):
     """Check to ensure the mm features correspond to one image."""
-    warmup_mm_features = llava_next_mm_utils.get_warmup_mm_features()
+    warmup_inputs = llava_next_mm_utils.get_warmup_inputs(req_count=1)
+    warmup_mm_features = warmup_inputs.mm_features
 
     # Multimodal features should be a list of (one) multimodal feature spec,
     # since we warm this model up with features pertaining to one image.
@@ -113,37 +116,42 @@ def test_warmup_shape_alignment(llava_next_mm_utils):
     actually correctly align with the embeddings and mm feature spec to prevent
     alignment issues when we merge the multimodal embeddings in FMS.
     """
-    warmup_toks = llava_next_mm_utils.get_warmup_tokens()
-    warmup_mm_features = llava_next_mm_utils.get_warmup_mm_features()
+    warmup_inputs = llava_next_mm_utils.get_warmup_inputs(req_count=1)
+    warmup_toks = warmup_inputs.input_ids[0]
+    warmup_mm_features = warmup_inputs.mm_features[0]
 
     # Get the total number of expanded image tokens in the inputs
     image_token_id = llava_next_mm_utils.get_multimodal_token_id()
     num_expanded_mm_ids = torch.sum(warmup_toks == image_token_id).item()
 
-    # Get the total number of expected image tokens across all (currently 1)
-    # multimodal warmup features, and ensuer that it matches the total expected
-    # number of image tokens
-    total_mm_offsets = sum([
-        feat.mm_position.length - feat.mm_position.offset
-        for feat in warmup_mm_features
-    ])
-    assert num_expanded_mm_ids == total_mm_offsets
+    # Only have one input image, so one image, so offsets should match directly
+    im_start = warmup_mm_features.mm_position.length
+    im_end = warmup_mm_features.mm_position.offset
+    assert num_expanded_mm_ids == (im_start - im_end)
 
 
 def test_warmup_feature_correctness(llava_next_mm_utils):
     """Ensure that the expanded image token count is actually
     correct with respect to the input image size by reprocessing
     it with transformers and comparing the result.
+    
+    NOTE: depending on the implementation, this may be redundant,
+    as the llava next processor essentially does this internally.
+    However, if other multimodal models are implemented, this is
+    is an important thing to verify.
     """
-    warmup_toks = llava_next_mm_utils.get_warmup_tokens()
     image_token_id = llava_next_mm_utils.get_multimodal_token_id()
-    warmup_mm_features = llava_next_mm_utils.get_warmup_mm_features()
+
+    warmup_inputs = llava_next_mm_utils.get_warmup_inputs(req_count=1)
+    warmup_toks = warmup_inputs.input_ids[0]
+    warmup_mm_features = warmup_inputs.mm_features[0]
+
     num_expanded_mm_ids = torch.sum(warmup_toks == image_token_id).item()
 
     processor = AutoProcessor.from_pretrained(GRANITE_VISION_MODEL)
     # Create a random PIL Image that matches the size of the hardcoded
     # inputs and run it through the processor to check the feature sizes.
-    image_dims = warmup_mm_features[0].data["image_sizes"].data
+    image_dims = warmup_mm_features.data["image_sizes"].data
 
     # NOTE: Shape is width x height for PIL, but it's height x width in pytorch,
     # so we need to flip dims here to ensure alignment with the torch tensors.
@@ -163,7 +171,7 @@ def test_warmup_feature_correctness(llava_next_mm_utils):
 
     # Check that after squeezing, the 4D pixel vals are the same shape
     pixel_vals = preproc_res.pixel_values.squeeze(0)
-    assert pixel_vals.shape == warmup_mm_features[0].data[
+    assert pixel_vals.shape == warmup_mm_features.data[
         "pixel_values"].data.shape
 
     # Check that the image shapes are also correct; note the dim flip earlier,

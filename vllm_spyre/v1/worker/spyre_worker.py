@@ -522,22 +522,25 @@ class SpyreWorker(WorkerBase):
         is_fp8_plus_cb = self.model_config.quantization is not None and envs_spyre.VLLM_SPYRE_USE_CB
         req_count = 3 if is_fp8_plus_cb else 2
 
-        # FIXME - this is tedious, clean it up
         mm_model_utils = self.model_runner.get_mm_utils()
         if mm_model_utils:
-            # MM only uses embedding inputs, so no need to pass tokens
-            warmup_tokens = [mm_model_utils.get_warmup_tokens()] * req_count
-            mm_features = mm_model_utils.get_warmup_mm_features()
-            warmup_embeds_tensor = [mm_model_utils.get_warmup_embeds_tensor()
-                                    ] * req_count
+            # In the case of multimodal, delegate to the MM utils class to get
+            # the appropriate features; note prompt length is currently
+            # determined purely by the multimodal input encoding.
+            mm_warmup_inputs = mm_model_utils.get_warmup_inputs(req_count)
+            warmup_tokens = mm_warmup_inputs.input_ids
+            warmup_embeds_tensor = mm_warmup_inputs.input_embeds
+            mm_features = mm_warmup_inputs.mm_features
             prompt_len = warmup_tokens[0].shape[-1]
         else:
             prompt_len = 42
-            mm_features = None
-            warmup_embeds_tensor = [None] * req_count
             warmup_tokens_tensor = valid_token_ids_tensor[torch.randint(
                 0, len(valid_token_ids_tensor), (3, prompt_len))]
             warmup_tokens = [wt.tolist() for wt in warmup_tokens_tensor]
+            # Text only models don't use mm features, and currently we only
+            # use embeddings as inputs to multimodal models.
+            warmup_embeds_tensor = [None] * req_count
+            mm_features = None
 
         requests = [
             new_request_data_builder(

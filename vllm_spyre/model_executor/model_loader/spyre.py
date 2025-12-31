@@ -329,6 +329,7 @@ class FmsModelBase(nn.Module):
         # If it's multimodal, create an instance of the
         # corresponding mm utils helper; this is arch specific.
         self.mm_model_utils = spyre_mm.maybe_get_mm_utils(
+            model_path=model_path,
             fms_config=self.model.config,
             hf_config=self.config,
         )
