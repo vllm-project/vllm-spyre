@@ -133,22 +133,32 @@ class SpyreCausalLM(nn.Module):
         return logits
 
     def get_maybe_mm_embeddings(self, input_ids, mm_features, is_decode):
-        """Retrieve the embeddings corresponding to the input_ids and
-        mm_features, if any are provided.
-        """
-        fms_model = self.model.model
+        """If the model is multimodal, get the (maybe) multimodal embeddings.
+        If it isn't, return None, since we only use embeddings for multimodal.
 
-        if not self.is_multimodal or self.mm_model_utils is None:
+        In the case of prefill / decode; we should only have mm features in
+        prefill, because by that point, the multimodal data will already be
+        merged into the embeddings to be cached. As such we explicitly explode
+        if mm_features are passed in decode, because it's likely a mistake.
+
+        NOTE: generally is_decode will set iteration > 0 in FMS; failing to do
+        this will cause it to return the raw input id and try to embed in the
+        forward call, which may break on AIU due to misalignment with prefill's
+        embedding call.
+        """
+        if not self.model.is_multimodal or self.mm_model_utils is None:
+            # The model is likely implemented incorrectly or not initialized,
+            # or we are passing multimodal features to a model that should not
+            # take them.
             if mm_features:
                 raise ValueError(
                     "mm_features were provided, but model is not multimodal!")
-            # Fall back to direct embedding otherwise for compatibility.
-            # This should generally not happen in current codepaths since
-            # only multimodal models should use embeddings for prefill/decode.
-            return fms_model.base_model.embedding(input_ids)
+            # We do not use embeddings for models that aren't multimodal.
+            return None
 
         # Delegate to this model architecture's multimodal helpers to
         # get the (potentially) multimodal embeddings from the FMS model.
+        fms_model = self.model.model
         return self.mm_model_utils.get_maybe_mm_embeddings(
             fms_model,
             input_ids,

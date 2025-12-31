@@ -1233,16 +1233,12 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # block table is only passed for decode
         block_table = None
 
-        # In the case of multimodal models, always use embeddings
-        # as inputs, even in the case where we only have texts.
-        if self.model.is_multimodal:
-            input_embeds = self.model.get_maybe_mm_embeddings(
-                input_tokens,
-                mm_features=mm_features,
-                is_decode=False,
-            )
-        else:
-            input_embeds = None
+        # None unless this model is multimodal
+        input_embeds = self.model.get_maybe_mm_embeddings(
+            input_tokens,
+            mm_features=mm_features,
+            is_decode=False,
+        )
 
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
@@ -1348,20 +1344,13 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # mask not needed during decode
         mask = None
 
-        if self.model.is_multimodal:
-            # NOTE: this is opaque, but is_decode causes the underlying FMS
-            # model to call the language model when preparing its embedding.
-            # by setting iteration > 0; failing to do this will cause it to
-            # return the raw input id and try to embed in the forward call,
-            # which may break on AIU due to misalignment with prefill
-            # embed call.
-            input_embeds = self.model.get_maybe_mm_embeddings(
-                input_tokens,
-                mm_features=None,
-                is_decode=True,
-            )
-        else:
-            input_embeds = None
+        # None unless this model is multimodal; no mm_features since
+        # all multimodal features are merged in prefill.
+        input_embeds = self.model.get_maybe_mm_embeddings(
+            input_tokens,
+            mm_features=None,
+            is_decode=True,
+        )
 
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
@@ -2195,18 +2184,12 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         self.model.n_pads_right = self.block_size - (((request_tkv - 1) % self.block_size) + 1)
         self.model.indices = torch.ones(1, dtype=torch.bool, device="cpu")
 
-        # In the case of multimodal models, always use embeddings
-        # as inputs, even in the case where we only have texts.
-        if self.model.is_multimodal:
-            # NOTE: This will call the mm encoder and merge the embeddings
-            # if we have multimodal features, e.g., for granite vision.
-            input_embeds = self.model.get_maybe_mm_embeddings(
-                input_tokens,
-                mm_features=mm_features,
-                is_decode=False,
-            )
-        else:
-            input_embeds = None
+        # None unless this model is multimodal
+        input_embeds = self.model.get_maybe_mm_embeddings(
+            input_tokens,
+            mm_features=mm_features,
+            is_decode=False,
+        )
 
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
@@ -2310,20 +2293,13 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             len(cached_request_data.req_ids), dtype=torch.bool, device="cpu"
         )
 
-        if self.model.is_multimodal:
-            # NOTE: this is opaque, but is_decode causes the underlying FMS
-            # model to call the language model when preparing its embedding.
-            # by setting iteration > 0; failing to do this will cause it to
-            # return the raw input id and try to embed in the forward call,
-            # which may break on AIU due to misalignment with prefill
-            # embed call.
-            input_embeds = self.model.get_maybe_mm_embeddings(
-                input_tokens,
-                mm_features=None,
-                is_decode=True,
-            )
-        else:
-            input_embeds = None
+        # None unless this model is multimodal; no mm_features since
+        # all multimodal features are merged in prefill.
+        input_embeds = self.model.get_maybe_mm_embeddings(
+            input_tokens,
+            mm_features=None,
+            is_decode=True,
+        )
 
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
