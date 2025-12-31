@@ -44,14 +44,16 @@ logger = init_logger(__name__)
 _inside_warmup_mode = False
 
 
-def new_request_data_builder(
-        req_id: str, prompt_token_ids: list[int],
-        sampling_params: Optional[SamplingParams],
-        pooling_params: Optional[PoolingParams]) -> NewRequestData:
+def new_request_data_builder(req_id: str, prompt_token_ids: list[int],
+                             sampling_params: Optional[SamplingParams],
+                             pooling_params: Optional[PoolingParams],
+                             prompt_embeds: Optional[torch.Tensor],
+                             mm_features: Optional[list]) -> NewRequestData:
 
     kwargs = {
         "req_id": req_id,
         "prompt_token_ids": prompt_token_ids,
+        "prompt_embeds": prompt_embeds,
         "sampling_params": sampling_params,
         "pooling_params": pooling_params,
         "block_ids": [0],  # not actually used
@@ -60,6 +62,8 @@ def new_request_data_builder(
     }
 
     ## Temporary backwards compatibility for 0.10.2
+    # NOTE: currently multimodal only works on 0.11.0+
+    # If this is expected to be around a while, add bc
     if 'mm_kwargs' in dataclass_fields(NewRequestData):
         kwargs["mm_kwargs"] = []
     if 'mm_hashes' in dataclass_fields(NewRequestData):
@@ -69,7 +73,10 @@ def new_request_data_builder(
 
     # Newly required in 0.11.0
     if "mm_features" in dataclass_fields(NewRequestData):
-        kwargs["mm_features"] = []
+        if not mm_features:
+            kwargs["mm_features"] = []
+        else:
+            kwargs["mm_features"] = mm_features
 
     return NewRequestData(**kwargs)
 
@@ -138,6 +145,7 @@ class SpyreWorker(WorkerBase):
 
     def compile_or_warm_up_model(self) -> None:
         """Prepare model for execution through compilation/warmup."""
+
         if envs_spyre.VLLM_SPYRE_USE_CB:
             self._warmup_spyre_dynamic_size(self.restricted_tokens)
             return
@@ -163,6 +171,12 @@ class SpyreWorker(WorkerBase):
                 "[WARMUP] (%d/%d) for prompt length %d, decoding %d tokens "
                 "with batch size %d...", i + 1, num_shape_combinations,
                 prompt_len, num_decode_tokens, batch_size)
+
+            if self.model_runner.is_multimodal():
+                logger.warning(
+                    "[WARMUP] - this model is multimodal, but mm features are "
+                    "not passed through in static batching at the moment; "
+                    "this will probably break compiled models!")
             self._warmup_spyre_fixed_size(prompt_len, num_decode_tokens,
                                           self.restricted_tokens, batch_size)
 
@@ -204,6 +218,9 @@ class SpyreWorker(WorkerBase):
         """
         # The fake kv_cache config specified by the model runner sets 4 bytes
         # per token.
+        # TODO: For multimodal, we may want to explicitly validate that the max
+        # len is less than the maximum size of one multimodal object prior to
+        # this, otherwise we can see some cryptic behaviors here.
         accurate_fake_kv_cache_size = (4 * self.model_config.max_model_len *
                                        self.scheduler_config.max_num_seqs)
 
@@ -442,6 +459,7 @@ class SpyreWorker(WorkerBase):
             # unused for continuous batching: set here to use same API
             wup_prompt_lens, wup_new_tokens = (0, ), (0, )
         else:
+            # TODO - handle warmup for multimodal
             wup_prompt_lens, wup_new_tokens = zip(
                 *[(s["prompt_length"], s["new_tokens"])
                   for s in self.spyre_warmup_shapes])
@@ -473,24 +491,42 @@ class SpyreWorker(WorkerBase):
         valid_token_ids_tensor = torch.tensor(valid_token_ids,
                                               dtype=torch.long,
                                               device=torch.device("cpu"))
-        prompt_len = 42
+
         num_decode_tokens = 2
-
-        # Sample from the valid token ids
-        warmup_tokens_tensor = valid_token_ids_tensor[torch.randint(
-            0, len(valid_token_ids_tensor), (3, prompt_len))]
-
         # TODO: we need 2 requests for warmup on FP8+CB
         # Check if model is quantized
         is_fp8_plus_cb = self.model_config.quantization is not None and \
             envs_spyre.VLLM_SPYRE_USE_CB
         req_count = 3 if is_fp8_plus_cb else 2
+
+        mm_model_utils = self.model_runner.get_mm_utils()
+        if mm_model_utils:
+            # In the case of multimodal, delegate to the MM utils class to get
+            # the appropriate features; note prompt length is currently
+            # determined purely by the multimodal input encoding.
+            mm_warmup_inputs = mm_model_utils.get_warmup_inputs(req_count)
+            warmup_tokens = mm_warmup_inputs.input_ids
+            warmup_embeds_tensor = mm_warmup_inputs.input_embeds
+            mm_features = mm_warmup_inputs.mm_features
+            prompt_len = len(warmup_tokens[0])
+        else:
+            prompt_len = 42
+            warmup_tokens_tensor = valid_token_ids_tensor[torch.randint(
+                0, len(valid_token_ids_tensor), (3, prompt_len))]
+            warmup_tokens = [wt.tolist() for wt in warmup_tokens_tensor]
+            # Text only models don't use mm features, and currently we only
+            # use embeddings as inputs to multimodal models.
+            warmup_embeds_tensor = [None] * req_count
+            mm_features = None
+
         requests = [
             new_request_data_builder(
                 req_id="warmup-%d" % (i),
-                prompt_token_ids=warmup_tokens_tensor[i].tolist(),
+                prompt_token_ids=warmup_tokens[i],
                 sampling_params=SamplingParams(max_tokens=num_decode_tokens),
                 pooling_params=None,
+                prompt_embeds=warmup_embeds_tensor[i],
+                mm_features=mm_features,
             ) for i in range(req_count)
         ]
 
@@ -605,7 +641,9 @@ class SpyreWorker(WorkerBase):
                 req_id="warmup",
                 prompt_token_ids=warmup_tokens_tensor[i].tolist(),
                 sampling_params=sampling_params,
-                pooling_params=pooling_params) for i in range(batch_size)
+                pooling_params=pooling_params,
+                prompt_embeds=None,
+                mm_features=None) for i in range(batch_size)
         ]
 
         # Set up dummy cached_requests for decode steps
