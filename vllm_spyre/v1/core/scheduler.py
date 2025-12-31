@@ -458,16 +458,17 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         # Update the correct num_computed_tokens value given left-padding and
         # prefix cache hit info
         for req in self.ongoing_prefills:
-            left_padding = model_runner_output.left_padding.get(
-                req.request_id, 0)
-            prefix_cache_len = model_runner_output.prefix_cache_hit_len.get(
-                req.request_id, 0)
-
             # The number of computed tokens only need to be adapted when it is
             # the first chunk of a multi-chunk prefill
             is_first_chunk = req.num_computed_tokens <= self.chunk_size
             is_last_chunk = req.num_computed_tokens == req.num_prompt_tokens
             if is_first_chunk and not is_last_chunk:
+
+                left_padding = model_runner_output.left_padding.get(
+                    req.request_id, 0)
+                prefix_cache_len = model_runner_output.prefix_cache_hit_len.get(
+                    req.request_id, 0)
+
                 req.num_computed_tokens = self.adjust_computed_tokens(
                     computed_tokens=req.num_computed_tokens,
                     left_padding=left_padding,
