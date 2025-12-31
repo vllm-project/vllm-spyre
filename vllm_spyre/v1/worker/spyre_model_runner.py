@@ -113,6 +113,10 @@ class CPSpyreModelRunnerOutput(CBSpyreModelRunnerOutput):
     kv_cache_usage: float = 0.0
     # Prefix cache stats, set whenever prefills are happening
     prefix_cache_stats: PrefixCacheStats | None = None
+    # In the case of prefix caching, we may have a much larger cached prefix
+    # available than the number of scheduled tokens. In that case, the scheduler
+    # needs to update its state to reflect the correct number of computed tokens
+    prefix_cache_hit_len: dict[str, int] = field(default_factory=dict)
 
 
 InputBatchT = TypeVar("InputBatchT", bound=BaseInputBatch)
@@ -2472,6 +2476,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                 left_padding=left_padding,
                 kv_cache_usage=self.get_kv_cache_usage(),
                 prefix_cache_stats=self.prefix_cache_stats,
+                prefix_cache_hit_len=self.get_prefix_cache_len(),
             )
 
         # Sample the next token.
@@ -2533,6 +2538,18 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
     def get_kv_cache_usage(self) -> float:
         return self.kv_cache_manager.block_pool.get_usage()
+
+    def get_prefix_cache_len(self) -> dict[str, int]:
+        """Get the prefix cache hit length for each prefilling request.
+        This is in the number of usable cache tokens: Including the left padding
+        this will always land at a chunk boundary.
+        """
+        result = {}
+        for req_id in self.prefill_batch.requests_ids:
+            request = self.requests[req_id]
+            assert isinstance(request, ChunkedPrefillRequestState)
+            result[req_id] = request.usable_blocks * self.block_size
+        return result
 
     def _mark_input_tensors(self, model_input: SamplingForwardInputs) -> None:
         # Marking dimensions static/dynamic
