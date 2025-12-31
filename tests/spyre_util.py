@@ -6,7 +6,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, NamedTuple, Optional
+from typing import Any, NamedTuple
 
 import openai
 import pytest
@@ -30,46 +30,51 @@ EmbeddingWarmupShapes = list[tuple[int, int]]
 DecodeWarmupShapes = list[tuple[int, int, int]]
 
 
-def patch_environment(use_cb: bool,
-                      warmup_shapes: DecodeWarmupShapes | None,
-                      backend: str,
-                      monkeypatch,
-                      use_chunked_prefill: bool = False,
-                      max_num_batched_tokens: int | None = None):
+def patch_environment(
+    use_cb: bool,
+    warmup_shapes: DecodeWarmupShapes | None,
+    backend: str,
+    monkeypatch,
+    use_chunked_prefill: bool = False,
+    max_num_batched_tokens: int | None = None,
+):
     # Setup the environment correctly for the LLM
 
     # ---- For static batching ----
     if warmup_shapes:
-        assert not use_cb, ("Warmup shapes through environment variables have "
-                            "been deprecated in continuous batching")
+        assert not use_cb, (
+            "Warmup shapes through environment variables have "
+            "been deprecated in continuous batching"
+        )
 
         patch_warmup_shapes(warmup_shapes, monkeypatch)
 
     # --------------
     monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1" if use_cb else "0")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
-    monkeypatch.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL",
-                       "1" if use_chunked_prefill else "0")
+    monkeypatch.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", "1" if use_chunked_prefill else "0")
     # NB: setting this env var explicitly is needed to set the desired value for
     # the chunk size in the case that granite 8b TP4 is detected
     if max_num_batched_tokens is not None:
         monkeypatch.setenv("VLLM_DT_CHUNK_LEN", max_num_batched_tokens)
 
 
-def patch_warmup_shapes(warmup_shapes: DecodeWarmupShapes
-                        | EmbeddingWarmupShapes, monkeypatch):
+def patch_warmup_shapes(warmup_shapes: DecodeWarmupShapes | EmbeddingWarmupShapes, monkeypatch):
     warmup_prompt_length = [t[0] for t in warmup_shapes]
     warmup_batch_size = [t[-1] for t in warmup_shapes]
 
-    monkeypatch.setenv('VLLM_SPYRE_WARMUP_PROMPT_LENS',
-                       ','.join(str(val) for val in warmup_prompt_length))
-    monkeypatch.setenv('VLLM_SPYRE_WARMUP_BATCH_SIZES',
-                       ','.join(str(val) for val in warmup_batch_size))
+    monkeypatch.setenv(
+        "VLLM_SPYRE_WARMUP_PROMPT_LENS", ",".join(str(val) for val in warmup_prompt_length)
+    )
+    monkeypatch.setenv(
+        "VLLM_SPYRE_WARMUP_BATCH_SIZES", ",".join(str(val) for val in warmup_batch_size)
+    )
 
     if all(len(s) == 3 for s in warmup_shapes):
         warmup_new_tokens = [t[1] for t in warmup_shapes]
-        monkeypatch.setenv('VLLM_SPYRE_WARMUP_NEW_TOKENS',
-                           ','.join(str(val) for val in warmup_new_tokens))
+        monkeypatch.setenv(
+            "VLLM_SPYRE_WARMUP_NEW_TOKENS", ",".join(str(val) for val in warmup_new_tokens)
+        )
 
 
 class ModelInfo(NamedTuple):
@@ -92,41 +97,34 @@ class RemoteOpenAIServer:
         model: str | ModelInfo,
         vllm_serve_args: list[str],
         *,
-        env_dict: Optional[dict[str, str]] = None,
-        seed: Optional[int] = 0,
+        env_dict: dict[str, str] | None = None,
+        seed: int | None = 0,
         auto_port: bool = True,
-        max_wait_seconds: Optional[float] = None,
+        max_wait_seconds: float | None = None,
     ) -> None:
         # NB: This implementation does not ensure that the model is downloaded
         # before booting the server, it should be used with models already
         # cached on disk
         if isinstance(model, ModelInfo):
             if model.revision is not None:
-                vllm_serve_args = vllm_serve_args + [
-                    "--revision", model.revision
-                ]
+                vllm_serve_args = vllm_serve_args + ["--revision", model.revision]
             model_name = model.name
         else:
             model_name = model
 
         if auto_port:
             if "-p" in vllm_serve_args or "--port" in vllm_serve_args:
-                raise ValueError("You have manually specified the port "
-                                 "when `auto_port=True`.")
+                raise ValueError("You have manually specified the port when `auto_port=True`.")
 
             # Don't mutate the input args
-            vllm_serve_args = vllm_serve_args + [
-                "--port", str(get_open_port())
-            ]
+            vllm_serve_args = vllm_serve_args + ["--port", str(get_open_port())]
         if seed is not None:
             if "--seed" in vllm_serve_args:
-                raise ValueError("You have manually specified the seed "
-                                 f"when `seed={seed}`.")
+                raise ValueError(f"You have manually specified the seed when `seed={seed}`.")
 
             vllm_serve_args = vllm_serve_args + ["--seed", str(seed)]
 
-        parser = FlexibleArgumentParser(
-            description="vLLM's remote OpenAI server.")
+        parser = FlexibleArgumentParser(description="vLLM's remote OpenAI server.")
         parser = make_arg_parser(parser)
         args = parser.parse_args(["--model", model_name, *vllm_serve_args])
         self.host = str(args.host or "localhost")
@@ -142,8 +140,7 @@ class RemoteOpenAIServer:
             stderr=sys.stderr,
         )
         max_wait_seconds = max_wait_seconds or 600
-        self._wait_for_server(url=self.url_for("health"),
-                              timeout=max_wait_seconds)
+        self._wait_for_server(url=self.url_for("health"), timeout=max_wait_seconds)
 
     def __enter__(self):
         return self
@@ -177,8 +174,7 @@ class RemoteOpenAIServer:
 
                 time.sleep(0.5)
                 if time.time() - start > timeout:
-                    raise RuntimeError(
-                        "Server failed to start in time.") from None
+                    raise RuntimeError("Server failed to start in time.") from None
 
     @property
     def url_root(self) -> str:
@@ -235,9 +231,7 @@ def get_spyre_backend_list():
 # get model names from env, if not set then use default models for each type.
 # Multiple models can be specified with a comma separated list in
 # VLLM_SPYRE_TEST_MODEL_LIST
-def get_spyre_model_list(isEmbeddings=False,
-                         isScoring=False,
-                         full_size_models=False):
+def get_spyre_model_list(isEmbeddings=False, isScoring=False, full_size_models=False):
     """Returns a list of pytest.params. The values are NamedTuples with a name
     and revision field."""
     user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST")
@@ -257,29 +251,26 @@ def get_spyre_model_list(isEmbeddings=False,
     for model in user_test_model_list.split(","):
         model_path = str(spyre_model_dir_path / model.strip())
         test_model_list.append(
-            pytest.param(ModelInfo(name=model_path),
-                         marks=marks,
-                         id=model.strip()))
+            pytest.param(ModelInfo(name=model_path), marks=marks, id=model.strip())
+        )
     return test_model_list
 
 
-def _default_test_models(isEmbeddings=False,
-                         isScoring=False,
-                         full_size_models=False):
+def _default_test_models(isEmbeddings=False, isScoring=False, full_size_models=False):
     """Return the default set of test models as pytest parameterizations"""
     if isEmbeddings:
-        model = ModelInfo(name="sentence-transformers/all-roberta-large-v1",
-                          revision="cf74d8acd4f198de950bf004b262e6accfed5d2c")
-        return [
-            pytest.param(model, marks=[pytest.mark.embedding], id=model.name)
-        ]
+        model = ModelInfo(
+            name="sentence-transformers/all-roberta-large-v1",
+            revision="cf74d8acd4f198de950bf004b262e6accfed5d2c",
+        )
+        return [pytest.param(model, marks=[pytest.mark.embedding], id=model.name)]
 
     if isScoring:
-        model = ModelInfo(name="cross-encoder/stsb-roberta-large",
-                          revision="2b12c2c0088918e76151fd5937b7bba986ef1f98")
-        return [
-            pytest.param(model, marks=[pytest.mark.scoring], id=model.name)
-        ]
+        model = ModelInfo(
+            name="cross-encoder/stsb-roberta-large",
+            revision="2b12c2c0088918e76151fd5937b7bba986ef1f98",
+        )
+        return [pytest.param(model, marks=[pytest.mark.scoring], id=model.name)]
 
     # Decoders
     # We run tests for both the full-precision bf16 and fp8-quantized models,
@@ -288,42 +279,45 @@ def _default_test_models(isEmbeddings=False,
     if not full_size_models:
         tinygranite = ModelInfo(
             name="ibm-ai-platform/micro-g3.3-8b-instruct-1b",
-            revision="6e9c6465a9d7e5e9fa35004a29f0c90befa7d23f")
+            revision="6e9c6465a9d7e5e9fa35004a29f0c90befa7d23f",
+        )
         tinygranite_fp8 = ModelInfo(
             name="ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8",
             revision="0dff8bacb968836dbbc7c2895c6d9ead0a05dc9e",
-            is_quantized=True)
+            is_quantized=True,
+        )
         params = [
-            pytest.param(tinygranite,
-                         marks=[pytest.mark.decoder],
-                         id=tinygranite.name),
-            pytest.param(tinygranite_fp8,
-                         marks=[pytest.mark.decoder, pytest.mark.quantized],
-                         id=tinygranite_fp8.name)
+            pytest.param(tinygranite, marks=[pytest.mark.decoder], id=tinygranite.name),
+            pytest.param(
+                tinygranite_fp8,
+                marks=[pytest.mark.decoder, pytest.mark.quantized],
+                id=tinygranite_fp8.name,
+            ),
         ]
         return params
 
     # Full-size decoders
-    granite = ModelInfo(name="ibm-granite/granite-3.3-8b-instruct",
-                        revision="51dd4bc2ade4059a6bd87649d68aa11e4fb2529b")
+    granite = ModelInfo(
+        name="ibm-granite/granite-3.3-8b-instruct",
+        revision="51dd4bc2ade4059a6bd87649d68aa11e4fb2529b",
+    )
     granite_fp8 = ModelInfo(
         name="ibm-granite/granite-3.3-8b-instruct-FP8",
-        revision="4b5990b8d402a75febe0086abbf1e490af494e3d")
+        revision="4b5990b8d402a75febe0086abbf1e490af494e3d",
+    )
     params = [
         pytest.param(granite, marks=[pytest.mark.decoder], id=granite.name),
-        pytest.param(granite_fp8,
-                     marks=[pytest.mark.decoder, pytest.mark.quantized],
-                     id=granite_fp8.name)
+        pytest.param(
+            granite_fp8, marks=[pytest.mark.decoder, pytest.mark.quantized], id=granite_fp8.name
+        ),
     ]
     return params
 
 
-def create_text_prompt(model: ModelInfo, min_token_length: int,
-                       max_token_length: int) -> str:
+def create_text_prompt(model: ModelInfo, min_token_length: int, max_token_length: int) -> str:
     """Create a text prompt for the specified model that will tokenize to within
     the specified token length range."""
-    tokenizer = AutoTokenizer.from_pretrained(model.name,
-                                              revision=model.revision)
+    tokenizer = AutoTokenizer.from_pretrained(model.name, revision=model.revision)
     pepper = "🌶️"
     pepper_tokens = len(tokenizer.encode(pepper, add_special_tokens=False))
 
@@ -344,8 +338,7 @@ def create_seq_prompt(model: ModelInfo, token_length: int) -> str:
     """Create a repeating sequential number prompt for the specified
     model that will tokenize to exactly the specified token length."""
 
-    tokenizer = AutoTokenizer.from_pretrained(model.name,
-                                              revision=model.revision)
+    tokenizer = AutoTokenizer.from_pretrained(model.name, revision=model.revision)
 
     # 20-token pattern
     pattern = "0 1 2 3 4 5 6 7 8 9 "
@@ -358,29 +351,28 @@ def create_seq_prompt(model: ModelInfo, token_length: int) -> str:
     tokens = tokenizer.encode(text_prompt)[:token_length]
 
     # Assert exact token length
-    assert len(tokens) == token_length, \
-        f"Token length mismatch: {len(tokens)} != {token_length}"
+    assert len(tokens) == token_length, f"Token length mismatch: {len(tokens)} != {token_length}"
 
     return tokenizer.decode(tokens)
 
 
-def create_random_request(request_id: int,
-                          num_tokens: int,
-                          sampling_params: SamplingParams,
-                          from_model_vocab: bool = False,
-                          model: Optional[ModelInfo] = None,
-                          seed: int = None) -> Request:
-
-    tokenizer = AutoTokenizer.from_pretrained(model.name,
-                                              revision=model.revision)
+def create_random_request(
+    request_id: int,
+    num_tokens: int,
+    sampling_params: SamplingParams,
+    from_model_vocab: bool = False,
+    model: ModelInfo | None = None,
+    seed: int = None,
+) -> Request:
+    tokenizer = AutoTokenizer.from_pretrained(model.name, revision=model.revision)
     if from_model_vocab:
-        assert model is not None, "Prompt requested to be generated from " \
-        "model's vocabulary: need to provide model."
+        assert model is not None, (
+            "Prompt requested to be generated from model's vocabulary: need to provide model."
+        )
 
-        valid_token_ids = sorted([
-            v for v in tokenizer.vocab.values()
-            if v not in tokenizer.all_special_ids
-        ])
+        valid_token_ids = sorted(
+            [v for v in tokenizer.vocab.values() if v not in tokenizer.all_special_ids]
+        )
         if seed is not None:
             random.seed(seed)
         prompt_token_ids = random.choices(valid_token_ids, k=num_tokens)
@@ -392,17 +384,20 @@ def create_random_request(request_id: int,
         prompt_token_ids = [p[:num_tokens] for p in tokenized_prompts][0]
 
         # make sure we get enough tokens from the prompts
-        assert (len(prompt_token_ids) == num_tokens
-                ), f"need {num_tokens} but got {len(prompt_token_ids)}"
+        assert len(prompt_token_ids) == num_tokens, (
+            f"need {num_tokens} but got {len(prompt_token_ids)}"
+        )
 
-    return Request(request_id=str(request_id),
-                   prompt_token_ids=prompt_token_ids,
-                   sampling_params=sampling_params,
-                   eos_token_id=None,
-                   arrival_time=0,
-                   lora_request=None,
-                   pooling_params=None,
-                   cache_salt=None)
+    return Request(
+        request_id=str(request_id),
+        prompt_token_ids=prompt_token_ids,
+        sampling_params=sampling_params,
+        eos_token_id=None,
+        arrival_time=0,
+        lora_request=None,
+        pooling_params=None,
+        cache_salt=None,
+    )
 
 
 def skip_unsupported_tp_size(size: int, backend: str):
@@ -414,24 +409,23 @@ def skip_unsupported_tp_size(size: int, backend: str):
         return
     cards = int(os.getenv("AIU_WORLD_SIZE", "0"))
     if cards < size:
-        pytest.skip(f"Cannot run TP size {size}: "
-                    f"only {cards} cards are available")
+        pytest.skip(f"Cannot run TP size {size}: only {cards} cards are available")
 
 
 def get_chicken_soup_prompts(num_prompts: int) -> list[str]:
     template = (
         "Below is an instruction that describes a task. Write a response that "
         "appropriately completes the request. Be polite in your response to the"
-        " user.\n\n### Instruction:\n{}\n\n### Response:")
+        " user.\n\n### Instruction:\n{}\n\n### Response:"
+    )
 
     prompts = [
-        template.format("Provide a list of instructions "
-                        "for preparing chicken soup."),
-        template.format("Provide me a list of things that I can do with my "
-                        "new found wealth."),
+        template.format("Provide a list of instructions for preparing chicken soup."),
+        template.format("Provide me a list of things that I can do with my new found wealth."),
         template.format(
             "how do I add multiple new columns in m for power query or \
-                power bi?"),
+                power bi?"
+        ),
         template.format("Convert char to string in Java."),
     ]
 
@@ -445,31 +439,38 @@ def get_longer_chicken_soup_prompts(num_prompts: int) -> list[str]:
     template = (
         "Below is an instruction that describes a task. Write a response that "
         "appropriately completes the request. Be polite in your response to the"
-        " user.\n\n### Instruction:\n{}\n\n### Response:")
+        " user.\n\n### Instruction:\n{}\n\n### Response:"
+    )
 
     prompts = [
-        template.format("Provide a list of instructions "
-                        "for preparing chicken soup along with "
-                        "rice curry to go with it so that "
-                        "the flavor is amazing and make sure to follow the "
-                        "recipe that my mum used to make during my "
-                        "childhood so that I can relive my good "
-                        "memories thanks"),
-        template.format("Provide me a list of things that I can do with my "
-                        "new found wealth which I have obtained through "
-                        "nefarious activities including gambling "
-                        "and betting on sports thanks"),
+        template.format(
+            "Provide a list of instructions "
+            "for preparing chicken soup along with "
+            "rice curry to go with it so that "
+            "the flavor is amazing and make sure to follow the "
+            "recipe that my mum used to make during my "
+            "childhood so that I can relive my good "
+            "memories thanks"
+        ),
+        template.format(
+            "Provide me a list of things that I can do with my "
+            "new found wealth which I have obtained through "
+            "nefarious activities including gambling "
+            "and betting on sports thanks"
+        ),
         template.format(
             "how do I add multiple new columns in m for power query or \
                 power bi? Can you explain that to me like I'm 5 years old "
             "with thorough step by step explanation and covering all edge "
-            "cases thanks"),
+            "cases thanks"
+        ),
         template.format(
             "Convert char to string in Java "
             "and write unit tests for the same, making sure they all pass "
             "and we get amazing test coverage along with high level "
             "correctness so that the PR reviewers have an easy time "
-            "reviewing the changes thanks"),
+            "reviewing the changes thanks"
+        ),
     ]
 
     if num_prompts > 4:
@@ -478,26 +479,19 @@ def get_longer_chicken_soup_prompts(num_prompts: int) -> list[str]:
     return prompts[:num_prompts]
 
 
-def write_sample_model_config(tmp_path,
-                              data,
-                              filename="model_compile.log.json"):
+def write_sample_model_config(tmp_path, data, filename="model_compile.log.json"):
     """Helper to write a sample model_compile.log.json in tmp_path."""
     config_path = tmp_path / filename
     config_path.write_text(json.dumps(data))
     return config_path
 
 
-def get_block_tables(
-        engine_core: EngineCore
-) -> tuple[dict[str, list[int]], dict[int, int]]:
-
-    model_runner = (
-        engine_core.model_executor.driver_worker.worker.model_runner)
+def get_block_tables(engine_core: EngineCore) -> tuple[dict[str, list[int]], dict[int, int]]:
+    model_runner = engine_core.model_executor.driver_worker.worker.model_runner
     req_to_blocks = model_runner.kv_cache_manager.req_to_blocks
 
     block_tables = {
-        req_id: [block.block_id for block in blocks]
-        for req_id, blocks in req_to_blocks.items()
+        req_id: [block.block_id for block in blocks] for req_id, blocks in req_to_blocks.items()
     }
 
     block_ref_count = {}
@@ -509,9 +503,7 @@ def get_block_tables(
     return block_tables, block_ref_count
 
 
-def verify_block_tables(engine_core: EngineCore, step_ref: dict[str, Any],
-                        disable_asserts: bool):
-
+def verify_block_tables(engine_core: EngineCore, step_ref: dict[str, Any], disable_asserts: bool):
     block_tables, block_ref_count = get_block_tables(engine_core)
 
     if not disable_asserts:

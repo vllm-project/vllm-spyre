@@ -16,8 +16,9 @@ def has_argument(func: Callable, param_name: str) -> bool:
     # should not be invoked in the critical path.
     signature = inspect.signature(func)
     for param in signature.parameters.values():
-        if param.kind in (
-                inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                inspect.Parameter.KEYWORD_ONLY) and param.name == param_name:
+        if (
+            param.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+            and param.name == param_name
+        ):
             return True
     return False
