@@ -1376,7 +1376,7 @@ def test_multi_chunk_full_match(
             "block_tables": {"0": [1, 2, 3, 4, 5, 6]},
             "block_ref_count": {1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1},
         },
-        {   # prefill chunks 1+2 seq 1
+        {  # prefill chunks 1+2 seq 1
             # prefix hit!
             "step": 4,
             "tkv": 384,
@@ -1393,7 +1393,7 @@ def test_multi_chunk_full_match(
             "block_tables": {"0": [1, 2, 3, 4, 5, 6], "1": [1, 2, 3, 4, 5, 6]},
             "block_ref_count": {1: 2, 2: 2, 3: 2, 4: 2, 5: 2, 6: 2},
         },
-        {   # prefill chunk 3 seq 1
+        {  # prefill chunk 3 seq 1
             # cannot use prefix, as the last chunk has to always be recomputed
             "step": 5,
             "tkv": 384,
@@ -1723,7 +1723,7 @@ def test_multi_chunk_partial_match_aligned(
             "n_used_blocks": 6,
             "n_prefix_hits": 0,
         },
-        {   # prefill chunk 1 and 2 seq 1
+        {  # prefill chunk 1 and 2 seq 1
             # prefix hit!
             "step": 4,
             "tkv": 384,
@@ -1734,9 +1734,9 @@ def test_multi_chunk_partial_match_aligned(
             "n_used_blocks": 8,
             "n_prefix_hits": 1,
             # The number of cached blocks is determined up front
-            "n_cached_blocks": 4 # Reusing two chunks (4 blocks)
+            "n_cached_blocks": 4,  # Reusing two chunks (4 blocks)
         },
-        {   # prefill chunk 3 seq 1
+        {  # prefill chunk 3 seq 1
             "step": 5,
             "tkv": 384,
             "waiting": [],

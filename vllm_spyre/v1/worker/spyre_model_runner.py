@@ -2476,7 +2476,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                 left_padding=left_padding,
                 kv_cache_usage=self.get_kv_cache_usage(),
                 prefix_cache_stats=self.prefix_cache_stats,
-                prefix_cache_hit_len=self.get_prefix_cache_len()
+                prefix_cache_hit_len=self.get_prefix_cache_len(),
             )
 
         # Sample the next token.
