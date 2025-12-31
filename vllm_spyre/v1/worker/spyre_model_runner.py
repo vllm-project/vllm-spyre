@@ -2625,22 +2625,12 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         This is in the number of usable cache tokens: Including the left padding
         this will always land at a chunk boundary.
         """
-        # Must be called with the prefill batch
-        assert batch == self.prefill_batch
-
-        # We only support serial chunked prefill
-        assert len(batch.requests_ids) == 1
-
-        req_id = batch.requests_ids[0]
-        request = self.requests[req_id]
-        assert isinstance(request, ChunkedPrefillRequestState)
-
-        # Prefix cache hits happen on first prefill iteration
-        if request.num_computed_tokens == 0:
-            num_cached_tokens = request.usable_blocks * self.block_size
-            return {req_id: num_cached_tokens}
-
-        return {}
+        result = {}
+        for req_id in batch.requests_ids:
+            request = self.requests[req_id]
+            assert isinstance(request, ChunkedPrefillRequestState)
+            result[req_id] = request.usable_blocks * self.block_size
+        return result
 
     def _mark_input_tensors(self, model_input: SamplingForwardInputs) -> None:
 
