@@ -2556,8 +2556,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                 left_padding=left_padding,
                 kv_cache_usage=self.get_kv_cache_usage(),
                 prefix_cache_stats=self.prefix_cache_stats,
-                prefix_cache_hit_len=self.get_prefix_cache_len(
-                    self.prefill_batch))
+                prefix_cache_hit_len=self.get_prefix_cache_len())
 
         # Sample the next token.
         output: SamplerOutput = self.model.sample(
@@ -2619,14 +2618,13 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
     def get_kv_cache_usage(self) -> float:
         return self.kv_cache_manager.block_pool.get_usage()
 
-    def get_prefix_cache_len(self,
-                             batch: SamplingInputBatch) -> dict[str, int]:
-        """Get the prefix cache hit length for a prefilling request.
+    def get_prefix_cache_len(self) -> dict[str, int]:
+        """Get the prefix cache hit length for each prefilling request.
         This is in the number of usable cache tokens: Including the left padding
         this will always land at a chunk boundary.
         """
         result = {}
-        for req_id in batch.requests_ids:
+        for req_id in self.prefill_batch.requests_ids:
             request = self.requests[req_id]
             assert isinstance(request, ChunkedPrefillRequestState)
             result[req_id] = request.usable_blocks * self.block_size
