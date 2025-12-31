@@ -531,7 +531,7 @@ class SpyreWorker(WorkerBase):
             warmup_tokens = mm_warmup_inputs.input_ids
             warmup_embeds_tensor = mm_warmup_inputs.input_embeds
             mm_features = mm_warmup_inputs.mm_features
-            prompt_len = warmup_tokens[0].shape[-1]
+            prompt_len = len(warmup_tokens[0])
         else:
             prompt_len = 42
             warmup_tokens_tensor = valid_token_ids_tensor[torch.randint(

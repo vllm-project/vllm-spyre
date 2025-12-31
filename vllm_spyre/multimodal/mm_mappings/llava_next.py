@@ -142,7 +142,7 @@ class LlavaNextMMUtils(MMUtilsBase):
         warmup_mm_features = LlavaNextMMUtils._build_multimodal_spec(proc_res)
 
         return MMWarmupInputs(
-            input_ids=[warmup_input_ids] * req_count,
+            input_ids=[warmup_input_ids.tolist()] * req_count,
             input_embeds=[warmup_embeds] * req_count,
             mm_features=warmup_mm_features,
         )

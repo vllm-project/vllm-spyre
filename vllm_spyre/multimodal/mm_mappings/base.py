@@ -11,9 +11,9 @@ from vllm.multimodal.inputs import MultiModalFeatureSpec
 class MMWarmupInputs(NamedTuple):
     """Wrapper for multimodal model warmup inputs,
     used for continuous batching."""
-    input_ids: list
-    input_embeds: list
-    mm_features: list
+    input_ids: list[int]
+    input_embeds: list[torch.Tensor]
+    mm_features: list[MultiModalFeatureSpec]
 
 
 class MMUtilsBase(ABC):
