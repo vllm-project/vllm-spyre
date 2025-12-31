@@ -7,13 +7,13 @@ run on cpu only.
 These tests all assume a chunk size of 128 to keep the test runtime overhead
 low.
 """
-
 from dataclasses import dataclass, field
 
 import pytest
 from llm_cache import get_cached_engine
 from spyre_util import ModelInfo
-from vllm.v1.core.sched.output import CachedRequestData, NewRequestData, SchedulerOutput
+from vllm.v1.core.sched.output import (CachedRequestData, NewRequestData,
+                                       SchedulerOutput)
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request, SamplingParams
@@ -46,26 +46,21 @@ class ChunkedPrefillModelRunnerOutput(ModelRunnerOutput):
 def default_test_params(test_func):
     """Sets params for the tests in this file"""
     test_func = pytest.mark.parametrize(
-        "max_model_len", [512], ids=lambda val: f"max_model_len({val})"
-    )(test_func)
+        "max_model_len", [512],
+        ids=lambda val: f"max_model_len({val})")(test_func)
     test_func = pytest.mark.parametrize(
-        "max_num_seqs", [2], ids=lambda val: f"max_num_seqs({val})"
-    )(test_func)
+        "max_num_seqs", [2], ids=lambda val: f"max_num_seqs({val})")(test_func)
 
     test_func = pytest.mark.parametrize(
-        "max_num_batched_tokens", [128], ids=lambda val: f"max_num_batched_tokens({val})"
-    )(test_func)
+        "max_num_batched_tokens", [128],
+        ids=lambda val: f"max_num_batched_tokens({val})")(test_func)
 
     return test_func
 
 
-def get_cpu_model_runner(
-    model: ModelInfo,
-    max_model_len: int,
-    max_num_seqs: int,
-    max_num_batched_tokens: int,
-    monkeypatch: pytest.MonkeyPatch,
-) -> SpyreModelRunner:
+def get_cpu_model_runner(model: ModelInfo, max_model_len: int,
+                         max_num_seqs: int, max_num_batched_tokens: int,
+                         monkeypatch: pytest.MonkeyPatch) -> SpyreModelRunner:
     # TODO: Need to add chunked prefill mode + params to get_cached_engine
     engine_core: EngineCore = get_cached_engine(
         model=model,
@@ -74,19 +69,18 @@ def get_cpu_model_runner(
         max_num_batched_tokens=max_num_batched_tokens,
         available_blocks=None,
         backend="eager",
-        monkeypatch=monkeypatch,
-    )
+        monkeypatch=monkeypatch)
 
     # NB: Only works because this engine is run with no multiprocessing and TP=1
-    runner: SpyreModelRunner = engine_core.model_executor.driver_worker.worker.model_runner
+    runner: SpyreModelRunner = \
+        engine_core.model_executor.driver_worker.worker.model_runner
 
     # Clean things up, this isn't a fixture that cleans up after previous tests
     if runner.requests:
         for request_id in list(runner.requests):
             # aborting one-by-one should be less error prone for the runner
-            abort_sched = make_scheduler_output(
-                scheduled_new_reqs=[], finished_req_ids={request_id}
-            )
+            abort_sched = make_scheduler_output(scheduled_new_reqs=[],
+                                                finished_req_ids={request_id})
             runner.execute_model(abort_sched)
 
     return runner
@@ -95,17 +89,18 @@ def get_cpu_model_runner(
 def make_cached_request_data(req_id_to_computed_tokens) -> CachedRequestData:
     cached_request_data = CachedRequestData.make_empty()
     cached_request_data.req_ids = list(req_id_to_computed_tokens.keys())
-    cached_request_data.num_computed_tokens = list(req_id_to_computed_tokens.values())
+    cached_request_data.num_computed_tokens = list(
+        req_id_to_computed_tokens.values())
     return cached_request_data
 
 
 def make_scheduler_output(
-    scheduled_new_reqs: list[NewRequestData],
-    scheduled_cached_reqs: CachedRequestData = None,
-    num_scheduled_tokens: dict[str, int] = None,
-    finished_req_ids: set[str] = None,
-) -> SchedulerOutput:
-    total_tokens = sum(num_scheduled_tokens.values()) if num_scheduled_tokens else 0
+        scheduled_new_reqs: list[NewRequestData],
+        scheduled_cached_reqs: CachedRequestData = None,
+        num_scheduled_tokens: dict[str, int] = None,
+        finished_req_ids: set[str] = None) -> SchedulerOutput:
+    total_tokens = sum(
+        num_scheduled_tokens.values()) if num_scheduled_tokens else 0
     if scheduled_cached_reqs is None:
         scheduled_cached_reqs = CachedRequestData.make_empty()
     if num_scheduled_tokens is None:
@@ -114,41 +109,34 @@ def make_scheduler_output(
         finished_req_ids = set()
 
     extra_args = _get_extra_args()
-    return SchedulerOutput(
-        scheduled_new_reqs=scheduled_new_reqs,
-        scheduled_cached_reqs=scheduled_cached_reqs,
-        num_scheduled_tokens=num_scheduled_tokens,
-        total_num_scheduled_tokens=total_tokens,
-        scheduled_spec_decode_tokens={},
-        scheduled_encoder_inputs={},
-        num_common_prefix_blocks=[],
-        finished_req_ids=finished_req_ids,
-        kv_connector_metadata=None,
-        **extra_args,
-    )
+    return SchedulerOutput(scheduled_new_reqs=scheduled_new_reqs,
+                           scheduled_cached_reqs=scheduled_cached_reqs,
+                           num_scheduled_tokens=num_scheduled_tokens,
+                           total_num_scheduled_tokens=total_tokens,
+                           scheduled_spec_decode_tokens={},
+                           scheduled_encoder_inputs={},
+                           num_common_prefix_blocks=[],
+                           finished_req_ids=finished_req_ids,
+                           kv_connector_metadata=None,
+                           **extra_args)
 
 
 def make_new_request_data(req_id, prompt_len):
-    req = Request(
-        request_id=req_id,
-        prompt_token_ids=[42] * prompt_len,
-        sampling_params=SamplingParams(),
-        pooling_params=None,
-        eos_token_id=None,
-    )
+    req = Request(request_id=req_id,
+                  prompt_token_ids=[42] * prompt_len,
+                  sampling_params=SamplingParams(),
+                  pooling_params=None,
+                  eos_token_id=None)
     return NewRequestData.from_request(req, block_ids=[])
 
 
 @pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @default_test_params
-def test_single_block_chunked_prefill(
-    model: ModelInfo,
-    max_model_len: int,
-    max_num_seqs: int,
-    max_num_batched_tokens: int,
-    monkeypatch: pytest.MonkeyPatch,
-):
+def test_single_block_chunked_prefill(model: ModelInfo, max_model_len: int,
+                                      max_num_seqs: int,
+                                      max_num_batched_tokens: int,
+                                      monkeypatch: pytest.MonkeyPatch):
     """A request that fits within a single block should be prefilled in one
     step and should not be padded out to the chunk boundary on decode"""
     runner: SpyreModelRunner = get_cpu_model_runner(
@@ -156,8 +144,7 @@ def test_single_block_chunked_prefill(
         max_model_len=max_model_len,
         max_num_seqs=max_num_seqs,
         max_num_batched_tokens=max_num_batched_tokens,
-        monkeypatch=monkeypatch,
-    )
+        monkeypatch=monkeypatch)
 
     req_id = "1"
     # Sub-block prompt
@@ -165,8 +152,8 @@ def test_single_block_chunked_prefill(
     new_req_data = make_new_request_data(req_id, prompt_len)
 
     scheduler_output = make_scheduler_output(
-        scheduled_new_reqs=[new_req_data], num_scheduled_tokens={req_id: prompt_len}
-    )
+        scheduled_new_reqs=[new_req_data],
+        num_scheduled_tokens={req_id: prompt_len})
 
     output = runner.execute_model(scheduler_output)
 
@@ -180,8 +167,7 @@ def test_single_block_chunked_prefill(
     scheduler_output = make_scheduler_output(
         scheduled_new_reqs=[],
         scheduled_cached_reqs=cached_req_data,
-        num_scheduled_tokens={req_id: 1},
-    )
+        num_scheduled_tokens={req_id: 1})
     output = runner.execute_model(scheduler_output)
     assert len(output.sampled_token_ids[0]) == 1
     # No extra block or chunk padding
@@ -191,14 +177,11 @@ def test_single_block_chunked_prefill(
 @pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @default_test_params
-def test_multi_chunk_padded_prefill(
-    model: ModelInfo,
-    max_model_len: int,
-    max_num_seqs: int,
-    max_num_batched_tokens: int,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    """A request that's longer than a chunk is split into multiple chunks, and
+def test_multi_chunk_padded_prefill(model: ModelInfo, max_model_len: int,
+                                    max_num_seqs: int,
+                                    max_num_batched_tokens: int,
+                                    monkeypatch: pytest.MonkeyPatch):
+    """A request that's longer than a chunk is split into multiple chunks, and 
     left-padded only with full size blocks to the end of the last chunk boundary
     """
     runner: SpyreModelRunner = get_cpu_model_runner(
@@ -206,8 +189,7 @@ def test_multi_chunk_padded_prefill(
         max_model_len=max_model_len,
         max_num_seqs=max_num_seqs,
         max_num_batched_tokens=max_num_batched_tokens,
-        monkeypatch=monkeypatch,
-    )
+        monkeypatch=monkeypatch)
     block_size = SpyrePlatform.get_block_size()
 
     req_id = "1"
@@ -217,8 +199,8 @@ def test_multi_chunk_padded_prefill(
 
     # Scheduler will give first chunk
     scheduler_output = make_scheduler_output(
-        scheduled_new_reqs=[new_req_data], num_scheduled_tokens={req_id: max_num_batched_tokens}
-    )
+        scheduled_new_reqs=[new_req_data],
+        num_scheduled_tokens={req_id: max_num_batched_tokens})
     output = runner.execute_model(scheduler_output)
 
     # no output tokens
@@ -238,8 +220,7 @@ def test_multi_chunk_padded_prefill(
     scheduler_output = make_scheduler_output(
         scheduled_new_reqs=[],
         scheduled_cached_reqs=cached_req_data,
-        num_scheduled_tokens={req_id: prompt_len - block_size},
-    )
+        num_scheduled_tokens={req_id: prompt_len - block_size})
     output = runner.execute_model(scheduler_output)
 
     # Should be one output token now
@@ -251,13 +232,10 @@ def test_multi_chunk_padded_prefill(
 @pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @default_test_params
-def test_multi_chunk_unpadded_prefill(
-    model: ModelInfo,
-    max_model_len: int,
-    max_num_seqs: int,
-    max_num_batched_tokens: int,
-    monkeypatch: pytest.MonkeyPatch,
-):
+def test_multi_chunk_unpadded_prefill(model: ModelInfo, max_model_len: int,
+                                      max_num_seqs: int,
+                                      max_num_batched_tokens: int,
+                                      monkeypatch: pytest.MonkeyPatch):
     """A request that's longer than a chunk can be split into multiple chunks
     with no padding required when the prompt is within one block of the end of
     a chunk"""
@@ -266,8 +244,7 @@ def test_multi_chunk_unpadded_prefill(
         max_model_len=max_model_len,
         max_num_seqs=max_num_seqs,
         max_num_batched_tokens=max_num_batched_tokens,
-        monkeypatch=monkeypatch,
-    )
+        monkeypatch=monkeypatch)
 
     req_id = "1"
     # Prompt is within one block of two full chunks
@@ -276,8 +253,8 @@ def test_multi_chunk_unpadded_prefill(
 
     # Scheduler will give first 128 token chunk
     scheduler_output = make_scheduler_output(
-        scheduled_new_reqs=[new_req_data], num_scheduled_tokens={req_id: max_num_batched_tokens}
-    )
+        scheduled_new_reqs=[new_req_data],
+        num_scheduled_tokens={req_id: max_num_batched_tokens})
     output = runner.execute_model(scheduler_output)
 
     # no output tokens
@@ -292,8 +269,7 @@ def test_multi_chunk_unpadded_prefill(
     scheduler_output = make_scheduler_output(
         scheduled_new_reqs=[],
         scheduled_cached_reqs=cached_req_data,
-        num_scheduled_tokens={req_id: prompt_len - max_num_batched_tokens},
-    )
+        num_scheduled_tokens={req_id: prompt_len - max_num_batched_tokens})
     output = runner.execute_model(scheduler_output)
 
     # Should be one output token now
@@ -304,13 +280,10 @@ def test_multi_chunk_unpadded_prefill(
 @pytest.mark.cpu
 @pytest.mark.chunked_prefill
 @default_test_params
-def test_decode_padding_to_same_block(
-    model: ModelInfo,
-    max_model_len: int,
-    max_num_seqs: int,
-    max_num_batched_tokens: int,
-    monkeypatch: pytest.MonkeyPatch,
-):
+def test_decode_padding_to_same_block(model: ModelInfo, max_model_len: int,
+                                      max_num_seqs: int,
+                                      max_num_batched_tokens: int,
+                                      monkeypatch: pytest.MonkeyPatch):
     """Test that decode batches will use full blocks of left-padding to align
     themselves into the same last block of tokens in the sequence"""
     runner: SpyreModelRunner = get_cpu_model_runner(
@@ -318,8 +291,7 @@ def test_decode_padding_to_same_block(
         max_model_len=max_model_len,
         max_num_seqs=max_num_seqs,
         max_num_batched_tokens=max_num_batched_tokens,
-        monkeypatch=monkeypatch,
-    )
+        monkeypatch=monkeypatch)
 
     short_req_id = "short"
     long_req_id = "long"
@@ -328,20 +300,20 @@ def test_decode_padding_to_same_block(
     steps = 0
     computed_tokens = lambda: {
         short_req_id: short_prompt_len + steps,
-        long_req_id: long_prompt_len + steps,
+        long_req_id: long_prompt_len + steps
     }
 
     # Prefill both in one pass each
     new_req_data = make_new_request_data(short_req_id, short_prompt_len)
     scheduler_output = make_scheduler_output(
-        scheduled_new_reqs=[new_req_data], num_scheduled_tokens={short_req_id: short_prompt_len}
-    )
+        scheduled_new_reqs=[new_req_data],
+        num_scheduled_tokens={short_req_id: short_prompt_len})
     output = runner.execute_model(scheduler_output)
 
     new_req_data = make_new_request_data(long_req_id, long_prompt_len)
     scheduler_output = make_scheduler_output(
-        scheduled_new_reqs=[new_req_data], num_scheduled_tokens={long_req_id: long_prompt_len}
-    )
+        scheduled_new_reqs=[new_req_data],
+        num_scheduled_tokens={long_req_id: long_prompt_len})
     output = runner.execute_model(scheduler_output)
     computed_tokens_dict = computed_tokens()
 
@@ -355,8 +327,10 @@ def test_decode_padding_to_same_block(
     scheduler_output = make_scheduler_output(
         scheduled_new_reqs=[],
         scheduled_cached_reqs=cached_req_data,
-        num_scheduled_tokens={short_req_id: 1, long_req_id: 1},
-    )
+        num_scheduled_tokens={
+            short_req_id: 1,
+            long_req_id: 1
+        })
     output = runner.execute_model(scheduler_output)
     # TKV is the length of the long request since both are still in first block
     assert output.tkv == long_prompt_len + steps
@@ -370,8 +344,10 @@ def test_decode_padding_to_same_block(
     scheduler_output = make_scheduler_output(
         scheduled_new_reqs=[],
         scheduled_cached_reqs=cached_req_data,
-        num_scheduled_tokens={short_req_id: 1, long_req_id: 1},
-    )
+        num_scheduled_tokens={
+            short_req_id: 1,
+            long_req_id: 1
+        })
     output = runner.execute_model(scheduler_output)
     # 🌶️🌶️🌶️ short prompt gets padded, it's now the longest sequence
     assert output.tkv == short_prompt_len + steps + 64
@@ -387,8 +363,10 @@ def test_decode_padding_to_same_block(
     scheduler_output = make_scheduler_output(
         scheduled_new_reqs=[],
         scheduled_cached_reqs=cached_req_data,
-        num_scheduled_tokens={short_req_id: 1, long_req_id: 1},
-    )
+        num_scheduled_tokens={
+            short_req_id: 1,
+            long_req_id: 1
+        })
     output = runner.execute_model(scheduler_output)
     # 🌶️🌶️🌶️ short prompt padding removed again, tkv is back to long + steps
     assert output.tkv == long_prompt_len + steps

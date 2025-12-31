@@ -1,6 +1,6 @@
 """Verification of the correctness of the step-by-step execution of chunked
-prefill. It does so by comparing, at every engine step (i.e. prefill or decode
-iteration), a bunch of attributes. This allows a finer testing of the padding
+prefill. It does so by comparing, at every engine step (i.e. prefill or decode 
+iteration), a bunch of attributes. This allows a finer testing of the padding 
 and scheduling implementation.
 
 Run `python -m pytest tests/e2e/test_spyre_cp_inference_steps.py`.
@@ -15,24 +15,20 @@ from spyre_util import ModelInfo
 @pytest.mark.full_model
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [2])
-@pytest.mark.parametrize("max_model_len", [128])  # restricted to violate scheduler condition
+@pytest.mark.parametrize("max_model_len",
+                         [128])  # restricted to violate scheduler condition
 @pytest.mark.parametrize("max_num_batched_tokens", [128])
 @pytest.mark.parametrize("available_blocks", [None])
-def test_prefill_tkv_too_big(
-    model: ModelInfo,
-    backend: str,
-    monkeypatch: pytest.MonkeyPatch,
-    set_random_seed,
-    max_num_seqs: int,
-    max_model_len: int,
-    max_num_batched_tokens: int,
-    available_blocks: int,
-):
-    """Scenario where the requested prompt is too long for current tkv value
-
+def test_prefill_tkv_too_big(model: ModelInfo, backend: str,
+                             monkeypatch: pytest.MonkeyPatch, set_random_seed,
+                             max_num_seqs: int, max_model_len: int,
+                             max_num_batched_tokens: int,
+                             available_blocks: int):
+    """ Scenario where the requested prompt is too long for current tkv value
+   
     Note that as we could prefill the prompt straight away, however,
     in this test the max model length is decreased to a value where
-    the tkv of the decode batch would be shifted beyond the max model length,
+    the tkv of the decode batch would be shifted beyond the max model length, 
     we therefore have to wait with scheduling.
 
     Configuration:
@@ -54,7 +50,7 @@ def test_prefill_tkv_too_big(
             "running": [],
             "request_outputs": [],
             "n_reserved_blocks": 0,
-            "n_used_blocks": 0,
+            "n_used_blocks": 0
         },
         {
             # Prefill sequence 0
@@ -64,8 +60,9 @@ def test_prefill_tkv_too_big(
             "waiting": ["1"],
             "running": ["0"],
             "request_outputs": ["0"],
-            "n_reserved_blocks": 2,  # prefill (1 block) + 17 decodes (1 additional block)
-            "n_used_blocks": 1,
+            "n_reserved_blocks":
+            2,  # prefill (1 block) + 17 decodes (1 additional block)
+            "n_used_blocks": 1
         },
         # Here we cannot schedule sequence 1. By shifting sequence 0 by
         # 1 block its max tkv would exceed the max model length
@@ -78,7 +75,7 @@ def test_prefill_tkv_too_big(
             "running": ["0"],
             "request_outputs": ["0"],
             "n_reserved_blocks": 2,
-            "n_used_blocks": 1,
+            "n_used_blocks": 1
         },
         {
             # Prefill sequence 1, tkv large enough to prefill w/o tkv shift
@@ -91,7 +88,7 @@ def test_prefill_tkv_too_big(
             "request_outputs": ["1"],
             # 2 + 2 (prefill (2 block) + 17 decodes in the last block)
             "n_reserved_blocks": 4,
-            "n_used_blocks": 3,
+            "n_used_blocks": 3
         },
         {
             # Decode sequences 0 and 1
@@ -106,7 +103,7 @@ def test_prefill_tkv_too_big(
             "request_outputs": ["1", "0"],
             "finished_requests": ["0"],
             "n_reserved_blocks": 4,
-            "n_used_blocks": 4,  # seq 0 needs another block for the last token
+            "n_used_blocks": 4  # seq 0 needs another block for the last token 
         },
         {
             # Decode sequence 1
@@ -117,7 +114,7 @@ def test_prefill_tkv_too_big(
             "running": ["1"],
             "request_outputs": ["1"],
             "n_reserved_blocks": 2,
-            "n_used_blocks": 2,
+            "n_used_blocks": 2
         },
         {
             # Sequence 1 finishes at step 33
@@ -128,7 +125,7 @@ def test_prefill_tkv_too_big(
             "request_outputs": ["1"],
             "finished_requests": ["1"],
             "n_reserved_blocks": 2,
-            "n_used_blocks": 2,
+            "n_used_blocks": 2
         },
         {
             # Tkv should be cleared one step later
@@ -138,7 +135,7 @@ def test_prefill_tkv_too_big(
             "running": [],
             "request_outputs": [],
             "n_reserved_blocks": 0,
-            "n_used_blocks": 0,
+            "n_used_blocks": 0
         },
     ]
 
@@ -164,19 +161,15 @@ def test_prefill_tkv_too_big(
 @pytest.mark.parametrize("max_model_len", [128])
 @pytest.mark.parametrize("max_num_batched_tokens", [128])
 @pytest.mark.parametrize("available_blocks", [None])
-def test_requests_exceed_batch_tkv_limit(
-    model: ModelInfo,
-    backend: str,
-    monkeypatch: pytest.MonkeyPatch,
-    set_random_seed,
-    max_num_seqs: int,
-    max_model_len: int,
-    max_num_batched_tokens: int,
-    available_blocks: int,
-):
-    """Scenario where a request cannot be scheduled right away as the
+def test_requests_exceed_batch_tkv_limit(model: ModelInfo, backend: str,
+                                         monkeypatch: pytest.MonkeyPatch,
+                                         set_random_seed, max_num_seqs: int,
+                                         max_model_len: int,
+                                         max_num_batched_tokens: int,
+                                         available_blocks: int):
+    """ Scenario where a request cannot be scheduled right away as the
     max batch x tkv limit, e.g the volumetric limit, is exceeded.
-
+    
     Configuration:
         * max_num_seqs: 2
         * number of prompts: 2
@@ -200,7 +193,7 @@ def test_requests_exceed_batch_tkv_limit(
             "running": [],
             "request_outputs": [],
             "n_reserved_blocks": 0,
-            "n_used_blocks": 0,
+            "n_used_blocks": 0
         },
         {
             # Prefill sequence 0
@@ -211,7 +204,7 @@ def test_requests_exceed_batch_tkv_limit(
             "running": ["0"],
             "request_outputs": ["0"],
             "n_reserved_blocks": 2,  # prefill (1 block) + 1 decode (1 block)
-            "n_used_blocks": 1,
+            "n_used_blocks": 1
         },
         # Note: we cannot prefill seq 1 as the volumetric limit
         # max_batch_tkv_limit is exceeded: 129 < 130
@@ -227,7 +220,7 @@ def test_requests_exceed_batch_tkv_limit(
             "request_outputs": ["0"],
             "finished_requests": ["0"],
             "n_reserved_blocks": 2,
-            "n_used_blocks": 2,
+            "n_used_blocks": 2
         },
         {
             # Prefill sequence 1
@@ -238,7 +231,7 @@ def test_requests_exceed_batch_tkv_limit(
             "running": ["1"],
             "request_outputs": ["1"],
             "n_reserved_blocks": 2,
-            "n_used_blocks": 2,  # 2 - 2 + 2
+            "n_used_blocks": 2  # 2 - 2 + 2
         },
         {
             # Decode sequence 1
@@ -251,7 +244,7 @@ def test_requests_exceed_batch_tkv_limit(
             "request_outputs": ["1"],
             "finished_requests": ["1"],
             "n_reserved_blocks": 2,
-            "n_used_blocks": 2,
+            "n_used_blocks": 2
         },
         {
             # Tkv should be cleared one step later
@@ -262,7 +255,7 @@ def test_requests_exceed_batch_tkv_limit(
             "running": [],
             "request_outputs": [],
             "n_reserved_blocks": 0,
-            "n_used_blocks": 0,
+            "n_used_blocks": 0
         },
     ]
 
@@ -293,18 +286,12 @@ def test_requests_exceed_batch_tkv_limit(
 # the sequences together in a batch.
 @pytest.mark.parametrize("available_blocks", [2])
 def test_prefill_use_more_than_available_blocks(
-    model: ModelInfo,
-    backend: str,
-    monkeypatch: pytest.MonkeyPatch,
-    set_random_seed,
-    max_num_seqs: int,
-    max_model_len: int,
-    max_num_batched_tokens: int,
-    available_blocks: int,
-):
-    """Scenario where the number of available KV cache blocks is decreased
+        model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch,
+        set_random_seed, max_num_seqs: int, max_model_len: int,
+        max_num_batched_tokens: int, available_blocks: int):
+    """ Scenario where the number of available KV cache blocks is decreased
     to a value where the the number of reserved blocks would exceed the number
-    of available blocks, we therefore have to wait scheduling the request.
+    of available blocks, we therefore have to wait scheduling the request. 
 
     Configuration:
         * max_num_seqs: 2
@@ -326,7 +313,7 @@ def test_prefill_use_more_than_available_blocks(
             "running": [],
             "request_outputs": [],
             "n_reserved_blocks": 0,
-            "n_used_blocks": 0,
+            "n_used_blocks": 0
         },
         {
             # Prefill sequence 0
@@ -337,7 +324,7 @@ def test_prefill_use_more_than_available_blocks(
             "running": ["0"],
             "request_outputs": ["0"],
             "n_reserved_blocks": 1,
-            "n_used_blocks": 1,
+            "n_used_blocks": 1
         },
         # We cannot schedule sequence 1 here. Needs 2 more blocks, but only
         # a total of 2 blocks available.
@@ -349,7 +336,7 @@ def test_prefill_use_more_than_available_blocks(
             "running": ["0"],
             "request_outputs": ["0"],
             "n_reserved_blocks": 1,
-            "n_used_blocks": 1,
+            "n_used_blocks": 1
         },
         {
             # Decode sequence 0
@@ -361,7 +348,7 @@ def test_prefill_use_more_than_available_blocks(
             "request_outputs": ["0"],
             "finished_requests": ["0"],
             "n_reserved_blocks": 1,
-            "n_used_blocks": 1,
+            "n_used_blocks": 1
         },
         {
             # Prefill sequence 1
@@ -371,7 +358,7 @@ def test_prefill_use_more_than_available_blocks(
             "running": ["1"],
             "request_outputs": ["1"],
             "n_reserved_blocks": 2,
-            "n_used_blocks": 2,
+            "n_used_blocks": 2
         },
         {
             # Decode sequence 1
@@ -381,7 +368,7 @@ def test_prefill_use_more_than_available_blocks(
             "running": ["1"],
             "request_outputs": ["1"],
             "n_reserved_blocks": 2,
-            "n_used_blocks": 2,
+            "n_used_blocks": 2
         },
         {
             # Decode sequence 0
@@ -393,7 +380,7 @@ def test_prefill_use_more_than_available_blocks(
             "request_outputs": ["1"],
             "finished_requests": ["1"],
             "n_reserved_blocks": 2,
-            "n_used_blocks": 2,
+            "n_used_blocks": 2
         },
         {
             # Tkv should be cleared one step later
@@ -403,7 +390,7 @@ def test_prefill_use_more_than_available_blocks(
             "running": [],
             "request_outputs": [],
             "n_reserved_blocks": 0,
-            "n_used_blocks": 0,
+            "n_used_blocks": 0
         },
     ]
 
@@ -430,18 +417,12 @@ def test_prefill_use_more_than_available_blocks(
 @pytest.mark.parametrize("max_model_len", [514, 1024])
 @pytest.mark.parametrize("max_num_batched_tokens", [128])
 @pytest.mark.parametrize("available_blocks", [None])
-def test_single_cp_prefill(
-    model: ModelInfo,
-    backend: str,
-    monkeypatch: pytest.MonkeyPatch,
-    set_random_seed,
-    max_num_seqs: int,
-    max_model_len: int,
-    max_num_batched_tokens: int,
-    available_blocks: int,
-):
-    """Scenario to test the most basic execution of chunked scheduling:
-    a single prompts larger than the chunk size.
+def test_single_cp_prefill(model: ModelInfo, backend: str,
+                           monkeypatch: pytest.MonkeyPatch, set_random_seed,
+                           max_num_seqs: int, max_model_len: int,
+                           max_num_batched_tokens: int, available_blocks: int):
+    """ Scenario to test the most basic execution of chunked scheduling:
+    a single prompts larger than the chunk size. 
 
     Configuration:
         * max_num_seqs: 2
@@ -453,7 +434,8 @@ def test_single_cp_prefill(
     if backend == "sendnn" and max_model_len == 514:
         pytest.skip("sendnn backend with 514 context length will not work")
     if backend != "sendnn" and max_model_len == 1024:
-        pytest.skip("skipping 1024 context length test case for CPU to save test time")
+        pytest.skip(
+            "skipping 1024 context length test case for CPU to save test time")
 
     seqs_max_tokens = [2]
     prompts_lengths = [512]
@@ -467,7 +449,7 @@ def test_single_cp_prefill(
             "running": [],
             "request_outputs": [],
             "n_reserved_blocks": 0,
-            "n_used_blocks": 0,
+            "n_used_blocks": 0
         },
         {
             # Prefill sequence 0 chunk 0
@@ -477,7 +459,7 @@ def test_single_cp_prefill(
             "running": ["0"],
             "request_outputs": [],
             "n_reserved_blocks": 9,
-            "n_used_blocks": 8,
+            "n_used_blocks": 8
         },
         {
             # Prefill sequence 0 chunk 1
@@ -487,7 +469,7 @@ def test_single_cp_prefill(
             "running": ["0"],
             "request_outputs": [],
             "n_reserved_blocks": 9,
-            "n_used_blocks": 8,
+            "n_used_blocks": 8
         },
         {
             # Prefill sequence 0 chunk 2
@@ -498,7 +480,7 @@ def test_single_cp_prefill(
             "running": ["0"],
             "request_outputs": [],
             "n_reserved_blocks": 9,
-            "n_used_blocks": 8,
+            "n_used_blocks": 8
         },
         {
             # Prefill sequence 0 chunk 3
@@ -509,7 +491,7 @@ def test_single_cp_prefill(
             "running": ["0"],
             "request_outputs": ["0"],
             "n_reserved_blocks": 9,
-            "n_used_blocks": 8,
+            "n_used_blocks": 8
         },
         {
             # Decode sequence 0
@@ -521,7 +503,7 @@ def test_single_cp_prefill(
             "request_outputs": ["0"],
             "finished_requests": ["0"],
             "n_reserved_blocks": 9,
-            "n_used_blocks": 9,
+            "n_used_blocks": 9
         },
         {
             # Tkv should be cleared one step later
@@ -531,7 +513,7 @@ def test_single_cp_prefill(
             "running": [],
             "request_outputs": [],
             "n_reserved_blocks": 0,
-            "n_used_blocks": 0,
+            "n_used_blocks": 0
         },
     ]
 
@@ -559,17 +541,13 @@ def test_single_cp_prefill(
 @pytest.mark.parametrize("max_model_len", [2048])
 @pytest.mark.parametrize("max_num_batched_tokens", [128])
 @pytest.mark.parametrize("available_blocks", [None])
-def test_cp_prefill_interleave1(
-    model: ModelInfo,
-    backend: str,
-    monkeypatch: pytest.MonkeyPatch,
-    set_random_seed,
-    max_num_seqs: int,
-    max_model_len: int,
-    max_num_batched_tokens: int,
-    available_blocks: int,
-):
-    """Scenario where two sequences are scheduled from the beginning
+def test_cp_prefill_interleave1(model: ModelInfo, backend: str,
+                                monkeypatch: pytest.MonkeyPatch,
+                                set_random_seed, max_num_seqs: int,
+                                max_model_len: int,
+                                max_num_batched_tokens: int,
+                                available_blocks: int):
+    """ Scenario where two sequences are scheduled from the beginning
     and the shorter sequence gets scheduled first. After a couple of
     iterations the interleaving of requests starts.
 
@@ -592,7 +570,7 @@ def test_cp_prefill_interleave1(
             "running": [],
             "request_outputs": [],
             "n_reserved_blocks": 0,
-            "n_used_blocks": 0,
+            "n_used_blocks": 0
         },
         {
             # Request 0 is prefilled with a single chunk
@@ -603,11 +581,11 @@ def test_cp_prefill_interleave1(
             "running": ["0"],
             "request_outputs": ["0"],
             "n_reserved_blocks": 1,
-            "n_used_blocks": 1,
+            "n_used_blocks": 1
         },
         {
             # Request 0 starts decoding.
-            # Request 1 can't be scheduled do to a restriction on
+            # Request 1 can't be scheduled do to a restricton on
             # consecutive prefills. Token 1 is generated
             "step": 2,
             "tkv": 11,
@@ -615,7 +593,7 @@ def test_cp_prefill_interleave1(
             "running": ["0"],
             "request_outputs": ["0"],
             "n_reserved_blocks": 1,
-            "n_used_blocks": 1,
+            "n_used_blocks": 1
         },
         {
             # Chunk 0 of request 1 prefill
@@ -625,7 +603,7 @@ def test_cp_prefill_interleave1(
             "running": ["1", "0"],
             "request_outputs": [],
             "n_reserved_blocks": 10,
-            "n_used_blocks": 9,
+            "n_used_blocks": 9
         },
         {
             # Decode 2 of request 0.
@@ -635,7 +613,7 @@ def test_cp_prefill_interleave1(
             "running": ["0", "1"],
             "request_outputs": ["0"],
             "n_reserved_blocks": 10,
-            "n_used_blocks": 9,
+            "n_used_blocks": 9
         },
         {
             # Chunk 1 of request 1 prefill
@@ -646,7 +624,7 @@ def test_cp_prefill_interleave1(
             "running": ["1", "0"],
             "request_outputs": [],
             "n_reserved_blocks": 10,
-            "n_used_blocks": 9,
+            "n_used_blocks": 9
         },
         {
             # Decode 3 of request 0.
@@ -656,7 +634,7 @@ def test_cp_prefill_interleave1(
             "running": ["0", "1"],
             "request_outputs": ["0"],
             "n_reserved_blocks": 10,
-            "n_used_blocks": 9,
+            "n_used_blocks": 9
         },
         {
             # Chunk 2 of request 1 prefill
@@ -667,7 +645,7 @@ def test_cp_prefill_interleave1(
             "running": ["1", "0"],
             "request_outputs": [],
             "n_reserved_blocks": 10,
-            "n_used_blocks": 9,
+            "n_used_blocks": 9
         },
         {
             # Decode 4 of request 0.
@@ -677,7 +655,7 @@ def test_cp_prefill_interleave1(
             "running": ["0", "1"],
             "request_outputs": ["0"],
             "n_reserved_blocks": 10,
-            "n_used_blocks": 9,
+            "n_used_blocks": 9
         },
         {
             # Chunk 3 of request 1 prefill.
@@ -689,7 +667,7 @@ def test_cp_prefill_interleave1(
             "running": ["1", "0"],
             "request_outputs": ["1"],
             "n_reserved_blocks": 10,
-            "n_used_blocks": 9,
+            "n_used_blocks": 9
         },
         {
             # Decode 5 of request 0.
@@ -700,7 +678,7 @@ def test_cp_prefill_interleave1(
             "running": ["1", "0"],
             "request_outputs": ["1", "0"],
             "n_reserved_blocks": 10,
-            "n_used_blocks": 10,
+            "n_used_blocks": 10
         },
         {
             # Decode 6 of request 0.
@@ -711,7 +689,7 @@ def test_cp_prefill_interleave1(
             "running": ["1", "0"],
             "request_outputs": ["1", "0"],
             "n_reserved_blocks": 10,
-            "n_used_blocks": 10,
+            "n_used_blocks": 10
         },
         {
             # Decode 7 of request 0.
@@ -724,7 +702,7 @@ def test_cp_prefill_interleave1(
             "finished_requests": ["1", "0"],
             "request_outputs": ["1", "0"],
             "n_reserved_blocks": 10,
-            "n_used_blocks": 10,
+            "n_used_blocks": 10
         },
         {
             # Tkv should be cleared one step later
@@ -734,7 +712,7 @@ def test_cp_prefill_interleave1(
             "running": [],
             "request_outputs": [],
             "n_reserved_blocks": 0,
-            "n_used_blocks": 0,
+            "n_used_blocks": 0
         },
     ]
 
@@ -762,16 +740,12 @@ def test_cp_prefill_interleave1(
 @pytest.mark.parametrize("max_model_len", [2048])
 @pytest.mark.parametrize("max_num_batched_tokens", [128])
 @pytest.mark.parametrize("available_blocks", [None])
-def test_cp_prefill_no_interleave(
-    model: ModelInfo,
-    backend: str,
-    monkeypatch: pytest.MonkeyPatch,
-    set_random_seed,
-    max_num_seqs: int,
-    max_model_len: int,
-    max_num_batched_tokens: int,
-    available_blocks: int,
-):
+def test_cp_prefill_no_interleave(model: ModelInfo, backend: str,
+                                  monkeypatch: pytest.MonkeyPatch,
+                                  set_random_seed, max_num_seqs: int,
+                                  max_model_len: int,
+                                  max_num_batched_tokens: int,
+                                  available_blocks: int):
     """Same as test_cp_prefill_interleave1 but with interleaving disabled
 
     Configuration:
@@ -795,7 +769,7 @@ def test_cp_prefill_no_interleave(
             "running": [],
             "request_outputs": [],
             "n_reserved_blocks": 0,
-            "n_used_blocks": 0,
+            "n_used_blocks": 0
         },
         {
             # Request 0 is prefilled with a single chunk
@@ -806,7 +780,7 @@ def test_cp_prefill_no_interleave(
             "running": ["0"],
             "request_outputs": ["0"],
             "n_reserved_blocks": 1,
-            "n_used_blocks": 1,
+            "n_used_blocks": 1
         },
         {
             # Chunk 0 of request 1 prefill
@@ -817,7 +791,7 @@ def test_cp_prefill_no_interleave(
             "running": ["1", "0"],
             "request_outputs": [],
             "n_reserved_blocks": 10,
-            "n_used_blocks": 9,
+            "n_used_blocks": 9
         },
         {
             # Chunk 1 of request 1 prefill
@@ -828,7 +802,7 @@ def test_cp_prefill_no_interleave(
             "running": ["1", "0"],
             "request_outputs": [],
             "n_reserved_blocks": 10,
-            "n_used_blocks": 9,
+            "n_used_blocks": 9
         },
         {
             # Chunk 2 of request 1 prefill
@@ -839,7 +813,7 @@ def test_cp_prefill_no_interleave(
             "running": ["1", "0"],
             "request_outputs": [],
             "n_reserved_blocks": 10,
-            "n_used_blocks": 9,
+            "n_used_blocks": 9
         },
         {
             # Chunk 3 of request 1 prefill.
@@ -851,7 +825,7 @@ def test_cp_prefill_no_interleave(
             "running": ["1", "0"],
             "request_outputs": ["1"],
             "n_reserved_blocks": 10,
-            "n_used_blocks": 9,
+            "n_used_blocks": 9
         },
         {
             # Both requests start decoding.
@@ -861,7 +835,7 @@ def test_cp_prefill_no_interleave(
             "running": ["1", "0"],
             "request_outputs": ["1", "0"],
             "n_reserved_blocks": 10,
-            "n_used_blocks": 10,
+            "n_used_blocks": 10
         },
         {
             # Decode 2
@@ -871,7 +845,7 @@ def test_cp_prefill_no_interleave(
             "running": ["1", "0"],
             "request_outputs": ["1", "0"],
             "n_reserved_blocks": 10,
-            "n_used_blocks": 10,
+            "n_used_blocks": 10
         },
         {
             # Decode 3
@@ -882,7 +856,7 @@ def test_cp_prefill_no_interleave(
             "finished_requests": ["1"],
             "request_outputs": ["1", "0"],
             "n_reserved_blocks": 10,
-            "n_used_blocks": 10,
+            "n_used_blocks": 10
         },
         {
             # Decode 4 of request 0.
@@ -892,7 +866,7 @@ def test_cp_prefill_no_interleave(
             "running": ["0"],
             "request_outputs": ["0"],
             "n_reserved_blocks": 1,
-            "n_used_blocks": 1,
+            "n_used_blocks": 1
         },
         {
             # Decode 5 of request 0.
@@ -902,7 +876,7 @@ def test_cp_prefill_no_interleave(
             "running": ["0"],
             "request_outputs": ["0"],
             "n_reserved_blocks": 1,
-            "n_used_blocks": 1,
+            "n_used_blocks": 1
         },
         {
             # Decode 6 of request 0.
@@ -912,7 +886,7 @@ def test_cp_prefill_no_interleave(
             "running": ["0"],
             "request_outputs": ["0"],
             "n_reserved_blocks": 1,
-            "n_used_blocks": 1,
+            "n_used_blocks": 1
         },
         {
             # Decode 7 of request 0.
@@ -923,7 +897,7 @@ def test_cp_prefill_no_interleave(
             "finished_requests": ["0"],
             "request_outputs": ["0"],
             "n_reserved_blocks": 1,
-            "n_used_blocks": 1,
+            "n_used_blocks": 1
         },
         {
             # Tkv should be cleared one step later
@@ -933,7 +907,7 @@ def test_cp_prefill_no_interleave(
             "running": [],
             "request_outputs": [],
             "n_reserved_blocks": 0,
-            "n_used_blocks": 0,
+            "n_used_blocks": 0
         },
     ]
 
@@ -961,16 +935,12 @@ def test_cp_prefill_no_interleave(
 @pytest.mark.parametrize("max_model_len", [2048])
 @pytest.mark.parametrize("max_num_batched_tokens", [128])
 @pytest.mark.parametrize("available_blocks", [None])
-def test_cp_prefill_interleave2(
-    model: ModelInfo,
-    backend: str,
-    monkeypatch: pytest.MonkeyPatch,
-    set_random_seed,
-    max_num_seqs: int,
-    max_model_len: int,
-    max_num_batched_tokens: int,
-    available_blocks: int,
-):
+def test_cp_prefill_interleave2(model: ModelInfo, backend: str,
+                                monkeypatch: pytest.MonkeyPatch,
+                                set_random_seed, max_num_seqs: int,
+                                max_model_len: int,
+                                max_num_batched_tokens: int,
+                                available_blocks: int):
     """Same as test_cp_prefill_interleave1 but now the second
     request arrives during decode of step 0
 
@@ -993,7 +963,7 @@ def test_cp_prefill_interleave2(
             "running": [],
             "request_outputs": [],
             "n_reserved_blocks": 0,
-            "n_used_blocks": 0,
+            "n_used_blocks": 0
         },
         {
             # Request 0 is prefilled with a single chunk
@@ -1004,7 +974,7 @@ def test_cp_prefill_interleave2(
             "running": ["0"],
             "request_outputs": ["0"],
             "n_reserved_blocks": 1,
-            "n_used_blocks": 1,
+            "n_used_blocks": 1
         },
         {
             # Decode 1 of request 0.
@@ -1014,7 +984,7 @@ def test_cp_prefill_interleave2(
             "running": ["0"],
             "request_outputs": ["0"],
             "n_reserved_blocks": 1,
-            "n_used_blocks": 1,
+            "n_used_blocks": 1
         },
         {
             # Decode 2 of request 0.
@@ -1024,7 +994,7 @@ def test_cp_prefill_interleave2(
             "running": ["0"],
             "request_outputs": ["0"],
             "n_reserved_blocks": 1,
-            "n_used_blocks": 1,
+            "n_used_blocks": 1
         },
         {
             # Chunk 0 of request 1 prefill
@@ -1035,7 +1005,7 @@ def test_cp_prefill_interleave2(
             "running": ["1", "0"],
             "request_outputs": [],
             "n_reserved_blocks": 10,
-            "n_used_blocks": 9,
+            "n_used_blocks": 9
         },
         {
             # Decode 3 of request 0.
@@ -1045,7 +1015,7 @@ def test_cp_prefill_interleave2(
             "running": ["0", "1"],
             "request_outputs": ["0"],
             "n_reserved_blocks": 10,
-            "n_used_blocks": 9,
+            "n_used_blocks": 9
         },
         {
             # Chunk 1 of request 1 prefill
@@ -1056,7 +1026,7 @@ def test_cp_prefill_interleave2(
             "running": ["1", "0"],
             "request_outputs": [],
             "n_reserved_blocks": 10,
-            "n_used_blocks": 9,
+            "n_used_blocks": 9
         },
         {
             # Decode 4 of request 0.
@@ -1066,7 +1036,7 @@ def test_cp_prefill_interleave2(
             "running": ["0", "1"],
             "request_outputs": ["0"],
             "n_reserved_blocks": 10,
-            "n_used_blocks": 9,
+            "n_used_blocks": 9
         },
         {
             # Chunk 2 of request 1 prefill
@@ -1077,7 +1047,7 @@ def test_cp_prefill_interleave2(
             "running": ["1", "0"],
             "request_outputs": [],
             "n_reserved_blocks": 10,
-            "n_used_blocks": 9,
+            "n_used_blocks": 9
         },
         {
             # Decode 5 of request 0.
@@ -1087,7 +1057,7 @@ def test_cp_prefill_interleave2(
             "running": ["0", "1"],
             "request_outputs": ["0"],
             "n_reserved_blocks": 10,
-            "n_used_blocks": 9,
+            "n_used_blocks": 9
         },
         {
             # Chunk 3 of request 1 prefill.
@@ -1099,7 +1069,7 @@ def test_cp_prefill_interleave2(
             "running": ["1", "0"],
             "request_outputs": ["1"],
             "n_reserved_blocks": 10,
-            "n_used_blocks": 9,
+            "n_used_blocks": 9
         },
         {
             # Decode 6 of request 0.
@@ -1110,7 +1080,7 @@ def test_cp_prefill_interleave2(
             "running": ["1", "0"],
             "request_outputs": ["1", "0"],
             "n_reserved_blocks": 10,
-            "n_used_blocks": 10,
+            "n_used_blocks": 10
         },
         {
             # Decode 7 of request 0.
@@ -1118,11 +1088,11 @@ def test_cp_prefill_interleave2(
             "step": 12,
             "tkv": 529,
             "waiting": [],
-            "running": ["1"],
+            "running": ['1'],
             "finished_requests": ["0"],
             "request_outputs": ["1", "0"],
             "n_reserved_blocks": 10,
-            "n_used_blocks": 10,
+            "n_used_blocks": 10
         },
         {
             "step": 13,
@@ -1132,7 +1102,7 @@ def test_cp_prefill_interleave2(
             "finished_requests": ["1"],
             "request_outputs": ["1"],
             "n_reserved_blocks": 9,
-            "n_used_blocks": 9,
+            "n_used_blocks": 9
         },
         {
             # Tkv should be cleared one step later
@@ -1142,7 +1112,7 @@ def test_cp_prefill_interleave2(
             "running": [],
             "request_outputs": [],
             "n_reserved_blocks": 0,
-            "n_used_blocks": 0,
+            "n_used_blocks": 0
         },
     ]
 
@@ -1170,22 +1140,18 @@ def test_cp_prefill_interleave2(
 @pytest.mark.full_model
 # These values are all parameterized for test sorting
 @pytest.mark.parametrize("max_num_seqs", [4])
-@pytest.mark.parametrize("max_model_len", [128])  # restricted to violate scheduler condition
+@pytest.mark.parametrize("max_model_len",
+                         [128])  # restricted to violate scheduler condition
 @pytest.mark.parametrize("max_num_batched_tokens", [128])
 @pytest.mark.parametrize("available_blocks", [None])
-def test_prefill_tkv_too_big2(
-    model: ModelInfo,
-    backend: str,
-    monkeypatch: pytest.MonkeyPatch,
-    set_random_seed,
-    max_num_seqs: int,
-    max_model_len: int,
-    max_num_batched_tokens: int,
-    available_blocks: int,
-):
-    """Scenario where the requested number of output is too big for current
+def test_prefill_tkv_too_big2(model: ModelInfo, backend: str,
+                              monkeypatch: pytest.MonkeyPatch, set_random_seed,
+                              max_num_seqs: int, max_model_len: int,
+                              max_num_batched_tokens: int,
+                              available_blocks: int):
+    """ Scenario where the requested number of output is too big for current 
     tkv value. We need to wait for a previous long prompt request to finish and
-    have tkv reduced to a previous block before being able to schedule the
+    have tkv reduced to a previous block before being able to schedule the 
     new request.
 
     Configuration:
@@ -1210,7 +1176,7 @@ def test_prefill_tkv_too_big2(
             "running": [],
             "request_outputs": [],
             "n_reserved_blocks": 0,
-            "n_used_blocks": 0,
+            "n_used_blocks": 0
         },
         {
             # Prefill sequence 0
@@ -1220,7 +1186,7 @@ def test_prefill_tkv_too_big2(
             "running": ["0"],
             "request_outputs": ["0"],
             "n_reserved_blocks": 1,
-            "n_used_blocks": 1,
+            "n_used_blocks": 1
         },
         # tkv should be updated at the end of the last chunked prefill
         # here we have only one chunk, so it will be updated directly
@@ -1233,7 +1199,7 @@ def test_prefill_tkv_too_big2(
             "request_outputs": ["1"],
             # 1 + 2 (prefill (2 block) + 3 decodes in the last block)
             "n_reserved_blocks": 3,
-            "n_used_blocks": 3,
+            "n_used_blocks": 3
         },
         # Here we cannot schedule sequence 2. Current tkv being in the second
         # block, the number of requested tokens can't fit in the remaining space
@@ -1247,7 +1213,7 @@ def test_prefill_tkv_too_big2(
             "running": ["1", "0"],
             "request_outputs": ["1", "0"],
             "n_reserved_blocks": 3,
-            "n_used_blocks": 3,
+            "n_used_blocks": 3
         },
         {
             # Decode 2 of sequence 0
@@ -1260,7 +1226,7 @@ def test_prefill_tkv_too_big2(
             "request_outputs": ["1", "0"],
             "finished_requests": ["1"],
             "n_reserved_blocks": 3,
-            "n_used_blocks": 3,
+            "n_used_blocks": 3
         },
         # The tkv value used here is computed before the model forward pass and
         # token sampling of this step. As a result, it does not yet reflect
@@ -1276,7 +1242,7 @@ def test_prefill_tkv_too_big2(
             "running": ["0"],
             "request_outputs": ["0"],
             "n_reserved_blocks": 1,
-            "n_used_blocks": 1,
+            "n_used_blocks": 1
         },
         # Sequence 2 can be scheduled for prefill, now that tkv is moved back to
         # the first block.
@@ -1289,7 +1255,7 @@ def test_prefill_tkv_too_big2(
             "request_outputs": ["2"],
             # 3 - 2 (finished seq 1) + 2 (prefill + 50 decodes in new block)
             "n_reserved_blocks": 3,
-            "n_used_blocks": 2,
+            "n_used_blocks": 2
         },
         {
             # Decode 4 of sequence 0
@@ -1302,7 +1268,7 @@ def test_prefill_tkv_too_big2(
             "request_outputs": ["2", "0"],
             "finished_requests": ["0"],
             "n_reserved_blocks": 3,
-            "n_used_blocks": 2,
+            "n_used_blocks": 2
         },
         {
             # Decode 2 of sequence 2
@@ -1312,7 +1278,7 @@ def test_prefill_tkv_too_big2(
             "running": ["2"],
             "request_outputs": ["2"],
             "n_reserved_blocks": 2,
-            "n_used_blocks": 1,
+            "n_used_blocks": 1
         },
         {
             # Decode 49 of sequence 2
@@ -1324,7 +1290,7 @@ def test_prefill_tkv_too_big2(
             "request_outputs": ["2"],
             "finished_requests": ["2"],
             "n_reserved_blocks": 2,
-            "n_used_blocks": 2,
+            "n_used_blocks": 2
         },
         {
             # tkv should be cleared one step later
@@ -1334,7 +1300,7 @@ def test_prefill_tkv_too_big2(
             "running": [],
             "request_outputs": [],
             "n_reserved_blocks": 0,
-            "n_used_blocks": 0,
+            "n_used_blocks": 0
         },
     ]
 
