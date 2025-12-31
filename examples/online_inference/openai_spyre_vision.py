@@ -6,7 +6,7 @@ static baching.
 First, start the server with the following command:
 
 VLLM_SPYRE_USE_CB=1 \
-VLLM_SPYRE_DYNAMO_BACKEND=eager \
+VLLM_SPYRE_DYNAMO_BACKEND=<your backend, e.g., sendnn/eager> \
 vllm serve 'ibm-granite/granite-vision-3.3-2b' \
     --max-model-len=16384 \
     --max-num-seqs=2
@@ -107,7 +107,7 @@ for prompt in prompts:
     start_t = time.time()
 
     chat_completion = client.chat.completions.create(
-        messages=prompt,
+        messages=[prompt],
         model=model,
         max_completion_tokens=args.max_tokens,
         stream=stream,
