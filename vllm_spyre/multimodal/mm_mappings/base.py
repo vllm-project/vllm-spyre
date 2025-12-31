@@ -1,9 +1,19 @@
+import functools
 from abc import ABC, abstractmethod
+from typing import NamedTuple
 
 import torch
 from fms.utils.config import ModelConfig
-from transformers import PretrainedConfig
+from transformers import AutoProcessor, PretrainedConfig
 from vllm.multimodal.inputs import MultiModalFeatureSpec
+
+
+class MMWarmupInputs(NamedTuple):
+    """Wrapper for multimodal model warmup inputs,
+    used for continuous batching."""
+    input_ids: list
+    input_embeds: list
+    mm_features: list
 
 
 class MMUtilsBase(ABC):
@@ -17,10 +27,17 @@ class MMUtilsBase(ABC):
     config (i.e., avoid ambiguous terms like model_config for readability).
     """
 
-    def __init__(self, fms_config: ModelConfig, hf_config: PretrainedConfig):
+    def __init__(self, model_path: str, fms_config: ModelConfig,
+                 hf_config: PretrainedConfig):
         self._validate_configs(fms_config, hf_config)
         self.fms_config = fms_config
         self.hf_config = hf_config
+        self.model_path = model_path
+
+    @functools.cached_property
+    def hf_processor(self):
+        """Get the Transformers processor, but only if we need it."""
+        return AutoProcessor.from_pretrained(self.model_path)
 
     @staticmethod
     def _validate_configs(fms_config: ModelConfig,
@@ -84,15 +101,7 @@ class MMUtilsBase(ABC):
         pass
 
     @abstractmethod
-    def get_warmup_mm_features(self) -> list[MultiModalFeatureSpec]:
-        pass
-
-    @abstractmethod
-    def get_warmup_tokens(self) -> torch.Tensor:
-        pass
-
-    @abstractmethod
-    def get_warmup_embeds_tensor(self) -> torch.Tensor:
+    def get_warmup_inputs(self, req_count: int) -> MMWarmupInputs:
         pass
 
     @abstractmethod
