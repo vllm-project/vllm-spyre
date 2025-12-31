@@ -14,21 +14,20 @@ VLLM_VERSION = os.getenv("TEST_VLLM_VERSION", "default")
 
 
 def test_mm_inputs():
-
     if VLLM_VERSION == "vLLM:lowest":
         # Can remove "mm_kwargs", "mm_hashes", "mm_positions"
         # (replaced by mm_features)
-        assert 'mm_kwargs' in dataclass_fields(NewRequestData)
+        assert "mm_kwargs" in dataclass_fields(NewRequestData)
 
 
 def test_get_sampler():
     if VLLM_VERSION == "vLLM:lowest":
         try:
             from vllm.model_executor.layers.sampler import (  # # noqa
-                get_sampler)
+                get_sampler,
+            )
         except ImportError as e:
-            raise AssertionError(
-                "Remove backwards compatibility for get_sampler") from e
+            raise AssertionError("Remove backwards compatibility for get_sampler") from e
 
 
 def test_use_mla():
@@ -43,9 +42,11 @@ def test_pin_memory_available():
             from vllm.utils import is_pin_memory_available  # # noqa
             from vllm.utils import make_tensor_with_pad  # # noqa
         except ImportError as e:
-            raise AssertionError("remove backwards compatibility imports for "
-                                 "is_pin_memory_available and "
-                                 "make_tensor_with_pad") from e
+            raise AssertionError(
+                "remove backwards compatibility imports for "
+                "is_pin_memory_available and "
+                "make_tensor_with_pad"
+            ) from e
 
 
 def test_multi_modal_cache_stats():
@@ -62,16 +63,15 @@ def test_v0_worker_base():
             from vllm.worker.worker_base import WorkerBase  # # noqa
         except ImportError as e:
             raise AssertionError(
-                "remove the backwards compatibility code from "
-                "the SpyreWorker initializer") from e
+                "remove the backwards compatibility code from the SpyreWorker initializer"
+            ) from e
 
 
 def test_structured_output_request_ids():
     if VLLM_VERSION == "vLLM:lowest":
         # Can remove "structured_output_request_ids" and "grammar_bitmask"
         # from backwards compat
-        assert 'structured_output_request_ids' in dataclass_fields(
-            SchedulerOutput)
+        assert "structured_output_request_ids" in dataclass_fields(SchedulerOutput)
 
 
 def test_hash_block_size():
@@ -83,5 +83,4 @@ def test_hash_block_size():
 def test_alignment_tokens():
     if VLLM_VERSION == "vLLM:lowest":
         # Can supply `alignment_tokens` everywhere, this was added in 0.12.0
-        assert not has_argument(FullAttentionManager.find_longest_cache_hit,
-                                "alignment_tokens")
+        assert not has_argument(FullAttentionManager.find_longest_cache_hit, "alignment_tokens")

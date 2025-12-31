@@ -72,13 +72,10 @@ def load_supported_configs_yaml() -> list[dict[str, Any]]:
 
 def initialize_supported_configurations(yaml_data: list[dict[str, Any]]):
     global model_runtime_configs, ignored_models, runtime_configs_by_model
-    model_runtime_configs = [
-        ModelRuntimeConfiguration(**config_dict) for config_dict in yaml_data
-    ]
+    model_runtime_configs = [ModelRuntimeConfiguration(**config_dict) for config_dict in yaml_data]
     ignored_models = {mrc.model for mrc in model_runtime_configs if mrc.ignore}
     runtime_configs_by_model = {
-        mrc.model: mrc.configs or []
-        for mrc in model_runtime_configs if not mrc.ignore
+        mrc.model: mrc.configs or [] for mrc in model_runtime_configs if not mrc.ignore
     }
 
 
@@ -91,9 +88,7 @@ def get_supported_models_list() -> list[str]:
     global model_runtime_configs
     if model_runtime_configs is None:
         initialize_supported_configurations_from_file()
-    public_models = [
-        mrc.model for mrc in model_runtime_configs or [] if not mrc.ignore
-    ]
+    public_models = [mrc.model for mrc in model_runtime_configs or [] if not mrc.ignore]
     return public_models
 
 
@@ -109,30 +104,36 @@ def verify_config_parameters(c: RuntimeConfiguration) -> bool:
     def is_power_of_2(n: int) -> bool:
         return (n > 0) and (n & (n - 1) == 0)
 
-    verify(f"'tensor_parallel_size' must be a power of 2, found {c.tp_size}",
-           is_power_of_2(c.tp_size))
+    verify(
+        f"'tensor_parallel_size' must be a power of 2, found {c.tp_size}", is_power_of_2(c.tp_size)
+    )
 
     if c.cb:
-        verify("'warmup_shapes' are not used for continuous batching",
-               c.warmup_shapes is None)
+        verify("'warmup_shapes' are not used for continuous batching", c.warmup_shapes is None)
         verify(
-            f"'max_model_len' must be a multiple of 64,"
-            f" found {c.max_model_len}", c.max_model_len % 64 == 0)
+            f"'max_model_len' must be a multiple of 64, found {c.max_model_len}",
+            c.max_model_len % 64 == 0,
+        )
         verify(
-            f"'max_num_seqs' must be a power of 2,"
-            f" found {c.max_num_seqs}", is_power_of_2(c.max_num_seqs))
+            f"'max_num_seqs' must be a power of 2, found {c.max_num_seqs}",
+            is_power_of_2(c.max_num_seqs),
+        )
     else:
-        verify("at least one 'warmup_shapes' required for static batching",
-               c.warmup_shapes is not None and len(c.warmup_shapes) > 0)
+        verify(
+            "at least one 'warmup_shapes' required for static batching",
+            c.warmup_shapes is not None and len(c.warmup_shapes) > 0,
+        )
 
         for i, ws in enumerate(c.warmup_shapes or []):
             # warmup_shape = [prompt_length, new_tokens, batch_size]
             verify(
-                f"'prompt_length' must be a multiple of 64, found {ws[0]}"
-                f" in warmup_shapes[{i}]", ws[0] % 64 == 0)
+                f"'prompt_length' must be a multiple of 64, found {ws[0]} in warmup_shapes[{i}]",
+                ws[0] % 64 == 0,
+            )
             verify(
-                f"'batch_size' must be a power of 2, found {ws[2]}"
-                f" in warmup_shapes[{i}]", is_power_of_2(ws[2]))
+                f"'batch_size' must be a power of 2, found {ws[2]} in warmup_shapes[{i}]",
+                is_power_of_2(ws[2]),
+            )
 
     return not found_invalid_parameters
 
@@ -147,8 +148,7 @@ def find_known_models_by_model_config(model_config: ModelConfig) -> list[str]:
     if known_model_configs is None:
         initialize_known_model_configurations_from_file()
 
-    requested_config = model_config.hf_config.__dict__ \
-        if model_config.hf_config else {}
+    requested_config = model_config.hf_config.__dict__ if model_config.hf_config else {}
 
     # remove sub-dicts with integers as keys so we can flatten dictionaries
     requested_config.pop("id2label", None)
@@ -158,20 +158,22 @@ def find_known_models_by_model_config(model_config: ModelConfig) -> list[str]:
         return "quantization_config" in config
 
     matching_models = [
-        model for model, config in (known_model_configs or {}).items()
-        if flatten(config).items() <= flatten(requested_config).items() and (
-            is_quantized(config) == is_quantized(requested_config))
+        model
+        for model, config in (known_model_configs or {}).items()
+        if flatten(config).items() <= flatten(requested_config).items()
+        and (is_quantized(config) == is_quantized(requested_config))
     ]
 
     return matching_models
 
 
 def validate_runtime_configuration(
-        model_config: ModelConfig,
-        tp_size: int = 0,
-        max_model_len: int = 0,
-        max_num_seqs: int = 0,
-        warmup_shapes: WarmupShapes | None = None) -> bool:
+    model_config: ModelConfig,
+    tp_size: int = 0,
+    max_model_len: int = 0,
+    max_num_seqs: int = 0,
+    warmup_shapes: WarmupShapes | None = None,
+) -> bool:
     """
     Verify if the requested model and configuration is supported by comparing
     the requested configuration to all the supported configurations.
@@ -179,8 +181,9 @@ def validate_runtime_configuration(
     # we only validate runtime configurations when running on Spyre cards
     if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn":
         logger.info(
-            "Model and runtime configuration validation bypassed for"
-            " backend '%s'", envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND)
+            "Model and runtime configuration validation bypassed for backend '%s'",
+            envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND,
+        )
         return True
 
     if model_runtime_configs is None:
@@ -192,19 +195,18 @@ def validate_runtime_configuration(
 
     if model not in known_models:
         logger.info(
-            "Model '%s' is not a known model. Trying to find one with"
-            " a matching ModelConfig.", model)
+            "Model '%s' is not a known model. Trying to find one with a matching ModelConfig.",
+            model,
+        )
 
         matching_models = find_known_models_by_model_config(model_config)
 
         if len(matching_models) == 1:
             model = matching_models[0]
-            logger.info("Found model '%s' matching ModelConfig `%s`.", model,
-                        model_config)
+            logger.info("Found model '%s' matching ModelConfig `%s`.", model, model_config)
 
         elif len(matching_models) == 0:
-            logger.warning("Found no matching model for ModelConfig `%s`.",
-                           model_config)
+            logger.warning("Found no matching model for ModelConfig `%s`.", model_config)
             return False
 
         elif len(matching_models) > 1:
@@ -214,7 +216,9 @@ def validate_runtime_configuration(
                 " need to update the known model configurations file"
                 " to distinguish between the returned models."
                 " Models found: [%s]. ModelConfig provided `%s`",
-                matching_models, model_config)
+                matching_models,
+                model_config,
+            )
             return False
 
     if model in ignored_models:
@@ -232,7 +236,8 @@ def validate_runtime_configuration(
         tp_size=tp_size,
         max_model_len=max_model_len if use_cb else 0,
         max_num_seqs=max_num_seqs if use_cb else 0,
-        warmup_shapes=warmup_shapes if not use_cb else None)
+        warmup_shapes=warmup_shapes if not use_cb else None,
+    )
 
     if not verify_config_parameters(requested_config):
         return False
@@ -242,26 +247,31 @@ def validate_runtime_configuration(
     matching_configs: list[RuntimeConfiguration] = list(
         filter(
             lambda supported_config: is_requested_config_supported(
-                requested_config=requested_config,
-                supported_config=supported_config),
+                requested_config=requested_config, supported_config=supported_config
+            ),
             supported_configs,
-        ))
+        )
+    )
 
     if len(matching_configs) == 0:
         logger.warning(
-            "The requested configuration is not supported for"
-            " model '%s': %s", model, str(requested_config))
+            "The requested configuration is not supported for model '%s': %s",
+            model,
+            str(requested_config),
+        )
         return False
     else:
         logger.info(
-            "The requested configuration is supported for"
-            " model '%s': %s", model, str(requested_config))
+            "The requested configuration is supported for model '%s': %s",
+            model,
+            str(requested_config),
+        )
         return True
 
 
 def is_requested_config_supported(
-        requested_config: RuntimeConfiguration,
-        supported_config: RuntimeConfiguration) -> bool:
+    requested_config: RuntimeConfiguration, supported_config: RuntimeConfiguration
+) -> bool:
     """
     Check if the requested configuration is supported by comparing the requested
     configuration to all the supported configurations.
@@ -269,14 +279,16 @@ def is_requested_config_supported(
     # Don't use `if requested_configuration not in supported_configurations:...`
     # since warmup shapes don't compare easily (excluded from dataclass __eq__)
     # Instead, use filter here and do a set-compare for warmup_shapes separately
-    return (requested_config.cb == supported_config.cb
-            and requested_config <= supported_config
-            and (requested_config.cb or is_warmup_shapes_supported(
-                requested_config, supported_config)))
+    return (
+        requested_config.cb == supported_config.cb
+        and requested_config <= supported_config
+        and (requested_config.cb or is_warmup_shapes_supported(requested_config, supported_config))
+    )
 
 
-def is_warmup_shapes_supported(requested_config: RuntimeConfiguration,
-                               supported_config: RuntimeConfiguration) -> bool:
+def is_warmup_shapes_supported(
+    requested_config: RuntimeConfiguration, supported_config: RuntimeConfiguration
+) -> bool:
     """
     Check if the requested warmup_shapes are a subset of the supported
     warmup_shapes. If a single warmup_shape is requested, validate its context
@@ -284,12 +296,14 @@ def is_warmup_shapes_supported(requested_config: RuntimeConfiguration,
     """
     requested_shapes = requested_config.warmup_shapes or []
     supported_shapes = supported_config.warmup_shapes or []
-    return (set(requested_shapes).issubset(set(supported_shapes))
-            or is_context_length_supported(requested_shapes, supported_shapes))
+    return set(requested_shapes).issubset(set(supported_shapes)) or is_context_length_supported(
+        requested_shapes, supported_shapes
+    )
 
 
-def is_context_length_supported(requested_shapes: WarmupShapes,
-                                supported_shapes: WarmupShapes) -> bool:
+def is_context_length_supported(
+    requested_shapes: WarmupShapes, supported_shapes: WarmupShapes
+) -> bool:
     """
     If a single warmup_shape is requested, check if its context length is
     less than or equal to the context length of any supported warmup_shape
@@ -302,13 +316,13 @@ def is_context_length_supported(requested_shapes: WarmupShapes,
         return False
 
     request_batch_size = requested_shapes[0][2]
-    shapes_with_same_batch_size = [(ws[0], ws[1], ws[2])
-                                   for ws in supported_shapes
-                                   if request_batch_size <= ws[2]]
+    shapes_with_same_batch_size = [
+        (ws[0], ws[1], ws[2]) for ws in supported_shapes if request_batch_size <= ws[2]
+    ]
 
-    return (len(shapes_with_same_batch_size) > 0
-            and (get_max_model_length(requested_shapes)
-                 <= get_max_model_length(shapes_with_same_batch_size)))
+    return len(shapes_with_same_batch_size) > 0 and (
+        get_max_model_length(requested_shapes) <= get_max_model_length(shapes_with_same_batch_size)
+    )
 
 
 def get_max_model_length(warmup_shapes: WarmupShapes) -> int:

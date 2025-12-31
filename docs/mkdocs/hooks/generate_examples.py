@@ -1,4 +1,5 @@
-""" Sourced from https://github.com/vllm-project/vllm/blob/main/docs/mkdocs/hooks/generate_examples.py """  # noqa: E501
+"""Sourced from https://github.com/vllm-project/vllm/blob/main/docs/mkdocs/hooks/generate_examples.py"""  # noqa: E501
+
 # SPDX-License-Identifier: Apache-2.0
 import itertools
 from dataclasses import dataclass, field
@@ -8,7 +9,7 @@ from typing import Literal
 import regex as re
 
 ROOT_DIR = Path(__file__).parent.parent.parent.parent
-ROOT_DIR_RELATIVE = '../../../../..'
+ROOT_DIR_RELATIVE = "../../../../.."
 EXAMPLE_DIR = ROOT_DIR / "examples"
 EXAMPLE_DOC_DIR = ROOT_DIR / "docs/examples"
 print(ROOT_DIR.resolve())
@@ -37,7 +38,7 @@ def fix_case(text: str) -> str:
         r"int\d+": lambda x: x.group(0).upper(),  # e.g. int8, int16
     }
     for pattern, repl in subs.items():
-        text = re.sub(rf'\b{pattern}\b', repl, text, flags=re.IGNORECASE)
+        text = re.sub(rf"\b{pattern}\b", repl, text, flags=re.IGNORECASE)
     return text
 
 
@@ -59,7 +60,8 @@ class Example:
         determine_other_files() -> list[Path]: Determines other files in the directory excluding the main file.
         determine_title() -> str: Determines the title of the document.
         generate() -> str: Generates the documentation content.
-    """ # noqa: E501
+    """  # noqa: E501
+
     path: Path
     category: str = None
     main_file: Path = field(init=False)
@@ -81,9 +83,8 @@ class Example:
             Markdown file found in the directory.
         Raises:
             IndexError: If no Markdown files are found in the directory.
-        """ # noqa: E501
-        return self.path if self.path.is_file() else list(
-            self.path.glob("*.md")).pop()
+        """  # noqa: E501
+        return self.path if self.path.is_file() else list(self.path.glob("*.md")).pop()
 
     def determine_other_files(self) -> list[Path]:
         """
@@ -95,7 +96,7 @@ class Example:
 
         Returns:
             list[Path]: A list of Path objects representing the other files in the directory.
-        """ # noqa: E501
+        """  # noqa: E501
         if self.path.is_file():
             return []
         is_other_file = lambda file: file.is_file() and file != self.main_file

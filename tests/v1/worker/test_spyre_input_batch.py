@@ -1,6 +1,5 @@
 # # SPDX-License-Identifier: Apache-2.0
 
-from typing import Optional
 
 import numpy as np
 import pytest
@@ -16,8 +15,7 @@ except ImportError:
 from vllm.v1.sample.logits_processor import LogitsProcessors
 from vllm.v1.sample.metadata import SamplingMetadata
 
-from vllm_spyre.v1.worker.spyre_input_batch import (SamplingInputBatch,
-                                                    SamplingRequestState)
+from vllm_spyre.v1.worker.spyre_input_batch import SamplingInputBatch, SamplingRequestState
 
 VOCAB_SIZE = 1024
 NUM_OUTPUT_TOKENS = 20
@@ -25,11 +23,12 @@ MAX_PROMPT_SIZE = 100
 MAX_NUM_PROMPT_TOKENS = 64
 
 
-def _remove_requests(input_batch: SamplingInputBatch, batch_size: int,
-                     reqs: list[SamplingRequestState]) -> set[str]:
+def _remove_requests(
+    input_batch: SamplingInputBatch, batch_size: int, reqs: list[SamplingRequestState]
+) -> set[str]:
     """
-    Remove some requests randomly from the batch and returns a set of 
-    request ids removed 
+    Remove some requests randomly from the batch and returns a set of
+    request ids removed
     """
 
     num_reqs_to_remove = np.random.randint(0, batch_size)
@@ -72,10 +71,7 @@ def _construct_expected_sampling_metadata(
     top_k = [VOCAB_SIZE for _ in range(num_reqs)]
     top_p = [0.0 for _ in range(num_reqs)]
     temperature = [0.0 for _ in range(num_reqs)]
-    allowed_token_ids_mask = torch.zeros(num_reqs,
-                                         VOCAB_SIZE,
-                                         dtype=torch.bool,
-                                         device=device)
+    allowed_token_ids_mask = torch.zeros(num_reqs, VOCAB_SIZE, dtype=torch.bool, device=device)
 
     bad_words_token_ids = {}
     for req in reqs:
@@ -85,32 +81,30 @@ def _construct_expected_sampling_metadata(
 
         output_token_ids[index_in_input_batch] = req.output_token_ids
         prompt_token_ids[index_in_input_batch] = req.prompt_token_ids
-        presence_penalties[
-            index_in_input_batch] = req.sampling_params.presence_penalty
-        frequency_penalties[index_in_input_batch] = (
-            req.sampling_params.frequency_penalty)
-        repetition_penalties[index_in_input_batch] = (
-            req.sampling_params.repetition_penalty)
+        presence_penalties[index_in_input_batch] = req.sampling_params.presence_penalty
+        frequency_penalties[index_in_input_batch] = req.sampling_params.frequency_penalty
+        repetition_penalties[index_in_input_batch] = req.sampling_params.repetition_penalty
         if req.sampling_params.top_k > 0:
             top_k[index_in_input_batch] = req.sampling_params.top_k
         top_p[index_in_input_batch] = req.sampling_params.top_p
         temperature[index_in_input_batch] = req.sampling_params.temperature
         if req.sampling_params.allowed_token_ids:
-            allowed_token_ids_mask[index_in_input_batch][
-                req.sampling_params.allowed_token_ids] = True
+            allowed_token_ids_mask[index_in_input_batch][req.sampling_params.allowed_token_ids] = (
+                True
+            )
         if req.sampling_params.bad_words_token_ids:
-            bad_words_token_ids[
-                index_in_input_batch] = req.sampling_params.bad_words_token_ids
+            bad_words_token_ids[index_in_input_batch] = req.sampling_params.bad_words_token_ids
 
     return SamplingMetadata(
-        temperature=torch.tensor(temperature, dtype=torch.float,
-                                 device=device),
+        temperature=torch.tensor(temperature, dtype=torch.float, device=device),
         all_greedy=False,
         all_random=True,
-        top_p=None if all(x == 1.0 for x in top_p) else torch.tensor(
-            top_p, dtype=torch.float, device=device),
-        top_k=None if all(x == VOCAB_SIZE for x in top_k) else torch.tensor(
-            top_k, dtype=torch.int, device=device),
+        top_p=None
+        if all(x == 1.0 for x in top_p)
+        else torch.tensor(top_p, dtype=torch.float, device=device),
+        top_k=None
+        if all(x == VOCAB_SIZE for x in top_k)
+        else torch.tensor(top_k, dtype=torch.int, device=device),
         generators={},
         max_num_logprobs=0,
         prompt_token_ids=make_tensor_with_pad(
@@ -119,19 +113,15 @@ def _construct_expected_sampling_metadata(
             device=torch.device(device),
             dtype=torch.int64,
         ),
-        frequency_penalties=torch.tensor(frequency_penalties,
-                                         dtype=torch.float,
-                                         device=device),
-        presence_penalties=torch.tensor(presence_penalties,
-                                        dtype=torch.float,
-                                        device=device),
-        repetition_penalties=torch.tensor(repetition_penalties,
-                                          dtype=torch.float,
-                                          device=device),
+        frequency_penalties=torch.tensor(frequency_penalties, dtype=torch.float, device=device),
+        presence_penalties=torch.tensor(presence_penalties, dtype=torch.float, device=device),
+        repetition_penalties=torch.tensor(repetition_penalties, dtype=torch.float, device=device),
         output_token_ids=output_token_ids,
-        no_penalties=(all(x == 0 for x in presence_penalties)
-                      and all(x == 0 for x in frequency_penalties)
-                      and all(x == 1 for x in repetition_penalties)),
+        no_penalties=(
+            all(x == 0 for x in presence_penalties)
+            and all(x == 0 for x in frequency_penalties)
+            and all(x == 1 for x in repetition_penalties)
+        ),
         allowed_token_ids_mask=allowed_token_ids_mask,
         bad_words_token_ids=bad_words_token_ids,
         logitsprocs=LogitsProcessors(),
@@ -146,22 +136,17 @@ def _create_sampling_params():
         repetition_penalty=np.random.uniform(0.0, 2.0),
         frequency_penalty=np.random.uniform(-2.0, 2.0),
         min_tokens=np.random.randint(1, 10),
-        stop_token_ids=[
-            np.random.randint(0, VOCAB_SIZE)
-            for _ in range(np.random.randint(10))
-        ],
+        stop_token_ids=[np.random.randint(0, VOCAB_SIZE) for _ in range(np.random.randint(10))],
         logit_bias={0: np.random.uniform(-3.0, 3.0)},
     )
 
 
 def _construct_cached_request_state(req_id_suffix: int):
     prompt_token_ids = [
-        np.random.randint(0, VOCAB_SIZE)
-        for _ in range(np.random.randint(0, MAX_PROMPT_SIZE))
+        np.random.randint(0, VOCAB_SIZE) for _ in range(np.random.randint(0, MAX_PROMPT_SIZE))
     ]
     output_token_ids = [
-        np.random.randint(0, VOCAB_SIZE)
-        for _ in range(np.random.randint(0, NUM_OUTPUT_TOKENS))
+        np.random.randint(0, VOCAB_SIZE) for _ in range(np.random.randint(0, NUM_OUTPUT_TOKENS))
     ]
     return SamplingRequestState(
         req_id=f"req_id_{req_id_suffix}",
@@ -174,15 +159,13 @@ def _construct_cached_request_state(req_id_suffix: int):
 
 
 def compare_results(sampling_metadata, expected_sampling_metadata):
-
-    def same(t1: Optional[torch.Tensor], t2: Optional[torch.Tensor]) -> bool:
-        return (t1 is None
-                and t2 is None) or (t1 is not None and t2 is not None
-                                    and torch.allclose(t1, t2))
+    def same(t1: torch.Tensor | None, t2: torch.Tensor | None) -> bool:
+        return (t1 is None and t2 is None) or (
+            t1 is not None and t2 is not None and torch.allclose(t1, t2)
+        )
 
     # Assert the actual and expected output.
-    assert torch.allclose(expected_sampling_metadata.temperature,
-                          sampling_metadata.temperature)
+    assert torch.allclose(expected_sampling_metadata.temperature, sampling_metadata.temperature)
     assert same(expected_sampling_metadata.top_p, sampling_metadata.top_p)
     assert same(expected_sampling_metadata.top_k, sampling_metadata.top_k)
     assert torch.allclose(
@@ -198,18 +181,17 @@ def compare_results(sampling_metadata, expected_sampling_metadata):
         sampling_metadata.repetition_penalties,
     )
 
-    assert torch.allclose(expected_sampling_metadata.prompt_token_ids,
-                          sampling_metadata.prompt_token_ids)
-    assert (expected_sampling_metadata.output_token_ids ==
-            sampling_metadata.output_token_ids)
-    assert expected_sampling_metadata.no_penalties == \
-           sampling_metadata.no_penalties
+    assert torch.allclose(
+        expected_sampling_metadata.prompt_token_ids, sampling_metadata.prompt_token_ids
+    )
+    assert expected_sampling_metadata.output_token_ids == sampling_metadata.output_token_ids
+    assert expected_sampling_metadata.no_penalties == sampling_metadata.no_penalties
     if sampling_metadata.allowed_token_ids_mask:
         assert torch.allclose(
             expected_sampling_metadata.allowed_token_ids_mask,
-            sampling_metadata.allowed_token_ids_mask)
-    assert expected_sampling_metadata.bad_words_token_ids == \
-        sampling_metadata.bad_words_token_ids
+            sampling_metadata.allowed_token_ids_mask,
+        )
+    assert expected_sampling_metadata.bad_words_token_ids == sampling_metadata.bad_words_token_ids
 
 
 @pytest.mark.cpu
@@ -226,7 +208,7 @@ def test_sampling_metadata_in_input_batch(batch_size: int):
     results to ensure correctness.
     """
 
-    device = torch.device('cpu')
+    device = torch.device("cpu")
     input_batch: SamplingInputBatch = SamplingInputBatch(
         max_num_reqs=batch_size,
         max_model_len=1024,
@@ -252,7 +234,8 @@ def test_sampling_metadata_in_input_batch(batch_size: int):
 
     # Create expected output.
     expected_sampling_metadata = _construct_expected_sampling_metadata(
-        reqs, req_ids_retained, input_batch, device=torch.device(device))
+        reqs, req_ids_retained, input_batch, device=torch.device(device)
+    )
 
     compare_results(sampling_metadata, expected_sampling_metadata)
 
@@ -261,8 +244,7 @@ def test_sampling_metadata_in_input_batch(batch_size: int):
 
     # Add more requests
     for req_index in range(len(req_ids_to_remove)):
-        req: SamplingRequestState = _construct_cached_request_state(req_index +
-                                                                    batch_size)
+        req: SamplingRequestState = _construct_cached_request_state(req_index + batch_size)
         input_batch.add_request(req)
         reqs.append(req)
         req_ids_retained.add(req.req_id)
@@ -271,7 +253,8 @@ def test_sampling_metadata_in_input_batch(batch_size: int):
 
     # Create expected output.
     expected_sampling_metadata = _construct_expected_sampling_metadata(
-        reqs, req_ids_retained, input_batch, device=torch.device(device))
+        reqs, req_ids_retained, input_batch, device=torch.device(device)
+    )
 
     compare_results(sampling_metadata, expected_sampling_metadata)
 
@@ -279,7 +262,7 @@ def test_sampling_metadata_in_input_batch(batch_size: int):
 @pytest.mark.cpu
 @pytest.mark.worker
 def test_sampling_metadata_topk_edges():
-    device = torch.device('cpu')
+    device = torch.device("cpu")
     input_batch: SamplingInputBatch = SamplingInputBatch(
         max_num_reqs=2,
         max_model_len=1024,
