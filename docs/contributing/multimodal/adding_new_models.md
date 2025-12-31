@@ -3,6 +3,7 @@
 In order to understand how to get multimodal models running through vLLM Spyre, it is important to understand the differences between how models are implemented in vLLM & vLLM Spyre. To illustrate this, we use `llava_next` as an example, because `granite vision` is the only multimodal model currently supported.
 
 NOTE: for those unfamiliar, granite vision is a special instance of llava next, and tends to run as an instance of llava next. The primary differences are:
+
 - For the LLM, we use a granite LLM.
 - For the vision encoder, we use SigLIP instead of CLIP.
 - Instead of taking the output of one feature layer from the vision encoder to form the visual features, we instead take the output of multiple layers and concatenate them.
