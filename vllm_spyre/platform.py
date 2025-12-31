@@ -19,14 +19,24 @@ import torch
 from transformers.models.granite import GraniteConfig
 from vllm.inputs import ProcessorInputs, PromptType
 from vllm.logger import init_logger
-from vllm.pooling_params import PoolingParams
-from vllm.sampling_params import SamplingParams
+
+try:
+    # pre 0.11.1 compatibility
+    from vllm.utils import FlexibleArgumentParser
+except ImportError:
+    from vllm.utils.argparse_utils import FlexibleArgumentParser
 
 if TYPE_CHECKING:
+    # NB: We can't eagerly import many things from vllm since vllm.config
+    # will import this file. These would lead to circular imports
     from vllm.config import ModelConfig, VllmConfig
+    from vllm.pooling_params import PoolingParams
+    from vllm.sampling_params import SamplingParams
 else:
     ModelConfig = None
     VllmConfig = None
+    SamplingParams = None
+    PoolingParams = None
 from vllm.platforms import Platform, PlatformEnum
 
 import vllm_spyre.envs as envs_spyre
@@ -172,6 +182,10 @@ class SpyrePlatform(Platform):
                 "vllm_spyre.v1.core.scheduler.StaticBatchingSpyreScheduler"
             )
 
+        # Hardcode some things for granite-3.3-8b-instruct
+        if cls.is_granite_3_8b(vllm_config.model_config):
+            cls.configure_granite_3_8b(vllm_config)
+
         # To disable any paged attention ops in the base scheduler, we:
         # - Set the block size (in tokens) to the maximum sequence length
         #       so that the scheduler thinks an entire sequence will fit in
@@ -186,15 +200,26 @@ class SpyrePlatform(Platform):
                     model_config.max_model_len * scheduler_config.max_num_seqs
                 )
             else:
+                # TODO: ideally, this would be user-configurable from CLI/engine
+                # args instead of with the internal env var, but that requires a
+                # way to detect if value set by vllm or by the user
+                if (chunk_len := os.getenv("VLLM_DT_CHUNK_LEN")) is None:
+                    os.environ["VLLM_DT_CHUNK_LEN"] = str(scheduler_config.max_num_batched_tokens)
+                else:
+                    try:
+                        chunk_len_int = int(chunk_len)
+                    except (ValueError, TypeError) as e:
+                        raise Exception("VLLM_DT_CHUNK_LEN must be an integer") from e
+                    scheduler_config.max_num_batched_tokens = chunk_len_int
+
                 assert scheduler_config.max_num_batched_tokens % cls._block_size == 0, (
                     "`max_num_batched_tokens` must"
                     f" be divisible by the block size ({cls._block_size}) "
                     "to enable chunked prefill. It was set to "
                     f"`{scheduler_config.max_num_batched_tokens}`. Please "
-                    "set `--max-num-batched-tokens` to a number that satisfy "
+                    "set `--max-num-batched-tokens` to a number that satisfies "
                     "this constraint."
                 )
-                os.environ["VLLM_DT_CHUNK_LEN"] = str(scheduler_config.max_num_batched_tokens)
 
         logger.info(
             "Overriding configurations based on warmup shapes. "
@@ -221,10 +246,6 @@ class SpyrePlatform(Platform):
             max(vllm_config.scheduler_config.max_num_seqs, 2)
         )
 
-        # Hardcode some things for granite-3.3-8b-instruct
-        if cls.is_granite_3_8b(vllm_config.model_config):
-            cls.configure_granite_3_8b(vllm_config)
-
         if not os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"):
             # max product of batch size x tkv supported by the Spyre compiler
             default_max_batch_tkv_limit = (
@@ -237,22 +258,6 @@ class SpyrePlatform(Platform):
                 "VLLM_DT_MAX_BATCH_TKV_LIMIT found. Using the default value "
                 "(max_model_len * max_batch_size): %d",
                 default_max_batch_tkv_limit,
-            )
-
-        # scheduling heuristic: prefill vs decode prioritization
-        if envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO == -1:
-            logger.info(
-                "Env var VLLM_SPYRE_N_TOKENS_PREFILL_PRIO for prefill/decode "
-                "balancing unset. Defaulting to -1, which always prioritizes "
-                "prefills (no scheduler heuristic/ balancing at all)."
-            )
-        else:
-            logger.info(
-                "Env var VLLM_SPYRE_N_TOKENS_PREFILL_PRIO for prefill/decode "
-                "balancing is set to %s. This means that prefills using up to "
-                " %s tokens will always be prioritized over decodes.",
-                envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO,
-                envs_spyre.VLLM_SPYRE_N_TOKENS_PREFILL_PRIO,
             )
 
         # Compare requested runtime configuration with supported configurations
@@ -356,6 +361,11 @@ class SpyrePlatform(Platform):
         processed_inputs: ProcessorInputs | None = None,
     ) -> None:
         """Raises if this request is unsupported on this platform"""
+
+        # The PoolingParams import is lazy here because it imports vllm.config,
+        # which will in turn import this file again.
+        from vllm.pooling_params import PoolingParams
+
         if isinstance(params, PoolingParams):
             # Only validating generation requests for now
             return None
@@ -386,13 +396,13 @@ class SpyrePlatform(Platform):
 
             # ceil division to pad to next block boundary
             prompt_padding_len = math.ceil(prompt_len / cls._block_size) * cls._block_size
-            if prompt_padding_len + max_tokens > cls._config.scheduler_config.max_model_len:
+            if prompt_padding_len + max_tokens > cls._config.model_config.max_model_len:
                 raise ValueError(
                     "Could not add request: prompt length is "
                     f"{prompt_len} tokens, which gets padded to "
                     f"{prompt_padding_len} tokens, maximum number of output "
                     f"tokens is {max_tokens} tokens, but max model context "
-                    f"length is {cls._config.scheduler_config.max_model_len}."
+                    f"length is {cls._config.model_config.max_model_len}."
                 )
         else:
             # For non-continuous batching, check if the request matches a warmup
@@ -425,6 +435,11 @@ class SpyrePlatform(Platform):
             for shape in warmup_shapes
             if prompt_len <= shape["prompt_length"] and max_tokens <= shape["new_tokens"]
         ]
+
+    @classmethod
+    def pre_register_and_update(cls, parser: FlexibleArgumentParser | None = None) -> None:
+        if parser is not None:
+            parser.set_defaults(enable_prefix_caching=False)
 
     @classmethod
     def _check_threading_config(cls, worker_count: int):
@@ -568,7 +583,7 @@ class SpyrePlatform(Platform):
         if self._warmup_shapes is None:
             # ceil division to pad to next block boundary
             padded_prompt_len = math.ceil(prompt_len / self._block_size) * self._block_size
-            max_new_tokens = self._config.scheduler_config.max_model_len - padded_prompt_len
+            max_new_tokens = self._config.model_config.max_model_len - padded_prompt_len
             return max_new_tokens
 
         max_new_tokens = 1
@@ -641,6 +656,19 @@ class SpyrePlatform(Platform):
                 vllm_config.cache_config.num_gpu_blocks_override,
                 blocks_override,
             )
+
+        # hard-coded value for max_num_batched_tokens with chunked prefill
+        if (
+            envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL
+            and envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn"
+            and os.getenv("VLLM_DT_CHUNK_LEN") is None
+        ):
+            logger.info(
+                "Model granite-3.3-8b-instruct and tensor "
+                "parallel size 4 with chunked prefill detected. Setting "
+                "--max-num-batched-tokens 1024"
+            )
+            vllm_config.scheduler_config.max_num_batched_tokens = 1024
 
     @classmethod
     def is_granite_3_8b(cls, model_config: ModelConfig):

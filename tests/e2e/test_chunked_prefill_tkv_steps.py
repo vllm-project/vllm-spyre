@@ -20,6 +20,7 @@ from vllm.v1.request import Request, SamplingParams
 
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import SpyreModelRunner
+from vllm_spyre.v1.worker.spyre_worker import _get_extra_args
 
 
 ########## Assuming that we have:
@@ -112,6 +113,7 @@ def make_scheduler_output(
     if finished_req_ids is None:
         finished_req_ids = set()
 
+    extra_args = _get_extra_args()
     return SchedulerOutput(
         scheduled_new_reqs=scheduled_new_reqs,
         scheduled_cached_reqs=scheduled_cached_reqs,
@@ -121,10 +123,8 @@ def make_scheduler_output(
         scheduled_encoder_inputs={},
         num_common_prefix_blocks=[],
         finished_req_ids=finished_req_ids,
-        free_encoder_mm_hashes=[],
-        structured_output_request_ids={},
-        grammar_bitmask=None,
         kv_connector_metadata=None,
+        **extra_args,
     )
 
 
@@ -346,7 +346,7 @@ def test_decode_padding_to_same_block(
     computed_tokens_dict = computed_tokens()
 
     # Save the number of free blocks to compare once we allocate a new one
-    initial_free_blocks = len(runner.block_pool)
+    initial_free_blocks = runner.block_pool.get_num_free_blocks()
 
     # Both requests are still in the first block
     # Scheduler schedules 1 token each
@@ -376,7 +376,7 @@ def test_decode_padding_to_same_block(
     # 🌶️🌶️🌶️ short prompt gets padded, it's now the longest sequence
     assert output.tkv == short_prompt_len + steps + 64
     # We should have allocated only one new block for the long prompt entering
-    assert len(runner.block_pool) == initial_free_blocks - 1
+    assert runner.block_pool.get_num_free_blocks() == initial_free_blocks - 1
     computed_tokens_dict = computed_tokens()
 
     # The shorter request is now at the second block boundary (tkv = 128), so we
@@ -393,4 +393,4 @@ def test_decode_padding_to_same_block(
     # 🌶️🌶️🌶️ short prompt padding removed again, tkv is back to long + steps
     assert output.tkv == long_prompt_len + steps
     # One more real block was allocated for the short request
-    assert len(runner.block_pool) == initial_free_blocks - 2
+    assert runner.block_pool.get_num_free_blocks() == initial_free_blocks - 2

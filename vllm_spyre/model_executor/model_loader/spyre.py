@@ -320,7 +320,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         rank: int,
     ) -> None:
         BLOCK_SIZE = SpyrePlatform.get_block_size()
-        max_model_len = vllm_config.scheduler_config.max_model_len
+        max_model_len = vllm_config.model_config.max_model_len
 
         # edge case: prompt fills model length: can produce 1 token with prefill
         max_prompt_length = max_model_len

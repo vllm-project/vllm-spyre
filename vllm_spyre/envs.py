@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     VLLM_SPYRE_PERF_METRIC_LOGGING_DIR: str = "/tmp"
     VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER: bool = False
     VLLM_SPYRE_USE_CHUNKED_PREFILL: bool = False
+    VLLM_SPYRE_CP_INTERLEAVE_STEPS: bool = True
     # Prompt logprobs are behind a flag because they're only supported for
     # static batching and require passing back the hidden states for the full
     # prefill on every request. This could incur a heavy performance penalty in
@@ -111,19 +112,6 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # If set, enables the `prompt_logprobs` sampling parameter.
     # Currently, prompt_logprobs aren't supported
     "VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS": lambda: False,
-    # If set, enables the joining of a new sequence even if its prompt length
-    # is exceeding the tkv of the current decode batch. As this shifts all the
-    # sequences in the decode batch to the right (increasing the tkv), there is
-    # also a potential performance decrease coming with this.
-    "VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION": lambda: bool(
-        int(os.getenv("VLLM_SPYRE_ENABLE_PREFILL_OPTIMIZATION", "1"))
-    ),
-    # scheduling heuristic: prefill vs decode prioritization
-    # Prefills using up to VLLM_SPYRE_N_TOKENS_PREFILL_PRIO tokens will always
-    # be prioritized. If limit is exceeded, decodes are prioritized.
-    "VLLM_SPYRE_N_TOKENS_PREFILL_PRIO": lambda: int(
-        os.getenv("VLLM_SPYRE_N_TOKENS_PREFILL_PRIO", "-1")
-    ),
     # Allow vllm-spyre to update env vars related to multi-threading (eg. OMP)
     # based on the detected CPU cores and server configuration
     "VLLM_SPYRE_UPDATE_THREAD_CONFIG": lambda: bool(
@@ -167,6 +155,12 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # single prefill is used.
     "VLLM_SPYRE_USE_CHUNKED_PREFILL": lambda: bool(
         int(os.getenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", "0"))
+    ),
+    # Feature Flag
+    # Works only with chunked prefill enabled. If set, prefill steps are
+    # interleaved with a decode step
+    "VLLM_SPYRE_CP_INTERLEAVE_STEPS": lambda: bool(
+        int(os.getenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "1"))
     ),
 }
 # --8<-- [end:env-vars-definition]

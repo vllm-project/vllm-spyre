@@ -13,6 +13,14 @@ from vllm.v1.metrics.stats import FinishedRequestStats, IterationStats, Schedule
 
 from vllm_spyre import envs as envs_spyre
 
+try:
+    from vllm.v1.metrics.stats import MultiModalCacheStats
+except ImportError:
+    # compatibility for vllm pre 0.11.1
+    class MultiModalCacheStats:  # type: ignore
+        pass
+
+
 logger = init_logger(__name__)
 
 
@@ -93,6 +101,7 @@ class FileStatLogger(StatLoggerBase):
         self,
         scheduler_stats: SchedulerStats | None,
         iteration_stats: IterationStats | None,
+        mm_cache_stats: MultiModalCacheStats | None = None,
         engine_idx: int = 0,
     ):
         if not self.enabled or engine_idx != 0:

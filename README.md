@@ -3,7 +3,7 @@ Spyre Plugin for vLLM
 </h1>
 
 <p align="center">
-| <a href="https://vllm-spyre.readthedocs.io/en/latest/"><b>Documentation</b></a> | <a href="https://discuss.vllm.ai/c/hardware-support/vllm-spyre-support"><b>Users Forum</b></a> | <a href="https://slack.vllm.ai"><b>#sig-spyre</b></a> |
+| <a href="https://vllm-project.github.io/vllm-spyre/"><b>Documentation</b></a> | <a href="https://discuss.vllm.ai/c/hardware-support/"><b>Users Forum</b></a> | <a href="https://slack.vllm.ai"><b>#sig-spyre</b></a> |
 </p>
 
 ---
@@ -20,16 +20,16 @@ For more information, check out the following:
 
 ## Getting Started
 
-Visit our [documentation](https://vllm-spyre.readthedocs.io/en/latest/):
+Visit our [documentation](https://vllm-project.github.io/vllm-spyre/):
 
-- [Installation](https://vllm-spyre.readthedocs.io/en/latest/getting_started/installation.html)
-- [List of Supported Models](https://vllm-spyre.readthedocs.io/en/latest/user_guide/supported_models.html)
-- [List of Supported Features](https://vllm-spyre.readthedocs.io/en/latest/user_guide/supported_features.html)
+- [Installation](https://vllm-project.github.io/vllm-spyre/getting_started/installation.html)
+- [List of Supported Models](https://vllm-project.github.io/vllm-spyre/user_guide/supported_models.html)
+- [List of Supported Features](https://vllm-project.github.io/vllm-spyre/user_guide/supported_features.html)
 
 ## Contributing
 
-We welcome and value any contributions and collaborations. Please check out [Contributing to vLLM Spyre](https://vllm-spyre.readthedocs.io/en/latest/contributing/index.html) for how to get involved.
+We welcome and value any contributions and collaborations. Please check out [Contributing to vLLM Spyre](https://vllm-project.github.io/vllm-spyre/contributing/index.html) for how to get involved.
 
 ## Contact
 
-You can reach out for discussion or support in the `#sig-spyre` channel in the [vLLM Slack](https://inviter.co/vllm-slack) workspace or by [opening an issue](https://vllm-spyre.readthedocs.io/en/latest/contributing/index.html#issues).
+You can reach out for discussion or support in the `#sig-spyre` channel in the [vLLM Slack](https://inviter.co/vllm-slack) workspace or by [opening an issue](https://vllm-project.github.io/vllm-spyre/contributing/index.html#issues).

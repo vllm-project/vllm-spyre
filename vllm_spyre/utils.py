@@ -38,3 +38,10 @@ def stagger_region(limit: int, world_size: int, rank: int):
                 continue
             torch.distributed.barrier()
         logger.info("Stagger Region: All Complete")
+
+
+def exact_div(a: int, b: int) -> int:
+    q, r = divmod(a, b)
+    if r != 0:
+        raise ValueError(f"{a} is not exactly divisible by {b}")
+    return q

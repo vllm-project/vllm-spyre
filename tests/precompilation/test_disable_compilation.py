@@ -59,7 +59,9 @@ def test_handle_disable_compilation(model, caplog_vllm_spyre, monkeypatch, tmp_p
         _ = VllmConfig(
             model_config=ModelConfig(model=model.name, revision=model.revision, max_model_len=256),
             parallel_config=ParallelConfig(tensor_parallel_size=2),
-            scheduler_config=SchedulerConfig(max_num_seqs=2),
+            scheduler_config=SchedulerConfig(
+                max_num_seqs=2, max_model_len=256, is_encoder_decoder=False
+            ),
         )
         assert "[PRECOMPILED_WARN] Setting DISABLE_COMPILATION" in caplog_vllm_spyre.text
 
@@ -146,7 +148,9 @@ def test_handle_disable_compilation_catalog(
         _ = VllmConfig(
             model_config=ModelConfig(model=model.name, revision=model.revision, max_model_len=256),
             parallel_config=ParallelConfig(tensor_parallel_size=2),
-            scheduler_config=SchedulerConfig(max_num_seqs=2),
+            scheduler_config=SchedulerConfig(
+                max_num_seqs=2, max_model_len=256, is_encoder_decoder=False
+            ),
         )
 
         assert "[PRECOMPILED_WARN] Setting DISABLE_COMPILATION" in caplog_vllm_spyre.text
@@ -231,7 +235,9 @@ def test_catalog_config_mismatch(model, caplog_vllm_spyre, monkeypatch, tmp_path
         _ = VllmConfig(
             model_config=ModelConfig(model=model.name, revision=model.revision, max_model_len=64),
             parallel_config=ParallelConfig(tensor_parallel_size=2),
-            scheduler_config=SchedulerConfig(max_num_seqs=2),
+            scheduler_config=SchedulerConfig(
+                max_num_seqs=2, max_model_len=256, is_encoder_decoder=False
+            ),
         )
         assert "[PRECOMPILED_WARN]" in caplog_vllm_spyre.text
         assert (

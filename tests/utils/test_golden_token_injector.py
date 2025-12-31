@@ -16,11 +16,12 @@ class DummyVllmConfig:
 
 
 class DummyModelConfig:
-    def __init__(self, tokenizer: str, revision: str | None):
-        self.tokenizer = tokenizer
+    def __init__(self, model: str, revision: str | None):
+        self.model = model
+        self.tokenizer = model
         self.revision = revision
         self.tokenizer_revision = revision
-        self.tokenizer_mode = None
+        self.tokenizer_mode = "hf"
         self.trust_remote_code = True
 
 

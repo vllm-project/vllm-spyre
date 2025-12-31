@@ -1,6 +1,7 @@
 import pytest
 import torch
 from llm_cache import patch_environment
+from llm_cache_util import force_engine_shutdown
 from spyre_util import ModelInfo
 from vllm import LLM, SamplingParams
 from vllm.config import VllmConfig
@@ -8,7 +9,7 @@ from vllm.v1.sample.logits_processor import BatchUpdate, LogitsProcessor, MoveDi
 
 
 def test_custom_logits_processor(
-    model: ModelInfo, backend, monkeypatch, max_num_seqs, max_model_len, warmup_shapes, cb
+    model: ModelInfo, backend, monkeypatch, max_num_seqs, max_model_len, warmup_shapes, mode: str
 ):
     """
     Simple test to check if custom logits processors are being registered
@@ -34,19 +35,28 @@ def test_custom_logits_processor(
             has_invoked_logits_processor = True
             return logits
 
-    patch_environment(cb == 1, warmup_shapes if cb == 0 else None, backend, monkeypatch)
+    patch_environment(
+        use_cb=mode in ["cb", "cp", "pc"],
+        warmup_shapes=warmup_shapes if mode == "sb" else None,
+        backend=backend,
+        use_chunked_prefill=mode in ["cp", "pc"],
+        monkeypatch=monkeypatch,
+    )
 
     spyre_model = LLM(
         model=model.name,
         revision=model.revision,
         max_model_len=max_model_len,
         max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=128 if mode in ["cp", "pc"] else None,
+        enable_prefix_caching=mode == "pc",
         logits_processors=[DummyLogitsProcessor],
     )
     prompt = "Hello Logits Processors"
     params = SamplingParams(max_tokens=5, temperature=0, logprobs=0)
 
     spyre_model.generate(prompt, params)
+    force_engine_shutdown(spyre_model)
 
     assert has_invoked_logits_processor
 
@@ -135,6 +145,7 @@ def test_cb_logits_processor(model: ModelInfo, backend, monkeypatch, max_model_l
     spy_outputs = {}
     params = [params0, params1, params2]
     outputs = spyre_model.generate(prompt, params)
+    force_engine_shutdown(spyre_model)
 
     assert spy_outputs[5] == outputs[0].outputs[0].token_ids
     assert spy_outputs[10] == outputs[1].outputs[0].token_ids

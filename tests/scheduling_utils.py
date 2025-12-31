@@ -1,7 +1,8 @@
 import copy
+import dataclasses
 import os
 from collections import defaultdict, deque
-from typing import Any
+from typing import Any, Callable, Union
 
 import pytest
 from llm_cache import get_cached_engine
@@ -12,12 +13,17 @@ from output_util import (
     generate_hf_output,
 )
 from spyre_util import ModelInfo, create_random_request
+from typing_extensions import deprecated
 from vllm import SamplingParams
 from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
+from vllm.v1.request import Request
 
-from vllm_spyre.v1.core.scheduler import ContinuousBatchingSpyreScheduler
+from vllm_spyre.v1.core.scheduler import (
+    ChunkedPrefillSpyreScheduler,
+    ContinuousBatchingSpyreScheduler,
+)
 
 DISABLE_ASSERTS = False  # used for debugging
 
@@ -41,11 +47,86 @@ def augment_checked_steps(checked_steps: list[dict[str, Any]]) -> deque[dict[str
     return all_checked_steps
 
 
+@dataclasses.dataclass
+class SchedulerTestRequest:
+    """Little struct for passing around vllm.v1.Requests for scheduler tests.
+    The tests often need to know at which step a request is added to the engine.
+    """
+
+    add_step: int  # Step that the request will be added to the engine
+    request: Request
+    hf_output: Any  # hf transformers output for this request
+
+
+def random_prompt(model: ModelInfo, seed: int, length: int) -> list[int]:
+    # Generate a random prompt with valid token ids for this model
+    return create_random_request(
+        request_id=0,
+        model=model,
+        from_model_vocab=True,
+        sampling_params=SamplingParams.from_optional(),
+        seed=seed,
+        num_tokens=length,
+    ).prompt_token_ids
+
+
+def create_request_for_scheduler_test(
+    model: ModelInfo,
+    request_id: int,
+    add_step: int,
+    max_tokens: int,
+    prompt: list[int],
+    use_golden_token_injection: bool,
+) -> SchedulerTestRequest:
+    # Creates a request out of a prompt, for use with the scheduler tests.
+    # Can add golden token injection, which will ensure that the vllm output
+    # matches the hf output so that we can do logits comparisons on identical
+    # token outputs.
+
+    sampling_params = SamplingParams(
+        max_tokens=max_tokens, temperature=0.0, logprobs=0, ignore_eos=True
+    )
+
+    hf_results = generate_hf_output(
+        model=model,
+        prompts=[prompt],
+        max_new_tokens=max_tokens,
+        ignore_eos=True,
+    )
+    hf = hf_results[0]
+
+    if use_golden_token_injection:
+        abs_tol = ISCLOSE_ABS_TOL_QUANTIZATION if model.is_quantized else ISCLOSE_ABS_TOL
+
+        sampling_params.extra_args = {
+            "golden_token_injector": {
+                "expected_token_ids": hf["token_ids"],
+                "expected_logprobs": hf["logprobs"],
+                "error_threshold": abs_tol,
+                "label": f"#{request_id}",
+            }
+        }
+
+    request = Request(
+        request_id=str(request_id),
+        sampling_params=sampling_params,
+        prompt_token_ids=prompt,
+        eos_token_id=None,
+        arrival_time=0,
+        lora_request=None,
+        pooling_params=None,
+        cache_salt=None,
+    )
+    return SchedulerTestRequest(add_step=add_step, request=request, hf_output=hf)
+
+
 def generate_prompts(
     model: ModelInfo,
     steps_add_reqs: list[int],
     seqs_max_tokens: list[int],
     prompts_lengths: list[int],
+    from_model_vocab: bool = False,
+    seeds: list[int] = None,
 ):
     generated_prompts = []
 
@@ -54,6 +135,16 @@ def generate_prompts(
     # will be overridden
     sorted_reqs_params = zip(steps_add_reqs, seqs_max_tokens, prompts_lengths)
     requests: deque[tuple[int, EngineCoreRequest]] = deque()
+
+    # seeds for random (repeated) prompts generation to test prefix caching
+    if seeds:
+        assert from_model_vocab, "when providing seeds we create random prompts"
+        assert len(seeds) == len(steps_add_reqs), (
+            "number of seeds must be equal to the number of prompts"
+        )
+    else:
+        seeds = [None] * len(steps_add_reqs)
+
     for i, (add_step, max_tokens, prompt_length) in enumerate(sorted_reqs_params):
         # ignoring eos because we want to force the decoding to finish
         # after max_tokens exactly
@@ -61,7 +152,12 @@ def generate_prompts(
             max_tokens=max_tokens, temperature=0.0, logprobs=0, ignore_eos=True
         )
         request = create_random_request(
-            request_id=i, num_tokens=prompt_length, sampling_params=sampling_params, model=model
+            request_id=i,
+            num_tokens=prompt_length,
+            sampling_params=sampling_params,
+            model=model,
+            from_model_vocab=from_model_vocab,
+            seed=seeds[i],
         )
         requests.append((add_step, request))
         # NOTE: It is going to be decoded later
@@ -70,6 +166,11 @@ def generate_prompts(
     return generated_prompts, requests
 
 
+def dummy_assert_func(engine_core: EngineCore, step_ref: dict[str, Any], disable_asserts: bool):
+    pass
+
+
+@deprecated("This function is deprecated. Use validate_scheduler_steps instead.")
 def check_scheduler_inference_steps(
     model: ModelInfo,
     backend: str,
@@ -83,6 +184,11 @@ def check_scheduler_inference_steps(
     available_blocks: int,
     max_batch_tkv_limit: int = -1,
     use_cb: bool = True,
+    max_num_batched_tokens: int = None,
+    random_prompts: bool = False,
+    prefix_caching: bool = False,
+    seeds: list[int] = None,
+    extra_assert_func: Callable[[EngineCore, dict[str, Any], bool], Any] = dummy_assert_func,
 ):
     """
     Test the scheduler execution by comparing the scheduler attributes at each
@@ -113,11 +219,14 @@ def check_scheduler_inference_steps(
         raise ValueError("List of checked steps needs to be of increasing order of step")
     # ------
 
-    collected_outputs = defaultdict(
-        lambda: {"token_ids": [], "logprobs": [], "text": "", "tokens": []}
+    prompts, requests = generate_prompts(
+        model,
+        steps_add_reqs,
+        seqs_max_tokens,
+        prompts_lengths,
+        from_model_vocab=random_prompts,
+        seeds=seeds,
     )
-
-    prompts, requests = generate_prompts(model, steps_add_reqs, seqs_max_tokens, prompts_lengths)
 
     hf_results = generate_hf_output(
         model=model,
@@ -139,16 +248,68 @@ def check_scheduler_inference_steps(
             }
         }
 
+    requests = [
+        SchedulerTestRequest(add_step=r[0], request=r[1], hf_output=hf_results[i])
+        for i, r in enumerate(requests)
+    ]
+
+    validate_scheduler_steps(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        requests=requests,
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
+        available_blocks=available_blocks,
+        max_batch_tkv_limit=max_batch_tkv_limit,
+        max_num_batched_tokens=max_num_batched_tokens,
+        prefix_caching=prefix_caching,
+        extra_assert_func=extra_assert_func,
+    )
+
+
+def validate_scheduler_steps(
+    model: ModelInfo,
+    backend: str,
+    monkeypatch: pytest.MonkeyPatch,
+    requests: list[SchedulerTestRequest],
+    checked_steps: list[dict[str, Any]],
+    max_num_seqs: int,
+    max_model_len: int,
+    available_blocks: int,
+    max_batch_tkv_limit: int = -1,
+    max_num_batched_tokens: int = None,
+    prefix_caching: bool = False,
+    extra_assert_func: Callable[[EngineCore, dict[str, Any], bool], Any] = dummy_assert_func,
+):
+    """
+    Creates a vllm.v1.engine and runs it step-by-step for the provided requests.
+    Validates that the engine state matches the state given in `checked_steps`,
+    and validates that the resulting output logprobs for each request is within
+    an acceptable tolerance of hf output.
+    """
+    assert len(requests) == len(set(r.request.request_id for r in requests)), (
+        "duplicate request IDs detected"
+    )
+
+    prompts = [r.request.prompt_token_ids for r in requests]
+    hf_results = [r.hf_output for r in requests]
+
     # Setup the engine
     engine_core: EngineCore = get_cached_engine(
         model=model,
         max_model_len=max_model_len,
         max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=max_num_batched_tokens,
+        use_pc=prefix_caching,
         available_blocks=available_blocks,
         backend=backend,
         monkeypatch=monkeypatch,
     )
-    scheduler: ContinuousBatchingSpyreScheduler = engine_core.scheduler
+    scheduler: Union[ContinuousBatchingSpyreScheduler, ChunkedPrefillSpyreScheduler] = (
+        engine_core.scheduler
+    )
 
     tokenizer = get_tokenizer(model.name, revision=model.revision)
     # clear the cache of function scheduler.check_batch_tkv_limit()
@@ -161,16 +322,22 @@ def check_scheduler_inference_steps(
         # This default value is set by platform.py
         scheduler.max_batch_tkv_limit = int(os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"))
 
+    scheduler.do_interleaving = bool(int(os.getenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "1")))
+
     # In-between steps are added as normal decode steps
     checked_steps = augment_checked_steps(checked_steps)
+
+    collected_outputs = defaultdict(
+        lambda: {"token_ids": [], "logprobs": [], "text": "", "tokens": []}
+    )
 
     # Run steps, until last step from 'checked_steps' is reached
     request_outputs = []
     requested_blocks, reserved_blocks = {}, {}
     for step in range(checked_steps[-1]["step"] + 1):
         # Add requests for this step
-        while requests and requests[0][0] == step:
-            engine_core.add_request(requests.popleft()[1])
+        while requests and requests[0].add_step == step:
+            engine_core.add_request(requests.pop(0).request)
 
         # Check step if it is in the provided list of steps to check
         if checked_steps and step == checked_steps[0]["step"]:
@@ -200,36 +367,75 @@ def check_scheduler_inference_steps(
             )
 
             # checking the scheduler handling of free and reserved blocks
-            n_blocks = engine_core.model_executor.driver_worker.worker.model_runner.n_blocks
+            model_runner = engine_core.model_executor.driver_worker.worker.model_runner
+            n_blocks = model_runner.n_blocks
+            block_size = model_runner.block_size
             n_reserved_blocks = n_blocks - scheduler.n_free_blocks
-            req_ids2blocks = (
-                engine_core.model_executor.driver_worker.worker.model_runner.req_ids2blocks
-            )
-            req_ids2reserved_blocks = (
-                engine_core.model_executor.driver_worker.worker.model_runner.req_ids2reserved_blocks
-            )
-            n_used_blocks = sum([len(blocks) for blocks in req_ids2blocks.values()])
+
+            kv_cache_manager = model_runner.kv_cache_manager
+
+            req_ids2blocks = {
+                req_id: [block.block_id for block in blocks]
+                for req_id, blocks in kv_cache_manager.req_to_blocks.items()
+                if blocks
+            }
+            req_ids2num_reserved_blocks = model_runner.req_ids2num_reserved_blocks
+            # Account for blocks reused via prefix caching
+            used_blocks = set()
+            for blocks in req_ids2blocks.values():
+                used_blocks = used_blocks.union(blocks)
+            n_used_blocks = len(used_blocks)
+
+            n_cached_blocks = n_prefix_hits = 0
+            if prefix_caching:
+                reqs = model_runner.requests
+                prefix_hits = [
+                    reqs[r_id].usable_blocks * block_size > reqs[r_id].num_computed_tokens
+                    for r_id in req_ids2blocks
+                ]
+                cached_blocks = [reqs[r_id].usable_blocks for r_id in req_ids2blocks]
+                n_cached_blocks = sum(cached_blocks)
+                n_prefix_hits = sum(prefix_hits)
 
             if step > 0:
+                if DISABLE_ASSERTS:
+                    print(
+                        f"{step=}, {n_reserved_blocks=}, {n_used_blocks=}, "
+                        f"{scheduler.tkv=}, {waiting=}, {out_reqs_finished=}, "
+                        f"{running=}, {out_reqs_ids=}, {n_prefix_hits=}, "
+                        f"{n_cached_blocks=}"
+                    )
                 assert DISABLE_ASSERTS or (n_reserved_blocks == step_ref["n_reserved_blocks"]), (
                     f"Step {step}, n_reserved_blocks: {n_reserved_blocks}"
                 )
                 assert DISABLE_ASSERTS or (n_used_blocks == step_ref["n_used_blocks"]), (
                     f"Step {step}, n_used_blocks: {n_used_blocks}"
                 )
+                assert (
+                    DISABLE_ASSERTS
+                    or "n_prefix_hits" not in step_ref
+                    or (n_prefix_hits == step_ref["n_prefix_hits"])
+                ), f"Step {step}, n_prefix_hits: {n_prefix_hits}"
+                assert (
+                    DISABLE_ASSERTS
+                    or "n_cached_blocks" not in step_ref
+                    or (n_cached_blocks == step_ref["n_cached_blocks"])
+                ), f"Step {step}, n_cached_blocks: {n_cached_blocks}"
 
-            assert DISABLE_ASSERTS or len(req_ids2blocks) == len(req_ids2reserved_blocks)
+            assert DISABLE_ASSERTS or len(req_ids2blocks) == len(req_ids2num_reserved_blocks)
             for req_id in req_ids2blocks:
                 # current number of used blocks should be less than reserved
                 assert (
                     DISABLE_ASSERTS
-                    or len(req_ids2blocks[req_id]) <= req_ids2reserved_blocks[req_id]
+                    or len(req_ids2blocks[req_id]) <= req_ids2num_reserved_blocks[req_id]
                 )
                 # update requested/reserved blocks to check in last step
                 # Note: overwrite and not max
                 # because of reduce_left_padding()
                 requested_blocks[req_id] = len(req_ids2blocks[req_id])
-                reserved_blocks[req_id] = req_ids2reserved_blocks[req_id]
+                reserved_blocks[req_id] = req_ids2num_reserved_blocks[req_id]
+
+            extra_assert_func(engine_core, step_ref, DISABLE_ASSERTS)
 
         # last step: check that sequences used all their reserved blocks
         # Note: no early stopping, all sequences produce max_num_tokens

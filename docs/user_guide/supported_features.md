@@ -4,10 +4,10 @@ This table summarize the status of features on Spyre. By default, those features
 
 | Feature                       | Status | Note |
 |-------------------------------|--------|------|
-| Chunked Prefill               |   🗓️   |      |
+| Chunked Prefill               |   ✅   |      |
 | Automatic Prefix Caching      |   🗓️   |      |
 | LoRA                          |   🗓️   |      |
-| Prompt Adapter                |   ⛔   | Being deprecated in vLLM [vllm#13981](https://github.com/vllm-project/vllm/issues/13981) |
+| Prompt Adapter                |   ⛔   | Deprecated in vLLM [vllm#13981](https://github.com/vllm-project/vllm/issues/13981) |
 | Speculative Decoding          |   🗓️   |      |
 | Guided Decoding               |   🗓️   |      |
 | Enc-dec                       |   ⛔   | No plans for now |

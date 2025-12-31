@@ -7,6 +7,10 @@ from vllm import SamplingParams
 
 pytestmark = [pytest.mark.full_model, pytest.mark.other_e2e]
 
+sb_mark = pytest.param("sb", marks=pytest.mark.sb, id="sb")
+cb_mark = pytest.param("cb", marks=pytest.mark.cb, id="cb")
+cp_mark = pytest.param("cp", marks=pytest.mark.chunked_prefill, id="cp")
+
 
 def test_spyre_batch1_temperature(
     model: ModelInfo, backend, monkeypatch, use_llm_cache, warmup_shapes
@@ -210,6 +214,7 @@ def test_spyre_batch1_top_k(model: ModelInfo, backend, monkeypatch, use_llm_cach
     assert token_div1 < token_div2
 
 
+@pytest.mark.parametrize("mode", [sb_mark, cb_mark, cp_mark])
 def test_spyre_batch1_logit_bias(
     model: ModelInfo,
     backend,
@@ -218,17 +223,18 @@ def test_spyre_batch1_logit_bias(
     warmup_shapes,
     max_model_len,
     max_num_seqs,
-    cb: int,
+    mode: str,
 ):
     spyre_model = get_cached_llm(
         model=model,
         max_model_len=max_model_len,
-        max_num_seqs=max_num_seqs,
         tensor_parallel_size=1,
         backend=backend,
         monkeypatch=monkeypatch,
-        warmup_shapes=warmup_shapes if cb == 0 else None,
-        use_cb=cb == 1,
+        warmup_shapes=warmup_shapes if mode == "sb" else None,
+        max_num_seqs=max_num_seqs if mode == "cb" or mode == "cp" else None,
+        max_num_batched_tokens=128 if mode == "cp" else None,
+        use_cb=mode == "cb" or mode == "cp",
     )
     tokenizer = spyre_model.get_tokenizer()
     banned_word = "train"
@@ -260,6 +266,7 @@ def test_spyre_batch1_logit_bias(
     assert output[0].outputs[0].text != output[1].outputs[0].text
 
 
+@pytest.mark.parametrize("mode", [sb_mark, cb_mark, cp_mark])
 def test_spyre_batch1_min_tokens(
     model: ModelInfo,
     backend,
@@ -268,7 +275,7 @@ def test_spyre_batch1_min_tokens(
     max_model_len,
     max_num_seqs,
     warmup_shapes,
-    cb: int,
+    mode: str,
 ):
     spyre_model = get_cached_llm(
         model=model,
@@ -276,9 +283,10 @@ def test_spyre_batch1_min_tokens(
         tensor_parallel_size=1,
         backend=backend,
         monkeypatch=monkeypatch,
-        warmup_shapes=warmup_shapes if cb != 1 else None,
-        max_num_seqs=max_num_seqs if cb == 1 else None,
-        use_cb=cb == 1,
+        warmup_shapes=warmup_shapes if mode == "sb" else None,
+        max_num_seqs=max_num_seqs if mode == "cb" or mode == "cp" else None,
+        max_num_batched_tokens=128 if mode == "cp" else None,
+        use_cb=mode == "cb" or mode == "cp",
     )
     prompt = "What is the capital of the USA?"
     tokenizer = spyre_model.get_tokenizer()
@@ -325,6 +333,7 @@ def test_spyre_batch1_ignore_eos(
     assert output2.outputs[0].finish_reason != "length"
 
 
+@pytest.mark.parametrize("mode", [sb_mark, cb_mark, cp_mark])
 def test_spyre_batch1_min_p(
     model: ModelInfo,
     backend,
@@ -333,17 +342,18 @@ def test_spyre_batch1_min_p(
     max_model_len,
     max_num_seqs,
     warmup_shapes,
-    cb: int,
+    mode: str,
 ):
     spyre_model = get_cached_llm(
         model=model,
         max_model_len=max_model_len,
-        max_num_seqs=max_num_seqs,
         tensor_parallel_size=1,
         backend=backend,
         monkeypatch=monkeypatch,
-        warmup_shapes=warmup_shapes if cb == 0 else None,
-        use_cb=cb == 1,
+        warmup_shapes=warmup_shapes if mode == "sb" else None,
+        max_num_seqs=max_num_seqs if mode == "cb" or mode == "cp" else None,
+        max_num_batched_tokens=128 if mode == "cp" else None,
+        use_cb=mode == "cb" or mode == "cp",
     )
     prompt = "The opposite of black is"
     params1 = SamplingParams(min_p=0.5, temperature=1, max_tokens=5)

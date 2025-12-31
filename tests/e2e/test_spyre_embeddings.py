@@ -99,6 +99,7 @@ def test_scheduling_invariance(
         max_model_len=256,
         tensor_parallel_size=1,
         revision=model.revision,
+        tokenizer_revision=model.revision,
     )
 
     def batch_embeds(step):

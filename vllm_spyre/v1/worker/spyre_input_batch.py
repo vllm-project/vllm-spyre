@@ -12,6 +12,7 @@ import torch
 from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import SamplingParams, SamplingType
 from vllm.v1.pool.metadata import PoolingMetadata
+from vllm.v1.request import Request
 
 # from vllm.v1.sample.logits_processor.state import LogitsProcessors
 from vllm.v1.sample.logits_processor import BatchUpdateBuilder, LogitsProcessors, MoveDirectionality
@@ -195,6 +196,15 @@ class SamplingRequestState(BaseRequestState):
     @property
     def num_tokens(self) -> int:
         return len(self.prompt_token_ids) + len(self.output_token_ids)
+
+
+@dataclass
+class ChunkedPrefillRequestState(SamplingRequestState):
+    scheduler_request: Request | None = None
+    chunk_count: int = 0
+    padding_blocks: int = 0
+    usable_blocks: int = 0
+    total_hit_blocks: int = 0
 
 
 class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):

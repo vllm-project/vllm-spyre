@@ -6,7 +6,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import openai
 import pytest
@@ -14,7 +14,16 @@ import requests
 from transformers import AutoTokenizer
 from vllm import SamplingParams
 from vllm.entrypoints.openai.cli_args import make_arg_parser
-from vllm.utils import FlexibleArgumentParser, get_open_port
+from vllm.v1.engine.core import EngineCore
+
+try:
+    # old
+    from vllm.utils import FlexibleArgumentParser, get_open_port
+except ImportError:
+    # new
+    from vllm.utils.argparse_utils import FlexibleArgumentParser
+    from vllm.utils.network_utils import get_open_port
+
 from vllm.v1.request import Request
 
 EmbeddingWarmupShapes = list[tuple[int, int]]
@@ -27,6 +36,7 @@ def patch_environment(
     backend: str,
     monkeypatch,
     use_chunked_prefill: bool = False,
+    max_num_batched_tokens: int | None = None,
 ):
     # Setup the environment correctly for the LLM
 
@@ -43,6 +53,10 @@ def patch_environment(
     monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1" if use_cb else "0")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", "1" if use_chunked_prefill else "0")
+    # NB: setting this env var explicitly is needed to set the desired value for
+    # the chunk size in the case that granite 8b TP4 is detected
+    if max_num_batched_tokens is not None:
+        monkeypatch.setenv("VLLM_DT_CHUNK_LEN", max_num_batched_tokens)
 
 
 def patch_warmup_shapes(warmup_shapes: DecodeWarmupShapes | EmbeddingWarmupShapes, monkeypatch):
@@ -348,6 +362,7 @@ def create_random_request(
     sampling_params: SamplingParams,
     from_model_vocab: bool = False,
     model: ModelInfo | None = None,
+    seed: int = None,
 ) -> Request:
     tokenizer = AutoTokenizer.from_pretrained(model.name, revision=model.revision)
     if from_model_vocab:
@@ -358,7 +373,10 @@ def create_random_request(
         valid_token_ids = sorted(
             [v for v in tokenizer.vocab.values() if v not in tokenizer.all_special_ids]
         )
+        if seed is not None:
+            random.seed(seed)
         prompt_token_ids = random.choices(valid_token_ids, k=num_tokens)
+
     else:
         # start with existing prompts and tokenize them
         prompts = get_longer_chicken_soup_prompts(1)
@@ -466,3 +484,34 @@ def write_sample_model_config(tmp_path, data, filename="model_compile.log.json")
     config_path = tmp_path / filename
     config_path.write_text(json.dumps(data))
     return config_path
+
+
+def get_block_tables(engine_core: EngineCore) -> tuple[dict[str, list[int]], dict[int, int]]:
+    model_runner = engine_core.model_executor.driver_worker.worker.model_runner
+    req_to_blocks = model_runner.kv_cache_manager.req_to_blocks
+
+    block_tables = {
+        req_id: [block.block_id for block in blocks] for req_id, blocks in req_to_blocks.items()
+    }
+
+    block_ref_count = {}
+
+    for blocks in req_to_blocks.values():
+        for block in blocks:
+            block_ref_count[block.block_id] = block.ref_cnt
+
+    return block_tables, block_ref_count
+
+
+def verify_block_tables(engine_core: EngineCore, step_ref: dict[str, Any], disable_asserts: bool):
+    block_tables, block_ref_count = get_block_tables(engine_core)
+
+    if not disable_asserts:
+        if "block_tables" in step_ref:
+            assert step_ref["block_tables"] == block_tables
+
+        if "block_ref_count" in step_ref:
+            assert step_ref["block_ref_count"] == block_ref_count
+    else:
+        print(f"{block_tables=}")
+        print(f"{block_ref_count=}")

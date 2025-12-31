@@ -20,7 +20,7 @@ def test_openai_serving(
     warmup_shapes,
     backend,
     tp_size,
-    cb,
+    mode,
     max_num_seqs,
     max_model_len,
 ):
@@ -33,7 +33,7 @@ def test_openai_serving(
     _check_result(client, model, temperature=1.0, n=2)
 
     # rest are SB tests
-    if cb:
+    if mode == "sb":
         return
     # Check some basic error handling as well. This is all done in one test
     # now to avoid server boot-up overhead to test each case.

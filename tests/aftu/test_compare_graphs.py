@@ -189,7 +189,7 @@ def test_compare_graphs_static_batching(
 
 
 @pytest.mark.spyre
-@pytest.mark.cb
+@pytest.mark.chunked_prefill
 def test_compare_graphs_chunked_prefill(
     model: ModelInfo, max_num_seqs: int, max_model_len: int, monkeypatch: pytest.MonkeyPatch
 ):
@@ -240,8 +240,13 @@ def test_compare_graphs_chunked_prefill(
     monkeypatch.setenv("TORCH_SENDNN_CACHE_ENABLE", "0")
 
     monkeypatch.setenv("VLLM_DT_CHUNK_LEN", str(chunk_size))
-    monkeypatch.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", "1")
-    patch_environment(use_cb=True, warmup_shapes=None, backend="sendnn", monkeypatch=monkeypatch)
+    patch_environment(
+        use_cb=True,
+        warmup_shapes=None,
+        backend="sendnn",
+        monkeypatch=monkeypatch,
+        use_chunked_prefill=True,
+    )
 
     original_cwd = os.getcwd()
     try:

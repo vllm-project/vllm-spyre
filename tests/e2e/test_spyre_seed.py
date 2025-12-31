@@ -10,10 +10,14 @@ from output_util import generate_spyre_vllm_output
 from spyre_util import DecodeWarmupShapes, ModelInfo, get_chicken_soup_prompts
 from vllm import SamplingParams
 
+sb_mark = pytest.param("sb", marks=pytest.mark.sb, id="sb")
+cb_mark = pytest.param("cb", marks=pytest.mark.cb, id="cb")
+
 
 @pytest.mark.xfail(reason="Failing currently because of output mismatch")
 @pytest.mark.parametrize("temperature", [0.1, 1.0])
 @pytest.mark.parametrize("seed", [42])
+@pytest.mark.parametrize("mode", [sb_mark, cb_mark])
 def test_seed(
     model: ModelInfo,
     temperature: float,
@@ -22,7 +26,7 @@ def test_seed(
     max_num_seqs: int,
     warmup_shapes: DecodeWarmupShapes,
     backend: str,
-    cb: int,
+    mode: str,
     monkeypatch: pytest.MonkeyPatch,
     use_llm_cache,
 ) -> None:
@@ -46,7 +50,7 @@ def test_seed(
         seed=seed,
     )
 
-    if bool(cb):
+    if mode == "sb":
         # Turn off warmup shapes for CB
         warmup_shapes = None
 
@@ -58,8 +62,9 @@ def test_seed(
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
         backend=backend,
-        use_cb=bool(cb),
+        use_cb=mode in ["cb", "cp"],
         max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=128 if mode == "cp" else None,
         monkeypatch=monkeypatch,
     )
 
