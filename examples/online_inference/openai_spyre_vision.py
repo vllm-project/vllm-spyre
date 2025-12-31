@@ -1,21 +1,23 @@
 """ 
 This example shows how to use Spyre with vLLM for running online inference,
 using granite vision. Note that currently, multimodal is *not* supported for
-static baching!
+static baching.
 
 First, start the server with the following command:
 
 VLLM_SPYRE_USE_CB=1 \
-VLLM_SPYRE_DYNAMO_BACKEND=sendnn \
+VLLM_SPYRE_DYNAMO_BACKEND=eager \
 vllm serve 'ibm-granite/granite-vision-3.3-2b' \
     --max-model-len=16384 \
-    --max-num-seqs=4
+    --max-num-seqs=2
 
-This sets up a server with max batch size 4. To actually exercise continuous 
-batching make sure to submit multiple prompts at once by running this script 
-with `--batch_size` > 1. Note that an image can take up around 5k tokens in
-the maximal case, so be sure to consider this when setting the max-model-len
-and running this script.
+NOTE: in the max feature case, a single image for granite vision can take
+around 5k tokens, so keep this in mind when setting the max model length.
+Also, although you should configure this to run as CB (as static batch is
+not supported), this script does *not* submit multiple requests as a batch.
+This is because multimodal inputs are only supported for chat completions,
+not completions, and the chat completions endpoint does not support batched
+inputs.
 """
 
 import argparse
@@ -31,11 +33,6 @@ parser.add_argument(
     type=int,
     default=8,
     help="Maximum tokens.",
-)
-parser.add_argument(
-    "--batch_size",
-    type=int,
-    default=1,
 )
 parser.add_argument(
     "--num_prompts",
@@ -60,10 +57,9 @@ client = OpenAI(
     base_url=openai_api_base,
 )
 
+
 def get_vllm_prompts(num_prompts):
     """Get the vLLM prompts to be processed."""
-    template = "<|system|>\nA chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions.\n<|user|>\n<image>\n{}\n<|assistant|>\n"  # noqa: E501
-
     img_urls = [
         "https://vllm-public-assets.s3.us-west-2.amazonaws.com/vision_model_images/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg",  # noqa: E501
         "https://vllm-public-assets.s3.us-west-2.amazonaws.com/multimodal_asset/duck.jpg",  # noqa: E501
@@ -78,34 +74,33 @@ def get_vllm_prompts(num_prompts):
     prompts = []
     for img_url in img_urls:
         for instr in instructions:
-            prompts.append(
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": instr},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": img_url},
+            prompts.append({
+                "role":
+                "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": instr
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": img_url
                         },
-                    ],
-                }                
-            )
+                    },
+                ],
+            })
 
     prompts = prompts * (num_prompts // len(prompts) + 1)
     return prompts[:num_prompts]
 
+
 models = client.models.list()
 model = models.data[0].id
 
-
 prompts = get_vllm_prompts(args.num_prompts)
-batch_size = args.batch_size
-print('submitting prompts of batch size', batch_size)
 
-# making sure not to submit more prompts than the batch size
-for i in range(0, len(prompts), batch_size):
-    prompt = prompts[i:i + batch_size]
-
+for prompt in prompts:
     stream = args.stream
 
     print(f"Prompt: {prompt}")
