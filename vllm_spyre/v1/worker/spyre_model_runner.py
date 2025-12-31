@@ -345,11 +345,6 @@ class SpyreModelRunner(BaseSpyreModelRunner[SamplingInputBatch,
 
     def __init__(self, vllm_config: VllmConfig, is_driver_worker: bool,
                  rank: int):
-        # Normally we would check if the modelconfig supports multimodal inputs
-        # by comparing the model config against the registry here
-
-        # We also calculate the multimodal budget; this is probably important
-        # see scratch/projects/vllm/vllm/v1/worker/utils.py (in the budget)
         super().__init__(vllm_config=vllm_config,
                          is_driver_worker=is_driver_worker,
                          rank=rank)
