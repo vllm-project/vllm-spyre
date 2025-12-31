@@ -9,8 +9,18 @@ from vllm.multimodal.inputs import (MultiModalBatchedField,
 from vllm_spyre.multimodal.mm_mappings import MMUtilsBase, MMWarmupInputs
 
 
-class LlavaNextMMUtils(MMUtilsBase):
+# Extend the adapter as part of the head dim fix; this is needed to
+# load 2b models correctly, but we do it here since this class is
+# currently initialized only once and the adapter extension does not
+# seem to be idempotent.
+#
+# NOTE: If this is made idempotent, we can move this into
+# get_mm_specific_load_overrides(), since it's needed to load.
+serialization.extend_adapter(
+    "llava_next", "hf", ["weight_expansion_for_mismatched_head_dim"])
 
+
+class LlavaNextMMUtils(MMUtilsBase):
     @staticmethod
     def _validate_configs(fms_config: ModelConfig,
                           hf_config: PretrainedConfig):
@@ -48,8 +58,6 @@ class LlavaNextMMUtils(MMUtilsBase):
         TODO: If additional variants of granite vision are added, or broader
         llava next support is added in FMS, handle it properly here.
         """
-        serialization.extend_adapter(
-            "llava_next", "hf", ["weight_expansion_for_mismatched_head_dim"])
         return {
             "override_hf_pretrained_config": True,
             "text_config": {
@@ -96,8 +104,7 @@ class LlavaNextMMUtils(MMUtilsBase):
                     image_sizes = image_sizes.unsqueeze(0)
                 fms_kwargs["image_sizes"] = image_sizes
 
-        # NOTE: use_cache is actually not used here, but currently it's
-        # required. Also, the value of iteration for decode as long as it's > 0.
+        # The value of iteration does not matter for decode as long as it's > 0
         input_embeds, _ = fms_model.prepare_inputs_for_generation(
             iteration=0 if not is_decode else 1,
             input_ids=input_ids,
