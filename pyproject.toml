@@ -67,8 +67,8 @@ environments = [
 vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.12.0" }
 
 [tool.ruff]
-# Allow lines to be as long as 80.
-line-length = 80
+# Use widescreen monitors 😎😎😎
+line-length = 100
 exclude = [
     "vllm_spyre/model_executor/model_loader/spyre_setup.py"
 ]
@@ -102,6 +102,11 @@ ignore = [
     "B007",
     # f-string format
     "UP032",
+    # % formatters
+    "UP031",
+    # ternary operators
+    "SIM108",
+
 
     # TODO: Fix all of these in code instead
 
@@ -171,6 +176,17 @@ markers = [
 
 ]
 # --8<-- [end:test-markers-definition]
+
+[tool.markdownlint]
+#MD013.line_length = 100
+MD013 = false # line-length
+MD033 = false # inline-html
+MD038 = false # no-space-in-code
+MD041 = false # first-line-h1
+MD046 = false # code-block-style
+MD024.allow_different_nesting = true # no-duplicate-headers
+MD007.indent = 4 # ul-indent
+MD037 = false # no-space-in-emphasis (allow MkDocs Admonitions)
 
 [tool.pymarkdown]
 plugins.md013.enabled = false # line-length

@@ -43,15 +43,11 @@ def test_openai_serving(
     with pytest.raises(openai.APIError):
         # Prompt too long should raise
         long_prompt = "Hello " * 1000
-        client.completions.create(model=model,
-                                  prompt=long_prompt,
-                                  max_tokens=500)
+        client.completions.create(model=model, prompt=long_prompt, max_tokens=500)
 
     # Short prompt under context length but requesting too many tokens for
     # the warmup shape should return an empty result
     try:
-        client.completions.create(model=model,
-                                  prompt="Hello World!",
-                                  max_tokens=25)
+        client.completions.create(model=model, prompt="Hello World!", max_tokens=25)
     except openai.BadRequestError as e:
         assert "warmup" in str(e)
