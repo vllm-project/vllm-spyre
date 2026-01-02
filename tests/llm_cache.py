@@ -32,7 +32,9 @@ class ModelCache(Generic[T]):
         else:
             self._teardown = teardown_method
 
-        self._preexisting_max_tkv = os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT")
+        # All VLLM_DT env vars must be cleared between cache accesses to avoid polluting new models.
+        # Cache any that are set at test collection time to put them back after clearing the cache
+        self._cache_vllm_dt_env_vars()
 
     def maybe_get(self, runtime_config: dict) -> T | None:
         if runtime_config == self._runtime_config:
@@ -63,15 +65,26 @@ class ModelCache(Generic[T]):
             self._teardown(self._model)
             self._model = None
             self._runtime_config = None
-            if self._preexisting_max_tkv is not None:
-                os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = self._preexisting_max_tkv
-            else:
-                os.environ.pop("VLLM_DT_MAX_BATCH_TKV_LIMIT", None)
+            self._reset_vllm_dt_env_vars()
 
     def _type(self) -> type | None:
         if hasattr(self, "__orig_class__"):
             return self.__orig_class__.__args__[0]
         return None
+
+    def _get_vllm_dt_env_vars(self) -> dict[str, str]:
+        return {k: v for k, v in os.environ.items() if k.startswith("VLLM_DT")}
+
+    def _cache_vllm_dt_env_vars(self):
+        self._preexisting_vllm_dt_env_vars = self._get_vllm_dt_env_vars()
+
+    def _reset_vllm_dt_env_vars(self):
+        # Clear all
+        for k in self._get_vllm_dt_env_vars().keys():
+            os.environ.pop(k, None)
+        # Set back
+        for k, v in self._preexisting_vllm_dt_env_vars.items():
+            os.environ[k] = v
 
 
 class LLMCache:
