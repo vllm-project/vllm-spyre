@@ -1929,7 +1929,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         # last chunk
         blocks_to_recompute = 0
-        if request.total_hit_blocks > 0:
+        if request.usable_blocks > 0:
             chunks_from_cache = exact_div(
                 request.padding_blocks + request.usable_blocks, self.chunk_blocks_count
             )
