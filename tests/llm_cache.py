@@ -80,7 +80,7 @@ class ModelCache(Generic[T]):
 
     def _reset_vllm_dt_env_vars(self):
         # Clear all
-        for k in self._get_vllm_dt_env_vars().keys():
+        for k in self._get_vllm_dt_env_vars():
             os.environ.pop(k, None)
         # Set back
         for k, v in self._preexisting_vllm_dt_env_vars.items():
