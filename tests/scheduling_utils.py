@@ -1,7 +1,6 @@
 from collections.abc import Iterable
 import copy
 import dataclasses
-import functools
 import os
 from collections import defaultdict, deque
 from typing import Any, Callable, Union
@@ -22,17 +21,14 @@ from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.request import Request
 
-from vllm_spyre.platform import SpyrePlatform
+
 from vllm_spyre.v1.core.scheduler import (
     ChunkedPrefillSpyreScheduler,
     ContinuousBatchingSpyreScheduler,
 )
-from vllm.forward_context import get_forward_context
-import torch
 
 
 DISABLE_ASSERTS = False  # used for debugging
-FORWARD_CONTEXT = None  # model forward context is dumped here each engine step for validation
 
 
 def augment_checked_steps(checked_steps: list[dict[str, Any]]) -> deque[dict[str, Any]]:
@@ -342,8 +338,6 @@ def validate_scheduler_steps(
         lambda: {"token_ids": [], "logprobs": [], "text": "", "tokens": []}
     )
 
-    _wrap_model_forward(engine_core)
-
     # Run steps, until last step from 'checked_steps' is reached
     request_outputs = []
     requested_blocks, reserved_blocks = {}, {}
@@ -448,7 +442,6 @@ def validate_scheduler_steps(
                 requested_blocks[req_id] = len(req_ids2blocks[req_id])
                 reserved_blocks[req_id] = req_ids2num_reserved_blocks[req_id]
 
-            print(FORWARD_CONTEXT)
             for extra_assert_func in extra_assert_funcs:
                 extra_assert_func(engine_core, step_ref, DISABLE_ASSERTS)
 
@@ -496,58 +489,3 @@ def validate_scheduler_steps(
         hf_results=hf_results,
         prompts=prompts,
     )
-
-
-def _wrap_model_forward(engine_core: EngineCore) -> None:
-    # Set up the model to save the forward context to FORWARD_CONTEXT each step
-    _model = engine_core.model_executor.driver_worker.worker.model_runner.model
-    original_model_fwd = _model.forward
-
-    def __context_forward__(*args, **kwargs):
-        global FORWARD_CONTEXT
-        FORWARD_CONTEXT = get_forward_context()
-        return original_model_fwd(*args, **kwargs)
-
-    # Guard to ensure that we don't nest this when the engine is cached and reused
-    if original_model_fwd.__name__ != "wrapped_forward":
-        functools.update_wrapper(__context_forward__, _model.forward)
-        _model.forward = __context_forward__
-        _model.forward.__name__ = "wrapped_forward"
-
-
-def verify_slot_mappings(engine_core: EngineCore, step_ref: dict[str, Any], disable_asserts: bool):
-    if "prefill_slot_mappings" not in step_ref:
-        return
-    prefill_slot_mappings = step_ref["prefill_slot_mappings"]
-
-    # Slot mappings should be provided at "block level", convert here to token level.
-    # e.g. [0, 1] expands to [0 ... 128]
-    slot_mapping_tensor_list = []
-
-    block_size = SpyrePlatform.get_block_size()
-
-    # TODO: Need to map the keys (request ids) to correct order in tensor
-    for slot_mapping in prefill_slot_mappings.values():
-        slot_mapping_tensor = torch.arange(block_size, dtype=torch.int64).repeat(len(slot_mapping))
-        slot_mapping_tensor += (
-            torch.tensor(slot_mapping, dtype=torch.int64)
-            .repeat_interleave(block_size)
-            .mul_(block_size)
-        )
-        slot_mapping_tensor_list.append(slot_mapping_tensor)  # TODO: slice?
-    reference_slot_mapping = torch.stack(slot_mapping_tensor_list)
-
-    actual_slot_mapping = FORWARD_CONTEXT.attn_metadata.slot_mapping
-
-    print(f"{actual_slot_mapping=}")
-    print(f"{reference_slot_mapping=}")
-
-    if not disable_asserts:
-        if "block_tables" in step_ref:
-            assert torch.equal(reference_slot_mapping, actual_slot_mapping), (
-                f"Reference slot mapping {reference_slot_mapping}, "
-                f"Actual slot mapping: {actual_slot_mapping}"
-            )
-    else:
-        print(f"{actual_slot_mapping=}")
-        print(f"{reference_slot_mapping=}")

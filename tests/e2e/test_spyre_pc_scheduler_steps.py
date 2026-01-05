@@ -11,9 +11,8 @@ from scheduling_utils import (
     create_request_for_scheduler_test,
     random_prompt,
     validate_scheduler_steps,
-    verify_slot_mappings,
 )
-from spyre_util import ModelInfo, verify_block_tables
+from spyre_util import ModelInfo, verify_block_tables, verify_slot_mappings
 
 
 @pytest.mark.chunked_prefill

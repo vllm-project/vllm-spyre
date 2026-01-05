@@ -1931,7 +1931,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         blocks_to_recompute = 0
         if request.total_hit_blocks > 0:
             if request.usable_blocks == 0:
-                print("\n\n\tTHIS IS THE CASE")
                 chunks_from_cache = 0
             else:
                 chunks_from_cache = exact_div(
