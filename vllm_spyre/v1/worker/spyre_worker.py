@@ -271,7 +271,11 @@ class SpyreWorker(WorkerBase):
             )
         if self.model_config.trust_remote_code:
             # note: lazy import to avoid importing torch before initializing
-            from vllm.utils import init_cached_hf_modules
+            try:
+                # pre 0.11.1 compatibility
+                from vllm.utils import init_cached_hf_modules
+            except ImportError:
+                from vllm.utils.import_utils import init_cached_hf_modules
 
             init_cached_hf_modules()
         self.model_runner: Union[
