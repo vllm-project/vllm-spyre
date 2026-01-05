@@ -992,6 +992,7 @@ def test_double_prefix_hit_within_batch(
             "n_prefix_hits": 0,
             "block_tables": {"0": [1, 2, 3], "1": [1, 2, 3]},
             "block_ref_count": {1: 2, 2: 2, 3: 2},
+            "prefill_slot_mappings": {"1": [0, 0]},  # Fully masked prefill
         },
         {  # prefill chunk 1 seq 2
             "step": 5,
@@ -1084,7 +1085,7 @@ def test_double_prefix_hit_within_batch(
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        extra_assert_funcs=[verify_block_tables],
+        extra_assert_funcs=[verify_block_tables, verify_slot_mappings],
     )
 
 
@@ -1577,6 +1578,7 @@ def test_multi_chunk_partial_match_misaligned(
             "n_prefix_hits": 1,
             # The number of cached blocks is determined up front
             "n_cached_blocks": 2,  # can only reuse the first chunk (2 blocks)
+            "prefill_slot_mappings": {"1": [1, 2]},
         },
         {  # prefill chunk 2 seq 1
             # cannot use prefix, as the prefix is less than 2 chunks
@@ -1589,6 +1591,7 @@ def test_multi_chunk_partial_match_misaligned(
             "n_used_blocks": 9,
             "n_prefix_hits": 0,
             "n_cached_blocks": 2,
+            "prefill_slot_mappings": {"1": [0, 4]},  # Block 3 (prefix hit) is masked out
         },
         {  # prefill chunk 3 seq 1
             "step": 6,
@@ -1604,6 +1607,7 @@ def test_multi_chunk_partial_match_misaligned(
                 "0": [1, 2, 3, 4, 5, 6],
                 "1": [1, 2, 3, 7, 8, 9],
             },
+            "prefill_slot_mappings": {"1": [8, 9]},
         },
         {
             # Decode 1 of request 0.
@@ -1641,7 +1645,7 @@ def test_multi_chunk_partial_match_misaligned(
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        extra_assert_funcs=[verify_block_tables],
+        extra_assert_funcs=[verify_block_tables, verify_slot_mappings],
     )
 
 
