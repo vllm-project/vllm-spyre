@@ -11,6 +11,7 @@ from scheduling_utils import (
     create_request_for_scheduler_test,
     random_prompt,
     validate_scheduler_steps,
+    verify_slot_mappings,
 )
 from spyre_util import ModelInfo, verify_block_tables
 
@@ -170,7 +171,7 @@ def test_prefix_hit_within_batch(
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        extra_assert_func=verify_block_tables,
+        extra_assert_funcs=[verify_block_tables],
     )
 
 
@@ -248,6 +249,7 @@ def test_block_deduplication_within_batch(
             "n_cached_blocks": 0,
             "block_tables": {"0": [1, 2]},
             "block_ref_count": {1: 1, 2: 1},
+            "prefill_slot_mappings": {"0": [1, 2]},
         },
         {  # prefill chunk 1 seq 1
             # cannot use prefix, as the last chunk has to always be recomputed
@@ -262,6 +264,9 @@ def test_block_deduplication_within_batch(
             "n_cached_blocks": 0,
             "block_tables": {"0": [1, 2], "1": [1, 3]},
             "block_ref_count": {1: 2, 2: 1, 3: 1},
+            "prefill_slot_mappings": {
+                "1": [0, 3]  # Block 1 is masked out during prefill so it is read-only
+            },
         },
         {
             # Decode 1 of request 0.
@@ -300,7 +305,7 @@ def test_block_deduplication_within_batch(
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        extra_assert_func=verify_block_tables,
+        extra_assert_funcs=[verify_block_tables, verify_slot_mappings],
     )
 
 
@@ -494,7 +499,7 @@ def test_prefix_hit_decoded_block_within_batch(
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        extra_assert_func=verify_block_tables,
+        extra_assert_funcs=[verify_block_tables],
     )
 
 
@@ -657,7 +662,7 @@ def test_prefix_hit_not_in_batch(
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        extra_assert_func=verify_block_tables,
+        extra_assert_funcs=[verify_block_tables],
     )
 
 
@@ -1080,7 +1085,7 @@ def test_double_prefix_hit_within_batch(
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        extra_assert_func=verify_block_tables,
+        extra_assert_funcs=[verify_block_tables],
     )
 
 
@@ -1456,7 +1461,7 @@ def test_multi_chunk_full_match(
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        extra_assert_func=verify_block_tables,
+        extra_assert_funcs=[verify_block_tables],
     )
 
 
@@ -1637,7 +1642,7 @@ def test_multi_chunk_partial_match_misaligned(
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        extra_assert_func=verify_block_tables,
+        extra_assert_funcs=[verify_block_tables],
     )
 
 
@@ -1811,7 +1816,7 @@ def test_multi_chunk_partial_match_aligned(
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        extra_assert_func=verify_block_tables,
+        extra_assert_funcs=[verify_block_tables],
     )
 
 
@@ -1888,6 +1893,7 @@ def test_first_chunk_partial_match(
             "n_reserved_blocks": 2,
             "n_used_blocks": 1,
             "n_prefix_hits": 0,
+            "block_tables": {"0": [1]},
         },
         {  # prefill seq 1. This step was crashing before
             "step": 2,
@@ -1898,6 +1904,11 @@ def test_first_chunk_partial_match(
             "n_reserved_blocks": 8,
             "n_used_blocks": 5,
             "n_prefix_hits": 0,
+            "block_tables": {"0": [1], "1": [1, 2, 3, 4, 5]},
+            "prefill_slot_mappings": {
+                "1": [0, 0, 2]  # One mask for left padding, one mask for block `1` to not be
+                # overwritten since it hit cache
+            },
         },
         {  # finish seq 1 prefill
             "step": 3,
@@ -1908,6 +1919,8 @@ def test_first_chunk_partial_match(
             "n_reserved_blocks": 8,
             "n_used_blocks": 5,
             "n_prefix_hits": 0,
+            "block_tables": {"0": [1], "1": [1, 2, 3, 4, 5]},
+            "prefill_slot_mappings": {"1": [3, 4, 5]},
         },
         {  # decode
             "step": 4,
@@ -1919,6 +1932,7 @@ def test_first_chunk_partial_match(
             "n_reserved_blocks": 8,
             "n_used_blocks": 7,
             "n_prefix_hits": 0,
+            "block_tables": {"0": [1, 6], "1": [1, 2, 3, 4, 5, 7]},
         },
     ]
 
@@ -1933,4 +1947,5 @@ def test_first_chunk_partial_match(
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
+        extra_assert_funcs=[verify_block_tables, verify_slot_mappings],
     )
