@@ -5,16 +5,16 @@
 # Cause the script to exit if a single command fails
 set -eo pipefail
 
-if [ -z "$@" ]; then
+if [ -z "$*" ]; then
   # Run all files by default if no args are passed to format.sh
-  args="--all-files"
+  args=( "--all-files" )
 else
   # Otherwise passthrough all args
-  args="$@"
+  args=( "$@" )
 fi
 
 # uvx will run prek from an isolated venv without requiring any dev setup or configuration
-uvx prek "${args}"
+uvx prek "${args[@]}"
 
 if ! git diff --quiet &>/dev/null; then
     echo 
