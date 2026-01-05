@@ -208,16 +208,8 @@ dev = [
     "aiu-fms-testing-utils>=0.5.0",
 ]
 lint = [
-    "clang-format==18.1.5",
-    "codespell==2.3.0",
-    "isort==5.13.2",
     "mypy==1.11.1",
-    "pymarkdownlnt==0.9.29",
-    "ruff==0.6.5",
-    "toml==0.10.2",
-    "tomli==2.0.2",
     "types-pyyaml>=6.0.12.20250326",
     "types-requests>=2.32.0.20250328",
     "types-setuptools>=77.0.2.20250328",
-    "yapf==0.43.0",
 ]
