@@ -33,3 +33,10 @@ repos:
   rev: v1.7.7
   hooks:
   - id: actionlint
+- repo: local
+  hooks:
+    - id: ty
+      name: ty check
+      entry: uvx ty check vllm_spyre
+      language: system
+      pass_filenames: false
