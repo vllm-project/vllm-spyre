@@ -196,32 +196,18 @@ This section is specific to the AIU operator and scheduling workloads onto speci
 
 ### Linting
 
-When submitting a PR, please make sure your code passes all linting checks. You can install the linting requirements using either `uv` or `pip`.
+When submitting a PR, please make sure your code passes all linting checks. We use prek with a .pre-commit-config.yaml file to run checks on every commit.
 
-Using `uv`:
-
-```sh
-uv sync --frozen --group lint --active --inexact
-```
-
-Using `pip`:
-
-```sh
-uv pip compile --group lint > requirements-lint.txt
-pip install -r requirements-lint.txt
-```
-
-After installing the requirements, run the formatting script:
+The `format.sh` script will run prek from an isolated virtual environment using [uvx](https://docs.astral.sh/uv/guides/tools/). The only requirement is that you have `uv` installed.
 
 ```sh
 bash format.sh
 ```
 
-Then, make sure to commit any changes made by the formatter:
+Alternatively, you can [install prek](https://github.com/j178/prek?tab=readme-ov-file#installation) and set up a git hook to run it on every commit with:
 
 ```sh
-git add .
-git commit -s -m "Apply linting and formatting"
+prek install
 ```
 
 ### DCO and Signed-off-by
