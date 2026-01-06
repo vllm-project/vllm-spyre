@@ -11,10 +11,13 @@ from typing import Any, NamedTuple
 import openai
 import pytest
 import requests
+import torch
 from transformers import AutoTokenizer
 from vllm import SamplingParams
 from vllm.entrypoints.openai.cli_args import make_arg_parser
 from vllm.v1.engine.core import EngineCore
+
+from vllm_spyre.platform import SpyrePlatform
 
 try:
     # old
@@ -508,10 +511,48 @@ def verify_block_tables(engine_core: EngineCore, step_ref: dict[str, Any], disab
 
     if not disable_asserts:
         if "block_tables" in step_ref:
-            assert step_ref["block_tables"] == block_tables
+            assert step_ref["block_tables"] == block_tables, (
+                f"Reference table {step_ref['block_tables']}, Actual table: {block_tables}"
+            )
 
         if "block_ref_count" in step_ref:
             assert step_ref["block_ref_count"] == block_ref_count
     else:
         print(f"{block_tables=}")
         print(f"{block_ref_count=}")
+
+
+def verify_slot_mappings(engine_core: EngineCore, step_ref: dict[str, Any], disable_asserts: bool):
+    if "prefill_slot_mappings" not in step_ref:
+        return
+    prefill_slot_mappings = step_ref["prefill_slot_mappings"]
+
+    # Slot mappings should be provided at "block level", convert here to token level.
+    # e.g. [0, 1] expands to [0 ... 128]
+    slot_mapping_tensor_list = []
+
+    block_size = SpyrePlatform.get_block_size()
+
+    # TODO: Need to map the keys (request ids) to correct order in tensor
+    # (But we only ever prefill one request right now)
+    for slot_mapping in prefill_slot_mappings.values():
+        slot_mapping_tensor = torch.arange(block_size, dtype=torch.int64).repeat(len(slot_mapping))
+        slot_mapping_tensor += (
+            torch.tensor(slot_mapping, dtype=torch.int64)
+            .repeat_interleave(block_size)
+            .mul_(block_size)
+        )
+        slot_mapping_tensor_list.append(slot_mapping_tensor)  # TODO: slice?
+    reference_slot_mapping = torch.stack(slot_mapping_tensor_list)
+
+    actual_slot_mapping = engine_core.forward_context.attn_metadata.slot_mapping
+
+    if not disable_asserts:
+        if "block_tables" in step_ref:
+            assert torch.equal(reference_slot_mapping, actual_slot_mapping), (
+                f"Reference slot mapping {reference_slot_mapping}, "
+                f"Actual slot mapping: {actual_slot_mapping}"
+            )
+    else:
+        print(f"{actual_slot_mapping=}")
+        print(f"{reference_slot_mapping=}")

@@ -1934,9 +1934,12 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         # last chunk
         blocks_to_recompute = 0
         if request.total_hit_blocks > 0:
-            chunks_from_cache = exact_div(
-                request.padding_blocks + request.usable_blocks, self.chunk_blocks_count
-            )
+            if request.usable_blocks == 0:
+                chunks_from_cache = 0
+            else:
+                chunks_from_cache = exact_div(
+                    request.padding_blocks + request.usable_blocks, self.chunk_blocks_count
+                )
 
             # When the current chunk has passed the number
             # of chunk loaded entirely from cache, the difference
@@ -1944,6 +1947,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             # blocks will the the number of blocks to recompute.
             if chunk_i == chunks_from_cache:
                 blocks_to_recompute = request.total_hit_blocks - request.usable_blocks
+                # Masking these blocks must account for left-padding: The first block of a chunk is
+                # block # {chunk_i * self.chunk_blocks_count - request.padding_blocks}
+                blocks_to_recompute += request.padding_blocks
 
         slot_mapping = []
         for i in range(self.chunk_blocks_count):
