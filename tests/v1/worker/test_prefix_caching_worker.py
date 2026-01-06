@@ -124,14 +124,19 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
         return super().execute_model(scheduler_output, **kwargs)
 
 
-@pytest.fixture
-def pc_model_runner(
+DEFAULT_TEST_MODEL = ModelInfo(
+    name="ibm-ai-platform/micro-g3.3-8b-instruct-1b",
+    revision="6e9c6465a9d7e5e9fa35004a29f0c90befa7d23f",
+)
+
+
+def build_pc_model_runner(
     monkeypatch: pytest.MonkeyPatch,
-    model: ModelInfo,
-    max_num_seqs: int,
-    max_model_len: int,
-    max_num_batched_tokens: int,
-    available_blocks: int | None,
+    model: ModelInfo = DEFAULT_TEST_MODEL,
+    max_num_seqs: int = 2,
+    max_model_len: int = 512,
+    max_num_batched_tokens: int = 128,
+    available_blocks: int | None = None,
 ) -> ChunkedPrefillModelRunner:
     """A fixture that returns a model runner configured for prefix caching."""
 
@@ -167,28 +172,20 @@ def pc_model_runner(
     model_runner.pre_warmup()
     model_runner.complete_warmup()
 
-    yield model_runner
+    return model_runner
 
 
 @pytest.mark.cpu
 @pytest.mark.worker
 @pytest.mark.prefix_caching
-@pytest.mark.parametrize("max_num_seqs", [2])
-@pytest.mark.parametrize("max_model_len", [512])
-@pytest.mark.parametrize("max_num_batched_tokens", [128])
-@pytest.mark.parametrize("available_blocks", [None])
 def test_block_sharing_for_2_chunks(
-    model: ModelInfo,
-    max_num_seqs: int,
-    max_model_len: int,
-    max_num_batched_tokens: int,
-    available_blocks: int | None,
-    pc_model_runner: ChunkedPrefillModelRunner,
+    monkeypatch: pytest.MonkeyPatch,
 ):
-    prompt = random_prompt(model=model, seed=0, length=192)
+    pc_model_runner = build_pc_model_runner(monkeypatch)
+    prompt = random_prompt(model=DEFAULT_TEST_MODEL, seed=0, length=192)
 
     request1 = create_request_for_scheduler_test(
-        model=model,
+        model=DEFAULT_TEST_MODEL,
         request_id=0,
         add_step=0,
         max_tokens=2,
@@ -198,7 +195,7 @@ def test_block_sharing_for_2_chunks(
     )
 
     request2 = create_request_for_scheduler_test(
-        model=model,
+        model=DEFAULT_TEST_MODEL,
         request_id=0,
         add_step=0,
         max_tokens=2,
@@ -340,18 +337,8 @@ def _assert_block_tables_and_slot_mappings(
 @pytest.mark.cpu
 @pytest.mark.worker
 @pytest.mark.prefix_caching
-@pytest.mark.parametrize("max_num_seqs", [2])
-@pytest.mark.parametrize("max_model_len", [512])
-@pytest.mark.parametrize("max_num_batched_tokens", [128])
-@pytest.mark.parametrize("available_blocks", [16])
 def test_multi_chunk_partial_match_misaligned(
-    model: ModelInfo,
     monkeypatch: pytest.MonkeyPatch,
-    max_num_seqs: int,
-    max_model_len: int,
-    max_num_batched_tokens: int,
-    available_blocks: int | None,
-    pc_model_runner: ChunkedPrefillModelRunner,
 ):
     """Scenario where two sequences are scheduled which share a common
     prefix. The second sequence shares 254 tokens with the first sequence,
@@ -369,16 +356,21 @@ def test_multi_chunk_partial_match_misaligned(
     """
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
 
+    pc_model_runner = build_pc_model_runner(
+        monkeypatch=monkeypatch,
+        available_blocks=16,
+    )
+
     # twice the same seed for a sequence of length 384
     # the first sequence shares the same prefix of length 384 tokens
     # the second sequence shares the same prefix of length 254 tokens
     # hence sequence 1 shares the first 254 tokens with sequence 0
 
-    prompt1 = random_prompt(model=model, seed=0, length=384)
-    prompt2 = prompt1[0:254] + random_prompt(model=model, seed=0, length=384 - 254)
+    prompt1 = random_prompt(model=DEFAULT_TEST_MODEL, seed=0, length=384)
+    prompt2 = prompt1[0:254] + random_prompt(model=DEFAULT_TEST_MODEL, seed=0, length=384 - 254)
 
     request1 = create_request_for_scheduler_test(
-        model=model,
+        model=DEFAULT_TEST_MODEL,
         request_id=0,
         add_step=0,
         max_tokens=2,
@@ -388,7 +380,7 @@ def test_multi_chunk_partial_match_misaligned(
     )
 
     request2 = create_request_for_scheduler_test(
-        model=model,
+        model=DEFAULT_TEST_MODEL,
         request_id=1,
         add_step=0,
         max_tokens=2,
@@ -522,23 +514,11 @@ def test_multi_chunk_partial_match_misaligned(
     assert model_runner_output_7.left_padding == {"0": 0, "1": 0}
 
 
-
-
 @pytest.mark.cpu
 @pytest.mark.worker
 @pytest.mark.prefix_caching
-@pytest.mark.parametrize("max_num_seqs", [2])
-@pytest.mark.parametrize("max_model_len", [512])
-@pytest.mark.parametrize("max_num_batched_tokens", [256])
-@pytest.mark.parametrize("available_blocks", [16])
 def test_first_chunk_recomputation(
-    model: ModelInfo,
     monkeypatch: pytest.MonkeyPatch,
-    max_num_seqs: int,
-    max_model_len: int,
-    max_num_batched_tokens: int,
-    available_blocks: int | None,
-    pc_model_runner: ChunkedPrefillModelRunner,
 ):
     """Scenario where two sequences are scheduled with 2 blocks
     each and a common 1 block prefix. Since chunk size is 4 times the block
@@ -558,11 +538,17 @@ def test_first_chunk_recomputation(
     """
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
 
-    prompt1 = random_prompt(model=model, seed=0, length=128)
-    prompt2 = prompt1[0:64] + random_prompt(model=model, seed=0, length=128 - 64)
+    pc_model_runner = build_pc_model_runner(
+        monkeypatch=monkeypatch,
+        max_num_batched_tokens=256,
+        available_blocks=16,
+    )
+
+    prompt1 = random_prompt(model=DEFAULT_TEST_MODEL, seed=0, length=128)
+    prompt2 = prompt1[0:64] + random_prompt(model=DEFAULT_TEST_MODEL, seed=0, length=128 - 64)
 
     request1 = create_request_for_scheduler_test(
-        model=model,
+        model=DEFAULT_TEST_MODEL,
         request_id=0,
         add_step=0,
         max_tokens=2,
@@ -572,7 +558,7 @@ def test_first_chunk_recomputation(
     )
 
     request2 = create_request_for_scheduler_test(
-        model=model,
+        model=DEFAULT_TEST_MODEL,
         request_id=1,
         add_step=0,
         max_tokens=2,
