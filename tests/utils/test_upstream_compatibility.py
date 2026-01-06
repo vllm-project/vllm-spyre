@@ -41,11 +41,12 @@ def test_pin_memory_available():
         try:
             from vllm.utils import is_pin_memory_available  # # noqa
             from vllm.utils import make_tensor_with_pad  # # noqa
+            from vllm.utils import init_cached_hf_modules  # # noqa
         except ImportError as e:
             raise AssertionError(
                 "remove backwards compatibility imports for "
-                "is_pin_memory_available and "
-                "make_tensor_with_pad"
+                "is_pin_memory_available, "
+                "make_tensor_with_pad and init_cached_hf_modules"
             ) from e
 
 

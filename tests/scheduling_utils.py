@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 import copy
 import dataclasses
 import os
@@ -21,10 +22,12 @@ from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.request import Request
 
+
 from vllm_spyre.v1.core.scheduler import (
     ChunkedPrefillSpyreScheduler,
     ContinuousBatchingSpyreScheduler,
 )
+
 
 DISABLE_ASSERTS = False  # used for debugging
 
@@ -191,7 +194,9 @@ def check_scheduler_inference_steps(
     random_prompts: bool = False,
     prefix_caching: bool = False,
     seeds: list[int] = None,
-    extra_assert_func: Callable[[EngineCore, dict[str, Any], bool], Any] = dummy_assert_func,
+    extra_assert_funcs: Iterable[Callable[[EngineCore, dict[str, Any], bool], Any]] = [
+        dummy_assert_func
+    ],
 ):
     """
     Test the scheduler execution by comparing the scheduler attributes at each
@@ -268,7 +273,7 @@ def check_scheduler_inference_steps(
         max_batch_tkv_limit=max_batch_tkv_limit,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=prefix_caching,
-        extra_assert_func=extra_assert_func,
+        extra_assert_funcs=extra_assert_funcs,
     )
 
 
@@ -284,7 +289,9 @@ def validate_scheduler_steps(
     max_batch_tkv_limit: int = -1,
     max_num_batched_tokens: int = None,
     prefix_caching: bool = False,
-    extra_assert_func: Callable[[EngineCore, dict[str, Any], bool], Any] = dummy_assert_func,
+    extra_assert_funcs: Iterable[Callable[[EngineCore, dict[str, Any], bool], Any]] = [
+        dummy_assert_func
+    ],
 ):
     """
     Creates a vllm.v1.engine and runs it step-by-step for the provided requests.
@@ -438,7 +445,8 @@ def validate_scheduler_steps(
                 requested_blocks[req_id] = len(req_ids2blocks[req_id])
                 reserved_blocks[req_id] = req_ids2num_reserved_blocks[req_id]
 
-            extra_assert_func(engine_core, step_ref, DISABLE_ASSERTS)
+            for extra_assert_func in extra_assert_funcs:
+                extra_assert_func(engine_core, step_ref, DISABLE_ASSERTS)
 
         # last step: check that sequences used all their reserved blocks
         # Note: no early stopping, all sequences produce max_num_tokens

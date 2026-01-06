@@ -1,6 +1,7 @@
 """Contains utilities for caching models (instantiated as vLLM endpoints)
 across test cases, to speed up test runtime."""
 
+import functools
 import os
 from typing import Callable, Generic, TypeVar
 
@@ -10,6 +11,8 @@ from spyre_util import DecodeWarmupShapes, ModelInfo, RemoteOpenAIServer, patch_
 from vllm import LLM, EngineArgs
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor
+from vllm.forward_context import get_forward_context
+
 
 from vllm_spyre.v1.sample.golden_token_injector import GoldenTokenInjector
 
@@ -32,7 +35,9 @@ class ModelCache(Generic[T]):
         else:
             self._teardown = teardown_method
 
-        self._preexisting_max_tkv = os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT")
+        # All VLLM_DT env vars must be cleared between cache accesses to avoid polluting new models.
+        # Cache any that are set at test collection time to put them back after clearing the cache
+        self._cache_vllm_dt_env_vars()
 
     def maybe_get(self, runtime_config: dict) -> T | None:
         if runtime_config == self._runtime_config:
@@ -63,15 +68,26 @@ class ModelCache(Generic[T]):
             self._teardown(self._model)
             self._model = None
             self._runtime_config = None
-            if self._preexisting_max_tkv is not None:
-                os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = self._preexisting_max_tkv
-            else:
-                os.environ.pop("VLLM_DT_MAX_BATCH_TKV_LIMIT", None)
+            self._reset_vllm_dt_env_vars()
 
     def _type(self) -> type | None:
         if hasattr(self, "__orig_class__"):
             return self.__orig_class__.__args__[0]
         return None
+
+    def _get_vllm_dt_env_vars(self) -> dict[str, str]:
+        return {k: v for k, v in os.environ.items() if k.startswith("VLLM_DT")}
+
+    def _cache_vllm_dt_env_vars(self):
+        self._preexisting_vllm_dt_env_vars = self._get_vllm_dt_env_vars()
+
+    def _reset_vllm_dt_env_vars(self):
+        # Clear all
+        for k in self._get_vllm_dt_env_vars():
+            os.environ.pop(k, None)
+        # Set back
+        for k, v in self._preexisting_vllm_dt_env_vars.items():
+            os.environ[k] = v
 
 
 class LLMCache:
@@ -276,6 +292,11 @@ class EngineCache:
             worker.model_runner.block_pool = worker.model_runner._make_block_pool()
             worker.model_runner.kv_cache_manager = worker.model_runner._make_kv_cache_manager()
 
+        # 🌶️🌶️🌶️
+        # Set up a wrapper around the model that will store the forward context at each step.
+        # This allows tests to make assertions on the SypreAttentionMetadata.
+        self._wrap_model_forward(engine_core)
+
         return self._cache.set(
             runtime_config,
             engine_core,
@@ -283,6 +304,21 @@ class EngineCache:
 
     def clear(self) -> None:
         self._cache.clear()
+
+    @staticmethod
+    def _wrap_model_forward(engine_core: EngineCore) -> None:
+        # Set up the model to save the forward context at each step
+        _model = engine_core.model_executor.driver_worker.worker.model_runner.model
+        original_model_fwd = _model.forward
+
+        engine_core.forward_context = None
+
+        def __context_forward__(*args, **kwargs):
+            engine_core.forward_context = get_forward_context()
+            return original_model_fwd(*args, **kwargs)
+
+        functools.update_wrapper(__context_forward__, _model.forward)
+        _model.forward = __context_forward__
 
 
 class RemoteOpenAIServerCache:

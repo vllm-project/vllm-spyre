@@ -210,6 +210,11 @@ class SpyrePlatform(Platform):
                         chunk_len_int = int(chunk_len)
                     except (ValueError, TypeError) as e:
                         raise Exception("VLLM_DT_CHUNK_LEN must be an integer") from e
+
+                    logger.info(
+                        "VLLM_DT_CHUNK_LEN was provided. Overriding max_num_batched_tokens to %d",
+                        chunk_len_int,
+                    )
                     scheduler_config.max_num_batched_tokens = chunk_len_int
 
                 assert scheduler_config.max_num_batched_tokens % cls._block_size == 0, (

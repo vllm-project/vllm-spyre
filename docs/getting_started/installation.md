@@ -68,12 +68,6 @@ GitHub.
     uv sync --frozen --active --inexact
     ```
     
-    To include optional linting dependencies, include `--group lint`:
-    
-    ```sh
-    uv sync --frozen --active --inexact --group lint
-    ```
-    
     !!! tip
         The `dev` group (i.e. `--group dev`) is enabled by default.
 
