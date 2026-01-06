@@ -520,3 +520,119 @@ def test_multi_chunk_partial_match_misaligned(
     assert model_runner_output_7.tkv == 385
     assert model_runner_output_7.n_free_blocks == 1
     assert model_runner_output_7.left_padding == {"0": 0, "1": 0}
+
+
+
+
+@pytest.mark.cpu
+@pytest.mark.worker
+@pytest.mark.prefix_caching
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_model_len", [512])
+@pytest.mark.parametrize("max_num_batched_tokens", [256])
+@pytest.mark.parametrize("available_blocks", [16])
+def test_first_chunk_recomputation(
+    model: ModelInfo,
+    monkeypatch: pytest.MonkeyPatch,
+    max_num_seqs: int,
+    max_model_len: int,
+    max_num_batched_tokens: int,
+    available_blocks: int | None,
+    pc_model_runner: ChunkedPrefillModelRunner,
+):
+    """Scenario where two sequences are scheduled with 2 blocks
+    each and a common 1 block prefix. Since chunk size is 4 times the block
+    size, the first two blocks of the first chunk of each request will be
+    padding blocks. In the second request, the third block of the chunk
+    will be recomputed to prevent block table deduplication while the
+    fourth block will be computed from scratch.
+
+    p1 = [00AB]
+    p2 = [00AC]
+
+    Configuration:
+        * max_num_seqs: 2
+        * number of prompts: 2
+            * 0: len = 128,  max tokens = 2, step joining = 0
+            * 1: len = 128, max tokens = 2, step joining = 0
+    """
+    monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
+
+    prompt1 = random_prompt(model=model, seed=0, length=128)
+    prompt2 = prompt1[0:64] + random_prompt(model=model, seed=0, length=128 - 64)
+
+    request1 = create_request_for_scheduler_test(
+        model=model,
+        request_id=0,
+        add_step=0,
+        max_tokens=2,
+        prompt=prompt1,
+        use_golden_token_injection=False,
+        block_hasher=pc_model_runner.request_block_hasher,
+    )
+
+    request2 = create_request_for_scheduler_test(
+        model=model,
+        request_id=1,
+        add_step=0,
+        max_tokens=2,
+        prompt=prompt2,
+        use_golden_token_injection=False,
+        block_hasher=pc_model_runner.request_block_hasher,
+    )
+
+    # Schedule chunk 0 of request 0
+    step_1_sched_output = _schedule_new_request(request1.request, 128)
+    model_runner_output_1 = pc_model_runner.execute_model(step_1_sched_output)
+    _assert_block_tables_and_slot_mappings(
+        attn_metadata=pc_model_runner.model.last_attn_metadata,
+        block_tables=[[0, 0, 1, 2]],
+        slot_mappings=[[0, 0, 1, 2]],
+    )
+
+    assert model_runner_output_1.req_ids == ["0"]
+    assert len(model_runner_output_1.sampled_token_ids) == 1
+    assert model_runner_output_1.tkv == 128
+    assert model_runner_output_1.n_free_blocks == 12
+    assert model_runner_output_1.left_padding == {"0": 128}
+
+    # Schedule chunk 0 of request 1
+    step_2_sched_output = _schedule_new_request(request2.request, 128)
+    model_runner_output_2 = pc_model_runner.execute_model(step_2_sched_output)
+    _assert_block_tables_and_slot_mappings(
+        attn_metadata=pc_model_runner.model.last_attn_metadata,
+        block_tables=[[0, 0, 1, 3]],
+        slot_mappings=[[0, 0, 0, 3]],
+    )
+    # ^This block table and slot mapping is the crux of this test.
+    # The padding blocks align with the slot mapping pointing to block
+    # 0. The third block is a cache hit, but has to be recomputed
+    # because we're in the last chunk with a prefix hit. The fourth
+    # block is not a prefix hit and has to be computed from scratch
+    # in a new block.
+
+    assert model_runner_output_2.req_ids == ["1"]
+    assert len(model_runner_output_2.sampled_token_ids) == 1
+    assert model_runner_output_2.tkv == 128
+    assert model_runner_output_2.n_free_blocks == 9
+    assert model_runner_output_2.left_padding == {"1": 128}
+
+    # Schedule decodes of requests 0 and 1
+    step_3_sched_output = _schedule_running_requests(
+        req_ids=["1", "0"],
+        num_computed_tokens=[128, 128],
+        tokens_to_schedule=[1, 1],
+    )
+    model_runner_output_3 = pc_model_runner.execute_model(step_3_sched_output)
+    _assert_block_tables_and_slot_mappings(
+        attn_metadata=pc_model_runner.model.last_attn_metadata,
+        block_tables=[[1, 2, 4], [1, 3, 5]],
+        slot_mappings=[[4], [5]],
+        slot_slice=slice(0, 1),
+    )
+
+    assert model_runner_output_3.req_ids == ["0", "1"]
+    assert len(model_runner_output_3.sampled_token_ids) == 2
+    assert model_runner_output_3.tkv == 129
+    assert model_runner_output_3.n_free_blocks == 9
+    assert model_runner_output_3.left_padding == {"0": 0, "1": 0}
