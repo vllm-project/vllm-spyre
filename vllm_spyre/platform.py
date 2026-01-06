@@ -86,6 +86,10 @@ class SpyrePlatform(Platform):
         return "spyre"
 
     @classmethod
+    def import_kernels(cls) -> None:
+        pass  # suppress warning
+
+    @classmethod
     def is_async_output_supported(cls, enforce_eager: bool | None) -> bool:
         """
         Check if the current platform supports async output.
@@ -445,6 +449,8 @@ class SpyrePlatform(Platform):
     def pre_register_and_update(cls, parser: FlexibleArgumentParser | None = None) -> None:
         if parser is not None:
             parser.set_defaults(enable_prefix_caching=False)
+            if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
+                parser.set_defaults(max_num_batched_tokens=1024)
 
     @classmethod
     def _check_threading_config(cls, worker_count: int):
