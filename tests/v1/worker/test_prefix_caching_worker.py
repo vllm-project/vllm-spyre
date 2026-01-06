@@ -20,7 +20,8 @@ def test_block_sharing_for_2_chunks(
         add_step=0,
         max_tokens=2,
         prompt=prompt,
-        use_golden_token_injection=True,
+        use_golden_token_injection=False,
+        generate_hf_results=False,
         block_hasher=pc_model_runner.request_block_hasher,
     )
 
@@ -30,7 +31,8 @@ def test_block_sharing_for_2_chunks(
         add_step=0,
         max_tokens=2,
         prompt=prompt,
-        use_golden_token_injection=True,
+        use_golden_token_injection=False,
+        generate_hf_results=False,
         block_hasher=pc_model_runner.request_block_hasher,
     )
 
@@ -98,6 +100,7 @@ def test_multi_chunk_partial_match_misaligned(
         max_tokens=2,
         prompt=prompt1,
         use_golden_token_injection=False,
+        generate_hf_results=False,
         block_hasher=pc_model_runner.request_block_hasher,
     )
 
@@ -108,6 +111,7 @@ def test_multi_chunk_partial_match_misaligned(
         max_tokens=2,
         prompt=prompt2,
         use_golden_token_injection=False,
+        generate_hf_results=False,
         block_hasher=pc_model_runner.request_block_hasher,
     )
 
@@ -264,6 +268,7 @@ def test_first_chunk_recomputation(
         max_tokens=2,
         prompt=prompt1,
         use_golden_token_injection=False,
+        generate_hf_results=False,
         block_hasher=pc_model_runner.request_block_hasher,
     )
 
@@ -274,6 +279,7 @@ def test_first_chunk_recomputation(
         max_tokens=2,
         prompt=prompt2,
         use_golden_token_injection=False,
+        generate_hf_results=False,
         block_hasher=pc_model_runner.request_block_hasher,
     )
 

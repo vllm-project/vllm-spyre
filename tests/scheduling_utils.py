@@ -81,6 +81,7 @@ def create_request_for_scheduler_test(
     max_tokens: int,
     prompt: list[int],
     use_golden_token_injection: bool,
+    generate_hf_results: bool = True,
     block_hasher: Callable[["Request"], list["BlockHash"]] | None = None,
 ) -> SchedulerTestRequest:
     # Creates a request out of a prompt, for use with the scheduler tests.
@@ -92,13 +93,16 @@ def create_request_for_scheduler_test(
         max_tokens=max_tokens, temperature=0.0, logprobs=0, ignore_eos=True
     )
 
-    hf_results = generate_hf_output(
-        model=model,
-        prompts=[prompt],
-        max_new_tokens=max_tokens,
-        ignore_eos=True,
-    )
-    hf = hf_results[0]
+    if generate_hf_results:
+        hf_results = generate_hf_output(
+            model=model,
+            prompts=[prompt],
+            max_new_tokens=max_tokens,
+            ignore_eos=True,
+        )
+        hf = hf_results[0]
+    else:
+        hf = None
 
     if use_golden_token_injection:
         abs_tol = ISCLOSE_ABS_TOL_QUANTIZATION if model.is_quantized else ISCLOSE_ABS_TOL
