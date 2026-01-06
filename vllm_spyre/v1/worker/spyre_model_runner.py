@@ -1805,6 +1805,14 @@ class SpyrePoolingModelRunner(
         return model_output
 
 
+@dataclass
+class ChunkedPrefillPlan:
+    chunk_count: int
+    padding_blocks: int
+    usable_cache_blocks: int
+    total_cache_blocks: int
+
+
 class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
     def __init__(
         self,
@@ -2139,7 +2147,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         return model_inputs
 
-    def _plan_chunking(self, scheduler_request: Request) -> tuple[int, int, int, int]:
+    def _plan_chunking(self, scheduler_request: Request) -> ChunkedPrefillPlan:
         prompt_len = len(scheduler_request.prompt_token_ids)
 
         chunk_size = self.chunk_size
@@ -2195,7 +2203,12 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             usable_blocks = 0
             n_hit = 0
 
-        return chunk_count, left_blocks, usable_blocks, n_hit
+        return ChunkedPrefillPlan(
+            chunk_count=chunk_count,
+            padding_blocks=left_blocks,
+            usable_cache_blocks=usable_blocks,
+            total_cache_blocks=n_hit,
+        )
 
     def add_new_request(self, request: NewRequestData):
         req_id = request.req_id
@@ -2227,10 +2240,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             eos_token_id=None,
             block_hasher=self.request_block_hasher,
         )
-        (chunk_count, left_blocks, usable_blocks, total_hit_blocks) = self._plan_chunking(
-            scheduler_request
-        )
-        num_cached_tokens = usable_blocks * self.block_size
+        chunk_plan = self._plan_chunking(scheduler_request)
+        num_cached_tokens = chunk_plan.usable_cache_blocks * self.block_size
 
         self.prefix_cache_stats = PrefixCacheStats(
             # We only support single-request chunked prefill so this is always 1
@@ -2260,10 +2271,10 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             # usage
             left_padding=0,
             scheduler_request=scheduler_request,
-            chunk_count=chunk_count,
-            padding_blocks=left_blocks,
-            usable_blocks=usable_blocks,
-            total_hit_blocks=total_hit_blocks,
+            chunk_count=chunk_plan.chunk_count,
+            padding_blocks=chunk_plan.padding_blocks,
+            usable_blocks=chunk_plan.usable_cache_blocks,
+            total_hit_blocks=chunk_plan.total_cache_blocks,
         )
 
         self.requests[req_id] = req_state

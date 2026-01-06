@@ -34,14 +34,12 @@ def test_block_sharing_for_2_chunks(
         block_hasher=pc_model_runner.request_block_hasher,
     )
 
-    (chunk_count, left_blocks, usable_blocks, n_hit) = pc_model_runner._plan_chunking(
-        request1.request
-    )
+    chunk_plan = pc_model_runner._plan_chunking(request1.request)
 
-    assert chunk_count == 2
-    assert left_blocks == 1
-    assert usable_blocks == 0
-    assert n_hit == 0
+    assert chunk_plan.chunk_count == 2
+    assert chunk_plan.padding_blocks == 1
+    assert chunk_plan.usable_cache_blocks == 0
+    assert chunk_plan.total_cache_blocks == 0
 
     kv_cache_manager = pc_model_runner.kv_cache_manager
 
@@ -49,14 +47,12 @@ def test_block_sharing_for_2_chunks(
     kv_cache_manager.cache_blocks(request1.request, 192)
     kv_cache_manager.free(request1.request.request_id)
 
-    (chunk_count, left_blocks, usable_blocks, n_hit) = pc_model_runner._plan_chunking(
-        request2.request
-    )
+    chunk_plan = pc_model_runner._plan_chunking(request2.request)
 
-    assert chunk_count == 2
-    assert left_blocks == 1
-    assert usable_blocks == 1
-    assert n_hit == 3
+    assert chunk_plan.chunk_count == 2
+    assert chunk_plan.padding_blocks == 1
+    assert chunk_plan.usable_cache_blocks == 1
+    assert chunk_plan.total_cache_blocks == 3
 
 
 @pytest.mark.cpu
