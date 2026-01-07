@@ -34,8 +34,7 @@ jobs:
       with:
         path: ~/.cache/prek
         key: >
-            ${{ format('pre-commit-{0}-{1}',
-            steps.setup-python.outputs.python-version,
+            ${{ format('pre-commit-{0}',
             hashFiles('.pre-commit-config.yaml')
             ) }}
 
