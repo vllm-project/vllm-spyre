@@ -60,6 +60,8 @@ def test_generic_model_chunk_size_default(
         "1024",
         "-tp",
         "4",
+        "--swap-space",  # to prevent a validation error in the 16GB memory test env.
+        "1",
     ]
 
     with environ_checkpoint():
