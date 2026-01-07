@@ -1544,10 +1544,10 @@ class SpyrePoolingModelRunner(
             # necessary. This solve issues of running forked tests that share
             # some resources from parent to children which can have problems
             # of caching even though the test run in isolated subprocesses.
-            try:
+
+            if SpyrePlatform.sendnn_configured():
                 from torch_sendnn import torch_sendnn  # noqa: F401
-            except ImportError:
-                print("WARNING: Disabled: torch_sendnn")
+
             with utils_spyre.stagger_region(
                 envs_spyre.VLLM_SPYRE_MAX_LOAD_PROCESSES, self.parallel_config.world_size, self.rank
             ):
@@ -1805,6 +1805,14 @@ class SpyrePoolingModelRunner(
         return model_output
 
 
+@dataclass
+class ChunkedPrefillPlan:
+    chunk_count: int
+    padding_blocks: int
+    usable_cache_blocks: int
+    total_cache_blocks: int
+
+
 class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
     def __init__(
         self,
@@ -1947,9 +1955,10 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             # blocks will the the number of blocks to recompute.
             if chunk_i == chunks_from_cache:
                 blocks_to_recompute = request.total_hit_blocks - request.usable_blocks
-                # Masking these blocks must account for left-padding: The first block of a chunk is
-                # block # {chunk_i * self.chunk_blocks_count - request.padding_blocks}
-                blocks_to_recompute += request.padding_blocks
+                # For the first block we must also account for left-padding blocks:
+                # blocks_to_recompute = total_hit_blocks - usable_blocks + padding_blocks
+                if chunk_i == 0:
+                    blocks_to_recompute += request.padding_blocks
 
         slot_mapping = []
         for i in range(self.chunk_blocks_count):
@@ -2139,7 +2148,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         return model_inputs
 
-    def _plan_chunking(self, scheduler_request: Request) -> tuple[int, int, int, int]:
+    def _plan_chunking(self, scheduler_request: Request) -> ChunkedPrefillPlan:
         prompt_len = len(scheduler_request.prompt_token_ids)
 
         chunk_size = self.chunk_size
@@ -2195,7 +2204,12 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             usable_blocks = 0
             n_hit = 0
 
-        return chunk_count, left_blocks, usable_blocks, n_hit
+        return ChunkedPrefillPlan(
+            chunk_count=chunk_count,
+            padding_blocks=left_blocks,
+            usable_cache_blocks=usable_blocks,
+            total_cache_blocks=n_hit,
+        )
 
     def add_new_request(self, request: NewRequestData):
         req_id = request.req_id
@@ -2227,10 +2241,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             eos_token_id=None,
             block_hasher=self.request_block_hasher,
         )
-        (chunk_count, left_blocks, usable_blocks, total_hit_blocks) = self._plan_chunking(
-            scheduler_request
-        )
-        num_cached_tokens = usable_blocks * self.block_size
+        chunk_plan = self._plan_chunking(scheduler_request)
+        num_cached_tokens = chunk_plan.usable_cache_blocks * self.block_size
 
         self.prefix_cache_stats = PrefixCacheStats(
             # We only support single-request chunked prefill so this is always 1
@@ -2260,10 +2272,10 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             # usage
             left_padding=0,
             scheduler_request=scheduler_request,
-            chunk_count=chunk_count,
-            padding_blocks=left_blocks,
-            usable_blocks=usable_blocks,
-            total_hit_blocks=total_hit_blocks,
+            chunk_count=chunk_plan.chunk_count,
+            padding_blocks=chunk_plan.padding_blocks,
+            usable_blocks=chunk_plan.usable_cache_blocks,
+            total_hit_blocks=chunk_plan.total_cache_blocks,
         )
 
         self.requests[req_id] = req_state

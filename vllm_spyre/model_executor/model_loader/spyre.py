@@ -268,10 +268,9 @@ class FmsModelBase(nn.Module):
             # necessary. This solve issues of running forked tests that share
             # some resources from parent to children which can have problems
             # of caching even though the test run in isolated subprocesses.
-            try:
+
+            if SpyrePlatform.sendnn_configured():
                 from torch_sendnn import torch_sendnn  # noqa: F401
-            except ImportError:
-                print("WARNING: Disabled: torch_sendnn")
 
             self.model = torch.compile(
                 self.model,
