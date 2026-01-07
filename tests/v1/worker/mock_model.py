@@ -229,7 +229,9 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
         attn_metadata = self.model.last_attn_metadata
         expected_block_table = torch.tensor(block_tables)
 
-        assert torch.equal(attn_metadata.block_table, expected_block_table)
+        assert torch.equal(attn_metadata.block_table, expected_block_table), (
+            f"Actual block table {attn_metadata.block_table}"
+        )
 
         slot_mapping_tensor_list = []
         for slot_mapping in slot_mappings:
@@ -244,7 +246,9 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
             slot_mapping_tensor_list.append(slot_mapping_tensor[slot_slice])
         expected_slot_mapping = torch.stack(slot_mapping_tensor_list)
 
-        assert torch.equal(attn_metadata.slot_mapping, expected_slot_mapping)
+        assert torch.equal(attn_metadata.slot_mapping, expected_slot_mapping), (
+            f"Actual slot mapping {attn_metadata.slot_mapping}"
+        )
 
     @classmethod
     def build(

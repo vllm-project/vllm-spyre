@@ -336,3 +336,150 @@ def test_first_chunk_recomputation(
     assert model_runner_output_3.tkv == 129
     assert model_runner_output_3.n_free_blocks == 9
     assert model_runner_output_3.left_padding == {"0": 0, "1": 0}
+
+
+@pytest.mark.cpu
+@pytest.mark.worker
+@pytest.mark.prefix_caching
+def test_middle_chunk_recomputation_with_padding(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Scenario where two sequences are scheduled. The first one has
+    8 blocks and the second 10, where the first 8 blocks are the same
+    as in the first sequence. Since the chunk size is 4 times the block
+    size, the first two blocks of the first chunk of the second request
+    will be padding blocks. Since the second chunk of the second request
+    is a full hit and is not the last chunk, it can be skipped. The third
+    chunk has a cache hit of two blocks, which have to be recomputed to
+    prevent duplicates in the block table while the two last blocks will
+    be computed from scratch.
+
+    This test also exercises the optimization where the tkv of existing
+    requests is increased and padding blocks are added to the left in the
+    decode batch to accommodate new requests with larger prompts.
+
+    p1 = [ ABCD | EFGH ]
+    p2 = [ 00AB | CDEF | GHIJ ]
+
+    Configuration:
+        * max_num_seqs: 2
+        * number of prompts: 2
+            * 0: len = 512,  max tokens = 2, step joining = 0
+            * 1: len = 640, max tokens = 2, step joining = 0
+    """
+    monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
+
+    pc_model_runner = InstrumentedModelRunner.build(
+        monkeypatch=monkeypatch,
+        max_num_batched_tokens=256,
+        available_blocks=32,
+        max_model_len=1024,
+    )
+
+    model = InstrumentedModelRunner.DEFAULT_TEST_MODEL
+    prompt1 = random_prompt(model=model, seed=0, length=512)
+    prompt2 = prompt1[0:512] + random_prompt(model=model, seed=0, length=128)
+
+    request1 = create_request_for_scheduler_test(
+        model=model,
+        request_id=0,
+        add_step=0,
+        max_tokens=2,
+        prompt=prompt1,
+        use_golden_token_injection=False,
+        generate_hf_results=False,
+        block_hasher=pc_model_runner.request_block_hasher,
+    )
+
+    request2 = create_request_for_scheduler_test(
+        model=model,
+        request_id=1,
+        add_step=0,
+        max_tokens=2,
+        prompt=prompt2,
+        use_golden_token_injection=False,
+        generate_hf_results=False,
+        block_hasher=pc_model_runner.request_block_hasher,
+    )
+
+    # Schedule chunk 0 of request 0
+    model_runner_output_1 = pc_model_runner.execute_new_request(request1.request, 256)
+    pc_model_runner.assert_block_tables_and_slot_mappings(
+        block_tables=[[1, 2, 3, 4]],
+        slot_mappings=[[1, 2, 3, 4]],
+    )
+
+    assert model_runner_output_1.req_ids == ["0"]
+    assert len(model_runner_output_1.sampled_token_ids) == 0
+    assert model_runner_output_1.tkv == 512
+    assert model_runner_output_1.n_free_blocks == 22
+    assert model_runner_output_1.left_padding == {"0": 0}
+    assert model_runner_output_1.prefix_cache_hit_len == {"0": 0}
+
+    # Schedule chunk 1 of request 0
+    model_runner_output_2 = pc_model_runner.execute_running_requests(
+        req_ids=["0"],
+        num_computed_tokens=[256],
+        tokens_to_schedule=[256],
+    )
+    pc_model_runner.assert_block_tables_and_slot_mappings(
+        block_tables=[[1, 2, 3, 4, 5, 6, 7, 8]],
+        slot_mappings=[[5, 6, 7, 8]],
+    )
+
+    assert model_runner_output_2.req_ids == ["0"]
+    assert len(model_runner_output_2.sampled_token_ids) == 1
+    assert model_runner_output_2.tkv == 512
+    assert model_runner_output_2.n_free_blocks == 22
+    assert model_runner_output_2.left_padding == {"0": 0}
+    assert model_runner_output_2.prefix_cache_hit_len == {}
+
+    # Schedule chunk 0 of request 1
+    model_runner_output_3 = pc_model_runner.execute_new_request(request2.request, 256)
+    # chunk loaded from cache
+    assert pc_model_runner.model.last_attn_metadata is None
+
+    assert model_runner_output_3.req_ids == ["1"]
+    assert len(model_runner_output_3.sampled_token_ids) == 0
+    assert model_runner_output_3.tkv == 512
+    assert model_runner_output_3.n_free_blocks == 11
+    assert model_runner_output_3.left_padding == {"1": 128}
+    assert model_runner_output_3.prefix_cache_hit_len == {"1": 384}
+
+    # Schedule chunk 2 of request 1 skipping the middle chunk execution because
+    # it's loaded from cache. We can consider the prefix_cache_hit_len
+    # above to have been computed
+    model_runner_output_4 = pc_model_runner.execute_running_requests(
+        req_ids=["1"],
+        num_computed_tokens=[384],
+        tokens_to_schedule=[256],
+    )
+    pc_model_runner.assert_block_tables_and_slot_mappings(
+        block_tables=[[0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]],
+        slot_mappings=[[0, 0, 9, 10]],
+    )
+
+    assert model_runner_output_4.req_ids == ["1"]
+    assert len(model_runner_output_4.sampled_token_ids) == 1
+    assert model_runner_output_4.tkv == 640
+    assert model_runner_output_4.n_free_blocks == 11
+    assert model_runner_output_4.left_padding == {"1": 128}
+    assert model_runner_output_4.prefix_cache_hit_len == {}
+
+    # Schedule decodes of requests 0 and 1
+    model_runner_output_5 = pc_model_runner.execute_running_requests(
+        req_ids=["1", "0"],
+        num_computed_tokens=[640, 512],
+        tokens_to_schedule=[1, 1],
+    )
+    pc_model_runner.assert_block_tables_and_slot_mappings(
+        block_tables=[[0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 11], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12]],
+        slot_mappings=[[11], [12]],
+        slot_slice=slice(0, 1),
+    )
+
+    assert model_runner_output_5.req_ids == ["0", "1"]
+    assert len(model_runner_output_5.sampled_token_ids) == 2
+    assert model_runner_output_5.tkv == 641
+    assert model_runner_output_5.n_free_blocks == 11
+    assert model_runner_output_5.left_padding == {"0": 128, "1": 0}
