@@ -261,20 +261,52 @@ def get_spyre_model_list(isEmbeddings=False, isScoring=False, full_size_models=F
     return test_model_list
 
 
+REFERENCE_MODELS = {}
+
+
+def register_model_info(name: str, revision: str, is_quantized: bool = False):
+    REFERENCE_MODELS[name] = ModelInfo(
+        name=name,
+        revision=revision,
+        is_quantized=is_quantized,
+    )
+
+
+register_model_info(
+    name="sentence-transformers/all-roberta-large-v1",
+    revision="cf74d8acd4f198de950bf004b262e6accfed5d2c",
+)
+register_model_info(
+    name="cross-encoder/stsb-roberta-large",
+    revision="2b12c2c0088918e76151fd5937b7bba986ef1f98",
+)
+register_model_info(
+    name="ibm-ai-platform/micro-g3.3-8b-instruct-1b",
+    revision="6e9c6465a9d7e5e9fa35004a29f0c90befa7d23f",
+)
+register_model_info(
+    name="ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8",
+    revision="0dff8bacb968836dbbc7c2895c6d9ead0a05dc9e",
+    is_quantized=True,
+)
+register_model_info(
+    name="ibm-granite/granite-3.3-8b-instruct",
+    revision="51dd4bc2ade4059a6bd87649d68aa11e4fb2529b",
+)
+register_model_info(
+    name="ibm-granite/granite-3.3-8b-instruct-FP8",
+    revision="4b5990b8d402a75febe0086abbf1e490af494e3d",
+)
+
+
 def _default_test_models(isEmbeddings=False, isScoring=False, full_size_models=False):
     """Return the default set of test models as pytest parameterizations"""
     if isEmbeddings:
-        model = ModelInfo(
-            name="sentence-transformers/all-roberta-large-v1",
-            revision="cf74d8acd4f198de950bf004b262e6accfed5d2c",
-        )
+        model = REFERENCE_MODELS["sentence-transformers/all-roberta-large-v1"]
         return [pytest.param(model, marks=[pytest.mark.embedding], id=model.name)]
 
     if isScoring:
-        model = ModelInfo(
-            name="cross-encoder/stsb-roberta-large",
-            revision="2b12c2c0088918e76151fd5937b7bba986ef1f98",
-        )
+        model = REFERENCE_MODELS["cross-encoder/stsb-roberta-large"]
         return [pytest.param(model, marks=[pytest.mark.scoring], id=model.name)]
 
     # Decoders
@@ -282,15 +314,8 @@ def _default_test_models(isEmbeddings=False, isScoring=False, full_size_models=F
     # but by default the `pytest.mark.quantized` marker is de-selected unless
     # the test command includes `-m quantized`.
     if not full_size_models:
-        tinygranite = ModelInfo(
-            name="ibm-ai-platform/micro-g3.3-8b-instruct-1b",
-            revision="6e9c6465a9d7e5e9fa35004a29f0c90befa7d23f",
-        )
-        tinygranite_fp8 = ModelInfo(
-            name="ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8",
-            revision="0dff8bacb968836dbbc7c2895c6d9ead0a05dc9e",
-            is_quantized=True,
-        )
+        tinygranite = REFERENCE_MODELS["ibm-ai-platform/micro-g3.3-8b-instruct-1b"]
+        tinygranite_fp8 = REFERENCE_MODELS["ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8"]
         params = [
             pytest.param(tinygranite, marks=[pytest.mark.decoder], id=tinygranite.name),
             pytest.param(
@@ -302,14 +327,8 @@ def _default_test_models(isEmbeddings=False, isScoring=False, full_size_models=F
         return params
 
     # Full-size decoders
-    granite = ModelInfo(
-        name="ibm-granite/granite-3.3-8b-instruct",
-        revision="51dd4bc2ade4059a6bd87649d68aa11e4fb2529b",
-    )
-    granite_fp8 = ModelInfo(
-        name="ibm-granite/granite-3.3-8b-instruct-FP8",
-        revision="4b5990b8d402a75febe0086abbf1e490af494e3d",
-    )
+    granite = REFERENCE_MODELS["ibm-granite/granite-3.3-8b-instruct"]
+    granite_fp8 = REFERENCE_MODELS["ibm-granite/granite-3.3-8b-instruct-FP8"]
     params = [
         pytest.param(granite, marks=[pytest.mark.decoder], id=granite.name),
         pytest.param(

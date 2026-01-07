@@ -5,7 +5,7 @@ from vllm import EngineArgs
 
 
 from vllm_spyre.platform import SpyrePlatform
-from spyre_util import environ_checkpoint
+from spyre_util import environ_checkpoint, REFERENCE_MODELS
 
 try:
     # old
@@ -49,8 +49,17 @@ def test_generic_model_chunk_size_default(
         return False
 
     monkeypatch.setattr(SpyrePlatform, "sendnn_configured", sendnn_configured)
-
-    common_args = ["--model", model_name, "--max-model-len", "1024", "-tp", "4"]
+    model = REFERENCE_MODELS[model_name]
+    common_args = [
+        "--model",
+        model.name,
+        "--revision",
+        model.revision,
+        "--max-model-len",
+        "1024",
+        "-tp",
+        "4",
+    ]
 
     with environ_checkpoint():
         # Test that the default is None but is changed to 2024 by
