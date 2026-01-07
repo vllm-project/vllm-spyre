@@ -127,6 +127,7 @@ def test_multi_chunk_partial_match_misaligned(
     assert model_runner_output_1.tkv == 384
     assert model_runner_output_1.n_free_blocks == 8
     assert model_runner_output_1.left_padding == {"0": 0}
+    assert model_runner_output_1.prefix_cache_hit_len == {"0": 0}
 
     # Schedule chunk 1 of request 0
     model_runner_output_2 = pc_model_runner.execute_running_requests(
@@ -172,6 +173,7 @@ def test_multi_chunk_partial_match_misaligned(
     assert model_runner_output_4.tkv == 384
     assert model_runner_output_4.n_free_blocks == 1
     assert model_runner_output_4.left_padding == {"1": 0}
+    assert model_runner_output_4.prefix_cache_hit_len == {"1": 128}
 
     # Schedule chunk 1 of request 1
     model_runner_output_5 = pc_model_runner.execute_running_requests(
@@ -295,6 +297,7 @@ def test_first_chunk_recomputation(
     assert model_runner_output_1.tkv == 128
     assert model_runner_output_1.n_free_blocks == 12
     assert model_runner_output_1.left_padding == {"0": 128}
+    assert model_runner_output_1.prefix_cache_hit_len == {}
 
     # Schedule chunk 0 of request 1
     model_runner_output_2 = pc_model_runner.execute_new_request(request2.request, 128)
@@ -314,6 +317,7 @@ def test_first_chunk_recomputation(
     assert model_runner_output_2.tkv == 128
     assert model_runner_output_2.n_free_blocks == 9
     assert model_runner_output_2.left_padding == {"1": 128}
+    assert model_runner_output_2.prefix_cache_hit_len == {}
 
     # Schedule decodes of requests 0 and 1
     model_runner_output_3 = pc_model_runner.execute_running_requests(
