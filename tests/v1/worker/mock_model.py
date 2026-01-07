@@ -13,7 +13,6 @@ from vllm.v1.request import Request
 from vllm.v1.sample.metadata import SamplingMetadata
 from vllm.v1.sample.sampler import Sampler
 
-import vllm_spyre.envs as envs_spyre
 from vllm_spyre.model_executor.model_loader.spyre import SpyreAttentionMetadata
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import ChunkedPrefillModelRunner
@@ -44,10 +43,6 @@ class MockSpyreCausalLM:
 
         # number of right pads (relevant for continuous batching only)
         self.n_pads_right = 0
-
-        self._mask_dtype = (
-            torch.float16 if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn" else torch.float32
-        )
 
         self.model = MockContinuousBatchingFmsModel()
 
@@ -92,9 +87,6 @@ class MockSpyreCausalLM:
     ) -> SamplerOutput | None:
         next_tokens = self.sampler(logits, sampling_metadata)
         return next_tokens
-
-    def get_mask_dtype(self) -> torch.dtype:
-        return self._mask_dtype
 
 
 class InstrumentedModelRunner(ChunkedPrefillModelRunner):
