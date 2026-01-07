@@ -7,7 +7,7 @@ Brief overview of what has been implemented so far in VLLM to test / debug conti
 * **File paths:**
     * `examples/offline_inference/cb_spyre_inference.py`
     * `examples/offline_inference/long_context.py`
-* **Purpose:** Debugging (ie. using manual execution)
+* **Purpose:** Debugging (i.e. using manual execution)
 
 ### Description
 
@@ -81,7 +81,11 @@ For `long_context.py`: the same parameters, but with some differences:
     VLLM_SPYRE_TEST_MODEL_LIST='tiny-granite-3.2-8b' python -m pytest -svx -m "spyre and cb" --forked tests/e2e/test_spyre_cb.py
     ```
 
+<!-- markdownlint-disable MD024 no-duplicate-heading -->
+
 ### Description
+
+<!-- markdownlint-enable MD024 -->
 
 Unit tests are designed for automated and systematic execution to verify that CB behaves as expected for different scenarios. For each scenario (i.e. configuration of parameters), the test either passes or fails. When a test suite fails, identifying which specific test case failed is often more informative than the failure message itself. Below is a brief description of the different unit tests targeting CB. The description can also be found in the docstring of the different test functions:
 
@@ -102,6 +106,7 @@ Output tests checks the correctness of the output of CB on a set of prompts. For
 
 !!! note inline end
     This applies for sendnn backend, on CPU the tokens need to additionally be exactly the same for the test to pass
+
 * The test passes if: the logprobs of HF on CPU and vLLM (on Spyre or CPU depending on the backend) are compared, and the test passes only if the pairwise relative differences of the values are all below a threshold: `math.isclose(hf_logprob, vllm_logprob, rel_tol=0.35)`. Otherwise it fails. There is no logic that takes into account the fact that the tokens might becomes different at some point, making the logits diverging.
 
 #### Scheduler Steps Tests

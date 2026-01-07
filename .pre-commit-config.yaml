@@ -1,0 +1,35 @@
+default_install_hook_types:
+  - pre-commit
+  - commit-msg
+default_stages:
+  - pre-commit # Run locally
+  - manual # Run in CI
+repos:
+- repo: https://github.com/astral-sh/ruff-pre-commit
+  rev: v0.14.0
+  hooks:
+  - id: ruff
+    args: [--output-format, github, --fix]
+  - id: ruff-format
+    # args: [--diff] # Uncomment to show diffs (not reformatting files)
+- repo: https://github.com/crate-ci/typos
+  rev: v1.41.0
+  hooks:
+  - id: typos
+    exclude: 'tests/hf_cache\.json'
+- repo: https://github.com/igorshubovych/markdownlint-cli
+  rev: v0.45.0
+  hooks:
+  - id: markdownlint
+    args: [
+      "--config",
+      "pyproject.toml",
+      "--configPointer",
+      "/tool/markdownlint",
+    ]
+    exclude: '.*\.inc\.md'
+    stages: [manual] # Only run in CI
+- repo: https://github.com/rhysd/actionlint
+  rev: v1.7.7
+  hooks:
+  - id: actionlint

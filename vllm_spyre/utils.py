@@ -24,8 +24,9 @@ def stagger_region(limit: int, world_size: int, rank: int):
             if rank < (_set + 1) * limit:
                 break
             torch.distributed.barrier()
-        logger.info("Stagger Region Enter (Set: %d) of %d", _set + 1,
-                    math.ceil(world_size / float(limit)))
+        logger.info(
+            "Stagger Region Enter (Set: %d) of %d", _set + 1, math.ceil(world_size / float(limit))
+        )
     yield {}
 
     # TODO: make sure this isn't called excessively
@@ -37,3 +38,10 @@ def stagger_region(limit: int, world_size: int, rank: int):
                 continue
             torch.distributed.barrier()
         logger.info("Stagger Region: All Complete")
+
+
+def exact_div(a: int, b: int) -> int:
+    q, r = divmod(a, b)
+    if r != 0:
+        raise ValueError(f"{a} is not exactly divisible by {b}")
+    return q

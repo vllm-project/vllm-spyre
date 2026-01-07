@@ -68,12 +68,6 @@ GitHub.
     uv sync --frozen --active --inexact
     ```
     
-    To include optional linting dependencies, include `--group lint`:
-    
-    ```sh
-    uv sync --frozen --active --inexact --group lint
-    ```
-    
     !!! tip
         The `dev` group (i.e. `--group dev`) is enabled by default.
 
@@ -195,8 +189,12 @@ Resolved 155 packages in 45ms
   help: `xformers` (v0.0.28.post1) was included because `vllm-spyre` (v0.1.0) depends on `vllm` (v0.2.5) which depends on `xformers`
 ```
 
+<!-- markdownlint-disable MD051 link-fragments -->
+
 To avoid this error, make sure to include the dependency `--overrides` as described
 in the installation from a [Release (PyPI)](#release-pypi) section.
+
+<!-- markdownlint-enable MD051 -->
 
 ### No solution found when resolving dependencies
 
@@ -233,5 +231,9 @@ $ uv pip install vllm-spyre==0.4.1
       and you require vllm-spyre==0.4.1, we can conclude that your requirements are unsatisfiable.
 ```
 
+<!-- markdownlint-disable MD051 link-fragments -->
+
 To avoid this error, make sure to include the dependency `--overrides` as described
 in the installation from a [Release (PyPI)](#release-pypi) section.
+
+<!-- markdownlint-enable MD051 -->
