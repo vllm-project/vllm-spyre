@@ -28,7 +28,7 @@ jobs:
         cache-dependency-glob: |
           pyproject.toml
     - name: "Install dependencies"
-      run: uv sync --frozen
+      run: VLLM_TARGET_DEVICE=empty uv sync --frozen
 
     - uses: actions/cache@v4
       with:
