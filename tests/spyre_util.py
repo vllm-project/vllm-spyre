@@ -7,6 +7,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Any, NamedTuple
+from contextlib import contextmanager
 
 import openai
 import pytest
@@ -18,6 +19,7 @@ from vllm.entrypoints.openai.cli_args import make_arg_parser
 from vllm.v1.engine.core import EngineCore
 
 from vllm_spyre.platform import SpyrePlatform
+from vllm_spyre import envs
 
 try:
     # old
@@ -556,3 +558,14 @@ def verify_slot_mappings(engine_core: EngineCore, step_ref: dict[str, Any], disa
     else:
         print(f"{actual_slot_mapping=}")
         print(f"{reference_slot_mapping=}")
+
+
+@contextmanager
+def environ_checkpoint():
+    original_environ = os.environ.copy()
+    try:
+        yield
+    finally:
+        os.environ.clear()
+        os.environ.update(original_environ)
+        envs.clear_env_cache()
