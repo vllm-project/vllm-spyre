@@ -15,7 +15,7 @@ from vllm.v1.sample.sampler import Sampler
 
 from vllm_spyre.model_executor.model_loader.spyre import SpyreAttentionMetadata
 from vllm_spyre.platform import SpyrePlatform
-from vllm_spyre.v1.worker.spyre_model_runner import ChunkedPrefillModelRunner
+from vllm_spyre.v1.worker.spyre_model_runner import ChunkedPrefillModelRunner, ChunkedPrefillPlan
 
 
 class MockContinuousBatchingFmsModel:
@@ -48,6 +48,7 @@ class MockSpyreCausalLM:
 
         self.vocab_size = vllm_config.model_config.get_vocab_size()
 
+        # These variables are here for future test scenarios to use
         self.last_input_ids: torch.Tensor | None = None
         self.last_positions: torch.Tensor | None = None
         self.last_masks: torch.Tensor | None = None
@@ -64,6 +65,7 @@ class MockSpyreCausalLM:
         masks: torch.Tensor,
         is_prompt: bool,
     ) -> torch.Tensor:
+        # These variables are here for future test scenarios to use
         self.last_input_ids = input_ids
         self.last_positions = positions
         self.last_masks = masks
@@ -112,6 +114,7 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
         scheduler_output: SchedulerOutput,
         **kwargs,
     ) -> ModelRunnerOutput:
+        # These variables are here for future test scenarios to use
         self.model.last_input_ids = None
         self.model.last_positions = None
         self.model.last_masks = None
@@ -241,6 +244,37 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
         assert torch.equal(attn_metadata.slot_mapping, expected_slot_mapping), (
             f"Actual slot mapping {attn_metadata.slot_mapping}"
         )
+
+    def verify_model_runner_output(
+        self,
+        model_runner_output: ModelRunnerOutput,
+        req_ids: list[str],
+        num_sampled_token_ids: int,
+        tkv: int,
+        n_free_blocks: int,
+        left_padding: dict[str, int],
+        prefix_cache_hit_len: dict[str, int] | None = None,
+    ) -> None:
+        assert model_runner_output.req_ids == req_ids
+        assert len(model_runner_output.sampled_token_ids) == num_sampled_token_ids
+        assert model_runner_output.tkv == tkv
+        assert model_runner_output.n_free_blocks == n_free_blocks
+        assert model_runner_output.left_padding == left_padding
+        if prefix_cache_hit_len is not None:
+            assert model_runner_output.prefix_cache_hit_len == prefix_cache_hit_len
+
+    def verify_chunk_plan(
+        self,
+        chunk_plan: ChunkedPrefillPlan,
+        chunk_count: int,
+        padding_blocks: int,
+        usable_cache_blocks: int = 0,
+        total_cache_blocks: int = 0,
+    ) -> None:
+        assert chunk_plan.chunk_count == chunk_count
+        assert chunk_plan.padding_blocks == padding_blocks
+        assert chunk_plan.usable_cache_blocks == usable_cache_blocks
+        assert chunk_plan.total_cache_blocks == total_cache_blocks
 
     @classmethod
     def build(

@@ -37,11 +37,11 @@ def test_block_sharing_for_2_chunks(
     )
 
     chunk_plan = pc_model_runner._plan_chunking(request1.request)
-
-    assert chunk_plan.chunk_count == 2
-    assert chunk_plan.padding_blocks == 1
-    assert chunk_plan.usable_cache_blocks == 0
-    assert chunk_plan.total_cache_blocks == 0
+    pc_model_runner.verify_chunk_plan(
+        chunk_plan=chunk_plan,
+        chunk_count=2,
+        padding_blocks=1,
+    )
 
     kv_cache_manager = pc_model_runner.kv_cache_manager
 
@@ -50,11 +50,13 @@ def test_block_sharing_for_2_chunks(
     kv_cache_manager.free(request1.request.request_id)
 
     chunk_plan = pc_model_runner._plan_chunking(request2.request)
-
-    assert chunk_plan.chunk_count == 2
-    assert chunk_plan.padding_blocks == 1
-    assert chunk_plan.usable_cache_blocks == 1
-    assert chunk_plan.total_cache_blocks == 3
+    pc_model_runner.verify_chunk_plan(
+        chunk_plan=chunk_plan,
+        chunk_count=2,
+        padding_blocks=1,
+        usable_cache_blocks=1,
+        total_cache_blocks=3,
+    )
 
 
 @pytest.mark.cpu
@@ -121,13 +123,15 @@ def test_multi_chunk_partial_match_misaligned(
         block_tables=[[1, 2]],
         slot_mappings=[[1, 2]],
     )
-
-    assert model_runner_output_1.req_ids == ["0"]
-    assert model_runner_output_1.sampled_token_ids == []
-    assert model_runner_output_1.tkv == 384
-    assert model_runner_output_1.n_free_blocks == 8
-    assert model_runner_output_1.left_padding == {"0": 0}
-    assert model_runner_output_1.prefix_cache_hit_len == {"0": 0}
+    pc_model_runner.verify_model_runner_output(
+        model_runner_output_1,
+        req_ids=["0"],
+        num_sampled_token_ids=0,
+        tkv=384,
+        n_free_blocks=8,
+        left_padding={"0": 0},
+        prefix_cache_hit_len={"0": 0},
+    )
 
     # Schedule chunk 1 of request 0
     model_runner_output_2 = pc_model_runner.execute_running_requests(
@@ -139,12 +143,15 @@ def test_multi_chunk_partial_match_misaligned(
         block_tables=[[1, 2, 3, 4]],
         slot_mappings=[[3, 4]],
     )
-
-    assert model_runner_output_2.req_ids == ["0"]
-    assert model_runner_output_2.sampled_token_ids == []
-    assert model_runner_output_2.tkv == 384
-    assert model_runner_output_2.n_free_blocks == 8
-    assert model_runner_output_2.left_padding == {"0": 0}
+    pc_model_runner.verify_model_runner_output(
+        model_runner_output_2,
+        req_ids=["0"],
+        num_sampled_token_ids=0,
+        tkv=384,
+        n_free_blocks=8,
+        left_padding={"0": 0},
+        prefix_cache_hit_len={"0": 0},
+    )
 
     # Schedule chunk 2 of request 0
     model_runner_output_3 = pc_model_runner.execute_running_requests(
@@ -156,24 +163,28 @@ def test_multi_chunk_partial_match_misaligned(
         block_tables=[[1, 2, 3, 4, 5, 6]],
         slot_mappings=[[5, 6]],
     )
-
-    assert model_runner_output_3.req_ids == ["0"]
-    assert len(model_runner_output_3.sampled_token_ids) == 1
-    assert model_runner_output_3.tkv == 384
-    assert model_runner_output_3.n_free_blocks == 8
-    assert model_runner_output_3.left_padding == {"0": 0}
+    pc_model_runner.verify_model_runner_output(
+        model_runner_output_3,
+        req_ids=["0"],
+        num_sampled_token_ids=1,
+        tkv=384,
+        n_free_blocks=8,
+        left_padding={"0": 0},
+    )
 
     # Schedule chunk 0 of request 1
     model_runner_output_4 = pc_model_runner.execute_new_request(request2.request, 128)
     # chunk loaded from cache
     assert pc_model_runner.model.last_attn_metadata is None
-
-    assert model_runner_output_4.req_ids == ["1"]
-    assert model_runner_output_4.sampled_token_ids == []
-    assert model_runner_output_4.tkv == 384
-    assert model_runner_output_4.n_free_blocks == 1
-    assert model_runner_output_4.left_padding == {"1": 0}
-    assert model_runner_output_4.prefix_cache_hit_len == {"1": 128}
+    pc_model_runner.verify_model_runner_output(
+        model_runner_output_4,
+        req_ids=["1"],
+        num_sampled_token_ids=0,
+        tkv=384,
+        n_free_blocks=1,
+        left_padding={"1": 0},
+        prefix_cache_hit_len={"1": 128},
+    )
 
     # Schedule chunk 1 of request 1
     model_runner_output_5 = pc_model_runner.execute_running_requests(
@@ -187,11 +198,15 @@ def test_multi_chunk_partial_match_misaligned(
     )  # <-- HERE: the block table and slot mapping
     # point to different places when a block is recomputed
 
-    assert model_runner_output_5.req_ids == ["1"]
-    assert model_runner_output_5.sampled_token_ids == []
-    assert model_runner_output_5.tkv == 384
-    assert model_runner_output_5.n_free_blocks == 1
-    assert model_runner_output_5.left_padding == {"1": 0}
+    pc_model_runner.verify_model_runner_output(
+        model_runner_output_5,
+        req_ids=["1"],
+        num_sampled_token_ids=0,
+        tkv=384,
+        n_free_blocks=1,
+        left_padding={"1": 0},
+        prefix_cache_hit_len={"1": 128},
+    )
 
     # Schedule chunk 2 of request 1
     model_runner_output_6 = pc_model_runner.execute_running_requests(
@@ -203,12 +218,14 @@ def test_multi_chunk_partial_match_misaligned(
         block_tables=[[1, 2, 3, 7, 8, 9]],
         slot_mappings=[[8, 9]],
     )
-
-    assert model_runner_output_6.req_ids == ["1"]
-    assert len(model_runner_output_6.sampled_token_ids) == 1
-    assert model_runner_output_6.tkv == 384
-    assert model_runner_output_6.n_free_blocks == 1
-    assert model_runner_output_6.left_padding == {"1": 0}
+    pc_model_runner.verify_model_runner_output(
+        model_runner_output_6,
+        req_ids=["1"],
+        num_sampled_token_ids=1,
+        tkv=384,
+        n_free_blocks=1,
+        left_padding={"1": 0},
+    )
 
     # Schedule decodes of requests 0 and 1
     model_runner_output_7 = pc_model_runner.execute_running_requests(
@@ -221,12 +238,14 @@ def test_multi_chunk_partial_match_misaligned(
         slot_mappings=[[10], [11]],
         slot_slice=slice(0, 1),
     )
-
-    assert model_runner_output_7.req_ids == ["0", "1"]
-    assert len(model_runner_output_7.sampled_token_ids) == 2
-    assert model_runner_output_7.tkv == 385
-    assert model_runner_output_7.n_free_blocks == 1
-    assert model_runner_output_7.left_padding == {"0": 0, "1": 0}
+    pc_model_runner.verify_model_runner_output(
+        model_runner_output_7,
+        req_ids=["0", "1"],
+        num_sampled_token_ids=2,
+        tkv=385,
+        n_free_blocks=1,
+        left_padding={"0": 0, "1": 0},
+    )
 
 
 @pytest.mark.cpu
@@ -291,13 +310,14 @@ def test_first_chunk_recomputation(
         block_tables=[[0, 0, 1, 2]],
         slot_mappings=[[0, 0, 1, 2]],
     )
-
-    assert model_runner_output_1.req_ids == ["0"]
-    assert len(model_runner_output_1.sampled_token_ids) == 1
-    assert model_runner_output_1.tkv == 128
-    assert model_runner_output_1.n_free_blocks == 12
-    assert model_runner_output_1.left_padding == {"0": 128}
-    assert model_runner_output_1.prefix_cache_hit_len == {}
+    pc_model_runner.verify_model_runner_output(
+        model_runner_output_1,
+        req_ids=["0"],
+        num_sampled_token_ids=1,
+        tkv=128,
+        n_free_blocks=12,
+        left_padding={"0": 128},
+    )
 
     # Schedule chunk 0 of request 1
     model_runner_output_2 = pc_model_runner.execute_new_request(request2.request, 128)
@@ -312,12 +332,14 @@ def test_first_chunk_recomputation(
     # block is not a prefix hit and has to be computed from scratch
     # in a new block.
 
-    assert model_runner_output_2.req_ids == ["1"]
-    assert len(model_runner_output_2.sampled_token_ids) == 1
-    assert model_runner_output_2.tkv == 128
-    assert model_runner_output_2.n_free_blocks == 9
-    assert model_runner_output_2.left_padding == {"1": 128}
-    assert model_runner_output_2.prefix_cache_hit_len == {}
+    pc_model_runner.verify_model_runner_output(
+        model_runner_output_2,
+        req_ids=["1"],
+        num_sampled_token_ids=1,
+        tkv=128,
+        n_free_blocks=9,
+        left_padding={"1": 128},
+    )
 
     # Schedule decodes of requests 0 and 1
     model_runner_output_3 = pc_model_runner.execute_running_requests(
@@ -330,12 +352,14 @@ def test_first_chunk_recomputation(
         slot_mappings=[[4], [5]],
         slot_slice=slice(0, 1),
     )
-
-    assert model_runner_output_3.req_ids == ["0", "1"]
-    assert len(model_runner_output_3.sampled_token_ids) == 2
-    assert model_runner_output_3.tkv == 129
-    assert model_runner_output_3.n_free_blocks == 9
-    assert model_runner_output_3.left_padding == {"0": 0, "1": 0}
+    pc_model_runner.verify_model_runner_output(
+        model_runner_output_3,
+        req_ids=["0", "1"],
+        num_sampled_token_ids=2,
+        tkv=129,
+        n_free_blocks=9,
+        left_padding={"0": 0, "1": 0},
+    )
 
 
 @pytest.mark.cpu
@@ -409,12 +433,15 @@ def test_middle_chunk_recomputation_with_padding(
         slot_mappings=[[1, 2, 3, 4]],
     )
 
-    assert model_runner_output_1.req_ids == ["0"]
-    assert len(model_runner_output_1.sampled_token_ids) == 0
-    assert model_runner_output_1.tkv == 512
-    assert model_runner_output_1.n_free_blocks == 22
-    assert model_runner_output_1.left_padding == {"0": 0}
-    assert model_runner_output_1.prefix_cache_hit_len == {"0": 0}
+    pc_model_runner.verify_model_runner_output(
+        model_runner_output_1,
+        req_ids=["0"],
+        num_sampled_token_ids=0,
+        tkv=512,
+        n_free_blocks=22,
+        left_padding={"0": 0},
+        prefix_cache_hit_len={"0": 0},
+    )
 
     # Schedule chunk 1 of request 0
     model_runner_output_2 = pc_model_runner.execute_running_requests(
@@ -426,25 +453,29 @@ def test_middle_chunk_recomputation_with_padding(
         block_tables=[[1, 2, 3, 4, 5, 6, 7, 8]],
         slot_mappings=[[5, 6, 7, 8]],
     )
-
-    assert model_runner_output_2.req_ids == ["0"]
-    assert len(model_runner_output_2.sampled_token_ids) == 1
-    assert model_runner_output_2.tkv == 512
-    assert model_runner_output_2.n_free_blocks == 22
-    assert model_runner_output_2.left_padding == {"0": 0}
-    assert model_runner_output_2.prefix_cache_hit_len == {}
+    pc_model_runner.verify_model_runner_output(
+        model_runner_output_2,
+        req_ids=["0"],
+        num_sampled_token_ids=1,
+        tkv=512,
+        n_free_blocks=22,
+        left_padding={"0": 0},
+    )
 
     # Schedule chunk 0 of request 1
     model_runner_output_3 = pc_model_runner.execute_new_request(request2.request, 256)
     # chunk loaded from cache
     assert pc_model_runner.model.last_attn_metadata is None
 
-    assert model_runner_output_3.req_ids == ["1"]
-    assert len(model_runner_output_3.sampled_token_ids) == 0
-    assert model_runner_output_3.tkv == 512
-    assert model_runner_output_3.n_free_blocks == 11
-    assert model_runner_output_3.left_padding == {"1": 128}
-    assert model_runner_output_3.prefix_cache_hit_len == {"1": 384}
+    pc_model_runner.verify_model_runner_output(
+        model_runner_output_3,
+        req_ids=["1"],
+        num_sampled_token_ids=0,
+        tkv=512,
+        n_free_blocks=11,
+        left_padding={"1": 128},
+        prefix_cache_hit_len={"1": 384},
+    )
 
     # Schedule chunk 2 of request 1 skipping the middle chunk execution because
     # it's loaded from cache. We can consider the prefix_cache_hit_len
@@ -459,12 +490,14 @@ def test_middle_chunk_recomputation_with_padding(
         slot_mappings=[[0, 0, 9, 10]],
     )
 
-    assert model_runner_output_4.req_ids == ["1"]
-    assert len(model_runner_output_4.sampled_token_ids) == 1
-    assert model_runner_output_4.tkv == 640
-    assert model_runner_output_4.n_free_blocks == 11
-    assert model_runner_output_4.left_padding == {"1": 128}
-    assert model_runner_output_4.prefix_cache_hit_len == {}
+    pc_model_runner.verify_model_runner_output(
+        model_runner_output_4,
+        req_ids=["1"],
+        num_sampled_token_ids=1,
+        tkv=640,
+        n_free_blocks=11,
+        left_padding={"1": 128},
+    )
 
     # Schedule decodes of requests 0 and 1
     model_runner_output_5 = pc_model_runner.execute_running_requests(
@@ -478,8 +511,11 @@ def test_middle_chunk_recomputation_with_padding(
         slot_slice=slice(0, 1),
     )
 
-    assert model_runner_output_5.req_ids == ["0", "1"]
-    assert len(model_runner_output_5.sampled_token_ids) == 2
-    assert model_runner_output_5.tkv == 641
-    assert model_runner_output_5.n_free_blocks == 11
-    assert model_runner_output_5.left_padding == {"0": 128, "1": 0}
+    pc_model_runner.verify_model_runner_output(
+        model_runner_output_5,
+        req_ids=["0", "1"],
+        num_sampled_token_ids=2,
+        tkv=641,
+        n_free_blocks=11,
+        left_padding={"0": 128, "1": 0},
+    )
