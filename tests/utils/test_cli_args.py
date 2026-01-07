@@ -1,5 +1,6 @@
 import pytest
 from pydantic import ValidationError
+from huggingface_hub.errors import LocalEntryNotFoundError
 from vllm.entrypoints.openai.cli_args import make_arg_parser
 from vllm import EngineArgs
 
@@ -64,11 +65,15 @@ def test_generic_model_chunk_size_default(
     with environ_checkpoint():
         # Test that the default is None but is changed to 2024 by
         # the VllmConfig initialization
-        engine_args = _build_engine_args(
-            [
-                *common_args,
-            ]
-        )
+        try:
+            engine_args = _build_engine_args(
+                [
+                    *common_args,
+                ]
+            )
+        except LocalEntryNotFoundError:
+            pytest.skip("Skipping test of model not found in local cache")
+
         assert engine_args.max_num_batched_tokens is None
         vllm_config = engine_args.create_engine_config()
         assert engine_args.max_num_batched_tokens == 2048
@@ -150,9 +155,12 @@ def test_generic_model_chunk_size_default(
 
 
 def test_prefix_caching_is_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    model = REFERENCE_MODELS["ibm-ai-platform/micro-g3.3-8b-instruct-1b"]
     common_args = [
         "--model",
-        "ibm-ai-platform/micro-g3.3-8b-instruct-1b",
+        model.name,
+        "--revision",
+        model.revision,
         "--max-model-len",
         "1024",
     ]
