@@ -11,7 +11,10 @@ def test_block_sharing_for_2_chunks(
     monkeypatch: pytest.MonkeyPatch,
 ):
     model = InstrumentedModelRunner.DEFAULT_TEST_MODEL
-    pc_model_runner = InstrumentedModelRunner.build(monkeypatch)
+    pc_model_runner = InstrumentedModelRunner.build(
+        monkeypatch,
+        max_num_batched_tokens=128,
+    )
     prompt = random_prompt(model=model, seed=0, length=192)
 
     request1 = create_request_for_scheduler_test(
@@ -83,6 +86,7 @@ def test_multi_chunk_partial_match_misaligned(
 
     pc_model_runner = InstrumentedModelRunner.build(
         monkeypatch=monkeypatch,
+        max_num_batched_tokens=128,
         available_blocks=16,
     )
 
@@ -118,7 +122,9 @@ def test_multi_chunk_partial_match_misaligned(
     )
 
     # Schedule chunk 0 of request 0
-    model_runner_output_1 = pc_model_runner.execute_new_request(request1.request, 128)
+    model_runner_output_1 = pc_model_runner.execute_new_request(
+        request=request1.request, tokens_to_schedule=128
+    )
     pc_model_runner.assert_block_tables_and_slot_mappings(
         block_tables=[[1, 2]],
         slot_mappings=[[1, 2]],
@@ -173,7 +179,9 @@ def test_multi_chunk_partial_match_misaligned(
     )
 
     # Schedule chunk 0 of request 1
-    model_runner_output_4 = pc_model_runner.execute_new_request(request2.request, 128)
+    model_runner_output_4 = pc_model_runner.execute_new_request(
+        request=request2.request, tokens_to_schedule=128
+    )
     # chunk loaded from cache
     assert pc_model_runner.model.last_attn_metadata is None
     pc_model_runner.verify_model_runner_output(
@@ -305,7 +313,9 @@ def test_first_chunk_recomputation(
     )
 
     # Schedule chunk 0 of request 0
-    model_runner_output_1 = pc_model_runner.execute_new_request(request1.request, 128)
+    model_runner_output_1 = pc_model_runner.execute_new_request(
+        request=request1.request, tokens_to_schedule=128
+    )
     pc_model_runner.assert_block_tables_and_slot_mappings(
         block_tables=[[0, 0, 1, 2]],
         slot_mappings=[[0, 0, 1, 2]],
@@ -320,7 +330,9 @@ def test_first_chunk_recomputation(
     )
 
     # Schedule chunk 0 of request 1
-    model_runner_output_2 = pc_model_runner.execute_new_request(request2.request, 128)
+    model_runner_output_2 = pc_model_runner.execute_new_request(
+        request=request2.request, tokens_to_schedule=128
+    )
     pc_model_runner.assert_block_tables_and_slot_mappings(
         block_tables=[[0, 0, 1, 3]],
         slot_mappings=[[0, 0, 0, 3]],
@@ -427,7 +439,9 @@ def test_middle_chunk_recomputation_with_padding(
     )
 
     # Schedule chunk 0 of request 0
-    model_runner_output_1 = pc_model_runner.execute_new_request(request1.request, 256)
+    model_runner_output_1 = pc_model_runner.execute_new_request(
+        request=request1.request, tokens_to_schedule=256
+    )
     pc_model_runner.assert_block_tables_and_slot_mappings(
         block_tables=[[1, 2, 3, 4]],
         slot_mappings=[[1, 2, 3, 4]],
@@ -463,8 +477,10 @@ def test_middle_chunk_recomputation_with_padding(
     )
 
     # Schedule chunk 0 of request 1
-    model_runner_output_3 = pc_model_runner.execute_new_request(request2.request, 256)
-    # chunk loaded from cache
+    model_runner_output_3 = pc_model_runner.execute_new_request(
+        request=request2.request, tokens_to_schedule=256
+    )
+    # chunk loaded from cache, therefore the attn_metadata is not set
     assert pc_model_runner.model.last_attn_metadata is None
 
     pc_model_runner.verify_model_runner_output(
