@@ -2233,7 +2233,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         # Reserve the number of blocks that this new sequence requires in the
         # worst case (it might always stop early by producing the EOS token)
-        if new_tokens := sampling_params.max_tokens is None:
+        if (new_tokens := sampling_params.max_tokens) is None:
             new_tokens = 0
 
         total_tokens = prompt_len + new_tokens - 1
