@@ -37,6 +37,8 @@ global_default = 192
 def test_generic_model_chunk_size_default(
     model_name: str, chunk_size: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
+
     # Change the default so that we can differentiate the global
     # default from model-specific defaults.
     monkeypatch.setattr(SpyrePlatform, "DEFAULT_CHUNK_SIZE", global_default)
