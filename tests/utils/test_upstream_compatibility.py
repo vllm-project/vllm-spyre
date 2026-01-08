@@ -23,7 +23,7 @@ def test_mm_inputs():
 def test_get_sampler():
     if VLLM_VERSION == "vLLM:lowest":
         try:
-            from vllm.model_executor.layers.sampler import (  # # noqa
+            from vllm.model_executor.layers.sampler import (  # # noqa #ty: ignore
                 get_sampler,
             )
         except ImportError as e:
@@ -39,9 +39,9 @@ def test_use_mla():
 def test_pin_memory_available():
     if VLLM_VERSION == "vLLM:lowest":
         try:
-            from vllm.utils import is_pin_memory_available  # # noqa
-            from vllm.utils import make_tensor_with_pad  # # noqa
-            from vllm.utils import init_cached_hf_modules  # # noqa
+            from vllm.utils import is_pin_memory_available  # # noqa #ty: ignore
+            from vllm.utils import make_tensor_with_pad  # # noqa #ty: ignore
+            from vllm.utils import init_cached_hf_modules  # # noqa #ty: ignore
         except ImportError as e:
             raise AssertionError(
                 "remove backwards compatibility imports for "
@@ -55,13 +55,13 @@ def test_multi_modal_cache_stats():
         # If this import succeeds then remove the backwards compatibility type
         # def for MultiModalCacheStats
         with pytest.raises(ImportError):
-            from vllm.v1.metrics.stats import MultiModalCacheStats  # # noqa
+            from vllm.v1.metrics.stats import MultiModalCacheStats  # # noqa #ty: ignore
 
 
 def test_v0_worker_base():
     if VLLM_VERSION == "vLLM:lowest":
         try:
-            from vllm.worker.worker_base import WorkerBase  # # noqa
+            from vllm.worker.worker_base import WorkerBase  # # noqa #ty: ignore
         except ImportError as e:
             raise AssertionError(
                 "remove the backwards compatibility code from the SpyreWorker initializer"

@@ -200,11 +200,14 @@ class SamplingRequestState(BaseRequestState):
 
 @dataclass
 class ChunkedPrefillRequestState(SamplingRequestState):
-    scheduler_request: Request | None = None
+    scheduler_request: Request = field(default_factory=lambda: Request(request_id="unset"))
     chunk_count: int = 0
     padding_blocks: int = 0
     usable_blocks: int = 0
     total_hit_blocks: int = 0
+
+    def __post_init__(self):
+        assert self.scheduler_request.request_id != "unset"
 
 
 class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):

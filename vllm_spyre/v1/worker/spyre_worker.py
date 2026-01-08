@@ -75,7 +75,9 @@ def new_request_data_builder(
     if "mm_features" in dataclass_fields(NewRequestData):
         kwargs["mm_features"] = []
 
-    return NewRequestData(**kwargs)
+    # type checker is sad here because `kwargs` is dict[str, Union[everything]]
+    # It's our responsibility to ensure the values here have the right types
+    return NewRequestData(**kwargs)  # ty: ignore[invalid-argument-type]
 
 
 @contextlib.contextmanager
@@ -83,7 +85,7 @@ def _maybe_warmup_context(limit: int, world_size: int, rank: int):
     global _inside_warmup_mode
     warmup_context = contextlib.nullcontext
     if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
-        from torch_sendnn import warmup_mode
+        from torch_sendnn import warmup_mode  # ty: ignore
 
         warmup_context = warmup_mode
 
@@ -114,7 +116,7 @@ def use_torch_fx_backed_size_oblivious():
     # NB: this setting is disabled at the end of this function
     from torch.fx.experimental import _config as config
 
-    config.backed_size_oblivious = True
+    config.backed_size_oblivious = True  # ty: ignore[invalid-assignment]
     yield
     config.backed_size_oblivious = False
 
@@ -130,7 +132,7 @@ class SpyreWorker(WorkerBase):
     def is_decoder(self) -> bool:
         return self.model_config.runner_type == "generate"
 
-    def get_kv_cache_spec(self) -> KVCacheSpec:
+    def get_kv_cache_spec(self) -> dict[str, KVCacheSpec]:
         """Get specifications for KV cache implementation.
 
         These specs are used to:
@@ -244,7 +246,7 @@ class SpyreWorker(WorkerBase):
     ) -> None:
         try:
             # pre 0.11.1 compatibility with old worker base class
-            from vllm.worker.worker_base import WorkerBase as LegacyWorkerBase
+            from vllm.worker.worker_base import WorkerBase as LegacyWorkerBase  # ty: ignore
 
             LegacyWorkerBase.__init__(self, vllm_config=vllm_config)
             self.local_rank = local_rank
@@ -557,7 +559,7 @@ class SpyreWorker(WorkerBase):
             total_num_scheduled_tokens=prompt_len,
             scheduled_spec_decode_tokens={},
             scheduled_encoder_inputs={},
-            num_common_prefix_blocks=0,
+            num_common_prefix_blocks=[],
             finished_req_ids=set(),
             **_get_extra_args(),
         )
@@ -588,7 +590,7 @@ class SpyreWorker(WorkerBase):
             total_num_scheduled_tokens=0,
             scheduled_spec_decode_tokens={},
             scheduled_encoder_inputs={},
-            num_common_prefix_blocks=0,
+            num_common_prefix_blocks=[],
             # The requests to be removed
             finished_req_ids=set([r.req_id for r in request]),
             **_get_extra_args(),
@@ -647,8 +649,8 @@ class SpyreWorker(WorkerBase):
         for req in dummy_requests:
             req_ids.append(req.req_id)
             new_token_ids.append(
-                [valid_token_ids_tensor[torch.randint(0, len(valid_token_ids_tensor), (1,)).item()]]
-            )  # placeholder token
+                [valid_token_ids_tensor[torch.randint(0, len(valid_token_ids_tensor), (1,)).item()]]  # ty: ignore
+            )  # placeholder token #ty: ignore
             new_block_ids.append([req.block_ids])
             num_computed_tokens.append(req.num_computed_tokens)
 
@@ -659,14 +661,16 @@ class SpyreWorker(WorkerBase):
         cached_request_data.num_computed_tokens = num_computed_tokens
 
         # Set up scheduler_output for execute_model
+        for r in dummy_requests:
+            assert r.prompt_token_ids is not None
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=dummy_requests,
             scheduled_cached_reqs=cached_request_data,
-            num_scheduled_tokens={r.req_id: len(r.prompt_token_ids) for r in dummy_requests},
+            num_scheduled_tokens={r.req_id: self._get_num_tokens(r) for r in dummy_requests},
             total_num_scheduled_tokens=sum(prompt_len for _ in range(batch_size)),
             scheduled_spec_decode_tokens={},
             scheduled_encoder_inputs={},
-            num_common_prefix_blocks=0,
+            num_common_prefix_blocks=[],
             finished_req_ids=set(),
             **_get_extra_args(),
         )
@@ -738,7 +742,7 @@ class SpyreWorker(WorkerBase):
                 total_num_scheduled_tokens=prompt_len,
                 scheduled_spec_decode_tokens={},
                 scheduled_encoder_inputs={},
-                num_common_prefix_blocks=0,
+                num_common_prefix_blocks=[],
                 finished_req_ids=set(),
                 **_get_extra_args(),
             )
@@ -769,7 +773,7 @@ class SpyreWorker(WorkerBase):
             total_num_scheduled_tokens=1,
             scheduled_spec_decode_tokens={},
             scheduled_encoder_inputs={},
-            num_common_prefix_blocks=0,
+            num_common_prefix_blocks=[],
             finished_req_ids=set(),
             **_get_extra_args(),
         )
@@ -788,7 +792,7 @@ class SpyreWorker(WorkerBase):
         scheduler_output.scheduled_new_reqs = requests
         scheduler_output.scheduled_cached_reqs = CachedRequestData.make_empty()
         scheduler_output.num_scheduled_tokens = {
-            r.req_id: len(r.prompt_token_ids) for r in requests
+            r.req_id: self._get_num_tokens(r) for r in requests
         }
         self.execute_model(scheduler_output)  # Prefill
 
@@ -825,6 +829,10 @@ class SpyreWorker(WorkerBase):
     ) -> ModelRunnerOutput | None:
         output = self.model_runner.execute_model(scheduler_output)
         return output if self.is_driver_worker else None
+
+    def _get_num_tokens(self, r: NewRequestData) -> int:
+        assert r.prompt_token_ids is not None, "requests should have tokens!"
+        return len(r.prompt_token_ids)
 
 
 # Ref: https://github.com/vllm-project/vllm/blob/5fbbfe9a4c13094ad72ed3d6b4ef208a7ddc0fd7/vllm/v1/executor/multiproc_executor.py#L446 # noqa: E501

@@ -29,6 +29,10 @@ jobs:
           pyproject.toml
     - name: "Install dependencies"
       run: VLLM_TARGET_DEVICE=empty uv sync --frozen
+    # The sadness knows no bounds: we require a separate pytorch install for type checking
+    - name: "Install PyTorch 2.7.1"
+      run: |
+        pip install torch=="2.7.1+cpu" --index-url https://download.pytorch.org/whl/cpu
 
     - uses: actions/cache@v4
       with:
