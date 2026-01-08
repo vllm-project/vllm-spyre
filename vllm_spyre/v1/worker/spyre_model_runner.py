@@ -160,7 +160,9 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
             )
         if vllm_config.device_config is None:
             self.device_config = DeviceConfig()
-        self.device = self.device_config.device
+
+        assert self.device_config.device is not None, "Torch device is required"
+        self.device = torch.device(self.device_config.device)
         self.pin_memory = is_pin_memory_available()
 
         # Lazy initialization: after load_model.
@@ -192,7 +194,7 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
         self,
         input_ids_list: list[torch.Tensor],
         min_pad_length: int = 0,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[list[torch.Tensor], list[torch.Tensor], list[torch.Tensor]]:
         """left side padding implemented as
         in fms.utils.generation.pad_input_id"""
         max_len = max([min_pad_length] + [seq.size(0) for seq in input_ids_list])
@@ -257,7 +259,7 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
         """Turn off warmup mode once the warmup is complete"""
         self.warmup_mode = False
 
-    def build_attn_metadata(self, _: ModelInputsT) -> SpyreAttentionMetadata:
+    def build_attn_metadata(self, model_input: ModelInputsT) -> SpyreAttentionMetadata:
         # TODO: probably sooner we will need a more sophisticated way to switch
         # build attention metadata based on model/attention. But for now, a
         # simple method override is good enough.
@@ -1461,7 +1463,7 @@ class PoolerAdapter(torch.nn.Module):
 
     def forward(
         self,
-        hidden_states: Union[torch.Tensor, list[torch.Tensor]],
+        hidden_states: Union[torch.Tensor, tuple[torch.Tensor, ...]],
         pooling_metadata: PoolingMetadata,
     ) -> Union[torch.Tensor, list[torch.Tensor]]:
         # Because we're using transformers to load the pooler
@@ -1493,6 +1495,10 @@ class SpyrePoolingModelRunner(
         self._position_ids: torch.Tensor = None
         self.use_token_type_ids = False
 
+    @property
+    def model(self) -> torch.nn.Module:
+        return self._model  # ty: ignore[invalid-return-type]
+
     def build_input_batch(self) -> PoolingInputBatch:
         return PoolingInputBatch(
             max_num_reqs=self.scheduler_config.max_num_seqs,
@@ -1519,10 +1525,10 @@ class SpyrePoolingModelRunner(
             )
             if hasattr(class_model, "bert"):
                 self._model = class_model.bert
-                self._pooler = PoolerAdapter(self.model.pooler)
+                self._pooler = PoolerAdapter(self.model.pooler)  # ty:ignore[invalid-argument-type]
             elif hasattr(class_model, "roberta"):
                 self._model = class_model.roberta
-                self._pooler = PoolerAdapter(_cls)
+                self._pooler = PoolerAdapter(_cls)  # ty:ignore[invalid-argument-type]
             else:
                 raise ValueError(
                     f"Unsupported model {self.model_config.model}: Expected "
@@ -1535,7 +1541,7 @@ class SpyrePoolingModelRunner(
         # Disable pooler because in transformers it's
         # always run even tough we don't use the outputs
         # directly.
-        self.model.pooler = None
+        self._model.pooler = None
 
         model_class_name = type(self.model).__name__
         self.is_roberta = "roberta" in model_class_name.lower()
@@ -1549,12 +1555,13 @@ class SpyrePoolingModelRunner(
             # of caching even though the test run in isolated subprocesses.
 
             if SpyrePlatform.sendnn_configured():
-                from torch_sendnn import torch_sendnn  # noqa: F401
+                pass  # ty: ignore[unresolved-import]
 
             with utils_spyre.stagger_region(
                 envs_spyre.VLLM_SPYRE_MAX_LOAD_PROCESSES, self.parallel_config.world_size, self.rank
             ):
-                self._model = torch.compile(
+                # Not clear how to make the type checking happy with the torch.compile return
+                self._model = torch.compile(  # ty: ignore[invalid-assignment]
                     self.model,
                     mode="default",
                     dynamic=False,
@@ -1569,6 +1576,7 @@ class SpyrePoolingModelRunner(
                 self.sep_token_id = tokenizer.sep_token_id
 
         pooler_config = self.model_config.pooler_config
+        assert pooler_config is not None, "Pooler config is require for pooling models"
 
         if task == "embed":
             with set_current_vllm_config(self.vllm_config):
@@ -1583,7 +1591,8 @@ class SpyrePoolingModelRunner(
 
     @property
     def vocab_size(self) -> int:
-        return self.model.config.vocab_size
+        # self.model here is probably a transformers model class
+        return self.model.config.vocab_size  # ty: ignore[invalid-return-type]
 
     def pad_input_ids(
         self,
@@ -1628,7 +1637,8 @@ class SpyrePoolingModelRunner(
 
         for i, seq_len in enumerate(seq_lens):
             pos = token_type_id_requests.get(i, seq_len)
-            ids = (torch.arange(seq_lens[i]) >= pos).int()
+            # TODO: maybe mbayser can see if the ty error here is important
+            ids = (torch.arange(seq_lens[i]) >= pos).int()  # ty: ignore
             token_type_ids.append(ids)
 
         return token_type_ids
@@ -1661,6 +1671,7 @@ class SpyrePoolingModelRunner(
         for request_data in new_requests:
             # retrieve initial (unpadded) tokens
             prompt_tokens = request_data.prompt_token_ids
+            assert prompt_tokens is not None, "prompt tokens are required for this model runner"
 
             input_token_list.append(
                 torch.tensor(prompt_tokens, dtype=torch.long, device=torch.device("cpu"))
@@ -1673,7 +1684,7 @@ class SpyrePoolingModelRunner(
 
             req_state = PoolingRequestState(
                 req_id=req_id,
-                prompt_token_ids=request_data.prompt_token_ids,
+                prompt_token_ids=prompt_tokens,
                 pooling_params=pooling_params,
             )
             self.requests[req_id] = req_state
@@ -1778,8 +1789,11 @@ class SpyrePoolingModelRunner(
         pooling_metadata = self.input_batch.make_pooling_metadata()
 
         ## No partial prefill, hence we can use the prompt lens here
+        num_scheduled_tokens = pooling_metadata.prompt_lens.tolist()
+        assert len(num_scheduled_tokens) == len(self.requests)
+
         pooling_metadata.build_pooling_cursor(
-            num_scheduled_tokens=pooling_metadata.prompt_lens, device=self.device
+            num_scheduled_tokens=num_scheduled_tokens, device=self.device
         )
 
         # prepare unpadded output for the pooler
@@ -1850,7 +1864,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
     def _prepare_prompt(self, new_request_data: list[NewRequestData]) -> SamplingForwardInputs:
         raise NotImplementedError
 
-    def _prepare_chunked_prefill(self, req_id: str):
+    def _prepare_chunked_prefill(self, req_id: str) -> SamplingForwardInputs:
         """
         Cases / Scenarios for the chunked prefill with right padding.
 
@@ -2326,7 +2340,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         self.input_batch.refresh_metadata()
         self.prefill_batch.refresh_metadata()
 
-    def prepare_model_input(self, scheduler_output):
+    def prepare_model_input(self, scheduler_output) -> SamplingForwardInputs:
         is_prefill = False
         req_id: str = ""
         if len(scheduler_output.scheduled_new_reqs) == 1:
@@ -2449,7 +2463,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         incomplete_prefill = False
         is_cached_chunk = False
-        is_prefill = cast(bool, model_input.is_prompt)
+        is_prefill = model_input.is_prompt
         if is_prefill:
             incomplete_prefill = self.check_incomplete_prefill(scheduler_output)
             is_cached_chunk = model_input.input_tokens is None
