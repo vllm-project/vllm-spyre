@@ -889,6 +889,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
     def _set_blocks(self, num_blocks: int) -> None:
         # set number of available blocks, populate block_pool and
         # create the kv_cache_manager
+        # Note: block 0 is reserved for padding and cannot be reused, hence
+        # number of actually usable blocks for kv caching = num_blocks - 1
         self.n_blocks = num_blocks - 1
         self.block_pool = self._make_block_pool()
         self.kv_cache_manager = self._make_kv_cache_manager()
