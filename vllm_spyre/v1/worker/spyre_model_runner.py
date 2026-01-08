@@ -2201,8 +2201,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         return chunk_count, left_blocks, usable_blocks, n_hit
 
     def add_new_request(self, request: NewRequestData):
-        print("\n\n\n", request.sampling_params, "\n\n\n")
-
         req_id = request.req_id
         prompt_token_ids = request.prompt_token_ids
         sampling_params = request.sampling_params
