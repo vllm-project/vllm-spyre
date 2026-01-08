@@ -106,7 +106,7 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
     ):
         super().__init__(vllm_config=vllm_config, is_driver_worker=is_driver_worker, rank=rank)
 
-        self.model = MockSpyreCausalLM(vllm_config=vllm_config)
+        self._model = MockSpyreCausalLM(vllm_config=vllm_config)
 
     @SpyrePlatform.inference_mode()
     def execute_model(
