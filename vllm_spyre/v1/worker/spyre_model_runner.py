@@ -2215,7 +2215,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         req_id = request.req_id
         prompt_token_ids = request.prompt_token_ids
         sampling_params = request.sampling_params
-        is_new_batch = len(self.req_ids2num_reserved_blocks) == 0
+        is_new_batch = self.get_n_free_blocks() == self.n_blocks
         prompt_len = len(prompt_token_ids)
 
         self.prefill_batch.clear_requests()
@@ -2223,15 +2223,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         # set the new tkv to the prompt length if starting a new decode batch
         if is_new_batch:
             self.tkv = prompt_len
-
-        # Reserve the number of blocks that this new sequence requires in the
-        # worst case (it might always stop early by producing the EOS token)
-        new_tokens = sampling_params.max_tokens if sampling_params is not None else 0
-        total_tokens = prompt_len + new_tokens - 1
-        # calculate the number of reserved blocks
-        n_reserved_blocks = math.ceil(total_tokens / self.block_size)
-
-        self.req_ids2num_reserved_blocks[req_id] = n_reserved_blocks
 
         scheduler_request = Request(
             request_id=req_id,
@@ -2553,6 +2544,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         )
 
         return model_output
+
+    def get_n_free_blocks(self) -> int:
+        return self.kv_cache_manager.block_pool.get_num_free_blocks()
 
     def get_kv_cache_usage(self) -> float:
         return self.kv_cache_manager.block_pool.get_usage()

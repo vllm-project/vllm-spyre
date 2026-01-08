@@ -419,9 +419,12 @@ def validate_scheduler_steps(
                         f"{running=}, {out_reqs_ids=}, {n_prefix_hits=}, "
                         f"{n_cached_blocks=}"
                     )
-                assert DISABLE_ASSERTS or (n_reserved_blocks == step_ref["n_reserved_blocks"]), (
-                    f"Step {step}, n_reserved_blocks: {n_reserved_blocks}"
-                )
+                assert (
+                    DISABLE_ASSERTS
+                    or "n_reserved_blocks" not in step_ref
+                    or (n_reserved_blocks == step_ref["n_reserved_blocks"])
+                ), f"Step {step}, n_reserved_blocks: {n_reserved_blocks}"
+
                 assert DISABLE_ASSERTS or (n_used_blocks == step_ref["n_used_blocks"]), (
                     f"Step {step}, n_used_blocks: {n_used_blocks}"
                 )
@@ -436,18 +439,20 @@ def validate_scheduler_steps(
                     or (n_cached_blocks == step_ref["n_cached_blocks"])
                 ), f"Step {step}, n_cached_blocks: {n_cached_blocks}"
 
-            assert DISABLE_ASSERTS or len(req_ids2blocks) == len(req_ids2num_reserved_blocks)
-            for req_id in req_ids2blocks:
-                # current number of used blocks should be less than reserved
-                assert (
-                    DISABLE_ASSERTS
-                    or len(req_ids2blocks[req_id]) <= req_ids2num_reserved_blocks[req_id]
-                )
-                # update requested/reserved blocks to check in last step
-                # Note: overwrite and not max
-                # because of reduce_left_padding()
-                requested_blocks[req_id] = len(req_ids2blocks[req_id])
-                reserved_blocks[req_id] = req_ids2num_reserved_blocks[req_id]
+            # only update reserved blocks for continuous batching
+            if "n_reserved_blocks" in step_ref:
+                assert DISABLE_ASSERTS or len(req_ids2blocks) == len(req_ids2num_reserved_blocks)
+                for req_id in req_ids2blocks:
+                    # current number of used blocks should be less than reserved
+                    assert (
+                        DISABLE_ASSERTS
+                        or len(req_ids2blocks[req_id]) <= req_ids2num_reserved_blocks[req_id]
+                    )
+                    # update requested/reserved blocks to check in last step
+                    # Note: overwrite and not max
+                    # because of reduce_left_padding()
+                    requested_blocks[req_id] = len(req_ids2blocks[req_id])
+                    reserved_blocks[req_id] = req_ids2num_reserved_blocks[req_id]
 
             for extra_assert_func in extra_assert_funcs:
                 extra_assert_func(engine_core, step_ref, DISABLE_ASSERTS)
