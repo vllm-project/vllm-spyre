@@ -94,7 +94,6 @@ def test_scheduling_invariance(
 
     vllm_model = LLM(
         model=model.name,
-        task="embed",
         tokenizer=model.name,
         max_model_len=256,
         tensor_parallel_size=1,

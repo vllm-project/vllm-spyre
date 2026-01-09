@@ -626,7 +626,7 @@ class SpyreWorker(WorkerBase):
         if not self.is_pooling:
             sampling_params = SamplingParams(max_tokens=num_decode_tokens)
         else:
-            pooling_params = PoolingParams()
+            pooling_params = PoolingParams(task="embed")  # for warmup any task will do
 
         # Set up dummy requests for prefill steps
         dummy_requests = [
