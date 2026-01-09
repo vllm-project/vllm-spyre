@@ -1,4 +1,5 @@
 import math
+import os
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
@@ -961,6 +962,15 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # Total number of blocks needs to be a multiple of the batch size
         # (spyre constraint) so round it down
         num_blocks = max_batch_size * (num_blocks // max_batch_size)
+
+        # For chunked prefill we must also ensure that VLLM_DT_MAX_BATCH_TKV_LIMIT
+        # and a full batch can be served given the available blocks on Spyre
+        if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
+            req_num_blocks_batch_tkv_limit = (
+                int(os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT")) // block_size
+            )
+            req_num_blocks_full_batch = max_batch_size * min_req_num_blocks
+            min_req_num_blocks = min(req_num_blocks_batch_tkv_limit, req_num_blocks_full_batch)
 
         if num_blocks < min_req_num_blocks:
             raise ValueError(
