@@ -67,8 +67,9 @@ def test_generic_model_chunk_size_default(
     ]
 
     with environ_checkpoint():
-        # Test that the default is None but is changed to 2024 by
-        # the VllmConfig initialization
+        # Test that the upstream default is None but is changed to 2048 by
+        # the VllmConfig initialization (when using CLI), but is then
+        # overridden in our platform.py
         try:
             engine_args = _build_engine_args(
                 [
@@ -126,7 +127,7 @@ def test_generic_model_chunk_size_default(
             assert vllm_config.scheduler_config.max_num_batched_tokens == chunk_size
 
     with environ_checkpoint():
-        # Test that an invalid value will trigger an error
+        # Test that an invalid value will trigger an error (42 is not a multiple of the block size)
         engine_args = _build_engine_args([*common_args, "--max-num-batched-tokens", "42"])
         assert engine_args.max_num_batched_tokens == 42
         if chunk_size == global_default:
