@@ -393,6 +393,7 @@ def validate_scheduler_steps(
                 for req_id, blocks in kv_cache_manager.req_to_blocks.items()
                 if blocks
             }
+            # req_ids2num_reserved_blocks is only populated for continuous batching
             req_ids2num_reserved_blocks = model_runner.req_ids2num_reserved_blocks
             # Account for blocks reused via prefix caching
             used_blocks = set()
@@ -439,8 +440,9 @@ def validate_scheduler_steps(
                     or (n_cached_blocks == step_ref["n_cached_blocks"])
                 ), f"Step {step}, n_cached_blocks: {n_cached_blocks}"
 
-            # only update reserved blocks for continuous batching
-            if "n_reserved_blocks" in step_ref:
+            # do not update reserved blocks for chunked prefill as the concept has been removed
+            is_chunked_prefill = bool(int(os.getenv("VLLM_SPYRE_USE_CHUNKED_PREFILL")))
+            if not is_chunked_prefill:
                 assert DISABLE_ASSERTS or len(req_ids2blocks) == len(req_ids2num_reserved_blocks)
                 for req_id in req_ids2blocks:
                     # current number of used blocks should be less than reserved
