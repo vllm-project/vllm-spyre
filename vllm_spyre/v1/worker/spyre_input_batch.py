@@ -5,7 +5,7 @@
 
 from abc import abstractmethod
 from dataclasses import dataclass, field
-from typing import Generic, TypeVar, cast
+from typing import Any, Generic, TypeVar, cast
 
 import numpy as np
 import torch
@@ -733,7 +733,7 @@ class PoolingInputBatch(BaseInputBatch[PoolingRequestState]):
         assert len(self.requests_ids) == len(self.pooling_params)
         pooling_params = [self.pooling_params[req_id] for req_id in self.requests_ids]
 
-        kwargs = {}
+        kwargs: dict[str, Any] = {}
         if has_argument(PoolingMetadata, "pooling_states"):
             kwargs["pooling_states"] = []
         return PoolingMetadata(

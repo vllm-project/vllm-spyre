@@ -1772,7 +1772,7 @@ class SpyrePoolingModelRunner(
         pooling_metadata = self.input_batch.make_pooling_metadata()
 
         ## No partial prefill, hence we can use the prompt lens here
-        cursor_kwargs = {}
+        cursor_kwargs: dict[str, Any] = {}
         if has_argument(pooling_metadata.build_pooling_cursor, "seq_lens_cpu"):
             cursor_kwargs["seq_lens_cpu"] = pooling_metadata.prompt_lens
         pooling_metadata.build_pooling_cursor(
