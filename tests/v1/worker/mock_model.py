@@ -3,7 +3,7 @@ from typing import Any
 
 import pytest
 import torch
-from spyre_util import ModelInfo, patch_environment
+from spyre_util import patch_environment
 from vllm import EngineArgs
 from vllm.config import VllmConfig
 from vllm.forward_context import get_forward_context
@@ -16,6 +16,8 @@ from vllm.v1.sample.sampler import Sampler
 from vllm_spyre.model_executor.model_loader.spyre import SpyreAttentionMetadata
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import ChunkedPrefillModelRunner, ChunkedPrefillPlan
+
+from spyre_util import REFERENCE_MODELS
 
 
 class MockContinuousBatchingFmsModel:
@@ -93,10 +95,7 @@ class MockSpyreCausalLM:
 
 class InstrumentedModelRunner(ChunkedPrefillModelRunner):
     ALL_SLICE = slice(None)
-    DEFAULT_TEST_MODEL = ModelInfo(
-        name="ibm-ai-platform/micro-g3.3-8b-instruct-1b",
-        revision="6e9c6465a9d7e5e9fa35004a29f0c90befa7d23f",
-    )
+    DEFAULT_TEST_MODEL = "ibm-ai-platform/micro-g3.3-8b-instruct-1b"
 
     def __init__(
         self,
@@ -281,7 +280,7 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
         cls,
         monkeypatch: pytest.MonkeyPatch,
         enable_prefix_caching: bool = True,
-        model: ModelInfo = DEFAULT_TEST_MODEL,
+        model_name: str = DEFAULT_TEST_MODEL,
         max_num_seqs: int = 2,
         max_model_len: int = 512,
         max_num_batched_tokens: int = 128,
@@ -298,6 +297,7 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
             max_num_batched_tokens=max_num_batched_tokens,
         )
 
+        model = REFERENCE_MODELS[model_name]
         engine_args = EngineArgs(
             model=model.name,
             tokenizer=model.name,

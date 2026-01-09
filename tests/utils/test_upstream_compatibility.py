@@ -85,3 +85,14 @@ def test_alignment_tokens():
     if VLLM_VERSION == "vLLM:lowest":
         # Can supply `alignment_tokens` everywhere, this was added in 0.12.0
         assert not has_argument(FullAttentionManager.find_longest_cache_hit, "alignment_tokens")
+
+
+def test_argparse_utils():
+    if VLLM_VERSION == "vLLM:lowest":
+        try:
+            from vllm.utils import FlexibleArgumentParser  # noqa
+        except ImportError as e:
+            raise AssertionError(
+                "Fix backward compatible imports of "
+                "FlexibleArgumentParser which is no longer required"
+            ) from e
