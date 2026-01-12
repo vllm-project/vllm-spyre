@@ -63,7 +63,9 @@ def test_generic_model_chunk_size_default(
         "--revision",
         model.revision,
         "--max-model-len",
-        "1024",
+        "64",
+        "--max-num-seqs",
+        "32",
         "-tp",
         "4",
         "--swap-space",  # to prevent a validation error in the 16GB memory test env.
@@ -85,7 +87,9 @@ def test_generic_model_chunk_size_default(
 
         assert engine_args.max_num_batched_tokens is None
         vllm_config = engine_args.create_engine_config()
-        assert engine_args.max_num_batched_tokens == 2048
+        # TODO: this behavior of changing the engine_args was introduced in v0.12.0.
+        # Uncomment below when this version becomes the lowest supported version.
+        # assert engine_args.max_num_batched_tokens == 2048
         # we override this in platform.py
         assert (
             vllm_config.scheduler_config.max_num_batched_tokens
@@ -94,10 +98,10 @@ def test_generic_model_chunk_size_default(
 
     with environ_checkpoint():
         # Test that we override the default and even the user provided setting
-        engine_args = _build_engine_args([*common_args, "--max-num-batched-tokens", "64"])
-        assert engine_args.max_num_batched_tokens == 64
+        engine_args = _build_engine_args([*common_args, "--max-num-batched-tokens", "128"])
+        assert engine_args.max_num_batched_tokens == 128
         vllm_config = engine_args.create_engine_config()
-        assert engine_args.max_num_batched_tokens == 64
+        assert engine_args.max_num_batched_tokens == 128
         # we override this in platform.py
         assert (
             vllm_config.scheduler_config.max_num_batched_tokens
@@ -121,12 +125,12 @@ def test_generic_model_chunk_size_default(
 
     with environ_checkpoint():
         # Test that we can still change the default
-        engine_args = _build_engine_args([*common_args, "--max-num-batched-tokens", "64"])
-        assert engine_args.max_num_batched_tokens == 64
+        engine_args = _build_engine_args([*common_args, "--max-num-batched-tokens", "128"])
+        assert engine_args.max_num_batched_tokens == 128
         vllm_config = engine_args.create_engine_config()
-        assert engine_args.max_num_batched_tokens == 64
+        assert engine_args.max_num_batched_tokens == 128
         if chunk_size == global_default:
-            assert vllm_config.scheduler_config.max_num_batched_tokens == 64
+            assert vllm_config.scheduler_config.max_num_batched_tokens == 128
         else:
             assert vllm_config.scheduler_config.max_num_batched_tokens == chunk_size
 
