@@ -2043,7 +2043,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             block_table=block_table,
             slot_mapping=slot_mapping,
             is_prompt=True,
-            scale_indices=self.input_batch.request_indices,
+            scale_indices=self.prefill_batch.request_indices,
+            # scale_indices=self.input_batch.request_indices,
         )
 
         self._mark_input_tensors(model_inputs)
