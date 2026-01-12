@@ -1847,7 +1847,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
     def _prepare_prompt(self, _):
         AssertionError("Should not call this method on chunked prefill implementation")
 
-    def _prepare_chunked_prefill(self, req_id: str):
+    def _prepare_chunked_prefill(self, req_id: str, scheduler_output: SchedulerOutput):
         """
         Cases / Scenarios for the chunked prefill with right padding.
 
@@ -2035,6 +2035,31 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         self.model.n_pads_right = self.block_size - (((request_tkv - 1) % self.block_size) + 1)
         self.model.indices = torch.ones(1, dtype=torch.bool, device="cpu")
 
+
+        prompt_len = len(prompt_token_ids)
+        num_scheduled_tokens = scheduler_output.num_scheduled_tokens[req_id]
+
+        if num_computed_tokens + num_scheduled_tokens >= prompt_len:
+            # Last prefill: we might need to update the tkv
+            req_n_blocks = math.ceil(prompt_len / self.block_size)
+            cur_n_blocks = math.ceil(self.tkv / self.block_size)
+            new_n_blocks = max(req_n_blocks, cur_n_blocks)
+            assert new_n_blocks > 0
+            base_n_tokens = (new_n_blocks - 1) * self.block_size
+            req_tkv_new_block = base_n_tokens + (prompt_len - 1) % self.block_size + 1
+            cur_tkv_new_block = base_n_tokens + (self.tkv - 1) % self.block_size + 1
+            self.tkv = max(req_tkv_new_block, cur_tkv_new_block)
+
+            # Last prefill we need to setup the logitsprocessors to sampling
+            prefill_index = self.input_batch.add_request(request)
+            for logitsproc in self.input_batch.logitsprocs_wrappers:
+                logitsproc.set_prefill_index(prefill_index)
+
+
+        # Refresh sampling metadata after all request are added to the batch
+        self.input_batch.refresh_metadata()
+        self.prefill_batch.refresh_metadata()
+
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
             input_positions=input_positions,
@@ -2043,7 +2068,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             block_table=block_table,
             slot_mapping=slot_mapping,
             is_prompt=True,
-            scale_indices=self.input_batch.request_indices,
+            scale_indices=self.prefill_batch.request_indices,
         )
 
         self._mark_input_tensors(model_inputs)
@@ -2343,8 +2368,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         if is_prefill:
             # All prefills are chunked
             # Get request id from new request or cached request
-            model_inputs = self._prepare_chunked_prefill(req_id)
-            self._maybe_prepare_last_prefill(req_id, scheduler_output)
+            model_inputs = self._prepare_chunked_prefill(req_id, scheduler_output)
+            # self._maybe_prepare_last_prefill(req_id, scheduler_output)
+            # model_inputs.scale_indices=self.input_batch.request_indices
 
             return model_inputs
         else:

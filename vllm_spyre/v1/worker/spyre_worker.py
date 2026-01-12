@@ -482,8 +482,8 @@ class SpyreWorker(WorkerBase):
         warmup_start_t = time.time()
 
         # satisfy mypy
-        model_runner: ContinuousBatchingSpyreModelRunner = cast(
-            ContinuousBatchingSpyreModelRunner, self.model_runner
+        model_runner: ChunkedPrefillModelRunner = cast(
+            ChunkedPrefillModelRunner, self.model_runner
         )
 
         vocab_size = model_runner.vocab_size
@@ -505,7 +505,7 @@ class SpyreWorker(WorkerBase):
         # TODO: we need 2 requests for warmup on FP8+CB
         # Check if model is quantized
         is_fp8_plus_cb = self.model_config.quantization is not None and envs_spyre.VLLM_SPYRE_USE_CB
-        req_count = 3 if is_fp8_plus_cb else 2
+        req_count = 2 if is_fp8_plus_cb else 2
         requests = [
             new_request_data_builder(
                 req_id="warmup-%d" % (i),
