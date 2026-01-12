@@ -3,7 +3,7 @@ batching. It does so by comparing, at every engine step (i.e. prefill or decode
 iteration), a bunch of attributes. This allows a finer testing of the padding
 and scheduling implementation.
 
-Run `python -m pytest tests/e2e/test_spyre_cb_inference_steps.py`.
+Run `python -m pytest tests/e2e/test_spyre_cb_scheduler_steps.py`.
 """
 
 import pytest
