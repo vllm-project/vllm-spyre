@@ -30,8 +30,12 @@ global_default = 192
 @pytest.mark.parametrize(
     "model_name, chunk_size",
     [
-        ("ibm-ai-platform/micro-g3.3-8b-instruct-1b", global_default),
-        ("ibm-granite/granite-3.3-8b-instruct", 1024),
+        pytest.param("ibm-ai-platform/micro-g3.3-8b-instruct-1b", global_default),
+        pytest.param(
+            "ibm-granite/granite-3.3-8b-instruct",
+            1024,
+            marks=[pytest.mark.full_model, pytest.mark.multi],
+        ),
     ],
 )
 def test_generic_model_chunk_size_default(
