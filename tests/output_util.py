@@ -416,10 +416,10 @@ def maybe_xfail(func):
                 func(*args, **kwargs)
             except AssertionError as e:
                 print(e)
-            pytest.xfail(
-                "Micro model FP8 static-batch compilation may result in"
-                " a model that fails quality checks"
-            )
+                pytest.xfail(
+                    "Micro model FP8 static-batch compilation may result in"
+                    " a model that fails quality checks"
+                )
         else:
             func(*args, **kwargs)
 
