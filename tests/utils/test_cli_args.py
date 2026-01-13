@@ -52,7 +52,10 @@ def test_generic_model_chunk_size_default(
         return False
 
     monkeypatch.setattr(SpyrePlatform, "sendnn_configured", sendnn_configured)
-    model = REFERENCE_MODELS[model_name]
+    # We always use the micro model because we can't download all model
+    # configurations in the GHA environment, but we patch SpyrePlatform
+    # to test the behavior for all models.
+    model = REFERENCE_MODELS["ibm-ai-platform/micro-g3.3-8b-instruct-1b"]
     common_args = [
         "--model",
         model.name,
@@ -67,6 +70,9 @@ def test_generic_model_chunk_size_default(
         "--swap-space",  # to prevent a validation error in the 16GB memory test env.
         "1",
     ]
+
+    if model_name == "ibm-granite/granite-3.3-8b-instruct":
+        monkeypatch.setattr(SpyrePlatform, "is_granite_3_8b", lambda _config: True)
 
     with environ_checkpoint():
         # Test that the upstream default is None but is changed to 2048 by
