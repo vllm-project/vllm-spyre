@@ -350,6 +350,9 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         elif self.config.model_type == "gpt_bigcode":
             self.kv_cache_specs["num_layers"] = self.config.n_layer
             self.kv_cache_specs["head_dim"] = self.config.n_embd // self.config.n_head
+        elif self.config.model_type == "pixtral":
+            self.kv_cache_specs["num_layers"] = self.config.text_config.num_hidden_layers
+            self.kv_cache_specs["head_dim"] = self.config.text_config.head_dim
         else:
             raise NotImplementedError(
                 f"[SpyreCausalLM] model type {self.config.model_type} "
