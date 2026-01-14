@@ -18,9 +18,3 @@
         show_root_heading: true
         members:
         - test_output
-
-::: tests.e2e.test_spyre_online
-    options:
-        show_root_heading: true
-        members:
-        - test_openai_serving_cb
