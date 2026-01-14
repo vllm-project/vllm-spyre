@@ -71,7 +71,7 @@ from vllm.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, ModelRunnerOutput
 logger = init_logger(__name__)
 
 
-@dataclass(frozen=True)
+@dataclass()
 class ModelForwardInputs:
     input_tokens: torch.Tensor | None = None
     input_positions: torch.Tensor | None = None
@@ -79,12 +79,12 @@ class ModelForwardInputs:
     is_prompt: bool = False
 
 
-@dataclass(frozen=True)
+@dataclass()
 class PoolingForwardInputs(ModelForwardInputs):
     token_type_ids: torch.Tensor | None = None
 
 
-@dataclass(frozen=True)
+@dataclass()
 class SamplingForwardInputs(ModelForwardInputs):
     """
     Used by the SpyreModelRunner.
@@ -2317,6 +2317,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         self.input_batch.refresh_metadata()
         self.prefill_batch.refresh_metadata()
 
+        return prefill_index
+
     def prepare_model_input(self, scheduler_output):
         is_prefill = False
         req_id: str = ""
@@ -2345,8 +2347,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             # All prefills are chunked
             # Get request id from new request or cached request
             model_inputs = self._prepare_chunked_prefill(req_id)
-            self._maybe_prepare_last_prefill(req_id, scheduler_output)
-
+            prefill_index = self._maybe_prepare_last_prefill(req_id, scheduler_output)
+            model_inputs.scale_indices = [prefill_index]
             return model_inputs
         else:
             return self._prepare_decode(scheduler_output.scheduled_cached_reqs)
