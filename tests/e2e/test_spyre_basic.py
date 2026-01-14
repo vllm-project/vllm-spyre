@@ -49,7 +49,6 @@ def test_output(
 
     skip_unsupported_tp_size(tp_size, backend)
 
-
     prompts = get_chicken_soup_prompts(4)
 
     kwargs = (
