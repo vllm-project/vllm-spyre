@@ -2285,7 +2285,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         # once if is fully prefilled
         self.prefill_batch.add_request(req_state)
 
-    def _maybe_prepare_last_prefill(self, req_id: str, scheduler_output: SchedulerOutput) -> None:
+    def _maybe_prepare_last_prefill(self, req_id: str, scheduler_output: SchedulerOutput) -> int:
         """In the last prefill we have to setup the batch to sample the
         first token.
         """
@@ -2348,7 +2348,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             # Get request id from new request or cached request
             model_inputs = self._prepare_chunked_prefill(req_id)
             prefill_index = self._maybe_prepare_last_prefill(req_id, scheduler_output)
-            model_inputs.scale_indices = [prefill_index]
+            if prefill_index is not None:
+                model_inputs.scale_indices = [prefill_index]
             return model_inputs
         else:
             return self._prepare_decode(scheduler_output.scheduled_cached_reqs)
