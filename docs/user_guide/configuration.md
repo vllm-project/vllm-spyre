@@ -7,20 +7,19 @@ For a complete list of configuration options, see [Environment Variables](env_va
 The torch.compile backend can be configured with the `VLLM_SPYRE_DYNAMO_BACKEND` environment variable.
 
 All models can be tested on CPU by setting this to `eager`.
-To run inference on IBM Spyre Accelerators, the backend should be set as:
+To run inference on IBM Spyre Accelerators, this should be set to `sendnn`.
 
-| Model type | vLLM backend | `VLLM_SPYRE_DYNAMO_BACKEND` configuration | Notes |
-| --- | --- | --- | --- |
-| Decoder | v0 | sendnn | V0 support for decoder models is deprecated |
-| Decoder | v1 | sendnn | |
-| Embedding | v0 | sendnn | V0 support for embedding models is deprecated|
-| Embedding | v1 | sendnn | |
+Support for the vllm v0 backend has been removed, only the vllm v1 backend is supported.
 
 ## Batching Modes
 
-When running decoder models, vLLM Spyre supports a static batching mode and a continuous batching mode.
+When running decoder models, vLLM Spyre supports:
 
-### Static Batching
+1. A legacy static batching mode
+2. A legacy continuous batching mode without chunked prefill support
+3. A continuous batching mode with chunked prefill and prefix caching
+
+### Static Batching (Legacy)
 
 With static batching, graphs are pre-compiled for the configured batch shapes and each batch must finish processing before a new batch can be scheduled. This adds extra constraints on the sizes of inputs and outputs for each request, and requests that do not fit the precompiled graphs will be rejected.
 
@@ -37,19 +36,19 @@ export VLLM_SPYRE_WARMUP_PROMPT_LENS=4096,1024
 export VLLM_SPYRE_WARMUP_NEW_TOKENS=1024,256
 ```
 
-### Continuous Batching
+### Continuous Batching (Legacy)
 
 !!! attention
     Continuous batching can be enabled with `VLLM_SPYRE_USE_CB=1`.
 
-Continuous batching works much more like other accelerator implementations on vLLM. Requests can be continually appended to a running batch, and requests that finish generating can be evicted from the batch to make room for more requests. Neither chunked prefill nor prefix caching are currently supported though, so when a request is added to the running batch it must first be paused for a full prefill of the incoming prompt.
+Continuous batching works much more like other accelerator implementations on vLLM. Requests can be continually appended to a running batch, and requests that finish generating can be evicted from the batch to make room for more requests. Neither chunked prefill nor prefix caching are currently supported in this mode, so when a request is added to the running batch it must first be paused for a full prefill of the incoming prompt.
 
 Unlike static batching, no warmup shapes need to be provided for continuous batching. While the user does not have to specify the prompt lengths explicitly (see `VLLM_SPYRE_WARMUP_PROMPT_LENS` for static batching), the vLLM argument `max-num-seqs` is used to set the maximum batch size (analogous to `VLLM_SPYRE_WARMUP_BATCH_SIZES` for static batching). The number of generated output tokens is implicitly limited by `max-model-len - padded_prompt_length` (see `VLLM_SPYRE_WARMUP_NEW_TOKENS` for static batching), where `padded_prompt_length` is the prompt length rounded up to the next multiple of the block size (64).
 
 !!! attention
     Currently the maximal context length for which continuous batching is supported on IBM Spyre Accelerators is 32K (32,768). Therefore the length of the submitted prompts plus the number of requested output tokens should be less than 32K. We strongly recommend not setting the `max_tokens` too high, such that prompt lengths plus output tokens are well below 32K. Otherwise there is a risk of performance degradation due to scheduling constraints.
 
-## Chunked Prefill
+### Chunked Prefill
 
 Chunked prefill is a technique that improves Inter-Token Latency (ITL) in continuous batching mode when large prompts need to be prefetched. Without it, these large prefills can negatively impact the performance of ongoing decodes. In essence, chunked prefill divides incoming prompts into smaller segments and processes them incrementally, allowing the system to balance prefill work with active decoding tasks.
 
@@ -62,7 +61,17 @@ In the vLLM v1 engine, this feature is enabled by default. In vLLM-Spyre, howeve
 
 As in vLLM, the `max_num_batched_tokens` parameter controls how chunks are formed. However, because current versions of vLLM-Spyre cannot prefill and decode within the same engine step and only prefill a single prompt at a time, `max_num_batched_tokens` specifies the chunk size, whereas in upstream vLLM it represents a shared token budget for both prefills and decodes.
 
-This parameter should be tuned according to your infrastructure, it is recommended to set it from `1024` to `4096` tokens and it **must** be multiple of the block size (currently fixed to `64`). For convenience, when using the model `ibm-granite/granite-3.3-8b-instruct` with `tp=4`, vLLM-Spyre automatically sets `max_num_batched_tokens` to `4096`, a value known to produce good hardware utilization in this setup.
+This parameter should be tuned according to your infrastructure, it is recommended to set it from `1024` to `4096` tokens and it **must** be multiple of the block size (currently fixed to `64`). For convenience, when using the model `ibm-granite/granite-3.3-8b-instruct` with `tp=4`, vLLM-Spyre automatically sets `max_num_batched_tokens` to `1024`, a value known to produce good hardware utilization in this setup.
+
+When running in chunked prefill mode, the `vllm:kv_cache_usage_perc` metric will report the correct kv cache usage on the spyre cards of all currently running requests.
+
+#### Prefix caching
+
+When running in chunked prefill mode, prefix caching can be enabled with the `--enable-prefix-caching` CLI flag. An overview of prefix caching can be found in the [vLLM official documentation on Automatic Prefix Caching](https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/#limits).
+
+Prefix caching works mostly the same as in upstream vllm, with the caveat that because prefills must happen in fixed-size chunks we can only effectively decrease the number of chunks in a prefill if an entire chunk is available in cache. Therefore workloads are expected to see a slightly lower prefix cache hit rate on spyre cards than on other accelerators.
+
+When running with prefix caching enabled the metrics `vllm:prefix_cache_queries` and `vllm:prefix_cache_hits` will correctly report the prefix cache stats in tokens.
 
 ## Caching Compiled Graphs
 
