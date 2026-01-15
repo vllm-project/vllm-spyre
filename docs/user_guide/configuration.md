@@ -9,11 +9,11 @@ The torch.compile backend can be configured with the `VLLM_SPYRE_DYNAMO_BACKEND`
 All models can be tested on CPU by setting this to `eager`.
 To run inference on IBM Spyre Accelerators, this should be set to `sendnn`.
 
-Support for the vllm v0 backend has been removed, only the vllm v1 backend is supported.
+Support for the vLLM v0 backend has been removed, only the vLLM v1 backend is supported.
 
 ## Batching Modes
 
-When running decoder models, vLLM Spyre supports:
+When running decoder models, vLLM-Spyre supports:
 
 1. A legacy static batching mode
 2. A legacy continuous batching mode without chunked prefill support
@@ -63,15 +63,15 @@ As in vLLM, the `max_num_batched_tokens` parameter controls how chunks are forme
 
 This parameter should be tuned according to your infrastructure, it is recommended to set it from `1024` to `4096` tokens and it **must** be multiple of the block size (currently fixed to `64`). For convenience, when using the model `ibm-granite/granite-3.3-8b-instruct` with `tp=4`, vLLM-Spyre automatically sets `max_num_batched_tokens` to `1024`, a value known to produce good hardware utilization in this setup.
 
-When running in chunked prefill mode, the `vllm:kv_cache_usage_perc` metric will report the correct kv cache usage on the spyre cards of all currently running requests.
+In chunked prefill mode, the `vllm:kv_cache_usage_perc` metric will report the correct KV cache usage on the Spyre cards for all active requests.
 
-#### Prefix caching
+#### Prefix Caching
 
 When running in chunked prefill mode, prefix caching can be enabled with the `--enable-prefix-caching` CLI flag. An overview of prefix caching can be found in the [vLLM official documentation on Automatic Prefix Caching](https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/#limits).
 
-Prefix caching works mostly the same as in upstream vllm, with the caveat that because prefills must happen in fixed-size chunks we can only effectively decrease the number of chunks in a prefill if an entire chunk is available in cache. Therefore workloads are expected to see a slightly lower prefix cache hit rate on spyre cards than on other accelerators.
+Prefix caching mirrors upstream vLLM, though the requirement for fixed-size prefill chunks means the number of chunks in a prefill is only reduced if an entire chunk is available in cache. Therefore, workloads may show slightly lower hit rates compared to other accelerators.
 
-When running with prefix caching enabled the metrics `vllm:prefix_cache_queries` and `vllm:prefix_cache_hits` will correctly report the prefix cache stats in tokens.
+When prefix caching is enabled, the `vllm:prefix_cache_queries` and `vllm:prefix_cache_hits` metrics correctly report prefix cache stats in tokens.
 
 ## Caching Compiled Graphs
 
