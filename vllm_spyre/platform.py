@@ -145,6 +145,12 @@ class SpyrePlatform(Platform):
             "Cannot use chunked prefill without continuous batching."
         )
 
+        assert (
+            cache_config.enable_prefix_caching and envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL
+        ) or not cache_config.enable_prefix_caching, (
+            "Cannot use prefix caching without chunked prefill."
+        )
+
         if envs_spyre.VLLM_SPYRE_USE_CB and is_decoder:
             if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
                 scheduler_config.scheduler_cls = (
