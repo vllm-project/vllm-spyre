@@ -74,6 +74,9 @@ class SpyrePlatform(Platform):
     _block_size: int = 64  # hardcoded Spyre constraint for now
     _config: VllmConfig = None
     _torch_sendnn_version = None
+    # tracks if we are being configured via CLI or LLM() so that we know if
+    # default arg parser changes actually have an effect
+    _used_with_cli = False
 
     # Backend for dynamic compilation ops
     # See vllm batched_count_greater_than method
@@ -145,11 +148,15 @@ class SpyrePlatform(Platform):
             "Cannot use chunked prefill without continuous batching."
         )
 
-        assert (
-            cache_config.enable_prefix_caching and envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL
-        ) or not cache_config.enable_prefix_caching, (
-            "Cannot use prefix caching without chunked prefill."
-        )
+        # enable_prefix_caching will be defaulted to True when used with LLM();
+        # only assert if our arg parser default was applied
+        print("Used with CLI", cls._used_with_cli)
+        if cls._used_with_cli:
+            assert (
+                cache_config.enable_prefix_caching and envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL
+            ) or not cache_config.enable_prefix_caching, (
+                "Cannot use prefix caching without chunked prefill."
+            )
 
         if envs_spyre.VLLM_SPYRE_USE_CB and is_decoder:
             if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
@@ -468,6 +475,9 @@ class SpyrePlatform(Platform):
     @classmethod
     def pre_register_and_update(cls, parser: FlexibleArgumentParser | None = None) -> None:
         if parser is not None:
+            # let's us know that defaults were applied to the parser
+            cls._used_with_cli = True
+
             parser.set_defaults(enable_prefix_caching=False)
             # TODO: We don't use the value of the enable_chunked_prefill arg,
             # but setting the default makes logs match our setting.
