@@ -32,6 +32,7 @@ def test_output(
     warmup_shapes: DecodeWarmupShapes,
     monkeypatch: pytest.MonkeyPatch,
     use_llm_cache,
+    runtime_xfail,
 ) -> None:
     """
     The warmup is based on a single shape. After the warmup,
@@ -62,6 +63,13 @@ def test_output(
             "warmup_shapes": warmup_shapes,
         }
     )
+
+    if (
+        "micro-g3.3-8b-instruct-1b" in model.name
+        and model.is_quantized
+        and mode not in ["cb", "cp"]
+    ):
+        runtime_xfail(reason="SB sometimes causes failures with quantized model")
 
     max_new_tokens = warmup_shapes[0][1]
 
