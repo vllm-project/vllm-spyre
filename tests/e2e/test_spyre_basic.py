@@ -67,7 +67,7 @@ def test_output(
     if (
         "micro-g3.3-8b-instruct-1b" in model.name
         and model.is_quantized
-        and mode not in ["cb", "cp"]
+        and mode not in ["cb", "cp", "pc"]
     ):
         runtime_xfail(reason="SB sometimes causes failures with quantized model")
 
