@@ -23,7 +23,7 @@
     { cb: True, tp_size: 4, max_model_len: 16384, max_num_seqs: 4 },
     { cb: True, tp_size: 4, max_model_len: 32768, max_num_seqs: 32 },
   ]
-- model: "granite4"
+- model: "ibm-granite/granite4"
   configs: [
     { cb: False, tp_size: 1, warmup_shapes: [[2048, 1024, 16]] },
     { cb: False, tp_size: 4, warmup_shapes: [[6144, 2048,  1]] },

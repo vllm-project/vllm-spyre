@@ -23,7 +23,7 @@
       "format": "float-quantized"
     }
   },
-  "granite4": {
+  "ibm-granite/granite4": {
     "model_type": "granitemoehybrid"
   },
   "ibm-granite/granite-embedding-125m-english": {
