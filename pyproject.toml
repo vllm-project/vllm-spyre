@@ -124,20 +124,6 @@ ignore = [
     "B905",
 ]
 
-[tool.mypy]
-ignore_missing_imports = true
-check_untyped_defs = true
-follow_imports = "silent"
-
-# After fixing type errors resulting from follow_imports: "skip" -> "silent",
-# move the directory here and remove it from tools/type_check.sh
-files = [
-]
-# TODO(woosuk): Include the code from Megatron and HuggingFace.
-exclude = [
-    'vllm_spyre/model_executor/model_loader/spyre_setup.py'
-]
-
 [tool.codespell]
 ignore-words-list = "dout, te, indicies, subtile, ElementE"
 skip = "*.svg,./tests/hf_cache.json"
@@ -212,10 +198,4 @@ dev = [
     "requests==2.32.3",
     "sentence-transformers==3.4.1",
     "aiu-fms-testing-utils>=0.5.0",
-]
-lint = [
-    "mypy==1.11.1",
-    "types-pyyaml>=6.0.12.20250326",
-    "types-requests>=2.32.0.20250328",
-    "types-setuptools>=77.0.2.20250328",
 ]
