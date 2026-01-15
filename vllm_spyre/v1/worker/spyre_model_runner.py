@@ -2063,6 +2063,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         self.model.n_pads_right = self.block_size - (((request_tkv - 1) % self.block_size) + 1)
         self.model.indices = torch.ones(1, dtype=torch.bool, device="cpu")
 
+        # TODO: call it something better?
         prefill_index = self._maybe_prepare_last_prefill(
             req_id=req_id, scheduler_output=scheduler_output
         )
