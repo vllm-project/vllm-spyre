@@ -258,7 +258,9 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
         assert len(model_runner_output.sampled_token_ids) == num_sampled_token_ids
         assert model_runner_output.tkv == tkv
         assert model_runner_output.n_free_blocks == n_free_blocks
-        assert model_runner_output.left_padding == left_padding
+        assert model_runner_output.left_padding == left_padding, (
+            f"Expected {left_padding}, got {model_runner_output.left_padding}"
+        )
         if prefix_cache_hit_len is not None:
             assert model_runner_output.prefix_cache_hit_len == prefix_cache_hit_len
 

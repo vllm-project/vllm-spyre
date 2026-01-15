@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from logging import DEBUG
-from typing import TYPE_CHECKING, Any, Generic, TypeVar, Union
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, Union, cast
 
 import numpy
 import torch
@@ -263,7 +263,7 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
         # TODO: probably sooner we will need a more sophisticated way to switch
         # build attention metadata based on model/attention. But for now, a
         # simple method override is good enough.
-        raise NotImplementedError()
+        return None  # ty: ignore
 
     @abstractmethod
     def update_states(self, scheduler_output: SchedulerOutput):
@@ -1960,12 +1960,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         )
 
         num_computed_tokens = request.num_computed_tokens
-        num_computed_blocks = exact_div(num_computed_tokens, self.block_size)
-
-        assert request.usable_blocks < num_computed_blocks, (
-            "Cannot prepare inputs for fully cached chunk"
-        )
-
         # round up due to possible padding
         chunk_i = math.ceil(num_computed_tokens / chunk_size)
 
@@ -2123,7 +2117,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
 
-            req_state = self.requests[req_id]
+            req_state = cast(ChunkedPrefillRequestState, self.requests[req_id])
 
             # filling block table with padding blocks to make it rectangular
             # Note: the padding block id 0 here is chosen arbitrarily, it can
@@ -2134,6 +2128,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             left_pad_blocks_count = max_n_blocks - len(blocks)
             block_ids = [0] * left_pad_blocks_count + [block.block_id for block in blocks]
             block_table.append(block_ids)
+            # Update the internal request state with the number of padding blocks used
+            req_state.padding_blocks = left_pad_blocks_count
 
             # slot_mapping for all blocks of sequence
             start_slot = block_table[-1][-1] * self.block_size
@@ -2528,10 +2524,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
             # TODO: FIXME: use like `self.prefill_output()` to output the same as a non-cached
             # chunked prefill instead of an empty output
-            empty_output = self.get_empty_output()
-            empty_output.prefix_cache_stats = self.prefix_cache_stats
-            empty_output.prefix_cache_hit_len = self.get_prefix_cache_len()
-            return empty_output
+            t1 = time.time() - t0
+            logger.debug("t_forward_pass: %.2fms [prefix cache hit][batch size 1]", (t1 * 1000))
+            return self.prefill_output()
 
         model_input = self.prepare_model_input(scheduler_output)
         is_prefill = model_input.is_prompt
@@ -2546,23 +2541,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                 is_prompt=model_input.is_prompt,
             )
 
-        # Get mapping between requests ids to the index within the batch
-        req_id_to_index = self.get_req_id_to_index(is_prefill)
-
-        # Prepare the left paddings to pass to the scheduler
-        left_padded_prompt_mask = model_input.left_padded_prompt_mask
-        left_padding: dict[str, int] = {
-            req_id: int(left_padded_prompt_mask[idx].item())
-            for req_id, idx in req_id_to_index.items()
-        }
-
-        # TODO: dead code, this only works for SB with bs=1, either
-        # fix it or remove it.
-        # prompt_logprobs_dicts = self._get_prompt_logprobs_dict(
-        #    logits=logits, model_inputs=model_input)
-        # TODO: disable prefix caching for requests with prompt logprobs
-        prompt_logprobs_dicts: dict[str, LogprobsTensors | None] = {}
-
         # If the prompt is being prefilled we don't have to sample
         # and generate a new token.
         if is_prefill and self.check_incomplete_prefill(scheduler_output):
@@ -2572,20 +2550,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
             t1 = time.time() - t0
             logger.debug("t_forward_pass: %.2fms [prefill single chunk][batch size 1]", (t1 * 1000))
-            return CPSpyreModelRunnerOutput(
-                req_ids=list(req_id_to_index.keys()),
-                req_id_to_index=req_id_to_index,
-                sampled_token_ids=[],
-                logprobs=None,
-                prompt_logprobs_dict=prompt_logprobs_dicts,
-                pooler_output=[],
-                tkv=self.tkv,
-                n_free_blocks=self.get_n_free_blocks(),
-                left_padding=left_padding,
-                kv_cache_usage=self.get_kv_cache_usage(),
-                prefix_cache_stats=self.prefix_cache_stats,
-                prefix_cache_hit_len=self.get_prefix_cache_len(),
-            )
+            return self.prefill_output()
 
         # Sample the next token.
         output: SamplerOutput | None = self.model.sample(
@@ -2628,17 +2593,51 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         if not self.is_driver_worker:
             return self.get_empty_output()
 
+        model_output = self.sampled_output(output, is_prefill)
+        return model_output
+
+    def prefill_output(self) -> CPSpyreModelRunnerOutput:
+        req_id_to_index = self.get_req_id_to_index(is_prefill=True)
+        left_padding = {
+            req_id: cast(ChunkedPrefillRequestState, self.requests[req_id]).padding_blocks
+            * self.block_size
+            for req_id in req_id_to_index
+        }
+
+        return CPSpyreModelRunnerOutput(
+            req_ids=list(req_id_to_index.keys()),
+            req_id_to_index=req_id_to_index,
+            sampled_token_ids=[],
+            logprobs=None,
+            prompt_logprobs_dict={},
+            pooler_output=[],
+            tkv=self.tkv,
+            n_free_blocks=self.get_n_free_blocks(),
+            left_padding=left_padding,
+            kv_cache_usage=self.get_kv_cache_usage(),
+            prefix_cache_stats=self.prefix_cache_stats,
+            prefix_cache_hit_len=self.get_prefix_cache_len(),
+        )
+
+    def sampled_output(self, output: SamplerOutput, is_prefill: bool) -> CPSpyreModelRunnerOutput:
+        req_id_to_index = self.get_req_id_to_index(is_prefill)
+        left_padding = {
+            req_id: cast(ChunkedPrefillRequestState, self.requests[req_id]).padding_blocks
+            * self.block_size
+            for req_id in req_id_to_index
+        }
+
         # list[int[int]] should be the correct type for vllm 0.12.0+
         sampled_token_ids: list[list[int]] = self._make_compatible_sampled_token_ids(
             output.sampled_token_ids
         )  # ty: ignore[invalid-assignment]
 
-        model_output = CPSpyreModelRunnerOutput(
+        return CPSpyreModelRunnerOutput(
             req_ids=list(req_id_to_index.keys()),
             req_id_to_index=req_id_to_index,
             sampled_token_ids=sampled_token_ids,
             logprobs=(output.logprobs_tensors.tolists() if output.logprobs_tensors else None),
-            prompt_logprobs_dict=prompt_logprobs_dicts,
+            prompt_logprobs_dict={},
             pooler_output=[],
             tkv=self.tkv,
             n_free_blocks=self.get_n_free_blocks(),
@@ -2646,8 +2645,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             kv_cache_usage=self.get_kv_cache_usage(),
             prefix_cache_stats=self.prefix_cache_stats,
         )
-
-        return model_output
 
     def get_kv_cache_usage(self) -> float:
         return self.kv_cache_manager.block_pool.get_usage()
