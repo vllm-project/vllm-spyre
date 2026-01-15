@@ -154,6 +154,10 @@ class SpyrePlatform(Platform):
                 scheduler_config.scheduler_cls = (
                     "vllm_spyre.v1.core.scheduler.ContinuousBatchingSpyreScheduler"
                 )
+            # overwrite so that vLLM prints our value in the "Initializing a
+            # V1 LLM engine" log message
+            scheduler_config.chunked_prefill_enabled = envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL
+
             if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
                 raise ValueError("Prompt logprobs not supported with continuous batching")
             if (
@@ -232,7 +236,7 @@ class SpyrePlatform(Platform):
                 )
 
         logger.info(
-            "Overriding configurations based on warmup shapes. "
+            "Overriding configurations for Spyre. "
             "max_model_len=%d, max_num_seqs=%d, block_size=%d, "
             "max_num_batched_tokens=%d",
             model_config.max_model_len,
