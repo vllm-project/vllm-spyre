@@ -69,6 +69,9 @@ vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.13.0" }
 [tool.ty.rules]
 possibly-missing-attribute = "ignore"
 
+[tool.ty.src]
+exclude = ["vllm_spyre/__init__.py"]
+
 [tool.ruff]
 # Use widescreen monitors 😎😎😎
 line-length = 100

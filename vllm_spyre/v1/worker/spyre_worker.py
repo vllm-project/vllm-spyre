@@ -342,12 +342,14 @@ class SpyreWorker(WorkerBase):
                 envs.VLLM_TORCH_PROFILER_WITH_FLOPS,
             )
 
+            # TODO: These flags should be set as bools, but are passed through as strings.
+            # This is probably a bug.
             self.profiler = torch.profiler.profile(
                 activities=[torch.profiler.ProfilerActivity.CPU],
-                record_shapes=envs.VLLM_TORCH_PROFILER_RECORD_SHAPES,
-                profile_memory=envs.VLLM_TORCH_PROFILER_WITH_PROFILE_MEMORY,
-                with_stack=envs.VLLM_TORCH_PROFILER_WITH_STACK,
-                with_flops=envs.VLLM_TORCH_PROFILER_WITH_FLOPS,
+                record_shapes=envs.VLLM_TORCH_PROFILER_RECORD_SHAPES,  # ty: ignore
+                profile_memory=envs.VLLM_TORCH_PROFILER_WITH_PROFILE_MEMORY,  # ty: ignore
+                with_stack=envs.VLLM_TORCH_PROFILER_WITH_STACK,  # ty: ignore
+                with_flops=envs.VLLM_TORCH_PROFILER_WITH_FLOPS,  # ty: ignore
                 on_trace_ready=torch.profiler.tensorboard_trace_handler(
                     torch_profiler_trace_dir, use_gzip=True
                 ),
@@ -650,7 +652,7 @@ class SpyreWorker(WorkerBase):
             req_ids.append(req.req_id)
             new_token_ids.append(
                 [valid_token_ids_tensor[torch.randint(0, len(valid_token_ids_tensor), (1,)).item()]]  # ty: ignore
-            )  # placeholder token #ty: ignore
+            )  # placeholder token
             new_block_ids.append([req.block_ids])
             num_computed_tokens.append(req.num_computed_tokens)
 

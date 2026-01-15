@@ -47,7 +47,7 @@ class LogitProcessorWrapper(LogitsProcessor):
 
     def __init__(
         self,
-        logit_processor: LogitsProcessor,
+        logit_processor: type[LogitsProcessor],
         vllm_config: VllmConfig,
         device: torch.device,
         is_pin_memory: bool,
