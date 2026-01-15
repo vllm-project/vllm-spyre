@@ -2285,7 +2285,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         # once if is fully prefilled
         self.prefill_batch.add_request(req_state)
 
-    def _maybe_prepare_last_prefill(self, req_id: str, scheduler_output: SchedulerOutput) -> int:
+    def _maybe_prepare_last_prefill(
+        self, req_id: str, scheduler_output: SchedulerOutput
+    ) -> int | None:
         """In the last prefill we have to setup the batch to sample the
         first token.
         """
@@ -2296,7 +2298,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         num_scheduled_tokens = scheduler_output.num_scheduled_tokens[req_id]
 
         if num_computed_tokens + num_scheduled_tokens < prompt_len:
-            return
+            return None
 
         # Last prefill: we might need to update the tkv
         req_n_blocks = math.ceil(prompt_len / self.block_size)
