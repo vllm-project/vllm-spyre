@@ -238,13 +238,17 @@ class SpyrePlatform(Platform):
                 )
 
         logger.info(
-            "Overriding configurations for Spyre. "
+            "Configurations for Spyre. "
             "max_model_len=%d, max_num_seqs=%d, block_size=%d, "
-            "max_num_batched_tokens=%d",
+            "max_num_batched_tokens=%d, "
+            "enable_chunked_prefill=%r, "
+            "enable_prefix_caching=%r",
             model_config.max_model_len,
             scheduler_config.max_num_seqs,
             cache_config.block_size,
             scheduler_config.max_num_batched_tokens,
+            envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL,
+            cache_config.enable_prefix_caching,
         )
 
         # set env vars for torch_sendnn to consume
