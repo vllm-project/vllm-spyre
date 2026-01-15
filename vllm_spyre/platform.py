@@ -154,8 +154,10 @@ class SpyrePlatform(Platform):
                 scheduler_config.scheduler_cls = (
                     "vllm_spyre.v1.core.scheduler.ContinuousBatchingSpyreScheduler"
                 )
-            # overwrite so that vLLM prints our value in the "Initializing a
-            # V1 LLM engine" log message
+            # Overwrite so that vLLM prints our value in the "Initializing a V1
+            # LLM engine" log message
+            # TODO: With the arg parser defaulting, this can  be removed when we
+            # only support vllm >= v0.11.1
             scheduler_config.chunked_prefill_enabled = envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL
 
             if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
@@ -457,6 +459,11 @@ class SpyrePlatform(Platform):
     def pre_register_and_update(cls, parser: FlexibleArgumentParser | None = None) -> None:
         if parser is not None:
             parser.set_defaults(enable_prefix_caching=False)
+            # TODO: We don't use the value of the enable_chunked_prefill arg,
+            # but setting the default makes logs match our setting.
+            # vLLM >= 0.11.1 does not override the arg, so we could remove the
+            # env var for v2 if we update our minimum support
+            parser.set_defaults(enable_chunked_prefill=envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL)
             if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
                 parser.set_defaults(max_num_batched_tokens=cls.DEFAULT_CHUNK_SIZE)
 
