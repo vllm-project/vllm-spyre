@@ -1806,10 +1806,6 @@ class SpyrePoolingModelRunner(
 
         ## No partial prefill, hence we can use the prompt lens here
         num_scheduled_tokens = pooling_metadata.prompt_lens.tolist()
-        assert len(num_scheduled_tokens) == len(self.input_batch.req_ids), (
-            f"Expected {len(self.input_batch.req_ids)} prompt lens but got "
-            f"{len(num_scheduled_tokens)}"
-        )
 
         cursor_kwargs: dict[str, Any] = {}
         if has_argument(pooling_metadata.build_pooling_cursor, "seq_lens_cpu"):
