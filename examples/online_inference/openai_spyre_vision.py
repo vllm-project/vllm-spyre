@@ -26,7 +26,8 @@ import time
 from openai import OpenAI
 
 parser = argparse.ArgumentParser(
-    description="Script to submit an inference request to vllm server.")
+    description="Script to submit an inference request to vllm server."
+)
 
 parser.add_argument(
     "--max_tokens",
@@ -74,22 +75,18 @@ def get_vllm_prompts(num_prompts):
     prompts = []
     for img_url in img_urls:
         for instr in instructions:
-            prompts.append({
-                "role":
-                "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": instr
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": img_url
+            prompts.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": instr},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": img_url},
                         },
-                    },
-                ],
-            })
+                    ],
+                }
+            )
 
     prompts = prompts * (num_prompts // len(prompts) + 1)
     return prompts[:num_prompts]

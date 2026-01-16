@@ -3,6 +3,7 @@
 primarily verify the correctness of some of the helper utils, especially
 with respect to the creation of warmup features.
 """
+
 import copy
 
 import pytest
@@ -29,8 +30,7 @@ def hf_config():
 def fms_config():
     """Get the FMS config corresponding to the above."""
     # Patch the head dimension directly (needed for llava next).
-    serialization.extend_adapter("llava_next", "hf",
-                                 ["weight_expansion_for_mismatched_head_dim"])
+    serialization.extend_adapter("llava_next", "hf", ["weight_expansion_for_mismatched_head_dim"])
 
     config_dict = {"head_dim": 128}
 
@@ -92,8 +92,7 @@ def test_warmup_embed_types_and_shape(llava_next_mm_utils):
     # Ensure embeddings and tokens have the same dims except the embed dim
     assert warmup_toks.shape == warmup_embeds_tensor.shape[:-1]
     # Check the embedding shape is consistent with the text subconfig
-    assert warmup_embeds_tensor.shape[
-        -1] == llava_next_mm_utils.hf_config.text_config.hidden_size
+    assert warmup_embeds_tensor.shape[-1] == llava_next_mm_utils.hf_config.text_config.hidden_size
     assert isinstance(warmup_embeds_tensor, torch.Tensor)
 
 
@@ -106,8 +105,7 @@ def test_warmup_mm_features_types(llava_next_mm_utils):
     # since we warm this model up with features pertaining to one image.
     assert isinstance(warmup_mm_features, list)
     assert len(warmup_mm_features) == 1
-    assert all(
-        isinstance(spec, MultiModalFeatureSpec) for spec in warmup_mm_features)
+    assert all(isinstance(spec, MultiModalFeatureSpec) for spec in warmup_mm_features)
 
 
 def test_warmup_shape_alignment(llava_next_mm_utils):
@@ -134,7 +132,7 @@ def test_warmup_feature_correctness(llava_next_mm_utils):
     """Ensure that the expanded image token count is actually
     correct with respect to the input image size by reprocessing
     it with transformers and comparing the result.
-    
+
     NOTE: depending on the implementation, this may be redundant,
     as the llava next processor essentially does this internally.
     However, if other multimodal models are implemented, this is
@@ -155,7 +153,7 @@ def test_warmup_feature_correctness(llava_next_mm_utils):
 
     # NOTE: Shape is width x height for PIL, but it's height x width in pytorch,
     # so we need to flip dims here to ensure alignment with the torch tensors.
-    dummy_img = Image.new('RGB', image_dims.tolist()[::-1])
+    dummy_img = Image.new("RGB", image_dims.tolist()[::-1])
 
     img_tok = processor.decode(image_token_id)
     preproc_res = processor(
@@ -163,16 +161,14 @@ def test_warmup_feature_correctness(llava_next_mm_utils):
         text=img_tok,
         return_tensors="pt",
     )
-    actual_expanded_mm_ids = torch.sum(
-        preproc_res.input_ids == image_token_id).item()
+    actual_expanded_mm_ids = torch.sum(preproc_res.input_ids == image_token_id).item()
 
     # Check that the hardcoded number of image toks matches the processor result
     assert num_expanded_mm_ids == actual_expanded_mm_ids
 
     # Check that after squeezing, the 4D pixel vals are the same shape
     pixel_vals = preproc_res.pixel_values.squeeze(0)
-    assert pixel_vals.shape == warmup_mm_features.data[
-        "pixel_values"].data.shape
+    assert pixel_vals.shape == warmup_mm_features.data["pixel_values"].data.shape
 
     # Check that the image shapes are also correct; note the dim flip earlier,
     # this is generally important because an m x n image does not necessarily

@@ -151,8 +151,7 @@ class SpyreCausalLM(nn.Module):
             # or we are passing multimodal features to a model that should not
             # take them.
             if mm_features:
-                raise ValueError(
-                    "mm_features were provided, but model is not multimodal!")
+                raise ValueError("mm_features were provided, but model is not multimodal!")
             # We do not use embeddings for models that aren't multimodal.
             return None
 

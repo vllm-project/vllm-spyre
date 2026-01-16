@@ -1,5 +1,3 @@
-from typing import Optional
-
 import transformers
 
 from vllm_spyre.multimodal.mm_mappings import LlavaNextMMUtils, MMUtilsBase
@@ -15,12 +13,10 @@ def get_mm_specific_load_overrides(hf_config: transformers.PretrainedConfig):
     cfg_type = type(hf_config)
     if cfg_type not in MM_HF_CFG_REGISTRY:
         return {}
-    return MM_HF_CFG_REGISTRY[cfg_type].get_mm_specific_load_overrides(
-        hf_config)
+    return MM_HF_CFG_REGISTRY[cfg_type].get_mm_specific_load_overrides(hf_config)
 
 
-def maybe_get_mm_utils(model_path, fms_config,
-                       hf_config) -> Optional[MMUtilsBase]:
+def maybe_get_mm_utils(model_path, fms_config, hf_config) -> MMUtilsBase | None:
     """Create an instance of the corresponding multimodal model's utils
     if one exists; if it doesn't, the model is not multimodal.
     """

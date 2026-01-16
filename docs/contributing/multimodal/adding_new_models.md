@@ -20,7 +20,7 @@ In vLLM, models are implemented as their own model class. The class implementati
 )
 ```
 
-If you are coming from a background of working with non-multimodal models, the more important pieces to be aware of are how the preprocesing differs, and how things differ in prefill. More specifically:
+If you are coming from a background of working with non-multimodal models, the more important pieces to be aware of are how the preprocessing differs, and how things differ in prefill. More specifically:
 
 - While text only models typically use a tokenizer, multimodal models generally have interleaved inputs. The manner in which this is accomplished is by using a *model specific* token that indicates that the corresponding positions should be replaced with multimodal features. Logically this essentially means something like the following:
 
@@ -53,7 +53,7 @@ In vLLM Spyre, models are implemented with a generic wrapper around FMS; the imp
 
 3. Implement the abstract methods for warmup features, multimodal embedding creation and so on.
 
-** Aside from uniformity, the main reason it's desirable to get the model running in vLLM *before* vLLM Spyre is that even though the model implementation is different, the preprocessor that vLLM uses to intialize it when it is running through vLLM Spyre is based on the underlying config, and is the *same*. This means that to implement the model in FMS, we do not have to reimplement any of the preprocessing wrapping or prompt substitution/multimodal token expansion logic, which is very well patterned in vLLM. This is ideal for keeping changes for specific model architectures in our generic wrapper to a minimum.
+** Aside from uniformity, the main reason it's desirable to get the model running in vLLM *before* vLLM Spyre is that even though the model implementation is different, the preprocessor that vLLM uses to initialize it when it is running through vLLM Spyre is based on the underlying config, and is the *same*. This means that to implement the model in FMS, we do not have to reimplement any of the preprocessing wrapping or prompt substitution/multimodal token expansion logic, which is very well patterned in vLLM. This is ideal for keeping changes for specific model architectures in our generic wrapper to a minimum.
 
 ### FAQ
 

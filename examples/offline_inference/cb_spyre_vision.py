@@ -5,6 +5,7 @@ NOTE: At the moment, if you are checking parity, things may not line up
 unless you compare eager against the FMS cpu model, i.e.,
     $ python cb_spyre_vision.py --backend eager --compare-target fms
 """
+
 import argparse
 import os
 import platform
@@ -19,13 +20,10 @@ from vllm import LLM, SamplingParams
 from vllm.assets.image import ImageAsset
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--model",
-                    type=str,
-                    default="ibm-granite/granite-vision-3.3-2b")
-parser.add_argument("--max_model_len",
-                    "--max-model-len",
-                    type=int,
-                    default=8192)  # one image has a max context of ~5k
+parser.add_argument("--model", type=str, default="ibm-granite/granite-vision-3.3-2b")
+parser.add_argument(
+    "--max_model_len", "--max-model-len", type=int, default=8192
+)  # one image has a max context of ~5k
 parser.add_argument("--max_num_seqs", "--max-num-seqs", type=int, default=2)
 parser.add_argument("--tp", type=int, default=1)
 parser.add_argument("--num-prompts", "-n", type=int, default=1)
@@ -34,17 +32,17 @@ parser.add_argument(
     type=str,
     default="8",
     help="Comma separated list of max tokens to use for each prompt. "
-    "This list is repeated until prompts are exhausted.")
-parser.add_argument("--backend",
-                    type=str,
-                    default='sendnn',
-                    choices=['eager', 'sendnn'])
+    "This list is repeated until prompts are exhausted.",
+)
+parser.add_argument("--backend", type=str, default="sendnn", choices=["eager", "sendnn"])
 
-parser.add_argument("--compare-target",
-                    type=str,
-                    default='fms',
-                    choices=['transformers', 'fms'],
-                    help="Target to compare results against on CPU.")
+parser.add_argument(
+    "--compare-target",
+    type=str,
+    default="fms",
+    choices=["transformers", "fms"],
+    help="Target to compare results against on CPU.",
+)
 
 
 def get_vllm_prompts(num_prompts):
@@ -52,8 +50,8 @@ def get_vllm_prompts(num_prompts):
     template = "<|system|>\nA chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions.\n<|user|>\n<image>\n{}\n<|assistant|>\n"  # noqa: E501
 
     images = [
-        ImageAsset('cherry_blossom').pil_image,
-        ImageAsset('stop_sign').pil_image,
+        ImageAsset("cherry_blossom").pil_image,
+        ImageAsset("stop_sign").pil_image,
     ]
 
     instructions = [
@@ -69,21 +67,24 @@ def get_vllm_prompts(num_prompts):
             # Make the images smol so that this example can run faster,
             # since we are not using a toy model here, and big images
             # can take up tons of tokens
-            new_width = int(.1 * width)
-            new_height = int(.1 * height)
-            prompts.append({
-                "prompt": template.format(instr),
-                "multi_modal_data": {
-                    "image": img.resize((new_width, new_height)),
+            new_width = int(0.1 * width)
+            new_height = int(0.1 * height)
+            prompts.append(
+                {
+                    "prompt": template.format(instr),
+                    "multi_modal_data": {
+                        "image": img.resize((new_width, new_height)),
+                    },
                 }
-            })
+            )
 
     prompts = prompts * (num_prompts // len(prompts) + 1)
     return prompts[:num_prompts]
 
 
-def compare_results(prompts: list[str], outputs_a: list[str],
-                    outputs_b: list[str], name_a: str, name_b: str):
+def compare_results(
+    prompts: list[str], outputs_a: list[str], outputs_b: list[str], name_a: str, name_b: str
+):
     """Utils for comparing outputs from differing engines/implementations,
     e.g., transformers & vLLM.
     """
@@ -128,8 +129,7 @@ def process_prompt_transformers(model, max_tokens, inputs):
 def get_fms_results(model_path, vllm_prompts):
     """Process the results for FMS running on CPU."""
     # head_dim expansion required for granite vision
-    serialization.extend_adapter("llava_next", "hf",
-                                 ["weight_expansion_for_mismatched_head_dim"])
+    serialization.extend_adapter("llava_next", "hf", ["weight_expansion_for_mismatched_head_dim"])
     config_dict = {}
     config_dict["head_dim"] = 128
 
@@ -179,9 +179,11 @@ def process_prompts(model_path, model, vllm_prompts, process_prompt):
         # Prompts are preformatted, so don't worry about the chat template
         vllm_req = vllm_prompts[i]
 
-        inputs = processor(text=vllm_req["prompt"],
-                           images=vllm_req["multi_modal_data"]["image"],
-                           return_tensors="pt")
+        inputs = processor(
+            text=vllm_req["prompt"],
+            images=vllm_req["multi_modal_data"]["image"],
+            return_tensors="pt",
+        )
         # NOTE: Image tokens are expanded in the llava next preprocessor
         num_expanded_toks = inputs.input_ids.shape[1]
 
@@ -213,31 +215,33 @@ if __name__ == "__main__":
             "Detected arm64 running environment. "
             "Setting HF_HUB_OFFLINE=1 otherwise vllm tries to download a "
             "different version of the model using HF API which might not work "
-            "locally on arm64.")
+            "locally on arm64."
+        )
         os.environ["HF_HUB_OFFLINE"] = "1"
 
-    os.environ['VLLM_SPYRE_DYNAMO_BACKEND'] = args.backend
-    os.environ['VLLM_SPYRE_USE_CB'] = '1'
-    os.environ['VLLM_SPYRE_USE_CHUNKED_PREFILL'] = '1'
+    os.environ["VLLM_SPYRE_DYNAMO_BACKEND"] = args.backend
+    os.environ["VLLM_SPYRE_USE_CB"] = "1"
+    os.environ["VLLM_SPYRE_USE_CHUNKED_PREFILL"] = "1"
 
     prompts = get_vllm_prompts(args.num_prompts)
 
-    # Set differring max_tokens so that the requests drop out of the batch at
+    # Set differing max_tokens so that the requests drop out of the batch at
     # different times
     max_tokens = [int(v) for v in args.max_tokens.split(",")]
     max_tokens = max_tokens * (args.num_prompts // len(max_tokens) + 1)
-    max_tokens = max_tokens[:args.num_prompts]
+    max_tokens = max_tokens[: args.num_prompts]
 
     sampling_params = [
-        SamplingParams(max_tokens=m, temperature=0.0, ignore_eos=True)
-        for m in max_tokens
+        SamplingParams(max_tokens=m, temperature=0.0, ignore_eos=True) for m in max_tokens
     ]
 
-    llm = LLM(model=args.model,
-              tokenizer=args.model,
-              max_model_len=args.max_model_len,
-              max_num_seqs=max_num_seqs,
-              tensor_parallel_size=args.tp)
+    llm = LLM(
+        model=args.model,
+        tokenizer=args.model,
+        max_model_len=args.max_model_len,
+        max_num_seqs=max_num_seqs,
+        tensor_parallel_size=args.tp,
+    )
 
     # Generate texts from the prompts. The output is a list of RequestOutput
     # objects that contain the prompt, generated text, and other information.

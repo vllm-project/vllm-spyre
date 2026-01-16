@@ -72,7 +72,7 @@ class HFResultCache:
         """
         if isinstance(prompt, list):
             prompt = self._token_ids_to_string(prompt)
-        elif isinstance(prompt, dict): # multimodal only
+        elif isinstance(prompt, dict):  # multimodal only
             prompt = json.dumps(prompt, default=self.mm_data_encode)
         max_tokens = str(max_tokens)
 
@@ -100,7 +100,7 @@ class HFResultCache:
         """
         if isinstance(prompt, list):
             prompt = self._token_ids_to_string(prompt)
-        elif isinstance(prompt, dict): # multimodal only
+        elif isinstance(prompt, dict):  # multimodal only
             prompt = json.dumps(prompt, default=self.mm_data_encode)
         max_tokens = str(max_tokens)
 

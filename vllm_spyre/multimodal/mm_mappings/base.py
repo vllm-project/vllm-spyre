@@ -11,6 +11,7 @@ from vllm.multimodal.inputs import MultiModalFeatureSpec
 class MMWarmupInputs(NamedTuple):
     """Wrapper for multimodal model warmup inputs,
     used for continuous batching."""
+
     input_ids: list[int]
     input_embeds: list[torch.Tensor]
     mm_features: list[MultiModalFeatureSpec]
@@ -21,14 +22,13 @@ class MMUtilsBase(ABC):
     Helpers utilities that are typically model architecture specific,
     and may be needed for properly integrating multimodal models from
     FMS.
-    
+
     Note that by convention, to avoid confusion, we use fms_config to
     refer to the FMS model config & hf_config to refer to the transformers
     config (i.e., avoid ambiguous terms like model_config for readability).
     """
 
-    def __init__(self, model_path: str, fms_config: ModelConfig,
-                 hf_config: PretrainedConfig):
+    def __init__(self, model_path: str, fms_config: ModelConfig, hf_config: PretrainedConfig):
         self._validate_configs(fms_config, hf_config)
         self.fms_config = fms_config
         self.hf_config = hf_config
@@ -40,20 +40,19 @@ class MMUtilsBase(ABC):
         return AutoProcessor.from_pretrained(self.model_path)
 
     @staticmethod
-    def _validate_configs(fms_config: ModelConfig,
-                          hf_config: PretrainedConfig):
+    def _validate_configs(fms_config: ModelConfig, hf_config: PretrainedConfig):
         """Ensure that configs are properly typed. Additional validation, e.g.,
         validating subconfig attrs should generally be done within subclasses.
         """
         if not isinstance(fms_config, ModelConfig):
             raise TypeError(
-                "Provided fms_config is of type %s, not an FMS ModelConfig",
-                type(fms_config))
+                "Provided fms_config is of type %s, not an FMS ModelConfig", type(fms_config)
+            )
 
         if not isinstance(hf_config, PretrainedConfig):
             raise TypeError(
-                "Provided hf_config is of type %s, not a PretrainedConfig",
-                type(fms_config))
+                "Provided hf_config is of type %s, not a PretrainedConfig", type(fms_config)
+            )
 
     def resolve_multimodal_vocab_size(self) -> int:
         """Determine the vocabulary size of the underlying LLM, which
@@ -62,12 +61,10 @@ class MMUtilsBase(ABC):
         # Try to look for the src_vocab_size in the sub text_config.
         # This will work for models like granite vision, but ultimately
         # depends on the wrapping vLM and underlying LLM.
-        if (text_config := getattr(self.fms_config, "text_config", None)):
-            if (vocab_sz := getattr(text_config, "src_vocab_size", None)):
+        if text_config := getattr(self.fms_config, "text_config", None):
+            if vocab_sz := getattr(text_config, "src_vocab_size", None):
                 return vocab_sz
-            raise ValueError(
-                "Provided FMS config has a text_config, but no src_vocab_size!"
-            )
+            raise ValueError("Provided FMS config has a text_config, but no src_vocab_size!")
         raise ValueError("Provided FMS config has no text config!")
 
     def unwrap_mm_kv_cache_opts(self):

@@ -247,8 +247,7 @@ def get_spyre_model_list(
     and revision field."""
     user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST")
     if not user_test_model_list:
-        return _default_test_models(isEmbeddings, isScoring, isMultimodal,
-                                    full_size_models)
+        return _default_test_models(isEmbeddings, isScoring, isMultimodal, full_size_models)
 
     # User overridden model list
     spyre_model_dir_path = get_spyre_model_dir_path()
@@ -324,11 +323,11 @@ def _default_test_models(
         return [pytest.param(model, marks=[pytest.mark.scoring], id=model.name)]
 
     if isMultimodal:
-        model = ModelInfo(name="ibm-granite/granite-vision-3.3-2b",
-                          revision="7fe917fdafb006f53aedf9589f148a83ec3cd8eb")
-        return [
-            pytest.param(model, marks=[pytest.mark.multimodal], id=model.name)
-        ]
+        model = ModelInfo(
+            name="ibm-granite/granite-vision-3.3-2b",
+            revision="7fe917fdafb006f53aedf9589f148a83ec3cd8eb",
+        )
+        return [pytest.param(model, marks=[pytest.mark.multimodal], id=model.name)]
 
     # Decoders
     # We run tests for both the full-precision bf16 and fp8-quantized models,
@@ -490,10 +489,11 @@ def get_single_image_prompts(num_prompts: int, image_token: str, tile_size: int)
         "<|system|>\nA chat between a curious user and an artificial "
         "intelligence assistant. The assistant gives helpful, detailed, and"
         " polite answers to the user's questions.\n<|user|>\n"
-        "{}\n{}\n<|assistant|>\n")
+        "{}\n{}\n<|assistant|>\n"
+    )
 
     # Make it smol
-    resized_img = ImageAsset('cherry_blossom').pil_image.resize(new_size)
+    resized_img = ImageAsset("cherry_blossom").pil_image.resize(new_size)
 
     raw_prompts = [
         "Describe this image.",
@@ -506,13 +506,14 @@ def get_single_image_prompts(num_prompts: int, image_token: str, tile_size: int)
     # Build multimodal prompts by mixing potentially
     # rescaled images with each of text prompts
     for raw_prompt in raw_prompts:
-        mm_prompts.append({
-            "prompt":
-            template.format(image_token, raw_prompt),
-            "multi_modal_data": {
-                "image": resized_img,
+        mm_prompts.append(
+            {
+                "prompt": template.format(image_token, raw_prompt),
+                "multi_modal_data": {
+                    "image": resized_img,
+                },
             }
-        })
+        )
 
     num_diff_prompts = len(mm_prompts)
     if num_prompts > num_diff_prompts:

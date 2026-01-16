@@ -9,19 +9,19 @@ from fms.models import get_model
 from transformers import AutoProcessor, AutoConfig
 
 import pytest
-from output_util import validate_vllm_vs_hf_output, generate_spyre_vllm_output
-from spyre_util import (get_single_image_prompts, get_spyre_model_list)
+from output_util import generate_spyre_vllm_output
+from spyre_util import get_single_image_prompts, get_spyre_model_list
 import torch
-from vllm import LLM, SamplingParams
+from vllm import SamplingParams
 
 # We should not use a very large value here, because
 # we do not have tiny multimodal models at the moment.
 MAX_TOKENS = 8
 
+
 def generate_fms_results(processor, model_path, prompts):
     # Ensure the llava next util has been imported, as we fix
     # the FMS serialization as a side effect at import time
-    from vllm_spyre.multimodal.mm_mappings import llava_next
     config_dict = {"head_dim": 128}
     config_dict["head_dim"] = 128
 
@@ -67,6 +67,7 @@ def generate_fms_results(processor, model_path, prompts):
         generated_texts.append(fms_texts)
     return generated_texts
 
+
 @pytest.mark.cpu
 @pytest.mark.parametrize("model", get_spyre_model_list(isMultimodal=True))
 def test_alignment_with_fms(model, mode, monkeypatch):
@@ -78,7 +79,9 @@ def test_alignment_with_fms(model, mode, monkeypatch):
     image_token = processor.decode(hf_config.image_token_index)
 
     prompts = get_single_image_prompts(
-        1, image_token, tile_size=hf_config.vision_config.image_size,
+        1,
+        image_token,
+        tile_size=hf_config.vision_config.image_size,
     )
 
     sampling_params = SamplingParams(

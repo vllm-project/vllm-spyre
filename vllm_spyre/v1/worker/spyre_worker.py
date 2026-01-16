@@ -497,7 +497,6 @@ class SpyreWorker(WorkerBase):
                 "Multimodal is not enabled for static batching; use continuous batching instead!"
             )
 
-
         load_model_end_t = time.time()
         load_model_total_t = load_model_end_t - load_model_start_t
         self.perf_metrics.log("load model time", load_model_total_t, model=self.model_config.model)
@@ -538,8 +537,9 @@ class SpyreWorker(WorkerBase):
             prompt_len = len(warmup_tokens[0])
         else:
             prompt_len = 42
-            warmup_tokens_tensor = valid_token_ids_tensor[torch.randint(
-                0, len(valid_token_ids_tensor), (3, prompt_len))]
+            warmup_tokens_tensor = valid_token_ids_tensor[
+                torch.randint(0, len(valid_token_ids_tensor), (3, prompt_len))
+            ]
             warmup_tokens = [wt.tolist() for wt in warmup_tokens_tensor]
             # Text only models don't use mm features, and currently we only
             # use embeddings as inputs to multimodal models.
@@ -554,7 +554,8 @@ class SpyreWorker(WorkerBase):
                 pooling_params=None,
                 prompt_embeds=warmup_embeds_tensor[i],
                 mm_features=mm_features,
-            ) for i in range(req_count)
+            )
+            for i in range(req_count)
         ]
 
         warmup_requests = requests[:-1]  # first one or two
