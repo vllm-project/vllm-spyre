@@ -23,6 +23,9 @@
       "format": "float-quantized"
     }
   },
+  "ibm-granite/granite4": {
+    "model_type": "granitemoehybrid"
+  },
   "ibm-granite/granite-embedding-125m-english": {
     "model_type": "roberta",
     "gradient_checkpointing": false,
