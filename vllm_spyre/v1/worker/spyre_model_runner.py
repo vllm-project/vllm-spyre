@@ -2115,8 +2115,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         self.input_batch.refresh_metadata()
         self.prefill_batch.refresh_metadata()
 
-        print(f"\n\t SCALE INDICES: {scale_indices}\n")
-
     def _prepare_decode(
         self,
         cached_request_data: CachedRequestData,

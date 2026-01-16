@@ -395,7 +395,6 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             from fms_mo.aiu_addons.fp8.fp8_utils import ScaledTensor
 
             already_scaled = int(os.getenv("VLLM_DT_CHUNK_LEN", "0")) > 0
-            print("already_scaled", already_scaled)
             batch_size = max(2, self.scheduler_config.max_num_seqs)
             self.past_key_value_states = [
                 (
