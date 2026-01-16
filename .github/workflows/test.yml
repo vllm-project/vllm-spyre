@@ -77,6 +77,8 @@ jobs:
           - name: "multimodal"
             markers: "cpu and multimodal"
             flags: "--timeout=300"
+            hf_model: "ibm-granite/granite-vision-3.3-2b"
+            hf_model_rev: "7fe917fdafb006f53aedf9589f148a83ec3cd8eb"
         include:
           # Lower bound support
           - vllm_version:
