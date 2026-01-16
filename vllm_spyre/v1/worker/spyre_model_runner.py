@@ -2064,9 +2064,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         self.model.indices = torch.ones(1, dtype=torch.bool, device="cpu")
 
         # TODO: call it something better?
-        request_index = self._maybe_prepare_last_prefill(
-            req_id=req_id, scheduler_output=scheduler_output
-        )
+        self._maybe_prepare_last_prefill(req_id=req_id, scheduler_output=scheduler_output)
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
             input_positions=input_positions,
@@ -2083,9 +2081,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         return model_inputs
 
-    def _maybe_prepare_last_prefill(
-        self, req_id: str, scheduler_output: SchedulerOutput
-    ) -> int | None:
+    def _maybe_prepare_last_prefill(self, req_id: str, scheduler_output: SchedulerOutput) -> None:
         """In the last prefill we have to setup the batch to sample the
         first token.
         """
@@ -2120,8 +2116,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         self.prefill_batch.refresh_metadata()
 
         print(f"\n\t SCALE INDICES: {scale_indices}\n")
-
-        return request_index
 
     def _prepare_decode(
         self,
