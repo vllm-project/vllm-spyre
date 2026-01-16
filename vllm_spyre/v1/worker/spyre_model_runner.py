@@ -42,10 +42,6 @@ from vllm_spyre.model_executor.model_loader.spyre import (
     SpyreAttentionMetadata,
     SpyreCausalLM,
 )
-from vllm_spyre.multimodal import (
-    is_multimodal_config,
-    resolve_multimodal_vocab_size,
-)
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.utils import exact_div
 from vllm_spyre.v1.sample.spyre_logits_processor import build_logitsprocs_for_cb
@@ -592,21 +588,6 @@ class SpyreModelRunner(
 
         # Execute the model
         with set_forward_context(attn_metadata, self.vllm_config):
-            if self.model.is_multimodal:
-                # TODO - utils for multimodal encode and embed merge;
-                # There are probably some utils in mainline vLLM we should
-                # reuse here.
-                # NOTE: we explcitly check this here because we don't use
-                # the vLLM model registry at all; this also means we do not
-                # have the multimodal registry, which includes prompt substitution
-                # logic etc.
-                # -> As we integrate this, we should see if there is a well patterned
-                #    way to do this using the vLLM preprocessing info, because this
-                #    we do still use the HF preprocessing in FMS, so that part of the
-                #    code should be identical, but may need to be fetched a bit dynamically...
-                raise NotImplementedError("Multimodal encode not yet implemented!")
-
-
             logits = self.model(
                 input_ids_or_embeds=input_ids_or_embeds,
                 positions=model_input.input_positions,
@@ -2666,7 +2647,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                                 model_input.input_tokens)
         with set_forward_context(attn_metadata, self.vllm_config):
             logits = self.model(
-                input_ids=input_ids_or_embeds,
+                input_ids_or_embeds=input_ids_or_embeds,
                 positions=model_input.input_positions,
                 masks=model_input.input_masks,
                 is_prompt=model_input.is_prompt,

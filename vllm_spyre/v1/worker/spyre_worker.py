@@ -52,8 +52,8 @@ def new_request_data_builder(
     prompt_token_ids: list[int],
     sampling_params: SamplingParams | None,
     pooling_params: PoolingParams | None,
-    prompt_embeds: Optional[torch.Tensor],
-    mm_features: Optional[list],
+    prompt_embeds: torch.Tensor | None,
+    mm_features: list | None,
 ) -> NewRequestData:
     kwargs = {
         "req_id": req_id,
