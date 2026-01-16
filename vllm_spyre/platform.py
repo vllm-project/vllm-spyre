@@ -74,6 +74,9 @@ class SpyrePlatform(Platform):
     _block_size: int = 64  # hardcoded Spyre constraint for now
     _config: VllmConfig = None
     _torch_sendnn_version = None
+    # tracks if we are being configured via CLI or LLM() so that we know if
+    # default arg parser changes actually have an effect
+    _used_with_cli = False
 
     # Backend for dynamic compilation ops
     # See vllm batched_count_greater_than method
@@ -145,6 +148,15 @@ class SpyrePlatform(Platform):
             "Cannot use chunked prefill without continuous batching."
         )
 
+        # enable_prefix_caching will be defaulted to True when used with LLM();
+        # only assert if our arg parser default was applied
+        if cls._used_with_cli:
+            assert (
+                cache_config.enable_prefix_caching and envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL
+            ) or not cache_config.enable_prefix_caching, (
+                "Cannot use prefix caching without chunked prefill."
+            )
+
         if envs_spyre.VLLM_SPYRE_USE_CB and is_decoder:
             if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
                 scheduler_config.scheduler_cls = (
@@ -154,6 +166,12 @@ class SpyrePlatform(Platform):
                 scheduler_config.scheduler_cls = (
                     "vllm_spyre.v1.core.scheduler.ContinuousBatchingSpyreScheduler"
                 )
+            # Overwrite so that vLLM prints our value in the "Initializing a V1
+            # LLM engine" log message
+            # TODO: With the arg parser defaulting, this can be removed when we
+            # only support vllm >= v0.11.1
+            scheduler_config.chunked_prefill_enabled = envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL
+
             if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
                 raise ValueError("Prompt logprobs not supported with continuous batching")
             if (
@@ -232,13 +250,17 @@ class SpyrePlatform(Platform):
                 )
 
         logger.info(
-            "Overriding configurations based on warmup shapes. "
+            "Configurations for Spyre. "
             "max_model_len=%d, max_num_seqs=%d, block_size=%d, "
-            "max_num_batched_tokens=%d",
+            "max_num_batched_tokens=%d, "
+            "enable_chunked_prefill=%r, "
+            "enable_prefix_caching=%r",
             model_config.max_model_len,
             scheduler_config.max_num_seqs,
             cache_config.block_size,
             scheduler_config.max_num_batched_tokens,
+            envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL,
+            cache_config.enable_prefix_caching,
         )
 
         # set env vars for torch_sendnn to consume
@@ -452,7 +474,15 @@ class SpyrePlatform(Platform):
     @classmethod
     def pre_register_and_update(cls, parser: FlexibleArgumentParser | None = None) -> None:
         if parser is not None:
+            # let's us know that defaults were applied to the parser
+            cls._used_with_cli = True
+
             parser.set_defaults(enable_prefix_caching=False)
+            # TODO: We don't use the value of the enable_chunked_prefill arg,
+            # but setting the default makes logs match our setting.
+            # vLLM >= 0.11.1 does not override the arg, so we could remove the
+            # env var for v2 if we update our minimum support
+            parser.set_defaults(enable_chunked_prefill=envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL)
             if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
                 parser.set_defaults(max_num_batched_tokens=cls.DEFAULT_CHUNK_SIZE)
 
