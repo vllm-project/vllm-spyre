@@ -867,7 +867,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.prefill_batch = SamplingInputBatch(
             # TODO: review this, currently we only support prefill for
             # `batch_size=1`
-            max_num_reqs=1,
+            max_num_reqs=self.scheduler_config.max_num_seqs,
             max_model_len=vllm_config.model_config.max_model_len,
             device=self.device,
             pin_memory=self.pin_memory,
@@ -2064,7 +2064,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         self.model.indices = torch.ones(1, dtype=torch.bool, device="cpu")
 
         # TODO: call it something better?
-        prefill_index = self._maybe_prepare_last_prefill(
+        request_index = self._maybe_prepare_last_prefill(
             req_id=req_id, scheduler_output=scheduler_output
         )
         model_inputs = SamplingForwardInputs(
@@ -2075,9 +2075,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             block_table=block_table,
             slot_mapping=slot_mapping,
             is_prompt=True,
-            scale_indices=self.prefill_batch.request_indices
-            if prefill_index is None
-            else [prefill_index],
+            scale_indices=self.prefill_batch.request_indices,
             input_masks=None,  # Unused
         )
 
@@ -2110,15 +2108,20 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         self.tkv = max(req_tkv_new_block, cur_tkv_new_block)
 
         # Last prefill we need to setup the logitsprocessors to sampling
-        prefill_index = self.input_batch.add_request(request)
+        scale_indices = self.prefill_batch.request_indices
+        request_index = scale_indices[0]
+        self.input_batch.add_request(request, req_index=request_index)
+        # prefill_index = self.input_batch.add_request(request)
         for logitsproc in self.input_batch.logitsprocs_wrappers:
-            logitsproc.set_prefill_index(prefill_index)
+            logitsproc.set_prefill_index(request_index)
 
         # Refresh sampling metadata after all request are added to the batch
         self.input_batch.refresh_metadata()
         self.prefill_batch.refresh_metadata()
 
-        return prefill_index
+        print(f"\n\t SCALE INDICES: {scale_indices}\n")
+
+        return request_index
 
     def _prepare_decode(
         self,
@@ -2362,7 +2365,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         # Add only to prefill batch, it will be added later to the input batch
         # once if is fully prefilled
-        self.prefill_batch.add_request(req_state)
+        # self.prefill_batch.add_request(req_state)
+        self.prefill_batch.add_request(req_state, req_index=self.input_batch.get_available_index())
 
     def prepare_model_input(self, scheduler_output) -> SamplingForwardInputs:
         is_prefill = False
