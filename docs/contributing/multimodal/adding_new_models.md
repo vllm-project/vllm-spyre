@@ -41,7 +41,7 @@ This has a few implications that may be nonobvious. Namely:
 
 5. As a result of ^, we must be careful to handle warmup correctly with respect to `torch.compile`, *especially* when it comes to AIU. More details on this below.
 
-For more extensive documentation in how to implement multimodal in vLLM, see the docs [here](https://docs.vllm.ai/en/latest/contributing/model/multimodal) - the above is mostly meant as context for how think of these models with respect to vLLM Spyre.
+For more extensive documentation in how to implement multimodal in vLLM, see the [official docs for multimodal on vLLM](https://docs.vllm.ai/en/latest/contributing/model/multimodal) - the above is mostly meant as context for how think of these models with respect to vLLM Spyre.
 
 ## Extending to vLLM Spyre
 
