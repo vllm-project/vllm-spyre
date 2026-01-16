@@ -12,7 +12,7 @@ from scheduling_utils import (
     random_prompt,
     validate_scheduler_steps,
 )
-from spyre_util import ModelInfo, verify_block_tables, verify_slot_mappings
+from spyre_util import ModelInfo, verify_block_tables, verify_slot_mappings, verify_scale_indices
 
 
 @pytest.mark.chunked_prefill
@@ -87,6 +87,7 @@ def test_prefix_hit_within_batch(
             "n_prefix_hits": 0,
             "block_tables": {"0": [1, 2, 3]},
             "block_ref_count": {1: 1, 2: 1, 3: 1},
+            "scale_indices": [0],
         },
         {  # prefill chunk 2 seq 0
             "step": 2,
@@ -99,6 +100,7 @@ def test_prefix_hit_within_batch(
             "n_prefix_hits": 0,
             "block_tables": {"0": [1, 2, 3]},
             "block_ref_count": {1: 1, 2: 1, 3: 1},
+            "scale_indices": [0],
         },
         {  # prefill chunk 1 seq 1
             # prefix hit!
@@ -115,6 +117,7 @@ def test_prefix_hit_within_batch(
             "n_cached_blocks": 1,
             "block_tables": {"0": [1, 2, 3], "1": [1, 2, 3]},
             "block_ref_count": {1: 2, 2: 2, 3: 2},
+            "scale_indices": [0],
         },
         {  # prefill chunk 2 seq 1
             # cannot use prefix, as the last chunk has to always be recomputed
@@ -129,6 +132,7 @@ def test_prefix_hit_within_batch(
             "n_cached_blocks": 1,
             "block_tables": {"0": [1, 2, 3], "1": [1, 2, 3]},
             "block_ref_count": {1: 2, 2: 2, 3: 2},
+            "scale_indices": [1],
         },
         {
             # Decode 1 of request 0.
@@ -144,6 +148,7 @@ def test_prefix_hit_within_batch(
             "n_cached_blocks": 1,
             "block_tables": {"0": [1, 2, 3, 4], "1": [1, 2, 3, 5]},
             "block_ref_count": {1: 2, 2: 2, 3: 2, 4: 1, 5: 1},
+            "scale_indices": [0, 1],
         },
         {
             # Tkv should be cleared one step later
@@ -170,7 +175,7 @@ def test_prefix_hit_within_batch(
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        extra_assert_funcs=[verify_block_tables],
+        extra_assert_funcs=[verify_block_tables, verify_scale_indices],
     )
 
 

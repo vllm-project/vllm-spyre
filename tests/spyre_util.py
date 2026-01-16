@@ -579,6 +579,20 @@ def verify_slot_mappings(engine_core: EngineCore, step_ref: dict[str, Any], disa
         print(f"{reference_slot_mapping=}")
 
 
+def verify_scale_indices(engine_core: EngineCore, step_ref: dict[str, Any], disable_asserts: bool):
+    if "scale_indices" not in step_ref:
+        return
+    scale_indices = step_ref["scale_indices"]
+
+    actual_scale_indices = engine_core.forward_context.attn_metadata.scale_indices.tolist()
+
+    if not disable_asserts:
+        assert scale_indices == actual_scale_indices, (
+            f"ref scale indices {scale_indices} vs actual {actual_scale_indices}"
+            f" for step {step_ref['step']}"
+        )
+
+
 @contextmanager
 def environ_checkpoint():
     original_environ = os.environ.copy()
