@@ -150,7 +150,6 @@ class SpyrePlatform(Platform):
 
         # enable_prefix_caching will be defaulted to True when used with LLM();
         # only assert if our arg parser default was applied
-        print("Used with CLI", cls._used_with_cli)
         if cls._used_with_cli:
             assert (
                 cache_config.enable_prefix_caching and envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL
@@ -169,7 +168,7 @@ class SpyrePlatform(Platform):
                 )
             # Overwrite so that vLLM prints our value in the "Initializing a V1
             # LLM engine" log message
-            # TODO: With the arg parser defaulting, this can  be removed when we
+            # TODO: With the arg parser defaulting, this can be removed when we
             # only support vllm >= v0.11.1
             scheduler_config.chunked_prefill_enabled = envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL
 
