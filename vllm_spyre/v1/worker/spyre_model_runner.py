@@ -867,7 +867,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.prefill_batch = SamplingInputBatch(
             # TODO: review this, currently we only support prefill for
             # `batch_size=1`
-            max_num_reqs=1,
+            max_num_reqs=self.scheduler_config.max_num_seqs,
             max_model_len=vllm_config.model_config.max_model_len,
             device=self.device,
             pin_memory=self.pin_memory,
@@ -2082,14 +2082,22 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             self.tkv = max(req_tkv_new_block, cur_tkv_new_block)
 
             # Last prefill we need to setup the logitsprocessors to sampling
-            prefill_index = self.input_batch.add_request(request)
-            scale_indices = [prefill_index]
+            request_index = scale_indices[0] 
+            self.input_batch.add_request(request, req_index=request_index)
+
+            # prashant's changes
+            # request_index = self.input_batch.add_request(request)
+            # scale_indices = [request_index]
+
+
             for logitsproc in self.input_batch.logitsprocs_wrappers:
-                logitsproc.set_prefill_index(prefill_index)
+                logitsproc.set_prefill_index(request_index)
 
             # Refresh sampling metadata after all request are added to the batch
             self.input_batch.refresh_metadata()
             self.prefill_batch.refresh_metadata()
+
+        print(f"\n\t SCALE INDICES: {scale_indices}\n")
 
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
@@ -2349,7 +2357,12 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         # Add only to prefill batch, it will be added later to the input batch
         # once if is fully prefilled
-        self.prefill_batch.add_request(req_state)
+        
+        free_index = self.input_batch.get_available_index()
+        self.prefill_batch.add_request(req_state, req_index=free_index)
+        
+        # self.prefill_batch.add_request(req_state)
+
 
     def prepare_model_input(self, scheduler_output) -> SamplingForwardInputs:
         is_prefill = False
