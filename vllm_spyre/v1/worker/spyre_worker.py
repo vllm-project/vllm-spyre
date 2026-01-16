@@ -518,7 +518,6 @@ class SpyreWorker(WorkerBase):
         valid_token_ids_tensor = torch.tensor(
             valid_token_ids, dtype=torch.long, device=torch.device("cpu")
         )
-        prompt_len = 42
         num_decode_tokens = 2
         # TODO: we need 2 requests for warmup on FP8+CB
         # Check if model is quantized
