@@ -189,12 +189,12 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
         return self._model
 
     def is_multimodal(self) -> bool:
-        """Indicates whether or not a model is loaded & multimodal.
-        If the model is not initialized yet, this will return False.
+        """Indicates whether or not a model is multimodal.
+        This should not be called until after the model is loaded.
         """
-        return bool(
-            hasattr(self, "model")
-            and getattr(self.model, "is_multimodal", False))
+        if not hasattr(self, "model"):
+            raise AssertionError("Cannot check if models are multimodal before loading!")
+        return bool(getattr(self.model, "is_multimodal", False))
 
     def get_mm_utils(self):
         """If the [loaded] model is multimodal, grab the instance of
