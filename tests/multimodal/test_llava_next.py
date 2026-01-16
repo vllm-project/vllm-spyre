@@ -85,7 +85,7 @@ def test_warmup_embed_types_and_shape(llava_next_mm_utils):
     the embeddings.
     """
     warmup_inputs = llava_next_mm_utils.get_warmup_inputs(req_count=1)
-    warmup_toks = warmup_inputs.input_ids[0]
+    warmup_toks = torch.Tensor(warmup_inputs.input_ids)[0]
     warmup_embeds_tensor = warmup_inputs.input_embeds[0]
 
     assert isinstance(warmup_toks, torch.Tensor)
@@ -117,7 +117,7 @@ def test_warmup_shape_alignment(llava_next_mm_utils):
     alignment issues when we merge the multimodal embeddings in FMS.
     """
     warmup_inputs = llava_next_mm_utils.get_warmup_inputs(req_count=1)
-    warmup_toks = warmup_inputs.input_ids[0]
+    warmup_toks = torch.Tensor(warmup_inputs.input_ids)
     warmup_mm_features = warmup_inputs.mm_features[0]
 
     # Get the total number of expanded image tokens in the inputs
@@ -143,7 +143,7 @@ def test_warmup_feature_correctness(llava_next_mm_utils):
     image_token_id = llava_next_mm_utils.get_multimodal_token_id()
 
     warmup_inputs = llava_next_mm_utils.get_warmup_inputs(req_count=1)
-    warmup_toks = warmup_inputs.input_ids[0]
+    warmup_toks = torch.Tensor(warmup_inputs.input_ids)
     warmup_mm_features = warmup_inputs.mm_features[0]
 
     num_expanded_mm_ids = torch.sum(warmup_toks == image_token_id).item()
