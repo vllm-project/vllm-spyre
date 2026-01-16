@@ -80,6 +80,7 @@ class LlavaNextMMUtils(MMUtilsBase):
 
         # Only merge multimodal features in prefill; nothing mm in decode
         if mm_features:
+            assert not is_decode # We never pass features in decode
             if len(mm_features) != 1:
                 raise ValueError(
                     "Currently we assume we only embed one mm request at a time"

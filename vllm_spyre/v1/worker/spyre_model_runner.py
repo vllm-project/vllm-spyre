@@ -201,7 +201,7 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
         """If the [loaded] model is multimodal, grab the instance of
         the mm utils for the corresponding wrapper class.
         """
-        if not self.is_multimodal():
+        if not self.is_multimodal:
             return None
         return self.model.mm_model_utils
 

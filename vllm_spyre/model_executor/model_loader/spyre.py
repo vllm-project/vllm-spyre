@@ -200,7 +200,7 @@ class FmsModelBase(nn.Module):
         self.dtype = self.get_dtype()
 
         # Wrappers for utils for multimodal
-        self.mm_model_utils: Optional[spyre_mm.MMUtilsBase] = None
+        self.mm_model_utils: spyre_mm.MMUtilsBase | None = None
         self.is_multimodal = False
 
         # Load the weights from the cached or downloaded files.
