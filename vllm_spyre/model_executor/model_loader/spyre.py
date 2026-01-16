@@ -394,6 +394,8 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         else:
             from fms_mo.aiu_addons.fp8.fp8_utils import ScaledTensor
 
+            already_scaled = int(os.getenv("VLLM_DT_CHUNK_LEN", "0")) > 0
+            print("already_scaled", already_scaled)
             batch_size = max(2, self.scheduler_config.max_num_seqs)
             self.past_key_value_states = [
                 (
@@ -406,7 +408,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                             dtype=self.dtype,
                         ),
                         scale=torch.tensor([1.0] * batch_size, dtype=torch.float32),
-                        scaled=False,
+                        scaled=already_scaled,
                     ),
                     ScaledTensor(
                         torch.zeros(
@@ -417,7 +419,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                             dtype=self.dtype,
                         ),
                         scale=torch.tensor([1.0] * batch_size, dtype=torch.float32),
-                        scaled=False,
+                        scaled=already_scaled,
                     ),
                 )
                 for _ in range(self.kv_cache_specs["num_layers"])
