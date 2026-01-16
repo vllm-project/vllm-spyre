@@ -1,6 +1,0 @@
-{
-  "architectures": [
-    "GraniteMoeHybridForCausalLM"
-  ],
-  "model_type": "granitemoehybrid"
-}

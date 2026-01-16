@@ -1,5 +1,7 @@
 import sys
 
+from transformers import GraniteMoeHybridConfig
+
 # When running this plugin on a Mac, we assume it's for local development
 # purposes. However, due to a compatibility issue with vLLM, which overrides
 # the Triton module with a placeholder, vLLM may fail to load on macOS. To
@@ -206,7 +208,9 @@ class SpyrePlatform(Platform):
             )
 
         # Hardcode some things for granite-3.3-8b-instruct
-        if cls.is_granite_3_8b(vllm_config.model_config):
+        if cls.is_granite_3_8b(vllm_config.model_config) or cls.is_granite_4_8b_dense(
+            vllm_config.model_config
+        ):
             cls.configure_granite_3_8b(vllm_config)
 
         # To disable any paged attention ops in the base scheduler, we:
@@ -731,7 +735,7 @@ class SpyrePlatform(Platform):
         """Returns true if we have a model that looks like
         ibm-granite/granite-3.3-8b-instruct"""
         if not isinstance(model_config.hf_config, GraniteConfig):
-            # Not granite at all
+            # Not granite 3 at all
             return False
 
         return (
@@ -739,6 +743,24 @@ class SpyrePlatform(Platform):
             and model_config.hf_config.max_position_embeddings == 131072
             and model_config.hf_config.hidden_size == 4096
             and model_config.hf_config.vocab_size == 49159
+            and model_config.hf_config.num_key_value_heads == 8
+            and model_config.hf_config.num_attention_heads == 32
+        )
+
+    @classmethod
+    def is_granite_4_8b_dense(cls, model_config: ModelConfig):
+        """Returns true if we have a dense granite 4 model with the same architecture as granite 3.3
+        8b"""
+        if not isinstance(model_config.hf_config, GraniteMoeHybridConfig):
+            # Not granite 4 at all
+            return False
+
+        return (
+            model_config.hf_config.num_hidden_layers == 40
+            and model_config.hf_config.num_experts_per_tok == 0  # dense model
+            and model_config.hf_config.max_position_embeddings == 131072
+            and model_config.hf_config.hidden_size == 4096
+            and model_config.hf_config.vocab_size == 100352
             and model_config.hf_config.num_key_value_heads == 8
             and model_config.hf_config.num_attention_heads == 32
         )

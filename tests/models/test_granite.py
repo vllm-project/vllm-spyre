@@ -38,19 +38,35 @@ def test_granite_3_8b_detection():
 
     assert not SpyrePlatform.is_granite_3_8b(granite_micro_config.model_config)
 
+    assert not SpyrePlatform.is_granite_4_8b_dense(granite_3_8b_config.model_config)
+
+
+@pytest.mark.cpu
+def test_granite_4_dense_detection():
+    """Check that we can detect the model config for granite 4 8b (dense)"""
+
+    granite_4_dense_config = VllmConfig(
+        model_config=ModelConfig(model=str(FIXTURES_PATH / "ibm-granite" / "granite-4-8b-dense")),
+        cache_config=NO_SWAP_CONFIG(),
+    )
+
+    assert SpyrePlatform.is_granite_4_8b_dense(granite_4_dense_config.model_config)
+    assert not SpyrePlatform.is_granite_3_8b(granite_4_dense_config.model_config)
+
 
 @pytest.mark.cpu
 @pytest.mark.parametrize(
-    "sendnn_configured, sendnn_version, expected_blocks",
+    "model_name, sendnn_configured, sendnn_version, expected_blocks",
     [
-        (True, (0, 0, 0), 8192),
-        (True, (1, 0, 2), 2080),
-        (True, (1, 1, 0), 8192),
-        (False, (1, 0, 2), 8192),
+        ("granite-3.3-8b-instruct", True, (0, 0, 0), 8192),
+        ("granite-3.3-8b-instruct", True, (1, 0, 2), 2080),
+        ("granite-3.3-8b-instruct", True, (1, 1, 0), 8192),
+        ("granite-3.3-8b-instruct", False, (1, 0, 2), 8192),
+        ("granite-4-8b-dense", True, (1, 1, 0), 8192),
     ],
     ids=lambda vals: f"{vals}",
 )
-def test_granite_3_8b_overrides(sendnn_configured, sendnn_version, expected_blocks):
+def test_granite_overrides(model_name, sendnn_configured, sendnn_version, expected_blocks):
     """Check that the correct values are overridden for g3.3 8b"""
 
     # Must ensure no env vars have been overridden before testing
@@ -64,9 +80,7 @@ def test_granite_3_8b_overrides(sendnn_configured, sendnn_version, expected_bloc
         tp4_config = ParallelConfig(tensor_parallel_size=4)
 
         granite_3_8b_config = VllmConfig(
-            model_config=ModelConfig(
-                model=str(FIXTURES_PATH / "ibm-granite" / "granite-3.3-8b-instruct")
-            ),
+            model_config=ModelConfig(model=str(FIXTURES_PATH / "ibm-granite" / model_name)),
             parallel_config=tp4_config,
             cache_config=NO_SWAP_CONFIG(),
         )
