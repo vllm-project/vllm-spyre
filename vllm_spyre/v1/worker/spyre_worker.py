@@ -155,7 +155,7 @@ class SpyreWorker(WorkerBase):
         if envs_spyre.VLLM_SPYRE_USE_CB:
             self._warmup_spyre_dynamic_size(self.restricted_tokens)
             return
-        if self.model_runner.is_multimodal():
+        if self.model_runner.is_multimodal:
             raise NotImplementedError(
                 "[WARMUP] Static batching is not supported for multimodal models."
             )
@@ -492,7 +492,7 @@ class SpyreWorker(WorkerBase):
 
         # Explode if we aren't using continuous batching; note that we currently need to do
         # this after the model loads, since loading sets the properties we are checking.
-        if self.model_runner.is_multimodal() and not envs_spyre.VLLM_SPYRE_USE_CB:
+        if self.model_runner.is_multimodal and not envs_spyre.VLLM_SPYRE_USE_CB:
             raise NotImplementedError(
                 "Multimodal is not enabled for static batching; use continuous batching instead!"
             )
