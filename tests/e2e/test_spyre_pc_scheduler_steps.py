@@ -395,6 +395,7 @@ def test_prefix_hit_decoded_block_within_batch(
             "n_reserved_blocks": 4,
             "n_used_blocks": 2,
             "n_prefix_hits": 0,
+            "scale_indices": [0],
         },
         {
             # Decode 1 of request 0.
@@ -405,6 +406,7 @@ def test_prefix_hit_decoded_block_within_batch(
             "request_outputs": ["0"],
             "n_reserved_blocks": 4,
             "n_used_blocks": 2,
+            "scale_indices": [0],
         },
         {
             # Decode 3 of request 0.
@@ -416,6 +418,7 @@ def test_prefix_hit_decoded_block_within_batch(
             "request_outputs": ["0"],
             "n_reserved_blocks": 4,
             "n_used_blocks": 3,
+            "scale_indices": [0],
         },
         {
             # Decode 66 of request 0.
@@ -426,6 +429,7 @@ def test_prefix_hit_decoded_block_within_batch(
             "request_outputs": ["0"],
             "n_reserved_blocks": 4,
             "n_used_blocks": 3,
+            "scale_indices": [0],
         },
         {  # prefill chunk 1 seq 1
             # prefix hit of the two blocks in the first chunk
@@ -441,6 +445,7 @@ def test_prefix_hit_decoded_block_within_batch(
             # 1st block (prompt)
             # 2nd block (prompt + 2 decodes) <- what we want to test
             "n_cached_blocks": 2,
+            "scale_indices": [0],
         },
         {  # prefill chunk 2 seq 1
             # no prefix hit, always recompute last chunk
@@ -462,6 +467,7 @@ def test_prefix_hit_decoded_block_within_batch(
                 # currently deduplicate decoded blocks and so do we:
                 # https://github.com/vllm-project/vllm/blob/1166c31cc78073378a16509fbbbed4cb4f040a4d/vllm/v1/core/block_pool.py#L46
             },
+            "scale_indices": [1],
         },
         {
             # Decode 1 of request 0.
@@ -479,6 +485,7 @@ def test_prefix_hit_decoded_block_within_batch(
                 "0": [1, 2, 3, 6],
                 "1": [1, 2, 4, 5],
             },
+            "scale_indices": [0, 1],
         },
         {
             # Tkv should be cleared one step later
@@ -503,7 +510,7 @@ def test_prefix_hit_decoded_block_within_batch(
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        extra_assert_funcs=[verify_block_tables],
+        extra_assert_funcs=[verify_block_tables, verify_scale_indices],
     )
 
 
