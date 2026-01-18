@@ -73,19 +73,11 @@ logger = init_logger(__name__)
 
 @dataclass(frozen=True)
 class ModelForwardInputs:
-<<<<<<< HEAD
     input_tokens: torch.Tensor | None # For non multimodal
     input_embeds: torch.Tensor | None # For multimodal
     input_positions: torch.Tensor
     input_masks: torch.Tensor | None  # pooling and static batching only
     is_prompt: bool
-=======
-    input_tokens: torch.Tensor | None = None  # For non multimodal
-    input_embeds: torch.Tensor | None = None  # For multimodal
-    input_positions: torch.Tensor | None = None
-    input_masks: torch.Tensor | None = None
-    is_prompt: bool = False
->>>>>>> 1064257 (run formatting)
 
 
 @dataclass(frozen=True)
@@ -736,7 +728,7 @@ class StaticBatchingSpyreModelRunner(WarmupShapesMixin, SpyreModelRunner):
             # retrieve initial (unpadded) tokens
             prompt_tokens = request_data.prompt_token_ids
             # Empty list for non multimodal requests
-            mm_features = request_data.mm_features
+            mm_features = getattr(request_data, "mm_features", None)
 
             input_token_list.append(
                 torch.tensor(prompt_tokens, dtype=torch.long, device=torch.device("cpu"))
@@ -1104,7 +1096,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         sampling_params = request.sampling_params
         is_new_batch = len(self.req_ids2num_reserved_blocks) == 0
         prompt_len = len(prompt_token_ids)  # ty: ignore[invalid-argument-type]
-        mm_features = request.mm_features
+        mm_features = getattr(request, "mm_features", None)
 
         # make sure that the current tkv of the decode batch is greater or
         # equal to the prompt length of the new joining sequence
@@ -2067,7 +2059,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             [left_padding], dtype=torch.int64, device=self.device
         )
 
-        mm_features = request.mm_features
+        mm_features = getattr(request, "mm_features", None)
         prompt_token_ids = request.prompt_token_ids
         num_computed_tokens = request.num_computed_tokens
         # round up due to possible padding
@@ -2382,7 +2374,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         is_new_batch = self.get_n_free_blocks() == self.n_blocks
         prompt_len = len(prompt_token_ids)
-        mm_features = request.mm_features
+        mm_features = getattr(request, "mm_features", None)
 
         self.prefill_batch.clear_requests()
 

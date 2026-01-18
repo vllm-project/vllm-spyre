@@ -305,6 +305,10 @@ register_model_info(
     name="ibm-granite/granite-3.3-8b-instruct-FP8",
     revision="4b5990b8d402a75febe0086abbf1e490af494e3d",
 )
+register_model_info(
+    name="ibm-granite/granite-vision-3.3-2b",
+    revision="7fe917fdafb006f53aedf9589f148a83ec3cd8eb",
+)
 
 
 def _default_test_models(
@@ -323,10 +327,7 @@ def _default_test_models(
         return [pytest.param(model, marks=[pytest.mark.scoring], id=model.name)]
 
     if isMultimodal:
-        model = ModelInfo(
-            name="ibm-granite/granite-vision-3.3-2b",
-            revision="7fe917fdafb006f53aedf9589f148a83ec3cd8eb",
-        )
+        model = REFERENCE_MODELS["ibm-granite/granite-vision-3.3-2b"]
         return [pytest.param(model, marks=[pytest.mark.multimodal], id=model.name)]
 
     # Decoders

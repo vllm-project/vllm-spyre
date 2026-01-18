@@ -58,7 +58,6 @@ def new_request_data_builder(
     kwargs = {
         "req_id": req_id,
         "prompt_token_ids": prompt_token_ids,
-        "prompt_embeds": prompt_embeds,
         "sampling_params": sampling_params,
         "pooling_params": pooling_params,
         "block_ids": [0],  # not actually used
@@ -80,6 +79,10 @@ def new_request_data_builder(
             kwargs["mm_features"] = []
         else:
             kwargs["mm_features"] = mm_features
+
+    # Only in newer versions, need to selectively add for compatibility
+    if "prompt_embeds" in dataclass_fields(NewRequestData):
+        kwargs["prompt_embeds"] = (prompt_embeds,)
 
     # type checker is sad here because `kwargs` is dict[str, Union[everything]]
     # It's our responsibility to ensure the values here have the right types

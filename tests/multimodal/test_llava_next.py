@@ -18,6 +18,10 @@ import vllm_spyre.multimodal as spyre_mm
 
 GRANITE_VISION_MODEL = "ibm-granite/granite-vision-3.3-2b"
 
+# Marks all tests in this file as multimodal and CPU to match
+# multimodal wf; tests in this file should be very fast.
+pytestmark = [pytest.mark.multimodal, pytest.mark.cpu]
+
 
 # NOTE: --forked forks after module scoped fixtures
 @pytest.fixture(scope="module")
