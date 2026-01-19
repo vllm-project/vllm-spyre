@@ -957,25 +957,36 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         if blocks_override is not None and blocks_override > 0:
             num_blocks = blocks_override
         else:
-            num_blocks = max_batch_size * max_blocks_per_seq
+            # Note on "+1": We need to add one additional block used exclusively for padding (idx 0)
+            num_blocks = max_batch_size * max_blocks_per_seq + 1
 
         # Total number of blocks needs to be a multiple of the batch size
-        # (spyre constraint) so round it down
-        num_blocks = max_batch_size * (num_blocks // max_batch_size)
+        # (spyre constraint) so round it up (rounding down might cut off the padding block)
+        old_num_blocks = num_blocks
+        num_blocks = math.ceil(num_blocks / max_batch_size) * max_batch_size
+
+        if num_blocks != old_num_blocks:
+            logger.info(
+                "Spyre constraint: num blocks rounded up from %d to %d (multiple of batch size=%d)",
+                old_num_blocks,
+                num_blocks,
+                max_batch_size,
+            )
 
         if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
             # As we drop the block reservation for chunked prefill the number of available blocks
             # needs to be at least as big as the smaller of the batch tkv limit
             # (VLLM_DT_MAX_BATCH_TKV_LIMIT) and a full batch (max_num_seqs * max_model_len)
-            num_blocks_full_batch = max_batch_size * max_blocks_per_seq
+            # Note on "+1": We need to add one additional block used exclusively for padding (idx 0)
+            num_blocks_full_batch = max_batch_size * max_blocks_per_seq + 1
             batch_tkv_limit = int(
                 os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", num_blocks_full_batch * block_size)
             )
-            num_blocks_batch_tkv_limit = batch_tkv_limit // block_size
+            num_blocks_batch_tkv_limit = batch_tkv_limit // block_size + 1
             min_req_num_blocks = min(num_blocks_full_batch, num_blocks_batch_tkv_limit)
         else:
             # default value: serve at least one sequence of full context (consistent with upstream)
-            min_req_num_blocks = max_blocks_per_seq
+            min_req_num_blocks = max_blocks_per_seq + 1
 
         # min_req_num_blocks := minimum required number of blocks
         if num_blocks < min_req_num_blocks:
