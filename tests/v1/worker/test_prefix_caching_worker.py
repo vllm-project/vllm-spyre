@@ -89,7 +89,7 @@ def test_multi_chunk_partial_match_misaligned(
     pc_model_runner = InstrumentedModelRunner.build(
         monkeypatch=monkeypatch,
         max_num_batched_tokens=128,
-        available_blocks=16,
+        available_blocks=17,  # 16 + padding block = 17
     )
 
     # twice the same seed for a sequence of length 384
@@ -136,8 +136,9 @@ def test_multi_chunk_partial_match_misaligned(
         req_ids=["0"],
         num_sampled_token_ids=0,
         tkv=384,
-        # total available blocks: 16 - 1 (padding block) = 15
-        n_free_blocks=9,  # 15 - 6 = 9
+        # actual number of available blocks (round up to multiple of batch size):
+        # ceil(17/2)*2 - 1 (padding block) = 18 - 1 = 17
+        n_free_blocks=11,  # 17 - 6 = 11
         left_padding={"0": 0},
         prefix_cache_hit_len={"0": 0},
     )
@@ -157,7 +158,7 @@ def test_multi_chunk_partial_match_misaligned(
         req_ids=["0"],
         num_sampled_token_ids=0,
         tkv=384,
-        n_free_blocks=9,
+        n_free_blocks=11,
         left_padding={"0": 0},
         prefix_cache_hit_len={"0": 0},
     )
@@ -177,7 +178,7 @@ def test_multi_chunk_partial_match_misaligned(
         req_ids=["0"],
         num_sampled_token_ids=1,
         tkv=384,
-        n_free_blocks=9,
+        n_free_blocks=11,
         left_padding={"0": 0},
     )
 
@@ -192,7 +193,7 @@ def test_multi_chunk_partial_match_misaligned(
         req_ids=["1"],
         num_sampled_token_ids=0,
         tkv=384,
-        n_free_blocks=6,  # 9 - (6 - 3 (prefixes)) = 6
+        n_free_blocks=8,  # 11 - (6 - 3 (prefixes)) = 8
         left_padding={"1": 0},
         prefix_cache_hit_len={"1": 128},
     )
@@ -214,7 +215,7 @@ def test_multi_chunk_partial_match_misaligned(
         req_ids=["1"],
         num_sampled_token_ids=0,
         tkv=384,
-        n_free_blocks=6,
+        n_free_blocks=8,
         left_padding={"1": 0},
         prefix_cache_hit_len={"1": 128},
     )
@@ -234,7 +235,7 @@ def test_multi_chunk_partial_match_misaligned(
         req_ids=["1"],
         num_sampled_token_ids=1,
         tkv=384,
-        n_free_blocks=6,
+        n_free_blocks=8,
         left_padding={"1": 0},
     )
 
@@ -254,7 +255,7 @@ def test_multi_chunk_partial_match_misaligned(
         req_ids=["0", "1"],
         num_sampled_token_ids=2,
         tkv=385,
-        n_free_blocks=4,  # 6 - 2 (both seqs need 1 block for decodes) = 4
+        n_free_blocks=6,  # 8 - 2 (both seqs need 1 block for decodes) = 6
         left_padding={"0": 0, "1": 0},
     )
 
@@ -286,7 +287,7 @@ def test_first_chunk_recomputation(
     pc_model_runner = InstrumentedModelRunner.build(
         monkeypatch=monkeypatch,
         max_num_batched_tokens=256,
-        available_blocks=16,
+        available_blocks=17,  # 16 + padding block = 17
     )
 
     model = REFERENCE_MODELS[InstrumentedModelRunner.DEFAULT_TEST_MODEL]
@@ -328,8 +329,9 @@ def test_first_chunk_recomputation(
         req_ids=["0"],
         num_sampled_token_ids=1,
         tkv=128,
-        # total available blocks: 16 - 1 (padding block) = 15
-        n_free_blocks=13,  # 15 - (4 - 2 (pads)) = 13
+        # actual number of available blocks (round up to multiple of batch size):
+        # ceil(17/2)*2 - 1 (padding block) = 18 - 1 = 17
+        n_free_blocks=15,  # 17 - (4 - 2 (pads)) = 15
         left_padding={"0": 128},
     )
 
@@ -353,7 +355,7 @@ def test_first_chunk_recomputation(
         req_ids=["1"],
         num_sampled_token_ids=1,
         tkv=128,
-        n_free_blocks=12,  # 13 - (4 - 2 (pads) - 1 (prefix)) = 12
+        n_free_blocks=14,  # 15 - (4 - 2 (pads) - 1 (prefix)) = 14
         left_padding={"1": 128},
     )
 
@@ -373,7 +375,7 @@ def test_first_chunk_recomputation(
         req_ids=["0", "1"],
         num_sampled_token_ids=2,
         tkv=129,
-        n_free_blocks=10,  # 12 - 2 (both seqs need 1 block for decodes) = 10
+        n_free_blocks=12,  # 14 - 2 (both seqs need 1 block for decodes) = 12
         left_padding={"0": 0, "1": 0},
     )
 
@@ -412,7 +414,7 @@ def test_middle_chunk_recomputation_with_padding(
     pc_model_runner = InstrumentedModelRunner.build(
         monkeypatch=monkeypatch,
         max_num_batched_tokens=256,
-        available_blocks=32,
+        available_blocks=33,  # 32 + padding block = 33
         max_model_len=1024,
     )
 
@@ -456,8 +458,9 @@ def test_middle_chunk_recomputation_with_padding(
         req_ids=["0"],
         num_sampled_token_ids=0,
         tkv=512,
-        # total available blocks: 32 - 1 (padding block) = 31
-        n_free_blocks=23,  # 31 - 8 = 23
+        # actual number of available blocks (round up to multiple of batch size):
+        # ceil(33/2)*2 - 1 (padding block) = 34 - 1 = 33
+        n_free_blocks=25,  # 33 - 8 = 25
         left_padding={"0": 0},
         prefix_cache_hit_len={"0": 0},
     )
@@ -477,7 +480,7 @@ def test_middle_chunk_recomputation_with_padding(
         req_ids=["0"],
         num_sampled_token_ids=1,
         tkv=512,
-        n_free_blocks=23,
+        n_free_blocks=25,
         left_padding={"0": 0},
     )
 
@@ -493,7 +496,7 @@ def test_middle_chunk_recomputation_with_padding(
         req_ids=["1"],
         num_sampled_token_ids=0,
         tkv=512,
-        n_free_blocks=21,  # 23 - (12 - 2 (pads) - 8 (prefix)) = 21
+        n_free_blocks=23,  # 25 - (12 - 2 (pads) - 8 (prefix)) = 23
         left_padding={"1": 128},
         prefix_cache_hit_len={"1": 384},
     )
@@ -516,7 +519,7 @@ def test_middle_chunk_recomputation_with_padding(
         req_ids=["1"],
         num_sampled_token_ids=1,
         tkv=640,
-        n_free_blocks=21,
+        n_free_blocks=23,
         left_padding={"1": 128},
     )
 
@@ -537,6 +540,6 @@ def test_middle_chunk_recomputation_with_padding(
         req_ids=["0", "1"],
         num_sampled_token_ids=2,
         tkv=641,
-        n_free_blocks=19,  # 21 - 2 (both seqs need 1 block for decodes) = 19
+        n_free_blocks=21,  # 23 - 2 (both seqs need 1 block for decodes) = 21
         left_padding={"0": 128, "1": 0},
     )
