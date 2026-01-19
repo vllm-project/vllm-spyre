@@ -1518,13 +1518,12 @@ class SpyrePoolingModelRunner(
         )
 
     def load_model(self, prompt_lens: Iterable[int], num_decode_tokens: Iterable[int]) -> None:
-        task = self.model_config.task
-        if task is None:
-            # Task is being deprecated upstream because the models
-            # support several tasks at once. But for now, here we need
-            # to know the task to load the model with
-            # AutoModelForSequenceClassification
-            task = self.model_config._get_default_pooling_task(self.model_config.architectures)
+        assert len(self.model_config.architectures) == 1
+        task = (
+            "classify"
+            if self.model_config.architectures[0].endswith("ForSequenceClassification")
+            else "embed"
+        )
 
         if task == "embed":
             self.model = AutoModel.from_pretrained(self.model_config.model)
@@ -1544,8 +1543,6 @@ class SpyrePoolingModelRunner(
                     "Bert or Roberta for sequence classification"
                 )
             self.classifier = class_model.classifier
-        else:
-            raise ValueError(f"Unsupported task {task}")
 
         # Disable pooler because in transformers it's
         # always run even tough we don't use the outputs
@@ -1793,8 +1790,11 @@ class SpyrePoolingModelRunner(
         pooling_metadata = self.input_batch.make_pooling_metadata()
 
         ## No partial prefill, hence we can use the prompt lens here
+        cursor_kwargs: dict[str, Any] = {}
+        if has_argument(pooling_metadata.build_pooling_cursor, "seq_lens_cpu"):
+            cursor_kwargs["seq_lens_cpu"] = pooling_metadata.prompt_lens
         pooling_metadata.build_pooling_cursor(
-            num_scheduled_tokens=pooling_metadata.prompt_lens, device=self.device
+            num_scheduled_tokens=pooling_metadata.prompt_lens, device=self.device, **cursor_kwargs
         )
 
         # prepare unpadded output for the pooler

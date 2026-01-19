@@ -6,7 +6,7 @@ TODO: Add section on RHOAI officially supported images, once they exist
 
 ## Spyre base images
 
-Base images containing the driver stack for IBM Spyre accelerators are available from the [ibm-aiu](https://quay.io/repository/ibm-aiu/base?tab=tags) organization on Quay. This includes the `torch_sendnn` package, which is required for using torch with Spyre cards.
+Base images containing the driver stack for IBM Spyre accelerators are available from the [ibm-aiu](https://quay.io/repository/ibm-aiu/) organization on Quay. This includes the `torch_sendnn` package, which is required for using torch with Spyre cards.
 
 !!! attention
     These images contain an install of the `torch` package. The specific version installed is guaranteed to be compatible with `torch_sendnn`. Overwriting this install with a different version of `torch` may cause issues.

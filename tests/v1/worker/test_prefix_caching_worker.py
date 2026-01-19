@@ -3,6 +3,8 @@ from scheduling_utils import create_request_for_scheduler_test, random_prompt
 
 from v1.worker.mock_model import InstrumentedModelRunner
 
+from spyre_util import REFERENCE_MODELS
+
 
 @pytest.mark.cpu
 @pytest.mark.worker
@@ -10,7 +12,7 @@ from v1.worker.mock_model import InstrumentedModelRunner
 def test_block_sharing_for_2_chunks(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    model = InstrumentedModelRunner.DEFAULT_TEST_MODEL
+    model = REFERENCE_MODELS[InstrumentedModelRunner.DEFAULT_TEST_MODEL]
     pc_model_runner = InstrumentedModelRunner.build(
         monkeypatch,
         max_num_batched_tokens=128,
@@ -95,7 +97,7 @@ def test_multi_chunk_partial_match_misaligned(
     # the second sequence shares the same prefix of length 254 tokens
     # hence sequence 1 shares the first 254 tokens with sequence 0
 
-    model = InstrumentedModelRunner.DEFAULT_TEST_MODEL
+    model = REFERENCE_MODELS[InstrumentedModelRunner.DEFAULT_TEST_MODEL]
     prompt1 = random_prompt(model=model, seed=0, length=384)
     prompt2 = prompt1[0:254] + random_prompt(model=model, seed=0, length=384 - 254)
 
@@ -287,7 +289,7 @@ def test_first_chunk_recomputation(
         available_blocks=16,
     )
 
-    model = InstrumentedModelRunner.DEFAULT_TEST_MODEL
+    model = REFERENCE_MODELS[InstrumentedModelRunner.DEFAULT_TEST_MODEL]
     prompt1 = random_prompt(model=model, seed=0, length=128)
     prompt2 = prompt1[0:64] + random_prompt(model=model, seed=0, length=128 - 64)
 
@@ -414,7 +416,7 @@ def test_middle_chunk_recomputation_with_padding(
         max_model_len=1024,
     )
 
-    model = InstrumentedModelRunner.DEFAULT_TEST_MODEL
+    model = REFERENCE_MODELS[InstrumentedModelRunner.DEFAULT_TEST_MODEL]
     prompt1 = random_prompt(model=model, seed=0, length=512)
     prompt2 = prompt1[0:512] + random_prompt(model=model, seed=0, length=128)
 
