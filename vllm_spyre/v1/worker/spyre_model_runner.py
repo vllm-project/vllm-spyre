@@ -952,13 +952,14 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         max_model_len = self.model_config.max_model_len
         block_size = SpyrePlatform.get_block_size()
         max_blocks_per_seq = max_model_len // block_size
+        # Note on "+1": We need to add one additional block used exclusively for padding (idx 0)
+        num_blocks_full_batch = max_batch_size * max_blocks_per_seq + 1
 
         blocks_override = self.cache_config.num_gpu_blocks_override
         if blocks_override is not None and blocks_override > 0:
             num_blocks = blocks_override
         else:
-            # Note on "+1": We need to add one additional block used exclusively for padding (idx 0)
-            num_blocks = max_batch_size * max_blocks_per_seq + 1
+            num_blocks = num_blocks_full_batch
 
         # Total number of blocks needs to be a multiple of the batch size
         # (spyre constraint) so round it up (rounding down might cut off the padding block)
@@ -977,11 +978,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             # As we drop the block reservation for chunked prefill the number of available blocks
             # needs to be at least as big as the smaller of the batch tkv limit
             # (VLLM_DT_MAX_BATCH_TKV_LIMIT) and a full batch (max_num_seqs * max_model_len)
-            # Note on "+1": We need to add one additional block used exclusively for padding (idx 0)
-            num_blocks_full_batch = max_batch_size * max_blocks_per_seq + 1
             batch_tkv_limit = int(
                 os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", num_blocks_full_batch * block_size)
             )
+            # Note on "+1": We need to add one additional block used exclusively for padding (idx 0)
             num_blocks_batch_tkv_limit = batch_tkv_limit // block_size + 1
             min_req_num_blocks = min(num_blocks_full_batch, num_blocks_batch_tkv_limit)
         else:
