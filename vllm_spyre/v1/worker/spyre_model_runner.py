@@ -951,28 +951,33 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         max_batch_size = self.scheduler_config.max_num_seqs
         max_model_len = self.model_config.max_model_len
         block_size = SpyrePlatform.get_block_size()
-        min_req_num_blocks = max_model_len // block_size
+        max_blocks_per_seq = max_model_len // block_size
 
         blocks_override = self.cache_config.num_gpu_blocks_override
         if blocks_override is not None and blocks_override > 0:
             num_blocks = blocks_override
         else:
-            num_blocks = max_batch_size * min_req_num_blocks
+            num_blocks = max_batch_size * max_blocks_per_seq
 
         # Total number of blocks needs to be a multiple of the batch size
         # (spyre constraint) so round it down
         num_blocks = max_batch_size * (num_blocks // max_batch_size)
 
-        # For chunked prefill we must also ensure that a full batch and
-        # VLLM_DT_MAX_BATCH_TKV_LIMIT can be served given num_blocks
         if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
-            req_num_blocks_full_batch = max_batch_size * min_req_num_blocks
+            # As we drop the block reservation for chunked prefill the number of available blocks
+            # needs to be at least as big as the smaller of the batch tkv limit
+            # (VLLM_DT_MAX_BATCH_TKV_LIMIT) and a full batch (max_num_seqs * max_model_len)
+            num_blocks_full_batch = max_batch_size * max_blocks_per_seq
             batch_tkv_limit = int(
-                os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", req_num_blocks_full_batch * block_size)
+                os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", num_blocks_full_batch * block_size)
             )
-            req_num_blocks_batch_tkv_limit = batch_tkv_limit // block_size
-            min_req_num_blocks = min(req_num_blocks_full_batch, req_num_blocks_batch_tkv_limit)
+            num_blocks_batch_tkv_limit = batch_tkv_limit // block_size
+            min_req_num_blocks = min(num_blocks_full_batch, num_blocks_batch_tkv_limit)
+        else:
+            # default value: serve at least one sequence of full context (consistent with upstream)
+            min_req_num_blocks = max_blocks_per_seq
 
+        # min_req_num_blocks := minimum required number of blocks
         if num_blocks < min_req_num_blocks:
             raise ValueError(
                 f"Number of pages available on Spyre {num_blocks} is not "
