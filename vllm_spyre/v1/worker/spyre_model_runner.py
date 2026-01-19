@@ -952,23 +952,26 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         max_model_len = self.model_config.max_model_len
         block_size = SpyrePlatform.get_block_size()
         max_blocks_per_seq = max_model_len // block_size
-        # Note on "+1": We need to add one additional block used exclusively for padding (idx 0)
-        num_blocks_full_batch = max_batch_size * max_blocks_per_seq + 1
+        num_blocks_full_batch = max_batch_size * max_blocks_per_seq
 
         blocks_override = self.cache_config.num_gpu_blocks_override
         if blocks_override is not None and blocks_override > 0:
             num_blocks = blocks_override
+            # Total number of blocks needs to be a multiple of the batch size on Spyre
+            # -> round down to not exceed the Spyre cards hard-coded limits of detected models
+            old_num_blocks = num_blocks
+            num_blocks = math.floor(num_blocks / max_batch_size) * max_batch_size
         else:
-            num_blocks = num_blocks_full_batch
-
-        # Total number of blocks needs to be a multiple of the batch size
-        # (spyre constraint) so round it up (rounding down might cut off the padding block)
-        old_num_blocks = num_blocks
-        num_blocks = math.ceil(num_blocks / max_batch_size) * max_batch_size
+            # Note on "+1": We need to add one additional block used exclusively for padding (idx 0)
+            num_blocks = num_blocks_full_batch + 1
+            # Total number of blocks needs to be a multiple of the batch size on Spyre
+            # -> round up as not among detected models (rounding down might cut the padding block)
+            old_num_blocks = num_blocks
+            num_blocks = math.ceil(num_blocks / max_batch_size) * max_batch_size
 
         if num_blocks != old_num_blocks:
             logger.info(
-                "Spyre constraint: num blocks rounded up from %d to %d (multiple of batch size=%d)",
+                "Spyre constraint: num blocks rounded from %d to %d (multiple of batch size=%d)",
                 old_num_blocks,
                 num_blocks,
                 max_batch_size,
@@ -981,9 +984,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             batch_tkv_limit = int(
                 os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", num_blocks_full_batch * block_size)
             )
+            num_blocks_batch_tkv_limit = batch_tkv_limit // block_size
             # Note on "+1": We need to add one additional block used exclusively for padding (idx 0)
-            num_blocks_batch_tkv_limit = batch_tkv_limit // block_size + 1
-            min_req_num_blocks = min(num_blocks_full_batch, num_blocks_batch_tkv_limit)
+            min_req_num_blocks = min(num_blocks_full_batch, num_blocks_batch_tkv_limit) + 1
         else:
             # default value: serve at least one sequence of full context (consistent with upstream)
             min_req_num_blocks = max_blocks_per_seq + 1
