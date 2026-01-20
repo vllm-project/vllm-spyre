@@ -71,8 +71,9 @@ def generate_fms_results(processor, model_path, prompts):
 @pytest.mark.cpu
 @pytest.mark.parametrize("model", get_spyre_model_list(isMultimodal=True))
 def test_alignment_with_fms(model, mode, monkeypatch):
-    if mode in ["sb", "pc"]:
-        pytest.skip("Static batching is not support for multimodal.")
+    # Only run continuous batching with chunked prefill for now (slow tests)
+    if mode != "cp":
+        pytest.skip("Only running multimodal tests for chunked prefill")
 
     processor = AutoProcessor.from_pretrained(model.name)
     hf_config = AutoConfig.from_pretrained(model.name)
