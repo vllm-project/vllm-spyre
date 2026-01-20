@@ -642,6 +642,46 @@ class SpyrePlatform(Platform):
         return max_new_tokens
 
     @classmethod
+    def _set_env_with_validation(cls, env_var: str, default_value: int) -> None:
+        """
+        Set an environment variable to a default value if not already set.
+        If the user has provided a value, validate it's an integer and warn if it's less than the
+        default.
+
+        Args:
+            env_var: The name of the environment variable to set
+            default_value: The default value to use (in bytes or appropriate units)
+        """
+        existing_value = os.getenv(env_var)
+
+        if not existing_value:
+            # No existing value, set the default
+            os.environ[env_var] = str(default_value)
+            logger.info("Using %s = %d", env_var, default_value)
+        else:
+            # User provided a value, validate it
+            try:
+                user_value = int(existing_value)
+            except ValueError:
+                logger.warning(
+                    "%s was set to '%s' which is not a valid integer. Using default of %d",
+                    env_var,
+                    existing_value,
+                    default_value,
+                )
+                os.environ[env_var] = str(default_value)
+                return
+
+            # Only warn if user value is less than default
+            if user_value < default_value:
+                logger.warning(
+                    "%s was set to %d which is less than the default of %d",
+                    env_var,
+                    user_value,
+                    default_value,
+                )
+
+    @classmethod
     def configure_granite_3_8b(cls, vllm_config: VllmConfig):
         """
         Configure hard coded values for the model
@@ -653,53 +693,26 @@ class SpyrePlatform(Platform):
             # only override configs for TP=4
             return
 
+        # Log once upfront that we detected the model
+        logger.info(
+            "Granite 8b dense model with tensor parallel size 4 detected. "
+            "Applying model-specific configuration overrides."
+        )
+
         tkv_128k = 128 * 1024
         if not os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"):
             os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(tkv_128k)
-            logger.info(
-                "Granite 8b dense model and tensor parallel size 4 detected. Using "
-                "VLLM_DT_MAX_BATCH_TKV_LIMIT = %d",
-                tkv_128k,
-            )
+            logger.info("Using VLLM_DT_MAX_BATCH_TKV_LIMIT = %d", tkv_128k)
         elif os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT") != str(tkv_128k):
             logger.warning(
-                "VLLM_DT_MAX_BATCH_TKV_LIMIT was set to %s, not overriding to the granite 8b "
-                "dense default of %d",
+                "VLLM_DT_MAX_BATCH_TKV_LIMIT was set to %s, not overriding to default of %d",
                 os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"),
                 tkv_128k,
             )
 
-        # If no HDMA p2psize override was specified, set 256MB
-        p2psize_256m = 256 * 1024 * 1024
-        if not os.getenv("FLEX_HDMA_P2PSIZE"):
-            os.environ["FLEX_HDMA_P2PSIZE"] = str(p2psize_256m)
-            logger.info(
-                "Granite 8b dense model and tensor parallel size 4 detected. Using "
-                "FLEX_HDMA_P2PSIZE = %d",
-                p2psize_256m,
-            )
-        elif os.getenv("FLEX_HDMA_P2PSIZE") != str(p2psize_256m):
-            logger.warning(
-                "FLEX_HDMA_P2PSIZE was set to %s, not using the granite 8b dense default of %d",
-                os.getenv("FLEX_HDMA_P2PSIZE"),
-                p2psize_256m,
-            )
-
-        # If no HDMA collsize override was specified, set 32MB
-        collsize_32m = 32 * 1024 * 1024
-        if not os.getenv("FLEX_HDMA_COLLSIZE"):
-            os.environ["FLEX_HDMA_COLLSIZE"] = str(collsize_32m)
-            logger.info(
-                "Granite 8b dense model and tensor parallel size 4 detected. Using "
-                "FLEX_HDMA_COLLSIZE = %d",
-                collsize_32m,
-            )
-        elif os.getenv("FLEX_HDMA_COLLSIZE") != str(collsize_32m):
-            logger.warning(
-                "FLEX_HDMA_COLLSIZE was set to %s, not using the granite 8b dense default of %d",
-                os.getenv("FLEX_HDMA_COLLSIZE"),
-                collsize_32m,
-            )
+        # Set HDMA environment variables with validation
+        cls._set_env_with_validation("FLEX_HDMA_P2PSIZE", 256 * 1024 * 1024)  # 256MB
+        cls._set_env_with_validation("FLEX_HDMA_COLLSIZE", 32 * 1024 * 1024)  # 32MB
 
         # Override the total number of KV cache blocks based on what we know
         # will fit. (Unless user already set `--num-gpu-blocks-override`)
@@ -718,15 +731,10 @@ class SpyrePlatform(Platform):
 
         if vllm_config.cache_config.num_gpu_blocks_override is None:
             vllm_config.cache_config.num_gpu_blocks_override = blocks_override
-            logger.info(
-                "Granite 8b dense model and tensor parallel size 4 detected. Overriding "
-                "available KV Cache blocks to %d",
-                blocks_override,
-            )
+            logger.info("Overriding available KV Cache blocks to %d", blocks_override)
         elif vllm_config.cache_config.num_gpu_blocks_override != blocks_override:
             logger.warning(
-                "--num-gpu-blocks-override was set to %d, not using the granite 8b dense default "
-                "of %d",
+                "--num-gpu-blocks-override was set to %d, not using default of %d",
                 vllm_config.cache_config.num_gpu_blocks_override,
                 blocks_override,
             )
@@ -737,10 +745,7 @@ class SpyrePlatform(Platform):
             and envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn"
             and os.getenv("VLLM_DT_CHUNK_LEN") is None
         ):
-            logger.info(
-                "Granite 8b dense model and tensor parallel size 4 with chunked prefill detected. "
-                "Setting --max-num-batched-tokens 1024"
-            )
+            logger.info("Setting --max-num-batched-tokens to 1024 for chunked prefill")
             vllm_config.scheduler_config.max_num_batched_tokens = 1024
 
     @classmethod
