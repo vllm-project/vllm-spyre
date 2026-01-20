@@ -1,5 +1,7 @@
 import sys
 
+from transformers import GraniteMoeHybridConfig
+
 # When running this plugin on a Mac, we assume it's for local development
 # purposes. However, due to a compatibility issue with vLLM, which overrides
 # the Triton module with a placeholder, vLLM may fail to load on macOS. To
@@ -75,6 +77,9 @@ class SpyrePlatform(Platform):
     # TODO: this `None` is dangerous
     _config: VllmConfig = None  # ty: ignore[invalid-assignment]
     _torch_sendnn_version = None
+    # tracks if we are being configured via CLI or LLM() so that we know if
+    # default arg parser changes actually have an effect
+    _used_with_cli = False
 
     # Backend for dynamic compilation ops
     # See vllm batched_count_greater_than method
@@ -146,6 +151,15 @@ class SpyrePlatform(Platform):
             "Cannot use chunked prefill without continuous batching."
         )
 
+        # enable_prefix_caching will be defaulted to True when used with LLM();
+        # only assert if our arg parser default was applied
+        if cls._used_with_cli:
+            assert (
+                cache_config.enable_prefix_caching and envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL
+            ) or not cache_config.enable_prefix_caching, (
+                "Cannot use prefix caching without chunked prefill."
+            )
+
         if envs_spyre.VLLM_SPYRE_USE_CB and is_decoder:
             if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
                 scheduler_config.scheduler_cls = (
@@ -155,6 +169,12 @@ class SpyrePlatform(Platform):
                 scheduler_config.scheduler_cls = (
                     "vllm_spyre.v1.core.scheduler.ContinuousBatchingSpyreScheduler"
                 )
+            # Overwrite so that vLLM prints our value in the "Initializing a V1
+            # LLM engine" log message
+            # TODO: With the arg parser defaulting, this can be removed when we
+            # only support vllm >= v0.11.1
+            scheduler_config.chunked_prefill_enabled = envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL
+
             if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
                 raise ValueError("Prompt logprobs not supported with continuous batching")
             if (
@@ -189,7 +209,9 @@ class SpyrePlatform(Platform):
             )
 
         # Hardcode some things for granite-3.3-8b-instruct
-        if cls.is_granite_3_8b(vllm_config.model_config):
+        if cls.is_granite_3_8b(vllm_config.model_config) or cls.is_granite_4_8b_dense(
+            vllm_config.model_config
+        ):
             cls.configure_granite_3_8b(vllm_config)
 
         # To disable any paged attention ops in the base scheduler, we:
@@ -233,22 +255,22 @@ class SpyrePlatform(Platform):
                 )
 
         logger.info(
-            "Overriding configurations based on warmup shapes. "
-            "max_model_len=%d, max_num_seqs=%d, block_size=%d, "
-            "max_num_batched_tokens=%d",
+            "Configurations for Spyre. max_model_len=%d, max_num_seqs=%d, block_size=%d, "
+            "max_num_batched_tokens=%d, enable_chunked_prefill=%r, enable_prefix_caching=%r",
             model_config.max_model_len,
             scheduler_config.max_num_seqs,
             cache_config.block_size,
             scheduler_config.max_num_batched_tokens,
+            envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL,
+            cache_config.enable_prefix_caching,
         )
 
         # set env vars for torch_sendnn to consume
         os.environ["VLLM_DT_MAX_CONTEXT_LEN"] = str(vllm_config.model_config.max_model_len)
         if envs_spyre.VLLM_SPYRE_USE_CB and vllm_config.model_config.max_model_len > 32 * 1024:
             logger.warning(
-                "Max context length is too big. Currently only 32K (32768) "
-                "context length is supported on Spyre for continuous "
-                "batching. Results might be off!"
+                "Max context length is too big. Currently only 32K (32768) context length is "
+                "supported on Spyre for continuous batching. Results might be off!"
             )
         # min value 2 needed for VLLM_DT_MAX_BATCH_SIZE (compiler constraint)
         # Note that we can still have decodes of batch size 1 as the env var
@@ -265,9 +287,8 @@ class SpyrePlatform(Platform):
 
             os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(default_max_batch_tkv_limit)
             logger.info(
-                "No model / tensor parallel size specific value for "
-                "VLLM_DT_MAX_BATCH_TKV_LIMIT found. Using the default value "
-                "(max_model_len * max_batch_size): %d",
+                "No model / tensor parallel size specific value for VLLM_DT_MAX_BATCH_TKV_LIMIT "
+                "found. Using the default value (max_model_len * max_batch_size): %d",
                 default_max_batch_tkv_limit,
             )
 
@@ -456,7 +477,15 @@ class SpyrePlatform(Platform):
     @classmethod
     def pre_register_and_update(cls, parser: FlexibleArgumentParser | None = None) -> None:
         if parser is not None:
+            # let's us know that defaults were applied to the parser
+            cls._used_with_cli = True
+
             parser.set_defaults(enable_prefix_caching=False)
+            # TODO: We don't use the value of the enable_chunked_prefill arg,
+            # but setting the default makes logs match our setting.
+            # vLLM >= 0.11.1 does not override the arg, so we could remove the
+            # env var for v2 if we update our minimum support
+            parser.set_defaults(enable_chunked_prefill=envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL)
             if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
                 parser.set_defaults(max_num_batched_tokens=cls.DEFAULT_CHUNK_SIZE)
 
@@ -562,8 +591,8 @@ class SpyrePlatform(Platform):
                 os.environ[env] = str(cpus_per_worker)
 
             logger.info(
-                "%s for %d workers. Since VLLM_SPYRE_UPDATE_THREAD_CONFIG is "
-                "enabled, setting threading configurations to %d",
+                "%s for %d workers. Since VLLM_SPYRE_UPDATE_THREAD_CONFIG is enabled, setting "
+                "threading configurations to %d",
                 detection_message,
                 worker_count,
                 cpus_per_worker,
@@ -587,9 +616,8 @@ class SpyrePlatform(Platform):
             for value in env_map.values()
         ):
             logger.warning(
-                "%s %s for %d workers. Recommend setting each threading "
-                "configuration to %d. Set VLLM_SPYRE_UPDATE_THREAD_CONFIG=1 "
-                "to do this automatically.",
+                "%s %s for %d workers. Recommend setting each threading configuration to %d. Set "
+                "VLLM_SPYRE_UPDATE_THREAD_CONFIG=1 to do this automatically.",
                 thread_warning,
                 detection_message,
                 worker_count,
@@ -616,7 +644,7 @@ class SpyrePlatform(Platform):
     def configure_granite_3_8b(cls, vllm_config: VllmConfig):
         """
         Configure hard coded values for the model
-        https://huggingface.co/ibm-granite/granite-3.3-8b-instruct
+        https://huggingface.co/ibm-granite/granite-3.3-8b-instruct and other dense 8b variants.
         """
         parallel_config = vllm_config.parallel_config
 
@@ -628,14 +656,14 @@ class SpyrePlatform(Platform):
         if not os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"):
             os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(tkv_128k)
             logger.info(
-                "Model granite-3.3-8b-instruct and tensor parallel "
-                "size 4 detected. Using VLLM_DT_MAX_BATCH_TKV_LIMIT = %d",
+                "Granite 8b dense model and tensor parallel size 4 detected. Using "
+                "VLLM_DT_MAX_BATCH_TKV_LIMIT = %d",
                 tkv_128k,
             )
         elif os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT") != str(tkv_128k):
             logger.warning(
-                "VLLM_DT_MAX_BATCH_TKV_LIMIT was set to %s, not "
-                "overriding to the granite-3.3-8b-instruct default of %d",
+                "VLLM_DT_MAX_BATCH_TKV_LIMIT was set to %s, not overriding to the granite 8b "
+                "dense default of %d",
                 os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"),
                 tkv_128k,
             )
@@ -645,14 +673,13 @@ class SpyrePlatform(Platform):
         if not os.getenv("FLEX_HDMA_P2PSIZE"):
             os.environ["FLEX_HDMA_P2PSIZE"] = str(p2psize_256m)
             logger.info(
-                "Model granite-3.3-8b-instruct and tensor parallel size 4 "
-                "detected. Using FLEX_HDMA_P2PSIZE = %d",
+                "Granite 8b dense model and tensor parallel size 4 detected. Using "
+                "FLEX_HDMA_P2PSIZE = %d",
                 p2psize_256m,
             )
         elif os.getenv("FLEX_HDMA_P2PSIZE") != str(p2psize_256m):
             logger.warning(
-                "FLEX_HDMA_P2PSIZE was set to %s, not using the "
-                "granite-3.3-8b-instruct default of %d",
+                "FLEX_HDMA_P2PSIZE was set to %s, not using the granite 8b dense default of %d",
                 os.getenv("FLEX_HDMA_P2PSIZE"),
                 p2psize_256m,
             )
@@ -675,14 +702,14 @@ class SpyrePlatform(Platform):
         if vllm_config.cache_config.num_gpu_blocks_override is None:
             vllm_config.cache_config.num_gpu_blocks_override = blocks_override
             logger.info(
-                "Model granite-3.3-8b-instruct and tensor parallel size 4 "
-                "detected. Overriding available KV Cache blocks to %d",
+                "Granite 8b dense model and tensor parallel size 4 detected. Overriding "
+                "available KV Cache blocks to %d",
                 blocks_override,
             )
         elif vllm_config.cache_config.num_gpu_blocks_override != blocks_override:
             logger.warning(
-                "--num-gpu-blocks-override was set to %d, not using the "
-                "granite-3.3-8b-instruct default of %d",
+                "--num-gpu-blocks-override was set to %d, not using the granite 8b dense default "
+                "of %d",
                 vllm_config.cache_config.num_gpu_blocks_override,
                 blocks_override,
             )
@@ -694,9 +721,8 @@ class SpyrePlatform(Platform):
             and os.getenv("VLLM_DT_CHUNK_LEN") is None
         ):
             logger.info(
-                "Model granite-3.3-8b-instruct and tensor "
-                "parallel size 4 with chunked prefill detected. Setting "
-                "--max-num-batched-tokens 1024"
+                "Granite 8b dense model and tensor parallel size 4 with chunked prefill detected. "
+                "Setting --max-num-batched-tokens 1024"
             )
             vllm_config.scheduler_config.max_num_batched_tokens = 1024
 
@@ -705,7 +731,7 @@ class SpyrePlatform(Platform):
         """Returns true if we have a model that looks like
         ibm-granite/granite-3.3-8b-instruct"""
         if not isinstance(model_config.hf_config, GraniteConfig):
-            # Not granite at all
+            # Not granite 3 at all
             return False
 
         return (
@@ -713,6 +739,24 @@ class SpyrePlatform(Platform):
             and model_config.hf_config.max_position_embeddings == 131072
             and model_config.hf_config.hidden_size == 4096
             and model_config.hf_config.vocab_size == 49159
+            and model_config.hf_config.num_key_value_heads == 8
+            and model_config.hf_config.num_attention_heads == 32
+        )
+
+    @classmethod
+    def is_granite_4_8b_dense(cls, model_config: ModelConfig):
+        """Returns true if we have a dense granite 4 model with the same architecture as granite 3.3
+        8b"""
+        if not isinstance(model_config.hf_config, GraniteMoeHybridConfig):
+            # Not granite 4 at all
+            return False
+
+        return (
+            model_config.hf_config.num_hidden_layers == 40
+            and model_config.hf_config.num_experts_per_tok == 0  # dense model
+            and model_config.hf_config.max_position_embeddings == 131072
+            and model_config.hf_config.hidden_size == 4096
+            and model_config.hf_config.vocab_size == 100352
             and model_config.hf_config.num_key_value_heads == 8
             and model_config.hf_config.num_attention_heads == 32
         )
