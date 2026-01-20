@@ -645,12 +645,15 @@ class SpyrePlatform(Platform):
     def _set_env_with_validation(cls, env_var: str, default_value: int) -> None:
         """
         Set an environment variable to a default value if not already set.
-        If the user has provided a value, validate it's an integer and warn if it's less than the
-        default.
+        If the user has provided a value, validate it's an integer and raise an error if invalid.
+        Warn if it's less than the default.
 
         Args:
             env_var: The name of the environment variable to set
             default_value: The default value to use (in bytes or appropriate units)
+
+        Raises:
+            ValueError: If the user-provided value is not a valid integer
         """
         existing_value = os.getenv(env_var)
 
@@ -662,15 +665,10 @@ class SpyrePlatform(Platform):
             # User provided a value, validate it
             try:
                 user_value = int(existing_value)
-            except ValueError:
-                logger.warning(
-                    "%s was set to '%s' which is not a valid integer. Using default of %d",
-                    env_var,
-                    existing_value,
-                    default_value,
-                )
-                os.environ[env_var] = str(default_value)
-                return
+            except ValueError as e:
+                raise ValueError(
+                    f"{env_var} was set to '{existing_value}' which is not a valid integer"
+                ) from e
 
             # Only warn if user value is less than default
             if user_value < default_value:
