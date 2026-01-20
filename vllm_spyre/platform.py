@@ -15,11 +15,11 @@ if sys.platform.startswith("darwin"):
 import math
 import operator
 import os
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Union, cast
 
 import torch
 from transformers.models.granite import GraniteConfig
-from vllm.inputs import ProcessorInputs, PromptType
+from vllm.inputs import ProcessorInputs, PromptType, TokenInputs
 from vllm.logger import init_logger
 
 try:
@@ -74,7 +74,8 @@ class SpyrePlatform(Platform):
     supported_quantization: list[str] = ["gptq", "compressed-tensors"]
     _warmup_shapes: tuple[dict[str, int], ...] | None = None
     _block_size: int = 64  # hardcoded Spyre constraint for now
-    _config: VllmConfig = None
+    # TODO: this `None` is dangerous
+    _config: VllmConfig = None  # ty: ignore[invalid-assignment]
     _torch_sendnn_version = None
     # tracks if we are being configured via CLI or LLM() so that we know if
     # default arg parser changes actually have an effect
@@ -172,7 +173,8 @@ class SpyrePlatform(Platform):
             # LLM engine" log message
             # TODO: With the arg parser defaulting, this can be removed when we
             # only support vllm >= v0.11.1
-            scheduler_config.chunked_prefill_enabled = envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL
+            if hasattr(scheduler_config, "chunked_prefill_enabled"):
+                scheduler_config.chunked_prefill_enabled = envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL  # ty: ignore
 
             if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
                 raise ValueError("Prompt logprobs not supported with continuous batching")
@@ -221,7 +223,7 @@ class SpyrePlatform(Platform):
         #       length requests, so that the scheduler will always have token
         #       budget available to schedule a full batch
         if cache_config is not None:
-            cache_config.block_size = model_config.max_model_len
+            cache_config.block_size = model_config.max_model_len  # ty: ignore[invalid-assignment]
             if not envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
                 scheduler_config.max_num_batched_tokens = (
                     model_config.max_model_len * scheduler_config.max_num_seqs
@@ -411,7 +413,10 @@ class SpyrePlatform(Platform):
         elif processed_inputs is not None:
             if "encoder" in processed_inputs:
                 raise ValueError("Encoder-decoder models not supported ")
-            prompt_len = len(processed_inputs["prompt_token_ids"])
+            if "prompt_token_ids" not in processed_inputs:
+                # Can't do any extra validation on embedding-only inputs
+                return
+            prompt_len = len(cast(TokenInputs, processed_inputs)["prompt_token_ids"])
         else:
             # We need a prompt length to do any validation here
             return
@@ -761,7 +766,7 @@ class SpyrePlatform(Platform):
     def sendnn_configured(cls) -> bool:
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
             try:
-                from torch_sendnn._version import __version__ as version_str
+                from torch_sendnn._version import __version__ as version_str  # ty: ignore[unresolved-import]
 
                 sem_ver = version_str.split("+")[0]
                 cls._torch_sendnn_version = tuple(map(int, sem_ver.split(".")))

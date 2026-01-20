@@ -23,7 +23,7 @@ import vllm_spyre.utils as utils_spyre
 from vllm_spyre.platform import SpyrePlatform
 
 try:
-    import backends.dynamo_tracer  # noqa: F401
+    import backends.dynamo_tracer  # ty: ignore[unresolved-import] # noqa
 except ImportError:
     print("WARNING: Disabled: dynamo_tracer")
     pass
@@ -35,16 +35,16 @@ logger = init_logger(__name__)
 
 @dataclass
 class SpyreAttentionMetadata:
-    slot_mapping: torch.Tensor = None
-    current_tkv_mask: torch.Tensor = None
-    left_padded_prompt_mask: torch.Tensor = None
-    block_table: torch.Tensor = None
-    is_prefill: bool = False
+    slot_mapping: torch.Tensor
+    current_tkv_mask: torch.Tensor
+    left_padded_prompt_mask: torch.Tensor
+    block_table: torch.Tensor
+    is_prefill: bool
     # We need this indices because when requests are removed from the
     # persistent batch, we need to keep the reference of the remaining
     # requests, that is, this index must be the same from the prefill until
     # the end.
-    scale_indices: torch.Tensor = None
+    scale_indices: torch.Tensor
 
 
 class SpyreCausalLM(nn.Module):
@@ -59,7 +59,7 @@ class SpyreCausalLM(nn.Module):
 
         try:
             ## Temporary backwards compatibility for 0.10.2
-            from vllm.model_executor.layers.sampler import get_sampler
+            from vllm.model_executor.layers.sampler import get_sampler  # ty: ignore[unresolved-import]
 
             self.sampler = get_sampler()
         except (ImportError, ModuleNotFoundError):
@@ -96,7 +96,7 @@ class SpyreCausalLM(nn.Module):
         is_prompt: bool,
     ) -> torch.Tensor:
         if is_prompt and not envs_spyre.VLLM_SPYRE_USE_CB:
-            self.model.past_key_value_states = None  # type: ignore
+            self.model.past_key_value_states = None
 
         extra_kwargs: dict[str, Any] = {}
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn":
@@ -170,6 +170,9 @@ class FmsModelBase(nn.Module):
             rank=rank,
             world_size=self.parallel_config.world_size,
         )
+
+    def get_dtype(self) -> torch.dtype:
+        raise NotImplementedError()
 
     def load_weights(
         self,
@@ -270,7 +273,7 @@ class FmsModelBase(nn.Module):
             # of caching even though the test run in isolated subprocesses.
 
             if SpyrePlatform.sendnn_configured():
-                from torch_sendnn import torch_sendnn  # noqa: F401
+                pass
 
             self.model = torch.compile(
                 self.model,
