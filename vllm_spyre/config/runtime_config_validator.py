@@ -41,8 +41,9 @@ class ModelRuntimeConfiguration:
     ignore: bool = False
 
     def __post_init__(self):
+        # TODO: the typing here is a bit wild
         self.configs = [
-            RuntimeConfiguration(**cfg) if isinstance(cfg, dict) else cfg
+            RuntimeConfiguration(**cfg) if isinstance(cfg, dict) else cfg  # ty: ignore
             for cfg in self.configs or []
         ]
 
