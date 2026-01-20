@@ -79,6 +79,7 @@ jobs:
             flags: "--timeout=300"
             hf_model: "ibm-granite/granite-vision-3.3-2b"
             hf_model_rev: "7fe917fdafb006f53aedf9589f148a83ec3cd8eb"
+            env_overrides: "HF_HUB_OFFLINE=0"
         include:
           # Lower bound support
           - vllm_version:
@@ -312,5 +313,5 @@ jobs:
           # re-install the vllm_sypre package from source
           source .venv/bin/activate
 
-          python3 -m pytest ${{ matrix.test_suite.flags }} \
+          ${{matrix.test_suite.env_overrides}} python3 -m pytest ${{ matrix.test_suite.flags }} \
             tests -v -m "${{ matrix.test_suite.markers }}"
