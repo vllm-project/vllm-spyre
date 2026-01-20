@@ -168,7 +168,7 @@ jobs:
       - name: "Install PyTorch 2.7.1"
         if: steps.changed-src-files.outputs.any_changed == 'true'
         run: |
-          pip install torch=="2.7.1+cpu" --index-url https://download.pytorch.org/whl/cpu
+          pip install torch=="2.7.1" --index-url https://download.pytorch.org/whl/cpu
 
       - name: "Install uv"
         if: steps.changed-src-files.outputs.any_changed == 'true'

@@ -1209,13 +1209,13 @@ wheels = [
 
 [[package]]
 name = "ibm-fms"
-version = "1.5.0"
+version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "torch", marker = "sys_platform == 'never'" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/85/73/a9baa69717c28f71f3d07043b122c76e092974c5f1a886f45f5e6760db7f/ibm_fms-1.5.0-py3-none-any.whl", hash = "sha256:027446b12a4ad8da787da9e45c12c726df8b6c0bd09791614a447923910f50a6", size = 191609, upload-time = "2025-10-31T16:43:21.278Z" },
+    { url = "https://files.pythonhosted.org/packages/b1/7a/9f67924f466c1ac709676d7f73e9a0ea028ec3d26d92a2b1fc8c4267b163/ibm_fms-1.6.0-py3-none-any.whl", hash = "sha256:ee9d46fca3d638586798586461826063ea93a919bce64a02a5561b3a4b7e090b", size = 201732, upload-time = "2026-01-14T16:39:52.811Z" },
 ]
 
 [[package]]
@@ -4266,7 +4266,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fms-model-optimizer", extras = ["fp8"], specifier = ">=0.8.0" },
-    { name = "ibm-fms", specifier = ">=1.5.0,<2.0" },
+    { name = "ibm-fms", specifier = ">=1.6.0,<2.0" },
     { name = "pytest-mock", specifier = ">=3.15.0" },
     { name = "vllm", git = "https://github.com/vllm-project/vllm?rev=v0.13.0" },
 ]

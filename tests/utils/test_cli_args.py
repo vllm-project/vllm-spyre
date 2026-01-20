@@ -176,6 +176,10 @@ def test_prefix_caching_is_off_by_default(monkeypatch: pytest.MonkeyPatch) -> No
         "1024",
     ]
 
+    # only care about prefix caching with chunked prefill
+    monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
+    monkeypatch.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", "1")
+
     with (
         environ_checkpoint(),
         pytest.MonkeyPatch.context() as m,
