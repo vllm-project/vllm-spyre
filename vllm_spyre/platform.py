@@ -646,7 +646,7 @@ class SpyrePlatform(Platform):
     def configure_granite_3_8b(cls, vllm_config: VllmConfig):
         """
         Configure hard coded values for the model
-        https://huggingface.co/ibm-granite/granite-3.3-8b-instruct
+        https://huggingface.co/ibm-granite/granite-3.3-8b-instruct and other dense 8b variants.
         """
         parallel_config = vllm_config.parallel_config
 
@@ -658,14 +658,14 @@ class SpyrePlatform(Platform):
         if not os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"):
             os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(tkv_128k)
             logger.info(
-                "Model granite-3.3-8b-instruct and tensor parallel "
+                "Granite 8b dense model and tensor parallel "
                 "size 4 detected. Using VLLM_DT_MAX_BATCH_TKV_LIMIT = %d",
                 tkv_128k,
             )
         elif os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT") != str(tkv_128k):
             logger.warning(
                 "VLLM_DT_MAX_BATCH_TKV_LIMIT was set to %s, not "
-                "overriding to the granite-3.3-8b-instruct default of %d",
+                "overriding to the granite 8b dense default of %d",
                 os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"),
                 tkv_128k,
             )
@@ -675,14 +675,13 @@ class SpyrePlatform(Platform):
         if not os.getenv("FLEX_HDMA_P2PSIZE"):
             os.environ["FLEX_HDMA_P2PSIZE"] = str(p2psize_256m)
             logger.info(
-                "Model granite-3.3-8b-instruct and tensor parallel size 4 "
+                "Granite 8b dense model and tensor parallel size 4 "
                 "detected. Using FLEX_HDMA_P2PSIZE = %d",
                 p2psize_256m,
             )
         elif os.getenv("FLEX_HDMA_P2PSIZE") != str(p2psize_256m):
             logger.warning(
-                "FLEX_HDMA_P2PSIZE was set to %s, not using the "
-                "granite-3.3-8b-instruct default of %d",
+                "FLEX_HDMA_P2PSIZE was set to %s, not using the granite 8b dense default of %d",
                 os.getenv("FLEX_HDMA_P2PSIZE"),
                 p2psize_256m,
             )
@@ -705,14 +704,14 @@ class SpyrePlatform(Platform):
         if vllm_config.cache_config.num_gpu_blocks_override is None:
             vllm_config.cache_config.num_gpu_blocks_override = blocks_override
             logger.info(
-                "Model granite-3.3-8b-instruct and tensor parallel size 4 "
+                "Granite 8b dense model and tensor parallel size 4 "
                 "detected. Overriding available KV Cache blocks to %d",
                 blocks_override,
             )
         elif vllm_config.cache_config.num_gpu_blocks_override != blocks_override:
             logger.warning(
                 "--num-gpu-blocks-override was set to %d, not using the "
-                "granite-3.3-8b-instruct default of %d",
+                "granite 8b dense default of %d",
                 vllm_config.cache_config.num_gpu_blocks_override,
                 blocks_override,
             )
@@ -724,7 +723,7 @@ class SpyrePlatform(Platform):
             and os.getenv("VLLM_DT_CHUNK_LEN") is None
         ):
             logger.info(
-                "Model granite-3.3-8b-instruct and tensor "
+                "Granite 8b dense model and tensor "
                 "parallel size 4 with chunked prefill detected. Setting "
                 "--max-num-batched-tokens 1024"
             )
