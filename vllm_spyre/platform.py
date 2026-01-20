@@ -687,6 +687,22 @@ class SpyrePlatform(Platform):
                 p2psize_256m,
             )
 
+        # If no HDMA collsize override was specified, set 32MB
+        collsize_32m = 32 * 1024 * 1024
+        if not os.getenv("FLEX_HDMA_COLLSIZE"):
+            os.environ["FLEX_HDMA_COLLSIZE"] = str(collsize_32m)
+            logger.info(
+                "Granite 8b dense model and tensor parallel size 4 detected. Using "
+                "FLEX_HDMA_COLLSIZE = %d",
+                collsize_32m,
+            )
+        elif os.getenv("FLEX_HDMA_COLLSIZE") != str(collsize_32m):
+            logger.warning(
+                "FLEX_HDMA_COLLSIZE was set to %s, not using the granite 8b dense default of %d",
+                os.getenv("FLEX_HDMA_COLLSIZE"),
+                collsize_32m,
+            )
+
         # Override the total number of KV cache blocks based on what we know
         # will fit. (Unless user already set `--num-gpu-blocks-override`)
         # TODO: remove this once we have correct free memory info available
