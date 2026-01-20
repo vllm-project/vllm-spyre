@@ -209,11 +209,18 @@ class SpyrePlatform(Platform):
                 "vllm_spyre.v1.core.scheduler.StaticBatchingSpyreScheduler"
             )
 
-        # Hardcode some things for granite-3.3-8b-instruct
-        if cls.is_granite_3_8b(vllm_config.model_config) or cls.is_granite_4_8b_dense(
-            vllm_config.model_config
-        ):
-            cls.configure_granite_3_8b(vllm_config)
+        # Apply model-specific configurations using the registry
+        from vllm_spyre.config.model_registry import get_model_registry
+
+        registry = get_model_registry()
+        model_name = registry.find_matching_model(model_config)
+
+        if model_name:
+            logger.info("Applying configuration for model '%s'", model_name)
+            configurator = registry.get_configurator(model_name)
+            configurator.configure(vllm_config)
+        else:
+            logger.debug("No model-specific configuration found for '%s'", model_config.model)
 
         # v0.14.0+ defaults to async scheduling
         scheduler_config.async_scheduling = False
