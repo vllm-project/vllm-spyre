@@ -254,11 +254,8 @@ class SpyrePlatform(Platform):
                 )
 
         logger.info(
-            "Configurations for Spyre. "
-            "max_model_len=%d, max_num_seqs=%d, block_size=%d, "
-            "max_num_batched_tokens=%d, "
-            "enable_chunked_prefill=%r, "
-            "enable_prefix_caching=%r",
+            "Configurations for Spyre. max_model_len=%d, max_num_seqs=%d, block_size=%d, "
+            "max_num_batched_tokens=%d, enable_chunked_prefill=%r, enable_prefix_caching=%r",
             model_config.max_model_len,
             scheduler_config.max_num_seqs,
             cache_config.block_size,
@@ -271,9 +268,8 @@ class SpyrePlatform(Platform):
         os.environ["VLLM_DT_MAX_CONTEXT_LEN"] = str(vllm_config.model_config.max_model_len)
         if envs_spyre.VLLM_SPYRE_USE_CB and vllm_config.model_config.max_model_len > 32 * 1024:
             logger.warning(
-                "Max context length is too big. Currently only 32K (32768) "
-                "context length is supported on Spyre for continuous "
-                "batching. Results might be off!"
+                "Max context length is too big. Currently only 32K (32768) context length is "
+                "supported on Spyre for continuous batching. Results might be off!"
             )
         # min value 2 needed for VLLM_DT_MAX_BATCH_SIZE (compiler constraint)
         # Note that we can still have decodes of batch size 1 as the env var
@@ -290,9 +286,8 @@ class SpyrePlatform(Platform):
 
             os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(default_max_batch_tkv_limit)
             logger.info(
-                "No model / tensor parallel size specific value for "
-                "VLLM_DT_MAX_BATCH_TKV_LIMIT found. Using the default value "
-                "(max_model_len * max_batch_size): %d",
+                "No model / tensor parallel size specific value for VLLM_DT_MAX_BATCH_TKV_LIMIT "
+                "found. Using the default value (max_model_len * max_batch_size): %d",
                 default_max_batch_tkv_limit,
             )
 
@@ -592,8 +587,8 @@ class SpyrePlatform(Platform):
                 os.environ[env] = str(cpus_per_worker)
 
             logger.info(
-                "%s for %d workers. Since VLLM_SPYRE_UPDATE_THREAD_CONFIG is "
-                "enabled, setting threading configurations to %d",
+                "%s for %d workers. Since VLLM_SPYRE_UPDATE_THREAD_CONFIG is enabled, setting "
+                "threading configurations to %d",
                 detection_message,
                 worker_count,
                 cpus_per_worker,
@@ -617,9 +612,8 @@ class SpyrePlatform(Platform):
             for value in env_map.values()
         ):
             logger.warning(
-                "%s %s for %d workers. Recommend setting each threading "
-                "configuration to %d. Set VLLM_SPYRE_UPDATE_THREAD_CONFIG=1 "
-                "to do this automatically.",
+                "%s %s for %d workers. Recommend setting each threading configuration to %d. Set "
+                "VLLM_SPYRE_UPDATE_THREAD_CONFIG=1 to do this automatically.",
                 thread_warning,
                 detection_message,
                 worker_count,
@@ -658,14 +652,14 @@ class SpyrePlatform(Platform):
         if not os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"):
             os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(tkv_128k)
             logger.info(
-                "Granite 8b dense model and tensor parallel "
-                "size 4 detected. Using VLLM_DT_MAX_BATCH_TKV_LIMIT = %d",
+                "Granite 8b dense model and tensor parallel size 4 detected. Using "
+                "VLLM_DT_MAX_BATCH_TKV_LIMIT = %d",
                 tkv_128k,
             )
         elif os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT") != str(tkv_128k):
             logger.warning(
-                "VLLM_DT_MAX_BATCH_TKV_LIMIT was set to %s, not "
-                "overriding to the granite 8b dense default of %d",
+                "VLLM_DT_MAX_BATCH_TKV_LIMIT was set to %s, not overriding to the granite 8b "
+                "dense default of %d",
                 os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"),
                 tkv_128k,
             )
@@ -675,8 +669,8 @@ class SpyrePlatform(Platform):
         if not os.getenv("FLEX_HDMA_P2PSIZE"):
             os.environ["FLEX_HDMA_P2PSIZE"] = str(p2psize_256m)
             logger.info(
-                "Granite 8b dense model and tensor parallel size 4 "
-                "detected. Using FLEX_HDMA_P2PSIZE = %d",
+                "Granite 8b dense model and tensor parallel size 4 detected. Using "
+                "FLEX_HDMA_P2PSIZE = %d",
                 p2psize_256m,
             )
         elif os.getenv("FLEX_HDMA_P2PSIZE") != str(p2psize_256m):
@@ -704,14 +698,14 @@ class SpyrePlatform(Platform):
         if vllm_config.cache_config.num_gpu_blocks_override is None:
             vllm_config.cache_config.num_gpu_blocks_override = blocks_override
             logger.info(
-                "Granite 8b dense model and tensor parallel size 4 "
-                "detected. Overriding available KV Cache blocks to %d",
+                "Granite 8b dense model and tensor parallel size 4 detected. Overriding "
+                "available KV Cache blocks to %d",
                 blocks_override,
             )
         elif vllm_config.cache_config.num_gpu_blocks_override != blocks_override:
             logger.warning(
-                "--num-gpu-blocks-override was set to %d, not using the "
-                "granite 8b dense default of %d",
+                "--num-gpu-blocks-override was set to %d, not using the granite 8b dense default "
+                "of %d",
                 vllm_config.cache_config.num_gpu_blocks_override,
                 blocks_override,
             )
@@ -723,9 +717,8 @@ class SpyrePlatform(Platform):
             and os.getenv("VLLM_DT_CHUNK_LEN") is None
         ):
             logger.info(
-                "Granite 8b dense model and tensor "
-                "parallel size 4 with chunked prefill detected. Setting "
-                "--max-num-batched-tokens 1024"
+                "Granite 8b dense model and tensor parallel size 4 with chunked prefill detected. "
+                "Setting --max-num-batched-tokens 1024"
             )
             vllm_config.scheduler_config.max_num_batched_tokens = 1024
 
