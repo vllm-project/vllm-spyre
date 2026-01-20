@@ -273,7 +273,7 @@ class FmsModelBase(nn.Module):
             # of caching even though the test run in isolated subprocesses.
 
             if SpyrePlatform.sendnn_configured():
-                pass  # ty: ignore[unresolved-import]
+                pass
 
             self.model = torch.compile(
                 self.model,

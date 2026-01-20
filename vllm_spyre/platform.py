@@ -173,7 +173,8 @@ class SpyrePlatform(Platform):
             # LLM engine" log message
             # TODO: With the arg parser defaulting, this can be removed when we
             # only support vllm >= v0.11.1
-            scheduler_config.chunked_prefill_enabled = envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL
+            if hasattr(scheduler_config, "chunked_prefill_enabled"):
+                scheduler_config.chunked_prefill_enabled = envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL  # ty: ignore
 
             if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
                 raise ValueError("Prompt logprobs not supported with continuous batching")
