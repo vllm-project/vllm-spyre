@@ -354,6 +354,12 @@ class SpyreModelRunner(
 
     @property
     def vocab_size(self) -> int:
+        cfg = self.model.model.model.config
+        # Mistral3 MM models, which currently only run text;
+        # TODO (Alex) move this to utils after granite vision
+        # is merged.
+        if hasattr(cfg, "text_config"):
+            return cfg.text_config.src_vocab_size
         return self.model.model.model.config.src_vocab_size
 
     def pad_input_ids(
