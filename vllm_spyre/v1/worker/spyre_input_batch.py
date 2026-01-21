@@ -210,6 +210,7 @@ class ChunkedPrefillRequestState(SamplingRequestState):
 
     def __post_init__(self):
         assert self.scheduler_request is not None
+        assert self.batch_index >= 0, f"batch_index must be >= 0, got {self.batch_index}"
 
 
 class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
