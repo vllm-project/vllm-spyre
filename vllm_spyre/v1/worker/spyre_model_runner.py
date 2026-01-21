@@ -2106,7 +2106,23 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         # Last prefill we need to setup the logitsprocessors to sampling
         scale_indices = self.prefill_batch.request_indices
         request_index = scale_indices[0]
+        logger.debug(
+            "Adding request to input batch: req_id=%s, request_index=%d, "
+            "input_batch_req_ids=%s, prefill_batch_req_ids=%s",
+            req_id,
+            request_index,
+            list(self.input_batch.req_id_to_index.keys()),
+            list(self.prefill_batch.req_id_to_index.keys()),
+        )
         self.input_batch.add_request(request, req_index=request_index)
+        logger.debug(
+            "Request added to input batch: req_id=%s, request_index=%d, "
+            "input_batch_req_ids=%s, prefill_batch_req_ids=%s",
+            req_id,
+            request_index,
+            list(self.input_batch.req_id_to_index.keys()),
+            list(self.prefill_batch.req_id_to_index.keys()),
+        )
         # prefill_index = self.input_batch.add_request(request)
         for logitsproc in self.input_batch.logitsprocs_wrappers:
             logitsproc.set_prefill_index(request_index)
@@ -2358,7 +2374,24 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         # Add only to prefill batch, it will be added later to the input batch
         # once if is fully prefilled
         # self.prefill_batch.add_request(req_state)
-        self.prefill_batch.add_request(req_state, req_index=self.input_batch.get_available_index())
+        available_index = self.input_batch.get_available_index()
+        logger.debug(
+            "Adding request to prefill batch: req_id=%s, available_index=%d, "
+            "input_batch_req_ids=%s, prefill_batch_req_ids=%s",
+            req_id,
+            available_index,
+            list(self.input_batch.req_id_to_index.keys()),
+            list(self.prefill_batch.req_id_to_index.keys()),
+        )
+        self.prefill_batch.add_request(request=req_state, req_index=available_index)
+        logger.debug(
+            "Request added to prefill batch: req_id=%s, available_index=%d, "
+            "input_batch_req_ids=%s, prefill_batch_req_ids=%s",
+            req_id,
+            available_index,
+            list(self.input_batch.req_id_to_index.keys()),
+            list(self.prefill_batch.req_id_to_index.keys()),
+        )
 
     def prepare_model_input(self, scheduler_output) -> SamplingForwardInputs:
         is_prefill = False
