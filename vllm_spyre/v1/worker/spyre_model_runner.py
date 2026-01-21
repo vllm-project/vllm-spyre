@@ -2073,7 +2073,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             block_table=block_table,
             slot_mapping=slot_mapping,
             is_prompt=True,
-            scale_indices=self.prefill_batch.request_indices,
+            scale_indices=[
+                request.batch_index
+            ],  # Use stored batch_index to avoid tensor operations
             input_masks=None,  # Unused
         )
 
@@ -2352,6 +2354,10 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         else:
             generator = None
 
+        # Get the batch index for this request before creating the state
+        available_index = self.input_batch.get_available_index()
+        assert available_index is not None, "No available index in the batch"
+
         req_state = ChunkedPrefillRequestState(
             req_id=req_id,
             prompt_token_ids=prompt_token_ids,
@@ -2367,6 +2373,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             padding_blocks=chunk_plan.padding_blocks,
             usable_blocks=chunk_plan.usable_cache_blocks,
             total_hit_blocks=chunk_plan.total_cache_blocks,
+            batch_index=available_index,  # Store the batch index to avoid tensor operations later
         )
 
         self.requests[req_id] = req_state

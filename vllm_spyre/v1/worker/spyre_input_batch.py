@@ -206,6 +206,7 @@ class ChunkedPrefillRequestState(SamplingRequestState):
     padding_blocks: int = 0
     usable_blocks: int = 0
     total_hit_blocks: int = 0
+    batch_index: int = -1  # Index in the batch, set when request is added
 
     def __post_init__(self):
         assert self.scheduler_request is not None
