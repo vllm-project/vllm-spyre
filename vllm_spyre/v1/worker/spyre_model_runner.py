@@ -2380,7 +2380,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         # Add only to prefill batch, it will be added later to the input batch
         # once if is fully prefilled
-        available_index = self.input_batch.get_available_index()
         logger.debug(
             "Adding request to prefill batch: req_id=%s, available_index=%d, "
             "input_batch_req_ids=%s, prefill_batch_req_ids=%s",
