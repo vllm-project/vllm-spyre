@@ -927,6 +927,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         kv_cache_manager = FullAttentionManager(
             kv_cache_spec=self._attn_spec,
             block_pool=self.block_pool,
+            enable_caching=self.enable_prefix_caching,
             # Currently don't support models with more than one
             # attention type, e.g. full and sliding window, so
             # there is only one group.
