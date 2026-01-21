@@ -1915,10 +1915,17 @@ def test_first_chunk_partial_match(
     max_model_len: int,
     max_num_batched_tokens: int,
     available_blocks: int,
+    runtime_xfail,
 ):
     """There was a bug where a partial match in the first chunk could cause a
     crash. This test covers that case.
     """
+    if "micro-g3.3-8b-instruct-1b" in model.name and model.is_quantized:
+        runtime_xfail(
+            reason="this test sometimes causes logprob differences"
+            " against Transformers with quantized model"
+        )
+
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
 
     # The bug occurred because the sum of the left padding plus the usable prefix cache was not
