@@ -72,6 +72,7 @@ class StaticBatchingSpyreScheduler(SpyreScheduler):
         if len(self.running) == 0:
             # Make a copy of the warmup shapes
             available_warmup_shapes = list(self.spyre_warmup_shapes)
+            last_available_warmup_shapes = available_warmup_shapes
 
             while holdback_queue:
                 request = holdback_queue[0]

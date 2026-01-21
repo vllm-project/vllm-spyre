@@ -85,7 +85,7 @@ class GoldenTokenInjector(LogitsProcessor):
         return None
 
     def update_state(self, batch_update: BatchUpdate | None):
-        process_dict_updates(self.req_states, batch_update, self.add_req_states)
+        process_dict_updates(self.req_states, batch_update, self.add_req_states)  # ty: ignore[invalid-argument-type]
 
     def apply(self, logits: torch.Tensor) -> torch.Tensor:
         if not self.req_states:
@@ -160,7 +160,7 @@ class GoldenTokenInjector(LogitsProcessor):
         expected_prob = math.exp(expected_logprob)
 
         # We'll inject only if the error is below the threshold
-        if not math.isclose(expected_prob, prob, abs_tol=cast(float, expectation.threshold)):
+        if not math.isclose(expected_prob, prob, abs_tol=expectation.threshold):
             err = abs(expected_prob - prob)
 
             logger.error(

@@ -22,7 +22,7 @@ def build_logitsprocs_for_cb(
     is_pin_memory: bool,
     is_pooling_model: bool,
     batch_size: int,
-    custom_logitsprocs: Sequence[Union[str, type[LogitsProcessor]]] = (),
+    custom_logitsprocs: Sequence[Union[str, type[LogitsProcessor]]] | None = None,
 ) -> LogitsProcessors:
     if is_pooling_model:
         if custom_logitsprocs:
@@ -47,7 +47,7 @@ class LogitProcessorWrapper(LogitsProcessor):
 
     def __init__(
         self,
-        logit_processor: LogitsProcessor,
+        logit_processor: type[LogitsProcessor],
         vllm_config: VllmConfig,
         device: torch.device,
         is_pin_memory: bool,

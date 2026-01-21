@@ -67,7 +67,7 @@ def test_granite_4_dense_detection():
     ids=lambda vals: f"{vals}",
 )
 def test_granite_overrides(model_name, sendnn_configured, sendnn_version, expected_blocks):
-    """Check that the correct values are overridden for g3.3 8b"""
+    """Check that the correct values are overridden for granite 8b dense variants"""
 
     # Must ensure no env vars have been overridden before testing
     with (

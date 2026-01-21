@@ -105,7 +105,7 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
     ):
         super().__init__(vllm_config=vllm_config, is_driver_worker=is_driver_worker, rank=rank)
 
-        self.model = MockSpyreCausalLM(vllm_config=vllm_config)
+        self._model = MockSpyreCausalLM(vllm_config=vllm_config)
 
     @SpyrePlatform.inference_mode()
     def execute_model(
@@ -258,7 +258,9 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
         assert len(model_runner_output.sampled_token_ids) == num_sampled_token_ids
         assert model_runner_output.tkv == tkv
         assert model_runner_output.n_free_blocks == n_free_blocks
-        assert model_runner_output.left_padding == left_padding
+        assert model_runner_output.left_padding == left_padding, (
+            f"Expected {left_padding}, got {model_runner_output.left_padding}"
+        )
         if prefix_cache_hit_len is not None:
             assert model_runner_output.prefix_cache_hit_len == prefix_cache_hit_len
 

@@ -201,11 +201,14 @@ class SamplingRequestState(BaseRequestState):
 
 @dataclass
 class ChunkedPrefillRequestState(SamplingRequestState):
-    scheduler_request: Request | None = None
+    scheduler_request: Request = None  # ty: ignore[invalid-assignment]
     chunk_count: int = 0
     padding_blocks: int = 0
     usable_blocks: int = 0
     total_hit_blocks: int = 0
+
+    def __post_init__(self):
+        assert self.scheduler_request is not None
 
 
 class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
@@ -358,7 +361,7 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
         Convert a request index to a dense index. See `req_id_to_dense_index`
         for more.
         """
-        return self.req_indices_mask[:req_index].sum().item()
+        return int(self.req_indices_mask[:req_index].sum().item())
 
     def get_available_index(self) -> int | None:
         """
