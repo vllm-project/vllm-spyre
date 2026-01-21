@@ -12,7 +12,12 @@ from scheduling_utils import (
     random_prompt,
     validate_scheduler_steps,
 )
-from spyre_util import ModelInfo, verify_block_tables, verify_slot_mappings, verify_scale_indices
+from spyre_util import (
+    ModelInfo,
+    verify_block_tables,
+    verify_scale_indices,
+    verify_slot_mappings,
+)
 
 
 @pytest.mark.chunked_prefill
@@ -104,6 +109,9 @@ def test_prefix_hit_within_batch(
         },
         {  # prefill chunk 1 seq 1
             # prefix hit!
+            # note we can't test scale_indices
+            # because this is a cached step so
+            # no forward context is generated
             "step": 3,
             "tkv": 192,
             "waiting": [],
@@ -117,7 +125,6 @@ def test_prefix_hit_within_batch(
             "n_cached_blocks": 1,
             "block_tables": {"0": [1, 2, 3], "1": [1, 2, 3]},
             "block_ref_count": {1: 2, 2: 2, 3: 2},
-            "scale_indices": [0],
         },
         {  # prefill chunk 2 seq 1
             # cannot use prefix, as the last chunk has to always be recomputed
@@ -254,6 +261,7 @@ def test_block_deduplication_within_batch(
             "block_tables": {"0": [1, 2]},
             "block_ref_count": {1: 1, 2: 1},
             "prefill_slot_mappings": {"0": [1, 2]},
+            "scale_indices": [0],
         },
         {  # prefill chunk 1 seq 1
             # cannot use prefix, as the last chunk has to always be recomputed
@@ -271,6 +279,7 @@ def test_block_deduplication_within_batch(
             "prefill_slot_mappings": {
                 "1": [0, 3]  # Block 1 is masked out during prefill so it is read-only
             },
+            "scale_indices": [1],
         },
         {
             # Decode 1 of request 0.
@@ -285,6 +294,7 @@ def test_block_deduplication_within_batch(
             "n_used_blocks": 3,
             "block_tables": {"0": [1, 2], "1": [1, 3]},
             "block_ref_count": {1: 2, 2: 1, 3: 1},
+            "scale_indices": [0, 1],
         },
         {
             # Tkv should be cleared one step later
@@ -309,7 +319,11 @@ def test_block_deduplication_within_batch(
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        extra_assert_funcs=[verify_block_tables, verify_slot_mappings],
+        extra_assert_funcs=[
+            verify_block_tables,
+            verify_slot_mappings,
+            verify_scale_indices,
+        ],
     )
 
 
@@ -432,7 +446,7 @@ def test_prefix_hit_decoded_block_within_batch(
             "scale_indices": [0],
         },
         {  # prefill chunk 1 seq 1
-            # prefix hit of the two blocks in the first chunk
+            # prefix hit of the two blocks in the first chunk - fully cached, no scale_indices
             "step": 68,
             # use unchanged tkv of seq 0, since seq 1 is still prefilling
             "tkv": 192,
@@ -445,7 +459,6 @@ def test_prefix_hit_decoded_block_within_batch(
             # 1st block (prompt)
             # 2nd block (prompt + 2 decodes) <- what we want to test
             "n_cached_blocks": 2,
-            "scale_indices": [0],
         },
         {  # prefill chunk 2 seq 1
             # no prefix hit, always recompute last chunk
@@ -585,6 +598,7 @@ def test_prefix_hit_not_in_batch(
             "n_reserved_blocks": 4,
             "n_used_blocks": 3,
             "n_prefix_hits": 0,
+            "scale_indices": [0],
         },
         {  # prefill chunk 2 seq 0
             "step": 2,
@@ -598,6 +612,7 @@ def test_prefix_hit_not_in_batch(
             "block_tables": {
                 "0": [1, 2, 3],
             },
+            "scale_indices": [0],
         },
         {
             # Decode 1 of request 0.
@@ -610,9 +625,10 @@ def test_prefix_hit_not_in_batch(
             "finished_requests": ["0"],
             "n_reserved_blocks": 4,
             "n_used_blocks": 4,
+            "scale_indices": [0],
         },
         {  # prefill chunk 1 seq 1
-            # prefix hit!
+            # prefix hit! - fully cached, no scale_indices
             "step": 4,
             "tkv": 192,
             "waiting": [],
@@ -637,6 +653,7 @@ def test_prefix_hit_not_in_batch(
             "block_tables": {
                 "1": [1, 2, 3],
             },
+            "scale_indices": [0],
         },
         {
             # Decode 1 of request 0.
@@ -649,6 +666,7 @@ def test_prefix_hit_not_in_batch(
             "n_reserved_blocks": 4,
             "n_used_blocks": 4,
             "n_cached_blocks": 1,
+            "scale_indices": [0],
         },
         {
             # Tkv should be cleared one step later
@@ -673,7 +691,7 @@ def test_prefix_hit_not_in_batch(
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        extra_assert_funcs=[verify_block_tables],
+        extra_assert_funcs=[verify_block_tables, verify_scale_indices],
     )
 
 
@@ -759,6 +777,7 @@ def test_limit_blocks_no_prefix_hit(
             "n_reserved_blocks": 4,
             "n_used_blocks": 3,
             "n_prefix_hits": 0,
+            "scale_indices": [0],
         },
         {  # prefill chunk 2 seq 0
             "step": 2,
@@ -769,6 +788,7 @@ def test_limit_blocks_no_prefix_hit(
             "n_reserved_blocks": 4,
             "n_used_blocks": 3,
             "n_prefix_hits": 0,
+            "scale_indices": [0],
         },
         {
             # Decode 1 of request 0
@@ -781,6 +801,7 @@ def test_limit_blocks_no_prefix_hit(
             "finished_requests": ["0"],
             "n_reserved_blocks": 4,
             "n_used_blocks": 4,
+            "scale_indices": [0],
         },
         {  # prefill chunk 1 seq 1
             "step": 4,
@@ -791,6 +812,7 @@ def test_limit_blocks_no_prefix_hit(
             "n_reserved_blocks": 4,
             "n_used_blocks": 3,
             "n_prefix_hits": 0,
+            "scale_indices": [0],
         },
         {  # prefill chunk 2 seq 1
             "step": 5,
@@ -801,6 +823,7 @@ def test_limit_blocks_no_prefix_hit(
             "n_reserved_blocks": 4,
             "n_used_blocks": 3,
             "n_prefix_hits": 0,
+            "scale_indices": [0],
         },
         {
             # Decode 1 of request 1
@@ -813,6 +836,7 @@ def test_limit_blocks_no_prefix_hit(
             "finished_requests": ["1"],
             "n_reserved_blocks": 4,
             "n_used_blocks": 4,
+            "scale_indices": [0],
         },
         {  # prefill chunk 1 seq 2
             # no prefix hit as KV cache is already overwritten!
@@ -824,6 +848,7 @@ def test_limit_blocks_no_prefix_hit(
             "n_reserved_blocks": 4,
             "n_used_blocks": 3,
             "n_prefix_hits": 0,
+            "scale_indices": [0],
         },
         {  # prefill chunk 2 seq 2
             "step": 8,
@@ -834,6 +859,7 @@ def test_limit_blocks_no_prefix_hit(
             "n_reserved_blocks": 4,
             "n_used_blocks": 3,
             "n_prefix_hits": 0,
+            "scale_indices": [0],
         },
         {
             # Decode 1 of request 2
@@ -845,6 +871,7 @@ def test_limit_blocks_no_prefix_hit(
             "finished_requests": ["2"],
             "n_reserved_blocks": 4,
             "n_used_blocks": 4,
+            "scale_indices": [0],
         },
         {
             # Tkv should be cleared one step later
@@ -869,6 +896,7 @@ def test_limit_blocks_no_prefix_hit(
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
+        extra_assert_funcs=[verify_block_tables, verify_scale_indices],
     )
 
 
@@ -966,6 +994,7 @@ def test_double_prefix_hit_within_batch(
             "n_prefix_hits": 0,
             "block_tables": {"0": [1, 2, 3]},
             "block_ref_count": {1: 1, 2: 1, 3: 1},
+            "scale_indices": [0],
         },
         {  # prefill chunk 2 seq 0
             "step": 2,
@@ -978,9 +1007,10 @@ def test_double_prefix_hit_within_batch(
             "n_prefix_hits": 0,
             "block_tables": {"0": [1, 2, 3]},
             "block_ref_count": {1: 1, 2: 1, 3: 1},
+            "scale_indices": [0],
         },
         {  # prefill chunk 1 seq 1
-            # prefix hit!
+            # prefix hit! - fully cached chunk, no model execution, no scale_indices verification
             "step": 3,
             "tkv": 192,
             "waiting": ["2", "3"],
@@ -1005,6 +1035,7 @@ def test_double_prefix_hit_within_batch(
             "block_tables": {"0": [1, 2, 3], "1": [1, 2, 3]},
             "block_ref_count": {1: 2, 2: 2, 3: 2},
             "prefill_slot_mappings": {"1": [0, 0]},  # Fully masked prefill
+            "scale_indices": [1],
         },
         {  # prefill chunk 1 seq 2
             "step": 5,
@@ -1017,6 +1048,7 @@ def test_double_prefix_hit_within_batch(
             "n_prefix_hits": 0,
             "block_tables": {"0": [1, 2, 3], "1": [1, 2, 3], "2": [4, 5, 6]},
             "block_ref_count": {1: 2, 2: 2, 3: 2, 4: 1, 5: 1, 6: 1},
+            "scale_indices": [2],
         },
         {  # prefill chunk 2 seq 2
             "step": 6,
@@ -1029,9 +1061,10 @@ def test_double_prefix_hit_within_batch(
             "n_prefix_hits": 0,
             "block_tables": {"0": [1, 2, 3], "1": [1, 2, 3], "2": [4, 5, 6]},
             "block_ref_count": {1: 2, 2: 2, 3: 2, 4: 1, 5: 1, 6: 1},
+            "scale_indices": [2],
         },
         {  # prefill chunk 1 seq 3
-            # prefix hit!
+            # prefix hit! - fully cached, no scale_indices
             "step": 7,
             "tkv": 192,
             "waiting": [],
@@ -1040,7 +1073,12 @@ def test_double_prefix_hit_within_batch(
             "n_reserved_blocks": 16,
             "n_used_blocks": 6,
             "n_prefix_hits": 1,
-            "block_tables": {"0": [1, 2, 3], "1": [1, 2, 3], "2": [4, 5, 6], "3": [1, 2, 3]},
+            "block_tables": {
+                "0": [1, 2, 3],
+                "1": [1, 2, 3],
+                "2": [4, 5, 6],
+                "3": [1, 2, 3],
+            },
             "block_ref_count": {1: 3, 2: 3, 3: 3, 4: 1, 5: 1, 6: 1},
         },
         {  # prefill chunk 2 seq 3
@@ -1053,8 +1091,14 @@ def test_double_prefix_hit_within_batch(
             "n_reserved_blocks": 16,
             "n_used_blocks": 6,
             "n_prefix_hits": 0,
-            "block_tables": {"0": [1, 2, 3], "1": [1, 2, 3], "2": [4, 5, 6], "3": [1, 2, 3]},
+            "block_tables": {
+                "0": [1, 2, 3],
+                "1": [1, 2, 3],
+                "2": [4, 5, 6],
+                "3": [1, 2, 3],
+            },
             "block_ref_count": {1: 3, 2: 3, 3: 3, 4: 1, 5: 1, 6: 1},
+            "scale_indices": [3],
         },
         {
             # Decode 1 of request 0, 1, 2, 3
@@ -1072,7 +1116,19 @@ def test_double_prefix_hit_within_batch(
                 "2": [4, 5, 6, 9],
                 "3": [1, 2, 3, 10],
             },
-            "block_ref_count": {1: 3, 2: 3, 3: 3, 7: 1, 8: 1, 4: 1, 5: 1, 6: 1, 9: 1, 10: 1},
+            "block_ref_count": {
+                1: 3,
+                2: 3,
+                3: 3,
+                7: 1,
+                8: 1,
+                4: 1,
+                5: 1,
+                6: 1,
+                9: 1,
+                10: 1,
+            },
+            "scale_indices": [0, 1, 2, 3],
         },
         {
             # Tkv should be cleared one step later
@@ -1097,7 +1153,11 @@ def test_double_prefix_hit_within_batch(
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        extra_assert_funcs=[verify_block_tables, verify_slot_mappings],
+        extra_assert_funcs=[
+            verify_block_tables,
+            verify_slot_mappings,
+            verify_scale_indices,
+        ],
     )
 
 
@@ -1183,6 +1243,7 @@ def test_limit_blocks_prefix_hit(
             "n_reserved_blocks": 4,
             "n_used_blocks": 3,
             "n_prefix_hits": 0,
+            "scale_indices": [0],
         },
         {  # prefill chunk 2 seq 0
             "step": 2,
@@ -1193,6 +1254,7 @@ def test_limit_blocks_prefix_hit(
             "n_reserved_blocks": 4,
             "n_used_blocks": 3,
             "n_prefix_hits": 0,
+            "scale_indices": [0],
         },
         {
             # Decode 1 of request 0
@@ -1205,6 +1267,7 @@ def test_limit_blocks_prefix_hit(
             "finished_requests": ["0"],
             "n_reserved_blocks": 4,
             "n_used_blocks": 4,
+            "scale_indices": [0],
         },
         {  # prefill chunk 1 seq 1
             "step": 4,
@@ -1215,6 +1278,7 @@ def test_limit_blocks_prefix_hit(
             "n_reserved_blocks": 4,
             "n_used_blocks": 3,
             "n_prefix_hits": 0,
+            "scale_indices": [0],
         },
         {  # prefill chunk 2 seq 1
             "step": 5,
@@ -1225,6 +1289,7 @@ def test_limit_blocks_prefix_hit(
             "n_reserved_blocks": 4,
             "n_used_blocks": 3,
             "n_prefix_hits": 0,
+            "scale_indices": [0],
         },
         {
             # Decode 1 of request 1
@@ -1237,9 +1302,10 @@ def test_limit_blocks_prefix_hit(
             "finished_requests": ["1"],
             "n_reserved_blocks": 4,
             "n_used_blocks": 4,
+            "scale_indices": [0],
         },
         {  # prefill chunk 1 seq 2
-            # prefix hit as KV cache is still persistent
+            # prefix hit as KV cache is still persistent - fully cached, no scale_indices
             "step": 7,
             "tkv": 192,
             "waiting": [],
@@ -1260,6 +1326,7 @@ def test_limit_blocks_prefix_hit(
             "n_used_blocks": 3,
             "n_prefix_hits": 0,
             "n_cached_blocks": 1,
+            "scale_indices": [0],
         },
         {
             # Decode 1 of request 2
@@ -1272,6 +1339,7 @@ def test_limit_blocks_prefix_hit(
             "n_reserved_blocks": 4,
             "n_used_blocks": 4,
             "n_cached_blocks": 1,
+            "scale_indices": [0],
         },
         {
             # Tkv should be cleared one step later
@@ -1296,6 +1364,7 @@ def test_limit_blocks_prefix_hit(
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
+        extra_assert_funcs=[verify_block_tables, verify_scale_indices],
     )
 
 
@@ -1368,6 +1437,7 @@ def test_multi_chunk_full_match(
             "n_reserved_blocks": 7,
             "n_used_blocks": 6,
             "n_prefix_hits": 0,
+            "scale_indices": [0],
         },
         {  # prefill chunk 2 seq 0
             "step": 2,
@@ -1378,6 +1448,7 @@ def test_multi_chunk_full_match(
             "n_reserved_blocks": 7,
             "n_used_blocks": 6,
             "n_prefix_hits": 0,
+            "scale_indices": [0],
         },
         {  # prefill chunk 3 seq 0
             "step": 3,
@@ -1392,9 +1463,10 @@ def test_multi_chunk_full_match(
             # with the block table
             "block_tables": {"0": [1, 2, 3, 4, 5, 6]},
             "block_ref_count": {1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1},
+            "scale_indices": [0],
         },
         {  # prefill chunks 1+2 seq 1
-            # prefix hit!
+            # prefix hit! - fully cached, no scale_indices
             "step": 4,
             "tkv": 384,
             "waiting": [],
@@ -1421,6 +1493,7 @@ def test_multi_chunk_full_match(
             "n_used_blocks": 6,
             "n_prefix_hits": 0,
             "n_cached_blocks": 4,
+            "scale_indices": [1],
         },
         {
             # Decode 1 of request 0.
@@ -1437,6 +1510,7 @@ def test_multi_chunk_full_match(
             # when decode starts, we see the tables diverge
             "block_tables": {"0": [1, 2, 3, 4, 5, 6, 7], "1": [1, 2, 3, 4, 5, 6, 8]},
             "block_ref_count": {1: 2, 2: 2, 3: 2, 4: 2, 5: 2, 6: 2, 7: 1, 8: 1},
+            "scale_indices": [0, 1],
         },
         {
             # Tkv should be cleared one step later
@@ -1461,7 +1535,7 @@ def test_multi_chunk_full_match(
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        extra_assert_funcs=[verify_block_tables],
+        extra_assert_funcs=[verify_block_tables, verify_scale_indices],
     )
 
 
@@ -1545,6 +1619,7 @@ def test_multi_chunk_partial_match_misaligned(
             "n_reserved_blocks": 7,
             "n_used_blocks": 6,
             "n_prefix_hits": 0,
+            "scale_indices": [0],
         },
         {  # prefill chunk 2 seq 0
             "step": 2,
@@ -1555,6 +1630,7 @@ def test_multi_chunk_partial_match_misaligned(
             "n_reserved_blocks": 7,
             "n_used_blocks": 6,
             "n_prefix_hits": 0,
+            "scale_indices": [0],
         },
         {  # prefill chunk 3 seq 0
             "step": 3,
@@ -1565,9 +1641,10 @@ def test_multi_chunk_partial_match_misaligned(
             "n_reserved_blocks": 7,
             "n_used_blocks": 6,
             "n_prefix_hits": 0,
+            "scale_indices": [0],
         },
         {  # prefill chunk 1 seq 1
-            # prefix hit!
+            # prefix hit! - fully cached, no scale_indices
             "step": 4,
             "tkv": 384,
             "waiting": [],
@@ -1592,6 +1669,7 @@ def test_multi_chunk_partial_match_misaligned(
             "n_prefix_hits": 0,
             "n_cached_blocks": 2,
             "prefill_slot_mappings": {"1": [0, 4]},  # Block 3 (prefix hit) is masked out
+            "scale_indices": [1],
         },
         {  # prefill chunk 3 seq 1
             "step": 6,
@@ -1608,6 +1686,7 @@ def test_multi_chunk_partial_match_misaligned(
                 "1": [1, 2, 3, 7, 8, 9],
             },
             "prefill_slot_mappings": {"1": [8, 9]},
+            "scale_indices": [1],
         },
         {
             # Decode 1 of request 0.
@@ -1621,6 +1700,7 @@ def test_multi_chunk_partial_match_misaligned(
             "n_reserved_blocks": 14,
             "n_used_blocks": 11,
             "n_cached_blocks": 2,
+            "scale_indices": [0, 1],
         },
         {
             # Tkv should be cleared one step later
@@ -1645,7 +1725,11 @@ def test_multi_chunk_partial_match_misaligned(
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        extra_assert_funcs=[verify_block_tables, verify_slot_mappings],
+        extra_assert_funcs=[
+            verify_block_tables,
+            verify_slot_mappings,
+            verify_scale_indices,
+        ],
     )
 
 
@@ -1722,6 +1806,7 @@ def test_multi_chunk_partial_match_aligned(
             "n_reserved_blocks": 7,
             "n_used_blocks": 6,
             "n_prefix_hits": 0,
+            "scale_indices": [0],
         },
         {  # prefill chunk 2 seq 0
             "step": 2,
@@ -1732,6 +1817,7 @@ def test_multi_chunk_partial_match_aligned(
             "n_reserved_blocks": 7,
             "n_used_blocks": 6,
             "n_prefix_hits": 0,
+            "scale_indices": [0],
         },
         {  # prefill chunk 3 seq 0
             "step": 3,
@@ -1742,9 +1828,10 @@ def test_multi_chunk_partial_match_aligned(
             "n_reserved_blocks": 7,
             "n_used_blocks": 6,
             "n_prefix_hits": 0,
+            "scale_indices": [0],
         },
         {  # prefill chunk 1 and 2 seq 1
-            # prefix hit!
+            # prefix hit! - fully cached, no scale_indices
             "step": 4,
             "tkv": 384,
             "waiting": [],
@@ -1770,6 +1857,7 @@ def test_multi_chunk_partial_match_aligned(
                 "0": [1, 2, 3, 4, 5, 6],
                 "1": [1, 2, 3, 4, 7, 8],
             },
+            "scale_indices": [1],
         },
         {
             # Decode 1 of request 0.
@@ -1783,6 +1871,7 @@ def test_multi_chunk_partial_match_aligned(
             "n_reserved_blocks": 14,
             "n_used_blocks": 10,
             "n_cached_blocks": 4,
+            "scale_indices": [0, 1],
         },
         {
             # Tkv should be cleared one step later
@@ -1807,7 +1896,7 @@ def test_multi_chunk_partial_match_aligned(
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        extra_assert_funcs=[verify_block_tables],
+        extra_assert_funcs=[verify_block_tables, verify_scale_indices],
     )
 
 
@@ -1885,6 +1974,7 @@ def test_first_chunk_partial_match(
             "n_used_blocks": 1,
             "n_prefix_hits": 0,
             "block_tables": {"0": [1]},
+            "scale_indices": [0],
         },
         {  # prefill seq 1. This step was crashing before
             "step": 2,
@@ -1897,9 +1987,14 @@ def test_first_chunk_partial_match(
             "n_prefix_hits": 0,
             "block_tables": {"0": [1], "1": [1, 2, 3, 4, 5]},
             "prefill_slot_mappings": {
-                "1": [0, 0, 2]  # One mask for left padding, one mask for block `1` to not be
+                "1": [
+                    0,
+                    0,
+                    2,
+                ]  # One mask for left padding, one mask for block `1` to not be
                 # overwritten since it hit cache
             },
+            "scale_indices": [1],
         },
         {  # finish seq 1 prefill
             "step": 3,
@@ -1912,6 +2007,7 @@ def test_first_chunk_partial_match(
             "n_prefix_hits": 0,
             "block_tables": {"0": [1], "1": [1, 2, 3, 4, 5]},
             "prefill_slot_mappings": {"1": [3, 4, 5]},
+            "scale_indices": [1],
         },
         {  # decode
             "step": 4,
@@ -1924,6 +2020,7 @@ def test_first_chunk_partial_match(
             "n_used_blocks": 7,
             "n_prefix_hits": 0,
             "block_tables": {"0": [1, 6], "1": [1, 2, 3, 4, 5, 7]},
+            "scale_indices": [0, 1],
         },
     ]
 
@@ -1938,5 +2035,9 @@ def test_first_chunk_partial_match(
         available_blocks=available_blocks,
         max_num_batched_tokens=max_num_batched_tokens,
         prefix_caching=True,
-        extra_assert_funcs=[verify_block_tables, verify_slot_mappings],
+        extra_assert_funcs=[
+            verify_block_tables,
+            verify_slot_mappings,
+            verify_scale_indices,
+        ],
     )
