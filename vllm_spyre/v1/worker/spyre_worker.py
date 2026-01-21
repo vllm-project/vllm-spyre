@@ -19,7 +19,7 @@ from huggingface_hub import hf_hub_download
 from vllm.config import VllmConfig
 from vllm.distributed import ensure_model_parallel_initialized, init_distributed_environment
 from vllm.logger import init_logger
-from vllm.model_executor import set_random_seed
+from vllm.utils.torch_utils import set_random_seed
 from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import SamplingParams
 from vllm.v1.core.sched.output import CachedRequestData, NewRequestData, SchedulerOutput
