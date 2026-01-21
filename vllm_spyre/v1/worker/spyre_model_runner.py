@@ -1,4 +1,5 @@
 import math
+import os
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
@@ -916,6 +917,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
     def _set_blocks(self, num_blocks: int) -> None:
         # set number of available blocks, populate block_pool and
         # create the kv_cache_manager
+        # Note: block 0 is reserved for padding and cannot be reused, hence
+        # number of actually usable blocks for kv caching = num_blocks - 1
         self.n_blocks = num_blocks - 1
         self.block_pool = self._make_block_pool()
         self.kv_cache_manager = self._make_kv_cache_manager()
@@ -975,18 +978,47 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         max_batch_size = self.scheduler_config.max_num_seqs
         max_model_len = self.model_config.max_model_len
         block_size = SpyrePlatform.get_block_size()
-        min_req_num_blocks = max_model_len // block_size
+        max_blocks_per_seq = max_model_len // block_size
+        num_blocks_full_batch = max_batch_size * max_blocks_per_seq
 
         blocks_override = self.cache_config.num_gpu_blocks_override
         if blocks_override is not None and blocks_override > 0:
             num_blocks = blocks_override
+            # Total number of blocks needs to be a multiple of the batch size on Spyre
+            # -> round down to not exceed the Spyre cards hard-coded limits of detected models
+            old_num_blocks = num_blocks
+            num_blocks = math.floor(num_blocks / max_batch_size) * max_batch_size
         else:
-            num_blocks = max_batch_size * min_req_num_blocks
+            # Note on "+1": We need to add one additional block used exclusively for padding (idx 0)
+            num_blocks = num_blocks_full_batch + 1
+            # Total number of blocks needs to be a multiple of the batch size on Spyre
+            # -> round up as not among detected models (rounding down might cut the padding block)
+            old_num_blocks = num_blocks
+            num_blocks = math.ceil(num_blocks / max_batch_size) * max_batch_size
 
-        # Total number of blocks needs to be a multiple of the batch size
-        # (spyre constraint) so round it down
-        num_blocks = max_batch_size * (num_blocks // max_batch_size)
+        if num_blocks != old_num_blocks:
+            logger.info(
+                "Spyre constraint: num blocks rounded from %d to %d (multiple of batch size=%d)",
+                old_num_blocks,
+                num_blocks,
+                max_batch_size,
+            )
 
+        if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
+            # As we drop the block reservation for chunked prefill the number of available blocks
+            # needs to be at least as big as the smaller of the batch tkv limit
+            # (VLLM_DT_MAX_BATCH_TKV_LIMIT) and a full batch (max_num_seqs * max_model_len)
+            batch_tkv_limit = int(
+                os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", num_blocks_full_batch * block_size)
+            )
+            num_blocks_batch_tkv_limit = batch_tkv_limit // block_size
+            # Note on "+1": We need to add one additional block used exclusively for padding (idx 0)
+            min_req_num_blocks = min(num_blocks_full_batch, num_blocks_batch_tkv_limit) + 1
+        else:
+            # default value: serve at least one sequence of full context (consistent with upstream)
+            min_req_num_blocks = max_blocks_per_seq + 1
+
+        # min_req_num_blocks := minimum required number of blocks
         if num_blocks < min_req_num_blocks:
             raise ValueError(
                 f"Number of pages available on Spyre {num_blocks} is not "
@@ -2249,7 +2281,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         assert sampling_params is not None, "sampling_params are required for this model runner"
         assert prompt_token_ids is not None, "prompt token ids are required for this model runner"
 
-        is_new_batch = len(self.req_ids2num_reserved_blocks) == 0
+        is_new_batch = self.get_n_free_blocks() == self.n_blocks
         prompt_len = len(prompt_token_ids)
 
         self.prefill_batch.clear_requests()
@@ -2257,17 +2289,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         # set the new tkv to the prompt length if starting a new decode batch
         if is_new_batch:
             self.tkv = prompt_len
-
-        # Reserve the number of blocks that this new sequence requires in the
-        # worst case (it might always stop early by producing the EOS token)
-        if (new_tokens := sampling_params.max_tokens) is None:
-            new_tokens = 0
-
-        total_tokens = prompt_len + new_tokens - 1
-        # calculate the number of reserved blocks
-        n_reserved_blocks = math.ceil(total_tokens / self.block_size)
-
-        self.req_ids2num_reserved_blocks[req_id] = n_reserved_blocks
 
         scheduler_request = Request(
             request_id=req_id,
@@ -2641,6 +2662,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             kv_cache_usage=self.get_kv_cache_usage(),
             prefix_cache_stats=self.prefix_cache_stats,
         )
+
+    def get_n_free_blocks(self) -> int:
+        return self.kv_cache_manager.block_pool.get_num_free_blocks()
 
     def get_kv_cache_usage(self) -> float:
         return self.kv_cache_manager.block_pool.get_usage()
