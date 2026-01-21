@@ -458,10 +458,6 @@ def validate_scheduler_steps(
             for req_id in requested_blocks:
                 assert DISABLE_ASSERTS or requested_blocks[req_id] == reserved_blocks[req_id]
 
-        # clear context before performing next step
-        # to ensure we don't work with outdated forward_context
-        if engine_core.forward_context is not None:
-            engine_core.forward_context = None
         # Perform next step
         step_output = engine_core.step()
         engine_core_output = step_output[0].get(0)
