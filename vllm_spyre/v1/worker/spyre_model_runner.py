@@ -13,7 +13,11 @@ from transformers import AutoModel, AutoModelForSequenceClassification, AutoToke
 from vllm.config import DeviceConfig, VllmConfig, set_current_vllm_config
 from vllm.forward_context import set_forward_context
 from vllm.logger import init_logger
-from vllm.model_executor.layers.pooler import ClassifierPooler, Pooler
+from vllm.model_executor.layers.pooler.seqwise.poolers import (
+    pooler_for_classify,
+    pooler_for_embed,
+)
+from vllm.model_executor.layers.pooler.activations import get_cross_encoder_act_fn
 from vllm.sampling_params import SamplingType
 
 try:
@@ -1566,13 +1570,14 @@ class SpyrePoolingModelRunner(
 
         if task == "embed":
             with set_current_vllm_config(self.vllm_config):
-                self.pooler = Pooler.for_embed(pooler_config=pooler_config)
+                self.pooler = pooler_for_embed(pooler_config=pooler_config)
         elif task == "classify":
             with set_current_vllm_config(self.vllm_config):
-                self.pooler = ClassifierPooler(
+                self.pooler = pooler_for_classify(
+                    pooler_config=pooler_config,
                     pooling=self._pooler,
                     classifier=self.classifier,
-                    act_fn=ClassifierPooler.act_fn_for_cross_encoder(self.model_config),
+                    act_fn=get_cross_encoder_act_fn(self.model_config),
                 )
 
     @property
