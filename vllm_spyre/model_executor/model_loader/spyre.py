@@ -394,7 +394,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         else:
             from fms_mo.aiu_addons.fp8.fp8_utils import ScaledTensor
 
-            already_scaled = int(os.getenv("VLLM_DT_CHUNK_LEN", "0")) > 0
+            already_scaled = envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL
             batch_size = max(2, self.scheduler_config.max_num_seqs)
             self.past_key_value_states = [
                 (
