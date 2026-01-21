@@ -2106,7 +2106,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         # Last prefill we need to setup the logitsprocessors to sampling
         # Use stored batch_index to avoid tensor operations
-        request_index = request.batch_index
+        request_index = cast(ChunkedPrefillRequestState, request).batch_index
         logger.debug(
             "Adding request to input batch: req_id=%s, request_index=%d, "
             "input_batch_req_ids=%s, prefill_batch_req_ids=%s",
