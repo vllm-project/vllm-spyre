@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS: bool = False
     VLLM_SPYRE_SIMPLE_COMPILE_BACKEND: str = "inductor"
     VLLM_SPYRE_NUM_CPUS: int = 0
+    VLLM_SPYRE_REQUIRE_KNOWN_CONFIG: bool = False
 
 logger = init_logger(__name__)
 
@@ -161,6 +162,12 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # interleaved with a decode step
     "VLLM_SPYRE_CP_INTERLEAVE_STEPS": lambda: bool(
         int(os.getenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "1"))
+    ),
+    # If set, raises a runtime error if the model configuration is not found
+    # in the known configurations registry. Only applies when running on
+    # Spyre device (sendnn backend).
+    "VLLM_SPYRE_REQUIRE_KNOWN_CONFIG": lambda: bool(
+        int(os.getenv("VLLM_SPYRE_REQUIRE_KNOWN_CONFIG", "0"))
     ),
 }
 # --8<-- [end:env-vars-definition]

@@ -1,6 +1,7 @@
 """Model configurator for applying model-specific configurations."""
 
 import os
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from vllm.logger import init_logger
@@ -13,6 +14,25 @@ if TYPE_CHECKING:
     from vllm_spyre.config.model_config import DeviceConfig, ModelConfig
 
 logger = init_logger(__name__)
+
+
+@dataclass
+class ConfigurationSummary:
+    """Summary of configuration changes applied by the configurator.
+
+    Attributes:
+        model_name: Name of the model being configured
+        tp_size: Tensor parallel size
+        env_vars: Dictionary of environment variables that were checked/set
+        num_blocks: GPU blocks override value, if configured
+        chunk_size: Chunked prefill max_num_batched_tokens, if configured
+    """
+
+    model_name: str
+    tp_size: int
+    env_vars: dict[str, str] = field(default_factory=dict)
+    num_blocks: int | None = None
+    chunk_size: int | None = None
 
 
 class ModelConfigurator:
@@ -34,14 +54,22 @@ class ModelConfigurator:
         """
         self.model_config = model_config
 
-    def configure(self, vllm_config: "VllmConfig") -> None:
+    def configure(self, vllm_config: "VllmConfig") -> ConfigurationSummary:
         """Apply device configurations.
 
         Args:
             vllm_config: The vLLM configuration to modify
+
+        Returns:
+            ConfigurationSummary with all configuration settings checked/applied
         """
         tp_size = vllm_config.parallel_config.world_size
         device_config = self.get_device_config(tp_size)
+
+        summary = ConfigurationSummary(
+            model_name=self.model_config.name,
+            tp_size=tp_size,
+        )
 
         if device_config is None:
             logger.debug(
@@ -49,26 +77,27 @@ class ModelConfigurator:
                 self.model_config.name,
                 tp_size,
             )
-            return
+            return summary
 
-        # Apply environment variables
+        # Apply environment variables and track them
         for key, value in device_config.env_vars.items():
             self.set_env_var(key, value, override=False)
+            summary.env_vars[key] = str(value)
 
         # Handle num_gpu_blocks_override with version check
-        self._configure_gpu_blocks(device_config, vllm_config, tp_size)
+        blocks_override = self._configure_gpu_blocks(device_config, vllm_config, tp_size)
+        if blocks_override is not None:
+            summary.num_blocks = blocks_override
 
         # Handle chunked prefill configuration
-        self._configure_chunked_prefill(device_config, vllm_config, tp_size)
+        cp_tokens = self._configure_chunked_prefill(device_config, vllm_config, tp_size)
+        if cp_tokens is not None:
+            summary.chunk_size = cp_tokens
 
-        logger.info(
-            "Applied configuration for model '%s' with TP=%d",
-            self.model_config.name,
-            tp_size,
-        )
+        return summary
 
     def set_env_var(
-        self, key: str, value: Any, override: bool = False, log_level: str = "info"
+        self, key: str, value: Any, override: bool = False, log_level: str = "debug"
     ) -> bool:
         """Set environment variable with logging.
 
@@ -80,12 +109,21 @@ class ModelConfigurator:
 
         Returns:
             True if variable was set, False if skipped
+
+        Raises:
+            RuntimeError: If VLLM_SPYRE_REQUIRE_KNOWN_CONFIG is set and existing value conflicts
         """
         str_value = str(value)
         existing = os.getenv(key)
 
         if existing is not None and not override:
             if existing != str_value:
+                if envs_spyre.VLLM_SPYRE_REQUIRE_KNOWN_CONFIG:
+                    raise RuntimeError(
+                        f"Model '{self.model_config.name}' requires {key}={str_value}, "
+                        f"but it was already set to {existing}. "
+                        f"VLLM_SPYRE_REQUIRE_KNOWN_CONFIG is enabled."
+                    )
                 logger.warning(
                     "%s was set to %s, not overriding to model default of %s",
                     key,
@@ -112,17 +150,23 @@ class ModelConfigurator:
 
     def _configure_gpu_blocks(
         self, device_config, vllm_config: "VllmConfig", tp_size: int
-    ) -> None:
+    ) -> int | None:
         """Configure GPU blocks with optional version-aware logic.
 
         Args:
             device_config: Device configuration containing block override settings
             vllm_config: The vLLM configuration to modify
             tp_size: Tensor parallel size
+
+        Returns:
+            The GPU blocks override value that was configured, or None if not configured
+
+        Raises:
+            RuntimeError: If VLLM_SPYRE_REQUIRE_KNOWN_CONFIG is set and user override conflicts
         """
         blocks_config = device_config.num_gpu_blocks_override
         if blocks_config is None:
-            return
+            return None
 
         # Determine which override to use
         if isinstance(blocks_config, int):
@@ -131,65 +175,82 @@ class ModelConfigurator:
             # Version-aware selection for torch_sendnn
             from vllm_spyre.platform import SpyrePlatform
 
+            sendnn_version = SpyrePlatform.sendnn_version()
             if (
                 SpyrePlatform.sendnn_configured()
-                and (0, 0, 0) < SpyrePlatform.sendnn_version() < (1, 0, 3)
+                and sendnn_version is not None
+                and (0, 0, 0) < sendnn_version < (1, 0, 3)
             ):
                 blocks_override = blocks_config.get("torch_sendnn_lt_1_0_3")
             else:
                 blocks_override = blocks_config.get("default")
 
         if blocks_override is None:
-            return
+            return None
 
         # Apply override if not already set
         if vllm_config.cache_config.num_gpu_blocks_override is None:
             vllm_config.cache_config.num_gpu_blocks_override = blocks_override
-            logger.info(
-                "Model %s with TP=%d: Overriding KV Cache blocks to %d",
+            logger.debug(
+                "Set num_gpu_blocks_override=%d for model %s with TP=%d",
+                blocks_override,
                 self.model_config.name,
                 tp_size,
-                blocks_override,
             )
+            return blocks_override
         elif vllm_config.cache_config.num_gpu_blocks_override != blocks_override:
+            user_value = vllm_config.cache_config.num_gpu_blocks_override
+            if envs_spyre.VLLM_SPYRE_REQUIRE_KNOWN_CONFIG:
+                raise RuntimeError(
+                    f"Model '{self.model_config.name}' with TP={tp_size} requires "
+                    f"num_gpu_blocks_override={blocks_override}, but user set "
+                    f"--num-gpu-blocks-override={user_value}. "
+                    f"VLLM_SPYRE_REQUIRE_KNOWN_CONFIG is enabled."
+                )
             logger.warning(
                 "--num-gpu-blocks-override was set to %d, not using model default of %d",
-                vllm_config.cache_config.num_gpu_blocks_override,
+                user_value,
                 blocks_override,
             )
+            return blocks_override
+
+        return blocks_override
 
     def _configure_chunked_prefill(
         self, device_config, vllm_config: "VllmConfig", tp_size: int
-    ) -> None:
+    ) -> int | None:
         """Configure chunked prefill settings if present.
 
         Args:
             device_config: Device configuration containing chunked prefill settings
             vllm_config: The vLLM configuration to modify
             tp_size: Tensor parallel size
+
+        Returns:
+            The max_num_batched_tokens value that was configured, or None if not configured
         """
         cp_config = device_config.chunked_prefill_config
         if cp_config is None:
-            return
+            return None
 
         if not envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
-            return
-
-        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn":
-            return
+            return None
 
         if os.getenv("VLLM_DT_CHUNK_LEN") is not None:
-            return
+            return None
 
         max_batched_tokens = cp_config.get("max_num_batched_tokens")
         if max_batched_tokens:
-            logger.info(
-                "Model %s with TP=%d and chunked prefill: "
-                "Setting --max-num-batched-tokens %d",
+            logger.debug(
+                "Set max_num_batched_tokens=%d for model %s with TP=%d (chunked prefill)",
+                max_batched_tokens,
                 self.model_config.name,
                 tp_size,
-                max_batched_tokens,
             )
             vllm_config.scheduler_config.max_num_batched_tokens = max_batched_tokens
+            return max_batched_tokens
+
+        return None
+
 
 # Made with Bob

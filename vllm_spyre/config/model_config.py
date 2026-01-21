@@ -7,46 +7,49 @@ from typing import Any
 @dataclass
 class ArchitecturePattern:
     """Pattern for matching model architectures.
-    
+
     Attributes:
+        model_name: The model name/identifier (e.g., 'ibm-granite/granite-3.3-8b-instruct')
         model_type: The model type (e.g., 'granite', 'llama', 'roberta')
-        num_hidden_layers: Number of hidden layers (optional)
-        max_position_embeddings: Maximum position embeddings (optional)
-        hidden_size: Hidden size dimension (optional)
-        vocab_size: Vocabulary size (optional)
-        num_key_value_heads: Number of key-value heads (optional)
-        num_attention_heads: Number of attention heads (optional)
-        num_experts_per_tok: Number of experts per token for MoE models (optional)
+        attributes: Dictionary of arbitrary attributes to match against HF config.
+                   Keys are attribute names, values are expected values (None means optional).
+                   Common attributes include: num_hidden_layers, max_position_embeddings,
+                   hidden_size, vocab_size, num_key_value_heads, num_attention_heads,
+                   num_experts_per_tok, quantization_config, etc.
     """
 
+    model_name: str
     model_type: str
-    num_hidden_layers: int | None = None
-    max_position_embeddings: int | None = None
-    hidden_size: int | None = None
-    vocab_size: int | None = None
-    num_key_value_heads: int | None = None
-    num_attention_heads: int | None = None
-    num_experts_per_tok: int | None = None
+    attributes: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ArchitecturePattern":
-        """Create ArchitecturePattern from dictionary."""
+    def from_dict(cls, model_name: str, data: dict[str, Any]) -> "ArchitecturePattern":
+        """Create ArchitecturePattern from dictionary.
+
+        Args:
+            model_name: The model name/identifier
+            data: Dictionary containing architecture pattern data
+
+        Returns:
+            ArchitecturePattern instance
+        """
+        # Extract model_type (required)
+        model_type = data["model_type"]
+
+        # All other keys become attributes
+        attributes = {k: v for k, v in data.items() if k != "model_type"}
+
         return cls(
-            model_type=data["model_type"],
-            num_hidden_layers=data.get("num_hidden_layers"),
-            max_position_embeddings=data.get("max_position_embeddings"),
-            hidden_size=data.get("hidden_size"),
-            vocab_size=data.get("vocab_size"),
-            num_key_value_heads=data.get("num_key_value_heads"),
-            num_attention_heads=data.get("num_attention_heads"),
-            num_experts_per_tok=data.get("num_experts_per_tok"),
+            model_name=model_name,
+            model_type=model_type,
+            attributes=attributes,
         )
 
 
 @dataclass
 class DeviceConfig:
     """Device-specific configuration for a model.
-    
+
     Attributes:
         tp_size: Tensor parallel size this config applies to
         env_vars: Environment variables to set
@@ -71,76 +74,106 @@ class DeviceConfig:
 
 
 @dataclass
-class RuntimeConfig:
-    """Runtime configuration (from supported_configs.yaml).
-    
+class StaticBatchingConfig:
+    """Static batching configuration.
+
     Attributes:
-        cb: Whether continuous batching is enabled
         tp_size: Tensor parallel size
-        max_model_len: Maximum model length (for CB mode)
-        max_num_seqs: Maximum number of sequences (for CB mode)
         warmup_shapes: Warmup shapes as (prompt_length, new_tokens, batch_size) tuples
     """
 
-    cb: bool
     tp_size: int
-    max_model_len: int = 0
-    max_num_seqs: int = 0
-    warmup_shapes: list[tuple[int, int, int]] | None = None
+    warmup_shapes: list[tuple[int, int, int]]
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "RuntimeConfig":
-        """Create RuntimeConfig from dictionary."""
-        warmup_shapes = None
-        if "warmup_shapes" in data:
-            # Convert list of lists to list of tuples
-            warmup_shapes = [tuple(ws) for ws in data["warmup_shapes"]]
-
+    def from_dict(cls, data: dict[str, Any]) -> "StaticBatchingConfig":
+        """Create StaticBatchingConfig from dictionary."""
+        # Convert list of lists to list of tuples
+        warmup_shapes = [tuple(ws) for ws in data["warmup_shapes"]]
         return cls(
-            cb=data["cb"],
             tp_size=data["tp_size"],
-            max_model_len=data.get("max_model_len", 0),
-            max_num_seqs=data.get("max_num_seqs", 0),
             warmup_shapes=warmup_shapes,
         )
 
 
 @dataclass
+class ContinuousBatchingConfig:
+    """Continuous batching configuration.
+
+    Attributes:
+        tp_size: Tensor parallel size
+        max_model_len: Maximum model length
+        max_num_seqs: Maximum number of sequences
+    """
+
+    tp_size: int
+    max_model_len: int
+    max_num_seqs: int
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ContinuousBatchingConfig":
+        """Create ContinuousBatchingConfig from dictionary."""
+        return cls(
+            tp_size=data["tp_size"],
+            max_model_len=data["max_model_len"],
+            max_num_seqs=data["max_num_seqs"],
+        )
+
+
+# Type alias for runtime configs
+RuntimeConfig = StaticBatchingConfig | ContinuousBatchingConfig
+
+
+@dataclass
 class ModelConfig:
     """Complete model configuration.
-    
+
     Attributes:
         name: Model name/identifier
         architecture: Architecture pattern for matching
-        supported_configs: List of supported runtime configurations
-        device_configs: Device-specific configurations keyed by TP size
+        static_batching_configs: List of static batching configurations
+        continuous_batching_configs: List of continuous batching configurations
+        device_configs: Device-specific configurations keyed by TP size (only for CB)
     """
 
     name: str
     architecture: ArchitecturePattern
-    supported_configs: list[RuntimeConfig]
+    static_batching_configs: list[StaticBatchingConfig] = field(default_factory=list)
+    continuous_batching_configs: list[ContinuousBatchingConfig] = field(default_factory=list)
     device_configs: dict[int, DeviceConfig] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, name: str, data: dict[str, Any]) -> "ModelConfig":
         """Create ModelConfig from dictionary (typically from YAML).
-        
+
         Args:
             name: Model name
             data: Dictionary containing model configuration
-            
+
         Returns:
             ModelConfig instance
         """
-        # Parse architecture
-        architecture = ArchitecturePattern.from_dict(data["architecture"])
+        # Parse architecture (pass model name for better logging)
+        architecture = ArchitecturePattern.from_dict(name, data["architecture"])
 
-        # Parse supported configs
-        supported_configs = [
-            RuntimeConfig.from_dict(cfg) for cfg in data.get("supported_configs", [])
-        ]
+        # Parse supported configs - separate into static and continuous batching
+        static_configs = []
+        continuous_configs = []
 
-        # Parse device configs
+        for cfg in data.get("supported_configs", []):
+            if "warmup_shapes" in cfg:
+                # Static batching config
+                static_configs.append(StaticBatchingConfig.from_dict(cfg))
+            elif "max_model_len" in cfg and "max_num_seqs" in cfg:
+                # Continuous batching config
+                continuous_configs.append(ContinuousBatchingConfig.from_dict(cfg))
+            else:
+                raise ValueError(
+                    f"Invalid config for model {name}: must have either 'warmup_shapes' "
+                    f"(static batching) or 'max_model_len' and 'max_num_seqs' (continuous batching)"
+                )
+
+        # Parse device configs (only relevant for continuous batching)
         device_configs = {}
         for tp_size_str, device_data in data.get("device_configs", {}).items():
             tp_size = int(tp_size_str)
@@ -149,8 +182,10 @@ class ModelConfig:
         return cls(
             name=name,
             architecture=architecture,
-            supported_configs=supported_configs,
+            static_batching_configs=static_configs,
+            continuous_batching_configs=continuous_configs,
             device_configs=device_configs,
         )
+
 
 # Made with Bob

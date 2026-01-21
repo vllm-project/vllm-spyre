@@ -30,7 +30,7 @@ class ModelConfigRegistry:
     def __init__(self):
         """Initialize the registry."""
         self._models: dict[str, ModelConfig] = {}
-        self._configurators: dict[str, "ModelConfigurator"] = {}
+        self._configurators: dict[str, ModelConfigurator] = {}
         self._matcher = ModelMatcher()
 
     @classmethod
@@ -49,35 +49,64 @@ class ModelConfigRegistry:
 
         Args:
             config_path: Path to model_configs.yaml file. If None, uses default location.
+
+        Note:
+            Registry validation is only performed when running on Spyre device (sendnn backend).
         """
         if self._initialized:
             logger.debug("Registry already initialized, skipping")
             return
 
-        if config_path is None:
-            config_path = Path(__file__).parent / "model_configs.yaml"
+        resolved_path = self._resolve_config_path(config_path)
+        if not self._validate_config_path(resolved_path):
+            return
 
+        self._load_and_register_models(resolved_path)
+        self._initialized = True
+
+    def _resolve_config_path(self, config_path: Path | None) -> Path:
+        """Resolve config path to absolute path."""
+        if config_path is None:
+            return Path(__file__).parent / "model_configs.yaml"
+        return config_path
+
+    def _validate_config_path(self, config_path: Path) -> bool:
+        """Validate that config path exists."""
         if not config_path.exists():
             logger.warning(
                 "Model configuration file not found at %s. Registry will be empty.",
                 config_path,
             )
-            self._initialized = True
-            return
+            return False
+        return True
 
+    def _load_and_register_models(self, config_path: Path) -> None:
+        """Load YAML and register all models.
+
+        Args:
+            config_path: Path to the configuration file
+
+        Raises:
+            RuntimeError: If loading or parsing fails
+        """
         try:
             with open(config_path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
+        except FileNotFoundError as e:
+            logger.error("Configuration file not found: %s", e)
+            raise RuntimeError(f"Failed to load model configurations: {e}") from e
+        except yaml.YAMLError as e:
+            logger.error("YAML parsing error: %s", e)
+            raise RuntimeError(f"Failed to load model configurations: {e}") from e
+        except OSError as e:
+            logger.error("File read error: %s", e)
+            raise RuntimeError(f"Failed to load model configurations: {e}") from e
 
-            for model_name, model_data in data.get("models", {}).items():
-                model_config = ModelConfig.from_dict(model_name, model_data)
-                self.register_model(model_config)
+        for model_name, model_data in data.get("models", {}).items():
+            model_config = ModelConfig.from_dict(model_name, model_data)
+            self.register_model(model_config)
 
-            self._initialized = True
-            logger.info("Loaded %d model configurations from %s", len(self._models), config_path)
-        except Exception as e:
-            logger.error("Failed to load model configurations from %s: %s", config_path, e, exc_info=True)
-            self._initialized = True  # Mark as initialized even on error to avoid retry loops
+        logger.info("Loaded %d model configurations from %s", len(self._models), config_path)
 
     def register_model(self, model_config: ModelConfig) -> None:
         """Register a model configuration.
@@ -122,9 +151,7 @@ class ModelConfigRegistry:
                 )
                 return model_name
 
-        logger.debug(
-            "No matching model configuration found for '%s'", vllm_model_config.model
-        )
+        logger.debug("No matching model configuration found for '%s'", vllm_model_config.model)
         return None
 
     def get_configurator(self, model_name: str) -> "ModelConfigurator":
@@ -185,5 +212,6 @@ def get_model_registry() -> ModelConfigRegistry:
     if not registry._initialized:
         registry.initialize()
     return registry
+
 
 # Made with Bob

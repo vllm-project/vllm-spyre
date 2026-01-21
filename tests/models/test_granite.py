@@ -7,7 +7,7 @@ from unittest import mock
 import pytest
 from vllm.config import CacheConfig, ModelConfig, ParallelConfig, VllmConfig
 
-from vllm_spyre.platform import SpyrePlatform
+from vllm_spyre.config.model_registry import get_model_registry
 
 FIXTURES_PATH = Path(__file__).parent.parent / "fixtures" / "model_configs"
 
@@ -27,18 +27,10 @@ def test_granite_3_8b_detection():
         cache_config=NO_SWAP_CONFIG(),
     )
 
-    granite_micro_config = VllmConfig(
-        model_config=ModelConfig(
-            model=str(FIXTURES_PATH / "ibm-ai-platform" / "micro-g3.3-8b-instruct-1b")
-        ),
-        cache_config=NO_SWAP_CONFIG(),
-    )
+    registry = get_model_registry()
+    matched_model = registry.find_matching_model(granite_3_8b_config.model_config)
 
-    assert SpyrePlatform.is_granite_3_8b(granite_3_8b_config.model_config)
-
-    assert not SpyrePlatform.is_granite_3_8b(granite_micro_config.model_config)
-
-    assert not SpyrePlatform.is_granite_4_8b_dense(granite_3_8b_config.model_config)
+    assert matched_model == "ibm-granite/granite-3.3-8b-instruct"
 
 
 @pytest.mark.cpu
@@ -50,8 +42,27 @@ def test_granite_4_dense_detection():
         cache_config=NO_SWAP_CONFIG(),
     )
 
-    assert SpyrePlatform.is_granite_4_8b_dense(granite_4_dense_config.model_config)
-    assert not SpyrePlatform.is_granite_3_8b(granite_4_dense_config.model_config)
+    registry = get_model_registry()
+    matched_model = registry.find_matching_model(granite_4_dense_config.model_config)
+
+    assert matched_model == "ibm-granite/granite-4-8b-dense"
+
+
+@pytest.mark.cpu
+def test_micro_model_not_in_registry():
+    """Check that micro model does not match any registered model"""
+
+    granite_micro_config = VllmConfig(
+        model_config=ModelConfig(
+            model=str(FIXTURES_PATH / "ibm-ai-platform" / "micro-g3.3-8b-instruct-1b")
+        ),
+        cache_config=NO_SWAP_CONFIG(),
+    )
+
+    registry = get_model_registry()
+    matched_model = registry.find_matching_model(granite_micro_config.model_config)
+
+    assert matched_model is None
 
 
 @pytest.mark.cpu
@@ -79,13 +90,28 @@ def test_granite_overrides(model_name, sendnn_configured, sendnn_version, expect
     ):
         tp4_config = ParallelConfig(tensor_parallel_size=4)
 
-        granite_3_8b_config = VllmConfig(
+        granite_config = VllmConfig(
             model_config=ModelConfig(model=str(FIXTURES_PATH / "ibm-granite" / model_name)),
             parallel_config=tp4_config,
             cache_config=NO_SWAP_CONFIG(),
         )
 
-        assert granite_3_8b_config.cache_config.num_gpu_blocks_override == expected_blocks
+        # Apply model-specific configuration using the registry
+        registry = get_model_registry()
+        matched_model = registry.find_matching_model(granite_config.model_config)
+        assert matched_model is not None, f"Model {model_name} should be in registry"
 
-        assert int(os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT")) == 128 * 1024
-        assert int(os.getenv("FLEX_HDMA_P2PSIZE")) == 256 * 1024 * 1024
+        configurator = registry.get_configurator(matched_model)
+        configurator.configure(granite_config)
+
+        # Verify the configuration was applied correctly
+        assert granite_config.cache_config.num_gpu_blocks_override == expected_blocks
+
+        # Verify environment variables were set
+        tkv_limit = os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT")
+        assert tkv_limit is not None, "VLLM_DT_MAX_BATCH_TKV_LIMIT should be set"
+        assert int(tkv_limit) == 128 * 1024
+
+        hdma_size = os.getenv("FLEX_HDMA_P2PSIZE")
+        assert hdma_size is not None, "FLEX_HDMA_P2PSIZE should be set"
+        assert int(hdma_size) == 256 * 1024 * 1024

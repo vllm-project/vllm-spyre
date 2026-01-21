@@ -12,6 +12,83 @@ logger = init_logger(__name__)
 class ModelMatcher:
     """Pattern-based model matching for identifying models from HF configs."""
 
+    def _validate_quantization_config(
+        self, model_name: str, config_value: Any, pattern_value: dict
+    ) -> bool:
+        """Validate quantization_config dictionary match.
+
+        Args:
+            model_name: Model name for logging purposes
+            config_value: Actual quantization config from HF config
+            pattern_value: Expected quantization config pattern
+
+        Returns:
+            True if quantization config matches, False otherwise
+        """
+        if not isinstance(config_value, dict):
+            logger.debug(
+                "Model '%s': quantization_config type mismatch: config=%s, pattern=%s",
+                model_name,
+                type(config_value),
+                type(pattern_value),
+            )
+            return False
+
+        for key, value in pattern_value.items():
+            if config_value.get(key) != value:
+                logger.debug(
+                    "Model '%s': quantization_config['%s'] mismatch: config=%s, pattern=%s",
+                    model_name,
+                    key,
+                    config_value.get(key),
+                    value,
+                )
+                return False
+
+        return True
+
+    def _validate_attribute(
+        self, hf_config: Any, model_name: str, attr_name: str, pattern_value: Any
+    ) -> bool:
+        """Validate a single attribute match between config and pattern.
+
+        Args:
+            hf_config: HuggingFace model configuration object
+            model_name: Model name for logging purposes
+            attr_name: Name of the attribute to validate
+            pattern_value: Expected value for the attribute
+
+        Returns:
+            True if the attribute matches or is not required, False otherwise
+        """
+        if pattern_value is None:
+            return True
+
+        if not hasattr(hf_config, attr_name):
+            logger.debug(
+                "Model '%s': HF config missing attribute '%s' required by pattern",
+                model_name,
+                attr_name,
+            )
+            return False
+
+        config_value = getattr(hf_config, attr_name)
+
+        if attr_name == "quantization_config" and isinstance(pattern_value, dict):
+            return self._validate_quantization_config(model_name, config_value, pattern_value)
+
+        if config_value != pattern_value:
+            logger.debug(
+                "Model '%s': Attribute '%s' mismatch: config=%s, pattern=%s",
+                model_name,
+                attr_name,
+                config_value,
+                pattern_value,
+            )
+            return False
+
+        return True
+
     def matches(self, hf_config: Any, pattern: ArchitecturePattern) -> bool:
         """Check if HF config matches architecture pattern.
 
@@ -22,50 +99,27 @@ class ModelMatcher:
         Returns:
             True if the config matches the pattern, False otherwise
         """
-        # Check model_type first (required)
+        model_name = pattern.model_name
+
         if not hasattr(hf_config, "model_type"):
-            logger.debug("HF config missing 'model_type' attribute")
+            logger.debug("Model '%s': HF config missing 'model_type' attribute", model_name)
             return False
 
         if hf_config.model_type != pattern.model_type:
             logger.debug(
-                "Model type mismatch: config=%s, pattern=%s",
+                "Model '%s': Model type mismatch: config=%s, pattern=%s",
+                model_name,
                 hf_config.model_type,
                 pattern.model_type,
             )
             return False
 
-        # Check optional attributes
-        for attr_name in [
-            "num_hidden_layers",
-            "max_position_embeddings",
-            "hidden_size",
-            "vocab_size",
-            "num_key_value_heads",
-            "num_attention_heads",
-            "num_experts_per_tok",
-        ]:
-            pattern_value = getattr(pattern, attr_name)
-            if pattern_value is None:
-                continue  # Skip if not specified in pattern
-
-            if not hasattr(hf_config, attr_name):
-                logger.debug(
-                    "HF config missing attribute '%s' required by pattern %s", attr_name, pattern.model_type
-                )
+        for attr_name, pattern_value in pattern.attributes.items():
+            if not self._validate_attribute(hf_config, model_name, attr_name, pattern_value):
                 return False
 
-            config_value = getattr(hf_config, attr_name)
-            if config_value != pattern_value:
-                logger.debug(
-                    "Attribute '%s' mismatch: config=%s, pattern=%s",
-                    attr_name,
-                    config_value,
-                    pattern_value,
-                )
-                return False
-
-        logger.debug("HF config matches pattern for model_type=%s", pattern.model_type)
+        logger.debug("Model '%s': HF config matches pattern", model_name)
         return True
+
 
 # Made with Bob

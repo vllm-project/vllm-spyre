@@ -3,8 +3,10 @@
 #
 # Each model entry contains:
 # - architecture: Pattern for matching HuggingFace model configs
-# - supported_configs: List of runtime configurations (CB/static batching, TP sizes, etc.)
-# - device_configs: Device-specific settings keyed by tensor parallel size
+# - supported_configs: List of runtime configurations
+#   - Static batching configs: Must have 'warmup_shapes'
+#   - Continuous batching configs: Must have 'max_model_len' and 'max_num_seqs'
+# - device_configs: Device-specific settings keyed by tensor parallel size (only for CB)
 
 models:
   # Granite 3.3 8B Instruct
@@ -19,29 +21,24 @@ models:
       num_attention_heads: 32
 
     supported_configs:
-      - cb: false
-        tp_size: 1
+      # Static batching configurations
+      - tp_size: 1
         warmup_shapes: [[2048, 1024, 16]]
-      - cb: false
-        tp_size: 4
+      - tp_size: 4
         warmup_shapes: [[6144, 2048, 1]]
-      - cb: false
-        tp_size: 4
+      - tp_size: 4
         warmup_shapes: [[7168, 1024, 4]]
-      - cb: true
-        tp_size: 1
+      # Continuous batching configurations
+      - tp_size: 1
         max_model_len: 3072
         max_num_seqs: 16
-      - cb: true
-        tp_size: 1
+      - tp_size: 1
         max_model_len: 8192
         max_num_seqs: 4
-      - cb: true
-        tp_size: 2
+      - tp_size: 2
         max_model_len: 8192
         max_num_seqs: 4
-      - cb: true
-        tp_size: 4
+      - tp_size: 4
         max_model_len: 32768
         max_num_seqs: 32
 
@@ -50,6 +47,7 @@ models:
         env_vars:
           VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072  # 128k
           FLEX_HDMA_P2PSIZE: 268435456  # 256MB
+          FLEX_HDMA_COLLSIZE: 33554432  # 32MB
         num_gpu_blocks_override:
           torch_sendnn_lt_1_0_3: 2080
           default: 8192
@@ -61,19 +59,18 @@ models:
     architecture:
       model_type: granite
       vocab_size: 49159
-      # Note: FP8 models have quantization_config, handled separately in matching
+      quantization_config:
+        format: float-quantized
 
     supported_configs:
-      - cb: true
-        tp_size: 1
+      # Continuous batching configurations only
+      - tp_size: 1
         max_model_len: 3072
         max_num_seqs: 16
-      - cb: true
-        tp_size: 4
+      - tp_size: 4
         max_model_len: 16384
         max_num_seqs: 4
-      - cb: true
-        tp_size: 4
+      - tp_size: 4
         max_model_len: 32768
         max_num_seqs: 32
 
@@ -82,6 +79,7 @@ models:
         env_vars:
           VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072
           FLEX_HDMA_P2PSIZE: 268435456
+          FLEX_HDMA_COLLSIZE: 33554432  # 32MB
         num_gpu_blocks_override:
           torch_sendnn_lt_1_0_3: 2080
           default: 8192
@@ -101,29 +99,24 @@ models:
       num_attention_heads: 32
 
     supported_configs:
-      - cb: false
-        tp_size: 1
+      # Static batching configurations
+      - tp_size: 1
         warmup_shapes: [[2048, 1024, 16]]
-      - cb: false
-        tp_size: 4
+      - tp_size: 4
         warmup_shapes: [[6144, 2048, 1]]
-      - cb: false
-        tp_size: 4
+      - tp_size: 4
         warmup_shapes: [[7168, 1024, 4]]
-      - cb: true
-        tp_size: 1
+      # Continuous batching configurations
+      - tp_size: 1
         max_model_len: 3072
         max_num_seqs: 16
-      - cb: true
-        tp_size: 1
+      - tp_size: 1
         max_model_len: 8192
         max_num_seqs: 4
-      - cb: true
-        tp_size: 2
+      - tp_size: 2
         max_model_len: 8192
         max_num_seqs: 4
-      - cb: true
-        tp_size: 4
+      - tp_size: 4
         max_model_len: 32768
         max_num_seqs: 32
 
@@ -132,13 +125,14 @@ models:
         env_vars:
           VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072
           FLEX_HDMA_P2PSIZE: 268435456
+          FLEX_HDMA_COLLSIZE: 33554432  # 32MB
         num_gpu_blocks_override:
           torch_sendnn_lt_1_0_3: 2080
           default: 8192
         chunked_prefill_config:
           max_num_batched_tokens: 1024
 
-  # Embedding models (no device configs needed for these)
+  # Embedding models (static batching only, no device configs needed)
   ibm-granite/granite-embedding-125m-english:
     architecture:
       model_type: roberta
@@ -146,8 +140,7 @@ models:
       vocab_size: 50265
 
     supported_configs:
-      - cb: false
-        tp_size: 1
+      - tp_size: 1
         warmup_shapes: [[512, 0, 64]]
 
   ibm-granite/granite-embedding-278m-multilingual:
@@ -157,11 +150,10 @@ models:
       vocab_size: 250002
 
     supported_configs:
-      - cb: false
-        tp_size: 1
+      - tp_size: 1
         warmup_shapes: [[512, 0, 64]]
 
-  # Other supported models
+  # Other supported models (static batching only)
   intfloat/multilingual-e5-large:
     architecture:
       model_type: xlm-roberta
@@ -169,8 +161,7 @@ models:
       vocab_size: 250002
 
     supported_configs:
-      - cb: false
-        tp_size: 1
+      - tp_size: 1
         warmup_shapes: [[512, 0, 64]]
 
   BAAI/bge-reranker-v2-m3:
@@ -181,8 +172,7 @@ models:
       vocab_size: 250002
 
     supported_configs:
-      - cb: false
-        tp_size: 1
+      - tp_size: 1
         warmup_shapes: [[8192, 0, 1]]
 
   BAAI/bge-reranker-large:
@@ -193,8 +183,7 @@ models:
       vocab_size: 250002
 
     supported_configs:
-      - cb: false
-        tp_size: 1
+      - tp_size: 1
         warmup_shapes: [[512, 0, 64]]
 
   sentence-transformers/all-roberta-large-v1:
@@ -204,8 +193,7 @@ models:
       vocab_size: 50265
 
     supported_configs:
-      - cb: false
-        tp_size: 1
+      - tp_size: 1
         warmup_shapes: [[128, 0, 8]]
 
 # Made with Bob

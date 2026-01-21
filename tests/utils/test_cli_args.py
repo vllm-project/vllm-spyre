@@ -5,6 +5,7 @@ from vllm import EngineArgs
 
 
 from vllm_spyre.platform import SpyrePlatform
+from vllm_spyre.config.model_registry import get_model_registry
 from spyre_util import environ_checkpoint, REFERENCE_MODELS
 
 try:
@@ -71,7 +72,12 @@ def test_generic_model_chunk_size_default(
     ]
 
     if model_name == "ibm-granite/granite-3.3-8b-instruct":
-        monkeypatch.setattr(SpyrePlatform, "is_granite_3_8b", lambda _config: True)
+        # Mock the registry to return the granite model name when matching
+        def mock_find_matching_model(vllm_model_config):
+            return "ibm-granite/granite-3.3-8b-instruct"
+
+        registry = get_model_registry()
+        monkeypatch.setattr(registry, "find_matching_model", mock_find_matching_model)
 
     with environ_checkpoint():
         # Test that the upstream default is None but is changed to 2048 by
