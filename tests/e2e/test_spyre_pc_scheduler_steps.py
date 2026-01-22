@@ -2048,3 +2048,584 @@ def test_first_chunk_partial_match(
             verify_scale_indices,
         ],
     )
+
+
+## INTERLEAVING TESTS
+
+
+@pytest.mark.chunked_prefill
+@pytest.mark.full_model
+@pytest.mark.prefix_caching
+# These values are all parameterized for test sorting
+@pytest.mark.parametrize("max_num_seqs", [4])
+@pytest.mark.parametrize("max_model_len", [256])
+@pytest.mark.parametrize("max_num_batched_tokens", [128])
+@pytest.mark.parametrize("available_blocks", [None])
+def test_double_prefix_hit_within_batch_interleaving(
+    model: ModelInfo,
+    backend: str,
+    monkeypatch: pytest.MonkeyPatch,
+    max_num_seqs: int,
+    max_model_len: int,
+    max_num_batched_tokens: int,
+    available_blocks: int,
+):
+    """Scenario where three equal and one different sequences are scheduled
+    with interleaving turned on.
+
+    While prefilling the second and fourth sequence we have a prefix cache
+    hit and can reuse the first chunk. Note that the fetched prefix blocks
+    are still part of the existing decode batch. Hence we have duplicated
+    blocks in the block table for this example. More specifically, three
+    sequences in the decode batch share the same KV cache block.
+
+    Configuration:
+        * max_num_seqs: 4
+        * number of prompts: 4
+            * 0: len = 192,  max tokens = 2, step joining = 0
+            * 1: len = 192, max tokens = 2, step joining = 0
+            * 2: len = 192, max tokens = 2, step joining = 0
+            * 3: len = 192, max tokens = 2, step joining = 0
+    """
+    monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "1")
+
+    prompt1 = random_prompt(model=model, seed=0, length=192)
+    prompt2 = random_prompt(model=model, seed=1, length=192)
+
+    request1 = create_request_for_scheduler_test(
+        model=model,
+        request_id=0,
+        add_step=0,
+        max_tokens=2,
+        prompt=prompt1,
+        use_golden_token_injection=True,
+    )
+
+    request2 = create_request_for_scheduler_test(
+        model=model,
+        request_id=1,
+        add_step=0,
+        max_tokens=2,
+        prompt=prompt1,
+        use_golden_token_injection=True,
+    )
+
+    request3 = create_request_for_scheduler_test(
+        model=model,
+        request_id=2,
+        add_step=0,
+        max_tokens=2,
+        prompt=prompt2,  # This request has a different prompt
+        use_golden_token_injection=True,
+    )
+
+    request4 = create_request_for_scheduler_test(
+        model=model,
+        request_id=3,
+        add_step=0,
+        max_tokens=2,
+        prompt=prompt1,
+        use_golden_token_injection=True,
+    )
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0", "1", "2", "3"],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0,
+        },
+        {  # prefill chunk 1 seq 0
+            "step": 1,
+            "tkv": 192,
+            "waiting": ["1", "2", "3"],
+            "running": ["0"],
+            "request_outputs": [],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 3,
+            "n_prefix_hits": 0,
+            "block_tables": {"0": [1, 2, 3]},
+            "block_ref_count": {1: 1, 2: 1, 3: 1},
+            "scale_indices": [0],
+        },
+        {  # prefill chunk 2 seq 0
+            "step": 2,
+            "tkv": 192,
+            "waiting": ["1", "2", "3"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 3,
+            "n_prefix_hits": 0,
+            "block_tables": {"0": [1, 2, 3]},
+            "block_ref_count": {1: 1, 2: 1, 3: 1},
+            "scale_indices": [0],
+        },
+        {  # decode seq 0 (generates 1 token, finishes)
+            "step": 3,
+            "tkv": 193,
+            "waiting": ["1", "2", "3"],
+            "running": [],
+            "request_outputs": ["0"],
+            "finished_requests": ["0"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 4,
+            "n_prefix_hits": 0,
+            "block_tables": {"0": [1, 2, 3, 4]},
+            "block_ref_count": {1: 1, 2: 1, 3: 1, 4: 1},
+        },
+        {  # prefill chunk 1 seq 1 (prefix cache hit - reuses blocks 1,2,3)
+            "step": 4,
+            "tkv": 192,
+            "waiting": ["2", "3"],
+            "running": ["1"],
+            "request_outputs": [],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 3,
+            "n_prefix_hits": 1,
+            "block_tables": {"1": [1, 2, 3]},
+            "block_ref_count": {1: 1, 2: 1, 3: 1},
+        },
+        {  # prefill chunk 2 seq 1 (last chunk must be recomputed)
+            "step": 5,
+            "tkv": 192,
+            "waiting": ["2", "3"],
+            "running": ["1"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 3,
+            "n_prefix_hits": 0,
+            "block_tables": {"1": [1, 2, 3]},
+            "block_ref_count": {1: 1, 2: 1, 3: 1},
+            "scale_indices": [0],
+        },
+        {  # decode seq 1 (generates 1 token, finishes)
+            "step": 6,
+            "tkv": 193,
+            "waiting": ["2", "3"],
+            "running": [],
+            "request_outputs": ["1"],
+            "finished_requests": ["1"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 4,
+            "n_prefix_hits": 0,
+            "block_tables": {"1": [1, 2, 3, 5]},
+            "block_ref_count": {1: 1, 2: 1, 3: 1, 5: 1},
+        },
+        {  # prefill chunk 1 seq 2
+            "step": 7,
+            "tkv": 192,
+            "waiting": ["3"],
+            "running": ["2"],
+            "request_outputs": [],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 3,
+            "n_prefix_hits": 0,
+            "block_tables": {"2": [6, 7, 8]},
+            "block_ref_count": {6: 1, 7: 1, 8: 1},
+            "scale_indices": [0],
+        },
+        {  # prefill chunk 2 seq 2
+            "step": 8,
+            "tkv": 192,
+            "waiting": ["3"],
+            "running": ["2"],
+            "request_outputs": ["2"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 3,
+            "n_prefix_hits": 0,
+            "block_tables": {"2": [6, 7, 8]},
+            "block_ref_count": {6: 1, 7: 1, 8: 1},
+            "scale_indices": [0],
+        },
+        {  # decode seq 2 (generates 1 token, finishes)
+            "step": 9,
+            "tkv": 193,
+            "waiting": ["3"],
+            "running": [],
+            "request_outputs": ["2"],
+            "finished_requests": ["2"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 4,
+            "n_prefix_hits": 0,
+            "block_tables": {"2": [6, 7, 8, 9]},
+            "block_ref_count": {6: 1, 7: 1, 8: 1, 9: 1},
+        },
+        {  # prefill chunk 1 seq 3 (prefix cache hit - reuses blocks 1,2,3)
+            "step": 10,
+            "tkv": 192,
+            "waiting": [],
+            "running": ["3"],
+            "request_outputs": [],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 3,
+            "n_prefix_hits": 1,
+            "block_tables": {"3": [1, 2, 3]},
+            "block_ref_count": {1: 1, 2: 1, 3: 1},
+        },
+        {  # prefill chunk 2 seq 3 (last chunk must be recomputed)
+            "step": 11,
+            "tkv": 192,
+            "waiting": [],
+            "running": ["3"],
+            "request_outputs": ["3"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 3,
+            "n_prefix_hits": 0,
+            "block_tables": {"3": [1, 2, 3]},
+            "block_ref_count": {1: 1, 2: 1, 3: 1},
+            "scale_indices": [0],
+        },
+        {  # decode seq 3 (generates 1 token, finishes)
+            "step": 12,
+            "tkv": 193,
+            "waiting": [],
+            "running": [],
+            "request_outputs": ["3"],
+            "finished_requests": ["3"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 4,
+            "block_tables": {"3": [1, 2, 3, 10]},
+            "block_ref_count": {1: 1, 2: 1, 3: 1, 10: 1},
+            "scale_indices": [0],
+        },
+        {  # cleanup step - all requests finished, resources released
+            "step": 13,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0,
+        },
+    ]
+
+    validate_scheduler_steps(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        requests=[request1, request2, request3, request4],
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
+        available_blocks=available_blocks,
+        max_num_batched_tokens=max_num_batched_tokens,
+        prefix_caching=True,
+        extra_assert_funcs=[
+            verify_block_tables,
+            verify_slot_mappings,
+            verify_scale_indices,
+        ],
+    )
+
+
+@pytest.mark.chunked_prefill
+@pytest.mark.full_model
+@pytest.mark.prefix_caching
+# These values are all parameterized for test sorting
+@pytest.mark.parametrize("max_num_seqs", [4])
+@pytest.mark.parametrize("max_model_len", [256])
+@pytest.mark.parametrize("max_num_batched_tokens", [128])
+@pytest.mark.parametrize("available_blocks", [None])
+def test_unequal_reqs_within_batch_interleaving(
+    model: ModelInfo,
+    backend: str,
+    monkeypatch: pytest.MonkeyPatch,
+    max_num_seqs: int,
+    max_model_len: int,
+    max_num_batched_tokens: int,
+    available_blocks: int,
+):
+    """Scenario where three equal and one different sequences are scheduled
+    with interleaving turned on.
+
+    While prefilling the second and fourth sequence we have a prefix cache
+    hit and can reuse the first chunk. Note that the fetched prefix blocks
+    are still part of the existing decode batch. Hence we have duplicated
+    blocks in the block table for this example. More specifically, three
+    sequences in the decode batch share the same KV cache block.
+
+    Configuration:
+        * max_num_seqs: 4
+        * number of prompts: 4
+            * 0: len = 192,  max tokens = 4, step joining = 0
+            * 1: len = 192, max tokens = 5, step joining = 2
+            * 2: len = 192, max tokens = 2, step joining = 4
+            * 3: len = 192, max tokens = 2, step joining = 6
+    """
+    monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "1")
+
+    prompt1 = random_prompt(model=model, seed=0, length=192)
+    prompt2 = random_prompt(model=model, seed=1, length=192)
+
+    request1 = create_request_for_scheduler_test(
+        model=model,
+        request_id=0,
+        add_step=0,
+        max_tokens=4,
+        prompt=prompt1,
+        use_golden_token_injection=True,
+    )
+
+    request2 = create_request_for_scheduler_test(
+        model=model,
+        request_id=1,
+        add_step=2,
+        max_tokens=5,
+        prompt=prompt1,
+        use_golden_token_injection=True,
+    )
+
+    request3 = create_request_for_scheduler_test(
+        model=model,
+        request_id=2,
+        add_step=4,
+        max_tokens=2,
+        prompt=prompt2,  # This request has a different prompt
+        use_golden_token_injection=True,
+    )
+
+    request4 = create_request_for_scheduler_test(
+        model=model,
+        request_id=3,
+        add_step=6,
+        max_tokens=2,
+        prompt=prompt1,
+        use_golden_token_injection=True,
+    )
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0"],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0,
+        },
+        {  # Step 1: Prefill seq 0 (192 tokens), allocates blocks [1,2,3]
+            "step": 1,
+            "tkv": 192,
+            "waiting": [],
+            "running": ["0"],
+            "request_outputs": [],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 3,
+            "n_prefix_hits": 0,
+            "block_tables": {"0": [1, 2, 3]},
+            "block_ref_count": {1: 1, 2: 1, 3: 1},
+            "scale_indices": [0],
+        },
+        {  # Step 2: Seq 0 generates first token, seq 1 joins waiting queue
+            "step": 2,
+            "tkv": 192,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 3,
+            "n_prefix_hits": 0,
+            "block_tables": {"0": [1, 2, 3]},
+            "block_ref_count": {1: 1, 2: 1, 3: 1},
+            "scale_indices": [0],
+        },
+        {  # Step 3: Decode seq 0 (generates 2nd token), allocates block 4
+            "step": 3,
+            "tkv": 193,
+            "waiting": ["1"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 4,
+            "n_prefix_hits": 0,
+            "block_tables": {"0": [1, 2, 3, 4]},
+            "block_ref_count": {1: 1, 2: 1, 3: 1, 4: 1},
+        },
+        {  # Step 4: Interleaved - prefill seq 1 (192 tokens)
+            # prefix cache hit on blocks [1,2,3]) + seq 2 joins waiting
+            "step": 4,
+            "tkv": 193,
+            "waiting": ["2"],
+            "running": ["1", "0"],
+            "request_outputs": [],
+            "n_reserved_blocks": 8,
+            "n_used_blocks": 4,
+            "n_prefix_hits": 1,
+            "block_tables": {"0": [1, 2, 3, 4], "1": [1, 2, 3]},
+            "block_ref_count": {1: 2, 2: 2, 3: 2, 4: 1},
+        },
+        {  # Step 5: Interleaved - decode seq 0 (generates 3rd token)
+            # seq 1 generates first token
+            "step": 5,
+            "tkv": 194,
+            "waiting": ["2"],
+            "running": ["0", "1"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 8,
+            "n_used_blocks": 4,
+            "n_prefix_hits": 1,
+            "block_tables": {"0": [1, 2, 3, 4], "1": [1, 2, 3]},
+            "block_ref_count": {1: 2, 2: 2, 3: 2, 4: 1},
+        },
+        {  # Step 6: Interleaved - decode seq 1 (generates 2nd token)
+            # decode seq 0, seq 3 joins waiting
+            "step": 6,
+            "tkv": 256,
+            "waiting": ["2", "3"],
+            "running": ["1", "0"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 8,
+            "n_used_blocks": 4,
+            "n_prefix_hits": 0,
+            "block_tables": {"0": [1, 2, 3, 4], "1": [1, 2, 3]},
+            "block_ref_count": {1: 2, 2: 2, 3: 2, 4: 1},
+        },
+        {  # Step 7: Decode seq 1 (generates 3rd token, allocates block 5)
+            # seq 0 finishes (4 tokens total)
+            "step": 7,
+            "tkv": 195,
+            "waiting": ["2", "3"],
+            "running": ["1"],
+            "request_outputs": ["1", "0"],
+            "finished_requests": ["0"],
+            "n_reserved_blocks": 8,
+            "n_used_blocks": 5,
+            "n_prefix_hits": 0,
+            "block_tables": {"0": [1, 2, 3, 4], "1": [1, 2, 3, 5]},
+            "block_ref_count": {1: 2, 2: 2, 3: 2, 4: 1, 5: 1},
+        },
+        {  # Step 8: Interleaved - prefill seq 2 (192 tokens, different prompt
+            # allocates blocks [6,7,8]) + decode seq 1
+            "step": 8,
+            "tkv": 195,
+            "waiting": ["3"],
+            "running": ["2", "1"],
+            "request_outputs": [],
+            "n_reserved_blocks": 8,
+            "n_used_blocks": 7,
+            "n_prefix_hits": 0,
+            "block_tables": {"1": [1, 2, 3, 5], "2": [6, 7, 8]},
+            "block_ref_count": {1: 1, 2: 1, 3: 1, 5: 1, 6: 1, 7: 1, 8: 1},
+        },
+        {  # Step 9: Interleaved - decode seq 1 (generates 4th token)
+            # seq 2 generates first token
+            "step": 9,
+            "tkv": 194,
+            "waiting": ["3"],
+            "running": ["1", "2"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 8,
+            "n_used_blocks": 7,
+            "n_prefix_hits": 0,
+            "block_tables": {"1": [1, 2, 3, 5], "2": [6, 7, 8]},
+            "block_ref_count": {1: 1, 2: 1, 3: 1, 5: 1, 6: 1, 7: 1, 8: 1},
+        },
+        {  # Step 10: Interleaved - decode seq 2 (generates 2nd token, will finish next)
+            # decode seq 1
+            "step": 10,
+            "tkv": 256,
+            "waiting": ["3"],
+            "running": ["2", "1"],
+            "request_outputs": ["2"],
+            "n_reserved_blocks": 8,
+            "n_used_blocks": 7,
+            "n_prefix_hits": 0,
+            "block_tables": {"1": [1, 2, 3, 5], "2": [6, 7, 8]},
+            "block_ref_count": {1: 1, 2: 1, 3: 1, 5: 1, 6: 1, 7: 1, 8: 1},
+        },
+        {  # Step 11: Decode seq 1 (generates 5th and final token)
+            # seq 2 finishes (2 tokens total, allocates block 9)
+            "step": 11,
+            "tkv": 195,
+            "waiting": ["3"],
+            "running": ["1"],
+            "request_outputs": ["2", "1"],
+            "finished_requests": ["2"],
+            "n_reserved_blocks": 8,
+            "n_used_blocks": 8,
+            "n_prefix_hits": 0,
+            "block_tables": {"1": [1, 2, 3, 5], "2": [6, 7, 8, 9]},
+            "block_ref_count": {1: 1, 2: 1, 3: 1, 5: 1, 6: 1, 7: 1, 8: 1, 9: 1},
+        },
+        {  # Step 12: Interleaved - prefill seq 3 (192 tokens, prefix cache hit on
+            # blocks [1,2,3]) + decode seq 1
+            "step": 12,
+            "tkv": 195,
+            "waiting": [],
+            "running": ["3", "1"],
+            "request_outputs": [],
+            "n_reserved_blocks": 8,
+            "n_used_blocks": 4,
+            "n_prefix_hits": 1,
+            "block_tables": {"1": [1, 2, 3, 5], "3": [1, 2, 3]},
+            "block_ref_count": {1: 2, 2: 2, 3: 2, 5: 1},
+        },
+        {  # Step 13: Seq 3 generates first token, seq 1 finishes (5 tokens total)
+            "step": 13,
+            "tkv": 196,
+            "waiting": [],
+            "running": ["3"],
+            "request_outputs": ["1"],
+            "finished_requests": ["1"],
+            "n_reserved_blocks": 8,
+            "n_used_blocks": 4,
+            "n_prefix_hits": 1,
+            "block_tables": {"1": [1, 2, 3, 5], "3": [1, 2, 3]},
+            "block_ref_count": {1: 2, 2: 2, 3: 2, 5: 1},
+            "scale_indices": [1],
+        },
+        {  # Step 14: Decode seq 3 (generates 2nd token, will finish next)
+            "step": 14,
+            "tkv": 256,
+            "waiting": [],
+            "running": ["3"],
+            "request_outputs": ["3"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 3,
+            "block_tables": {"3": [1, 2, 3]},
+            "block_ref_count": {1: 1, 2: 1, 3: 1},
+        },
+        {  # Step 15: Seq 3 finishes (2 tokens total, allocates block 10)
+            "step": 15,
+            "tkv": 193,
+            "waiting": [],
+            "running": [],
+            "request_outputs": ["3"],
+            "finished_requests": ["3"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 4,
+            "block_tables": {"3": [1, 2, 3, 10]},
+            "block_ref_count": {1: 1, 2: 1, 3: 1, 10: 1},
+        },
+        {  # cleanup step - all requests finished, resources released
+            "step": 16,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0,
+        },
+    ]
+
+    validate_scheduler_steps(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        requests=[request1, request2, request3, request4],
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
+        available_blocks=available_blocks,
+        max_num_batched_tokens=max_num_batched_tokens,
+        prefix_caching=True,
+        extra_assert_funcs=[
+            verify_block_tables,
+            verify_slot_mappings,
+            verify_scale_indices,
+        ],
+    )
