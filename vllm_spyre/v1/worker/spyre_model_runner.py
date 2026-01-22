@@ -867,7 +867,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.prefill_batch = SamplingInputBatch(
             # TODO: review this, currently we only support prefill for
             # `batch_size=1`
-            max_num_reqs=self.scheduler_config.max_num_seqs,
+            max_num_reqs=1,
             max_model_len=vllm_config.model_config.max_model_len,
             device=self.device,
             pin_memory=self.pin_memory,
