@@ -73,8 +73,8 @@ logger = init_logger(__name__)
 
 @dataclass(frozen=True)
 class ModelForwardInputs:
-    input_tokens: torch.Tensor | None # For non multimodal
-    input_embeds: torch.Tensor | None # For multimodal
+    input_tokens: torch.Tensor | None  # For non multimodal
+    input_embeds: torch.Tensor | None  # For multimodal
     input_positions: torch.Tensor
     input_masks: torch.Tensor | None  # pooling and static batching only
     is_prompt: bool
@@ -381,7 +381,7 @@ class SpyreModelRunner(
         model_cfg = self.model.model.model.config
         if self.model.is_multimodal:
             return self.model.mm_model_utils.resolve_multimodal_vocab_size()
-        return model_cfg.src_vocab_size # ty: ignore[invalid-return-type]
+        return model_cfg.src_vocab_size  # ty: ignore[invalid-return-type]
 
     def pad_input_ids(
         self,
@@ -773,6 +773,7 @@ class StaticBatchingSpyreModelRunner(WarmupShapesMixin, SpyreModelRunner):
 
         model_input = SamplingForwardInputs(
             input_tokens=input_tokens,
+            input_embeds=None,
             input_positions=self._position_ids,
             input_masks=self._mask,
             is_prompt=True,
@@ -814,6 +815,7 @@ class StaticBatchingSpyreModelRunner(WarmupShapesMixin, SpyreModelRunner):
         input_tokens = torch.tensor(input_tokens, dtype=torch.long, device=self.device)  # ty: ignore[invalid-assignment]
         model_input = SamplingForwardInputs(
             input_tokens=input_tokens,  # ty: ignore[invalid-argument-type]
+            input_embeds=None,
             input_positions=self._position_ids,
             input_masks=self._mask,
             is_prompt=False,
@@ -1832,6 +1834,7 @@ class SpyrePoolingModelRunner(
 
         model_input = PoolingForwardInputs(
             input_tokens=input_tokens,
+            input_embeds=None,
             input_positions=position_ids,
             input_masks=mask,
             is_prompt=True,

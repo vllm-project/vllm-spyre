@@ -104,7 +104,7 @@ class LlavaNextMMUtils(MMUtilsBase):
         # The value of iteration does not matter for decode as long as it's > 0
         input_embeds, _ = fms_model.prepare_inputs_for_generation(
             iteration=0 if not is_decode else 1, input_ids=input_ids, kwargs=fms_kwargs
-        )
+        )  # ty: ignore[call-non-callable]
         return input_embeds
 
     def get_warmup_inputs(self, req_count: int) -> MMWarmupInputs:
