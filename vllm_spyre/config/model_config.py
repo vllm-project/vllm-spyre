@@ -98,25 +98,38 @@ class StaticBatchingConfig:
 
 @dataclass
 class ContinuousBatchingConfig:
-    """Continuous batching configuration.
+    """Continuous batching configuration with optional device config.
 
     Attributes:
         tp_size: Tensor parallel size
         max_model_len: Maximum model length
         max_num_seqs: Maximum number of sequences
+        device_config: Optional device-specific configuration (nested)
     """
 
     tp_size: int
     max_model_len: int
     max_num_seqs: int
+    device_config: "DeviceConfig | None" = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ContinuousBatchingConfig":
-        """Create ContinuousBatchingConfig from dictionary."""
+        """Create ContinuousBatchingConfig from dictionary.
+
+        The device_config field is optional and will be None if not present.
+        """
+        device_config = None
+        if "device_config" in data:
+            # tp_size is inherited from parent config
+            device_config = DeviceConfig.from_dict(
+                tp_size=data["tp_size"], data=data["device_config"]
+            )
+
         return cls(
             tp_size=data["tp_size"],
             max_model_len=data["max_model_len"],
             max_num_seqs=data["max_num_seqs"],
+            device_config=device_config,
         )
 
 
@@ -133,18 +146,20 @@ class ModelConfig:
         architecture: Architecture pattern for matching
         static_batching_configs: List of static batching configurations
         continuous_batching_configs: List of continuous batching configurations
-        device_configs: Device-specific configurations keyed by TP size (only for CB)
+            (each may have its own device_config)
     """
 
     name: str
     architecture: ArchitecturePattern
     static_batching_configs: list[StaticBatchingConfig] = field(default_factory=list)
     continuous_batching_configs: list[ContinuousBatchingConfig] = field(default_factory=list)
-    device_configs: dict[int, DeviceConfig] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, name: str, data: dict[str, Any]) -> "ModelConfig":
         """Create ModelConfig from dictionary (typically from YAML).
+
+        Note: YAML anchors are resolved by PyYAML before this method,
+        so device_config references appear as regular dictionaries.
 
         Args:
             name: Model name
@@ -156,35 +171,45 @@ class ModelConfig:
         # Parse architecture (pass model name for better logging)
         architecture = ArchitecturePattern.from_dict(name, data["architecture"])
 
-        # Parse supported configs - separate into static and continuous batching
+        # Parse static batching configs
         static_configs = []
+        for cfg in data.get("static_batching_configs", []):
+            static_configs.append(StaticBatchingConfig.from_dict(cfg))
+
+        # Parse continuous batching configs (with nested device configs)
         continuous_configs = []
+        for cfg in data.get("continuous_batching_configs", []):
+            continuous_configs.append(ContinuousBatchingConfig.from_dict(cfg))
 
-        for cfg in data.get("supported_configs", []):
-            if "warmup_shapes" in cfg:
-                # Static batching config
-                static_configs.append(StaticBatchingConfig.from_dict(cfg))
-            elif "max_model_len" in cfg and "max_num_seqs" in cfg:
-                # Continuous batching config
-                continuous_configs.append(ContinuousBatchingConfig.from_dict(cfg))
-            else:
+        # Validate no duplicate CB configs
+        cb_signatures = set()
+        for cfg in continuous_configs:
+            signature = (cfg.tp_size, cfg.max_model_len, cfg.max_num_seqs)
+            if signature in cb_signatures:
                 raise ValueError(
-                    f"Invalid config for model {name}: must have either 'warmup_shapes' "
-                    f"(static batching) or 'max_model_len' and 'max_num_seqs' (continuous batching)"
+                    f"Duplicate runtime configuration for model '{name}': "
+                    f"tp_size={cfg.tp_size}, max_model_len={cfg.max_model_len}, "
+                    f"max_num_seqs={cfg.max_num_seqs}"
                 )
+            cb_signatures.add(signature)
 
-        # Parse device configs (only relevant for continuous batching)
-        device_configs = {}
-        for tp_size_str, device_data in data.get("device_configs", {}).items():
-            tp_size = int(tp_size_str)
-            device_configs[tp_size] = DeviceConfig.from_dict(tp_size, device_data)
+        # Validate no duplicate static configs
+        static_signatures = set()
+        for cfg in static_configs:
+            # Sort warmup shapes for comparison (order shouldn't matter)
+            signature = (cfg.tp_size, tuple(sorted(cfg.warmup_shapes)))
+            if signature in static_signatures:
+                raise ValueError(
+                    f"Duplicate runtime configuration for model '{name}': "
+                    f"tp_size={cfg.tp_size}, warmup_shapes={cfg.warmup_shapes}"
+                )
+            static_signatures.add(signature)
 
         return cls(
             name=name,
             architecture=architecture,
             static_batching_configs=static_configs,
             continuous_batching_configs=continuous_configs,
-            device_configs=device_configs,
         )
 
 

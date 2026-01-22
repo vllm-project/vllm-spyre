@@ -24,8 +24,8 @@ class ConfigurationSummary:
         model_name: Name of the model being configured
         tp_size: Tensor parallel size
         env_vars: Dictionary of environment variables that were checked/set
-        num_blocks: GPU blocks override value, if configured
-        chunk_size: Chunked prefill max_num_batched_tokens, if configured
+        num_blocks: num_gpu_blocks_override value, if configured
+        chunk_size: max_num_batched_tokens for Chunked Prefill, if configured
     """
 
     model_name: str
@@ -46,13 +46,15 @@ class ModelConfigurator:
     All features are optional and driven by the device_config in YAML.
     """
 
-    def __init__(self, model_config: "ModelConfig"):
-        """Initialize configurator with model configuration.
+    def __init__(self, model_config: "ModelConfig", device_config: "DeviceConfig | None" = None):
+        """Initialize configurator with model configuration and optional device config.
 
         Args:
             model_config: The model configuration to use
+            device_config: Optional device configuration (from matching CB config)
         """
         self.model_config = model_config
+        self.device_config = device_config
 
     def configure(self, vllm_config: "VllmConfig") -> ConfigurationSummary:
         """Apply device configurations.
@@ -64,14 +66,13 @@ class ModelConfigurator:
             ConfigurationSummary with all configuration settings checked/applied
         """
         tp_size = vllm_config.parallel_config.world_size
-        device_config = self.get_device_config(tp_size)
 
         summary = ConfigurationSummary(
             model_name=self.model_config.name,
             tp_size=tp_size,
         )
 
-        if device_config is None:
+        if self.device_config is None:
             logger.debug(
                 "No device configuration for model '%s' with TP=%d",
                 self.model_config.name,
@@ -80,17 +81,17 @@ class ModelConfigurator:
             return summary
 
         # Apply environment variables and track them
-        for key, value in device_config.env_vars.items():
+        for key, value in self.device_config.env_vars.items():
             self.set_env_var(key, value, override=False)
             summary.env_vars[key] = str(value)
 
         # Handle num_gpu_blocks_override with version check
-        blocks_override = self._configure_gpu_blocks(device_config, vllm_config, tp_size)
+        blocks_override = self._configure_gpu_blocks(self.device_config, vllm_config)
         if blocks_override is not None:
             summary.num_blocks = blocks_override
 
         # Handle chunked prefill configuration
-        cp_tokens = self._configure_chunked_prefill(device_config, vllm_config, tp_size)
+        cp_tokens = self._configure_chunked_prefill(self.device_config, vllm_config)
         if cp_tokens is not None:
             summary.chunk_size = cp_tokens
 
@@ -137,29 +138,15 @@ class ModelConfigurator:
         log_func("Set %s = %s", key, str_value)
         return True
 
-    def get_device_config(self, tp_size: int) -> "DeviceConfig | None":
-        """Get device configuration for tensor parallel size.
-
-        Args:
-            tp_size: Tensor parallel size
-
-        Returns:
-            DeviceConfig if available for this TP size, None otherwise
-        """
-        return self.model_config.device_configs.get(tp_size)
-
-    def _configure_gpu_blocks(
-        self, device_config, vllm_config: "VllmConfig", tp_size: int
-    ) -> int | None:
+    def _configure_gpu_blocks(self, device_config, vllm_config: "VllmConfig") -> int | None:
         """Configure GPU blocks with optional version-aware logic.
 
         Args:
             device_config: Device configuration containing block override settings
             vllm_config: The vLLM configuration to modify
-            tp_size: Tensor parallel size
 
         Returns:
-            The GPU blocks override value that was configured, or None if not configured
+            The num blocks override value that was configured, or None if not configured
 
         Raises:
             RuntimeError: If VLLM_SPYRE_REQUIRE_KNOWN_CONFIG is set and user override conflicts
@@ -170,7 +157,7 @@ class ModelConfigurator:
 
         # Determine which override to use
         if isinstance(blocks_config, int):
-            blocks_override = blocks_config
+            num_blocks_override = blocks_config
         else:
             # Version-aware selection for torch_sendnn
             from vllm_spyre.platform import SpyrePlatform
@@ -181,43 +168,44 @@ class ModelConfigurator:
                 and sendnn_version is not None
                 and (0, 0, 0) < sendnn_version < (1, 0, 3)
             ):
-                blocks_override = blocks_config.get("torch_sendnn_lt_1_0_3")
+                num_blocks_override = blocks_config.get("torch_sendnn_lt_1_0_3")
             else:
-                blocks_override = blocks_config.get("default")
+                num_blocks_override = blocks_config.get("default")
 
-        if blocks_override is None:
+        if num_blocks_override is None:
             return None
 
         # Apply override if not already set
         if vllm_config.cache_config.num_gpu_blocks_override is None:
-            vllm_config.cache_config.num_gpu_blocks_override = blocks_override
+            vllm_config.cache_config.num_gpu_blocks_override = num_blocks_override
             logger.debug(
-                "Set num_gpu_blocks_override=%d for model %s with TP=%d",
-                blocks_override,
+                "Set num_gpu_blocks_override=%d for model %s",
+                num_blocks_override,
                 self.model_config.name,
-                tp_size,
             )
-            return blocks_override
-        elif vllm_config.cache_config.num_gpu_blocks_override != blocks_override:
+            return num_blocks_override
+        elif vllm_config.cache_config.num_gpu_blocks_override != num_blocks_override:
             user_value = vllm_config.cache_config.num_gpu_blocks_override
             if envs_spyre.VLLM_SPYRE_REQUIRE_KNOWN_CONFIG:
                 raise RuntimeError(
-                    f"Model '{self.model_config.name}' with TP={tp_size} requires "
-                    f"num_gpu_blocks_override={blocks_override}, but user set "
+                    f"Expected runtime config for '{self.model_config.name}' requires "
+                    f"num_gpu_blocks_override={num_blocks_override}, but user set "
                     f"--num-gpu-blocks-override={user_value}. "
                     f"VLLM_SPYRE_REQUIRE_KNOWN_CONFIG is enabled."
                 )
             logger.warning(
                 "--num-gpu-blocks-override was set to %d, not using model default of %d",
                 user_value,
-                blocks_override,
+                num_blocks_override,
             )
-            return blocks_override
+            return num_blocks_override
 
-        return blocks_override
+        return num_blocks_override
 
     def _configure_chunked_prefill(
-        self, device_config, vllm_config: "VllmConfig", tp_size: int
+        self,
+        device_config,
+        vllm_config: "VllmConfig",
     ) -> int | None:
         """Configure chunked prefill settings if present.
 
@@ -242,10 +230,9 @@ class ModelConfigurator:
         max_batched_tokens = cp_config.get("max_num_batched_tokens")
         if max_batched_tokens:
             logger.debug(
-                "Set max_num_batched_tokens=%d for model %s with TP=%d (chunked prefill)",
+                "Set max_num_batched_tokens=%d for model %s (chunked prefill)",
                 max_batched_tokens,
                 self.model_config.name,
-                tp_size,
             )
             vllm_config.scheduler_config.max_num_batched_tokens = max_batched_tokens
             return max_batched_tokens

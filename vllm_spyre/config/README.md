@@ -51,31 +51,30 @@ models:
       model_type: llama  # Required: HF model type
       num_hidden_layers: 32  # Optional: for precise matching
       vocab_size: 128256  # Optional: for precise matching
-      # Add other HF config attributes as needed
 
-    supported_configs:
-      # Continuous batching configuration
-      - cb: true
-        tp_size: 1
+    # Static batching configuration (if supported)
+    static_batching_configs:
+      - tp_size: 1
+        warmup_shapes: [[2048, 1024, 16]]  # [prompt_len, new_tokens, batch_size]
+
+    # Continuous batching configuration (if supported)
+    continuous_batching_configs:
+      - tp_size: 1
         max_model_len: 8192
         max_num_seqs: 16
 
-      # Static batching configuration
-      - cb: false
-        tp_size: 1
-        warmup_shapes: [[2048, 1024, 16]]  # [prompt_len, new_tokens, batch_size]
-
-    # Optional: device-specific configurations
-    device_configs:
-      4:  # Tensor parallel size 4
-        env_vars:
-          VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072
-          FLEX_HDMA_P2PSIZE: 268435456
-        num_gpu_blocks_override:
-          torch_sendnn_lt_1_0_3: 2080  # Version-specific override
-          default: 8192
-        chunked_prefill_config:
-          max_num_batched_tokens: 1024
+      # With device config for TP=4
+      - tp_size: 4
+        max_model_len: 32768
+        max_num_seqs: 32
+        device_config:  # Optional: nested device configuration
+          env_vars:
+            VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072
+          num_gpu_blocks_override:
+            torch_sendnn_lt_1_0_3: 2080
+            default: 8192
+          chunked_prefill_config:
+            max_num_batched_tokens: 1024
 ```
 
 **That's it!** No code changes needed for most models.
@@ -98,85 +97,109 @@ architecture:
   num_experts_per_tok: 0       # Optional: for MoE models
 ```
 
-### Runtime Configurations
+### Static Batching Configurations
 
-Defines supported runtime modes (continuous batching or static batching):
+For models that support static batching (fixed batch sizes):
 
 ```yaml
-supported_configs:
-  # Continuous batching mode
-  - cb: true
-    tp_size: 4
-    max_model_len: 32768
-    max_num_seqs: 32
-
-  # Static batching mode
-  - cb: false
-    tp_size: 1
+static_batching_configs:
+  - tp_size: 1
     warmup_shapes:
-      - [2048, 1024, 16]  # prompt_length, new_tokens, batch_size
+      - [2048, 1024, 16]  # [prompt_length, new_tokens, batch_size]
       - [4096, 512, 8]
+  - tp_size: 4
+    warmup_shapes:
+      - [6144, 2048, 1]
 ```
 
-### Device Configurations
+### Continuous Batching Configurations
 
-Optional device-specific settings keyed by tensor parallel size:
+For models that support continuous batching. Each configuration can optionally include a nested `device_config`:
 
 ```yaml
-device_configs:
-  4:  # TP size 4
-    # Environment variables to set
+continuous_batching_configs:
+  # Simple config without device overrides
+  - tp_size: 1
+    max_model_len: 3072
+    max_num_seqs: 16
+
+  # Config with device-specific settings
+  - tp_size: 4
+    max_model_len: 32768
+    max_num_seqs: 32
+    device_config:  # Optional, nested device configuration
+      env_vars:
+        VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072
+        FLEX_HDMA_P2PSIZE: 268435456
+      num_gpu_blocks_override:
+        torch_sendnn_lt_1_0_3: 2080
+        default: 8192
+      chunked_prefill_config:
+        max_num_batched_tokens: 1024
+```
+
+### Device Configuration Templates (YAML Anchors)
+
+To reduce verbosity, define reusable device configs as YAML anchors:
+
+```yaml
+device_config_templates:
+  granite_8b_tp4_device_config: &granite_8b_tp4_device_config
     env_vars:
       VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072
       FLEX_HDMA_P2PSIZE: 268435456
-
-    # GPU block override (simple or version-aware)
-    num_gpu_blocks_override: 8192  # Simple override
-    # OR
     num_gpu_blocks_override:
-      torch_sendnn_lt_1_0_3: 2080  # For torch_sendnn < 1.0.3
-      default: 8192                 # For other versions
-
-    # Chunked prefill configuration
+      default: 8192
     chunked_prefill_config:
       max_num_batched_tokens: 1024
+
+models:
+  ibm-granite/granite-3.3-8b-instruct:
+    continuous_batching_configs:
+      - tp_size: 4
+        max_model_len: 32768
+        max_num_seqs: 32
+        device_config: *granite_8b_tp4_device_config  # Reference the anchor
 ```
 
 ## How It Works
 
-### 1. Model Matching
+### 1. Model Matching and Runtime Config Verification
 
 When vLLM loads a model, the registry:
 1. Extracts the HuggingFace config
 2. Compares it against all registered architecture patterns
-3. Finds the matching model configuration
+3. Verifies there's a supported runtime configuration matching the runtime parameters:
+   - For continuous batching: TP size, max_model_len, and max_num_seqs
+   - For static batching: TP size AND warmup shapes must match
+4. Returns a configurator with the appropriate device_config (if any)
 
 ```python
 # In platform.py
 from vllm_spyre.config.model_registry import get_model_registry
 
 registry = get_model_registry()
-model_name = registry.find_matching_model(model_config)
+# For static batching, pass warmup shapes for validation
+warmup_shapes = cls._warmup_shapes if not envs_spyre.VLLM_SPYRE_USE_CB else None
+configurator = registry.get_configurator_for_runtime(vllm_config, warmup_shapes)
 ```
 
 ### 2. Configuration Application
 
 Once matched, the configurator:
-1. Gets the device config for the current TP size
-2. Applies environment variables
-3. Configures GPU blocks (with version awareness)
-4. Sets up chunked prefill (if applicable)
+1. Applies environment variables from the device_config
+2. Configures GPU blocks (with version awareness)
+3. Sets up chunked prefill (if applicable)
 
 ```python
-if model_name:
-    configurator = registry.get_configurator(model_name)
-    configurator.configure(vllm_config)
+if configurator:
+    config_summary = configurator.configure(vllm_config)
 ```
 
 ### 3. Optional Features
 
 All device configuration features are optional:
-- **No device_configs**: Model works with defaults
+- **No device_config**: Model works with defaults
 - **No env_vars**: No environment variables set
 - **No num_gpu_blocks_override**: Uses vLLM's default calculation
 - **No chunked_prefill_config**: Uses command-line settings
@@ -190,43 +213,42 @@ from vllm_spyre.config.model_registry import get_model_registry
 
 registry = get_model_registry()
 
-# Find model by HF config
+# Get configurator for runtime (recommended - does matching and verification)
+# For static batching, pass warmup_shapes for validation
+warmup_shapes = get_warmup_shapes()  # from platform
+configurator = registry.get_configurator_for_runtime(vllm_config, warmup_shapes)
+
+# Find model by HF config (lower-level)
 model_name = registry.find_matching_model(vllm_model_config)
-
-# Get model configuration
-model_config = registry.get_model_config(model_name)
-
-# Get configurator
-configurator = registry.get_configurator(model_name)
 
 # List all registered models
 models = registry.list_models()
 ```
 
-### DefaultConfigurator
+### ModelConfigurator
 
 The universal configurator handles all models:
 
 ```python
-class DefaultConfigurator(ModelConfigurator):
-    def configure(self, vllm_config: VllmConfig) -> None:
-        """Apply device configurations"""
+class ModelConfigurator:
+    def __init__(self, model_config: ModelConfig, device_config: DeviceConfig | None = None):
+        """Initialize with model config and optional device config"""
 
-    def _configure_gpu_blocks(self, device_config, vllm_config, tp_size) -> None:
+    def configure(self, vllm_config: VllmConfig) -> ConfigurationSummary:
+        """Apply device configurations and return summary"""
+
+    def _configure_gpu_blocks(self, device_config, vllm_config, tp_size) -> int | None:
         """Configure GPU blocks with version-aware logic"""
 
-    def _configure_chunked_prefill(self, device_config, vllm_config, tp_size) -> None:
+    def _configure_chunked_prefill(self, device_config, vllm_config, tp_size) -> int | None:
         """Configure chunked prefill settings"""
 ```
 
-Helper methods from base class:
+Helper methods:
 
 ```python
 # Set environment variable with logging
 self.set_env_var("KEY", "value", override=False)
-
-# Get device config for TP size
-device_config = self.get_device_config(tp_size)
 ```
 
 ## Migration from Legacy Code
@@ -244,14 +266,17 @@ def configure_granite_3_8b(cls, vllm_config: VllmConfig):
     # ... more hard-coded logic
 ```
 
-### After (Declarative YAML)
+### After (Declarative YAML with Nested Device Config)
 
 ```yaml
 ibm-granite/granite-3.3-8b-instruct:
-  device_configs:
-    4:
-      env_vars:
-        VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072
+  continuous_batching_configs:
+    - tp_size: 4
+      max_model_len: 32768
+      max_num_seqs: 32
+      device_config:
+        env_vars:
+          VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072
 ```
 
 ## Benefits
@@ -301,41 +326,52 @@ sentence-transformers/all-roberta-large-v1:
     num_hidden_layers: 24
     vocab_size: 50265
 
-  supported_configs:
-    - cb: false
-      tp_size: 1
+  static_batching_configs:
+    - tp_size: 1
       warmup_shapes: [[128, 0, 8]]
 ```
 
-### Complex Generation Model
+### Complex Generation Model with Device Config
 
 ```yaml
-ibm-granite/granite-3.3-8b-instruct:
-  architecture:
-    model_type: granite
-    num_hidden_layers: 40
-    max_position_embeddings: 131072
-    hidden_size: 4096
-    vocab_size: 49159
-    num_key_value_heads: 8
-    num_attention_heads: 32
+# Define reusable device config template
+device_config_templates:
+  granite_8b_tp4_device_config: &granite_8b_tp4_device_config
+    env_vars:
+      VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072
+      FLEX_HDMA_P2PSIZE: 268435456
+      FLEX_HDMA_COLLSIZE: 33554432
+    num_gpu_blocks_override:
+      torch_sendnn_lt_1_0_3: 2080
+      default: 8192
+    chunked_prefill_config:
+      max_num_batched_tokens: 1024
 
-  supported_configs:
-    - cb: true
-      tp_size: 4
-      max_model_len: 32768
-      max_num_seqs: 32
+models:
+  ibm-granite/granite-3.3-8b-instruct:
+    architecture:
+      model_type: granite
+      num_hidden_layers: 40
+      max_position_embeddings: 131072
+      hidden_size: 4096
+      vocab_size: 49159
+      num_key_value_heads: 8
+      num_attention_heads: 32
 
-  device_configs:
-    4:
-      env_vars:
-        VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072
-        FLEX_HDMA_P2PSIZE: 268435456
-      num_gpu_blocks_override:
-        torch_sendnn_lt_1_0_3: 2080
-        default: 8192
-      chunked_prefill_config:
-        max_num_batched_tokens: 1024
+    static_batching_configs:
+      - tp_size: 1
+        warmup_shapes: [[2048, 1024, 16]]
+      - tp_size: 4
+        warmup_shapes: [[6144, 2048, 1]]
+
+    continuous_batching_configs:
+      - tp_size: 1
+        max_model_len: 3072
+        max_num_seqs: 16
+      - tp_size: 4
+        max_model_len: 32768
+        max_num_seqs: 32
+        device_config: *granite_8b_tp4_device_config  # Reference anchor
 ```
 
 ## Troubleshooting

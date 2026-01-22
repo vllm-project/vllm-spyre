@@ -10,9 +10,10 @@ from vllm_spyre.config.model_config import ModelConfig
 from vllm_spyre.config.model_matcher import ModelMatcher
 
 if TYPE_CHECKING:
-    from vllm.config import ModelConfig as VllmModelConfig
+    from vllm.config import ModelConfig as VllmModelConfig, VllmConfig
 
     from vllm_spyre.config.configurators.model_configurator import ModelConfigurator
+    from vllm_spyre.config.model_config import DeviceConfig
 
 logger = init_logger(__name__)
 
@@ -154,34 +155,171 @@ class ModelConfigRegistry:
         logger.debug("No matching model configuration found for '%s'", vllm_model_config.model)
         return None
 
-    def get_configurator(self, model_name: str) -> "ModelConfigurator":
-        """Get or create configurator for a model.
+    def get_configurator_for_runtime(
+        self,
+        vllm_config: "VllmConfig",
+        warmup_shapes: list[tuple[int, int, int]] | None = None,
+    ) -> "ModelConfigurator | None":
+        """Get configurator for a model with runtime-specific device config.
+
+        This method:
+        1. Finds the matching model by HF config
+        2. Verifies there's a supported runtime configuration
+        3. Finds the appropriate device_config (if any) for the runtime parameters
+        4. Returns a configurator (possibly with no device_config if none matches)
+
+        A registry match requires BOTH:
+        - Model architecture pattern match
+        - Runtime config (static or continuous batching) matching the runtime params
 
         Args:
-            model_name: Name of the model
+            vllm_config: vLLM configuration containing model and runtime parameters
+            warmup_shapes: Optional warmup shapes for static batching validation
 
         Returns:
-            ModelConfigurator instance for the model
-
-        Raises:
-            ValueError: If model is not registered
+            ModelConfigurator instance if model matches AND has supported runtime config,
+            None if no model match OR no supported runtime config
         """
-        if model_name in self._configurators:
-            return self._configurators[model_name]
+        model_name = self.find_matching_model(vllm_config.model_config)
+        if model_name is None:
+            logger.debug("No model architecture match found")
+            return None
 
         model_config = self.get_model_config(model_name)
         if model_config is None:
-            raise ValueError(f"Model '{model_name}' not registered")
+            return None
 
-        configurator = self._create_configurator(model_config)
-        self._configurators[model_name] = configurator
-        return configurator
+        has_runtime_match, device_config = self._find_runtime_match_and_device_config(
+            model_config, vllm_config, warmup_shapes
+        )
 
-    def _create_configurator(self, model_config: ModelConfig) -> "ModelConfigurator":
+        if not has_runtime_match:
+            logger.warning(
+                "Model '%s' registered but does support the requested runtime configuration",
+                model_name,
+            )
+            return None
+
+        return self._create_configurator(model_config, device_config)
+
+    def _find_runtime_match_and_device_config(
+        self,
+        model_config: ModelConfig,
+        vllm_config: "VllmConfig",
+        warmup_shapes: list[tuple[int, int, int]] | None = None,
+    ) -> tuple[bool, "DeviceConfig | None"]:
+        """Find matching runtime config and associated device config.
+
+        This method searches for a runtime configuration that matches the current
+        vLLM configuration. For continuous batching configs, it also extracts the
+        associated device_config if present.
+
+        Args:
+            model_config: Model configuration
+            vllm_config: vLLM configuration
+            warmup_shapes: Optional warmup shapes for static batching validation
+
+        Returns:
+            Tuple of (has_match, device_config) where:
+            - has_match: True if a supported runtime config exists
+            - device_config: Associated device config, or None
+        """
+        tp_size = vllm_config.parallel_config.world_size
+        max_model_len = vllm_config.model_config.max_model_len
+        max_num_seqs = vllm_config.scheduler_config.max_num_seqs
+
+        # Check continuous batching configs first (they can have device configs)
+        cb_result = self._match_cb_config(model_config, tp_size, max_model_len, max_num_seqs)
+        if cb_result is not None:
+            return cb_result
+
+        # Check static batching configs
+        if warmup_shapes and any(
+            sb_config.tp_size == tp_size
+            and self._warmup_shapes_compatible(sb_config.warmup_shapes, warmup_shapes)
+            for sb_config in model_config.static_batching_configs
+        ):
+            logger.debug(
+                "Found static batching config for model '%s' with TP=%d"
+                "and compatible warmup shapes",
+                model_config.name,
+                tp_size,
+            )
+            # no device config for static batching
+            return True, None
+
+        return False, None
+
+    def _match_cb_config(
+        self,
+        model_config: ModelConfig,
+        tp_size: int,
+        max_model_len: int,
+        max_num_seqs: int,
+    ) -> tuple[bool, "DeviceConfig | None"] | None:
+        """Match continuous batching configuration.
+
+        Args:
+            model_config: Model configuration
+            tp_size: Tensor parallel size
+            max_model_len: Maximum model length
+            max_num_seqs: Maximum number of sequences
+
+        Returns:
+            Tuple of (has_match, device_config) if match found, None otherwise
+        """
+        for cb_config in model_config.continuous_batching_configs:
+            if (
+                cb_config.tp_size != tp_size
+                or cb_config.max_model_len != max_model_len
+                or cb_config.max_num_seqs != max_num_seqs
+            ):
+                continue
+
+            logger.debug(
+                "Found continuous batching config match for model '%s' "
+                "(TP=%d, max_model_len=%d, max_num_seqs=%d)",
+                model_config.name,
+                tp_size,
+                max_model_len,
+                max_num_seqs,
+            )
+            return True, cb_config.device_config
+
+        return None
+
+    def _warmup_shapes_compatible(
+        self, config_shapes: list[tuple[int, int, int]], runtime_shapes: list[tuple[int, int, int]]
+    ) -> bool:
+        """Check if runtime warmup shapes are compatible with config warmup shapes.
+
+        Runtime shapes are compatible if they are a subset of config shapes.
+
+        Args:
+            config_shapes: Warmup shapes from model config
+                [(prompt_len, new_tokens, batch_size), ...]
+            runtime_shapes: Warmup shapes from runtime
+                [(prompt_len, new_tokens, batch_size), ...]
+
+        Returns:
+            True if all runtime shapes are in config shapes
+        """
+        if not runtime_shapes:
+            return False
+
+        # Runtime shapes must be a subset of config shapes
+        config_set = set(config_shapes)
+        runtime_set = set(runtime_shapes)
+        return runtime_set.issubset(config_set)
+
+    def _create_configurator(
+        self, model_config: ModelConfig, device_config: "DeviceConfig | None" = None
+    ) -> "ModelConfigurator":
         """Create configurator instance.
 
         Args:
             model_config: Model configuration
+            device_config: Optional device configuration
 
         Returns:
             ModelConfigurator instance
@@ -189,7 +327,7 @@ class ModelConfigRegistry:
         from vllm_spyre.config.configurators.model_configurator import ModelConfigurator
 
         logger.debug("Creating configurator for model %s", model_config.name)
-        return ModelConfigurator(model_config)
+        return ModelConfigurator(model_config, device_config)
 
     def list_models(self) -> list[str]:
         """List all registered model names.

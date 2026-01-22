@@ -212,10 +212,20 @@ class SpyrePlatform(Platform):
             from vllm_spyre.config.model_registry import get_model_registry
 
             registry = get_model_registry()
-            model_name = registry.find_matching_model(model_config)
 
-            if model_name:
-                configurator = registry.get_configurator(model_name)
+            # For static batching, pass warmup shapes for validation
+
+            warmup_shape_tuples = (
+                [
+                    (ws["prompt_length"], ws["new_tokens"], ws["batch_size"])
+                    for ws in cls._warmup_shapes
+                ]
+                if cls._warmup_shapes and not envs_spyre.VLLM_SPYRE_USE_CB
+                else None
+            )
+            configurator = registry.get_configurator_for_runtime(vllm_config, warmup_shape_tuples)
+
+            if configurator:
                 config_summary = configurator.configure(vllm_config)
 
                 # Format summary for logging
@@ -233,7 +243,7 @@ class SpyrePlatform(Platform):
                 )
                 logger.info(
                     "Applied registry configuration for '%s' (TP=%d): %s",
-                    model_name,
+                    config_summary.model_name,
                     config_summary.tp_size,
                     summary_str,
                 )

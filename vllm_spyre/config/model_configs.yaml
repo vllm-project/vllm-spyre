@@ -3,10 +3,23 @@
 #
 # Each model entry contains:
 # - architecture: Pattern for matching HuggingFace model configs
-# - supported_configs: List of runtime configurations
-#   - Static batching configs: Must have 'warmup_shapes'
-#   - Continuous batching configs: Must have 'max_model_len' and 'max_num_seqs'
-# - device_configs: Device-specific settings keyed by tensor parallel size (only for CB)
+# - static_batching_configs: List of static batching configurations (optional)
+# - continuous_batching_configs: List of continuous batching configurations (optional)
+#   - Each CB config may have a nested device_config for device-specific settings
+
+# Device configuration templates for reuse via YAML anchors
+device_config_templates:
+  # Template for TP=4 Granite 8B models
+  granite_8b_tp4_device_config: &granite_8b_tp4_device_config
+    env_vars:
+      VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072  # 128k
+      FLEX_HDMA_P2PSIZE: 268435456  # 256MB
+      FLEX_HDMA_COLLSIZE: 33554432  # 32MB
+    num_gpu_blocks_override:
+      torch_sendnn_lt_1_0_3: 2080
+      default: 8192
+    chunked_prefill_config:
+      max_num_batched_tokens: 1024
 
 models:
   # Granite 3.3 8B Instruct
@@ -20,15 +33,17 @@ models:
       num_key_value_heads: 8
       num_attention_heads: 32
 
-    supported_configs:
-      # Static batching configurations
+    # Static batching configurations
+    static_batching_configs:
       - tp_size: 1
         warmup_shapes: [[2048, 1024, 16]]
       - tp_size: 4
         warmup_shapes: [[6144, 2048, 1]]
       - tp_size: 4
         warmup_shapes: [[7168, 1024, 4]]
-      # Continuous batching configurations
+
+    # Continuous batching configurations
+    continuous_batching_configs:
       - tp_size: 1
         max_model_len: 3072
         max_num_seqs: 16
@@ -41,18 +56,7 @@ models:
       - tp_size: 4
         max_model_len: 32768
         max_num_seqs: 32
-
-    device_configs:
-      4:  # TP size 4
-        env_vars:
-          VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072  # 128k
-          FLEX_HDMA_P2PSIZE: 268435456  # 256MB
-          FLEX_HDMA_COLLSIZE: 33554432  # 32MB
-        num_gpu_blocks_override:
-          torch_sendnn_lt_1_0_3: 2080
-          default: 8192
-        chunked_prefill_config:
-          max_num_batched_tokens: 1024
+        device_config: *granite_8b_tp4_device_config
 
   # Granite 3.3 8B Instruct FP8
   ibm-granite/granite-3.3-8b-instruct-FP8:
@@ -62,29 +66,19 @@ models:
       quantization_config:
         format: float-quantized
 
-    supported_configs:
-      # Continuous batching configurations only
+    # Continuous batching configurations only
+    continuous_batching_configs:
       - tp_size: 1
         max_model_len: 3072
         max_num_seqs: 16
       - tp_size: 4
         max_model_len: 16384
         max_num_seqs: 4
+        device_config: *granite_8b_tp4_device_config
       - tp_size: 4
         max_model_len: 32768
         max_num_seqs: 32
-
-    device_configs:
-      4:
-        env_vars:
-          VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072
-          FLEX_HDMA_P2PSIZE: 268435456
-          FLEX_HDMA_COLLSIZE: 33554432  # 32MB
-        num_gpu_blocks_override:
-          torch_sendnn_lt_1_0_3: 2080
-          default: 8192
-        chunked_prefill_config:
-          max_num_batched_tokens: 1024
+        device_config: *granite_8b_tp4_device_config
 
   # Granite 4 8B Dense
   ibm-granite/granite-4-8b-dense:
@@ -98,15 +92,17 @@ models:
       num_key_value_heads: 8
       num_attention_heads: 32
 
-    supported_configs:
-      # Static batching configurations
+    # Static batching configurations
+    static_batching_configs:
       - tp_size: 1
         warmup_shapes: [[2048, 1024, 16]]
       - tp_size: 4
         warmup_shapes: [[6144, 2048, 1]]
       - tp_size: 4
         warmup_shapes: [[7168, 1024, 4]]
-      # Continuous batching configurations
+
+    # Continuous batching configurations
+    continuous_batching_configs:
       - tp_size: 1
         max_model_len: 3072
         max_num_seqs: 16
@@ -119,18 +115,7 @@ models:
       - tp_size: 4
         max_model_len: 32768
         max_num_seqs: 32
-
-    device_configs:
-      4:
-        env_vars:
-          VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072
-          FLEX_HDMA_P2PSIZE: 268435456
-          FLEX_HDMA_COLLSIZE: 33554432  # 32MB
-        num_gpu_blocks_override:
-          torch_sendnn_lt_1_0_3: 2080
-          default: 8192
-        chunked_prefill_config:
-          max_num_batched_tokens: 1024
+        device_config: *granite_8b_tp4_device_config
 
   # Embedding models (static batching only, no device configs needed)
   ibm-granite/granite-embedding-125m-english:
@@ -139,7 +124,7 @@ models:
       num_hidden_layers: 12
       vocab_size: 50265
 
-    supported_configs:
+    static_batching_configs:
       - tp_size: 1
         warmup_shapes: [[512, 0, 64]]
 
@@ -149,7 +134,7 @@ models:
       num_hidden_layers: 12
       vocab_size: 250002
 
-    supported_configs:
+    static_batching_configs:
       - tp_size: 1
         warmup_shapes: [[512, 0, 64]]
 
@@ -160,7 +145,7 @@ models:
       num_hidden_layers: 24
       vocab_size: 250002
 
-    supported_configs:
+    static_batching_configs:
       - tp_size: 1
         warmup_shapes: [[512, 0, 64]]
 
@@ -171,7 +156,7 @@ models:
       num_hidden_layers: 24
       vocab_size: 250002
 
-    supported_configs:
+    static_batching_configs:
       - tp_size: 1
         warmup_shapes: [[8192, 0, 1]]
 
@@ -182,7 +167,7 @@ models:
       num_hidden_layers: 24
       vocab_size: 250002
 
-    supported_configs:
+    static_batching_configs:
       - tp_size: 1
         warmup_shapes: [[512, 0, 64]]
 
@@ -192,7 +177,7 @@ models:
       num_hidden_layers: 24
       vocab_size: 50265
 
-    supported_configs:
+    static_batching_configs:
       - tp_size: 1
         warmup_shapes: [[128, 0, 8]]
 
