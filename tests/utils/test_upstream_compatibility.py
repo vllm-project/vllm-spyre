@@ -118,3 +118,12 @@ def test_set_random_seed():
                 "Backwards compatibility code for set_random_seed "
                 "import no longer required"
             ) from e
+
+
+def test_enable_caching():
+    if VLLM_VERSION == "vLLM:lowest":
+        # Can supply enable_caching everywhere, added in v0.14.0
+        assert not has_argument(FullAttentionManager.__init__, "enable_caching"), (
+            "Backwards compatibility code for enable_caching parameter "
+            "in FullAttentionManager no longer required"
+        )

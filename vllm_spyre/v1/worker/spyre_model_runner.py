@@ -919,19 +919,24 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             **kwargs,
         )
 
-        kv_cache_manager = FullAttentionManager(
-            kv_cache_spec=self._attn_spec,
-            block_pool=self.block_pool,
-            enable_caching=self.enable_prefix_caching,
+        # Enable_caching parameter added in vllm v0.14.0
+        kwargs = {
+            "kv_cache_spec": self._attn_spec,
+            "block_pool": self.block_pool,
             # Currently don't support models with more than one
             # attention type, e.g. full and sliding window, so
             # there is only one group.
-            kv_cache_group_id=0,
+            "kv_cache_group_id": 0,
             # We don't support DCP
             # https://docs.vllm.ai/en/latest/serving/context_parallel_deployment/#decode-context-parallel
-            dcp_world_size=1,
-        )
-        return kv_cache_manager
+            "dcp_world_size": 1,
+        }
+
+        # Conditionally add param for vLLM >= 0.14.0
+        if has_argument(FullAttentionManager.__init__, "enable_caching"):
+            kwargs["enable_caching"] = self.enable_prefix_caching
+
+        return FullAttentionManager(**kwargs)
 
     def _get_blocks(self, request_id: str) -> list[KVCacheBlock]:
         return self.kv_cache_manager.req_to_blocks[request_id]
