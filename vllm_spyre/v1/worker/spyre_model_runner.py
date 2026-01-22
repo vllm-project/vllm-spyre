@@ -73,7 +73,8 @@ logger = init_logger(__name__)
 
 @dataclass(frozen=True)
 class ModelForwardInputs:
-    input_tokens: torch.Tensor
+    input_tokens: torch.Tensor | None  # For non multimodal
+    input_embeds: torch.Tensor | None  # For multimodal
     input_positions: torch.Tensor
     input_masks: torch.Tensor | None  # pooling and static batching only
     is_prompt: bool
@@ -186,6 +187,23 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
     def model(self) -> SpyreCausalLM:
         assert self._model is not None, "model accessed before loading"
         return self._model
+
+    @property
+    def is_multimodal(self) -> bool:
+        """Indicates whether or not a model is multimodal.
+        This should not be called until after the model is loaded.
+        """
+        if not hasattr(self, "model"):
+            raise AssertionError("Cannot check if models are multimodal before loading!")
+        return bool(getattr(self.model, "is_multimodal", False))
+
+    def get_mm_utils(self):
+        """If the [loaded] model is multimodal, grab the instance of
+        the mm utils for the corresponding wrapper class.
+        """
+        if not self.is_multimodal:
+            return None
+        return self.model.mm_model_utils
 
     @abstractmethod
     def load_model(self, prompt_lens: Iterable[int], num_decode_tokens: Iterable[int]) -> None:
@@ -360,8 +378,10 @@ class SpyreModelRunner(
 
     @property
     def vocab_size(self) -> int:
-        # TODO: fix the typing here?
-        return self.model.model.model.config.src_vocab_size  # ty: ignore[invalid-return-type]
+        model_cfg = self.model.model.model.config
+        if self.model.is_multimodal:
+            return self.model.mm_model_utils.resolve_multimodal_vocab_size()
+        return model_cfg.src_vocab_size  # ty: ignore[invalid-return-type]
 
     def pad_input_ids(
         self,
@@ -523,13 +543,13 @@ class SpyreModelRunner(
     def prepare_model_input(self, scheduler_output: SchedulerOutput) -> SamplingForwardInputs:
         # NOTE: We assume that all sequences in the group are all prompts or
         # all decodes. Also assuming that new sequences are prefills
-        is_prompt = len(scheduler_output.scheduled_new_reqs) > 0
 
+        is_prompt = len(scheduler_output.scheduled_new_reqs) > 0
         # Prepare input tensors.
         if is_prompt:
             # Assert no running requests
             assert len(scheduler_output.scheduled_cached_reqs.req_ids) == 0
-
+            # NOTE: This will encode multimodal features if we have them
             return self._prepare_prompt(scheduler_output.scheduled_new_reqs)
         else:
             return self._prepare_decode(scheduler_output.scheduled_cached_reqs)
@@ -561,11 +581,18 @@ class SpyreModelRunner(
 
         model_input = self.prepare_model_input(scheduler_output)
 
-        # Execute the model
         attn_metadata = self.build_attn_metadata(model_input)
+        # Embeddings take priority [used by multimodal models only]
+        input_ids_or_embeds = (
+            model_input.input_embeds
+            if model_input.input_embeds is not None
+            else model_input.input_tokens
+        )
+
+        # Execute the model
         with set_forward_context(attn_metadata, self.vllm_config):
             logits = self.model(
-                input_ids=model_input.input_tokens,
+                input_ids_or_embeds=input_ids_or_embeds,
                 positions=model_input.input_positions,
                 masks=model_input.input_masks,
                 is_prompt=model_input.is_prompt,
@@ -700,6 +727,8 @@ class StaticBatchingSpyreModelRunner(WarmupShapesMixin, SpyreModelRunner):
         for request_data in new_requests:
             # retrieve initial (unpadded) tokens
             prompt_tokens = request_data.prompt_token_ids
+            # Empty list for non multimodal requests
+            mm_features = getattr(request_data, "mm_features", None)
 
             input_token_list.append(
                 torch.tensor(prompt_tokens, dtype=torch.long, device=torch.device("cpu"))
@@ -717,6 +746,7 @@ class StaticBatchingSpyreModelRunner(WarmupShapesMixin, SpyreModelRunner):
             req_state = SamplingRequestState(
                 req_id=req_id,
                 prompt_token_ids=request_data.prompt_token_ids,  # ty: ignore[invalid-argument-type]
+                mm_features=mm_features if mm_features else None,
                 sampling_params=sampling_params,  # ty: ignore[invalid-argument-type]
                 generator=generator,
                 output_token_ids=[],
@@ -743,6 +773,7 @@ class StaticBatchingSpyreModelRunner(WarmupShapesMixin, SpyreModelRunner):
 
         model_input = SamplingForwardInputs(
             input_tokens=input_tokens,
+            input_embeds=None,
             input_positions=self._position_ids,
             input_masks=self._mask,
             is_prompt=True,
@@ -763,6 +794,9 @@ class StaticBatchingSpyreModelRunner(WarmupShapesMixin, SpyreModelRunner):
         self,
         cached_request_data: CachedRequestData,
     ) -> SamplingForwardInputs:
+        # TODO - ensure multimodal features are dropped in decode, because
+        # we only consider the multimodal encoder during prefill
+
         assert len(cached_request_data.req_ids) > 0
         input_tokens: list[list[int]] = [[0] for _ in range(self._position_ids.shape[0])]
 
@@ -781,6 +815,7 @@ class StaticBatchingSpyreModelRunner(WarmupShapesMixin, SpyreModelRunner):
         input_tokens = torch.tensor(input_tokens, dtype=torch.long, device=self.device)  # ty: ignore[invalid-assignment]
         model_input = SamplingForwardInputs(
             input_tokens=input_tokens,  # ty: ignore[invalid-argument-type]
+            input_embeds=None,
             input_positions=self._position_ids,
             input_masks=self._mask,
             is_prompt=False,
@@ -868,6 +903,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.prefill_batch = SamplingInputBatch(
             # TODO: review this, currently we only support prefill for
             # `batch_size=1`
+            # TODO: when considering multimodal inputs for larger batches, we
+            # should also ensure that prefill correctly handles the case in
+            # which we mix mm + text-only requests in the same prefill batch.
             max_num_reqs=1,
             max_model_len=vllm_config.model_config.max_model_len,
             device=self.device,
@@ -1060,6 +1098,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         sampling_params = request.sampling_params
         is_new_batch = len(self.req_ids2num_reserved_blocks) == 0
         prompt_len = len(prompt_token_ids)  # ty: ignore[invalid-argument-type]
+        mm_features = getattr(request, "mm_features", None)
 
         # make sure that the current tkv of the decode batch is greater or
         # equal to the prompt length of the new joining sequence
@@ -1138,6 +1177,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         req_state = SamplingRequestState(
             req_id=req_id,
             prompt_token_ids=prompt_token_ids,  # ty: ignore[invalid-argument-type]
+            mm_features=mm_features,
             sampling_params=sampling_params,  # ty: ignore[invalid-argument-type]
             generator=generator,
             output_token_ids=[],
@@ -1179,8 +1219,16 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # block table is only passed for decode
         block_table = None
 
+        # None unless this model is multimodal
+        input_embeds = self.model.get_maybe_mm_embeddings(
+            input_tokens,
+            mm_features=mm_features,
+            is_decode=False,
+        )
+
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
+            input_embeds=input_embeds,
             input_positions=position_ids,
             input_masks=mask,
             current_tkv_mask=current_tkv_mask,  # ty: ignore[invalid-argument-type]
@@ -1282,8 +1330,17 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # mask not needed during decode
         mask = None
 
+        # None unless this model is multimodal; no mm_features since
+        # all multimodal features are merged in prefill.
+        input_embeds = self.model.get_maybe_mm_embeddings(
+            input_tokens,
+            mm_features=None,
+            is_decode=True,
+        )
+
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
+            input_embeds=input_embeds,
             input_positions=position_ids,
             input_masks=mask,
             current_tkv_mask=current_tkv_mask,
@@ -1452,24 +1509,32 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # Marking dimensions static/dynamic
         if model_input.is_prompt:
             # batch static (batch size 1)
-            torch._dynamo.mark_static(model_input.input_tokens, 0)
             torch._dynamo.mark_static(model_input.slot_mapping, 0)
             torch._dynamo.mark_static(model_input.input_positions, 0)
             torch._dynamo.mark_static(model_input.input_masks, 0)
 
             # sequence dynamic
-            torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
             torch._dynamo.mark_dynamic(model_input.slot_mapping, 1)
             torch._dynamo.mark_dynamic(model_input.input_positions, 1)
             torch._dynamo.mark_dynamic(model_input.input_masks, 2)
             torch._dynamo.mark_dynamic(model_input.input_masks, 3)
+
+            # In the case that the input tokens are 3D, i.e., they're actually
+            # embeddings, The last dimension (embedding dimension) is static.
+            # This is mostly for multimodal models.
+            if model_input.input_embeds is not None:
+                torch._dynamo.mark_static(model_input.input_embeds, 0)
+                torch._dynamo.mark_dynamic(model_input.input_embeds, 1)
+                torch._dynamo.mark_static(model_input.input_embeds, 2)
+            else:
+                torch._dynamo.mark_static(model_input.input_tokens, 0)
+                torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
 
         # decode
         else:
             # mask is no longer used here
 
             # batch dynamic
-            torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
             torch._dynamo.mark_dynamic(model_input.block_table, 0)
             torch._dynamo.mark_dynamic(model_input.slot_mapping, 0)
             torch._dynamo.mark_dynamic(model_input.input_positions, 0)
@@ -1477,10 +1542,18 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             torch._dynamo.mark_dynamic(model_input.left_padded_prompt_mask, 0)
 
             # sequence
-            torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
             torch._dynamo.mark_dynamic(model_input.block_table, 1)
             torch._dynamo.mark_static(model_input.slot_mapping, 1)  # always 1
             torch._dynamo.mark_static(model_input.input_positions, 1)  # always 1
+
+            # for multimodal models, we also don't use input_embeds
+            if model_input.input_embeds is not None:
+                torch._dynamo.mark_dynamic(model_input.input_embeds, 0)
+                torch._dynamo.mark_static(model_input.input_embeds, 1)  # always 1
+                torch._dynamo.mark_static(model_input.input_embeds, 2)
+            else:
+                torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
+                torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
 
     def build_input_batch(self) -> SamplingInputBatch:
         # Define logits processors.
@@ -1761,6 +1834,7 @@ class SpyrePoolingModelRunner(
 
         model_input = PoolingForwardInputs(
             input_tokens=input_tokens,
+            input_embeds=None,
             input_positions=position_ids,
             input_masks=mask,
             is_prompt=True,
@@ -1811,12 +1885,13 @@ class SpyrePoolingModelRunner(
 
         model_input = self.prepare_model_input(scheduler_output)
 
-        # Execute the model
         attn_metadata = self.build_attn_metadata(model_input)
 
         model_kwargs = {}
         if self.use_token_type_ids:
             model_kwargs["token_type_ids"] = model_input.token_type_ids
+
+        # Execute the model
         with set_forward_context(attn_metadata, self.vllm_config):
             outputs = self.model(
                 input_ids=model_input.input_tokens,
@@ -1987,6 +2062,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             [left_padding], dtype=torch.int64, device=self.device
         )
 
+        mm_features = getattr(request, "mm_features", None)
+        prompt_token_ids = request.prompt_token_ids
         num_computed_tokens = request.num_computed_tokens
         # round up due to possible padding
         chunk_i = math.ceil(num_computed_tokens / chunk_size)
@@ -2093,8 +2170,16 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         self.model.n_pads_right = self.block_size - (((request_tkv - 1) % self.block_size) + 1)
         self.model.indices = torch.ones(1, dtype=torch.bool, device="cpu")
 
+        # None unless this model is multimodal
+        input_embeds = self.model.get_maybe_mm_embeddings(
+            input_tokens,
+            mm_features=mm_features,
+            is_decode=False,
+        )
+
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
+            input_embeds=input_embeds,
             input_positions=input_positions,
             current_tkv_mask=current_tkv_mask,
             left_padded_prompt_mask=left_padded_prompt_mask,
@@ -2194,8 +2279,17 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             len(cached_request_data.req_ids), dtype=torch.bool, device="cpu"
         )
 
+        # None unless this model is multimodal; no mm_features since
+        # all multimodal features are merged in prefill.
+        input_embeds = self.model.get_maybe_mm_embeddings(
+            input_tokens,
+            mm_features=None,
+            is_decode=True,
+        )
+
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
+            input_embeds=input_embeds,
             input_positions=position_ids,
             current_tkv_mask=current_tkv_mask,
             left_padded_prompt_mask=left_padded_prompt_mask,
@@ -2283,6 +2377,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         is_new_batch = self.get_n_free_blocks() == self.n_blocks
         prompt_len = len(prompt_token_ids)
+        mm_features = getattr(request, "mm_features", None)
 
         self.prefill_batch.clear_requests()
 
@@ -2322,6 +2417,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         req_state = ChunkedPrefillRequestState(
             req_id=req_id,
             prompt_token_ids=prompt_token_ids,
+            mm_features=mm_features,
             sampling_params=sampling_params,
             generator=generator,
             output_token_ids=[],
@@ -2550,9 +2646,15 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         # Execute the model
         attn_metadata = self.build_attn_metadata(model_input)
+        # Embeddings take priority [used by multimodal models only]
+        input_ids_or_embeds = (
+            model_input.input_embeds
+            if model_input.input_embeds is not None
+            else model_input.input_tokens
+        )
         with set_forward_context(attn_metadata, self.vllm_config):
             logits = self.model(
-                input_ids=model_input.input_tokens,
+                input_ids_or_embeds=input_ids_or_embeds,
                 positions=model_input.input_positions,
                 masks=model_input.input_masks,
                 is_prompt=model_input.is_prompt,
@@ -2685,23 +2787,31 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         # Marking dimensions static/dynamic
         if model_input.is_prompt:
             # batch static (batch size 1)
-            torch._dynamo.mark_static(model_input.input_tokens, 0)
             torch._dynamo.mark_static(model_input.slot_mapping, 0)
             torch._dynamo.mark_static(model_input.input_positions, 0)
             torch._dynamo.mark_static(model_input.block_table, 0)
 
             # sequence dynamic
-            torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
             torch._dynamo.mark_dynamic(model_input.slot_mapping, 1)
             torch._dynamo.mark_dynamic(model_input.input_positions, 1)
             torch._dynamo.mark_dynamic(model_input.block_table, 1)
+
+            # In the case that the input tokens are 3D, i.e., they're actually
+            # embeddings, The last dimension (embedding dimension) is static.
+            # This is mostly for multimodal models.
+            if model_input.input_embeds is not None:
+                torch._dynamo.mark_static(model_input.input_embeds, 0)
+                torch._dynamo.mark_dynamic(model_input.input_embeds, 1)
+                torch._dynamo.mark_static(model_input.input_embeds, 2)
+            else:
+                torch._dynamo.mark_static(model_input.input_tokens, 0)
+                torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
 
         # decode
         else:
             # mask is no longer used here
 
             # batch dynamic
-            torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
             torch._dynamo.mark_dynamic(model_input.block_table, 0)
             torch._dynamo.mark_dynamic(model_input.slot_mapping, 0)
             torch._dynamo.mark_dynamic(model_input.input_positions, 0)
@@ -2709,7 +2819,14 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             torch._dynamo.mark_dynamic(model_input.left_padded_prompt_mask, 0)
 
             # sequence
-            torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
             torch._dynamo.mark_dynamic(model_input.block_table, 1)
             torch._dynamo.mark_static(model_input.slot_mapping, 1)  # always 1
             torch._dynamo.mark_static(model_input.input_positions, 1)  # always 1
+
+            if model_input.input_embeds is not None:
+                torch._dynamo.mark_dynamic(model_input.input_embeds, 0)
+                torch._dynamo.mark_static(model_input.input_embeds, 1)  # always 1
+                torch._dynamo.mark_static(model_input.input_embeds, 2)
+            else:
+                torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
+                torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
