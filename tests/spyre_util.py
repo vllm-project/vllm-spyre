@@ -596,6 +596,35 @@ def verify_scale_indices(engine_core: EngineCore, step_ref: dict[str, Any], disa
         )
 
 
+def verify_batch_index(engine_core: EngineCore, step_ref: dict[str, Any], disable_asserts: bool):
+    """Verify that batch_index for each request matches expected values.
+
+    This is particularly important for interleaving scenarios where multiple
+    requests may be processed in the same batch.
+    """
+    if "batch_index" not in step_ref:
+        return
+
+    expected_batch_index = step_ref["batch_index"]
+
+    model_runner = engine_core.model_executor.driver_worker.worker.model_runner
+    reqs = model_runner.requests
+
+    actual_batch_index = {}
+    for req_id in expected_batch_index:
+        if req_id in reqs:
+            actual_batch_index[req_id] = reqs[req_id].batch_index
+
+    if not disable_asserts:
+        assert expected_batch_index == actual_batch_index, (
+            f"Expected batch_index {expected_batch_index}, "
+            f"Actual batch_index: {actual_batch_index} "
+            f"for step {step_ref['step']}"
+        )
+    else:
+        print(f"{actual_batch_index=}")
+
+
 @contextmanager
 def environ_checkpoint():
     original_environ = os.environ.copy()

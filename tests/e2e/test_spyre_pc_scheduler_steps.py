@@ -14,6 +14,7 @@ from scheduling_utils import (
 )
 from spyre_util import (
     ModelInfo,
+    verify_batch_index,
     verify_block_tables,
     verify_scale_indices,
     verify_slot_mappings,
@@ -2150,6 +2151,7 @@ def test_double_prefix_hit_within_batch_interleaving(
             "block_tables": {"0": [1, 2, 3]},
             "block_ref_count": {1: 1, 2: 1, 3: 1},
             "scale_indices": [0],
+            "batch_index": {"0": 0},
         },
         {  # prefill chunk 2 seq 0
             "step": 2,
@@ -2163,6 +2165,7 @@ def test_double_prefix_hit_within_batch_interleaving(
             "block_tables": {"0": [1, 2, 3]},
             "block_ref_count": {1: 1, 2: 1, 3: 1},
             "scale_indices": [0],
+            "batch_index": {"0": 0},
         },
         {  # decode seq 0 (generates 1 token, finishes)
             "step": 3,
@@ -2188,6 +2191,7 @@ def test_double_prefix_hit_within_batch_interleaving(
             "n_prefix_hits": 1,
             "block_tables": {"1": [1, 2, 3]},
             "block_ref_count": {1: 1, 2: 1, 3: 1},
+            "batch_index": {"1": 0},
         },
         {  # prefill chunk 2 seq 1 (last chunk must be recomputed)
             "step": 5,
@@ -2201,6 +2205,7 @@ def test_double_prefix_hit_within_batch_interleaving(
             "block_tables": {"1": [1, 2, 3]},
             "block_ref_count": {1: 1, 2: 1, 3: 1},
             "scale_indices": [0],
+            "batch_index": {"1": 0},
         },
         {  # decode seq 1 (generates 1 token, finishes)
             "step": 6,
@@ -2227,6 +2232,7 @@ def test_double_prefix_hit_within_batch_interleaving(
             "block_tables": {"2": [6, 7, 8]},
             "block_ref_count": {6: 1, 7: 1, 8: 1},
             "scale_indices": [0],
+            "batch_index": {"2": 0},
         },
         {  # prefill chunk 2 seq 2
             "step": 8,
@@ -2240,6 +2246,7 @@ def test_double_prefix_hit_within_batch_interleaving(
             "block_tables": {"2": [6, 7, 8]},
             "block_ref_count": {6: 1, 7: 1, 8: 1},
             "scale_indices": [0],
+            "batch_index": {"2": 0},
         },
         {  # decode seq 2 (generates 1 token, finishes)
             "step": 9,
@@ -2265,6 +2272,7 @@ def test_double_prefix_hit_within_batch_interleaving(
             "n_prefix_hits": 1,
             "block_tables": {"3": [1, 2, 3]},
             "block_ref_count": {1: 1, 2: 1, 3: 1},
+            "batch_index": {"3": 0},
         },
         {  # prefill chunk 2 seq 3 (last chunk must be recomputed)
             "step": 11,
@@ -2278,6 +2286,7 @@ def test_double_prefix_hit_within_batch_interleaving(
             "block_tables": {"3": [1, 2, 3]},
             "block_ref_count": {1: 1, 2: 1, 3: 1},
             "scale_indices": [0],
+            "batch_index": {"3": 0},
         },
         {  # decode seq 3 (generates 1 token, finishes)
             "step": 12,
@@ -2318,6 +2327,7 @@ def test_double_prefix_hit_within_batch_interleaving(
             verify_block_tables,
             verify_slot_mappings,
             verify_scale_indices,
+            verify_batch_index,
         ],
     )
 
@@ -2419,6 +2429,7 @@ def test_unequal_reqs_within_batch_interleaving(
             "block_tables": {"0": [1, 2, 3]},
             "block_ref_count": {1: 1, 2: 1, 3: 1},
             "scale_indices": [0],
+            "batch_index": {"0": 0},
         },
         {  # Step 2: Seq 0 generates first token, seq 1 joins waiting queue
             "step": 2,
@@ -2432,6 +2443,7 @@ def test_unequal_reqs_within_batch_interleaving(
             "block_tables": {"0": [1, 2, 3]},
             "block_ref_count": {1: 1, 2: 1, 3: 1},
             "scale_indices": [0],
+            "batch_index": {"0": 0},
         },
         {  # Step 3: Decode seq 0 (generates 2nd token), allocates block 4
             "step": 3,
@@ -2457,6 +2469,7 @@ def test_unequal_reqs_within_batch_interleaving(
             "n_prefix_hits": 1,
             "block_tables": {"0": [1, 2, 3, 4], "1": [1, 2, 3]},
             "block_ref_count": {1: 2, 2: 2, 3: 2, 4: 1},
+            "batch_index": {"1": 1},
         },
         {  # Step 5: Interleaved - decode seq 0 (generates 3rd token)
             # seq 1 generates first token
@@ -2470,6 +2483,7 @@ def test_unequal_reqs_within_batch_interleaving(
             "n_prefix_hits": 1,
             "block_tables": {"0": [1, 2, 3, 4], "1": [1, 2, 3]},
             "block_ref_count": {1: 2, 2: 2, 3: 2, 4: 1},
+            "batch_index": {"1": 1},
         },
         {  # Step 6: Interleaved - decode seq 1 (generates 2nd token)
             # decode seq 0, seq 3 joins waiting
@@ -2510,6 +2524,7 @@ def test_unequal_reqs_within_batch_interleaving(
             "n_prefix_hits": 0,
             "block_tables": {"1": [1, 2, 3, 5], "2": [6, 7, 8]},
             "block_ref_count": {1: 1, 2: 1, 3: 1, 5: 1, 6: 1, 7: 1, 8: 1},
+            "batch_index": {"2": 0},  # since seq 0 finished, seq 2 is now batch 0
         },
         {  # Step 9: Interleaved - decode seq 1 (generates 4th token)
             # seq 2 generates first token
@@ -2563,6 +2578,7 @@ def test_unequal_reqs_within_batch_interleaving(
             "n_prefix_hits": 1,
             "block_tables": {"1": [1, 2, 3, 5], "3": [1, 2, 3]},
             "block_ref_count": {1: 2, 2: 2, 3: 2, 5: 1},
+            "batch_index": {"3": 0},  # since seq 2 is finished, seq 3 gets 0
         },
         {  # Step 13: Seq 3 generates first token, seq 1 finishes (5 tokens total)
             "step": 13,
@@ -2577,6 +2593,7 @@ def test_unequal_reqs_within_batch_interleaving(
             "block_tables": {"1": [1, 2, 3, 5], "3": [1, 2, 3]},
             "block_ref_count": {1: 2, 2: 2, 3: 2, 5: 1},
             "scale_indices": [1],
+            "batch_index": {"3": 0},
         },
         {  # Step 14: Decode seq 3 (generates 2nd token, will finish next)
             "step": 14,
@@ -2627,5 +2644,6 @@ def test_unequal_reqs_within_batch_interleaving(
             verify_block_tables,
             verify_slot_mappings,
             verify_scale_indices,
+            verify_batch_index,
         ],
     )
