@@ -8,8 +8,8 @@ import copy
 
 import pytest
 import torch
-from fms.models import get_model
-from fms.utils import serialization
+from fms.models.llava_next import LlavaNextConfig
+from fms.models.hf.config_utils.param_builders import build_llava_next_params
 from PIL import Image
 from transformers import AutoConfig, AutoProcessor
 from vllm.multimodal.inputs import MultiModalFeatureSpec
@@ -34,24 +34,11 @@ def hf_config():
 
 
 @pytest.fixture(scope="module")
-def fms_config():
+def fms_config(hf_config):
     """Get the FMS config corresponding to the above."""
-    # Patch the head dimension directly (needed for llava next).
-    serialization.extend_adapter("llava_next", "hf", ["weight_expansion_for_mismatched_head_dim"])
-
-    config_dict = {"head_dim": 128}
-
-    # Just grab the model and take the config off of it. This is pretty fast,
-    # and mostly done for compatibility for now, since the config mapping utils
-    # in FMS are currently being heavily refactored.
-    model = get_model(
-        "hf_pretrained",
-        GVISION_MODEL.name,
-        fused_weights=False,
-        override_hf_pretrained_config=True,
-        text_config=config_dict,
-    )
-    return model.config
+    config_params = build_llava_next_params(hf_config)
+    config_params["text_config"].head_dim = 128
+    return LlavaNextConfig(**config_params)
 
 
 @pytest.fixture(scope="module")
@@ -83,8 +70,6 @@ def test_config_validation(fms_config, hf_config):
 
 
 ### Tests for inspecting the correctness of the warmup shapes
-
-
 def test_warmup_embed_types_and_shape(llava_next_mm_utils):
     """Ensure that the types and dimensions for the embeddings are consistent
     with the input IDs. Note that currently we pass input IDs all the way
