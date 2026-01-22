@@ -14,6 +14,11 @@ from spyre_util import get_single_image_prompts, get_spyre_model_list
 import torch
 from vllm import SamplingParams
 
+# Ensure the llava next mm mapping is imported, since
+# the FMS serialization utilities are patched at import time,
+# and the patching is currently NOT idempotent.
+import vllm_spyre.multimodal.mm_mappings.llava_next  # noqa: F401
+
 # We should not use a very large value here, because
 # we do not have tiny multimodal models at the moment.
 MAX_TOKENS = 8
@@ -23,7 +28,6 @@ def generate_fms_results(processor, model_path, prompts):
     # Ensure the llava next util has been imported, as we fix
     # the FMS serialization as a side effect at import time
     config_dict = {"head_dim": 128}
-    config_dict["head_dim"] = 128
 
     # Load, but don't compile (compare to CPU)
     model = get_model(
@@ -105,7 +109,7 @@ def test_alignment_with_fms(model, mode, monkeypatch):
         backend="eager",
         max_num_seqs=1,
         monkeypatch=monkeypatch,
-        max_model_len=4096,
+        max_model_len=2048,
         use_cb=True,
         max_num_batched_tokens=1024 if mode == "cp" else None,
     )

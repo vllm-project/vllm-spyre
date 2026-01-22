@@ -15,9 +15,9 @@ from transformers import AutoConfig, AutoProcessor
 from vllm.multimodal.inputs import MultiModalFeatureSpec
 
 import vllm_spyre.multimodal as spyre_mm
+from tests.spyre_util import REFERENCE_MODELS
 
-GRANITE_VISION_MODEL = "ibm-granite/granite-vision-3.3-2b"
-
+GVISION_MODEL = REFERENCE_MODELS["ibm-granite/granite-vision-3.2-2b"]
 # Marks all tests in this file as multimodal and CPU to match
 # multimodal wf; tests in this file should be very fast.
 pytestmark = [pytest.mark.multimodal, pytest.mark.cpu]
@@ -27,7 +27,10 @@ pytestmark = [pytest.mark.multimodal, pytest.mark.cpu]
 @pytest.fixture(scope="module")
 def hf_config():
     """Get a transformers config for granite vision."""
-    return AutoConfig.from_pretrained(GRANITE_VISION_MODEL)
+    return AutoConfig.from_pretrained(
+        GVISION_MODEL.name,
+        revision=GVISION_MODEL.revision,
+    )
 
 
 @pytest.fixture(scope="module")
@@ -43,7 +46,7 @@ def fms_config():
     # in FMS are currently being heavily refactored.
     model = get_model(
         "hf_pretrained",
-        GRANITE_VISION_MODEL,
+        GVISION_MODEL.name,
         fused_weights=False,
         override_hf_pretrained_config=True,
         text_config=config_dict,
@@ -54,7 +57,7 @@ def fms_config():
 @pytest.fixture(scope="module")
 def llava_next_mm_utils(fms_config, hf_config):
     return spyre_mm.maybe_get_mm_utils(
-        model_path=GRANITE_VISION_MODEL,
+        model_path=GVISION_MODEL.name,
         fms_config=fms_config,
         hf_config=hf_config,
     )
@@ -73,7 +76,7 @@ def test_config_validation(fms_config, hf_config):
     non_granite_cfg = copy.deepcopy(hf_config)
     non_granite_cfg.text_config.model_type = "not granite"
     with pytest.raises(TypeError):
-        spyre_mm.LlavaNextMMUtils(
+        spyre_mm.LlavaNextMMUtils._validate_configs(
             fms_config=fms_config,
             hf_config=non_granite_cfg,
         )
@@ -150,7 +153,7 @@ def test_warmup_feature_correctness(llava_next_mm_utils):
 
     num_expanded_mm_ids = torch.sum(warmup_toks == image_token_id).item()
 
-    processor = AutoProcessor.from_pretrained(GRANITE_VISION_MODEL)
+    processor = AutoProcessor.from_pretrained(GVISION_MODEL.name, revision=GVISION_MODEL.revision)
     # Create a random PIL Image that matches the size of the hardcoded
     # inputs and run it through the processor to check the feature sizes.
     image_dims = warmup_mm_features.data["image_sizes"].data

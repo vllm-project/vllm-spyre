@@ -306,8 +306,8 @@ register_model_info(
     revision="4b5990b8d402a75febe0086abbf1e490af494e3d",
 )
 register_model_info(
-    name="ibm-granite/granite-vision-3.3-2b",
-    revision="7fe917fdafb006f53aedf9589f148a83ec3cd8eb",
+    name="ibm-granite/granite-vision-3.2-2b",
+    revision="2818ae5b93cb750b099df1b65f7864e4a0401271",
 )
 
 
@@ -327,7 +327,9 @@ def _default_test_models(
         return [pytest.param(model, marks=[pytest.mark.scoring], id=model.name)]
 
     if isMultimodal:
-        model = REFERENCE_MODELS["ibm-granite/granite-vision-3.3-2b"]
+        # NOTE: use 3.2 instead of 3.3 here since it's minimal case currently
+        # has fewer image tokens (1 tile + base patch instead of 2).
+        model = REFERENCE_MODELS["ibm-granite/granite-vision-3.2-2b"]
         return [pytest.param(model, marks=[pytest.mark.multimodal], id=model.name)]
 
     # Decoders

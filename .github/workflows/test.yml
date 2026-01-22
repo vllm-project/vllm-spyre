@@ -76,9 +76,9 @@ jobs:
             flags: "--timeout=300"
           - name: "multimodal"
             markers: "cpu and multimodal"
-            flags: "--timeout=3000 -sv"
-            # hf_model: "ibm-granite/granite-vision-3.3-2b"
-            # hf_model_rev: "7fe917fdafb006f53aedf9589f148a83ec3cd8eb"
+            flags: "--timeout=300 -sv"
+            # hf_model: "ibm-granite/granite-vision-3.2-2b"
+            # hf_model_rev: "2818ae5b93cb750b099df1b65f7864e4a0401271"
             env_overrides: "HF_HUB_OFFLINE=0"
         include:
           # Lower bound support
