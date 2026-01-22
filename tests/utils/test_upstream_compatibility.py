@@ -96,3 +96,14 @@ def test_argparse_utils():
                 "Fix backward compatible imports of "
                 "FlexibleArgumentParser which is no longer required"
             ) from e
+
+
+def test_pooler_api():
+    if VLLM_VERSION == "vLLM:lowest":
+        try:
+            from vllm.model_executor.layers.pooler import ClassifierPooler, Pooler  # noqa
+        except ImportError as e:
+            raise AssertionError(
+                "Backwards compatibility code for old pooler API "
+                "ClassifierPooler no longer required"
+            ) from e
