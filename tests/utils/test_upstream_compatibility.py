@@ -107,3 +107,14 @@ def test_pooler_api():
                 "Backwards compatibility code for old pooler API "
                 "ClassifierPooler no longer required"
             ) from e
+
+
+def test_set_random_seed():
+    if VLLM_VERSION == "vLLM:lowest":
+        try:
+            from vllm.model_executor import set_random_seed  # noqa
+        except ImportError as e:
+            raise AssertionError(
+                "Backwards compatibility code for set_random_seed "
+                "import no longer required"
+            ) from e
