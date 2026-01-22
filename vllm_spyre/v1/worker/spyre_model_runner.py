@@ -2202,9 +2202,12 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             # blocks in the last chunk to deduplicate the used blocks. So
             # although we will recompute, we'll still point the block table
             # to the cached blocks.
-            self.block_pool.touch((computed_blocks,))
-            self.kv_cache_manager.save_new_computed_blocks(
-                scheduler_request.request_id, computed_blocks
+            self.block_pool.touch(computed_blocks)
+            self.kv_cache_manager.allocate_new_computed_blocks(
+                request_id=scheduler_request.request_id,
+                new_computed_blocks=computed_blocks,
+                num_local_computed_tokens=len(computed_blocks) * self.block_size,
+                num_external_computed_tokens=0,
             )
         else:
             usable_blocks = 0
