@@ -537,7 +537,10 @@ def verify_block_tables(engine_core: EngineCore, step_ref: dict[str, Any], disab
             )
 
         if "block_ref_count" in step_ref:
-            assert step_ref["block_ref_count"] == block_ref_count
+            assert step_ref["block_ref_count"] == block_ref_count, (
+                f"Reference block_ref_count {step_ref['block_ref_count']},"
+                f" Actual: {block_ref_count}"
+            )
     else:
         print(f"{block_tables=}")
         print(f"{block_ref_count=}")
