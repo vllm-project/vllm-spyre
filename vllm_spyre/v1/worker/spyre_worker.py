@@ -818,6 +818,13 @@ class SpyreWorker(WorkerBase):
     def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
         return self.model_runner.get_supported_tasks()
 
+    def sample_tokens(
+        self, grammar_output: "GrammarOutput | None"
+    ) -> ModelRunnerOutput:
+        from vllm.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT
+
+        return EMPTY_MODEL_RUNNER_OUTPUT
+
     @SpyrePlatform.inference_mode()
     def execute_model(
         self,

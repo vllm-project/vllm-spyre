@@ -213,6 +213,9 @@ class SpyrePlatform(Platform):
         ):
             cls.configure_granite_3_8b(vllm_config)
 
+        # v0.14.0+ defaults to async scheduling
+        scheduler_config.async_scheduling = False
+
         # To disable any paged attention ops in the base scheduler, we:
         # - Set the block size (in tokens) to the maximum sequence length
         #       so that the scheduler thinks an entire sequence will fit in
