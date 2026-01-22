@@ -2387,7 +2387,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             list(self.input_batch.req_id_to_index.keys()),
             list(self.prefill_batch.req_id_to_index.keys()),
         )
-        self.prefill_batch.add_request(request=req_state, req_index=available_index)
+        self.prefill_batch.add_request(request=req_state)
         logger.debug(
             "Request added to prefill batch: req_id=%s, available_index=%d, "
             "input_batch_req_ids=%s, prefill_batch_req_ids=%s",
