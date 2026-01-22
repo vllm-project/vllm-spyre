@@ -72,6 +72,7 @@ def generate_fms_results(processor, model_path, prompts):
     return generated_texts
 
 
+@pytest.mark.skip("Multimodal E2E tests are currently disabled; no tiny model")
 @pytest.mark.cpu
 @pytest.mark.parametrize("model", get_spyre_model_list(isMultimodal=True))
 def test_alignment_with_fms(model, mode, monkeypatch):
