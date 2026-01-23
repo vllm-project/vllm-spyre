@@ -10,7 +10,7 @@ from vllm.v1.core.sched.scheduler import Scheduler
 from vllm.v1.engine import EngineCoreOutputs
 from vllm.v1.metrics.stats import PrefixCacheStats, SchedulerStats
 from vllm.v1.outputs import ModelRunnerOutput
-from vllm.v1.request import Request
+from vllm.v1.request import Request, RequestStatus
 
 import vllm_spyre.envs as envs_spyre
 from vllm_spyre.platform import SpyrePlatform
@@ -517,6 +517,23 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         while holdback_queue:
             if self.can_schedule_prefill(holdback_queue[0]):
                 new_request = holdback_queue.popleft()
+                # Remove structured_output_request
+                # NB: SpyrePlatform.validate_request() removes structured_output
+                # before the request gets here in most cases
+                # TODO: We don't currently support structured output and it
+                # breaks some assumptions the code makes. The problems is that
+                # a structured output request will stay in waiting for multiple
+                # iterations with status WAITING_FOR_FSM. To handle this
+                # properly we need to exclude such requests from entering
+                # ongoing_prefills but still pass them in the waiting queue to
+                # the base scheduler to track the FSM initialization.
+                if new_request.structured_output_request is not None:
+                    logger.warning(
+                        "Removing structured output from request: %s", new_request.request_id
+                    )
+                    new_request.structured_output_request = None
+                    new_request.status = RequestStatus.WAITING
+
                 logger.debug(
                     "Scheduling a new request (%d prompt tokens), holding back %d requests",
                     new_request.num_prompt_tokens,

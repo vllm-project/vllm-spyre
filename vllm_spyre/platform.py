@@ -411,6 +411,15 @@ class SpyrePlatform(Platform):
         if params.prompt_logprobs is not None and not envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
             raise ValueError("Prompt logprobs are currently not supported.")
 
+        # Structured Outputs are not supported yet and cause issues in our
+        # scheduler if included in the request
+        if params.structured_outputs is not None:
+            logger.warning(
+                "Structured outputs are currently not supported and "
+                "will be stripped from the request."
+            )
+            params.structured_outputs = None
+
         if isinstance(prompt, dict) and "prompt_token_ids" in prompt:
             prompt_len = len(prompt["prompt_token_ids"])
         elif processed_inputs is not None:
