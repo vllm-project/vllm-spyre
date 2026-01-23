@@ -10,7 +10,7 @@ import sys
 import time
 from datetime import timedelta
 from pathlib import Path
-from typing import Union, cast
+from typing import TYPE_CHECKING, Union, cast
 
 import torch
 import torch.distributed as dist
@@ -19,12 +19,13 @@ from huggingface_hub import hf_hub_download
 from vllm.config import VllmConfig
 from vllm.distributed import ensure_model_parallel_initialized, init_distributed_environment
 from vllm.logger import init_logger
+
 try:
     # vllm >= v0.14.0
     from vllm.utils.torch_utils import set_random_seed
 except ImportError:
     # vllm < v0.14.0
-    from vllm.model_executor import set_random_seed
+    from vllm.model_executor import set_random_seed  # ty: ignore[unresolved-import]
 
 from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import SamplingParams
@@ -32,6 +33,9 @@ from vllm.v1.core.sched.output import CachedRequestData, NewRequestData, Schedul
 from vllm.v1.kv_cache_interface import KVCacheConfig, KVCacheSpec
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.worker.worker_base import WorkerBase
+
+if TYPE_CHECKING:
+    from vllm.v1.core.sched.output import GrammarOutput
 
 import vllm_spyre.envs as envs_spyre
 import vllm_spyre.perf_metrics as perf_metrics
@@ -297,9 +301,9 @@ class SpyreWorker(WorkerBase):
             # note: lazy import to avoid importing torch before initializing
             try:
                 # pre 0.11.1 compatibility
-                from vllm.utils import init_cached_hf_modules
+                from vllm.utils import init_cached_hf_modules  # ty: ignore[unresolved-import]
             except ImportError:
-                from vllm.utils.import_utils import init_cached_hf_modules
+                from vllm.utils.import_utils import init_cached_hf_modules  # ty: ignore[unresolved-import]
 
             init_cached_hf_modules()
         self.model_runner: Union[
@@ -872,9 +876,7 @@ class SpyreWorker(WorkerBase):
     def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
         return self.model_runner.get_supported_tasks()
 
-    def sample_tokens(
-        self, grammar_output: "GrammarOutput | None"
-    ) -> ModelRunnerOutput:
+    def sample_tokens(self, grammar_output: "GrammarOutput | None") -> ModelRunnerOutput:
         from vllm.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT
 
         return EMPTY_MODEL_RUNNER_OUTPUT

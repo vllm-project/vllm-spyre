@@ -115,8 +115,7 @@ def test_set_random_seed():
             from vllm.model_executor import set_random_seed  # noqa
         except ImportError as e:
             raise AssertionError(
-                "Backwards compatibility code for set_random_seed "
-                "import no longer required"
+                "Backwards compatibility code for set_random_seed import no longer required"
             ) from e
 
 
@@ -132,6 +131,7 @@ def test_enable_caching():
 def test_pooling_metadata_build_cursor():
     if VLLM_VERSION == "vLLM:lowest":
         from vllm.v1.pool.metadata import PoolingMetadata
+
         assert has_argument(PoolingMetadata.build_pooling_cursor, "num_scheduled_tokens"), (
             "Backwards compatibility code for num_scheduled_tokens parameter "
             "in PoolingMetadata.build_pooling_cursor no longer required "

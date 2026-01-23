@@ -17,7 +17,7 @@ from vllm.sampling_params import SamplingType
 
 try:
     # pre 0.11.1 compatibility
-    from vllm.utils import get_hash_fn_by_name, is_pin_memory_available
+    from vllm.utils import get_hash_fn_by_name, is_pin_memory_available  # ty: ignore[unresolved-import]
 except ImportError:
     from vllm.utils.platform_utils import is_pin_memory_available
     from vllm.utils.hashing import get_hash_fn_by_name
@@ -1004,7 +1004,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         if has_argument(FullAttentionManager.__init__, "enable_caching"):
             kwargs["enable_caching"] = self.enable_prefix_caching
 
-        return FullAttentionManager(**kwargs)
+        return FullAttentionManager(**kwargs)  # ty: ignore[invalid-argument-type]
 
     def _get_blocks(self, request_id: str) -> list[KVCacheBlock]:
         return self.kv_cache_manager.req_to_blocks[request_id]
@@ -1723,15 +1723,15 @@ class SpyrePoolingModelRunner(
                         pooler_config=pooler_config,
                         pooling=self._pooler,
                         classifier=self.classifier,
-                        act_fn=get_cross_encoder_act_fn(self.model_config),
+                        act_fn=get_cross_encoder_act_fn(self.model_config.hf_config),
                     )
         except ImportError:
             # vllm < v0.14.0
-            from vllm.model_executor.layers.pooler import ClassifierPooler, Pooler
+            from vllm.model_executor.layers.pooler import ClassifierPooler, Pooler  # ty: ignore[unresolved-import]
 
             if task == "embed":
                 with set_current_vllm_config(self.vllm_config):
-                    self.pooler = Pooler.for_embed(pooler_config=pooler_config)
+                    self.pooler = Pooler.for_embed(pooler_config=pooler_config)  # ty: ignore[unresolved-attribute]
             elif task == "classify":
                 with set_current_vllm_config(self.vllm_config):
                     self.pooler = ClassifierPooler(
@@ -1942,8 +1942,6 @@ class SpyrePoolingModelRunner(
         pooling_metadata = self.input_batch.make_pooling_metadata()
 
         ## No partial prefill, hence we can use the prompt lens here
-        num_scheduled_tokens = pooling_metadata.prompt_lens.tolist()
-
         cursor_kwargs: dict[str, Any] = {}
         if has_argument(pooling_metadata.build_pooling_cursor, "seq_lens_cpu"):
             cursor_kwargs["seq_lens_cpu"] = pooling_metadata.prompt_lens

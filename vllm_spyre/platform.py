@@ -24,7 +24,7 @@ from vllm.logger import init_logger
 
 try:
     # pre 0.11.1 compatibility
-    from vllm.utils import FlexibleArgumentParser
+    from vllm.utils import FlexibleArgumentParser  # ty: ignore[unresolved-import]
 except ImportError:
     from vllm.utils.argparse_utils import FlexibleArgumentParser
 
