@@ -2191,6 +2191,7 @@ def test_double_prefix_hit_within_batch_interleaving(
             "n_prefix_hits": 1,
             "block_tables": {"1": [1, 2, 3]},
             "block_ref_count": {1: 1, 2: 1, 3: 1},
+            "scale_indices": [0],
             "batch_index": {"1": 0},
         },
         {  # prefill chunk 2 seq 1 (last chunk must be recomputed)
@@ -2272,6 +2273,7 @@ def test_double_prefix_hit_within_batch_interleaving(
             "n_prefix_hits": 1,
             "block_tables": {"3": [1, 2, 3]},
             "block_ref_count": {1: 1, 2: 1, 3: 1},
+            "scale_indices": [0],
             "batch_index": {"3": 0},
         },
         {  # prefill chunk 2 seq 3 (last chunk must be recomputed)
@@ -2524,7 +2526,8 @@ def test_unequal_reqs_within_batch_interleaving(
             "n_prefix_hits": 0,
             "block_tables": {"1": [1, 2, 3, 5], "2": [6, 7, 8]},
             "block_ref_count": {1: 1, 2: 1, 3: 1, 5: 1, 6: 1, 7: 1, 8: 1},
-            "batch_index": {"2": 0},  # since seq 0 finished, seq 2 is now batch 0
+            "scale_indices": [0],
+            "batch_index": {"2": 0},
         },
         {  # Step 9: Interleaved - decode seq 1 (generates 4th token)
             # seq 2 generates first token
@@ -2538,6 +2541,8 @@ def test_unequal_reqs_within_batch_interleaving(
             "n_prefix_hits": 0,
             "block_tables": {"1": [1, 2, 3, 5], "2": [6, 7, 8]},
             "block_ref_count": {1: 1, 2: 1, 3: 1, 5: 1, 6: 1, 7: 1, 8: 1},
+            "scale_indices": [1],
+            "batch_index": {"2": 0},
         },
         {  # Step 10: Interleaved - decode seq 2 (generates 2nd token, will finish next)
             # decode seq 1
@@ -2579,6 +2584,7 @@ def test_unequal_reqs_within_batch_interleaving(
             "block_tables": {"1": [1, 2, 3, 5], "3": [1, 2, 3]},
             "block_ref_count": {1: 2, 2: 2, 3: 2, 5: 1},
             "batch_index": {"3": 0},  # since seq 2 is finished, seq 3 gets 0
+            "scale_indices": [0, 1],
         },
         {  # Step 13: Seq 3 generates first token, seq 1 finishes (5 tokens total)
             "step": 13,
