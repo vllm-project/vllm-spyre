@@ -57,7 +57,7 @@ jobs:
             hf_model_rev: "0dff8bacb968836dbbc7c2895c6d9ead0a05dc9e"
           - name: "fp8 scheduler tests with PC and CP"
             markers: "cpu and quantized and prefix_caching"
-            flags: "--timeout=600 -k 'test_spyre_pc_scheduler_steps and interleaving' --durations=0"
+            flags: "--timeout=600 -k 'test_spyre_pc_scheduler_steps' --durations=0"
             hf_model: "ibm-ai-platform/micro-g3.3-8b-instruct-1b-FP8"
             hf_model_rev: "0dff8bacb968836dbbc7c2895c6d9ead0a05dc9e"
           - name: "embedding"
