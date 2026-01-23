@@ -3,6 +3,9 @@ import os
 import re
 from pathlib import Path
 
+import numpy as np
+from PIL.Image import Image
+import torch
 from spyre_util import ModelInfo
 
 
@@ -38,6 +41,17 @@ class HFResultCache:
 
         self.dirty = False
 
+    @staticmethod
+    def mm_data_encode(obj):
+        """Fallback for JSON serialization for cache keys from MM inputs."""
+        # Convert any multimodal data types to torch tensors and hash
+        if isinstance(obj, Image):
+            return HFResultCache.mm_data_encode(torch.as_tensor(np.array(obj)))
+
+        if isinstance(obj, torch.Tensor):
+            return hash(tuple(obj.reshape(-1).tolist()))
+        raise TypeError(f"Object of type {type(obj)} is not serializable!")
+
     def write_cache(self):
         """
         Write the current cache to 'hf_cache.json' if it has been modified.
@@ -58,6 +72,8 @@ class HFResultCache:
         """
         if isinstance(prompt, list):
             prompt = self._token_ids_to_string(prompt)
+        elif isinstance(prompt, dict):  # multimodal only
+            prompt = json.dumps(prompt, default=self.mm_data_encode)
         max_tokens = str(max_tokens)
 
         if isinstance(model, ModelInfo):
@@ -84,6 +100,8 @@ class HFResultCache:
         """
         if isinstance(prompt, list):
             prompt = self._token_ids_to_string(prompt)
+        elif isinstance(prompt, dict):  # multimodal only
+            prompt = json.dumps(prompt, default=self.mm_data_encode)
         max_tokens = str(max_tokens)
 
         if isinstance(model, ModelInfo):

@@ -15,11 +15,11 @@ if sys.platform.startswith("darwin"):
 import math
 import operator
 import os
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Union, cast
 
 import torch
 from transformers.models.granite import GraniteConfig
-from vllm.inputs import ProcessorInputs, PromptType
+from vllm.inputs import ProcessorInputs, PromptType, TokenInputs
 from vllm.logger import init_logger
 
 try:
@@ -74,7 +74,8 @@ class SpyrePlatform(Platform):
     supported_quantization: list[str] = ["gptq", "compressed-tensors"]
     _warmup_shapes: tuple[dict[str, int], ...] | None = None
     _block_size: int = 64  # hardcoded Spyre constraint for now
-    _config: VllmConfig = None
+    # TODO: this `None` is dangerous
+    _config: VllmConfig = None  # ty: ignore[invalid-assignment]
     _torch_sendnn_version = None
     # tracks if we are being configured via CLI or LLM() so that we know if
     # default arg parser changes actually have an effect
@@ -172,7 +173,8 @@ class SpyrePlatform(Platform):
             # LLM engine" log message
             # TODO: With the arg parser defaulting, this can be removed when we
             # only support vllm >= v0.11.1
-            scheduler_config.chunked_prefill_enabled = envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL
+            if hasattr(scheduler_config, "chunked_prefill_enabled"):
+                scheduler_config.chunked_prefill_enabled = envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL  # ty: ignore
 
             if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
                 raise ValueError("Prompt logprobs not supported with continuous batching")
@@ -224,7 +226,7 @@ class SpyrePlatform(Platform):
         #       length requests, so that the scheduler will always have token
         #       budget available to schedule a full batch
         if cache_config is not None:
-            cache_config.block_size = model_config.max_model_len
+            cache_config.block_size = model_config.max_model_len  # ty: ignore[invalid-assignment]
             if not envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
                 scheduler_config.max_num_batched_tokens = (
                     model_config.max_model_len * scheduler_config.max_num_seqs
@@ -257,11 +259,8 @@ class SpyrePlatform(Platform):
                 )
 
         logger.info(
-            "Configurations for Spyre. "
-            "max_model_len=%d, max_num_seqs=%d, block_size=%d, "
-            "max_num_batched_tokens=%d, "
-            "enable_chunked_prefill=%r, "
-            "enable_prefix_caching=%r",
+            "Configurations for Spyre. max_model_len=%d, max_num_seqs=%d, block_size=%d, "
+            "max_num_batched_tokens=%d, enable_chunked_prefill=%r, enable_prefix_caching=%r",
             model_config.max_model_len,
             scheduler_config.max_num_seqs,
             cache_config.block_size,
@@ -274,9 +273,8 @@ class SpyrePlatform(Platform):
         os.environ["VLLM_DT_MAX_CONTEXT_LEN"] = str(vllm_config.model_config.max_model_len)
         if envs_spyre.VLLM_SPYRE_USE_CB and vllm_config.model_config.max_model_len > 32 * 1024:
             logger.warning(
-                "Max context length is too big. Currently only 32K (32768) "
-                "context length is supported on Spyre for continuous "
-                "batching. Results might be off!"
+                "Max context length is too big. Currently only 32K (32768) context length is "
+                "supported on Spyre for continuous batching. Results might be off!"
             )
         # min value 2 needed for VLLM_DT_MAX_BATCH_SIZE (compiler constraint)
         # Note that we can still have decodes of batch size 1 as the env var
@@ -293,9 +291,8 @@ class SpyrePlatform(Platform):
 
             os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(default_max_batch_tkv_limit)
             logger.info(
-                "No model / tensor parallel size specific value for "
-                "VLLM_DT_MAX_BATCH_TKV_LIMIT found. Using the default value "
-                "(max_model_len * max_batch_size): %d",
+                "No model / tensor parallel size specific value for VLLM_DT_MAX_BATCH_TKV_LIMIT "
+                "found. Using the default value (max_model_len * max_batch_size): %d",
                 default_max_batch_tkv_limit,
             )
 
@@ -419,7 +416,10 @@ class SpyrePlatform(Platform):
         elif processed_inputs is not None:
             if "encoder" in processed_inputs:
                 raise ValueError("Encoder-decoder models not supported ")
-            prompt_len = len(processed_inputs["prompt_token_ids"])
+            if "prompt_token_ids" not in processed_inputs:
+                # Can't do any extra validation on embedding-only inputs
+                return
+            prompt_len = len(cast(TokenInputs, processed_inputs)["prompt_token_ids"])
         else:
             # We need a prompt length to do any validation here
             return
@@ -595,8 +595,8 @@ class SpyrePlatform(Platform):
                 os.environ[env] = str(cpus_per_worker)
 
             logger.info(
-                "%s for %d workers. Since VLLM_SPYRE_UPDATE_THREAD_CONFIG is "
-                "enabled, setting threading configurations to %d",
+                "%s for %d workers. Since VLLM_SPYRE_UPDATE_THREAD_CONFIG is enabled, setting "
+                "threading configurations to %d",
                 detection_message,
                 worker_count,
                 cpus_per_worker,
@@ -620,9 +620,8 @@ class SpyrePlatform(Platform):
             for value in env_map.values()
         ):
             logger.warning(
-                "%s %s for %d workers. Recommend setting each threading "
-                "configuration to %d. Set VLLM_SPYRE_UPDATE_THREAD_CONFIG=1 "
-                "to do this automatically.",
+                "%s %s for %d workers. Recommend setting each threading configuration to %d. Set "
+                "VLLM_SPYRE_UPDATE_THREAD_CONFIG=1 to do this automatically.",
                 thread_warning,
                 detection_message,
                 worker_count,
@@ -646,10 +645,48 @@ class SpyrePlatform(Platform):
         return max_new_tokens
 
     @classmethod
+    def _set_env_with_validation(cls, env_var: str, default_value: int) -> None:
+        """
+        Set an environment variable to a default value if not already set.
+        If the user has provided a value, validate it's an integer and raise an error if invalid.
+        Warn if it's less than the default.
+
+        Args:
+            env_var: The name of the environment variable to set
+            default_value: The default value to use (in bytes or appropriate units)
+
+        Raises:
+            ValueError: If the user-provided value is not a valid integer
+        """
+        existing_value = os.getenv(env_var)
+
+        if not existing_value:
+            # No existing value, set the default
+            os.environ[env_var] = str(default_value)
+            logger.info("Using %s = %d", env_var, default_value)
+        else:
+            # User provided a value, validate it
+            try:
+                user_value = int(existing_value)
+            except ValueError as e:
+                raise ValueError(
+                    f"{env_var} was set to '{existing_value}' which is not a valid integer"
+                ) from e
+
+            # Only warn if user value is less than default
+            if user_value < default_value:
+                logger.warning(
+                    "%s was set to %d which is less than the default of %d",
+                    env_var,
+                    user_value,
+                    default_value,
+                )
+
+    @classmethod
     def configure_granite_3_8b(cls, vllm_config: VllmConfig):
         """
         Configure hard coded values for the model
-        https://huggingface.co/ibm-granite/granite-3.3-8b-instruct
+        https://huggingface.co/ibm-granite/granite-3.3-8b-instruct and other dense 8b variants.
         """
         parallel_config = vllm_config.parallel_config
 
@@ -657,38 +694,26 @@ class SpyrePlatform(Platform):
             # only override configs for TP=4
             return
 
+        # Log once upfront that we detected the model
+        logger.info(
+            "Granite 8b dense model with tensor parallel size 4 detected. "
+            "Applying model-specific configuration overrides."
+        )
+
         tkv_128k = 128 * 1024
         if not os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"):
             os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(tkv_128k)
-            logger.info(
-                "Model granite-3.3-8b-instruct and tensor parallel "
-                "size 4 detected. Using VLLM_DT_MAX_BATCH_TKV_LIMIT = %d",
-                tkv_128k,
-            )
+            logger.info("Using VLLM_DT_MAX_BATCH_TKV_LIMIT = %d", tkv_128k)
         elif os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT") != str(tkv_128k):
             logger.warning(
-                "VLLM_DT_MAX_BATCH_TKV_LIMIT was set to %s, not "
-                "overriding to the granite-3.3-8b-instruct default of %d",
+                "VLLM_DT_MAX_BATCH_TKV_LIMIT was set to %s, not overriding to default of %d",
                 os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"),
                 tkv_128k,
             )
 
-        # If no HDMA p2psize override was specified, set 256MB
-        p2psize_256m = 256 * 1024 * 1024
-        if not os.getenv("FLEX_HDMA_P2PSIZE"):
-            os.environ["FLEX_HDMA_P2PSIZE"] = str(p2psize_256m)
-            logger.info(
-                "Model granite-3.3-8b-instruct and tensor parallel size 4 "
-                "detected. Using FLEX_HDMA_P2PSIZE = %d",
-                p2psize_256m,
-            )
-        elif os.getenv("FLEX_HDMA_P2PSIZE") != str(p2psize_256m):
-            logger.warning(
-                "FLEX_HDMA_P2PSIZE was set to %s, not using the "
-                "granite-3.3-8b-instruct default of %d",
-                os.getenv("FLEX_HDMA_P2PSIZE"),
-                p2psize_256m,
-            )
+        # Set HDMA environment variables with validation
+        cls._set_env_with_validation("FLEX_HDMA_P2PSIZE", 256 * 1024 * 1024)  # 256MB
+        cls._set_env_with_validation("FLEX_HDMA_COLLSIZE", 32 * 1024 * 1024)  # 32MB
 
         # Override the total number of KV cache blocks based on what we know
         # will fit. (Unless user already set `--num-gpu-blocks-override`)
@@ -707,15 +732,10 @@ class SpyrePlatform(Platform):
 
         if vllm_config.cache_config.num_gpu_blocks_override is None:
             vllm_config.cache_config.num_gpu_blocks_override = blocks_override
-            logger.info(
-                "Model granite-3.3-8b-instruct and tensor parallel size 4 "
-                "detected. Overriding available KV Cache blocks to %d",
-                blocks_override,
-            )
+            logger.info("Overriding available KV Cache blocks to %d", blocks_override)
         elif vllm_config.cache_config.num_gpu_blocks_override != blocks_override:
             logger.warning(
-                "--num-gpu-blocks-override was set to %d, not using the "
-                "granite-3.3-8b-instruct default of %d",
+                "--num-gpu-blocks-override was set to %d, not using default of %d",
                 vllm_config.cache_config.num_gpu_blocks_override,
                 blocks_override,
             )
@@ -726,11 +746,7 @@ class SpyrePlatform(Platform):
             and envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn"
             and os.getenv("VLLM_DT_CHUNK_LEN") is None
         ):
-            logger.info(
-                "Model granite-3.3-8b-instruct and tensor "
-                "parallel size 4 with chunked prefill detected. Setting "
-                "--max-num-batched-tokens 1024"
-            )
+            logger.info("Setting --max-num-batched-tokens to 1024 for chunked prefill")
             vllm_config.scheduler_config.max_num_batched_tokens = 1024
 
     @classmethod
@@ -772,7 +788,7 @@ class SpyrePlatform(Platform):
     def sendnn_configured(cls) -> bool:
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
             try:
-                from torch_sendnn._version import __version__ as version_str
+                from torch_sendnn._version import __version__ as version_str  # ty: ignore[unresolved-import]
 
                 sem_ver = version_str.split("+")[0]
                 cls._torch_sendnn_version = tuple(map(int, sem_ver.split(".")))

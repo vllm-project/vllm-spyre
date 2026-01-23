@@ -160,7 +160,7 @@ class GoldenTokenInjector(LogitsProcessor):
         expected_prob = math.exp(expected_logprob)
 
         # We'll inject only if the error is below the threshold
-        if not math.isclose(expected_prob, prob, abs_tol=cast(float, expectation.threshold)):
+        if not math.isclose(expected_prob, prob, abs_tol=expectation.threshold):
             err = abs(expected_prob - prob)
 
             logger.error(

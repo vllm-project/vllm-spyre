@@ -33,3 +33,16 @@ repos:
   rev: v1.7.7
   hooks:
   - id: actionlint
+- repo: local
+  hooks:
+    - id: ty
+      name: ty check
+      entry: uvx ty check vllm_spyre
+      # `system` here instead of python so that we avoid running inside an isolated venv created by
+      # prek, and instead have access to the .venv created by uv for the project
+      language: system
+      # `pass_filenames: false` is super important, this stops prek from passing the list of files
+      # modified by the current commit to the `ty` command. For type checking we want to always
+      # check all files because the staged changes may cause errors in unmodified files. Think
+      # deleting a method but forgetting to remove all of the call sites in other files.
+      pass_filenames: false
