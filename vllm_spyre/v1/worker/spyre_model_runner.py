@@ -1805,9 +1805,14 @@ class SpyrePoolingModelRunner(
         cursor_kwargs: dict[str, Any] = {}
         if has_argument(pooling_metadata.build_pooling_cursor, "seq_lens_cpu"):
             cursor_kwargs["seq_lens_cpu"] = pooling_metadata.prompt_lens
-        pooling_metadata.build_pooling_cursor(
-            num_scheduled_tokens=pooling_metadata.prompt_lens, device=self.device, **cursor_kwargs
-        )
+
+        # v0.14.0 uses param "num_scheduled_tokens_np"
+        if has_argument(pooling_metadata.build_pooling_cursor, "num_scheduled_tokens_np"):
+            cursor_kwargs["num_scheduled_tokens_np"] = pooling_metadata.prompt_lens.numpy()
+        else:
+            cursor_kwargs["num_scheduled_tokens"] = pooling_metadata.prompt_lens.tolist()
+
+        pooling_metadata.build_pooling_cursor(device=self.device, **cursor_kwargs)
 
         # prepare unpadded output for the pooler
         hidden_state_list: list[torch.Tensor] = []

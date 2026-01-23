@@ -637,7 +637,7 @@ class SpyreWorker(WorkerBase):
         # Set up dummy requests for prefill steps
         dummy_requests = [
             new_request_data_builder(
-                req_id="warmup",
+                req_id=f"warmup_{i}",
                 prompt_token_ids=warmup_tokens_tensor[i].tolist(),
                 sampling_params=sampling_params,
                 pooling_params=pooling_params,

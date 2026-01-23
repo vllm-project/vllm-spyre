@@ -127,3 +127,12 @@ def test_enable_caching():
             "Backwards compatibility code for enable_caching parameter "
             "in FullAttentionManager no longer required"
         )
+
+
+def test_pooling_metadata_build_cursor():
+    if VLLM_VERSION == "vLLM:lowest":
+        from vllm.v1.pool.metadata import PoolingMetadata
+        assert has_argument(PoolingMetadata.build_pooling_cursor, "num_scheduled_tokens"), (
+            "Backwards compatibility code for num_scheduled_tokens parameter "
+            "in PoolingMetadata.build_pooling_cursor no longer required "
+        )
