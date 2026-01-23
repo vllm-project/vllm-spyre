@@ -651,15 +651,18 @@ def verify_slot_mappings(engine_core: EngineCore, step_ref: dict[str, Any], disa
 def verify_scale_indices(engine_core: EngineCore, step_ref: dict[str, Any], disable_asserts: bool):
     if "scale_indices" not in step_ref:
         return
-    scale_indices = step_ref["scale_indices"]
+    ref_scale_indices = step_ref["scale_indices"]
 
     actual_scale_indices = engine_core.forward_context.attn_metadata.scale_indices.tolist()
 
     if not disable_asserts:
-        assert scale_indices == actual_scale_indices, (
-            f"ref scale indices {scale_indices} vs actual {actual_scale_indices}"
+        assert ref_scale_indices == actual_scale_indices, (
+            f"ref scale indices {ref_scale_indices} vs actual {actual_scale_indices}"
             f" for step {step_ref['step']}"
         )
+    else:
+        print(f"{ref_scale_indices=}")
+        print(f"{actual_scale_indices=}")
 
 
 def verify_batch_index(engine_core: EngineCore, step_ref: dict[str, Any], disable_asserts: bool):
