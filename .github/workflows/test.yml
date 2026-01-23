@@ -43,7 +43,7 @@ jobs:
             repo: "git+https://github.com/vllm-project/vllm --branch main"
         test_suite:
           - name: "chunked prefill"
-            markers: "cpu and chunked_prefill and not prefix_caching and not quantized"
+            markers: "cpu and chunked_prefill and not prefix_caching and not quantized and not multimodal"
           - name: "prefix caching"
             markers: "cpu and prefix_caching and not quantized"
           - name: "static batching"
@@ -71,14 +71,20 @@ jobs:
             hf_model: "cross-encoder/stsb-roberta-large"
             hf_model_rev: "2b12c2c0088918e76151fd5937b7bba986ef1f98"
           - name: "continuous batching"
-            markers: "cpu and cb and not quantized"
+            markers: "cpu and cb and not quantized and not multimodal"
             flags: "--timeout=300  --durations=0 -s"
           - name: "worker and utils"
-            markers: "not e2e and not quantized and not spyre"
+            markers: "not e2e and not quantized and not spyre and not multimodal"
             flags: "--timeout=300"
           - name: "other e2e"
             markers: "cpu and other_e2e and not quantized"
             flags: "--timeout=300"
+          - name: "multimodal"
+            markers: "cpu and multimodal"
+            flags: "--timeout=300 -sv"
+            # hf_model: "ibm-granite/granite-vision-3.2-2b"
+            # hf_model_rev: "2818ae5b93cb750b099df1b65f7864e4a0401271"
+            env_overrides: "HF_HUB_OFFLINE=0"
         include:
           # Lower bound support
           - vllm_version:
@@ -312,5 +318,5 @@ jobs:
           # re-install the vllm_sypre package from source
           source .venv/bin/activate
 
-          python3 -m pytest ${{ matrix.test_suite.flags }} \
+          ${{matrix.test_suite.env_overrides}} python3 -m pytest ${{ matrix.test_suite.flags }} \
             tests -v -m "${{ matrix.test_suite.markers }}"

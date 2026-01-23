@@ -15,6 +15,7 @@ import requests
 import torch
 from transformers import AutoTokenizer
 from vllm import SamplingParams
+from vllm.assets.image import ImageAsset
 from vllm.entrypoints.openai.cli_args import make_arg_parser
 from vllm.v1.engine.core import EngineCore
 
@@ -236,12 +237,17 @@ def get_spyre_backend_list():
 # get model names from env, if not set then use default models for each type.
 # Multiple models can be specified with a comma separated list in
 # VLLM_SPYRE_TEST_MODEL_LIST
-def get_spyre_model_list(isEmbeddings=False, isScoring=False, full_size_models=False):
+def get_spyre_model_list(
+    isEmbeddings=False,
+    isScoring=False,
+    isMultimodal=False,
+    full_size_models=False,
+):
     """Returns a list of pytest.params. The values are NamedTuples with a name
     and revision field."""
     user_test_model_list = os.environ.get("VLLM_SPYRE_TEST_MODEL_LIST")
     if not user_test_model_list:
-        return _default_test_models(isEmbeddings, isScoring, full_size_models)
+        return _default_test_models(isEmbeddings, isScoring, isMultimodal, full_size_models)
 
     # User overridden model list
     spyre_model_dir_path = get_spyre_model_dir_path()
@@ -249,6 +255,8 @@ def get_spyre_model_list(isEmbeddings=False, isScoring=False, full_size_models=F
         marks = [pytest.mark.embedding]
     elif isScoring:
         marks = [pytest.mark.scoring]
+    elif isMultimodal:
+        marks = [pytest.mark.multimodal]
     else:
         marks = [pytest.mark.decoder]
 
@@ -297,9 +305,18 @@ register_model_info(
     name="ibm-granite/granite-3.3-8b-instruct-FP8",
     revision="4b5990b8d402a75febe0086abbf1e490af494e3d",
 )
+register_model_info(
+    name="ibm-granite/granite-vision-3.2-2b",
+    revision="2818ae5b93cb750b099df1b65f7864e4a0401271",
+)
 
 
-def _default_test_models(isEmbeddings=False, isScoring=False, full_size_models=False):
+def _default_test_models(
+    isEmbeddings=False,
+    isScoring=False,
+    isMultimodal=False,
+    full_size_models=False,
+):
     """Return the default set of test models as pytest parameterizations"""
     if isEmbeddings:
         model = REFERENCE_MODELS["sentence-transformers/all-roberta-large-v1"]
@@ -308,6 +325,12 @@ def _default_test_models(isEmbeddings=False, isScoring=False, full_size_models=F
     if isScoring:
         model = REFERENCE_MODELS["cross-encoder/stsb-roberta-large"]
         return [pytest.param(model, marks=[pytest.mark.scoring], id=model.name)]
+
+    if isMultimodal:
+        # NOTE: use 3.2 instead of 3.3 here since it's minimal case currently
+        # has fewer image tokens (1 tile + base patch instead of 2).
+        model = REFERENCE_MODELS["ibm-granite/granite-vision-3.2-2b"]
+        return [pytest.param(model, marks=[pytest.mark.multimodal], id=model.name)]
 
     # Decoders
     # We run tests for both the full-precision bf16 and fp8-quantized models,
@@ -457,6 +480,49 @@ def get_chicken_soup_prompts(num_prompts: int) -> list[str]:
         prompts = prompts * (math.ceil(num_prompts / 4))
 
     return prompts[:num_prompts]
+
+
+def get_single_image_prompts(num_prompts: int, image_token: str, tile_size: int) -> list[str]:
+    # NOTE: this prompt is pretty specific to granite vision, and mm models are
+    # often VERY sensitive to template changes; if we use this for other archs,
+    # we should probably abstract the template.
+    new_size = (tile_size, tile_size)
+
+    template = (
+        "<|system|>\nA chat between a curious user and an artificial "
+        "intelligence assistant. The assistant gives helpful, detailed, and"
+        " polite answers to the user's questions.\n<|user|>\n"
+        "{}\n{}\n<|assistant|>\n"
+    )
+
+    # Make it smol
+    resized_img = ImageAsset("cherry_blossom").pil_image.resize(new_size)
+
+    raw_prompts = [
+        "Describe this image.",
+        "What is the focus of this image?",
+        "What color is the background of this photo?",
+        "What flowers are these?",
+    ]
+
+    mm_prompts = []
+    # Build multimodal prompts by mixing potentially
+    # rescaled images with each of text prompts
+    for raw_prompt in raw_prompts:
+        mm_prompts.append(
+            {
+                "prompt": template.format(image_token, raw_prompt),
+                "multi_modal_data": {
+                    "image": resized_img,
+                },
+            }
+        )
+
+    num_diff_prompts = len(mm_prompts)
+    if num_prompts > num_diff_prompts:
+        mm_prompts = mm_prompts * (math.ceil(num_prompts / num_diff_prompts))
+
+    return mm_prompts[:num_prompts]
 
 
 def get_longer_chicken_soup_prompts(num_prompts: int) -> list[str]:

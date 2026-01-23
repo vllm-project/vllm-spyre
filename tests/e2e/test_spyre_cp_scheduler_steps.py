@@ -53,7 +53,6 @@ def test_prefill_tkv_too_big(
             "waiting": ["0", "1"],
             "running": [],
             "request_outputs": [],
-            "n_reserved_blocks": 0,
             "n_used_blocks": 0,
         },
         {
@@ -64,7 +63,6 @@ def test_prefill_tkv_too_big(
             "waiting": ["1"],
             "running": ["0"],
             "request_outputs": ["0"],
-            "n_reserved_blocks": 2,  # prefill (1 block) + 17 decodes (1 additional block)
             "n_used_blocks": 1,
         },
         # Here we cannot schedule sequence 1. By shifting sequence 0 by
@@ -77,7 +75,6 @@ def test_prefill_tkv_too_big(
             "waiting": ["1"],
             "running": ["0"],
             "request_outputs": ["0"],
-            "n_reserved_blocks": 2,
             "n_used_blocks": 1,
         },
         {
@@ -90,7 +87,6 @@ def test_prefill_tkv_too_big(
             "running": ["1", "0"],
             "request_outputs": ["1"],
             # 2 + 2 (prefill (2 block) + 17 decodes in the last block)
-            "n_reserved_blocks": 4,
             "n_used_blocks": 3,
         },
         {
@@ -105,7 +101,6 @@ def test_prefill_tkv_too_big(
             "running": ["1"],
             "request_outputs": ["1", "0"],
             "finished_requests": ["0"],
-            "n_reserved_blocks": 4,
             "n_used_blocks": 4,  # seq 0 needs another block for the last token
         },
         {
@@ -116,7 +111,6 @@ def test_prefill_tkv_too_big(
             "waiting": [],
             "running": ["1"],
             "request_outputs": ["1"],
-            "n_reserved_blocks": 2,
             "n_used_blocks": 2,
         },
         {
@@ -127,7 +121,6 @@ def test_prefill_tkv_too_big(
             "running": [],
             "request_outputs": ["1"],
             "finished_requests": ["1"],
-            "n_reserved_blocks": 2,
             "n_used_blocks": 2,
         },
         {
@@ -137,7 +130,6 @@ def test_prefill_tkv_too_big(
             "waiting": [],
             "running": [],
             "request_outputs": [],
-            "n_reserved_blocks": 0,
             "n_used_blocks": 0,
         },
     ]
@@ -199,7 +191,6 @@ def test_requests_exceed_batch_tkv_limit(
             "waiting": ["0", "1"],
             "running": [],
             "request_outputs": [],
-            "n_reserved_blocks": 0,
             "n_used_blocks": 0,
         },
         {
@@ -210,7 +201,6 @@ def test_requests_exceed_batch_tkv_limit(
             "waiting": ["1"],
             "running": ["0"],
             "request_outputs": ["0"],
-            "n_reserved_blocks": 2,  # prefill (1 block) + 1 decode (1 block)
             "n_used_blocks": 1,
         },
         # Note: we cannot prefill seq 1 as the volumetric limit
@@ -226,7 +216,6 @@ def test_requests_exceed_batch_tkv_limit(
             "running": [],
             "request_outputs": ["0"],
             "finished_requests": ["0"],
-            "n_reserved_blocks": 2,
             "n_used_blocks": 2,
         },
         {
@@ -237,7 +226,6 @@ def test_requests_exceed_batch_tkv_limit(
             "waiting": [],
             "running": ["1"],
             "request_outputs": ["1"],
-            "n_reserved_blocks": 2,
             "n_used_blocks": 2,  # 2 - 2 + 2
         },
         {
@@ -250,7 +238,6 @@ def test_requests_exceed_batch_tkv_limit(
             "running": [],
             "request_outputs": ["1"],
             "finished_requests": ["1"],
-            "n_reserved_blocks": 2,
             "n_used_blocks": 2,
         },
         {
@@ -261,7 +248,6 @@ def test_requests_exceed_batch_tkv_limit(
             "waiting": [],
             "running": [],
             "request_outputs": [],
-            "n_reserved_blocks": 0,
             "n_used_blocks": 0,
         },
     ]
@@ -278,146 +264,6 @@ def test_requests_exceed_batch_tkv_limit(
         max_model_len=max_model_len,
         available_blocks=available_blocks,
         max_batch_tkv_limit=max_batch_tkv_limit,
-        use_cb=False,
-        max_num_batched_tokens=max_num_batched_tokens,
-    )
-
-
-@pytest.mark.chunked_prefill
-@pytest.mark.full_model
-# These values are all parameterized for test sorting
-@pytest.mark.parametrize("max_num_seqs", [2])
-@pytest.mark.parametrize("max_model_len", [128])
-@pytest.mark.parametrize("max_num_batched_tokens", [128])
-# provide only 2 blocks, but at least 3 blocks would be required to schedule
-# the sequences together in a batch.
-@pytest.mark.parametrize("available_blocks", [2])
-def test_prefill_use_more_than_available_blocks(
-    model: ModelInfo,
-    backend: str,
-    monkeypatch: pytest.MonkeyPatch,
-    set_random_seed,
-    max_num_seqs: int,
-    max_model_len: int,
-    max_num_batched_tokens: int,
-    available_blocks: int,
-):
-    """Scenario where the number of available KV cache blocks is decreased
-    to a value where the the number of reserved blocks would exceed the number
-    of available blocks, we therefore have to wait scheduling the request.
-
-    Configuration:
-        * max_num_seqs: 2
-        * number of prompts: 2
-            * 0: len = 49, max tokens = 3, step joining = 0
-            * 1: len = 70, max tokens = 3, step joining = 0
-        * available_blocks: 2
-    """
-
-    seqs_max_tokens = [3, 3]
-    prompts_lengths = [49, 70]
-    steps_add_reqs = [0, 0]
-
-    checked_steps = [
-        {
-            "step": 0,
-            "tkv": 0,
-            "waiting": ["0", "1"],
-            "running": [],
-            "request_outputs": [],
-            "n_reserved_blocks": 0,
-            "n_used_blocks": 0,
-        },
-        {
-            # Prefill sequence 0
-            # total blocks in use: 1
-            "step": 1,
-            "tkv": 49,
-            "waiting": ["1"],
-            "running": ["0"],
-            "request_outputs": ["0"],
-            "n_reserved_blocks": 1,
-            "n_used_blocks": 1,
-        },
-        # We cannot schedule sequence 1 here. Needs 2 more blocks, but only
-        # a total of 2 blocks available.
-        {
-            # Decode sequence 0
-            "step": 2,
-            "tkv": 50,
-            "waiting": ["1"],
-            "running": ["0"],
-            "request_outputs": ["0"],
-            "n_reserved_blocks": 1,
-            "n_used_blocks": 1,
-        },
-        {
-            # Decode sequence 0
-            # seq 0 finishes in this step
-            "step": 3,
-            "tkv": 51,
-            "waiting": ["1"],
-            "running": [],
-            "request_outputs": ["0"],
-            "finished_requests": ["0"],
-            "n_reserved_blocks": 1,
-            "n_used_blocks": 1,
-        },
-        {
-            # Prefill sequence 1
-            "step": 4,
-            "tkv": 70,
-            "waiting": [],
-            "running": ["1"],
-            "request_outputs": ["1"],
-            "n_reserved_blocks": 2,
-            "n_used_blocks": 2,
-        },
-        {
-            # Decode sequence 1
-            "step": 5,
-            "tkv": 71,
-            "waiting": [],
-            "running": ["1"],
-            "request_outputs": ["1"],
-            "n_reserved_blocks": 2,
-            "n_used_blocks": 2,
-        },
-        {
-            # Decode sequence 0
-            # seq 0 finishes in this step
-            "step": 6,
-            "tkv": 72,
-            "waiting": [],
-            "running": [],
-            "request_outputs": ["1"],
-            "finished_requests": ["1"],
-            "n_reserved_blocks": 2,
-            "n_used_blocks": 2,
-        },
-        {
-            # Tkv should be cleared one step later
-            "step": 7,
-            "tkv": 0,
-            "waiting": [],
-            "running": [],
-            "request_outputs": [],
-            "n_reserved_blocks": 0,
-            "n_used_blocks": 0,
-        },
-    ]
-
-    check_scheduler_inference_steps(
-        model=model,
-        backend=backend,
-        monkeypatch=monkeypatch,
-        seqs_max_tokens=seqs_max_tokens,
-        prompts_lengths=prompts_lengths,
-        steps_add_reqs=steps_add_reqs,
-        checked_steps=checked_steps,
-        max_num_seqs=max_num_seqs,
-        max_model_len=max_model_len,
-        available_blocks=available_blocks,
         use_cb=False,
         max_num_batched_tokens=max_num_batched_tokens,
     )
@@ -466,7 +312,6 @@ def test_single_cp_prefill(
             "waiting": ["0"],
             "running": [],
             "request_outputs": [],
-            "n_reserved_blocks": 0,
             "n_used_blocks": 0,
         },
         {
@@ -476,7 +321,6 @@ def test_single_cp_prefill(
             "waiting": [],
             "running": ["0"],
             "request_outputs": [],
-            "n_reserved_blocks": 9,
             "n_used_blocks": 8,
         },
         {
@@ -486,7 +330,6 @@ def test_single_cp_prefill(
             "waiting": [],
             "running": ["0"],
             "request_outputs": [],
-            "n_reserved_blocks": 9,
             "n_used_blocks": 8,
         },
         {
@@ -497,7 +340,6 @@ def test_single_cp_prefill(
             "waiting": [],
             "running": ["0"],
             "request_outputs": [],
-            "n_reserved_blocks": 9,
             "n_used_blocks": 8,
         },
         {
@@ -508,7 +350,6 @@ def test_single_cp_prefill(
             "waiting": [],
             "running": ["0"],
             "request_outputs": ["0"],
-            "n_reserved_blocks": 9,
             "n_used_blocks": 8,
         },
         {
@@ -520,7 +361,6 @@ def test_single_cp_prefill(
             "running": [],
             "request_outputs": ["0"],
             "finished_requests": ["0"],
-            "n_reserved_blocks": 9,
             "n_used_blocks": 9,
         },
         {
@@ -530,7 +370,6 @@ def test_single_cp_prefill(
             "waiting": [],
             "running": [],
             "request_outputs": [],
-            "n_reserved_blocks": 0,
             "n_used_blocks": 0,
         },
     ]
@@ -591,7 +430,6 @@ def test_cp_prefill_interleave1(
             "waiting": ["0", "1"],
             "running": [],
             "request_outputs": [],
-            "n_reserved_blocks": 0,
             "n_used_blocks": 0,
         },
         {
@@ -602,7 +440,6 @@ def test_cp_prefill_interleave1(
             "waiting": ["1"],
             "running": ["0"],
             "request_outputs": ["0"],
-            "n_reserved_blocks": 1,
             "n_used_blocks": 1,
         },
         {
@@ -614,7 +451,6 @@ def test_cp_prefill_interleave1(
             "waiting": ["1"],
             "running": ["0"],
             "request_outputs": ["0"],
-            "n_reserved_blocks": 1,
             "n_used_blocks": 1,
         },
         {
@@ -624,7 +460,6 @@ def test_cp_prefill_interleave1(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": [],
-            "n_reserved_blocks": 10,
             "n_used_blocks": 9,
         },
         {
@@ -634,7 +469,6 @@ def test_cp_prefill_interleave1(
             "waiting": [],
             "running": ["0", "1"],
             "request_outputs": ["0"],
-            "n_reserved_blocks": 10,
             "n_used_blocks": 9,
         },
         {
@@ -645,7 +479,6 @@ def test_cp_prefill_interleave1(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": [],
-            "n_reserved_blocks": 10,
             "n_used_blocks": 9,
         },
         {
@@ -655,7 +488,6 @@ def test_cp_prefill_interleave1(
             "waiting": [],
             "running": ["0", "1"],
             "request_outputs": ["0"],
-            "n_reserved_blocks": 10,
             "n_used_blocks": 9,
         },
         {
@@ -666,7 +498,6 @@ def test_cp_prefill_interleave1(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": [],
-            "n_reserved_blocks": 10,
             "n_used_blocks": 9,
         },
         {
@@ -676,7 +507,6 @@ def test_cp_prefill_interleave1(
             "waiting": [],
             "running": ["0", "1"],
             "request_outputs": ["0"],
-            "n_reserved_blocks": 10,
             "n_used_blocks": 9,
         },
         {
@@ -688,7 +518,6 @@ def test_cp_prefill_interleave1(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": ["1"],
-            "n_reserved_blocks": 10,
             "n_used_blocks": 9,
         },
         {
@@ -699,7 +528,6 @@ def test_cp_prefill_interleave1(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": ["1", "0"],
-            "n_reserved_blocks": 10,
             "n_used_blocks": 10,
         },
         {
@@ -710,7 +538,6 @@ def test_cp_prefill_interleave1(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": ["1", "0"],
-            "n_reserved_blocks": 10,
             "n_used_blocks": 10,
         },
         {
@@ -723,7 +550,6 @@ def test_cp_prefill_interleave1(
             "running": [],
             "finished_requests": ["1", "0"],
             "request_outputs": ["1", "0"],
-            "n_reserved_blocks": 10,
             "n_used_blocks": 10,
         },
         {
@@ -733,7 +559,6 @@ def test_cp_prefill_interleave1(
             "waiting": [],
             "running": [],
             "request_outputs": [],
-            "n_reserved_blocks": 0,
             "n_used_blocks": 0,
         },
     ]
@@ -794,7 +619,6 @@ def test_cp_prefill_no_interleave(
             "waiting": ["0", "1"],
             "running": [],
             "request_outputs": [],
-            "n_reserved_blocks": 0,
             "n_used_blocks": 0,
         },
         {
@@ -805,7 +629,6 @@ def test_cp_prefill_no_interleave(
             "waiting": ["1"],
             "running": ["0"],
             "request_outputs": ["0"],
-            "n_reserved_blocks": 1,
             "n_used_blocks": 1,
         },
         {
@@ -816,7 +639,6 @@ def test_cp_prefill_no_interleave(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": [],
-            "n_reserved_blocks": 10,
             "n_used_blocks": 9,
         },
         {
@@ -827,7 +649,6 @@ def test_cp_prefill_no_interleave(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": [],
-            "n_reserved_blocks": 10,
             "n_used_blocks": 9,
         },
         {
@@ -838,7 +659,6 @@ def test_cp_prefill_no_interleave(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": [],
-            "n_reserved_blocks": 10,
             "n_used_blocks": 9,
         },
         {
@@ -850,7 +670,6 @@ def test_cp_prefill_no_interleave(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": ["1"],
-            "n_reserved_blocks": 10,
             "n_used_blocks": 9,
         },
         {
@@ -860,7 +679,6 @@ def test_cp_prefill_no_interleave(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": ["1", "0"],
-            "n_reserved_blocks": 10,
             "n_used_blocks": 10,
         },
         {
@@ -870,7 +688,6 @@ def test_cp_prefill_no_interleave(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": ["1", "0"],
-            "n_reserved_blocks": 10,
             "n_used_blocks": 10,
         },
         {
@@ -881,7 +698,6 @@ def test_cp_prefill_no_interleave(
             "running": ["0"],
             "finished_requests": ["1"],
             "request_outputs": ["1", "0"],
-            "n_reserved_blocks": 10,
             "n_used_blocks": 10,
         },
         {
@@ -891,7 +707,6 @@ def test_cp_prefill_no_interleave(
             "waiting": [],
             "running": ["0"],
             "request_outputs": ["0"],
-            "n_reserved_blocks": 1,
             "n_used_blocks": 1,
         },
         {
@@ -901,7 +716,6 @@ def test_cp_prefill_no_interleave(
             "waiting": [],
             "running": ["0"],
             "request_outputs": ["0"],
-            "n_reserved_blocks": 1,
             "n_used_blocks": 1,
         },
         {
@@ -911,7 +725,6 @@ def test_cp_prefill_no_interleave(
             "waiting": [],
             "running": ["0"],
             "request_outputs": ["0"],
-            "n_reserved_blocks": 1,
             "n_used_blocks": 1,
         },
         {
@@ -922,7 +735,6 @@ def test_cp_prefill_no_interleave(
             "running": [],
             "finished_requests": ["0"],
             "request_outputs": ["0"],
-            "n_reserved_blocks": 1,
             "n_used_blocks": 1,
         },
         {
@@ -932,7 +744,6 @@ def test_cp_prefill_no_interleave(
             "waiting": [],
             "running": [],
             "request_outputs": [],
-            "n_reserved_blocks": 0,
             "n_used_blocks": 0,
         },
     ]
@@ -992,7 +803,6 @@ def test_cp_prefill_interleave2(
             "waiting": ["0"],
             "running": [],
             "request_outputs": [],
-            "n_reserved_blocks": 0,
             "n_used_blocks": 0,
         },
         {
@@ -1003,7 +813,6 @@ def test_cp_prefill_interleave2(
             "waiting": [],
             "running": ["0"],
             "request_outputs": ["0"],
-            "n_reserved_blocks": 1,
             "n_used_blocks": 1,
         },
         {
@@ -1013,7 +822,6 @@ def test_cp_prefill_interleave2(
             "waiting": [],
             "running": ["0"],
             "request_outputs": ["0"],
-            "n_reserved_blocks": 1,
             "n_used_blocks": 1,
         },
         {
@@ -1023,7 +831,6 @@ def test_cp_prefill_interleave2(
             "waiting": ["1"],
             "running": ["0"],
             "request_outputs": ["0"],
-            "n_reserved_blocks": 1,
             "n_used_blocks": 1,
         },
         {
@@ -1034,7 +841,6 @@ def test_cp_prefill_interleave2(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": [],
-            "n_reserved_blocks": 10,
             "n_used_blocks": 9,
         },
         {
@@ -1044,7 +850,6 @@ def test_cp_prefill_interleave2(
             "waiting": [],
             "running": ["0", "1"],
             "request_outputs": ["0"],
-            "n_reserved_blocks": 10,
             "n_used_blocks": 9,
         },
         {
@@ -1055,7 +860,6 @@ def test_cp_prefill_interleave2(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": [],
-            "n_reserved_blocks": 10,
             "n_used_blocks": 9,
         },
         {
@@ -1065,7 +869,6 @@ def test_cp_prefill_interleave2(
             "waiting": [],
             "running": ["0", "1"],
             "request_outputs": ["0"],
-            "n_reserved_blocks": 10,
             "n_used_blocks": 9,
         },
         {
@@ -1076,7 +879,6 @@ def test_cp_prefill_interleave2(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": [],
-            "n_reserved_blocks": 10,
             "n_used_blocks": 9,
         },
         {
@@ -1086,7 +888,6 @@ def test_cp_prefill_interleave2(
             "waiting": [],
             "running": ["0", "1"],
             "request_outputs": ["0"],
-            "n_reserved_blocks": 10,
             "n_used_blocks": 9,
         },
         {
@@ -1098,7 +899,6 @@ def test_cp_prefill_interleave2(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": ["1"],
-            "n_reserved_blocks": 10,
             "n_used_blocks": 9,
         },
         {
@@ -1109,7 +909,6 @@ def test_cp_prefill_interleave2(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": ["1", "0"],
-            "n_reserved_blocks": 10,
             "n_used_blocks": 10,
         },
         {
@@ -1121,7 +920,6 @@ def test_cp_prefill_interleave2(
             "running": ["1"],
             "finished_requests": ["0"],
             "request_outputs": ["1", "0"],
-            "n_reserved_blocks": 10,
             "n_used_blocks": 10,
         },
         {
@@ -1131,7 +929,6 @@ def test_cp_prefill_interleave2(
             "running": [],
             "finished_requests": ["1"],
             "request_outputs": ["1"],
-            "n_reserved_blocks": 9,
             "n_used_blocks": 9,
         },
         {
@@ -1141,7 +938,6 @@ def test_cp_prefill_interleave2(
             "waiting": [],
             "running": [],
             "request_outputs": [],
-            "n_reserved_blocks": 0,
             "n_used_blocks": 0,
         },
     ]
@@ -1209,7 +1005,6 @@ def test_prefill_tkv_too_big2(
             "waiting": ["0", "1", "2"],
             "running": [],
             "request_outputs": [],
-            "n_reserved_blocks": 0,
             "n_used_blocks": 0,
         },
         {
@@ -1219,7 +1014,6 @@ def test_prefill_tkv_too_big2(
             "waiting": ["1", "2"],
             "running": ["0"],
             "request_outputs": ["0"],
-            "n_reserved_blocks": 1,
             "n_used_blocks": 1,
         },
         # tkv should be updated at the end of the last chunked prefill
@@ -1232,7 +1026,6 @@ def test_prefill_tkv_too_big2(
             "running": ["1", "0"],
             "request_outputs": ["1"],
             # 1 + 2 (prefill (2 block) + 3 decodes in the last block)
-            "n_reserved_blocks": 3,
             "n_used_blocks": 3,
         },
         # Here we cannot schedule sequence 2. Current tkv being in the second
@@ -1246,7 +1039,6 @@ def test_prefill_tkv_too_big2(
             "waiting": ["2"],
             "running": ["1", "0"],
             "request_outputs": ["1", "0"],
-            "n_reserved_blocks": 3,
             "n_used_blocks": 3,
         },
         {
@@ -1259,7 +1051,6 @@ def test_prefill_tkv_too_big2(
             "running": ["0"],
             "request_outputs": ["1", "0"],
             "finished_requests": ["1"],
-            "n_reserved_blocks": 3,
             "n_used_blocks": 3,
         },
         # The tkv value used here is computed before the model forward pass and
@@ -1275,7 +1066,6 @@ def test_prefill_tkv_too_big2(
             "waiting": ["2"],
             "running": ["0"],
             "request_outputs": ["0"],
-            "n_reserved_blocks": 1,
             "n_used_blocks": 1,
         },
         # Sequence 2 can be scheduled for prefill, now that tkv is moved back to
@@ -1288,7 +1078,6 @@ def test_prefill_tkv_too_big2(
             "running": ["2", "0"],
             "request_outputs": ["2"],
             # 3 - 2 (finished seq 1) + 2 (prefill + 50 decodes in new block)
-            "n_reserved_blocks": 3,
             "n_used_blocks": 2,
         },
         {
@@ -1301,7 +1090,6 @@ def test_prefill_tkv_too_big2(
             "running": ["2"],
             "request_outputs": ["2", "0"],
             "finished_requests": ["0"],
-            "n_reserved_blocks": 3,
             "n_used_blocks": 2,
         },
         {
@@ -1311,7 +1099,6 @@ def test_prefill_tkv_too_big2(
             "waiting": [],
             "running": ["2"],
             "request_outputs": ["2"],
-            "n_reserved_blocks": 2,
             "n_used_blocks": 1,
         },
         {
@@ -1323,7 +1110,6 @@ def test_prefill_tkv_too_big2(
             "running": [],
             "request_outputs": ["2"],
             "finished_requests": ["2"],
-            "n_reserved_blocks": 2,
             "n_used_blocks": 2,
         },
         {
@@ -1333,7 +1119,6 @@ def test_prefill_tkv_too_big2(
             "waiting": [],
             "running": [],
             "request_outputs": [],
-            "n_reserved_blocks": 0,
             "n_used_blocks": 0,
         },
     ]
