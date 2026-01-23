@@ -2241,7 +2241,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             list(self.input_batch.req_id_to_index.keys()),
             list(self.prefill_batch.req_id_to_index.keys()),
         )
-        # prefill_index = self.input_batch.add_request(request)
         for logitsproc in self.input_batch.logitsprocs_wrappers:
             logitsproc.set_prefill_index(request_index)
 
