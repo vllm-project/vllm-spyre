@@ -2121,6 +2121,8 @@ def test_double_prefix_hit_within_batch_interleaving(
             "n_prefix_hits": 0,
             "block_tables": {"1": [1, 2, 3, 5]},
             "block_ref_count": {1: 1, 2: 1, 3: 1, 5: 1},
+            "scale_indices": [0],
+            "batch_index": {"1": 0},
         },
         {  # prefill chunk 1 seq 2
             "step": 7,
@@ -2159,6 +2161,8 @@ def test_double_prefix_hit_within_batch_interleaving(
             "n_prefix_hits": 0,
             "block_tables": {"2": [6, 7, 8, 9]},
             "block_ref_count": {6: 1, 7: 1, 8: 1, 9: 1},
+            "scale_indices": [0],
+            "batch_index": {"2": 0},
         },
         {  # prefill chunk 1 seq 3 (prefix cache hit - reuses blocks 1,2,3)
             "step": 10,
@@ -2197,6 +2201,7 @@ def test_double_prefix_hit_within_batch_interleaving(
             "block_tables": {"3": [1, 2, 3, 10]},
             "block_ref_count": {1: 1, 2: 1, 3: 1, 10: 1},
             "scale_indices": [0],
+            "batch_index": {"3": 0},
         },
         {  # cleanup step - all requests finished, resources released
             "step": 13,
