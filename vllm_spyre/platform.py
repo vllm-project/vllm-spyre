@@ -715,9 +715,31 @@ class SpyrePlatform(Platform):
         # Set HDMA environment variables with validation
         cls._set_env_with_validation("FLEX_HDMA_P2PSIZE", 256 * 1024 * 1024)  # 256MB
         cls._set_env_with_validation("FLEX_HDMA_COLLSIZE", 32 * 1024 * 1024)  # 32MB
-        
-        # num_gpu_blocks_override hard coded to 2080 for Llama
-        vllm_config.cache_config.num_gpu_blocks_override = 2080
+
+        # Override the total number of KV cache blocks based on what we know
+        # will fit. (Unless user already set `--num-gpu-blocks-override`)
+        # TODO: remove this once we have correct free memory info available
+        if cls.sendnn_configured() and ((0, 0, 0) < cls.sendnn_version() < (1, 0, 3)):
+            # Older versions of torch_sendnn use the previous override of ~2k
+            # blocks.
+            # NB: A version of (0, 0, 0) means that the version of torch_sendnn
+            # could not be determined, and we assume this means we have a dev
+            # install of newer code.
+            blocks_override = 2080
+        else:
+            # If torch_sendnn is not configured or we have a newer torch_sendnn
+            # install, use the newer 8k override.
+            blocks_override = 8192
+
+        if vllm_config.cache_config.num_gpu_blocks_override is None:
+            vllm_config.cache_config.num_gpu_blocks_override = blocks_override
+            logger.info("Overriding available KV Cache blocks to %d", blocks_override)
+        elif vllm_config.cache_config.num_gpu_blocks_override != blocks_override:
+            logger.warning(
+                "--num-gpu-blocks-override was set to %d, not using default of %d",
+                vllm_config.cache_config.num_gpu_blocks_override,
+                blocks_override,
+            )
 
         # hard-coded value for max_num_batched_tokens with chunked prefill
         if (
