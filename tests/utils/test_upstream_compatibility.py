@@ -124,3 +124,14 @@ def test_allocate_new_computed_blocks():
             "in FullAttentionManager no longer required, can use "
             "allocate_new_computed_blocks everywhere"
         )
+
+
+def test_guided_decoding_params():
+    if VLLM_VERSION == "vLLM:lowest":
+        try:
+            from vllm.sampling_params import GuidedDecodingParams  # noqa
+        except ImportError as e:
+            raise AssertionError(
+                "Fix backward compatible imports of "
+                "GuidedDecodingParams which is no longer required"
+            ) from e

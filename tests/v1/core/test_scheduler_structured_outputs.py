@@ -8,11 +8,13 @@ These unit tests mock the scheduler dependencies and call the actual schedule() 
 
 import pytest
 from unittest.mock import Mock, patch
-from vllm import SamplingParams
-from vllm.sampling_params import StructuredOutputsParams
 from vllm.v1.request import Request, RequestStatus
 from vllm.v1.core.sched.request_queue import FCFSRequestQueue
 from vllm_spyre.v1.core.scheduler import ChunkedPrefillSpyreScheduler
+
+# Backwards compatibility for vLLM < 0.11.0
+# TODO: Remove these imports when dropping support for vLLM v0.10.2
+from vllm_spyre.compat_utils import StructuredOutputsParams, SamplingParamsCompat as SamplingParams
 
 
 pytestmark = pytest.mark.skip_global_cleanup
