@@ -551,6 +551,9 @@ class ContinuousBatchingFmsModel(FmsModelBase):
     def _set_scale_for_fp8(self, attn_metadata: SpyreAttentionMetadata):
         for layer_idx, (k, v) in enumerate(self.past_key_value_states):
             if attn_metadata.is_prefill:
+                # TODO: for chunked prefill, we don't need to be recreating the
+                # scale tensors every chunk. Possible future enhancement
+
                 # NOTE: Currently, prefill is only for a single prompt
                 # In prefill, we restore the scale (no scale) and
                 # reset to 1.
@@ -562,8 +565,8 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                 v._scale = self.current_kv_scales[layer_idx][1][prefill_index] = torch.ones(
                     1, dtype=torch.float32
                 )
-                k._scaled = False
-                v._scaled = False
+                k._scaled = bool(envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL)
+                v._scaled = bool(envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL)
             elif len(attn_metadata.scale_indices) == 1:
                 # Decode
                 # Special case for decode of bs=1, pad the batch to be bs=2
