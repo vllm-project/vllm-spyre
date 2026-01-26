@@ -2343,7 +2343,7 @@ def test_unequal_reqs_within_batch_interleaving(
             "scale_indices": [0],
             "batch_index": {"0": 0},
         },
-        {  # Step 3: Decode seq 0 (generates 2nd token), allocates block 4
+        {  # Step 3: Decode seq 0
             "step": 3,
             "tkv": 193,
             "waiting": ["1"],
@@ -2369,8 +2369,7 @@ def test_unequal_reqs_within_batch_interleaving(
             "block_ref_count": {1: 2, 2: 2, 3: 2, 4: 1},
             "batch_index": {"0": 0, "1": 1},
         },
-        {  # Step 5: Interleaved - decode seq 0 (generates 3rd token)
-            # seq 1 generates first token
+        {  # Step 5: Interleaved - decode seq 0
             "step": 5,
             "tkv": 194,
             "waiting": ["2"],
@@ -2383,8 +2382,8 @@ def test_unequal_reqs_within_batch_interleaving(
             "scale_indices": [0],
             "batch_index": {"0": 0, "1": 1},
         },
-        {  # Step 6: Interleaved - decode seq 1 (generates 2nd token)
-            # decode seq 0, seq 3 joins waiting
+        {  # Step 6: Interleaved - decode seq 1
+            # seq 3 joins waiting
             "step": 6,
             "tkv": 256,
             "waiting": ["2", "3"],
@@ -2397,8 +2396,7 @@ def test_unequal_reqs_within_batch_interleaving(
             "scale_indices": [1],
             "batch_index": {"0": 0, "1": 1},
         },
-        {  # Step 7: Decode seq 1 (generates 3rd token, allocates block 5)
-            # seq 0 finishes (4 tokens total)
+        {  # Step 7: Decode seq 1 + seq 0 finishes
             "step": 7,
             "tkv": 195,
             "waiting": ["2", "3"],
@@ -2413,7 +2411,7 @@ def test_unequal_reqs_within_batch_interleaving(
             "batch_index": {"1": 1, "0": 0},
         },
         {  # Step 8: Interleaved - prefill seq 2 (192 tokens, different prompt
-            # allocates blocks [6,7,8]) + decode seq 1
+            # allocates blocks [6,7,8])
             "step": 8,
             "tkv": 195,
             "waiting": ["3"],
@@ -2426,8 +2424,7 @@ def test_unequal_reqs_within_batch_interleaving(
             "scale_indices": [0],
             "batch_index": {"1": 1, "2": 0},
         },
-        {  # Step 9: Interleaved - decode seq 1 (generates 4th token)
-            # seq 2 generates first token
+        {  # Step 9: Interleaved - decode seq 1
             "step": 9,
             "tkv": 194,
             "waiting": ["3"],
@@ -2440,8 +2437,7 @@ def test_unequal_reqs_within_batch_interleaving(
             "scale_indices": [1],
             "batch_index": {"1": 1, "2": 0},
         },
-        {  # Step 10: Interleaved - decode seq 2 (generates 2nd token, will finish next)
-            # decode seq 1
+        {  # Step 10: Interleaved - decode seq 2
             "step": 10,
             "tkv": 256,
             "waiting": ["3"],
@@ -2454,8 +2450,8 @@ def test_unequal_reqs_within_batch_interleaving(
             "scale_indices": [0],
             "batch_index": {"1": 1, "2": 0},
         },
-        {  # Step 11: Decode seq 1 (generates 5th and final token)
-            # seq 2 finishes (2 tokens total, allocates block 9)
+        {  # Step 11: Decode seq 1
+            # seq 2 finishes
             "step": 11,
             "tkv": 195,
             "waiting": ["3"],
@@ -2470,7 +2466,7 @@ def test_unequal_reqs_within_batch_interleaving(
             "batch_index": {"1": 1, "2": 0},
         },
         {  # Step 12: Interleaved - prefill seq 3 (192 tokens, prefix cache hit on
-            # blocks [1,2,3]) + decode seq 1
+            # blocks [1,2,3])
             "step": 12,
             "tkv": 195,
             "waiting": [],
@@ -2483,7 +2479,7 @@ def test_unequal_reqs_within_batch_interleaving(
             "batch_index": {"1": 1, "3": 0},  # since seq 2 is finished, seq 3 gets 0
             "scale_indices": [0, 1],
         },
-        {  # Step 13: Seq 3 generates first token, seq 1 finishes (5 tokens total)
+        {  # Step 13: seq 1 finishes
             "step": 13,
             "tkv": 196,
             "waiting": [],
@@ -2497,7 +2493,7 @@ def test_unequal_reqs_within_batch_interleaving(
             "scale_indices": [1],
             "batch_index": {"1": 1, "3": 0},
         },
-        {  # Step 14: Decode seq 3 (generates 2nd token, will finish next)
+        {  # Step 14: Decode seq 3
             "step": 14,
             "tkv": 256,
             "waiting": [],
