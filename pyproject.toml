@@ -64,7 +64,7 @@ environments = [
 ]
 
 [tool.uv.sources]
-vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.13.0" }
+vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.14.0" }
 
 [tool.ty.rules]
 possibly-missing-attribute = "ignore"

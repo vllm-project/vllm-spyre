@@ -24,7 +24,7 @@ from vllm.logger import init_logger
 
 try:
     # pre 0.11.1 compatibility
-    from vllm.utils import FlexibleArgumentParser
+    from vllm.utils import FlexibleArgumentParser  # ty: ignore[unresolved-import]
 except ImportError:
     from vllm.utils.argparse_utils import FlexibleArgumentParser
 
@@ -214,6 +214,9 @@ class SpyrePlatform(Platform):
             vllm_config.model_config
         ):
             cls.configure_granite_3_8b(vllm_config)
+
+        # v0.14.0+ defaults to async scheduling
+        scheduler_config.async_scheduling = False
 
         # To disable any paged attention ops in the base scheduler, we:
         # - Set the block size (in tokens) to the maximum sequence length
