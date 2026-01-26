@@ -1,3 +1,6 @@
+from vllm.sampling_params import SamplingParams
+
+
 import inspect
 from dataclasses import fields
 from functools import lru_cache
@@ -82,6 +85,10 @@ def SamplingParamsCompat(params_or_first_arg=None, **kwargs) -> _SamplingParamsW
     TODO: Remove this function when dropping support for vLLM v0.10.2
     """
 
+    # Avoid double wrapping
+    if params_or_first_arg is not None and isinstance(params_or_first_arg, _SamplingParamsWrapper):
+        return params_or_first_arg
+
     # If called with an existing SamplingParams instance, wrap it
     if params_or_first_arg is not None and isinstance(params_or_first_arg, SamplingParamsBase):
         return _SamplingParamsWrapper(params_or_first_arg)
@@ -94,7 +101,7 @@ def SamplingParamsCompat(params_or_first_arg=None, **kwargs) -> _SamplingParamsW
     # Handle the case where params_or_first_arg might be a positional argument
     if params_or_first_arg is not None:
         # Assume it's a positional argument for SamplingParams
-        params = SamplingParamsBase(params_or_first_arg, **kwargs)
+        params: SamplingParams = SamplingParamsBase(params_or_first_arg, **kwargs)
     else:
         params = SamplingParamsBase(**kwargs)
 
