@@ -61,7 +61,6 @@ class TestSchedulerStructuredOutputHandling:
 
     def test_scheduler_strips_structured_output_request(self, mocked_scheduler, caplog_vllm_spyre):
         """Test that the scheduler removes structured_output_request from new requests."""
-        # scheduler = self._create_mock_scheduler()
 
         # Create a request with structured outputs
         sampling_params = SamplingParams(
