@@ -58,13 +58,7 @@ class SpyreCausalLM(nn.Module):
     ) -> None:
         super().__init__()
 
-        try:
-            ## Temporary backwards compatibility for 0.10.2
-            from vllm.model_executor.layers.sampler import get_sampler  # ty: ignore[unresolved-import]
-
-            self.sampler = get_sampler()
-        except (ImportError, ModuleNotFoundError):
-            self.sampler = Sampler()
+        self.sampler = Sampler()
 
         # boolean tensor of length batch size with indices:
         # True for unfinished sequences and

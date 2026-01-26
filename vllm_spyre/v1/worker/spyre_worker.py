@@ -73,22 +73,8 @@ def new_request_data_builder(
         "block_ids": [0],  # not actually used
         "num_computed_tokens": len(prompt_token_ids),
         "lora_request": None,
+        "mm_features": mm_features or [],
     }
-
-    ## Temporary backwards compatibility for 0.10.2
-    if "mm_kwargs" in dataclass_fields(NewRequestData):
-        kwargs["mm_kwargs"] = []
-    if "mm_hashes" in dataclass_fields(NewRequestData):
-        kwargs["mm_hashes"] = []
-    if "mm_positions" in dataclass_fields(NewRequestData):
-        kwargs["mm_positions"] = []
-
-    # Newly required in 0.11.0
-    if "mm_features" in dataclass_fields(NewRequestData):
-        if not mm_features:
-            kwargs["mm_features"] = []
-        else:
-            kwargs["mm_features"] = mm_features
 
     # Only in newer versions, need to selectively add for compatibility
     if "prompt_embeds" in dataclass_fields(NewRequestData):

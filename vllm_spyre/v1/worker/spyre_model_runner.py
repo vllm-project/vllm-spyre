@@ -35,7 +35,7 @@ from vllm.v1.sample.logits_processor import build_logitsprocs
 
 import vllm_spyre.envs as envs_spyre
 import vllm_spyre.utils as utils_spyre
-from vllm_spyre.compat_utils import dataclass_fields, has_argument
+from vllm_spyre.compat_utils import has_argument
 from vllm_spyre.model_executor.model_loader.spyre import (
     BACKEND_LIST,
     SpyreAttentionMetadata,
@@ -262,14 +262,11 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
         # We do at least use the real size from the cache config.
         block_size = self.vllm_config.cache_config.block_size
 
-        if "use_mla" in dataclass_fields(FullAttentionSpec):
-            ## Temporary backwards compatibility for 0.10.2
-            kwargs = {"use_mla": False}
-        else:
-            kwargs = {}
-
         attn_spec = FullAttentionSpec(
-            block_size=block_size, num_kv_heads=1, head_size=1, dtype=torch.float16, **kwargs
+            block_size=block_size,
+            num_kv_heads=1,
+            head_size=1,
+            dtype=torch.float16,
         )
         return {"foo": attn_spec}
 
@@ -972,19 +969,12 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         )
 
     def _make_kv_cache_manager(self) -> FullAttentionManager:
-        ## Temporary backwards compatibility for 0.10.2
-        if "use_mla" in dataclass_fields(FullAttentionSpec):
-            kwargs = {"use_mla": False}
-        else:
-            kwargs = {}
-
         self._attn_spec = FullAttentionSpec(
             block_size=self.block_size,
             # dummy values
             num_kv_heads=1,
             head_size=1,
             dtype=torch.float16,
-            **kwargs,
         )
 
         # Enable_caching parameter added in vllm v0.14.0
