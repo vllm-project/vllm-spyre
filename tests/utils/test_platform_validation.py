@@ -5,28 +5,18 @@ from SamplingParams during request validation.
 """
 
 import pytest
-from unittest.mock import patch
 from vllm import SamplingParams
 from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import StructuredOutputsParams
 from vllm_spyre.platform import SpyrePlatform
 
-
 pytestmark = pytest.mark.skip_global_cleanup
-
-
-@pytest.fixture
-def mock_platform_config():
-    """Fixture to mock the platform config."""
-    with patch.object(SpyrePlatform, "_config") as mock_config:
-        mock_config.model_config.max_model_len = 2048
-        yield mock_config
 
 
 class TestStructuredOutputValidation:
     """Test that platform validation strips structured outputs from requests."""
 
-    def test_strips_structured_outputs(self, mock_platform_config):
+    def test_strips_structured_outputs(self):
         """Test that validate_request sets structured_outputs to None."""
         params = SamplingParams(
             max_tokens=20, structured_outputs=StructuredOutputsParams(json_object=True)
@@ -38,7 +28,7 @@ class TestStructuredOutputValidation:
 
         assert params.structured_outputs is None
 
-    def test_logs_warning_when_stripping(self, mock_platform_config, caplog_vllm_spyre):
+    def test_logs_warning_when_stripping(self, caplog_vllm_spyre):
         """Test that a warning is logged when stripping structured_outputs."""
         params = SamplingParams(
             max_tokens=20, structured_outputs=StructuredOutputsParams(json_object=True)
@@ -59,9 +49,7 @@ class TestStructuredOutputValidation:
             StructuredOutputsParams(regex="[0-9]+"),
         ],
     )
-    def test_strips_different_structured_output_types(
-        self, mock_platform_config, structured_output
-    ):
+    def test_strips_different_structured_output_types(self, structured_output):
         """Test validation with different types of structured outputs."""
         params = SamplingParams(max_tokens=20, structured_outputs=structured_output)
 
@@ -71,7 +59,7 @@ class TestStructuredOutputValidation:
 
         assert params.structured_outputs is None
 
-    def test_preserves_other_sampling_params(self, mock_platform_config):
+    def test_preserves_other_sampling_params(self):
         """Test that other sampling params are not affected by the fix."""
         params = SamplingParams(
             max_tokens=20,
@@ -99,7 +87,7 @@ class TestStructuredOutputValidation:
         # But structured_outputs should be None
         assert params.structured_outputs is None
 
-    def test_does_not_affect_pooling_params(self, mock_platform_config):
+    def test_does_not_affect_pooling_params(self):
         """Test that PoolingParams are not affected (early return in validate_request)."""
         pooling_params = PoolingParams()
 
