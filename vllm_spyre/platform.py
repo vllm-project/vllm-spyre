@@ -405,7 +405,6 @@ class SpyrePlatform(Platform):
         if isinstance(params, PoolingParams):
             # Only validating generation requests for now
             return None
-        params = cast(SamplingParams, params)
 
         # Note: Currently prompt logprobs are not supported, therefore
         # envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS is hardcoded to False
@@ -414,17 +413,12 @@ class SpyrePlatform(Platform):
 
         # Structured Outputs are not supported yet and cause issues in our
         # scheduler if included in the request
-        # Use compatibility wrapper to handle both 'guided_decoding' and 'structured_outputs'
-        # TODO: Remove wrapper when dropping support for vLLM v0.10.2
-        from vllm_spyre.compat_utils import SamplingParamsCompat
-
-        params_compat = SamplingParamsCompat(params)
-        if params_compat.structured_outputs is not None:
+        if params.structured_outputs is not None:
             logger.warning(
                 "Structured outputs are currently not supported and "
                 "will be stripped from the request."
             )
-            params_compat.structured_outputs = None
+            params.structured_outputs = None
 
         if isinstance(prompt, dict) and "prompt_token_ids" in prompt:
             prompt_len = len(prompt["prompt_token_ids"])

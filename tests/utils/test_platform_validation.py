@@ -6,12 +6,10 @@ from SamplingParams during request validation.
 
 import pytest
 from unittest.mock import patch
+from vllm import SamplingParams
 from vllm.pooling_params import PoolingParams
+from vllm.sampling_params import StructuredOutputsParams
 from vllm_spyre.platform import SpyrePlatform
-
-# Backwards compatibility for vLLM < 0.11.0
-# TODO: Remove these imports when dropping support for vLLM v0.10.2
-from vllm_spyre.compat_utils import StructuredOutputsParams, SamplingParamsCompat as SamplingParams
 
 
 pytestmark = pytest.mark.skip_global_cleanup
