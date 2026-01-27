@@ -206,7 +206,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             self.running = []
             logger.debug(
                 "Scheduling a prefill step (%d prompt tokens), holding back %d requests",
-                self.waiting[-1].num_prompt_tokens,
+                self.waiting[-1].num_prompt_tokens,  # ty: ignore[not-subscriptable]
                 len(holdback_queue),
             )
         else:
