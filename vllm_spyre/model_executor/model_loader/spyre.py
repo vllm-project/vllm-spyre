@@ -487,7 +487,6 @@ class ContinuousBatchingFmsModel(FmsModelBase):
 
     def _set_scale_for_fp8(self, attn_metadata: SpyreAttentionMetadata):
         for layer_idx, (k, v) in enumerate(self.past_key_value_states):
-
             if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
                 # static scaling
                 if attn_metadata.is_prefill:
@@ -496,13 +495,14 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                 elif len(attn_metadata.scale_indices) == 1:
                     k._scale = torch.ones(2, dtype=torch.float32)
                     v._scale = torch.ones(2, dtype=torch.float32)
-                    torch._dynamo.mark_dynamic(v._scale, 0)
-                    torch._dynamo.mark_dynamic(k._scale, 0)
                 else:
                     k._scale = torch.ones(len(attn_metadata.scale_indices), dtype=torch.float32)
                     v._scale = torch.ones(len(attn_metadata.scale_indices), dtype=torch.float32)
-                    torch._dynamo.mark_dynamic(v._scale, 0)
-                    torch._dynamo.mark_dynamic(k._scale, 0)
+
+                # interesting- no mark_dynamic required on decode here
+
+                k._scaled = True
+                v._scaled = True
                 continue
 
             if attn_metadata.is_prefill:
