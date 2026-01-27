@@ -405,28 +405,6 @@ def setup_golden_token(
     return sampling_params
 
 
-# wrapper to be able to mark some tests as xfail for logprobs diffs but
-# still run and report the comparison
-def maybe_xfail(func):
-    def wrapper(*args, **kwargs):
-        model = kwargs["model"]
-        use_cb = kwargs.get("use_cb", False)
-        if "micro-g3.3-8b-instruct-1b" in model.name and model.is_quantized and not use_cb:
-            try:
-                func(*args, **kwargs)
-            except AssertionError as e:
-                print(e)
-            pytest.xfail(
-                "Micro model FP8 static-batch compilation may result in"
-                " a model that fails quality checks"
-            )
-        else:
-            func(*args, **kwargs)
-
-    return wrapper
-
-
-@maybe_xfail
 def validate_vllm_vs_hf_output(
     model: ModelInfo,
     prompts: Union[list[str], list[list[int]]],
