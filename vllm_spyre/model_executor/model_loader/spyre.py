@@ -487,6 +487,24 @@ class ContinuousBatchingFmsModel(FmsModelBase):
 
     def _set_scale_for_fp8(self, attn_metadata: SpyreAttentionMetadata):
         for layer_idx, (k, v) in enumerate(self.past_key_value_states):
+
+            if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
+                # static scaling
+                if attn_metadata.is_prefill:
+                    k._scale = torch.ones(1, dtype=torch.float32)
+                    v._scale = torch.ones(1, dtype=torch.float32)
+                elif len(attn_metadata.scale_indices) == 1:
+                    k._scale = torch.ones(2, dtype=torch.float32)
+                    v._scale = torch.ones(2, dtype=torch.float32)
+                    torch._dynamo.mark_dynamic(v._scale, 0)
+                    torch._dynamo.mark_dynamic(k._scale, 0)
+                else:
+                    k._scale = torch.ones(len(attn_metadata.scale_indices), dtype=torch.float32)
+                    v._scale = torch.ones(len(attn_metadata.scale_indices), dtype=torch.float32)
+                    torch._dynamo.mark_dynamic(v._scale, 0)
+                    torch._dynamo.mark_dynamic(k._scale, 0)
+                continue
+
             if attn_metadata.is_prefill:
                 # NOTE: Currently, prefill is only for a single prompt
                 # In prefill, we restore the scale (no scale) and
@@ -525,6 +543,10 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             torch._dynamo.mark_dynamic(k._scale, is_dynamic_flag)
 
     def _update_scale_for_fp8(self, attn_metadata: SpyreAttentionMetadata):
+        if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
+            # static scaling
+            return
+
         for layer_idx, (k, v) in enumerate(self.past_key_value_states):
             if attn_metadata.is_prefill or len(attn_metadata.scale_indices) > 1:
                 self.current_kv_scales[layer_idx][0][attn_metadata.scale_indices] = k._scale
