@@ -24,7 +24,7 @@ from vllm.logger import init_logger
 
 try:
     # pre 0.11.1 compatibility
-    from vllm.utils import FlexibleArgumentParser
+    from vllm.utils import FlexibleArgumentParser  # ty: ignore[unresolved-import]
 except ImportError:
     from vllm.utils.argparse_utils import FlexibleArgumentParser
 
@@ -214,6 +214,9 @@ class SpyrePlatform(Platform):
             vllm_config.model_config
         ):
             cls.configure_granite_3_8b(vllm_config)
+
+        # v0.14.0+ defaults to async scheduling
+        scheduler_config.async_scheduling = False
 
         # To disable any paged attention ops in the base scheduler, we:
         # - Set the block size (in tokens) to the maximum sequence length
@@ -408,8 +411,17 @@ class SpyrePlatform(Platform):
         if params.prompt_logprobs is not None and not envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
             raise ValueError("Prompt logprobs are currently not supported.")
 
+        # Structured Outputs are not supported yet and cause issues in our
+        # scheduler if included in the request
+        if params.structured_outputs is not None:
+            logger.warning(
+                "Structured outputs are currently not supported and "
+                "will be stripped from the request."
+            )
+            params.structured_outputs = None
+
         if isinstance(prompt, dict) and "prompt_token_ids" in prompt:
-            prompt_len = len(prompt["prompt_token_ids"])
+            prompt_len = len(prompt["prompt_token_ids"])  # ty: ignore
         elif processed_inputs is not None:
             if "encoder" in processed_inputs:
                 raise ValueError("Encoder-decoder models not supported ")

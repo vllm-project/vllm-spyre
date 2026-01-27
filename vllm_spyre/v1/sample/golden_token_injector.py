@@ -85,7 +85,7 @@ class GoldenTokenInjector(LogitsProcessor):
         return None
 
     def update_state(self, batch_update: BatchUpdate | None):
-        process_dict_updates(self.req_states, batch_update, self.add_req_states)  # ty: ignore[invalid-argument-type]
+        process_dict_updates(self.req_states, batch_update, self.add_req_states)
 
     def apply(self, logits: torch.Tensor) -> torch.Tensor:
         if not self.req_states:

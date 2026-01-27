@@ -1,4 +1,5 @@
 import math
+import os
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
@@ -12,12 +13,11 @@ from transformers import AutoModel, AutoModelForSequenceClassification, AutoToke
 from vllm.config import DeviceConfig, VllmConfig, set_current_vllm_config
 from vllm.forward_context import set_forward_context
 from vllm.logger import init_logger
-from vllm.model_executor.layers.pooler import ClassifierPooler, Pooler
 from vllm.sampling_params import SamplingType
 
 try:
     # pre 0.11.1 compatibility
-    from vllm.utils import get_hash_fn_by_name, is_pin_memory_available
+    from vllm.utils import get_hash_fn_by_name, is_pin_memory_available  # ty: ignore[unresolved-import]
 except ImportError:
     from vllm.utils.platform_utils import is_pin_memory_available
     from vllm.utils.hashing import get_hash_fn_by_name
@@ -35,7 +35,7 @@ from vllm.v1.sample.logits_processor import build_logitsprocs
 
 import vllm_spyre.envs as envs_spyre
 import vllm_spyre.utils as utils_spyre
-from vllm_spyre.compat_utils import dataclass_fields, has_argument
+from vllm_spyre.compat_utils import has_argument
 from vllm_spyre.model_executor.model_loader.spyre import (
     BACKEND_LIST,
     SpyreAttentionMetadata,
@@ -72,7 +72,8 @@ logger = init_logger(__name__)
 
 @dataclass(frozen=True)
 class ModelForwardInputs:
-    input_tokens: torch.Tensor
+    input_tokens: torch.Tensor | None  # For non multimodal
+    input_embeds: torch.Tensor | None  # For multimodal
     input_positions: torch.Tensor
     input_masks: torch.Tensor | None  # pooling and static batching only
     is_prompt: bool
@@ -186,6 +187,23 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
         assert self._model is not None, "model accessed before loading"
         return self._model
 
+    @property
+    def is_multimodal(self) -> bool:
+        """Indicates whether or not a model is multimodal.
+        This should not be called until after the model is loaded.
+        """
+        if not hasattr(self, "model"):
+            raise AssertionError("Cannot check if models are multimodal before loading!")
+        return bool(getattr(self.model, "is_multimodal", False))
+
+    def get_mm_utils(self):
+        """If the [loaded] model is multimodal, grab the instance of
+        the mm utils for the corresponding wrapper class.
+        """
+        if not self.is_multimodal:
+            return None
+        return self.model.mm_model_utils
+
     @abstractmethod
     def load_model(self, prompt_lens: Iterable[int], num_decode_tokens: Iterable[int]) -> None:
         raise NotImplementedError
@@ -244,14 +262,11 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
         # We do at least use the real size from the cache config.
         block_size = self.vllm_config.cache_config.block_size
 
-        if "use_mla" in dataclass_fields(FullAttentionSpec):
-            ## Temporary backwards compatibility for 0.10.2
-            kwargs = {"use_mla": False}
-        else:
-            kwargs = {}
-
         attn_spec = FullAttentionSpec(
-            block_size=block_size, num_kv_heads=1, head_size=1, dtype=torch.float16, **kwargs
+            block_size=block_size,
+            num_kv_heads=1,
+            head_size=1,
+            dtype=torch.float16,
         )
         return {"foo": attn_spec}
 
@@ -359,8 +374,10 @@ class SpyreModelRunner(
 
     @property
     def vocab_size(self) -> int:
-        # TODO: fix the typing here?
-        return self.model.model.model.config.src_vocab_size  # ty: ignore[invalid-return-type]
+        model_cfg = self.model.model.model.config
+        if self.model.is_multimodal:
+            return self.model.mm_model_utils.resolve_multimodal_vocab_size()
+        return model_cfg.src_vocab_size  # ty: ignore[invalid-return-type]
 
     def pad_input_ids(
         self,
@@ -522,13 +539,13 @@ class SpyreModelRunner(
     def prepare_model_input(self, scheduler_output: SchedulerOutput) -> SamplingForwardInputs:
         # NOTE: We assume that all sequences in the group are all prompts or
         # all decodes. Also assuming that new sequences are prefills
-        is_prompt = len(scheduler_output.scheduled_new_reqs) > 0
 
+        is_prompt = len(scheduler_output.scheduled_new_reqs) > 0
         # Prepare input tensors.
         if is_prompt:
             # Assert no running requests
             assert len(scheduler_output.scheduled_cached_reqs.req_ids) == 0
-
+            # NOTE: This will encode multimodal features if we have them
             return self._prepare_prompt(scheduler_output.scheduled_new_reqs)
         else:
             return self._prepare_decode(scheduler_output.scheduled_cached_reqs)
@@ -560,11 +577,18 @@ class SpyreModelRunner(
 
         model_input = self.prepare_model_input(scheduler_output)
 
-        # Execute the model
         attn_metadata = self.build_attn_metadata(model_input)
+        # Embeddings take priority [used by multimodal models only]
+        input_ids_or_embeds = (
+            model_input.input_embeds
+            if model_input.input_embeds is not None
+            else model_input.input_tokens
+        )
+
+        # Execute the model
         with set_forward_context(attn_metadata, self.vllm_config):
             logits = self.model(
-                input_ids=model_input.input_tokens,
+                input_ids_or_embeds=input_ids_or_embeds,
                 positions=model_input.input_positions,
                 masks=model_input.input_masks,
                 is_prompt=model_input.is_prompt,
@@ -699,6 +723,8 @@ class StaticBatchingSpyreModelRunner(WarmupShapesMixin, SpyreModelRunner):
         for request_data in new_requests:
             # retrieve initial (unpadded) tokens
             prompt_tokens = request_data.prompt_token_ids
+            # Empty list for non multimodal requests
+            mm_features = getattr(request_data, "mm_features", None)
 
             input_token_list.append(
                 torch.tensor(prompt_tokens, dtype=torch.long, device=torch.device("cpu"))
@@ -716,6 +742,7 @@ class StaticBatchingSpyreModelRunner(WarmupShapesMixin, SpyreModelRunner):
             req_state = SamplingRequestState(
                 req_id=req_id,
                 prompt_token_ids=request_data.prompt_token_ids,  # ty: ignore[invalid-argument-type]
+                mm_features=mm_features if mm_features else None,
                 sampling_params=sampling_params,  # ty: ignore[invalid-argument-type]
                 generator=generator,
                 output_token_ids=[],
@@ -742,6 +769,7 @@ class StaticBatchingSpyreModelRunner(WarmupShapesMixin, SpyreModelRunner):
 
         model_input = SamplingForwardInputs(
             input_tokens=input_tokens,
+            input_embeds=None,
             input_positions=self._position_ids,
             input_masks=self._mask,
             is_prompt=True,
@@ -762,6 +790,9 @@ class StaticBatchingSpyreModelRunner(WarmupShapesMixin, SpyreModelRunner):
         self,
         cached_request_data: CachedRequestData,
     ) -> SamplingForwardInputs:
+        # TODO - ensure multimodal features are dropped in decode, because
+        # we only consider the multimodal encoder during prefill
+
         assert len(cached_request_data.req_ids) > 0
         input_tokens: list[list[int]] = [[0] for _ in range(self._position_ids.shape[0])]
 
@@ -780,6 +811,7 @@ class StaticBatchingSpyreModelRunner(WarmupShapesMixin, SpyreModelRunner):
         input_tokens = torch.tensor(input_tokens, dtype=torch.long, device=self.device)  # ty: ignore[invalid-assignment]
         model_input = SamplingForwardInputs(
             input_tokens=input_tokens,  # ty: ignore[invalid-argument-type]
+            input_embeds=None,
             input_positions=self._position_ids,
             input_masks=self._mask,
             is_prompt=False,
@@ -867,6 +899,9 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.prefill_batch = SamplingInputBatch(
             # TODO: review this, currently we only support prefill for
             # `batch_size=1`
+            # TODO: when considering multimodal inputs for larger batches, we
+            # should also ensure that prefill correctly handles the case in
+            # which we mix mm + text-only requests in the same prefill batch.
             max_num_reqs=1,
             max_model_len=vllm_config.model_config.max_model_len,
             device=self.device,
@@ -916,6 +951,8 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
     def _set_blocks(self, num_blocks: int) -> None:
         # set number of available blocks, populate block_pool and
         # create the kv_cache_manager
+        # Note: block 0 is reserved for padding and cannot be reused, hence
+        # number of actually usable blocks for kv caching = num_blocks - 1
         self.n_blocks = num_blocks - 1
         self.block_pool = self._make_block_pool()
         self.kv_cache_manager = self._make_kv_cache_manager()
@@ -932,33 +969,32 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         )
 
     def _make_kv_cache_manager(self) -> FullAttentionManager:
-        ## Temporary backwards compatibility for 0.10.2
-        if "use_mla" in dataclass_fields(FullAttentionSpec):
-            kwargs = {"use_mla": False}
-        else:
-            kwargs = {}
-
         self._attn_spec = FullAttentionSpec(
             block_size=self.block_size,
             # dummy values
             num_kv_heads=1,
             head_size=1,
             dtype=torch.float16,
-            **kwargs,
         )
 
-        kv_cache_manager = FullAttentionManager(
-            kv_cache_spec=self._attn_spec,
-            block_pool=self.block_pool,
+        # Enable_caching parameter added in vllm v0.14.0
+        kwargs = {
+            "kv_cache_spec": self._attn_spec,
+            "block_pool": self.block_pool,
             # Currently don't support models with more than one
             # attention type, e.g. full and sliding window, so
             # there is only one group.
-            kv_cache_group_id=0,
+            "kv_cache_group_id": 0,
             # We don't support DCP
             # https://docs.vllm.ai/en/latest/serving/context_parallel_deployment/#decode-context-parallel
-            dcp_world_size=1,
-        )
-        return kv_cache_manager
+            "dcp_world_size": 1,
+        }
+
+        # Conditionally add param for vLLM >= 0.14.0
+        if has_argument(FullAttentionManager.__init__, "enable_caching"):
+            kwargs["enable_caching"] = self.enable_prefix_caching
+
+        return FullAttentionManager(**kwargs)  # ty: ignore[invalid-argument-type]
 
     def _get_blocks(self, request_id: str) -> list[KVCacheBlock]:
         return self.kv_cache_manager.req_to_blocks[request_id]
@@ -975,18 +1011,47 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         max_batch_size = self.scheduler_config.max_num_seqs
         max_model_len = self.model_config.max_model_len
         block_size = SpyrePlatform.get_block_size()
-        min_req_num_blocks = max_model_len // block_size
+        max_blocks_per_seq = max_model_len // block_size
+        num_blocks_full_batch = max_batch_size * max_blocks_per_seq
 
         blocks_override = self.cache_config.num_gpu_blocks_override
         if blocks_override is not None and blocks_override > 0:
             num_blocks = blocks_override
+            # Total number of blocks needs to be a multiple of the batch size on Spyre
+            # -> round down to not exceed the Spyre cards hard-coded limits of detected models
+            old_num_blocks = num_blocks
+            num_blocks = math.floor(num_blocks / max_batch_size) * max_batch_size
         else:
-            num_blocks = max_batch_size * min_req_num_blocks
+            # Note on "+1": We need to add one additional block used exclusively for padding (idx 0)
+            num_blocks = num_blocks_full_batch + 1
+            # Total number of blocks needs to be a multiple of the batch size on Spyre
+            # -> round up as not among detected models (rounding down might cut the padding block)
+            old_num_blocks = num_blocks
+            num_blocks = math.ceil(num_blocks / max_batch_size) * max_batch_size
 
-        # Total number of blocks needs to be a multiple of the batch size
-        # (spyre constraint) so round it down
-        num_blocks = max_batch_size * (num_blocks // max_batch_size)
+        if num_blocks != old_num_blocks:
+            logger.info(
+                "Spyre constraint: num blocks rounded from %d to %d (multiple of batch size=%d)",
+                old_num_blocks,
+                num_blocks,
+                max_batch_size,
+            )
 
+        if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
+            # As we drop the block reservation for chunked prefill the number of available blocks
+            # needs to be at least as big as the smaller of the batch tkv limit
+            # (VLLM_DT_MAX_BATCH_TKV_LIMIT) and a full batch (max_num_seqs * max_model_len)
+            batch_tkv_limit = int(
+                os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", num_blocks_full_batch * block_size)
+            )
+            num_blocks_batch_tkv_limit = batch_tkv_limit // block_size
+            # Note on "+1": We need to add one additional block used exclusively for padding (idx 0)
+            min_req_num_blocks = min(num_blocks_full_batch, num_blocks_batch_tkv_limit) + 1
+        else:
+            # default value: serve at least one sequence of full context (consistent with upstream)
+            min_req_num_blocks = max_blocks_per_seq + 1
+
+        # min_req_num_blocks := minimum required number of blocks
         if num_blocks < min_req_num_blocks:
             raise ValueError(
                 f"Number of pages available on Spyre {num_blocks} is not "
@@ -1028,6 +1093,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         sampling_params = request.sampling_params
         is_new_batch = len(self.req_ids2num_reserved_blocks) == 0
         prompt_len = len(prompt_token_ids)  # ty: ignore[invalid-argument-type]
+        mm_features = getattr(request, "mm_features", None)
 
         # make sure that the current tkv of the decode batch is greater or
         # equal to the prompt length of the new joining sequence
@@ -1106,6 +1172,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         req_state = SamplingRequestState(
             req_id=req_id,
             prompt_token_ids=prompt_token_ids,  # ty: ignore[invalid-argument-type]
+            mm_features=mm_features,
             sampling_params=sampling_params,  # ty: ignore[invalid-argument-type]
             generator=generator,
             output_token_ids=[],
@@ -1147,8 +1214,16 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # block table is only passed for decode
         block_table = None
 
+        # None unless this model is multimodal
+        input_embeds = self.model.get_maybe_mm_embeddings(
+            input_tokens,
+            mm_features=mm_features,
+            is_decode=False,
+        )
+
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
+            input_embeds=input_embeds,
             input_positions=position_ids,
             input_masks=mask,
             current_tkv_mask=current_tkv_mask,  # ty: ignore[invalid-argument-type]
@@ -1250,8 +1325,17 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # mask not needed during decode
         mask = None
 
+        # None unless this model is multimodal; no mm_features since
+        # all multimodal features are merged in prefill.
+        input_embeds = self.model.get_maybe_mm_embeddings(
+            input_tokens,
+            mm_features=None,
+            is_decode=True,
+        )
+
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
+            input_embeds=input_embeds,
             input_positions=position_ids,
             input_masks=mask,
             current_tkv_mask=current_tkv_mask,
@@ -1420,24 +1504,32 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # Marking dimensions static/dynamic
         if model_input.is_prompt:
             # batch static (batch size 1)
-            torch._dynamo.mark_static(model_input.input_tokens, 0)
             torch._dynamo.mark_static(model_input.slot_mapping, 0)
             torch._dynamo.mark_static(model_input.input_positions, 0)
             torch._dynamo.mark_static(model_input.input_masks, 0)
 
             # sequence dynamic
-            torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
             torch._dynamo.mark_dynamic(model_input.slot_mapping, 1)
             torch._dynamo.mark_dynamic(model_input.input_positions, 1)
             torch._dynamo.mark_dynamic(model_input.input_masks, 2)
             torch._dynamo.mark_dynamic(model_input.input_masks, 3)
+
+            # In the case that the input tokens are 3D, i.e., they're actually
+            # embeddings, The last dimension (embedding dimension) is static.
+            # This is mostly for multimodal models.
+            if model_input.input_embeds is not None:
+                torch._dynamo.mark_static(model_input.input_embeds, 0)
+                torch._dynamo.mark_dynamic(model_input.input_embeds, 1)
+                torch._dynamo.mark_static(model_input.input_embeds, 2)
+            else:
+                torch._dynamo.mark_static(model_input.input_tokens, 0)
+                torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
 
         # decode
         else:
             # mask is no longer used here
 
             # batch dynamic
-            torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
             torch._dynamo.mark_dynamic(model_input.block_table, 0)
             torch._dynamo.mark_dynamic(model_input.slot_mapping, 0)
             torch._dynamo.mark_dynamic(model_input.input_positions, 0)
@@ -1445,10 +1537,18 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             torch._dynamo.mark_dynamic(model_input.left_padded_prompt_mask, 0)
 
             # sequence
-            torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
             torch._dynamo.mark_dynamic(model_input.block_table, 1)
             torch._dynamo.mark_static(model_input.slot_mapping, 1)  # always 1
             torch._dynamo.mark_static(model_input.input_positions, 1)  # always 1
+
+            # for multimodal models, we also don't use input_embeds
+            if model_input.input_embeds is not None:
+                torch._dynamo.mark_dynamic(model_input.input_embeds, 0)
+                torch._dynamo.mark_static(model_input.input_embeds, 1)  # always 1
+                torch._dynamo.mark_static(model_input.input_embeds, 2)
+            else:
+                torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
+                torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
 
     def build_input_batch(self) -> SamplingInputBatch:
         # Define logits processors.
@@ -1594,16 +1694,41 @@ class SpyrePoolingModelRunner(
         pooler_config = self.model_config.pooler_config
         assert pooler_config is not None, "Pooler config is require for pooling models"
 
-        if task == "embed":
-            with set_current_vllm_config(self.vllm_config):
-                self.pooler = Pooler.for_embed(pooler_config=pooler_config)
-        elif task == "classify":
-            with set_current_vllm_config(self.vllm_config):
-                self.pooler = ClassifierPooler(
-                    pooling=self._pooler,
-                    classifier=self.classifier,
-                    act_fn=ClassifierPooler.act_fn_for_cross_encoder(self.model_config),
-                )
+        try:
+            # vllm >= v0.14.0
+            from vllm.model_executor.layers.pooler.seqwise.poolers import (
+                pooler_for_classify,
+                pooler_for_embed,
+            )
+            from vllm.model_executor.layers.pooler.activations import (
+                get_cross_encoder_act_fn,
+            )
+
+            if task == "embed":
+                with set_current_vllm_config(self.vllm_config):
+                    self.pooler = pooler_for_embed(pooler_config=pooler_config)
+            elif task == "classify":
+                with set_current_vllm_config(self.vllm_config):
+                    self.pooler = pooler_for_classify(
+                        pooler_config=pooler_config,
+                        pooling=self._pooler,
+                        classifier=self.classifier,
+                        act_fn=get_cross_encoder_act_fn(self.model_config.hf_config),
+                    )
+        except ImportError:
+            # vllm < v0.14.0
+            from vllm.model_executor.layers.pooler import ClassifierPooler, Pooler  # ty: ignore[unresolved-import]
+
+            if task == "embed":
+                with set_current_vllm_config(self.vllm_config):
+                    self.pooler = Pooler.for_embed(pooler_config=pooler_config)  # ty: ignore[unresolved-attribute]
+            elif task == "classify":
+                with set_current_vllm_config(self.vllm_config):
+                    self.pooler = ClassifierPooler(
+                        pooling=self._pooler,
+                        classifier=self.classifier,
+                        act_fn=ClassifierPooler.act_fn_for_cross_encoder(self.model_config),
+                    )
 
     @property
     def vocab_size(self) -> int:
@@ -1729,6 +1854,7 @@ class SpyrePoolingModelRunner(
 
         model_input = PoolingForwardInputs(
             input_tokens=input_tokens,
+            input_embeds=None,
             input_positions=position_ids,
             input_masks=mask,
             is_prompt=True,
@@ -1779,12 +1905,13 @@ class SpyrePoolingModelRunner(
 
         model_input = self.prepare_model_input(scheduler_output)
 
-        # Execute the model
         attn_metadata = self.build_attn_metadata(model_input)
 
         model_kwargs = {}
         if self.use_token_type_ids:
             model_kwargs["token_type_ids"] = model_input.token_type_ids
+
+        # Execute the model
         with set_forward_context(attn_metadata, self.vllm_config):
             outputs = self.model(
                 input_ids=model_input.input_tokens,
@@ -1805,14 +1932,17 @@ class SpyrePoolingModelRunner(
         pooling_metadata = self.input_batch.make_pooling_metadata()
 
         ## No partial prefill, hence we can use the prompt lens here
-        num_scheduled_tokens = pooling_metadata.prompt_lens.tolist()
-
         cursor_kwargs: dict[str, Any] = {}
         if has_argument(pooling_metadata.build_pooling_cursor, "seq_lens_cpu"):
-            cursor_kwargs["seq_lens_cpu"] = num_scheduled_tokens
-        pooling_metadata.build_pooling_cursor(
-            num_scheduled_tokens=num_scheduled_tokens, device=self.device, **cursor_kwargs
-        )
+            cursor_kwargs["seq_lens_cpu"] = pooling_metadata.prompt_lens
+
+        # v0.14.0 uses param "num_scheduled_tokens_np"
+        if has_argument(pooling_metadata.build_pooling_cursor, "num_scheduled_tokens_np"):
+            cursor_kwargs["num_scheduled_tokens_np"] = pooling_metadata.prompt_lens.numpy()
+        else:
+            cursor_kwargs["num_scheduled_tokens"] = pooling_metadata.prompt_lens.tolist()
+
+        pooling_metadata.build_pooling_cursor(device=self.device, **cursor_kwargs)
 
         # prepare unpadded output for the pooler
         hidden_state_list: list[torch.Tensor] = []
@@ -1955,6 +2085,8 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             [left_padding], dtype=torch.int64, device=self.device
         )
 
+        mm_features = getattr(request, "mm_features", None)
+        prompt_token_ids = request.prompt_token_ids
         num_computed_tokens = request.num_computed_tokens
         # round up due to possible padding
         chunk_i = math.ceil(num_computed_tokens / chunk_size)
@@ -2061,8 +2193,16 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         self.model.n_pads_right = self.block_size - (((request_tkv - 1) % self.block_size) + 1)
         self.model.indices = torch.ones(1, dtype=torch.bool, device="cpu")
 
+        # None unless this model is multimodal
+        input_embeds = self.model.get_maybe_mm_embeddings(
+            input_tokens,
+            mm_features=mm_features,
+            is_decode=False,
+        )
+
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
+            input_embeds=input_embeds,
             input_positions=input_positions,
             current_tkv_mask=current_tkv_mask,
             left_padded_prompt_mask=left_padded_prompt_mask,
@@ -2162,8 +2302,17 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             len(cached_request_data.req_ids), dtype=torch.bool, device="cpu"
         )
 
+        # None unless this model is multimodal; no mm_features since
+        # all multimodal features are merged in prefill.
+        input_embeds = self.model.get_maybe_mm_embeddings(
+            input_tokens,
+            mm_features=None,
+            is_decode=True,
+        )
+
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
+            input_embeds=input_embeds,
             input_positions=position_ids,
             current_tkv_mask=current_tkv_mask,
             left_padded_prompt_mask=left_padded_prompt_mask,
@@ -2226,10 +2375,20 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             # blocks in the last chunk to deduplicate the used blocks. So
             # although we will recompute, we'll still point the block table
             # to the cached blocks.
-            self.block_pool.touch((computed_blocks,))
-            self.kv_cache_manager.save_new_computed_blocks(
-                scheduler_request.request_id, computed_blocks
-            )
+            try:
+                # vllm >= v0.14.0
+                self.kv_cache_manager.allocate_new_computed_blocks(
+                    request_id=scheduler_request.request_id,
+                    new_computed_blocks=computed_blocks,
+                    num_local_computed_tokens=len(computed_blocks) * self.block_size,
+                    num_external_computed_tokens=0,
+                )
+            except (AttributeError, TypeError):
+                # vllm < v0.14.0
+                self.kv_cache_manager.save_new_computed_blocks(
+                    scheduler_request.request_id,
+                    computed_blocks,
+                )
         else:
             usable_blocks = 0
             n_hit = 0
@@ -2249,25 +2408,15 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         assert sampling_params is not None, "sampling_params are required for this model runner"
         assert prompt_token_ids is not None, "prompt token ids are required for this model runner"
 
-        is_new_batch = len(self.req_ids2num_reserved_blocks) == 0
+        is_new_batch = self.get_n_free_blocks() == self.n_blocks
         prompt_len = len(prompt_token_ids)
+        mm_features = getattr(request, "mm_features", None)
 
         self.prefill_batch.clear_requests()
 
         # set the new tkv to the prompt length if starting a new decode batch
         if is_new_batch:
             self.tkv = prompt_len
-
-        # Reserve the number of blocks that this new sequence requires in the
-        # worst case (it might always stop early by producing the EOS token)
-        if (new_tokens := sampling_params.max_tokens) is None:
-            new_tokens = 0
-
-        total_tokens = prompt_len + new_tokens - 1
-        # calculate the number of reserved blocks
-        n_reserved_blocks = math.ceil(total_tokens / self.block_size)
-
-        self.req_ids2num_reserved_blocks[req_id] = n_reserved_blocks
 
         scheduler_request = Request(
             request_id=req_id,
@@ -2301,6 +2450,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         req_state = ChunkedPrefillRequestState(
             req_id=req_id,
             prompt_token_ids=prompt_token_ids,
+            mm_features=mm_features,
             sampling_params=sampling_params,
             generator=generator,
             output_token_ids=[],
@@ -2529,9 +2679,15 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
 
         # Execute the model
         attn_metadata = self.build_attn_metadata(model_input)
+        # Embeddings take priority [used by multimodal models only]
+        input_ids_or_embeds = (
+            model_input.input_embeds
+            if model_input.input_embeds is not None
+            else model_input.input_tokens
+        )
         with set_forward_context(attn_metadata, self.vllm_config):
             logits = self.model(
-                input_ids=model_input.input_tokens,
+                input_ids_or_embeds=input_ids_or_embeds,
                 positions=model_input.input_positions,
                 masks=model_input.input_masks,
                 is_prompt=model_input.is_prompt,
@@ -2642,6 +2798,9 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             prefix_cache_stats=self.prefix_cache_stats,
         )
 
+    def get_n_free_blocks(self) -> int:
+        return self.kv_cache_manager.block_pool.get_num_free_blocks()
+
     def get_kv_cache_usage(self) -> float:
         return self.kv_cache_manager.block_pool.get_usage()
 
@@ -2661,23 +2820,31 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         # Marking dimensions static/dynamic
         if model_input.is_prompt:
             # batch static (batch size 1)
-            torch._dynamo.mark_static(model_input.input_tokens, 0)
             torch._dynamo.mark_static(model_input.slot_mapping, 0)
             torch._dynamo.mark_static(model_input.input_positions, 0)
             torch._dynamo.mark_static(model_input.block_table, 0)
 
             # sequence dynamic
-            torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
             torch._dynamo.mark_dynamic(model_input.slot_mapping, 1)
             torch._dynamo.mark_dynamic(model_input.input_positions, 1)
             torch._dynamo.mark_dynamic(model_input.block_table, 1)
+
+            # In the case that the input tokens are 3D, i.e., they're actually
+            # embeddings, The last dimension (embedding dimension) is static.
+            # This is mostly for multimodal models.
+            if model_input.input_embeds is not None:
+                torch._dynamo.mark_static(model_input.input_embeds, 0)
+                torch._dynamo.mark_dynamic(model_input.input_embeds, 1)
+                torch._dynamo.mark_static(model_input.input_embeds, 2)
+            else:
+                torch._dynamo.mark_static(model_input.input_tokens, 0)
+                torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
 
         # decode
         else:
             # mask is no longer used here
 
             # batch dynamic
-            torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
             torch._dynamo.mark_dynamic(model_input.block_table, 0)
             torch._dynamo.mark_dynamic(model_input.slot_mapping, 0)
             torch._dynamo.mark_dynamic(model_input.input_positions, 0)
@@ -2685,7 +2852,14 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             torch._dynamo.mark_dynamic(model_input.left_padded_prompt_mask, 0)
 
             # sequence
-            torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
             torch._dynamo.mark_dynamic(model_input.block_table, 1)
             torch._dynamo.mark_static(model_input.slot_mapping, 1)  # always 1
             torch._dynamo.mark_static(model_input.input_positions, 1)  # always 1
+
+            if model_input.input_embeds is not None:
+                torch._dynamo.mark_dynamic(model_input.input_embeds, 0)
+                torch._dynamo.mark_static(model_input.input_embeds, 1)  # always 1
+                torch._dynamo.mark_static(model_input.input_embeds, 2)
+            else:
+                torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
+                torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
