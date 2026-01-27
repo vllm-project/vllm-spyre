@@ -421,7 +421,7 @@ class SpyrePlatform(Platform):
             params.structured_outputs = None
 
         if isinstance(prompt, dict) and "prompt_token_ids" in prompt:
-            prompt_len = len(prompt["prompt_token_ids"])
+            prompt_len = len(prompt["prompt_token_ids"])  # ty: ignore
         elif processed_inputs is not None:
             if "encoder" in processed_inputs:
                 raise ValueError("Encoder-decoder models not supported ")
