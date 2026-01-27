@@ -215,13 +215,15 @@ def test_compare_graphs_chunked_prefill(
         "--max_new_tokens", "5",
         "--batch_size", str(max_num_seqs),
         "--compile_dynamic_sendnn",
-        "--attention_type", "paged",
         "--prefill_chunk_size", str(chunk_size),
     ]
     # fmt: on
 
     if not model.is_quantized:
         inference_py_args += ["--default_dtype", "fp16"]
+        inference_py_args += ["--attention_type", "paged"]
+    else:
+        inference_py_args += ["--attention_type", "paged_fp8"]
 
     extra_env = {
         "VLLM_DT_MAX_CONTEXT_LEN": str(max_model_len),
