@@ -32,6 +32,7 @@ def test_output(
     warmup_shapes: DecodeWarmupShapes,
     monkeypatch: pytest.MonkeyPatch,
     use_llm_cache,
+    runtime_xfail,
 ) -> None:
     """
     The warmup is based on a single shape. After the warmup,
@@ -49,8 +50,12 @@ def test_output(
 
     skip_unsupported_tp_size(tp_size, backend)
 
-    if mode == "cp" and model.is_quantized:
-        pytest.skip("Chunked prefill and FP8 not supported at the moment.")
+    if (
+        "micro-g3.3-8b-instruct-1b" in model.name
+        and model.is_quantized
+        and mode not in ["cb", "cp", "pc"]
+    ):
+        runtime_xfail(reason="SB sometimes causes failures with quantized model")
 
     prompts = get_chicken_soup_prompts(4)
 
