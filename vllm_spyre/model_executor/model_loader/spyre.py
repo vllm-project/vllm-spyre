@@ -431,6 +431,9 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         self.current_scale: list[tuple] | None = None
 
     def set_past_key_value_states(self, num_blocks) -> None:
+
+        print("setting up kv states")
+
         # List[layers] of Tuple[k,v] of
         # Tensor[num_blocks, block_size, num_kv_heads, head_dim]
         if not self.model_config.quantization:
@@ -490,6 +493,9 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             self.current_kv_scales = [
                 (k_cache._scale, v_cache._scale) for k_cache, v_cache in self.past_key_value_states
             ]
+            print("setup current kv scales")
+            for (k_scale, v_scale) in self.current_kv_scales:
+                print(k_scale.shape)
 
     def forward(
         self,
@@ -549,7 +555,26 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         return logits
 
     def _set_scale_for_fp8(self, attn_metadata: SpyreAttentionMetadata):
+
+        print("setting scale for fp8 call")
+        for (k_scale, v_scale) in self.current_kv_scales:
+            print(k_scale.shape)
+
         for layer_idx, (k, v) in enumerate(self.past_key_value_states):
+
+            if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
+                # static scaling
+                k._scale = torch.ones(len(attn_metadata.scale_indices), dtype=torch.float32)
+                v._scale = torch.ones(len(attn_metadata.scale_indices), dtype=torch.float32)
+                # k._scaled = True
+                # v._scaled = True
+
+                if len(attn_metadata.scale_indices) == 1 and not attn_metadata.is_prefill:
+                    k._scale = torch.ones(2, dtype=torch.float32)
+                    v._scale = torch.ones(2, dtype=torch.float32)
+                continue
+
+
             if attn_metadata.is_prefill:
                 # TODO: for chunked prefill, we don't need to be recreating the
                 # scale tensors every chunk. Possible future enhancement
@@ -559,14 +584,42 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                 # reset to 1.
                 assert len(attn_metadata.scale_indices) == 1
                 prefill_index = attn_metadata.scale_indices[0]
-                k._scale = self.current_kv_scales[layer_idx][0][prefill_index] = torch.ones(
+
+                print("Scales same?", torch.equal(k._scale, self.current_kv_scales[layer_idx][0][prefill_index]))
+
+                # self.current_kv_scales[layer_idx][0] -> k
+                # 
+
+                print("K scale shape:", k._scale.shape)
+
+                print("cached k scale shape:", self.current_kv_scales[layer_idx][0][prefill_index].shape)
+
+                print("torch ones shape:", torch.ones(
                     1, dtype=torch.float32
-                )
-                v._scale = self.current_kv_scales[layer_idx][1][prefill_index] = torch.ones(
-                    1, dtype=torch.float32
-                )
+                ).shape)
+
+                print("self.current_kv_scales[layer_idx][0][prefill_index]:", self.current_kv_scales[layer_idx][0][prefill_index])
+                print("self.current_kv_scales[layer_idx][0][prefill_index].reshape(-1):", self.current_kv_scales[layer_idx][0][prefill_index].reshape(-1))
+                print("torch.ones(1, dtype=torch.float32)", torch.ones(1, dtype=torch.float32))
+
+                # k._scale = self.current_kv_scales[layer_idx][0][prefill_index]#  = torch.ones(
+                #     1, dtype=torch.float32
+                # )
+                # v._scale = self.current_kv_scales[layer_idx][1][prefill_index]#  = torch.ones(
+                #     1, dtype=torch.float32
+                # )
+                
+                k._scale = self.current_kv_scales[layer_idx][0][prefill_index].reshape(-1)
+                v._scale = self.current_kv_scales[layer_idx][1][prefill_index].reshape(-1)
+
+                print("reshaped K scale:", k._scale.shape)
+
                 k._scaled = bool(envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL)
                 v._scaled = bool(envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL)
+
+                # torch._dynamo.mark_dynamic(v._scale, 0)
+                # torch._dynamo.mark_dynamic(k._scale, 0)
+
             elif len(attn_metadata.scale_indices) == 1:
                 # Decode
                 # Special case for decode of bs=1, pad the batch to be bs=2
@@ -574,8 +627,12 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                 k._scale = self.current_kv_scales[layer_idx][0][dec_index].repeat(2)
                 v._scale = self.current_kv_scales[layer_idx][1][dec_index].repeat(2)
 
+                torch._dynamo.mark_dynamic(v._scale, 0)
+                torch._dynamo.mark_dynamic(k._scale, 0)
+
             else:
                 # Set scale only for the requests of the batch
+                # (.reshape may be required for conitiguity)
                 k._scale = self.current_kv_scales[layer_idx][0][
                     attn_metadata.scale_indices
                 ].reshape(-1)
@@ -583,14 +640,22 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                     attn_metadata.scale_indices
                 ].reshape(-1)
 
+                torch._dynamo.mark_dynamic(v._scale, 0)
+                torch._dynamo.mark_dynamic(k._scale, 0)
+
+
             # We set dynamic only for the first dimension of scale
             # during decoding
-            is_dynamic_flag = 0 if attn_metadata.is_prefill else 1
+            # is_dynamic_flag = 0 if attn_metadata.is_prefill else 1
+            # is_dynamic_flag = 0
 
-            torch._dynamo.mark_dynamic(v._scale, is_dynamic_flag)
-            torch._dynamo.mark_dynamic(k._scale, is_dynamic_flag)
+            # torch._dynamo.mark_dynamic(v._scale, is_dynamic_flag)
+            # torch._dynamo.mark_dynamic(k._scale, is_dynamic_flag)
 
     def _update_scale_for_fp8(self, attn_metadata: SpyreAttentionMetadata):
+        if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
+            return
+
         for layer_idx, (k, v) in enumerate(self.past_key_value_states):
             if attn_metadata.is_prefill or len(attn_metadata.scale_indices) > 1:
                 self.current_kv_scales[layer_idx][0][attn_metadata.scale_indices] = k._scale

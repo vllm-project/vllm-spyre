@@ -2472,6 +2472,10 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         available_index = self.input_batch.get_available_index()
         assert available_index is not None, "No available index in the batch"
 
+        for (k_scale, v_scale) in self.model.model.current_kv_scales:
+            k_scale[available_index]  = torch.ones(1, dtype=torch.float32)
+            v_scale[available_index]  = torch.ones(1, dtype=torch.float32)
+
         req_state = ChunkedPrefillRequestState(
             req_id=req_id,
             prompt_token_ids=prompt_token_ids,
