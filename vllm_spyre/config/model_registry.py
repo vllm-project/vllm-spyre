@@ -103,6 +103,10 @@ class ModelConfigRegistry:
             logger.error("File read error: %s", e)
             raise RuntimeError(f"Failed to load model configurations: {e}") from e
 
+        # Handle empty YAML files (yaml.safe_load returns None)
+        if data is None:
+            data = {}
+
         for model_name, model_data in data.get("models", {}).items():
             model_config = ModelConfig.from_dict(model_name, model_data)
             self.register_model(model_config)
@@ -118,25 +122,14 @@ class ModelConfigRegistry:
         self._models[model_config.name] = model_config
         logger.debug("Registered model: %s", model_config.name)
 
-    def get_model_config(self, model_name: str) -> ModelConfig | None:
-        """Get configuration for a specific model.
-
-        Args:
-            model_name: Name of the model
-
-        Returns:
-            ModelConfig if found, None otherwise
-        """
-        return self._models.get(model_name)
-
-    def find_matching_model(self, vllm_model_config: "VllmModelConfig") -> str | None:
-        """Find model name by matching HF config.
+    def find_matching_model(self, vllm_model_config: "VllmModelConfig") -> ModelConfig | None:
+        """Find model config by matching HF config.
 
         Args:
             vllm_model_config: vLLM model configuration containing HF config
 
         Returns:
-            Model name if a match is found, None otherwise
+            ModelConfig if a match is found, None otherwise
         """
         hf_config = vllm_model_config.hf_config
         if hf_config is None:
@@ -150,7 +143,7 @@ class ModelConfigRegistry:
                     vllm_model_config.model,
                     model_name,
                 )
-                return model_name
+                return model_config
 
         logger.debug("No matching model configuration found for '%s'", vllm_model_config.model)
         return None
@@ -180,13 +173,9 @@ class ModelConfigRegistry:
             ModelConfigurator instance if model matches AND has supported runtime config,
             None if no model match OR no supported runtime config
         """
-        model_name = self.find_matching_model(vllm_config.model_config)
-        if model_name is None:
-            logger.debug("No model architecture match found")
-            return None
-
-        model_config = self.get_model_config(model_name)
+        model_config = self.find_matching_model(vllm_config.model_config)
         if model_config is None:
+            logger.debug("No model architecture match found")
             return None
 
         has_runtime_match, device_config = self._find_runtime_match_and_device_config(
@@ -196,7 +185,7 @@ class ModelConfigRegistry:
         if not has_runtime_match:
             logger.warning(
                 "Model '%s' registered but does support the requested runtime configuration",
-                model_name,
+                model_config.name,
             )
             return None
 

@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import os
 import random
 
@@ -330,6 +331,9 @@ def temporary_enable_log_propagate():
 def caplog_vllm_spyre(temporary_enable_log_propagate, caplog):
     # To capture vllm-spyre log, we should enable propagate=True temporarily
     # because caplog depends on logs propagated to the root logger.
+    caplog.set_level(logging.DEBUG)
+    logging.getLogger("vllm_spyre").setLevel(logging.DEBUG)
+
     yield caplog
 
 

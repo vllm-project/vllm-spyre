@@ -3,9 +3,10 @@
 import os
 from pathlib import Path
 from unittest import mock
+from unittest.mock import Mock
 
 import pytest
-from vllm.config import CacheConfig, ModelConfig, ParallelConfig, VllmConfig
+from vllm.config import CacheConfig, ModelConfig, VllmConfig
 
 from vllm_spyre.config.model_registry import get_model_registry
 
@@ -30,7 +31,8 @@ def test_granite_3_8b_detection():
     registry = get_model_registry()
     matched_model = registry.find_matching_model(granite_3_8b_config.model_config)
 
-    assert matched_model == "ibm-granite/granite-3.3-8b-instruct"
+    assert matched_model is not None
+    assert matched_model.name == "ibm-granite/granite-3.3-8b-instruct"
 
 
 @pytest.mark.cpu
@@ -45,7 +47,8 @@ def test_granite_4_dense_detection():
     registry = get_model_registry()
     matched_model = registry.find_matching_model(granite_4_dense_config.model_config)
 
-    assert matched_model == "ibm-granite/granite-4-8b-dense"
+    assert matched_model is not None
+    assert matched_model.name == "ibm-granite/granite-4-8b-dense"
 
 
 @pytest.mark.cpu
@@ -88,20 +91,22 @@ def test_granite_overrides(model_name, sendnn_configured, sendnn_version, expect
         ),
         mock.patch("vllm_spyre.platform.SpyrePlatform.sendnn_version", new=lambda: sendnn_version),
     ):
-        tp4_config = ParallelConfig(tensor_parallel_size=4)
-
-        granite_config = VllmConfig(
-            model_config=ModelConfig(model=str(FIXTURES_PATH / "ibm-granite" / model_name)),
-            parallel_config=tp4_config,
-            cache_config=NO_SWAP_CONFIG(),
+        # Create mock vllm_config for CB with TP=4
+        granite_config = Mock()
+        granite_config.model_config = ModelConfig(
+            model=str(FIXTURES_PATH / "ibm-granite" / model_name),
+            max_model_len=32768,
         )
+        granite_config.parallel_config = Mock(world_size=4)
+        granite_config.scheduler_config = Mock(max_num_seqs=32, max_num_batched_tokens=None)
+        granite_config.cache_config = NO_SWAP_CONFIG()
 
         # Apply model-specific configuration using the registry
         registry = get_model_registry()
-        matched_model = registry.find_matching_model(granite_config.model_config)
-        assert matched_model is not None, f"Model {model_name} should be in registry"
 
-        configurator = registry.get_configurator(matched_model)
+        configurator = registry.get_configurator_for_runtime(granite_config)
+        assert configurator is not None, f"Model {model_name} should have a matching configurator"
+
         configurator.configure(granite_config)
 
         # Verify the configuration was applied correctly
@@ -115,3 +120,6 @@ def test_granite_overrides(model_name, sendnn_configured, sendnn_version, expect
         hdma_size = os.getenv("FLEX_HDMA_P2PSIZE")
         assert hdma_size is not None, "FLEX_HDMA_P2PSIZE should be set"
         assert int(hdma_size) == 256 * 1024 * 1024
+
+
+# Made with Bob

@@ -171,6 +171,19 @@ class TestContinuousBatchingConfig:
         assert config.tp_size == 1
         assert config.max_model_len == 2048
         assert config.max_num_seqs == 256
+        assert config.device_config is None
+
+    def test_create_config_with_device_config(self):
+        """Test creating continuous batching config with device config."""
+        device_config = DeviceConfig(tp_size=4, env_vars={"TEST_VAR": "123"})
+        config = ContinuousBatchingConfig(
+            tp_size=4, max_model_len=32768, max_num_seqs=32, device_config=device_config
+        )
+        assert config.tp_size == 4
+        assert config.max_model_len == 32768
+        assert config.max_num_seqs == 32
+        assert config.device_config is not None
+        assert config.device_config.env_vars["TEST_VAR"] == "123"
 
     def test_from_dict(self):
         """Test creating continuous batching config from dict."""
@@ -183,6 +196,28 @@ class TestContinuousBatchingConfig:
         assert config.tp_size == 2
         assert config.max_model_len == 4096
         assert config.max_num_seqs == 128
+        assert config.device_config is None
+
+    def test_from_dict_with_device_config(self):
+        """Test CB config with nested device config."""
+        data = {
+            "tp_size": 4,
+            "max_model_len": 32768,
+            "max_num_seqs": 32,
+            "device_config": {
+                "env_vars": {"TEST_VAR": "123"},
+                "num_gpu_blocks_override": 8192,
+            },
+        }
+
+        cb_config = ContinuousBatchingConfig.from_dict(data)
+
+        assert cb_config.tp_size == 4
+        assert cb_config.max_model_len == 32768
+        assert cb_config.max_num_seqs == 32
+        assert cb_config.device_config is not None
+        assert cb_config.device_config.env_vars["TEST_VAR"] == "123"
+        assert cb_config.device_config.num_gpu_blocks_override == 8192
 
 
 class TestModelConfig:
@@ -196,33 +231,33 @@ class TestModelConfig:
         assert config.architecture == architecture
         assert config.static_batching_configs == []
         assert config.continuous_batching_configs == []
-        assert config.device_configs == {}
 
     def test_create_with_configs(self):
         """Test creating model config with configurations."""
         architecture = ArchitecturePattern(model_name="granite-model", model_type="granite")
         static_config = StaticBatchingConfig(tp_size=1, warmup_shapes=[(64, 20, 4)])
-        cb_config = ContinuousBatchingConfig(tp_size=1, max_model_len=2048, max_num_seqs=256)
-        device_config = DeviceConfig(tp_size=1, env_vars={"TEST": "value"})
+        device_config = DeviceConfig(tp_size=4, env_vars={"TEST": "value"})
+        cb_config = ContinuousBatchingConfig(
+            tp_size=4, max_model_len=2048, max_num_seqs=256, device_config=device_config
+        )
 
         config = ModelConfig(
             name="granite-model",
             architecture=architecture,
             static_batching_configs=[static_config],
             continuous_batching_configs=[cb_config],
-            device_configs={1: device_config},
         )
         assert config.name == "granite-model"
         assert len(config.static_batching_configs) == 1
         assert len(config.continuous_batching_configs) == 1
-        assert 1 in config.device_configs
-        assert config.device_configs[1] == device_config
+        assert cb_config.device_config == device_config
 
     def test_from_dict_minimal(self):
         """Test creating model config from minimal dict."""
         data = {
             "architecture": {"model_type": "llama"},
-            "supported_configs": [],
+            "static_batching_configs": [],
+            "continuous_batching_configs": [],
         }
         config = ModelConfig.from_dict(name="test-model", data=data)
         assert config.name == "test-model"
@@ -230,15 +265,14 @@ class TestModelConfig:
         assert config.architecture.model_name == "test-model"
         assert config.static_batching_configs == []
         assert config.continuous_batching_configs == []
-        assert config.device_configs == {}
 
-    def test_from_dict_with_supported_configs(self):
-        """Test creating model config from dict with supported configs."""
+    def test_from_dict_with_new_config_format(self):
+        """Test creating model config from dict with new format."""
         data = {
             "architecture": {"model_type": "granite"},
-            "supported_configs": [
-                {"tp_size": 1, "warmup_shapes": [[64, 20, 4]]},
-                {"tp_size": 1, "max_model_len": 2048, "max_num_seqs": 256},
+            "static_batching_configs": [{"tp_size": 1, "warmup_shapes": [[64, 20, 4]]}],
+            "continuous_batching_configs": [
+                {"tp_size": 1, "max_model_len": 2048, "max_num_seqs": 256}
             ],
         }
         config = ModelConfig.from_dict(name="granite-model", data=data)
@@ -249,62 +283,119 @@ class TestModelConfig:
         assert config.continuous_batching_configs[0].tp_size == 1
         assert config.continuous_batching_configs[0].max_model_len == 2048
 
-    def test_from_dict_with_device_configs(self):
-        """Test creating model config from dict with device configs."""
+    def test_from_dict_with_nested_device_config(self):
+        """Test creating model config with nested device config in CB config."""
         data = {
             "architecture": {"model_type": "granite"},
-            "supported_configs": [],
-            "device_configs": {
-                "1": {
-                    "env_vars": {"VLLM_ATTENTION_BACKEND": "FLASH_ATTN"},
-                    "num_gpu_blocks_override": 1000,
-                },
-                "2": {
-                    "env_vars": {"VLLM_ATTENTION_BACKEND": "XFORMERS"},
-                    "num_gpu_blocks_override": 500,
-                },
-            },
+            "static_batching_configs": [{"tp_size": 1, "warmup_shapes": [[64, 20, 4]]}],
+            "continuous_batching_configs": [
+                {
+                    "tp_size": 4,
+                    "max_model_len": 32768,
+                    "max_num_seqs": 32,
+                    "device_config": {
+                        "env_vars": {"VLLM_DT_MAX_BATCH_TKV_LIMIT": "131072"},
+                        "num_gpu_blocks_override": 8192,
+                    },
+                }
+            ],
         }
         config = ModelConfig.from_dict(name="granite-model", data=data)
-        assert 1 in config.device_configs
-        assert 2 in config.device_configs
-        assert config.device_configs[1].tp_size == 1
-        assert config.device_configs[2].tp_size == 2
-        assert config.device_configs[1].num_gpu_blocks_override == 1000
-        assert config.device_configs[2].num_gpu_blocks_override == 500
-
-    def test_from_dict_complete(self):
-        """Test creating model config from complete dict."""
-        data = {
-            "architecture": {
-                "model_type": "granite",
-                "num_hidden_layers": 32,
-                "hidden_size": 4096,
-            },
-            "supported_configs": [
-                {"tp_size": 1, "warmup_shapes": [[64, 20, 4]]},
-                {"tp_size": 2, "max_model_len": 4096, "max_num_seqs": 128},
-            ],
-            "device_configs": {
-                "1": {
-                    "env_vars": {"TEST_VAR": "test_value"},
-                    "num_gpu_blocks_override": {"default": 1000, "torch_sendnn_lt_1_0_3": 800},
-                    "chunked_prefill_config": {"max_num_batched_tokens": 512},
-                },
-            },
-        }
-        config = ModelConfig.from_dict(name="granite-8b", data=data)
-        assert config.name == "granite-8b"
-        assert config.architecture.model_type == "granite"
-        assert config.architecture.model_name == "granite-8b"
-        assert config.architecture.attributes["num_hidden_layers"] == 32
-        assert len(config.static_batching_configs) == 1
         assert len(config.continuous_batching_configs) == 1
-        assert config.static_batching_configs[0].warmup_shapes == [(64, 20, 4)]
-        assert config.continuous_batching_configs[0].max_model_len == 4096
-        assert 1 in config.device_configs
-        assert config.device_configs[1].env_vars == {"TEST_VAR": "test_value"}
-        assert config.device_configs[1].chunked_prefill_config == {"max_num_batched_tokens": 512}
+        cb_config = config.continuous_batching_configs[0]
+        assert cb_config.tp_size == 4
+        assert cb_config.device_config is not None
+        assert cb_config.device_config.env_vars["VLLM_DT_MAX_BATCH_TKV_LIMIT"] == "131072"
+        assert cb_config.device_config.num_gpu_blocks_override == 8192
+
+    def test_model_config_no_device_configs_field(self):
+        """Test that ModelConfig no longer has device_configs field."""
+        data = {
+            "architecture": {"model_type": "test"},
+            "static_batching_configs": [{"tp_size": 1, "warmup_shapes": [[512, 0, 64]]}],
+            "continuous_batching_configs": [
+                {"tp_size": 1, "max_model_len": 1000, "max_num_seqs": 10}
+            ],
+        }
+
+        model_config = ModelConfig.from_dict("test-model", data)
+
+        # Verify device_configs field doesn't exist
+        assert not hasattr(model_config, "device_configs")
+        assert len(model_config.static_batching_configs) == 1
+        assert len(model_config.continuous_batching_configs) == 1
+
+
+class TestYAMLAnchorResolution:
+    """Tests for YAML anchor resolution in device configs."""
+
+    def test_yaml_anchor_resolution(self):
+        """Test that YAML anchors are resolved correctly."""
+        import yaml
+
+        yaml_content = """
+device_config_templates:
+  test_config: &test_anchor
+    env_vars:
+      TEST_VAR: "123"
+    num_gpu_blocks_override: 8192
+
+models:
+  test-model:
+    architecture:
+      model_type: test
+    continuous_batching_configs:
+      - tp_size: 4
+        max_model_len: 1000
+        max_num_seqs: 10
+        device_config: *test_anchor
+        """
+
+        data = yaml.safe_load(yaml_content)
+        model_config = ModelConfig.from_dict("test-model", data["models"]["test-model"])
+
+        assert len(model_config.continuous_batching_configs) == 1
+        cb_config = model_config.continuous_batching_configs[0]
+        assert cb_config.device_config is not None
+        assert cb_config.device_config.env_vars["TEST_VAR"] == "123"
+        assert cb_config.device_config.num_gpu_blocks_override == 8192
+
+
+class TestModelConfigIntegration:
+    """Integration tests for the refactored model config system."""
+
+    def test_load_actual_config_file(self):
+        """Test loading the actual model_configs.yaml file."""
+        from pathlib import Path
+
+        from vllm_spyre.config.model_registry import ModelConfigRegistry
+
+        registry = ModelConfigRegistry()
+        config_path = Path(__file__).parent.parent.parent / "vllm_spyre/config/model_configs.yaml"
+        registry.initialize(config_path)
+
+        # Check that models were loaded
+        models = registry.list_models()
+        assert len(models) == 9, f"Expected 9 models, got {len(models)}"
+
+        # Check a model with device config
+        granite_config = registry._models.get("ibm-granite/granite-3.3-8b-instruct")
+        assert granite_config is not None
+        assert len(granite_config.continuous_batching_configs) > 0
+
+        # Check that device config is nested in CB config
+        tp4_configs = [cb for cb in granite_config.continuous_batching_configs if cb.tp_size == 4]
+        assert len(tp4_configs) > 0, "Should have at least one TP=4 config"
+
+        # At least one TP=4 config should have device_config
+        has_device_config = any(cb.device_config is not None for cb in tp4_configs)
+        assert has_device_config, "At least one TP=4 config should have device_config"
+
+        # Verify device config content
+        for cb_config in tp4_configs:
+            if cb_config.device_config:
+                assert len(cb_config.device_config.env_vars) > 0
+                assert "VLLM_DT_MAX_BATCH_TKV_LIMIT" in cb_config.device_config.env_vars
 
 
 # Made with Bob
