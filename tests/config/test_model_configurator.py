@@ -8,22 +8,12 @@ from unittest.mock import Mock, patch
 from vllm_spyre import envs as envs_spyre
 from vllm_spyre.config.model_config import DeviceConfig, ModelConfig
 from vllm_spyre.config.configurators.model_configurator import (
+    ConfigValue,
     ConfigurationSummary,
     ModelConfigurator,
 )
-from vllm_spyre.config.configurators import model_configurator
 
 pytestmark = pytest.mark.skip_global_cleanup
-
-
-@pytest.fixture
-def log_capture(caplog):
-    """Fixture to setup log capture for model_configurator logger."""
-    caplog.set_level(logging.DEBUG)
-    model_configurator.logger.setLevel(logging.DEBUG)
-    if caplog.handler not in model_configurator.logger.handlers:
-        model_configurator.logger.addHandler(caplog.handler)
-    return caplog
 
 
 @pytest.fixture
@@ -58,7 +48,10 @@ class TestEnvironmentVariables:
 
         result = configurator.set_env_var("TEST_VAR", "123")
 
-        assert result is True
+        assert isinstance(result, ConfigValue)
+        assert result.expected == "123"
+        assert result.actual == "123"
+        assert result.was_overridden() is False
         assert os.getenv("TEST_VAR") == "123"
 
     def test_skip_when_already_set_to_same_value(self, monkeypatch, model_config):
@@ -70,11 +63,14 @@ class TestEnvironmentVariables:
 
         result = configurator.set_env_var("TEST_VAR", "123")
 
-        assert result is False
+        assert isinstance(result, ConfigValue)
+        assert result.expected == "123"
+        assert result.actual == "123"
+        assert result.was_overridden() is False
         assert os.getenv("TEST_VAR") == "123"
 
     def test_log_warning_when_different_value_no_override(
-        self, monkeypatch, model_config, log_capture
+        self, monkeypatch, model_config, caplog_vllm_spyre
     ):
         """Test warning logged when already set to different value (no override)."""
         monkeypatch.setenv("TEST_VAR", "456")
@@ -85,9 +81,12 @@ class TestEnvironmentVariables:
 
         result = configurator.set_env_var("TEST_VAR", "123")
 
-        assert result is False
+        assert isinstance(result, ConfigValue)
+        assert result.expected == "123"
+        assert result.actual == "456"
+        assert result.was_overridden() is True
         assert os.getenv("TEST_VAR") == "456"  # Not overridden
-        assert "not overriding" in log_capture.text.lower()
+        assert "not using model default" in caplog_vllm_spyre.text.lower()
 
     def test_raise_error_when_require_known_config_and_conflict(self, monkeypatch, model_config):
         """Test RuntimeError when VLLM_SPYRE_REQUIRE_KNOWN_CONFIG=1 and conflict."""
@@ -120,7 +119,12 @@ class TestEnvironmentVariables:
         assert os.getenv("VAR1") == "value1"
         assert os.getenv("VAR2") == "value2"
         assert os.getenv("VAR3") == "value3"
-        assert summary.env_vars == {"VAR1": "value1", "VAR2": "value2", "VAR3": "value3"}
+        assert "VAR1" in summary.env_vars
+        assert "VAR2" in summary.env_vars
+        assert "VAR3" in summary.env_vars
+        assert summary.env_vars["VAR1"] == "value1"
+        assert summary.env_vars["VAR2"] == "value2"
+        assert summary.env_vars["VAR3"] == "value3"
 
     def test_configuration_summary_tracks_env_vars(self, monkeypatch, model_config, vllm_config):
         """Test that ConfigurationSummary tracks environment variables."""
@@ -133,7 +137,8 @@ class TestEnvironmentVariables:
 
         assert summary.model_name == "test-model"
         assert summary.tp_size == 4
-        assert summary.env_vars == {"TEST_VAR": "123"}
+        assert "TEST_VAR" in summary.env_vars
+        assert summary.env_vars["TEST_VAR"] == "123"
 
 
 class TestGPUBlocksOverride:
@@ -147,7 +152,8 @@ class TestGPUBlocksOverride:
         summary = configurator.configure(vllm_config)
 
         assert vllm_config.cache_config.num_gpu_blocks_override == 1000
-        assert summary.num_blocks == 1000
+        assert summary.num_blocks.actual == 1000
+        assert summary.num_blocks.was_overridden() is False
 
     @pytest.mark.parametrize(
         "sendnn_configured,sendnn_version,expected_blocks",
@@ -185,10 +191,11 @@ class TestGPUBlocksOverride:
         summary = configurator.configure(vllm_config)
 
         assert vllm_config.cache_config.num_gpu_blocks_override == expected_blocks
-        assert summary.num_blocks == expected_blocks
+        assert summary.num_blocks.actual == expected_blocks
+        assert summary.num_blocks.was_overridden() is False
 
     def test_log_warning_when_user_set_different_value(
-        self, monkeypatch, model_config, vllm_config, log_capture
+        self, monkeypatch, model_config, vllm_config, caplog_vllm_spyre
     ):
         """Test warning when user already set --num-gpu-blocks-override to different value."""
         monkeypatch.setenv("VLLM_SPYRE_REQUIRE_KNOWN_CONFIG", "0")
@@ -202,8 +209,10 @@ class TestGPUBlocksOverride:
         summary = configurator.configure(vllm_config)
 
         assert vllm_config.cache_config.num_gpu_blocks_override == 500  # Not changed
-        assert summary.num_blocks == 1000  # But summary shows what we wanted
-        assert "not using model default" in log_capture.text.lower()
+        assert summary.num_blocks.expected == 1000  # Summary shows what we wanted
+        assert summary.num_blocks.actual == 500  # And what was actually set
+        assert summary.num_blocks.was_overridden() is True
+        assert "not using model default" in caplog_vllm_spyre.text.lower()
 
     def test_raise_error_when_require_known_config_and_user_override_conflicts(
         self, monkeypatch, model_config, vllm_config
@@ -255,7 +264,8 @@ class TestGPUBlocksOverride:
 
         summary = configurator.configure(vllm_config)
 
-        assert summary.num_blocks == 1000
+        assert summary.num_blocks.actual == 1000
+        assert summary.num_blocks.was_overridden() is False
         assert vllm_config.cache_config.num_gpu_blocks_override == 1000
 
 
@@ -279,7 +289,8 @@ class TestChunkedPrefill:
         summary = configurator.configure(vllm_config)
 
         assert vllm_config.scheduler_config.max_num_batched_tokens == 2048
-        assert summary.chunk_size == 2048
+        assert summary.chunk_size.actual == 2048
+        assert summary.chunk_size.was_overridden() is False
 
     @pytest.mark.parametrize(
         "use_cp,chunk_len_set,cp_config,expected_tokens",
@@ -316,8 +327,20 @@ class TestChunkedPrefill:
 
         summary = configurator.configure(vllm_config)
 
-        assert vllm_config.scheduler_config.max_num_batched_tokens == expected_tokens
-        assert summary.chunk_size == expected_tokens
+        if expected_tokens is None:
+            assert vllm_config.scheduler_config.max_num_batched_tokens == expected_tokens
+            # When chunk_len_set=True, we now return a ConfigValue tracking the override
+            if chunk_len_set and cp_config and cp_config.get("max_num_batched_tokens"):
+                assert summary.chunk_size is not None
+                assert summary.chunk_size.expected == cp_config["max_num_batched_tokens"]
+                assert summary.chunk_size.actual == 1024
+                assert summary.chunk_size.was_overridden() is True
+            else:
+                assert summary.chunk_size is None
+        else:
+            assert vllm_config.scheduler_config.max_num_batched_tokens == expected_tokens
+            assert summary.chunk_size.actual == expected_tokens
+            assert summary.chunk_size.was_overridden() is False
 
 
 class TestNoDeviceConfig:
@@ -336,13 +359,293 @@ class TestNoDeviceConfig:
         assert summary.num_blocks is None
         assert summary.chunk_size is None
 
-    def test_log_debug_message_when_no_device_config(self, model_config, vllm_config, log_capture):
+    def test_log_debug_message_when_no_device_config(
+        self, model_config, vllm_config, caplog_vllm_spyre
+    ):
         """Test that debug message is logged when no device config."""
         configurator = ModelConfigurator(model_config, device_config=None)
 
         configurator.configure(vllm_config)
 
-        assert "no device configuration" in log_capture.text.lower()
+        assert "no device configuration" in caplog_vllm_spyre.text.lower()
+
+
+class TestConfigValue:
+    """Tests for ConfigValue dataclass."""
+
+    @pytest.mark.parametrize(
+        "expected,actual,should_be_overridden",
+        [
+            ("100", "200", True),  # Different strings
+            ("100", "100", False),  # Same strings
+            (1000, 500, True),  # Different ints
+            (1000, 1000, False),  # Same ints
+            (None, None, False),  # Both None
+            ("100", None, True),  # Expected set, actual None
+        ],
+        ids=["diff_str", "same_str", "diff_int", "same_int", "both_none", "expected_only"],
+    )
+    def test_was_overridden(self, expected, actual, should_be_overridden):
+        """Test was_overridden method with various value combinations."""
+        config_value = ConfigValue(expected=expected, actual=actual)
+        assert config_value.was_overridden() is should_be_overridden
+
+
+class TestOverrideTracking:
+    """Tests for override tracking in configuration methods."""
+
+    @pytest.mark.parametrize(
+        "existing_value,expected_value,should_override",
+        [
+            (None, "123", False),  # Not set, should apply
+            ("123", "123", False),  # Same value, no override
+            ("456", "123", True),  # Different value, is overridden
+        ],
+        ids=["not_set", "same_value", "overridden"],
+    )
+    def test_set_env_var_override_tracking(
+        self, monkeypatch, model_config, existing_value, expected_value, should_override
+    ):
+        """Test that set_env_var correctly tracks overrides."""
+        if existing_value is None:
+            monkeypatch.delenv("TEST_VAR", raising=False)
+        else:
+            monkeypatch.setenv("TEST_VAR", existing_value)
+        monkeypatch.setenv("VLLM_SPYRE_REQUIRE_KNOWN_CONFIG", "0")
+        envs_spyre.clear_env_cache()
+
+        device_config = DeviceConfig(tp_size=4, env_vars={"TEST_VAR": expected_value})
+        configurator = ModelConfigurator(model_config, device_config)
+
+        result = configurator.set_env_var("TEST_VAR", expected_value)
+
+        assert isinstance(result, ConfigValue)
+        assert result.expected == expected_value
+        assert result.actual == (existing_value if existing_value else expected_value)
+        assert result.was_overridden() is should_override
+
+    @pytest.mark.parametrize(
+        "user_value,expected_value",
+        [
+            (None, 1000),  # Not set by user
+            (1000, 1000),  # User set to same value
+            (500, 1000),  # User set to different value
+        ],
+        ids=["not_set", "same_value", "overridden"],
+    )
+    def test_configure_gpu_blocks_override_tracking(
+        self, monkeypatch, model_config, vllm_config, user_value, expected_value
+    ):
+        """Test that _configure_gpu_blocks correctly tracks overrides."""
+        monkeypatch.setenv("VLLM_SPYRE_REQUIRE_KNOWN_CONFIG", "0")
+        envs_spyre.clear_env_cache()
+
+        vllm_config.cache_config.num_gpu_blocks_override = user_value
+
+        device_config = DeviceConfig(tp_size=4, num_gpu_blocks_override=expected_value)
+        configurator = ModelConfigurator(model_config, device_config)
+
+        result = configurator._configure_gpu_blocks(device_config, vllm_config)
+
+        assert isinstance(result, ConfigValue)
+        assert result.expected == expected_value
+        assert result.actual == (user_value if user_value else expected_value)
+        assert result.was_overridden() is (user_value is not None and user_value != expected_value)
+
+    @pytest.mark.parametrize(
+        "chunk_len_env,expected_tokens",
+        [
+            (None, 2048),  # Not set by user
+            ("2048", 2048),  # User set to same value
+            ("1024", 2048),  # User set to different value
+        ],
+        ids=["not_set", "same_value", "overridden"],
+    )
+    def test_configure_chunked_prefill_override_tracking(
+        self, monkeypatch, model_config, vllm_config, chunk_len_env, expected_tokens
+    ):
+        """Test that _configure_chunked_prefill correctly tracks overrides."""
+        monkeypatch.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", "1")
+        if chunk_len_env is None:
+            monkeypatch.delenv("VLLM_DT_CHUNK_LEN", raising=False)
+        else:
+            monkeypatch.setenv("VLLM_DT_CHUNK_LEN", chunk_len_env)
+        envs_spyre.clear_env_cache()
+
+        device_config = DeviceConfig(
+            tp_size=4,
+            chunked_prefill_config={"max_num_batched_tokens": expected_tokens},
+        )
+        configurator = ModelConfigurator(model_config, device_config)
+
+        result = configurator._configure_chunked_prefill(device_config, vllm_config)
+
+        assert isinstance(result, ConfigValue)
+        assert result.expected == expected_tokens
+        assert result.actual == int(chunk_len_env) if chunk_len_env else expected_tokens
+        assert result.was_overridden() is (
+            chunk_len_env is not None and int(chunk_len_env) != expected_tokens
+        )
+
+    def test_configuration_summary_contains_config_values(
+        self, monkeypatch, model_config, vllm_config
+    ):
+        """Test that ConfigurationSummary contains ConfigValue objects."""
+        monkeypatch.delenv("TEST_VAR", raising=False)
+        monkeypatch.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", "1")
+        monkeypatch.delenv("VLLM_DT_CHUNK_LEN", raising=False)
+        envs_spyre.clear_env_cache()
+
+        device_config = DeviceConfig(
+            tp_size=4,
+            env_vars={"TEST_VAR": "123"},
+            num_gpu_blocks_override=1000,
+            chunked_prefill_config={"max_num_batched_tokens": 2048},
+        )
+        configurator = ModelConfigurator(model_config, device_config)
+
+        summary = configurator.configure(vllm_config)
+
+        # Check env_vars contains ConfigValue
+        assert "TEST_VAR" in summary.env_vars
+        assert isinstance(summary.env_vars["TEST_VAR"], ConfigValue)
+        assert summary.env_vars["TEST_VAR"].expected == "123"
+        assert summary.env_vars["TEST_VAR"].actual == "123"
+
+        # Check num_blocks is ConfigValue
+        assert isinstance(summary.num_blocks, ConfigValue)
+        assert summary.num_blocks.expected == 1000
+        assert summary.num_blocks.actual == 1000
+
+        # Check chunk_size is ConfigValue
+        assert isinstance(summary.chunk_size, ConfigValue)
+        assert summary.chunk_size.expected == 2048
+        assert summary.chunk_size.actual == 2048
+
+
+class TestConfigurationSummaryLogging:
+    """Tests for ConfigurationSummary.format_log_message() method"""
+
+    def test_log_format_with_no_overrides(self, caplog_vllm_spyre):
+        """Test log format when all values are applied as expected."""
+        # Create a summary with no overrides
+        config_summary = ConfigurationSummary(
+            model_name="test-model",
+            tp_size=4,
+            env_vars={
+                "VLLM_DT_MAX_BATCH_TKV_LIMIT": ConfigValue(expected="131072", actual="131072"),
+                "FLEX_HDMA_P2PSIZE": ConfigValue(expected="268435456", actual="268435456"),
+            },
+            num_blocks=ConfigValue(expected=8192, actual=8192),
+            chunk_size=ConfigValue(expected=1024, actual=1024),
+        )
+
+        # Actually print the log for human inspection as well
+        logging.getLogger().info(config_summary.format_log_message())
+
+        # Validate the log output
+        log_text = caplog_vllm_spyre.text
+        assert "Applied registry configuration for 'test-model' (TP=4):" in log_text
+        assert "Environment variables:" in log_text
+        assert "VLLM_DT_MAX_BATCH_TKV_LIMIT=131072 ✓" in log_text
+        assert "FLEX_HDMA_P2PSIZE=268435456 ✓" in log_text
+        assert "num_gpu_blocks_override=8192 ✓" in log_text
+        assert "max_num_batched_tokens=1024 ✓" in log_text
+        # Should not contain any override warnings
+        assert "⚠" not in log_text
+        assert "expected:" not in log_text
+
+    def test_log_format_with_overrides(self, caplog_vllm_spyre):
+        """Test log format when values are overridden by user."""
+        # Create a summary with overrides
+        config_summary = ConfigurationSummary(
+            model_name="granite-3.3-8b-instruct",
+            tp_size=4,
+            env_vars={
+                "VLLM_DT_MAX_BATCH_TKV_LIMIT": ConfigValue(expected="131072", actual="131072"),
+                "FLEX_HDMA_P2PSIZE": ConfigValue(expected="268435456", actual="134217728"),
+            },
+            num_blocks=ConfigValue(expected=8192, actual=8192),
+            chunk_size=ConfigValue(expected=1024, actual=2048),
+        )
+
+        # Actually print the log for human inspection as well
+        logging.getLogger().info(config_summary.format_log_message())
+
+        # Validate the log output
+        log_text = caplog_vllm_spyre.text
+        assert "Applied registry configuration for 'granite-3.3-8b-instruct' (TP=4):" in log_text
+        assert "Environment variables:" in log_text
+
+        # Check non-overridden value
+        assert "VLLM_DT_MAX_BATCH_TKV_LIMIT=131072 ✓" in log_text
+
+        # Check overridden env var
+        assert "FLEX_HDMA_P2PSIZE=134217728 ⚠" in log_text
+        assert "expected: 268435456" in log_text
+
+        # Check non-overridden num_blocks
+        assert "num_gpu_blocks_override=8192 ✓" in log_text
+
+        # Check overridden chunk_size
+        assert "max_num_batched_tokens=2048 ⚠" in log_text
+        assert "expected: 1024" in log_text
+
+    def test_log_format_with_mixed_overrides(self, caplog_vllm_spyre):
+        """Test log format with a mix of overridden and non-overridden values."""
+        # Create a summary with mixed overrides
+        config_summary = ConfigurationSummary(
+            model_name="test-model",
+            tp_size=2,
+            env_vars={
+                "VAR1": ConfigValue(expected="100", actual="100"),
+                "VAR2": ConfigValue(expected="200", actual="300"),
+                "VAR3": ConfigValue(expected="400", actual="400"),
+            },
+            num_blocks=ConfigValue(expected=1000, actual=500),
+            chunk_size=None,  # Not configured
+        )
+
+        # Log using caplog's logger
+        logging.getLogger().info(config_summary.format_log_message())
+
+        # Validate the log output
+        log_text = caplog_vllm_spyre.text
+
+        # Check header
+        assert "Applied registry configuration for 'test-model' (TP=2):" in log_text
+
+        # Check env vars
+        assert "VAR1=100 ✓" in log_text
+        assert "VAR2=300 ⚠" in log_text
+        assert "expected: 200" in log_text
+        assert "VAR3=400 ✓" in log_text
+
+        # Check num_blocks override
+        assert "num_gpu_blocks_override=500 ⚠" in log_text
+        assert "expected: 1000" in log_text
+
+        # chunk_size should not appear since it's None
+        assert "max_num_batched_tokens" not in log_text
+
+    def test_log_format_with_empty_config(self, caplog_vllm_spyre):
+        """Test log format when no device-specific configs are present."""
+        # Create an empty summary
+        config_summary = ConfigurationSummary(
+            model_name="test-model",
+            tp_size=1,
+            env_vars={},
+            num_blocks=None,
+            chunk_size=None,
+        )
+
+        # Actually print the log for human inspection as well
+        logging.getLogger().info(config_summary.format_log_message())
+
+        # Validate the log output
+        log_text = caplog_vllm_spyre.text
+        assert "Applied registry configuration for 'test-model' (TP=1):" in log_text
+        assert "no device-specific configs" in log_text
 
 
 # Made with Bob

@@ -387,7 +387,7 @@ class TestPartialOverrides:
 
         # Should log warning about conflict
         assert any(
-            "was set to" in record.message and "num-gpu-blocks-override" in record.message
+            "num_gpu_blocks_override was set to 5000" in record.message
             for record in caplog_vllm_spyre.records
         )
 

@@ -227,26 +227,7 @@ class SpyrePlatform(Platform):
 
             if configurator:
                 config_summary = configurator.configure(vllm_config)
-
-                # Format summary for logging
-                summary_parts = []
-                if config_summary.env_vars:
-                    env_str = ", ".join(f"{k}={v}" for k, v in config_summary.env_vars.items())
-                    summary_parts.append(f"env_vars=[{env_str}]")
-                if config_summary.num_blocks is not None:
-                    summary_parts.append(f"num_blocks={config_summary.num_blocks}")
-                if config_summary.chunk_size is not None:
-                    summary_parts.append(f"chunk_size={config_summary.chunk_size}")
-
-                summary_str = (
-                    ", ".join(summary_parts) if summary_parts else "no device-specific configs"
-                )
-                logger.info(
-                    "Applied registry configuration for '%s' (TP=%d): %s",
-                    config_summary.model_name,
-                    config_summary.tp_size,
-                    summary_str,
-                )
+                logger.info(config_summary.format_log_message())
             else:
                 error_msg = f"No model-specific configuration found for '{model_config.model}'"
                 if envs_spyre.VLLM_SPYRE_REQUIRE_KNOWN_CONFIG:
