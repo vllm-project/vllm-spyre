@@ -179,8 +179,7 @@ jobs:
             uv.lock
             tests/**/*.py
             vllm_spyre/**/*.py
-            vllm_spyre/config/known_model_configs.json
-            vllm_spyre/config/supported_configs.yaml
+            vllm_spyre/config/model_configs.yaml
 
       - name: "Install PyTorch 2.7.1"
         if: steps.changed-src-files.outputs.any_changed == 'true'
