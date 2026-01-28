@@ -50,6 +50,10 @@ override-dependencies = [
     "torchvision; sys_platform == 'never'",
     "triton; sys_platform == 'never'",
     "intel-extension-for-pytorch; sys_platform == 'never'",
+
+    # opencv-python-headless==4.13.0.90 has a packaging bug that incorrectly depends on libxcb.so.1,
+    # causing import failure on headless Linux systems.
+    "opencv-python-headless==4.12.0.88",
     
     # Skip packages on s390x and ppc64le, expected to be pre-installed
     "vllm ; platform_machine not in 's390x, ppc64le'",
