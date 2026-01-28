@@ -252,10 +252,11 @@ class EngineCache:
         # then adjust these limits in the engine's scheduler for tests.
 
         # Setup the engine
-        # Round max_num_seqs (batch size) to the next power of two for
-        # Spyre compilation. This seems more robust and helps that all tests in
-        # tests/e2e/test_spyre_cb_inference_steps.py pass on Spyre.
-        max_num_seqs_compiled = 1 << (max_num_seqs - 1).bit_length()
+        # Round max_num_seqs (batch size) to the next power of two (minimum of 4) for
+        # Spyre compilation. This seems more robust and helps all tests using this cache not fail
+        # compilation.
+        max_num_seqs_compiled: int = max(4, 1 << (max_num_seqs - 1).bit_length())
+
         engine_args = EngineArgs(
             model=model_name,
             tokenizer=model_name,
