@@ -138,7 +138,7 @@ class TestRegistryErrorHandling:
 
         # Should log warning about unsupported runtime config
         assert any(
-            "does support the requested runtime" in record.message
+            "does not support the requested runtime" in record.message
             for record in caplog_vllm_spyre.records
         )
 

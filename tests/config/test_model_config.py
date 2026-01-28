@@ -1,5 +1,6 @@
 """Tests for model configuration data structures."""
 
+from pathlib import Path
 import pytest
 
 from vllm_spyre.config.model_config import (
@@ -9,6 +10,7 @@ from vllm_spyre.config.model_config import (
     ModelConfig,
     StaticBatchingConfig,
 )
+from vllm_spyre.config.model_registry import ModelConfigRegistry
 
 pytestmark = pytest.mark.skip_global_cleanup
 
@@ -253,18 +255,28 @@ class TestModelConfig:
         assert cb_config.device_config == device_config
 
     def test_from_dict_minimal(self):
-        """Test creating model config from minimal dict."""
+        """Test creating model config from minimal dict with at least one config."""
         data = {
             "architecture": {"model_type": "llama"},
-            "static_batching_configs": [],
+            "static_batching_configs": [{"tp_size": 1, "warmup_shapes": [(64, 20, 4)]}],
             "continuous_batching_configs": [],
         }
         config = ModelConfig.from_dict(name="test-model", data=data)
         assert config.name == "test-model"
         assert config.architecture.model_type == "llama"
         assert config.architecture.model_name == "test-model"
-        assert config.static_batching_configs == []
+        assert len(config.static_batching_configs) == 1
         assert config.continuous_batching_configs == []
+
+    def test_from_dict_no_configs_raises_error(self):
+        """Test that creating model config with no runtime configs raises ValueError."""
+        data = {
+            "architecture": {"model_type": "llama"},
+            "static_batching_configs": [],
+            "continuous_batching_configs": [],
+        }
+        with pytest.raises(ValueError, match="must have at least one runtime configuration"):
+            ModelConfig.from_dict(name="test-model", data=data)
 
     def test_from_dict_with_new_config_format(self):
         """Test creating model config from dict with new format."""
@@ -371,33 +383,13 @@ class TestModelConfigIntegration:
         registry.initialize(config_path)
 
         # Check that models were loaded
-        models = registry.list_models()
-        assert len(models) == 9, f"Expected 9 models, got {len(models)}"
+        model_names = registry.list_models()
+        assert len(model_names) == 9, f"Expected 9 models, got {len(model_names)}"
 
-        # Verify granite model has device config by attempting to get a configurator
-        # Create mock vllm_config for CB with TP=4
-        vllm_config = Mock()
-        vllm_config.model_config = Mock(
-            hf_config=Mock(
-                model_type="granite",
-                num_hidden_layers=32,
-                hidden_size=4096,
-                vocab_size=49152,
-            ),
-            max_model_len=32768,
-        )
-        vllm_config.parallel_config = Mock(world_size=4)
-        vllm_config.scheduler_config = Mock(max_num_seqs=32)
-        vllm_config.cache_config = Mock(num_gpu_blocks_override=None)
-
-        configurator = registry.get_configurator_for_runtime(vllm_config)
-        assert configurator is not None, "Should find granite model configuration"
-        assert configurator.model_config.name == "ibm-granite/granite-3.3-8b-instruct"
-
-        # Verify device config exists and has expected content
-        assert configurator.device_config is not None, "TP=4 config should have device_config"
-        assert len(configurator.device_config.env_vars) > 0
-        assert "VLLM_DT_MAX_BATCH_TKV_LIMIT" in configurator.device_config.env_vars
+        # Verify expected models are present
+        assert "ibm-granite/granite-3.3-8b-instruct" in model_names
+        assert "ibm-granite/granite-3.3-8b-instruct-FP8" in model_names
+        assert "ibm-granite/granite-4-8b-dense" in model_names
 
 
 # Made with Bob

@@ -35,16 +35,9 @@ class ConfigValue:
     def __eq__(self, other: object) -> bool:
         """Compare ConfigValue with another value using the actual value.
 
-        This allows backward compatibility with code that compares directly
-        to values without accessing .actual attribute.
+        This allows code that compares directly to values
         """
-        if isinstance(other, ConfigValue):
-            return self.actual == other.actual
         return self.actual == other
-
-    def __hash__(self) -> int:
-        """Make ConfigValue hashable based on actual value."""
-        return hash(self.actual)
 
 
 @dataclass
@@ -229,6 +222,24 @@ class ModelConfigurator:
         log_func("Set %s = %s", key, str_value)
         return ConfigValue(expected=str_value, actual=str_value)
 
+    def _parse_device_config_gpu_blocks(self, blocks_config: Any) -> int:
+        # Determine which override to use
+        if isinstance(blocks_config, int):
+            return blocks_config
+        else:
+            # Version-aware selection for torch_sendnn
+            from vllm_spyre.platform import SpyrePlatform
+
+            sendnn_version = SpyrePlatform.sendnn_version()
+            if (
+                SpyrePlatform.sendnn_configured()
+                and sendnn_version is not None
+                and (0, 0, 0) < sendnn_version < (1, 0, 3)
+            ):
+                return blocks_config.get("torch_sendnn_lt_1_0_3")
+            else:
+                return blocks_config.get("default")
+
     def _configure_gpu_blocks(self, device_config, vllm_config: "VllmConfig") -> ConfigValue | None:
         """Configure GPU blocks with optional version-aware logic.
 
@@ -246,22 +257,7 @@ class ModelConfigurator:
         if blocks_config is None:
             return None
 
-        # Determine which override to use
-        if isinstance(blocks_config, int):
-            num_blocks_override = blocks_config
-        else:
-            # Version-aware selection for torch_sendnn
-            from vllm_spyre.platform import SpyrePlatform
-
-            sendnn_version = SpyrePlatform.sendnn_version()
-            if (
-                SpyrePlatform.sendnn_configured()
-                and sendnn_version is not None
-                and (0, 0, 0) < sendnn_version < (1, 0, 3)
-            ):
-                num_blocks_override = blocks_config.get("torch_sendnn_lt_1_0_3")
-            else:
-                num_blocks_override = blocks_config.get("default")
+        num_blocks_override = self._parse_device_config_gpu_blocks(blocks_config)
 
         if num_blocks_override is None:
             return None
@@ -286,6 +282,28 @@ class ModelConfigurator:
         )
         return config_value
 
+    def _parse_chunk_len_env(self, env_value: str | None) -> int | None:
+        """Parse and validate VLLM_DT_CHUNK_LEN environment variable.
+
+        Args:
+            env_value: Raw environment variable value
+            expected: Expected default value from config
+
+        Returns:
+            Parsed integer value or None if invalid/not set
+        """
+        if env_value is None:
+            return None
+
+        try:
+            return int(env_value)
+        except (ValueError, TypeError):
+            logger.warning(
+                "VLLM_DT_CHUNK_LEN was set to invalid value %s, ignoring",
+                env_value,
+            )
+            return None
+
     def _configure_chunked_prefill(
         self,
         device_config,
@@ -296,47 +314,37 @@ class ModelConfigurator:
         Args:
             device_config: Device configuration containing chunked prefill settings
             vllm_config: The vLLM configuration to modify
-            tp_size: Tensor parallel size
 
         Returns:
             ConfigValue tracking expected and actual chunk_size, or None if not configured
         """
-        cp_config = device_config.chunked_prefill_config
-        if cp_config is None:
-            return None
-
         if not envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
             return None
 
-        max_batched_tokens = cp_config.get("max_num_batched_tokens")
-        if not max_batched_tokens:
-            return None
+        cp_config = device_config.chunked_prefill_config
+        default_chunk_size = cp_config.get("max_num_batched_tokens") if cp_config else None
 
-        # Check if user already set VLLM_DT_CHUNK_LEN
-        user_chunk_len = os.getenv("VLLM_DT_CHUNK_LEN")
-        if user_chunk_len is not None:
-            try:
-                user_value = int(user_chunk_len)
-                logger.debug(
-                    "VLLM_DT_CHUNK_LEN already set to %d, not using model default of %d",
-                    user_value,
-                    max_batched_tokens,
-                )
-                return ConfigValue(expected=max_batched_tokens, actual=user_value)
-            except (ValueError, TypeError):
-                logger.warning(
-                    "VLLM_DT_CHUNK_LEN was set to invalid value %s, ignoring setting",
-                    user_chunk_len,
-                )
-                return None
+        env_chunk_len = self._parse_chunk_len_env(os.getenv("VLLM_DT_CHUNK_LEN"))
+
+        if env_chunk_len is not None and env_chunk_len != default_chunk_size:
+            logger.debug(
+                "VLLM_DT_CHUNK_LEN is set to %d, not using model default of %d",
+                env_chunk_len,
+                default_chunk_size,
+            )
+
+        effective_chunk_size = env_chunk_len if env_chunk_len is not None else default_chunk_size
+        if effective_chunk_size is None:
+            return None
 
         logger.debug(
             "Set max_num_batched_tokens=%d for model %s (chunked prefill)",
-            max_batched_tokens,
+            effective_chunk_size,
             self.model_config.name,
         )
-        vllm_config.scheduler_config.max_num_batched_tokens = max_batched_tokens
-        return ConfigValue(expected=max_batched_tokens, actual=max_batched_tokens)
+
+        vllm_config.scheduler_config.max_num_batched_tokens = effective_chunk_size
+        return ConfigValue(expected=default_chunk_size, actual=effective_chunk_size)
 
 
 # Made with Bob

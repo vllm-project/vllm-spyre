@@ -260,23 +260,6 @@ class SpyrePlatform(Platform):
                     model_config.max_model_len * scheduler_config.max_num_seqs
                 )
             else:
-                # TODO: ideally, this would be user-configurable from CLI/engine
-                # args instead of with the internal env var, but that requires a
-                # way to detect if value set by vllm or by the user
-                if (chunk_len := os.getenv("VLLM_DT_CHUNK_LEN")) is None:
-                    os.environ["VLLM_DT_CHUNK_LEN"] = str(scheduler_config.max_num_batched_tokens)
-                else:
-                    try:
-                        chunk_len_int = int(chunk_len)
-                    except (ValueError, TypeError) as e:
-                        raise Exception("VLLM_DT_CHUNK_LEN must be an integer") from e
-
-                    logger.info(
-                        "VLLM_DT_CHUNK_LEN was provided. Overriding max_num_batched_tokens to %d",
-                        chunk_len_int,
-                    )
-                    scheduler_config.max_num_batched_tokens = chunk_len_int
-
                 assert scheduler_config.max_num_batched_tokens % cls._block_size == 0, (
                     "`max_num_batched_tokens` must"
                     f" be divisible by the block size ({cls._block_size}) "

@@ -158,9 +158,6 @@ class ModelConfig:
     def from_dict(cls, name: str, data: dict[str, Any]) -> "ModelConfig":
         """Create ModelConfig from dictionary (typically from YAML).
 
-        Note: YAML anchors are resolved by PyYAML before this method,
-        so device_config references appear as regular dictionaries.
-
         Args:
             name: Model name
             data: Dictionary containing model configuration
@@ -204,6 +201,13 @@ class ModelConfig:
                     f"tp_size={cfg.tp_size}, warmup_shapes={cfg.warmup_shapes}"
                 )
             static_signatures.add(signature)
+
+        # Validate at least one runtime configuration exists
+        if not static_configs and not continuous_configs:
+            raise ValueError(
+                f"Model '{name}' must have at least one runtime configuration "
+                f"(either static_batching_configs or continuous_batching_configs)"
+            )
 
         return cls(
             name=name,

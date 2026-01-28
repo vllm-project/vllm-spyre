@@ -10,12 +10,62 @@ from vllm_spyre.config.model_registry import ModelConfigRegistry
 pytestmark = pytest.mark.skip_global_cleanup
 
 
+@pytest.fixture
+def static_batching_model():
+    """Fixture providing a model config with static batching."""
+    yaml_content = """
+models:
+  test-model:
+    architecture:
+      model_type: test
+    static_batching_configs:
+      - tp_size: 1
+        warmup_shapes: [[64, 20, 4], [128, 40, 2], [256, 80, 1]]
+    """
+    data = yaml.safe_load(yaml_content)
+    return ModelConfig.from_dict("test-model", data["models"]["test-model"])
+
+
+@pytest.fixture
+def mock_static_vllm_config():
+    """Fixture providing a mock vllm config for static batching."""
+    vllm_config = Mock()
+    vllm_config.model_config = Mock(hf_config=Mock(model_type="test"))
+    vllm_config.parallel_config = Mock(world_size=1)
+    vllm_config.scheduler_config = Mock(max_num_seqs=None)
+    vllm_config.cache_config = Mock(num_gpu_blocks_override=None)
+    return vllm_config
+
+
+def create_mock_vllm_config(world_size, max_model_len, max_num_seqs):
+    """Create a mock vllm config with specified parameters."""
+    vllm_config = Mock()
+    vllm_config.model_config = Mock()
+    vllm_config.model_config.hf_config = Mock(model_type="test")
+    vllm_config.parallel_config = Mock(world_size=world_size)
+    vllm_config.model_config.max_model_len = max_model_len
+    vllm_config.scheduler_config = Mock(max_num_seqs=max_num_seqs)
+    return vllm_config
+
+
 class TestCBConfigMatchingLogic:
     """Tests for continuous batching config matching logic."""
 
-    def test_cb_config_matching_any_mismatch_skips(self):
+    # NB: Using test_ prefix on some parameterize to not conflict with default
+    # parameterization in ../conftest.py
+    @pytest.mark.parametrize(
+        "world_size,test_max_model_len,test_max_num_seqs,should_match,description",
+        [
+            (2, 8192, 32, False, "Should not match when only TP size differs"),
+            (4, 4096, 32, False, "Should not match when only max_model_len differs"),
+            (4, 8192, 16, False, "Should not match when only max_num_seqs differs"),
+            (4, 8192, 32, True, "Should match when all parameters match"),
+        ],
+    )
+    def test_cb_config_matching_any_mismatch_skips(
+        self, world_size, test_max_model_len, test_max_num_seqs, should_match, description
+    ):
         """Test that CB config is skipped if ANY parameter mismatches."""
-        # Create a test registry with a model that has one CB config
         yaml_content = """
 models:
   test-model:
@@ -26,106 +76,55 @@ models:
         max_model_len: 8192
         max_num_seqs: 32
         """
-
         data = yaml.safe_load(yaml_content)
         registry = ModelConfigRegistry()
         model_config = ModelConfig.from_dict("test-model", data["models"]["test-model"])
         registry.register_model(model_config)
 
-        # Create mock vllm configs for testing
-
-        # Test 1: Only TP size mismatches -> should NOT match
-        vllm_config = Mock()
-        vllm_config.model_config = Mock()
-        vllm_config.model_config.hf_config = Mock(model_type="test")
-        vllm_config.parallel_config = Mock(world_size=2)  # Different TP
-        vllm_config.model_config.max_model_len = 8192
-        vllm_config.scheduler_config = Mock(max_num_seqs=32)
-
+        vllm_config = create_mock_vllm_config(world_size, test_max_model_len, test_max_num_seqs)
         configurator = registry.get_configurator_for_runtime(vllm_config)
-        assert configurator is None, "Should not match when only TP size differs"
 
-        # Test 2: Only max_model_len mismatches -> should NOT match
-        vllm_config.parallel_config.world_size = 4  # Correct TP
-        vllm_config.model_config.max_model_len = 4096  # Different max_model_len
-        vllm_config.scheduler_config.max_num_seqs = 32
-
-        configurator = registry.get_configurator_for_runtime(vllm_config)
-        assert configurator is None, "Should not match when only max_model_len differs"
-
-        # Test 3: Only max_num_seqs mismatches -> should NOT match
-        vllm_config.parallel_config.world_size = 4
-        vllm_config.model_config.max_model_len = 8192
-        vllm_config.scheduler_config.max_num_seqs = 16  # Different max_num_seqs
-
-        configurator = registry.get_configurator_for_runtime(vllm_config)
-        assert configurator is None, "Should not match when only max_num_seqs differs"
-
-        # Test 4: All match -> SHOULD match
-        vllm_config.parallel_config.world_size = 4
-        vllm_config.model_config.max_model_len = 8192
-        vllm_config.scheduler_config.max_num_seqs = 32
-
-        configurator = registry.get_configurator_for_runtime(vllm_config)
-        assert configurator is not None, "Should match when all parameters match"
+        if should_match:
+            assert configurator is not None, description
+        else:
+            assert configurator is None, description
 
 
 class TestWarmupShapesSubset:
     """Tests for warmup shapes subset matching."""
 
-    def test_runtime_warmup_shapes_can_be_subset_of_config(self):
-        """Test that runtime warmup shapes can be a subset of config shapes."""
+    @pytest.mark.parametrize(
+        "runtime_shapes,should_match,description",
+        [
+            ([(64, 20, 4), (128, 40, 2)], True, "Subset of shapes should match"),
+            ([(256, 80, 1)], True, "Single shape should match if in config"),
+            ([(512, 100, 1)], False, "Non-matching shape should not match"),
+            ([(64, 20, 4), (512, 100, 1)], False, "Partial match should fail"),
+            ([(256, 80, 1), (64, 20, 4)], True, "Different order should match"),
+            ([], False, "Empty shapes should not match"),
+        ],
+        ids=["subset", "single", "no_match", "partial_fail", "order_independent", "empty"],
+    )
+    def test_warmup_shapes_matching(
+        self,
+        static_batching_model,
+        mock_static_vllm_config,
+        runtime_shapes,
+        should_match,
+        description,
+    ):
+        """Test various warmup shapes matching scenarios."""
         registry = ModelConfigRegistry()
+        registry.register_model(static_batching_model)
 
-        # Config has 3 warmup shapes
-        config_shapes = [(64, 20, 4), (128, 40, 2), (256, 80, 1)]
-
-        # Runtime only uses 2 of them (subset) -> should match
-        runtime_shapes = [(64, 20, 4), (128, 40, 2)]
-        assert registry._warmup_shapes_compatible(config_shapes, runtime_shapes), (
-            "Runtime shapes should be allowed to be subset of config shapes"
+        configurator = registry.get_configurator_for_runtime(
+            mock_static_vllm_config, runtime_shapes
         )
 
-        # Runtime uses 1 of them (subset) -> should match
-        runtime_shapes = [(256, 80, 1)]
-        assert registry._warmup_shapes_compatible(config_shapes, runtime_shapes), (
-            "Single runtime shape should match if it's in config shapes"
-        )
-
-        # Runtime uses shapes not in config -> should NOT match
-        runtime_shapes = [(512, 100, 1)]
-        assert not registry._warmup_shapes_compatible(config_shapes, runtime_shapes), (
-            "Runtime shapes not in config should not match"
-        )
-
-        # Runtime uses mix of valid and invalid -> should NOT match
-        runtime_shapes = [(64, 20, 4), (512, 100, 1)]
-        assert not registry._warmup_shapes_compatible(config_shapes, runtime_shapes), (
-            "Runtime shapes with any invalid shape should not match"
-        )
-
-    def test_warmup_shapes_order_independent(self):
-        """Test that warmup shapes matching is order-independent."""
-        registry = ModelConfigRegistry()
-
-        config_shapes = [(64, 20, 4), (128, 40, 2), (256, 80, 1)]
-
-        # Same shapes, different order -> should match
-        runtime_shapes = [(256, 80, 1), (64, 20, 4)]
-        assert registry._warmup_shapes_compatible(config_shapes, runtime_shapes), (
-            "Warmup shapes should match regardless of order"
-        )
-
-    def test_empty_runtime_shapes_does_not_match(self):
-        """Test that empty runtime shapes does not match."""
-        registry = ModelConfigRegistry()
-
-        config_shapes = [(64, 20, 4), (128, 40, 2)]
-        runtime_shapes = []
-
-        assert not registry._warmup_shapes_compatible(config_shapes, runtime_shapes), (
-            "Empty runtime shapes should not match"
-        )
+        if should_match:
+            assert configurator is not None, description
+        else:
+            assert configurator is None, description
 
 
 class TestDuplicateRuntimeConfigDetection:
@@ -208,7 +207,6 @@ models:
 
         data = yaml.safe_load(yaml_content)
 
-        # Should not raise
         model_config = ModelConfig.from_dict("test-model", data["models"]["test-model"])
         assert len(model_config.continuous_batching_configs) == 2
 
@@ -228,7 +226,6 @@ models:
 
         data = yaml.safe_load(yaml_content)
 
-        # Should not raise
         model_config = ModelConfig.from_dict("test-model", data["models"]["test-model"])
         assert len(model_config.static_batching_configs) == 2
 

@@ -94,8 +94,8 @@ class ModelConfigRegistry:
             with open(config_path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
         except FileNotFoundError as e:
-            logger.error("Configuration file not found: %s", e)
-            raise RuntimeError(f"Failed to load model configurations: {e}") from e
+            # This should never happen since _validate_config_path checks file existence
+            raise AssertionError(f"Unreachable: File validated but not found: {e}") from e
         except yaml.YAMLError as e:
             logger.error("YAML parsing error: %s", e)
             raise RuntimeError(f"Failed to load model configurations: {e}") from e
@@ -119,6 +119,10 @@ class ModelConfigRegistry:
         Args:
             model_config: The model configuration to register
         """
+        if model_config.name in self._models:
+            logger.warning(
+                "Model '%s' is already registered and will be overwritten", model_config.name
+            )
         self._models[model_config.name] = model_config
         logger.debug("Registered model: %s", model_config.name)
 
@@ -184,7 +188,7 @@ class ModelConfigRegistry:
 
         if not has_runtime_match:
             logger.warning(
-                "Model '%s' registered but does support the requested runtime configuration",
+                "Model '%s' registered but does not support the requested runtime configuration",
                 model_config.name,
             )
             return None
@@ -230,7 +234,7 @@ class ModelConfigRegistry:
         ):
             logger.debug(
                 "Found static batching config for model '%s' with TP=%d"
-                "and compatible warmup shapes",
+                "and compatible warmup shapes.",
                 model_config.name,
                 tp_size,
             )
