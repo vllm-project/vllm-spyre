@@ -4,6 +4,9 @@ from spyre_util import REFERENCE_MODELS, patch_environment
 from v1.worker.mock_model import InstrumentedModelRunner
 from vllm import EngineArgs
 
+from vllm_spyre.model_executor.model_loader.spyre import ContinuousBatchingFmsModel
+
+
 class FP8InstrumentedModelRunner(InstrumentedModelRunner):
     """Extended model runner with FP8 support for testing _set_scale_for_fp8."""
 
@@ -27,15 +30,10 @@ class FP8InstrumentedModelRunner(InstrumentedModelRunner):
 
         self.model.model.is_fp8_model = True
 
+        # Set attention_name for FP8 models
+        self.model.model.attention_name = "math_fp8"
+
         # Import and bind the actual methods from ContinuousBatchingFmsModel
-        from typing import cast
-
-        from vllm.forward_context import get_forward_context
-
-        from vllm_spyre.model_executor.model_loader.spyre import (
-            ContinuousBatchingFmsModel,
-        )
-
         self.model.model.set_past_key_value_states = (
             ContinuousBatchingFmsModel.set_past_key_value_states.__get__(
                 self.model.model, type(self.model.model)
@@ -48,6 +46,16 @@ class FP8InstrumentedModelRunner(InstrumentedModelRunner):
         )
         self.model.model._update_scale_for_fp8 = (
             ContinuousBatchingFmsModel._update_scale_for_fp8.__get__(
+                self.model.model, type(self.model.model)
+            )
+        )
+        self.model.model._adjust_input_for_fp8 = (
+            ContinuousBatchingFmsModel._adjust_input_for_fp8.__get__(
+                self.model.model, type(self.model.model)
+            )
+        )
+        self.model.model._adjust_output_for_fp8 = (
+            ContinuousBatchingFmsModel._adjust_output_for_fp8.__get__(
                 self.model.model, type(self.model.model)
             )
         )
@@ -79,6 +87,37 @@ class FP8InstrumentedModelRunner(InstrumentedModelRunner):
             return logits, past_key_value_states
 
         self.model.model.model = mock_inner_model_call
+
+        original_mock_forward = self.model.forward
+
+        def new_forward(input_ids_or_embeds, positions, masks, is_prompt):
+            # Save the last_* attributes like the original mock does
+            self.model.last_input_ids = input_ids_or_embeds
+            self.model.last_positions = positions
+            self.model.last_masks = masks
+            self.model.last_is_prompt = is_prompt
+
+            from vllm.forward_context import get_forward_context
+
+            forward_context = get_forward_context()
+            self.model.last_attn_metadata = forward_context.attn_metadata
+
+            # Call the bound ContinuousBatchingFmsModel.forward
+            logits = self.model.model.forward(
+                input_ids=input_ids_or_embeds,
+                position_ids=positions,
+                mask=masks,
+                use_cache=True,
+                is_prompt=is_prompt,
+            )
+
+            # Return logits in the same format as the original mock
+            # For decode (not is_prompt), return (batch_size, vocab_size)
+            # For prefill (is_prompt), return (batch_size, vocab_size)
+            return logits[:, -1, :]
+
+        # Override MockSpyreCausalLM.forward to call the bound ContinuousBatchingFmsModel.forward
+        self.model.forward = new_forward
 
     @classmethod
     def build_fp8(
@@ -123,4 +162,3 @@ class FP8InstrumentedModelRunner(InstrumentedModelRunner):
         model_runner.pre_warmup()
         model_runner.complete_warmup()
         return model_runner
-
