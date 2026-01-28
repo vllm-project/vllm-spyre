@@ -3,7 +3,7 @@ from typing import Any
 
 import pytest
 import torch
-from spyre_util import patch_environment
+from spyre_util import REFERENCE_MODELS, patch_environment
 from vllm import EngineArgs
 from vllm.config import VllmConfig
 from vllm.forward_context import get_forward_context
@@ -15,13 +15,33 @@ from vllm.v1.sample.sampler import Sampler
 
 from vllm_spyre.model_executor.model_loader.spyre import SpyreAttentionMetadata
 from vllm_spyre.platform import SpyrePlatform
-from vllm_spyre.v1.worker.spyre_model_runner import ChunkedPrefillModelRunner, ChunkedPrefillPlan
-
-from spyre_util import REFERENCE_MODELS
+from vllm_spyre.v1.worker.spyre_model_runner import (
+    ChunkedPrefillModelRunner,
+    ChunkedPrefillPlan,
+)
 
 
 class MockContinuousBatchingFmsModel:
+    def __init__(self, vllm_config):
+        self.past_key_value_states = None
+        self.current_kv_scales = None
+        self.is_fp8_model = False
+        self.kv_cache_specs = {}
+        self.model_config = vllm_config.model_config
+        self.scheduler_config = vllm_config.scheduler_config
+        self.dtype = torch.float32
+
     def set_past_key_value_states(self, num_blocks) -> None:
+        pass
+
+    def _set_scale_for_fp8(self, attn_metadata):
+        """Mock implementation of _set_scale_for_fp8 for testing."""
+        # This will be overridden in FP8InstrumentedModelRunner
+        pass
+
+    def _update_scale_for_fp8(self, attn_metadata):
+        """Mock implementation of _update_scale_for_fp8 for testing."""
+        # This will be overridden in FP8InstrumentedModelRunner
         pass
 
 
@@ -40,7 +60,7 @@ class MockSpyreCausalLM:
         # number of right pads (relevant for continuous batching only)
         self.n_pads_right = 0
 
-        self.model = MockContinuousBatchingFmsModel()
+        self.model = MockContinuousBatchingFmsModel(vllm_config=vllm_config)
 
         self.vocab_size = vllm_config.model_config.get_vocab_size()
 
