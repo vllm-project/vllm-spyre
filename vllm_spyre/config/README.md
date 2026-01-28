@@ -1,24 +1,85 @@
 # Model Configuration System
 
-This directory contains the new model configuration system for vLLM-Spyre, which provides a clean, extensible way to manage model-specific configurations.
+This directory contains the model configuration system for vLLM-Spyre,
+which provides a clean, extensible way to manage model-specific configurations.
+
+## Table of Contents
+
+- [Directory Structure](#directory-structure)
+- [Quick Start](#quick-start)
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Adding a New Model](#adding-a-new-model)
+- [Configuration Schema](#configuration-schema)
+- [How It Works](#how-it-works)
+- [API Reference](#api-reference)
+- [Benefits](#benefits)
+- [Examples](#examples)
+- [Troubleshooting](#troubleshooting)
+
+## Directory Structure
+
+```text
+vllm_spyre/config/
+├── __init__.py
+├── model_config.py          # Data structures
+├── model_configs.yaml       # Model definitions
+├── model_matcher.py         # Pattern matching
+├── model_registry.py        # Registry singleton
+├── README.md
+└── configurators/
+    ├── __init__.py
+    └── model_configurator.py  # Configuration logic
+```
+
+## Quick Start
+
+To use the configuration system:
+
+```python
+from vllm_spyre.config.model_registry import get_model_registry
+
+# Get the registry (auto-initializes)
+registry = get_model_registry()
+
+# Get configurator for your runtime
+#   warmup_shapes is None for continuous batching
+configurator = registry.get_configurator_for_runtime(vllm_config, warmup_shapes)
+
+# Apply configuration
+if configurator:
+    summary = configurator.configure(vllm_config)
+    logger.info(summary.format_log_message())
+```
 
 ## Overview
 
-The configuration system replaces hard-coded model logic with a declarative YAML-based approach, making it easy to add new models and maintain existing configurations.
+Uses a declarative YAML-based approach, making it easy to add new models and
+maintain existing configurations.
+
+### Benefits
+
+1. **Extensibility**: Add new models by editing YAML only
+2. **Maintainability**: Centralized configuration, no scattered code
+3. **Testability**: Easy to test configurations in isolation
+4. **Documentation**: YAML serves as self-documenting configuration
+5. **Simplicity**: Single configurator handles all models
+6. **Flexibility**: Configurations can be omitted
 
 ### Key Components
 
-1. **`model_configs.yaml`**: Declarative model definitions with architecture patterns, runtime configs, and device settings
+1. **`model_configs.yaml`**: Declarative model definitions with architecture
+   patterns, runtime configs, and device configurations
 2. **`model_registry.py`**: Singleton registry that loads and manages model configurations
-3. **`model_matcher.py`**: Pattern-based matching to identify models from HuggingFace configs
-4. **`model_config.py`**: Data structures (ModelConfig, ArchitecturePattern, DeviceConfig, RuntimeConfig)
-5. **`configurators/`**: Code-based logic for applying configurations
-   - `base.py`: Abstract base class with helper methods
-   - `default.py`: Universal configurator handling all model types
+3. **`model_matcher.py`**: Pattern-based matching to identify models from
+   HuggingFace configs
+4. **`model_config.py`**: Data structures (ModelConfig, ArchitecturePattern,
+   DeviceConfig, RuntimeConfig)
+5. **`configurators/model_configurator.py`**: Universal configurator for most models
 
 ## Architecture
 
-```
+```text
 ┌─────────────────────┐
 │  model_configs.yaml │  ← Declarative configuration
 └──────────┬──────────┘
@@ -33,7 +94,7 @@ The configuration system replaces hard-coded model logic with a declarative YAML
            │
            ├─► ModelMatcher (pattern matching)
            │
-           └─► DefaultConfigurator (apply configs)
+           └─► ModelConfigurator (apply configs)
                     │
                     ├─► Environment variables
                     ├─► GPU block overrides
@@ -83,7 +144,9 @@ models:
 
 ### Architecture Pattern
 
-Defines how to match a model from its HuggingFace config. Only `model_type` is required; other fields are optional and used for more precise matching.
+Defines how to match a model from its HuggingFace config. Only `model_type` is
+strictly required, but other fields are needed and used for more precise matching
+(enough to distinguish between all other supported models).
 
 ```yaml
 architecture:
@@ -114,7 +177,8 @@ static_batching_configs:
 
 ### Continuous Batching Configurations
 
-For models that support continuous batching. Each configuration can optionally include a nested `device_config`:
+For models that support continuous batching. Each configuration can optionally
+include a nested `device_config`:
 
 ```yaml
 continuous_batching_configs:
@@ -166,7 +230,8 @@ models:
 
 ### 1. Model Matching and Runtime Config Verification
 
-When vLLM loads a model, the registry:
+Before vLLM Spyre loads the model, the registry:
+
 1. Extracts the HuggingFace config
 2. Compares it against all registered architecture patterns
 3. Verifies there's a supported runtime configuration matching the runtime parameters:
@@ -178,6 +243,7 @@ When vLLM loads a model, the registry:
 # In platform.py
 from vllm_spyre.config.model_registry import get_model_registry
 
+
 registry = get_model_registry()
 # For static batching, pass warmup shapes for validation
 warmup_shapes = cls._warmup_shapes if not envs_spyre.VLLM_SPYRE_USE_CB else None
@@ -186,19 +252,23 @@ configurator = registry.get_configurator_for_runtime(vllm_config, warmup_shapes)
 
 ### 2. Configuration Application
 
-Once matched, the configurator:
-1. Applies environment variables from the device_config
-2. Configures GPU blocks (with version awareness)
-3. Sets up chunked prefill (if applicable)
+Once matched, the configurator applies environment variables and other
+configurations as applicable. Overrides of the default values are allowed
+as long as `VLLM_SPYRE_REQUIRE_KNOWN_CONFIG=0` (the default).
+
+The configurator returns a summary of the applied configurations that can easily
+be printed.
 
 ```python
 if configurator:
     config_summary = configurator.configure(vllm_config)
+    logger.info(config_summary.format_log_message())
 ```
 
 ### 3. Optional Features
 
 All device configuration features are optional:
+
 - **No device_config**: Model works with defaults
 - **No env_vars**: No environment variables set
 - **No num_gpu_blocks_override**: Uses vLLM's default calculation
@@ -227,93 +297,59 @@ models = registry.list_models()
 
 ### ModelConfigurator
 
-The universal configurator handles all models:
+Default configurator that should be able to handle most models:
 
 ```python
 class ModelConfigurator:
-    def __init__(self, model_config: ModelConfig, device_config: DeviceConfig | None = None):
+    def __init__(self, model_config: ModelConfig,
+                 device_config: DeviceConfig | None = None):
         """Initialize with model config and optional device config"""
 
     def configure(self, vllm_config: VllmConfig) -> ConfigurationSummary:
         """Apply device configurations and return summary"""
 
-    def _configure_gpu_blocks(self, device_config, vllm_config, tp_size) -> int | None:
+    def set_env_var(self, key: str, value: Any, override: bool = False) -> ConfigValue:
+        """Set environment variable with tracking"""
+
+    def _configure_gpu_blocks(self, device_config: DeviceConfig,
+                             vllm_config: VllmConfig) -> ConfigValue | None:
         """Configure GPU blocks with version-aware logic"""
 
-    def _configure_chunked_prefill(self, device_config, vllm_config, tp_size) -> int | None:
+    def _configure_chunked_prefill(self, device_config: DeviceConfig,
+                                  vllm_config: VllmConfig) -> ConfigValue | None:
         """Configure chunked prefill settings"""
 ```
 
-Helper methods:
+### ConfigurationSummary
+
+Returned by `configure()` to track what was applied:
 
 ```python
-# Set environment variable with logging
-self.set_env_var("KEY", "value", override=False)
+@dataclass
+class ConfigurationSummary:
+    model_name: str
+    tp_size: int
+    env_vars: dict[str, ConfigValue]  # Tracks expected vs actual values
+    num_blocks: ConfigValue | None    # GPU blocks override
+    chunk_size: ConfigValue | None    # Chunked prefill tokens
+
+    def format_log_message(self) -> str:
+        """Format summary for logging with override warnings"""
 ```
 
-## Migration from Legacy Code
+### ConfigValue
 
-### Before (Hard-coded in platform.py)
+Tracks configuration values with override detection:
 
 ```python
-def configure_granite_3_8b(cls, vllm_config: VllmConfig):
-    if parallel_config.world_size != 4:
-        return
+@dataclass
+class ConfigValue:
+    expected: str | int | None  # Expected value from config
+    actual: str | int | None    # Actual value applied (possibly from user override)
 
-    tkv_128k = 128 * 1024
-    if not os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"):
-        os.environ["VLLM_DT_MAX_BATCH_TKV_LIMIT"] = str(tkv_128k)
-    # ... more hard-coded logic
+    def was_overridden(self) -> bool:
+        """Check if actual differs from expected"""
 ```
-
-### After (Declarative YAML with Nested Device Config)
-
-```yaml
-ibm-granite/granite-3.3-8b-instruct:
-  continuous_batching_configs:
-    - tp_size: 4
-      max_model_len: 32768
-      max_num_seqs: 32
-      device_config:
-        env_vars:
-          VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072
-```
-
-## Benefits
-
-1. **Extensibility**: Add new models by editing YAML only
-2. **Maintainability**: Centralized configuration, no scattered code
-3. **Testability**: Easy to test configurations in isolation
-4. **Documentation**: YAML serves as self-documenting configuration
-5. **Simplicity**: Single configurator handles all models
-6. **Flexibility**: Optional features can be omitted
-
-## Testing
-
-Unit tests should cover:
-
-```bash
-# Test model matching
-pytest tests/config/test_model_matcher.py
-
-# Test registry functionality
-pytest tests/config/test_model_registry.py
-
-# Test configurator logic
-pytest tests/config/test_configurators.py
-
-# Integration tests
-pytest tests/config/test_integration.py
-```
-
-## Future Enhancements
-
-Potential improvements:
-- YAML schema validation
-- Configuration inheritance (model families)
-- Dynamic model registration API
-- Configuration versioning
-- Performance profiling per configuration
 
 ## Examples
 
@@ -379,30 +415,26 @@ models:
 ### Model Not Matched
 
 If your model isn't being matched:
+
 1. Check the HF config attributes: `print(model_config.hf_config.__dict__)`
 2. Ensure `model_type` matches exactly
 3. Add more specific attributes to narrow the match
-4. Check logs for matching attempts
+4. Check logs with VLLM_LOGGING_LEVEL=DEBUG for matching attempts
 
 ### Configuration Not Applied
 
 If configuration isn't being applied:
+
 1. Verify the TP size matches a device_config key
 2. Check that environment variables aren't already set
 3. Review logs for configuration application messages
 4. Ensure YAML syntax is correct
 
-### Version-Specific Issues
-
-For version-aware configurations:
-1. Check torch_sendnn version: `SpyrePlatform.sendnn_version()`
-2. Verify version comparison logic in configurator
-3. Add logging to debug version selection
-
 ## Support
 
 For questions or issues:
+
 1. Check this README
 2. Review existing model configurations in `model_configs.yaml`
-3. Examine the configurator code in `configurators/default.py`
+3. Examine the configurator code in `configurators/model_configurator.py`
 4. Consult the vLLM-Spyre team
