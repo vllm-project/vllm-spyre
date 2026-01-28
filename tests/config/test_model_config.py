@@ -366,10 +366,6 @@ class TestModelConfigIntegration:
 
     def test_load_actual_config_file(self):
         """Test loading the actual model_configs.yaml file."""
-        from pathlib import Path
-
-        from vllm_spyre.config.model_registry import ModelConfigRegistry
-
         registry = ModelConfigRegistry()
         config_path = Path(__file__).parent.parent.parent / "vllm_spyre/config/model_configs.yaml"
         registry.initialize(config_path)
@@ -378,24 +374,30 @@ class TestModelConfigIntegration:
         models = registry.list_models()
         assert len(models) == 9, f"Expected 9 models, got {len(models)}"
 
-        # Check a model with device config
-        granite_config = registry._models.get("ibm-granite/granite-3.3-8b-instruct")
-        assert granite_config is not None
-        assert len(granite_config.continuous_batching_configs) > 0
+        # Verify granite model has device config by attempting to get a configurator
+        # Create mock vllm_config for CB with TP=4
+        vllm_config = Mock()
+        vllm_config.model_config = Mock(
+            hf_config=Mock(
+                model_type="granite",
+                num_hidden_layers=32,
+                hidden_size=4096,
+                vocab_size=49152,
+            ),
+            max_model_len=32768,
+        )
+        vllm_config.parallel_config = Mock(world_size=4)
+        vllm_config.scheduler_config = Mock(max_num_seqs=32)
+        vllm_config.cache_config = Mock(num_gpu_blocks_override=None)
 
-        # Check that device config is nested in CB config
-        tp4_configs = [cb for cb in granite_config.continuous_batching_configs if cb.tp_size == 4]
-        assert len(tp4_configs) > 0, "Should have at least one TP=4 config"
+        configurator = registry.get_configurator_for_runtime(vllm_config)
+        assert configurator is not None, "Should find granite model configuration"
+        assert configurator.model_config.name == "ibm-granite/granite-3.3-8b-instruct"
 
-        # At least one TP=4 config should have device_config
-        has_device_config = any(cb.device_config is not None for cb in tp4_configs)
-        assert has_device_config, "At least one TP=4 config should have device_config"
-
-        # Verify device config content
-        for cb_config in tp4_configs:
-            if cb_config.device_config:
-                assert len(cb_config.device_config.env_vars) > 0
-                assert "VLLM_DT_MAX_BATCH_TKV_LIMIT" in cb_config.device_config.env_vars
+        # Verify device config exists and has expected content
+        assert configurator.device_config is not None, "TP=4 config should have device_config"
+        assert len(configurator.device_config.env_vars) > 0
+        assert "VLLM_DT_MAX_BATCH_TKV_LIMIT" in configurator.device_config.env_vars
 
 
 # Made with Bob

@@ -436,7 +436,7 @@ class TestOverrideTracking:
     def test_configure_gpu_blocks_override_tracking(
         self, monkeypatch, model_config, vllm_config, user_value, expected_value
     ):
-        """Test that _configure_gpu_blocks correctly tracks overrides."""
+        """Test that GPU blocks override correctly tracks overrides."""
         monkeypatch.setenv("VLLM_SPYRE_REQUIRE_KNOWN_CONFIG", "0")
         envs_spyre.clear_env_cache()
 
@@ -445,12 +445,16 @@ class TestOverrideTracking:
         device_config = DeviceConfig(tp_size=4, num_gpu_blocks_override=expected_value)
         configurator = ModelConfigurator(model_config, device_config)
 
-        result = configurator._configure_gpu_blocks(device_config, vllm_config)
+        # Use public configure() method instead of private _configure_gpu_blocks()
+        summary = configurator.configure(vllm_config)
 
-        assert isinstance(result, ConfigValue)
-        assert result.expected == expected_value
-        assert result.actual == (user_value if user_value else expected_value)
-        assert result.was_overridden() is (user_value is not None and user_value != expected_value)
+        assert summary.num_blocks is not None
+        assert isinstance(summary.num_blocks, ConfigValue)
+        assert summary.num_blocks.expected == expected_value
+        assert summary.num_blocks.actual == (user_value if user_value else expected_value)
+        assert summary.num_blocks.was_overridden() is (
+            user_value is not None and user_value != expected_value
+        )
 
     @pytest.mark.parametrize(
         "chunk_len_env,expected_tokens",
@@ -464,7 +468,7 @@ class TestOverrideTracking:
     def test_configure_chunked_prefill_override_tracking(
         self, monkeypatch, model_config, vllm_config, chunk_len_env, expected_tokens
     ):
-        """Test that _configure_chunked_prefill correctly tracks overrides."""
+        """Test that chunked prefill correctly tracks overrides."""
         monkeypatch.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", "1")
         if chunk_len_env is None:
             monkeypatch.delenv("VLLM_DT_CHUNK_LEN", raising=False)
@@ -478,12 +482,14 @@ class TestOverrideTracking:
         )
         configurator = ModelConfigurator(model_config, device_config)
 
-        result = configurator._configure_chunked_prefill(device_config, vllm_config)
+        # Use public configure() method instead of private _configure_chunked_prefill()
+        summary = configurator.configure(vllm_config)
 
-        assert isinstance(result, ConfigValue)
-        assert result.expected == expected_tokens
-        assert result.actual == int(chunk_len_env) if chunk_len_env else expected_tokens
-        assert result.was_overridden() is (
+        assert summary.chunk_size is not None
+        assert isinstance(summary.chunk_size, ConfigValue)
+        assert summary.chunk_size.expected == expected_tokens
+        assert summary.chunk_size.actual == int(chunk_len_env) if chunk_len_env else expected_tokens
+        assert summary.chunk_size.was_overridden() is (
             chunk_len_env is not None and int(chunk_len_env) != expected_tokens
         )
 

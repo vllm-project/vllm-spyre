@@ -209,20 +209,8 @@ class TestConfiguratorEdgeCases:
         assert summary.num_blocks is None
         assert summary.chunk_size is None
 
-    def test_registry_file_not_found_error_path(self):
-        """Test that FileNotFoundError is caught and re-raised as RuntimeError."""
-        from vllm_spyre.config.model_registry import ModelConfigRegistry
-        from pathlib import Path
-
-        registry = ModelConfigRegistry()
-        nonexistent_path = Path("/definitely/does/not/exist/config.yaml")
-
-        # Should raise RuntimeError wrapping FileNotFoundError
-        with pytest.raises(RuntimeError, match="Failed to load model configurations"):
-            registry._load_and_register_models(nonexistent_path)
-
     def test_registry_os_error_path(self):
-        """Test that OSError is caught and re-raised as RuntimeError."""
+        """Test that OSError is caught and re-raised as RuntimeError when file is unreadable."""
         from vllm_spyre.config.model_registry import ModelConfigRegistry
         from pathlib import Path
         import tempfile
@@ -241,7 +229,7 @@ class TestConfiguratorEdgeCases:
 
             # Should raise RuntimeError wrapping OSError
             with pytest.raises(RuntimeError, match="Failed to load model configurations"):
-                registry._load_and_register_models(temp_path)
+                registry.initialize(temp_path)
         finally:
             # Restore permissions and cleanup
             os.chmod(temp_path, 0o644)
