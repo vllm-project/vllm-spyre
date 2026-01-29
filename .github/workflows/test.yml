@@ -43,9 +43,11 @@ jobs:
             repo: "git+https://github.com/vllm-project/vllm --branch main"
         test_suite:
           - name: "chunked prefill"
-            markers: "cpu and chunked_prefill and not quantized"
+            markers: "cpu and chunked_prefill and not prefix_caching and not quantized and not multimodal"
+          - name: "prefix caching"
+            markers: "cpu and prefix_caching and not quantized"
           - name: "static batching"
-            markers: "cpu and decoder and not cb and not other_e2e and not chunked_prefill and not quantized"
+            markers: "cpu and decoder and not cb and not other_e2e and not chunked_prefill and not prefix_caching and not quantized"
             flags: "--timeout=300"
             hf_model: "JackFram/llama-160m"
           - name: "fp8"
@@ -64,25 +66,28 @@ jobs:
             hf_model: "cross-encoder/stsb-roberta-large"
             hf_model_rev: "2b12c2c0088918e76151fd5937b7bba986ef1f98"
           - name: "continuous batching"
-            markers: "cpu and cb and not quantized"
+            markers: "cpu and cb and not quantized and not multimodal"
             flags: "--timeout=300  --durations=0 -s"
           - name: "worker and utils"
-            markers: "not e2e and not quantized and not spyre"
-            flags: "--timeout=300"
-          - name: "compatibility"
-            markers: "compat"
+            markers: "not e2e and not quantized and not spyre and not multimodal"
             flags: "--timeout=300"
           - name: "other e2e"
             markers: "cpu and other_e2e and not quantized"
             flags: "--timeout=300"
+          - name: "multimodal"
+            markers: "cpu and multimodal"
+            flags: "--timeout=300 -sv"
+            # hf_model: "ibm-granite/granite-vision-3.2-2b"
+            # hf_model_rev: "2818ae5b93cb750b099df1b65f7864e4a0401271"
+            env_overrides: "HF_HUB_OFFLINE=0"
         include:
           # Lower bound support
           - vllm_version:
               name: "vLLM:lowest"
-              repo: "git+https://github.com/vllm-project/vllm --tag v0.10.2"
+              repo: "git+https://github.com/vllm-project/vllm --tag v0.11.0"
             test_suite:
               name: "backward compat"
-              markers: "compat or (cpu and basic)"
+              markers: "compat or (cpu and basic and not quantized and not sb)"
               flags: "--timeout=300"
               hf_model_2: "sentence-transformers/all-roberta-large-v1"
               hf_model_2_rev: "cf74d8acd4f198de950bf004b262e6accfed5d2c"
@@ -90,22 +95,55 @@ jobs:
             python_version: "3.12"
           # Intermediate versions of vllm to check basic support for as well
           - vllm_version:
-              name: "vLLM:0.11.0"
-              repo: "git+https://github.com/vllm-project/vllm --tag v0.11.0"
+              name: "vLLM:0.11.1"
+              repo: "git+https://github.com/vllm-project/vllm --tag v0.11.1"
             test_suite:
               name: "backward compat"
-              markers: "compat or (cpu and basic)"
+              markers: "cpu and basic and not quantized and not sb"
               flags: "--timeout=300"
               hf_model_2: "sentence-transformers/all-roberta-large-v1"
               hf_model_2_rev: "cf74d8acd4f198de950bf004b262e6accfed5d2c"
             os: "ubuntu-latest"
             python_version: "3.12"
           - vllm_version:
-              name: "vLLM:0.11.1"
-              repo: "git+https://github.com/vllm-project/vllm --tag v0.11.1"
+              name: "vLLM:0.11.2"
+              repo: "git+https://github.com/vllm-project/vllm --tag v0.11.2"
             test_suite:
               name: "backward compat"
-              markers: "compat or (cpu and basic)"
+              markers: "cpu and basic and not quantized and not sb"
+              flags: "--timeout=300"
+              hf_model_2: "sentence-transformers/all-roberta-large-v1"
+              hf_model_2_rev: "cf74d8acd4f198de950bf004b262e6accfed5d2c"
+            os: "ubuntu-latest"
+            python_version: "3.12"
+          - vllm_version:
+              name: "vLLM:0.12.0"
+              repo: "git+https://github.com/vllm-project/vllm --tag v0.12.0"
+            test_suite:
+              name: "backward compat"
+              markers: "cpu and basic and not quantized and not sb"
+              flags: "--timeout=300"
+              hf_model_2: "sentence-transformers/all-roberta-large-v1"
+              hf_model_2_rev: "cf74d8acd4f198de950bf004b262e6accfed5d2c"
+            os: "ubuntu-latest"
+            python_version: "3.12"
+          - vllm_version:
+              name: "vLLM:0.13.0"
+              repo: "git+https://github.com/vllm-project/vllm --tag v0.13.0"
+            test_suite:
+              name: "backward compat"
+              markers: "cpu and basic and not quantized and not sb"
+              flags: "--timeout=300"
+              hf_model_2: "sentence-transformers/all-roberta-large-v1"
+              hf_model_2_rev: "cf74d8acd4f198de950bf004b262e6accfed5d2c"
+            os: "ubuntu-latest"
+            python_version: "3.12"
+          - vllm_version:
+              name: "vLLM:0.14.0"
+              repo: "git+https://github.com/vllm-project/vllm --tag v0.14.0"
+            test_suite:
+              name: "backward compat"
+              markers: "cpu and basic and not quantized and not sb"
               flags: "--timeout=300"
               hf_model_2: "sentence-transformers/all-roberta-large-v1"
               hf_model_2_rev: "cf74d8acd4f198de950bf004b262e6accfed5d2c"
@@ -147,7 +185,7 @@ jobs:
       - name: "Install PyTorch 2.7.1"
         if: steps.changed-src-files.outputs.any_changed == 'true'
         run: |
-          pip install torch=="2.7.1+cpu" --index-url https://download.pytorch.org/whl/cpu
+          pip install torch=="2.7.1" --index-url https://download.pytorch.org/whl/cpu
 
       - name: "Install uv"
         if: steps.changed-src-files.outputs.any_changed == 'true'
@@ -286,5 +324,5 @@ jobs:
           # re-install the vllm_sypre package from source
           source .venv/bin/activate
 
-          python3 -m pytest ${{ matrix.test_suite.flags }} \
+          ${{matrix.test_suite.env_overrides}} python3 -m pytest ${{ matrix.test_suite.flags }} \
             tests -v -m "${{ matrix.test_suite.markers }}"

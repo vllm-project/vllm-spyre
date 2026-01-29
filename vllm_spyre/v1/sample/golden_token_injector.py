@@ -1,13 +1,12 @@
 import json
 import math
-from typing import TYPE_CHECKING, Optional, cast
+from typing import TYPE_CHECKING, cast
 
 import torch
 import torch.nn.functional as F
 from vllm.logger import init_logger
 from vllm.transformers_utils.tokenizer import get_tokenizer
-from vllm.v1.sample.logits_processor import (BatchUpdate, LogitsProcessor,
-                                             process_dict_updates)
+from vllm.v1.sample.logits_processor import BatchUpdate, LogitsProcessor, process_dict_updates
 
 logger = init_logger(__name__)
 
@@ -21,31 +20,32 @@ else:
 
 
 class ExpectationState:
-    '''
+    """
     This class controls the state of the generation.
     Args:
         expected_token_ids: Expected tokens ids
         expected_logprobs: Expected logprobs
-        error_threshold: Acceptable threshold to keep the injection. If it is 
+        error_threshold: Acceptable threshold to keep the injection. If it is
             over the threshold, we stop the injection and give feedback at the
             end of the generation that this token is diverging too much.
-        label: Used to identify the request, ideally it would be the request 
+        label: Used to identify the request, ideally it would be the request
             id. However we might not have that yet, therefore we have the
-            opportunity to add a more human friendly label. It is used to log 
+            opportunity to add a more human friendly label. It is used to log
             which requests are being injected with the golden token.
-    '''
+    """
 
-    def __init__(self,
-                 output_token_ids: list[int],
-                 expected_token_ids: list[int],
-                 expected_logprobs: Optional[list[float]] = None,
-                 error_threshold: Optional[float] = None,
-                 label: Optional[str] = None):
-
+    def __init__(
+        self,
+        output_token_ids: list[int],
+        expected_token_ids: list[int],
+        expected_logprobs: list[float] | None = None,
+        error_threshold: float | None = None,
+        label: str | None = None,
+    ):
         self.token_ids: list[int] = expected_token_ids
-        self.logprobs: Optional[list[float]] = expected_logprobs
-        self.threshold: Optional[float] = error_threshold
-        self.label: Optional[str] = label
+        self.logprobs: list[float] | None = expected_logprobs
+        self.threshold: float | None = error_threshold
+        self.label: str | None = label
         # to track the generated outputs
         self.output_token_ids: list[int] = output_token_ids
         self.has_error = False
@@ -54,15 +54,15 @@ class ExpectationState:
 class GoldenTokenInjector(LogitsProcessor):
     """Logit processor to inject expected token during generation for tests"""
 
-    def __init__(self, vllm_config: VllmConfig, device: torch.device,
-                 is_pin_memory: bool):
+    def __init__(self, vllm_config: VllmConfig, device: torch.device, is_pin_memory: bool):
         self.req_states: dict[int, ExpectationState] = {}
         model_config = vllm_config.model_config
         self.tokenizer = get_tokenizer(
             model_config.tokenizer,
             revision=model_config.tokenizer_revision,
             tokenizer_mode=model_config.tokenizer_mode,
-            trust_remote_code=model_config.trust_remote_code)
+            trust_remote_code=model_config.trust_remote_code,
+        )
 
     def is_argmax_invariant(self) -> bool:
         """Never impacts greedy sampling"""
@@ -70,29 +70,22 @@ class GoldenTokenInjector(LogitsProcessor):
 
     @staticmethod
     def add_req_states(
-            params: SamplingParams, prompt_tok_ids: list[int] | None,
-            output_tok_ids: list[int]) -> Optional[ExpectationState]:
-
-        if params.extra_args and (
-                injector_dict :=
-                params.extra_args.get("golden_token_injector")):
-
+        params: SamplingParams, prompt_tok_ids: list[int] | None, output_tok_ids: list[int]
+    ) -> ExpectationState | None:
+        if params.extra_args and (injector_dict := params.extra_args.get("golden_token_injector")):
             # OpenAI API can pass this parameter as string, so
             # we will just parse as the expected dict
             if isinstance(injector_dict, str):
                 injector_dict = json.loads(injector_dict)
             elif not isinstance(injector_dict, dict):
-                raise ValueError(
-                    "Golden token injector accepts only str or dict.")
+                raise ValueError("Golden token injector accepts only str or dict.")
 
-            return ExpectationState(output_token_ids=output_tok_ids,
-                                    **injector_dict)
+            return ExpectationState(output_token_ids=output_tok_ids, **injector_dict)
 
         return None
 
-    def update_state(self, batch_update: Optional[BatchUpdate]):
-        process_dict_updates(self.req_states, batch_update,
-                             self.add_req_states)
+    def update_state(self, batch_update: BatchUpdate | None):
+        process_dict_updates(self.req_states, batch_update, self.add_req_states)
 
     def apply(self, logits: torch.Tensor) -> torch.Tensor:
         if not self.req_states:
@@ -106,8 +99,13 @@ class GoldenTokenInjector(LogitsProcessor):
 
         return logits
 
-    def inject_token(self, logits: torch.Tensor, logprobs: torch.Tensor,
-                     req_idx: int, expectation: ExpectationState):
+    def inject_token(
+        self,
+        logits: torch.Tensor,
+        logprobs: torch.Tensor,
+        req_idx: int,
+        expectation: ExpectationState,
+    ):
         if expectation.has_error:
             # There was an error already for inject tokens for this
             # request, skip until the end of its generation.
@@ -116,15 +114,16 @@ class GoldenTokenInjector(LogitsProcessor):
         # Label to identify request, if the label was set in the state,
         # use it, otherwise it will be the index of the request in the
         # batch
-        label = f"'{expectation.label}'" if expectation.label is not None \
-            else f"idx '{req_idx}'"
+        label = f"'{expectation.label}'" if expectation.label is not None else f"idx '{req_idx}'"
 
         current_token_idx = len(expectation.output_token_ids)
 
         if not current_token_idx < len(expectation.token_ids):
             logger.warning_once(
-                "Request %s does not have enough expected tokens "
-                " for this generation; count: %d", label, current_token_idx)
+                "Request %s does not have enough expected tokens  for this generation; count: %d",
+                label,
+                current_token_idx,
+            )
             return
 
         expected_token_id = expectation.token_ids[current_token_idx]
@@ -138,20 +137,18 @@ class GoldenTokenInjector(LogitsProcessor):
         token = self.tokenizer.decode([token_id])
         expected_token = self.tokenizer.decode([expected_token_id])
 
-        if expectation.logprobs is None or \
-            expectation.threshold is None:
-
+        if expectation.logprobs is None or expectation.threshold is None:
             # Always inject the token
             logits[req_idx] = -math.inf
             logits[req_idx][expected_token_id] = 0.0
 
-            logger.info("Golden token injection for request %s"\
-                    " at token index '%d': "
-                    "'%s'  replaced by '%s'",
-                    label,
-                    current_token_idx,
-                    token,
-                    expected_token)
+            logger.info(
+                "Golden token injection for request %s at token index '%d': '%s'  replaced by '%s'",
+                label,
+                current_token_idx,
+                token,
+                expected_token,
+            )
 
             return
 
@@ -159,24 +156,23 @@ class GoldenTokenInjector(LogitsProcessor):
         token_lp = logprobs[req_idx][expected_token_id].reshape(-1)
         prob = torch.exp(token_lp).item()
 
-        expected_logprob = \
-            cast(torch.Tensor, expectation.logprobs)[
-                current_token_idx
-            ]
+        expected_logprob = cast(torch.Tensor, expectation.logprobs)[current_token_idx]
         expected_prob = math.exp(expected_logprob)
 
         # We'll inject only if the error is below the threshold
-        if not math.isclose(expected_prob,
-                            prob,
-                            abs_tol=cast(float, expectation.threshold)):
+        if not math.isclose(expected_prob, prob, abs_tol=expectation.threshold):
             err = abs(expected_prob - prob)
 
             logger.error(
                 "Token probability is out of the acceptable threshold "
                 "%.2f > %.2f at request "
                 "%s token idx '%s'."
-                " Token injection will be skipped.", err,
-                expectation.threshold, label, current_token_idx)
+                " Token injection will be skipped.",
+                err,
+                expectation.threshold,
+                label,
+                current_token_idx,
+            )
             expectation.has_error = True
             return
 
@@ -199,8 +195,10 @@ class GoldenTokenInjector(LogitsProcessor):
                 "logprobs for the token ids "
                 "(%.4f < %.4f), this "
                 "suggests that the generation diverged too much "
-                "from the expectation.", token_lp.item(),
-                other_logprobs.item())
+                "from the expectation.",
+                token_lp.item(),
+                other_logprobs.item(),
+            )
             expectation.has_error = True
             return
 
@@ -209,15 +207,17 @@ class GoldenTokenInjector(LogitsProcessor):
 
         old_prob = logprobs[req_idx][token_id].exp().item()
 
-        logger.info("Golden token injection for request %s"\
-                " at token index '%d': "
-                "'%s' (%.2f%%) replaced by "
-                "'%s' (%.2f%%);"
-                " baseline: (%.2f%%)",
-                label,
-                current_token_idx,
-                token,
-                old_prob * 100,
-                expected_token,
-                prob * 100,
-                expected_prob * 100)
+        logger.info(
+            "Golden token injection for request %s"
+            " at token index '%d': "
+            "'%s' (%.2f%%) replaced by "
+            "'%s' (%.2f%%);"
+            " baseline: (%.2f%%)",
+            label,
+            current_token_idx,
+            token,
+            old_prob * 100,
+            expected_token,
+            prob * 100,
+            expected_prob * 100,
+        )

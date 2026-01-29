@@ -1,0 +1,41 @@
+name: pre-commit
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  pre-commit:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+    
+    # Need to pull real deps from cache so that `ty` can type check against vllm
+    - name: "Set up Python 3.12"
+      uses: astral-sh/setup-uv@v5
+      with:
+        python-version: "3.12"
+        enable-cache: true
+        ignore-nothing-to-cache: true
+        cache-dependency-glob: |
+          pyproject.toml
+    - name: "Install dependencies"
+      run: VLLM_TARGET_DEVICE=empty uv sync --frozen
+
+    # The sadness knows no bounds: we require a separate pytorch install
+    - name: "Install PyTorch 2.7.1"
+      run: |
+        uv pip install pip && python3 -m pip install torch=="2.7.1+cpu" --index-url https://download.pytorch.org/whl/cpu
+
+    - run: echo "::add-matcher::.github/workflows/matchers/ruff.json"
+    - uses: j178/prek-action@v1
+      with:
+        extra_args: --all-files --hook-stage manual
