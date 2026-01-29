@@ -76,6 +76,7 @@ export VLLM_SPYRE_REQUIRE_KNOWN_CONFIG=1
 ```
 
 When this flag is enabled, the engine will raise a `RuntimeError` if:
+
 - The model cannot be matched to a known configuration
 - The requested runtime parameters are not in the supported configurations list
 
