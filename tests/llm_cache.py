@@ -280,6 +280,10 @@ class EngineCache:
         # original values. They were changed for more robust compilation only.
         engine_core.scheduler.model_config.max_model_len = max_model_len
         engine_core.scheduler.scheduler_config.max_num_seqs = max_num_seqs
+        engine_core.scheduler.max_num_running_reqs = max_num_seqs
+        engine_core.model_executor.driver_worker.worker.model_runner.model_config.max_model_len = (
+            max_model_len
+        )
 
         if available_blocks is not None:
             worker = engine_core.model_executor.driver_worker.worker
