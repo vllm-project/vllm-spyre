@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from vllm.config import ModelConfig as VllmModelConfig, VllmConfig
 
     from vllm_spyre.config.configurators.model_configurator import ModelConfigurator
-    from vllm_spyre.config.model_config import DeviceConfig
+    from vllm_spyre.config.model_config import DeviceConfig, WarmupShape
 
 logger = init_logger(__name__)
 
@@ -282,15 +282,14 @@ class ModelConfigRegistry:
         return None
 
     def _warmup_shapes_compatible(
-        self, config_shapes: list[tuple[int, int, int]], runtime_shapes: list[tuple[int, int, int]]
+        self, config_shapes: list["WarmupShape"], runtime_shapes: list[tuple[int, int, int]]
     ) -> bool:
         """Check if runtime warmup shapes are compatible with config warmup shapes.
 
         Runtime shapes are compatible if they are a subset of config shapes.
 
         Args:
-            config_shapes: Warmup shapes from model config
-                [(prompt_len, new_tokens, batch_size), ...]
+            config_shapes: WarmupShapes from model config
             runtime_shapes: Warmup shapes from runtime
                 [(prompt_len, new_tokens, batch_size), ...]
 
@@ -300,8 +299,11 @@ class ModelConfigRegistry:
         if not runtime_shapes:
             return False
 
+        # Convert config WarmupShape objects to tuples for comparison
+        config_tuples = [shape.to_tuple() for shape in config_shapes]
+
         # Runtime shapes must be a subset of config shapes
-        config_set = set(config_shapes)
+        config_set = set(config_tuples)
         runtime_set = set(runtime_shapes)
         return runtime_set.issubset(config_set)
 

@@ -9,6 +9,7 @@ from vllm_spyre.config.model_config import (
     DeviceConfig,
     ModelConfig,
     StaticBatchingConfig,
+    WarmupShape,
 )
 from vllm_spyre.config.model_registry import ModelConfigRegistry
 
@@ -143,25 +144,71 @@ class TestDeviceConfig:
         assert config.chunked_prefill_config == data["chunked_prefill_config"]
 
 
+class TestWarmupShape:
+    """Tests for WarmupShape dataclass."""
+
+    def test_create_warmup_shape(self):
+        """Test creating warmup shape."""
+        shape = WarmupShape(prompt_len=64, new_tokens=20, batch_size=4)
+        assert shape.prompt_len == 64
+        assert shape.new_tokens == 20
+        assert shape.batch_size == 4
+
+    def test_to_tuple(self):
+        """Test converting warmup shape to tuple."""
+        shape = WarmupShape(prompt_len=64, new_tokens=20, batch_size=4)
+        assert shape.to_tuple() == (64, 20, 4)
+
+    def test_from_dict(self):
+        """Test creating warmup shape from dict."""
+        data = {"prompt_len": 128, "new_tokens": 40, "batch_size": 2}
+        shape = WarmupShape.from_dict(data)
+        assert shape.prompt_len == 128
+        assert shape.new_tokens == 40
+        assert shape.batch_size == 2
+
+    def test_from_dict_missing_key(self):
+        """Test that missing keys raise ValueError."""
+        data = {"prompt_len": 128, "new_tokens": 40}
+        with pytest.raises(ValueError, match="Missing key"):
+            WarmupShape.from_dict(data)
+
+    def test_from_dict_invalid_value(self):
+        """Test that invalid values raise ValueError."""
+        data = {"prompt_len": "not_an_int", "new_tokens": 40, "batch_size": 2}
+        with pytest.raises(ValueError, match="must be valid integers"):
+            WarmupShape.from_dict(data)
+
+
 class TestStaticBatchingConfig:
     """Tests for StaticBatchingConfig dataclass."""
 
     def test_create_config(self):
         """Test creating static batching config."""
-        warmup_shapes = [(64, 20, 4), (128, 40, 2)]
+        warmup_shapes = [
+            WarmupShape(prompt_len=64, new_tokens=20, batch_size=4),
+            WarmupShape(prompt_len=128, new_tokens=40, batch_size=2),
+        ]
         config = StaticBatchingConfig(tp_size=1, warmup_shapes=warmup_shapes)
         assert config.tp_size == 1
-        assert config.warmup_shapes == warmup_shapes
+        assert len(config.warmup_shapes) == 2
+        assert config.warmup_shapes[0].to_tuple() == (64, 20, 4)
+        assert config.warmup_shapes[1].to_tuple() == (128, 40, 2)
 
     def test_from_dict(self):
         """Test creating static batching config from dict."""
         data = {
             "tp_size": 1,
-            "warmup_shapes": [[64, 20, 4], [128, 40, 2]],
+            "warmup_shapes": [
+                {"prompt_len": 64, "new_tokens": 20, "batch_size": 4},
+                {"prompt_len": 128, "new_tokens": 40, "batch_size": 2},
+            ],
         }
         config = StaticBatchingConfig.from_dict(data)
         assert config.tp_size == 1
-        assert config.warmup_shapes == [(64, 20, 4), (128, 40, 2)]
+        assert len(config.warmup_shapes) == 2
+        assert config.warmup_shapes[0].to_tuple() == (64, 20, 4)
+        assert config.warmup_shapes[1].to_tuple() == (128, 40, 2)
 
 
 class TestContinuousBatchingConfig:
@@ -237,7 +284,8 @@ class TestModelConfig:
     def test_create_with_configs(self):
         """Test creating model config with configurations."""
         architecture = ArchitecturePattern(model_name="granite-model", model_type="granite")
-        static_config = StaticBatchingConfig(tp_size=1, warmup_shapes=[(64, 20, 4)])
+        warmup_shape = WarmupShape(prompt_len=64, new_tokens=20, batch_size=4)
+        static_config = StaticBatchingConfig(tp_size=1, warmup_shapes=[warmup_shape])
         device_config = DeviceConfig(tp_size=4, env_vars={"TEST": "value"})
         cb_config = ContinuousBatchingConfig(
             tp_size=4, max_model_len=2048, max_num_seqs=256, device_config=device_config
@@ -258,7 +306,12 @@ class TestModelConfig:
         """Test creating model config from minimal dict with at least one config."""
         data = {
             "architecture": {"model_type": "llama"},
-            "static_batching_configs": [{"tp_size": 1, "warmup_shapes": [(64, 20, 4)]}],
+            "static_batching_configs": [
+                {
+                    "tp_size": 1,
+                    "warmup_shapes": [{"prompt_len": 64, "new_tokens": 20, "batch_size": 4}],
+                }
+            ],
             "continuous_batching_configs": [],
         }
         config = ModelConfig.from_dict(name="test-model", data=data)
@@ -282,7 +335,12 @@ class TestModelConfig:
         """Test creating model config from dict with new format."""
         data = {
             "architecture": {"model_type": "granite"},
-            "static_batching_configs": [{"tp_size": 1, "warmup_shapes": [[64, 20, 4]]}],
+            "static_batching_configs": [
+                {
+                    "tp_size": 1,
+                    "warmup_shapes": [{"prompt_len": 64, "new_tokens": 20, "batch_size": 4}],
+                }
+            ],
             "continuous_batching_configs": [
                 {"tp_size": 1, "max_model_len": 2048, "max_num_seqs": 256}
             ],
@@ -291,7 +349,7 @@ class TestModelConfig:
         assert len(config.static_batching_configs) == 1
         assert len(config.continuous_batching_configs) == 1
         assert config.static_batching_configs[0].tp_size == 1
-        assert config.static_batching_configs[0].warmup_shapes == [(64, 20, 4)]
+        assert config.static_batching_configs[0].warmup_shapes[0].to_tuple() == (64, 20, 4)
         assert config.continuous_batching_configs[0].tp_size == 1
         assert config.continuous_batching_configs[0].max_model_len == 2048
 
@@ -299,7 +357,12 @@ class TestModelConfig:
         """Test creating model config with nested device config in CB config."""
         data = {
             "architecture": {"model_type": "granite"},
-            "static_batching_configs": [{"tp_size": 1, "warmup_shapes": [[64, 20, 4]]}],
+            "static_batching_configs": [
+                {
+                    "tp_size": 1,
+                    "warmup_shapes": [{"prompt_len": 64, "new_tokens": 20, "batch_size": 4}],
+                }
+            ],
             "continuous_batching_configs": [
                 {
                     "tp_size": 4,
@@ -324,7 +387,12 @@ class TestModelConfig:
         """Test that ModelConfig no longer has device_configs field."""
         data = {
             "architecture": {"model_type": "test"},
-            "static_batching_configs": [{"tp_size": 1, "warmup_shapes": [[512, 0, 64]]}],
+            "static_batching_configs": [
+                {
+                    "tp_size": 1,
+                    "warmup_shapes": [{"prompt_len": 512, "new_tokens": 0, "batch_size": 64}],
+                }
+            ],
             "continuous_batching_configs": [
                 {"tp_size": 1, "max_model_len": 1000, "max_num_seqs": 10}
             ],

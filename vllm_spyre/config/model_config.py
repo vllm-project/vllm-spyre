@@ -74,22 +74,74 @@ class DeviceConfig:
 
 
 @dataclass
+class WarmupShape:
+    """Warmup shape configuration for static batching.
+
+    Attributes:
+        prompt_len: Prompt length
+        new_tokens: Number of new tokens to generate
+        batch_size: Batch size
+    """
+
+    prompt_len: int
+    new_tokens: int
+    batch_size: int
+
+    def to_tuple(self) -> tuple[int, int, int]:
+        """Convert WarmupShape to tuple format.
+
+        Returns:
+            Tuple of (prompt_len, new_tokens, batch_size)
+        """
+        return (self.prompt_len, self.new_tokens, self.batch_size)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "WarmupShape":
+        """Create WarmupShape from dictionary.
+
+        Args:
+            data: Dictionary containing warmup shape data with keys:
+                  prompt_len, new_tokens, batch_size
+
+        Returns:
+            WarmupShape instance
+
+        Raises:
+            KeyError: If required keys are missing
+            ValueError: If values are not valid integers
+        """
+        try:
+            return cls(
+                prompt_len=int(data["prompt_len"]),
+                new_tokens=int(data["new_tokens"]),
+                batch_size=int(data["batch_size"]),
+            )
+        except KeyError as e:
+            raise ValueError(
+                f"Warmup shape must have 'prompt_len', 'new_tokens', and 'batch_size' keys. "
+                f"Missing key: {e}"
+            ) from e
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"Warmup shape values must be valid integers: {e}") from e
+
+
+@dataclass
 class StaticBatchingConfig:
     """Static batching configuration.
 
     Attributes:
         tp_size: Tensor parallel size
-        warmup_shapes: Warmup shapes as (prompt_length, new_tokens, batch_size) tuples
+        warmup_shapes: List of warmup shape configurations
     """
 
     tp_size: int
-    warmup_shapes: list[tuple[int, int, int]]
+    warmup_shapes: list[WarmupShape]
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "StaticBatchingConfig":
         """Create StaticBatchingConfig from dictionary."""
-        # Convert list of lists to list of tuples
-        warmup_shapes = [tuple(ws) for ws in data["warmup_shapes"]]
+        # Convert warmup shapes from dicts to WarmupShape objects
+        warmup_shapes = [WarmupShape.from_dict(ws) for ws in data["warmup_shapes"]]
         return cls(
             tp_size=data["tp_size"],
             warmup_shapes=warmup_shapes,
@@ -193,12 +245,13 @@ class ModelConfig:
         # Validate no duplicate static configs
         static_signatures = set()
         for cfg in static_configs:
-            # Sort warmup shapes for comparison (order shouldn't matter)
-            signature = (cfg.tp_size, tuple(sorted(cfg.warmup_shapes)))
+            # Convert WarmupShape objects to tuples and sort for comparison (order shouldn't matter)
+            warmup_tuples = [shape.to_tuple() for shape in cfg.warmup_shapes]
+            signature = (cfg.tp_size, tuple(sorted(warmup_tuples)))
             if signature in static_signatures:
                 raise ValueError(
                     f"Duplicate runtime configuration for model '{name}': "
-                    f"tp_size={cfg.tp_size}, warmup_shapes={cfg.warmup_shapes}"
+                    f"tp_size={cfg.tp_size}, warmup_shapes={warmup_tuples}"
                 )
             static_signatures.add(signature)
 

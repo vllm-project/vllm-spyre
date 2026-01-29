@@ -20,7 +20,16 @@ models:
       model_type: test
     static_batching_configs:
       - tp_size: 1
-        warmup_shapes: [[64, 20, 4], [128, 40, 2], [256, 80, 1]]
+        warmup_shapes:
+          - prompt_len: 64
+            new_tokens: 20
+            batch_size: 4
+          - prompt_len: 128
+            new_tokens: 40
+            batch_size: 2
+          - prompt_len: 256
+            new_tokens: 80
+            batch_size: 1
     """
     data = yaml.safe_load(yaml_content)
     return ModelConfig.from_dict("test-model", data["models"]["test-model"])
@@ -160,9 +169,21 @@ models:
       model_type: test
     static_batching_configs:
       - tp_size: 1
-        warmup_shapes: [[64, 20, 4], [128, 40, 2]]
+        warmup_shapes:
+          - prompt_len: 64
+            new_tokens: 20
+            batch_size: 4
+          - prompt_len: 128
+            new_tokens: 40
+            batch_size: 2
       - tp_size: 1
-        warmup_shapes: [[64, 20, 4], [128, 40, 2]]
+        warmup_shapes:
+          - prompt_len: 64
+            new_tokens: 20
+            batch_size: 4
+          - prompt_len: 128
+            new_tokens: 40
+            batch_size: 2
         """
 
         data = yaml.safe_load(yaml_content)
@@ -179,9 +200,21 @@ models:
       model_type: test
     static_batching_configs:
       - tp_size: 1
-        warmup_shapes: [[64, 20, 4], [128, 40, 2]]
+        warmup_shapes:
+          - prompt_len: 64
+            new_tokens: 20
+            batch_size: 4
+          - prompt_len: 128
+            new_tokens: 40
+            batch_size: 2
       - tp_size: 1
-        warmup_shapes: [[128, 40, 2], [64, 20, 4]]
+        warmup_shapes:
+          - prompt_len: 128
+            new_tokens: 40
+            batch_size: 2
+          - prompt_len: 64
+            new_tokens: 20
+            batch_size: 4
         """
 
         data = yaml.safe_load(yaml_content)
@@ -219,9 +252,15 @@ models:
       model_type: test
     static_batching_configs:
       - tp_size: 1
-        warmup_shapes: [[64, 20, 4]]
+        warmup_shapes:
+          - prompt_len: 64
+            new_tokens: 20
+            batch_size: 4
       - tp_size: 1
-        warmup_shapes: [[128, 40, 2]]
+        warmup_shapes:
+          - prompt_len: 128
+            new_tokens: 40
+            batch_size: 2
         """
 
         data = yaml.safe_load(yaml_content)
