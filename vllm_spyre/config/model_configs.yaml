@@ -7,9 +7,19 @@
 # - continuous_batching_configs: List of continuous batching configurations (optional)
 #   - Each CB config may have a nested device_config for device-specific settings
 
-# Device configuration templates for reuse via YAML anchors
-device_config_templates:
-  # Template for TP=4 Granite 8B models
+# templates for reuse via YAML anchors
+_templates:
+  # model architecture for Granite 8
+  granite_33_8b_architecture: &granite_33_8b_architecture
+    model_type: granite
+    num_hidden_layers: 40
+    max_position_embeddings: 131072
+    hidden_size: 4096
+    vocab_size: 49159
+    num_key_value_heads: 8
+    num_attention_heads: 32
+
+  # device config for TP=4 Granite 8b models
   granite_8b_tp4_device_config: &granite_8b_tp4_device_config
     env_vars:
       VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072  # 128k
@@ -22,14 +32,7 @@ device_config_templates:
 models:
   # Granite 3.3 8B Instruct
   ibm-granite/granite-3.3-8b-instruct:
-    architecture:
-      model_type: granite
-      num_hidden_layers: 40
-      max_position_embeddings: 131072
-      hidden_size: 4096
-      vocab_size: 49159
-      num_key_value_heads: 8
-      num_attention_heads: 32
+    architecture: *granite_33_8b_architecture
 
     # Static batching configurations
     static_batching_configs:
@@ -68,8 +71,7 @@ models:
   # Granite 3.3 8B Instruct FP8
   ibm-granite/granite-3.3-8b-instruct-FP8:
     architecture:
-      model_type: granite
-      vocab_size: 49159
+      <<: *granite_33_8b_architecture
       quantization_config:
         format: float-quantized
 
