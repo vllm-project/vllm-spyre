@@ -99,6 +99,157 @@ models:
             assert configurator is None, description
 
 
+class TestModelMatchingPriority:
+    """Tests for model matching prioritization based on complexity."""
+
+    def test_prioritizes_quantized_over_base_model(self):
+        """Test that quantized model config is selected over base model when both match."""
+        yaml_content = """
+models:
+  base-model:
+    architecture:
+      model_type: granite
+      num_hidden_layers: 40
+      hidden_size: 4096
+    continuous_batching_configs:
+      - tp_size: 1
+        max_model_len: 8192
+        max_num_seqs: 4
+
+  quantized-model:
+    architecture:
+      model_type: granite
+      num_hidden_layers: 40
+      hidden_size: 4096
+      quantization_config:
+        format: float-quantized
+    continuous_batching_configs:
+      - tp_size: 1
+        max_model_len: 8192
+        max_num_seqs: 4
+        """
+        data = yaml.safe_load(yaml_content)
+        registry = ModelConfigRegistry()
+
+        # Register both models
+        base_config = ModelConfig.from_dict("base-model", data["models"]["base-model"])
+        quant_config = ModelConfig.from_dict("quantized-model", data["models"]["quantized-model"])
+        registry.register_model(base_config)
+        registry.register_model(quant_config)
+
+        # Create HF config with quantization
+        vllm_model_config = Mock()
+        vllm_model_config.model = "test/granite-fp8"
+        vllm_model_config.hf_config = Mock(
+            model_type="granite",
+            num_hidden_layers=40,
+            hidden_size=4096,
+            quantization_config={"format": "float-quantized"},
+        )
+
+        # Should match the quantized model (higher complexity score)
+        matched = registry.find_matching_model(vllm_model_config)
+        assert matched is not None
+        assert matched.name == "quantized-model"
+
+    def test_base_model_matches_when_no_quantization(self):
+        """Test that base model is selected when HF config has no quantization."""
+        yaml_content = """
+models:
+  base-model:
+    architecture:
+      model_type: granite
+      num_hidden_layers: 40
+      hidden_size: 4096
+    continuous_batching_configs:
+      - tp_size: 1
+        max_model_len: 8192
+        max_num_seqs: 4
+  
+  quantized-model:
+    architecture:
+      model_type: granite
+      num_hidden_layers: 40
+      hidden_size: 4096
+      quantization_config:
+        format: float-quantized
+    continuous_batching_configs:
+      - tp_size: 1
+        max_model_len: 8192
+        max_num_seqs: 4
+        """
+        data = yaml.safe_load(yaml_content)
+        registry = ModelConfigRegistry()
+
+        # Register both models
+        base_config = ModelConfig.from_dict("base-model", data["models"]["base-model"])
+        quant_config = ModelConfig.from_dict("quantized-model", data["models"]["quantized-model"])
+        registry.register_model(base_config)
+        registry.register_model(quant_config)
+
+        # Create HF config WITHOUT quantization
+        vllm_model_config = Mock()
+        vllm_model_config.model = "test/granite-base"
+        vllm_model_config.hf_config = Mock(
+            model_type="granite",
+            num_hidden_layers=40,
+            hidden_size=4096,
+        )
+
+        # Should match the base model (quantized model won't match)
+        matched = registry.find_matching_model(vllm_model_config)
+        assert matched is not None
+        assert matched.name == "base-model"
+
+    def test_more_specific_attributes_win(self):
+        """Test that patterns with more matching attributes are prioritized."""
+        yaml_content = """
+models:
+  generic-model:
+    architecture:
+      model_type: granite
+      num_hidden_layers: 40
+    continuous_batching_configs:
+      - tp_size: 1
+        max_model_len: 8192
+        max_num_seqs: 4
+  
+  specific-model:
+    architecture:
+      model_type: granite
+      num_hidden_layers: 40
+      hidden_size: 4096
+      vocab_size: 49159
+    continuous_batching_configs:
+      - tp_size: 1
+        max_model_len: 8192
+        max_num_seqs: 4
+        """
+        data = yaml.safe_load(yaml_content)
+        registry = ModelConfigRegistry()
+
+        # Register both models
+        generic_config = ModelConfig.from_dict("generic-model", data["models"]["generic-model"])
+        specific_config = ModelConfig.from_dict("specific-model", data["models"]["specific-model"])
+        registry.register_model(generic_config)
+        registry.register_model(specific_config)
+
+        # Create HF config that matches both
+        vllm_model_config = Mock()
+        vllm_model_config.model = "test/granite"
+        vllm_model_config.hf_config = Mock(
+            model_type="granite",
+            num_hidden_layers=40,
+            hidden_size=4096,
+            vocab_size=49159,
+        )
+
+        # Should match the more specific model (higher complexity score)
+        matched = registry.find_matching_model(vllm_model_config)
+        assert matched is not None
+        assert matched.name == "specific-model"
+
+
 class TestWarmupShapesSubset:
     """Tests for warmup shapes subset matching."""
 

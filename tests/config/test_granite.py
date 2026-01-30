@@ -36,6 +36,24 @@ def test_granite_3_8b_detection():
 
 
 @pytest.mark.cpu
+def test_granite_3_8b_fp8_detection():
+    """Check that we can detect the model config for granite 3 8b"""
+
+    granite_3_8b_fp8_config = VllmConfig(
+        model_config=ModelConfig(
+            model=str(FIXTURES_PATH / "ibm-granite" / "granite-3.3-8b-instruct-FP8")
+        ),
+        cache_config=NO_SWAP_CONFIG(),
+    )
+
+    registry = get_model_registry()
+    matched_model = registry.find_matching_model(granite_3_8b_fp8_config.model_config)
+
+    assert matched_model is not None
+    assert matched_model.name == "ibm-granite/granite-3.3-8b-instruct-FP8"
+
+
+@pytest.mark.cpu
 def test_granite_4_dense_detection():
     """Check that we can detect the model config for granite 4 8b (dense)"""
 

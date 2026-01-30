@@ -22,6 +22,35 @@ class ArchitecturePattern:
     model_type: str
     attributes: dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def complexity_score(self) -> int:
+        """Calculate complexity score for pattern prioritization.
+
+        More complex patterns (with more constraints) get higher scores,
+        ensuring they are matched before simpler, more generic patterns.
+
+        Returns:
+            Complexity score (higher = more specific/complex pattern)
+        """
+        score = 0
+
+        # Count non-None attributes
+        for attr_name, attr_value in self.attributes.items():
+            if attr_value is None:
+                continue
+
+            # Quantization config gets extra weight as it's a key differentiator
+            if attr_name == "quantization_config" and isinstance(attr_value, dict):
+                # Base score for having quantization_config
+                score += 10
+                # Additional score for each key in quantization_config
+                score += len(attr_value)
+            else:
+                # Regular attribute match
+                score += 1
+
+        return score
+
     @classmethod
     def from_dict(cls, model_name: str, data: dict[str, Any]) -> "ArchitecturePattern":
         """Create ArchitecturePattern from dictionary.

@@ -88,6 +88,51 @@ class TestArchitecturePattern:
         assert pattern.attributes["num_experts_per_tok"] == 2
         assert pattern.attributes["quantization_config"] == {"format": "float-quantized"}
 
+    def test_complexity_score_minimal_pattern(self):
+        """Test complexity score for minimal pattern (no attributes)."""
+        pattern = ArchitecturePattern(model_name="test-model", model_type="llama")
+        assert pattern.complexity_score == 0
+
+    def test_complexity_score_with_attributes(self):
+        """Test complexity score increases with attributes."""
+        pattern = ArchitecturePattern(
+            model_name="test-model",
+            model_type="granite",
+            attributes={
+                "num_hidden_layers": 32,
+                "hidden_size": 4096,
+            },
+        )
+        assert pattern.complexity_score == 2
+
+    def test_complexity_score_with_quantization_config(self):
+        """Test complexity score gives extra weight to quantization_config."""
+        pattern = ArchitecturePattern(
+            model_name="test-model-fp8",
+            model_type="granite",
+            attributes={
+                "num_hidden_layers": 32,
+                "quantization_config": {
+                    "format": "float-quantized",
+                    "quant_method": "fp8",
+                },
+            },
+        )
+        # 1 for num_hidden_layers + 10 for quantization_config + 2 for keys in quantization_config
+        assert pattern.complexity_score == 13
+
+    def test_complexity_score_ignores_none_values(self):
+        """Test complexity score ignores None attribute values."""
+        pattern = ArchitecturePattern(
+            model_name="test-model",
+            model_type="granite",
+            attributes={
+                "num_hidden_layers": 32,
+                "hidden_size": None,  # Should be ignored
+            },
+        )
+        assert pattern.complexity_score == 1
+
 
 class TestDeviceConfig:
     """Tests for DeviceConfig dataclass."""
