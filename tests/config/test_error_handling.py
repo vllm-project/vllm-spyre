@@ -207,7 +207,6 @@ class TestConfiguratorEdgeCases:
         assert summary.tp_size == 1
         assert len(summary.env_vars) == 0
         assert summary.num_blocks is None
-        assert summary.chunk_size is None
 
     def test_registry_os_error_path(self):
         """Test that OSError is caught and re-raised as RuntimeError when file is unreadable."""

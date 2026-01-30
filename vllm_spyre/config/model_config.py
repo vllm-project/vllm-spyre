@@ -54,13 +54,11 @@ class DeviceConfig:
         tp_size: Tensor parallel size this config applies to
         env_vars: Environment variables to set
         num_gpu_blocks_override: Override for GPU blocks (can be int or dict with version keys)
-        chunked_prefill_config: Configuration for chunked prefill
     """
 
     tp_size: int
     env_vars: dict[str, Any] = field(default_factory=dict)
     num_gpu_blocks_override: dict[str, int] | int | None = None
-    chunked_prefill_config: dict[str, Any] | None = None
 
     @classmethod
     def from_dict(cls, tp_size: int, data: dict[str, Any]) -> "DeviceConfig":
@@ -69,7 +67,6 @@ class DeviceConfig:
             tp_size=tp_size,
             env_vars=data.get("env_vars", {}),
             num_gpu_blocks_override=data.get("num_gpu_blocks_override"),
-            chunked_prefill_config=data.get("chunked_prefill_config"),
         )
 
 

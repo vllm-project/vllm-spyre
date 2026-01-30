@@ -269,96 +269,6 @@ class TestGPUBlocksOverride:
         assert vllm_config.cache_config.num_gpu_blocks_override == 1000
 
 
-class TestChunkedPrefill:
-    """Tests for chunked prefill configuration."""
-
-    @pytest.mark.parametrize(
-        "use_cp,chunk_len_set,cp_config,expected_result",
-        [
-            ("0", False, {"max_num_batched_tokens": 1024}, None),  # CP disabled
-            ("1", True, {"max_num_batched_tokens": 1024}, 4096),  # VLLM_DT_CHUNK_LEN set
-            ("1", True, None, 4096),  # VLLM_DT_CHUNK_LEN set, no config
-            ("1", False, None, None),  # No VLLM_DT_CHUNK_LEN or config
-            ("1", False, {"max_num_batched_tokens": 1024}, 1024),  # Should apply
-            ("1", False, {"other_key": "value"}, None),  # Config missing max_num_batched_tokens
-        ],
-        ids=[
-            "cp_disabled",
-            "chunk_len_set",
-            "chunk_len_set_no_config",
-            "no_config",
-            "applies",
-            "missing_key",
-        ],
-    )
-    def test_chunked_prefill_conditions(
-        self,
-        monkeypatch,
-        model_config,
-        vllm_config,
-        use_cp,
-        chunk_len_set,
-        cp_config,
-        expected_result,
-    ):
-        """Test various chunked prefill skip conditions and application."""
-        monkeypatch.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", use_cp)
-        if chunk_len_set:
-            monkeypatch.setenv("VLLM_DT_CHUNK_LEN", "4096")
-        else:
-            monkeypatch.delenv("VLLM_DT_CHUNK_LEN", raising=False)
-        envs_spyre.clear_env_cache()
-
-        default_max_num_batched_tokens = vllm_config.scheduler_config.max_num_batched_tokens
-
-        device_config = DeviceConfig(tp_size=4, chunked_prefill_config=cp_config)
-        configurator = ModelConfigurator(model_config, device_config)
-
-        summary = configurator.configure(vllm_config)
-
-        if expected_result is None:
-            assert (
-                vllm_config.scheduler_config.max_num_batched_tokens
-                == default_max_num_batched_tokens
-            ), "Expected no override of vLLM default max_num_batched_tokens"
-        else:
-            assert vllm_config.scheduler_config.max_num_batched_tokens == expected_result
-
-        if not use_cp or expected_result is None:
-            assert summary.chunk_size is None
-        else:
-            assert summary.chunk_size is not None
-            assert summary.chunk_size.actual == expected_result
-            if cp_config and cp_config.get("max_num_batched_tokens"):
-                assert summary.chunk_size.expected == cp_config["max_num_batched_tokens"]
-            else:
-                assert summary.chunk_size.expected is None
-
-    def test_invalid_chunk_len_applies_default(
-        self, monkeypatch, model_config, vllm_config, caplog_vllm_spyre
-    ):
-        """Test that invalid VLLM_DT_CHUNK_LEN value applies default."""
-        monkeypatch.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", "1")
-        monkeypatch.setenv("VLLM_DT_CHUNK_LEN", "invalid_value")
-        envs_spyre.clear_env_cache()
-
-        device_config = DeviceConfig(
-            tp_size=4,
-            chunked_prefill_config={"max_num_batched_tokens": 2048},
-        )
-        configurator = ModelConfigurator(model_config, device_config)
-
-        summary = configurator.configure(vllm_config)
-
-        # Should apply the default value instead of None
-        assert vllm_config.scheduler_config.max_num_batched_tokens == 2048
-        assert summary.chunk_size is not None
-        assert summary.chunk_size.expected == 2048
-        assert summary.chunk_size.actual == 2048
-        assert summary.chunk_size.was_overridden() is False
-        assert "invalid value" in caplog_vllm_spyre.text.lower()
-
-
 class TestNoDeviceConfig:
     """Tests for behavior when device_config is None."""
 
@@ -373,7 +283,6 @@ class TestNoDeviceConfig:
         assert summary.tp_size == 4
         assert summary.env_vars == {}
         assert summary.num_blocks is None
-        assert summary.chunk_size is None
 
     def test_log_debug_message_when_no_device_config(
         self, model_config, vllm_config, caplog_vllm_spyre
@@ -472,57 +381,17 @@ class TestOverrideTracking:
             user_value is not None and user_value != expected_value
         )
 
-    @pytest.mark.parametrize(
-        "chunk_len_env,expected_tokens",
-        [
-            (None, 2048),  # Not set by user
-            ("2048", 2048),  # User set to same value
-            ("1024", 2048),  # User set to different value
-        ],
-        ids=["not_set", "same_value", "overridden"],
-    )
-    def test_configure_chunked_prefill_override_tracking(
-        self, monkeypatch, model_config, vllm_config, chunk_len_env, expected_tokens
-    ):
-        """Test that chunked prefill correctly tracks overrides."""
-        monkeypatch.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", "1")
-        if chunk_len_env is None:
-            monkeypatch.delenv("VLLM_DT_CHUNK_LEN", raising=False)
-        else:
-            monkeypatch.setenv("VLLM_DT_CHUNK_LEN", chunk_len_env)
-        envs_spyre.clear_env_cache()
-
-        device_config = DeviceConfig(
-            tp_size=4,
-            chunked_prefill_config={"max_num_batched_tokens": expected_tokens},
-        )
-        configurator = ModelConfigurator(model_config, device_config)
-
-        # Use public configure() method instead of private _configure_chunked_prefill()
-        summary = configurator.configure(vllm_config)
-
-        assert summary.chunk_size is not None
-        assert isinstance(summary.chunk_size, ConfigValue)
-        assert summary.chunk_size.expected == expected_tokens
-        assert summary.chunk_size.actual == int(chunk_len_env) if chunk_len_env else expected_tokens
-        assert summary.chunk_size.was_overridden() is (
-            chunk_len_env is not None and int(chunk_len_env) != expected_tokens
-        )
-
     def test_configuration_summary_contains_config_values(
         self, monkeypatch, model_config, vllm_config
     ):
         """Test that ConfigurationSummary contains ConfigValue objects."""
         monkeypatch.delenv("TEST_VAR", raising=False)
-        monkeypatch.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", "1")
-        monkeypatch.delenv("VLLM_DT_CHUNK_LEN", raising=False)
         envs_spyre.clear_env_cache()
 
         device_config = DeviceConfig(
             tp_size=4,
             env_vars={"TEST_VAR": "123"},
             num_gpu_blocks_override=1000,
-            chunked_prefill_config={"max_num_batched_tokens": 2048},
         )
         configurator = ModelConfigurator(model_config, device_config)
 
@@ -539,11 +408,6 @@ class TestOverrideTracking:
         assert summary.num_blocks.expected == 1000
         assert summary.num_blocks.actual == 1000
 
-        # Check chunk_size is ConfigValue
-        assert isinstance(summary.chunk_size, ConfigValue)
-        assert summary.chunk_size.expected == 2048
-        assert summary.chunk_size.actual == 2048
-
 
 class TestConfigurationSummaryLogging:
     """Tests for ConfigurationSummary.format_log_message() method"""
@@ -559,7 +423,6 @@ class TestConfigurationSummaryLogging:
                 "FLEX_HDMA_P2PSIZE": ConfigValue(expected="268435456", actual="268435456"),
             },
             num_blocks=ConfigValue(expected=8192, actual=8192),
-            chunk_size=ConfigValue(expected=1024, actual=1024),
         )
 
         # Actually print the log for human inspection as well
@@ -572,7 +435,6 @@ class TestConfigurationSummaryLogging:
         assert "VLLM_DT_MAX_BATCH_TKV_LIMIT=131072 ✓" in log_text
         assert "FLEX_HDMA_P2PSIZE=268435456 ✓" in log_text
         assert "num_gpu_blocks_override=8192 ✓" in log_text
-        assert "max_num_batched_tokens=1024 ✓" in log_text
         # Should not contain any override warnings
         assert "⚠" not in log_text
         assert "expected:" not in log_text
@@ -588,7 +450,6 @@ class TestConfigurationSummaryLogging:
                 "FLEX_HDMA_P2PSIZE": ConfigValue(expected="268435456", actual="134217728"),
             },
             num_blocks=ConfigValue(expected=8192, actual=8192),
-            chunk_size=ConfigValue(expected=1024, actual=2048),
         )
 
         # Actually print the log for human inspection as well
@@ -609,10 +470,6 @@ class TestConfigurationSummaryLogging:
         # Check non-overridden num_blocks
         assert "num_gpu_blocks_override=8192 ✓" in log_text
 
-        # Check overridden chunk_size
-        assert "max_num_batched_tokens=2048 ⚠" in log_text
-        assert "expected: 1024" in log_text
-
     def test_log_format_with_mixed_overrides(self, caplog_vllm_spyre):
         """Test log format with a mix of overridden and non-overridden values."""
         # Create a summary with mixed overrides
@@ -625,7 +482,6 @@ class TestConfigurationSummaryLogging:
                 "VAR3": ConfigValue(expected="400", actual="400"),
             },
             num_blocks=ConfigValue(expected=1000, actual=500),
-            chunk_size=None,  # Not configured
         )
 
         # Log using caplog's logger
@@ -647,9 +503,6 @@ class TestConfigurationSummaryLogging:
         assert "num_gpu_blocks_override=500 ⚠" in log_text
         assert "expected: 1000" in log_text
 
-        # chunk_size should not appear since it's None
-        assert "max_num_batched_tokens" not in log_text
-
     def test_log_format_with_empty_config(self, caplog_vllm_spyre):
         """Test log format when no device-specific configs are present."""
         # Create an empty summary
@@ -658,7 +511,6 @@ class TestConfigurationSummaryLogging:
             tp_size=1,
             env_vars={},
             num_blocks=None,
-            chunk_size=None,
         )
 
         # Actually print the log for human inspection as well

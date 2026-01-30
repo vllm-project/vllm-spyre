@@ -49,14 +49,12 @@ class ConfigurationSummary:
         tp_size: Tensor parallel size
         env_vars: Dictionary of environment variables with override tracking
         num_blocks: num_gpu_blocks_override value with override tracking, if configured
-        chunk_size: max_num_batched_tokens for Chunked Prefill with override tracking, if configured
     """
 
     model_name: str
     tp_size: int
     env_vars: dict[str, ConfigValue] = field(default_factory=dict)
     num_blocks: ConfigValue | None = None
-    chunk_size: ConfigValue | None = None
 
     def format_log_message(self) -> str:
         """Format the configuration summary as a multi-line log message.
@@ -81,9 +79,6 @@ class ConfigurationSummary:
             if self.num_blocks is not None:
                 yield format_config_line("num_gpu_blocks_override", self.num_blocks)
 
-            if self.chunk_size is not None:
-                yield format_config_line("max_num_batched_tokens", self.chunk_size)
-
         lines = list(generate_lines())
         if len(lines) == 1:
             lines.append("  no device-specific configs")
@@ -97,7 +92,6 @@ class ModelConfigurator:
     This configurator applies device configurations including:
     - Environment variables
     - GPU block overrides (with version-aware logic)
-    - Chunked prefill configurations
 
     All features are optional and driven by the device_config in YAML.
     """
@@ -145,11 +139,6 @@ class ModelConfigurator:
         blocks_override = self._configure_gpu_blocks(self.device_config, vllm_config)
         if blocks_override is not None:
             summary.num_blocks = blocks_override
-
-        # Handle chunked prefill configuration
-        cp_tokens = self._configure_chunked_prefill(self.device_config, vllm_config)
-        if cp_tokens is not None:
-            summary.chunk_size = cp_tokens
 
         return summary
 
@@ -281,70 +270,6 @@ class ModelConfigurator:
             error_context=f"user set --num-gpu-blocks-override={user_value}",
         )
         return config_value
-
-    def _parse_chunk_len_env(self, env_value: str | None) -> int | None:
-        """Parse and validate VLLM_DT_CHUNK_LEN environment variable.
-
-        Args:
-            env_value: Raw environment variable value
-            expected: Expected default value from config
-
-        Returns:
-            Parsed integer value or None if invalid/not set
-        """
-        if env_value is None:
-            return None
-
-        try:
-            return int(env_value)
-        except (ValueError, TypeError):
-            logger.warning(
-                "VLLM_DT_CHUNK_LEN was set to invalid value %s, ignoring",
-                env_value,
-            )
-            return None
-
-    def _configure_chunked_prefill(
-        self,
-        device_config,
-        vllm_config: "VllmConfig",
-    ) -> ConfigValue | None:
-        """Configure chunked prefill settings if present.
-
-        Args:
-            device_config: Device configuration containing chunked prefill settings
-            vllm_config: The vLLM configuration to modify
-
-        Returns:
-            ConfigValue tracking expected and actual chunk_size, or None if not configured
-        """
-        if not envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
-            return None
-
-        cp_config = device_config.chunked_prefill_config
-        default_chunk_size = cp_config.get("max_num_batched_tokens") if cp_config else None
-
-        env_chunk_len = self._parse_chunk_len_env(os.getenv("VLLM_DT_CHUNK_LEN"))
-
-        if env_chunk_len is not None and env_chunk_len != default_chunk_size:
-            logger.debug(
-                "VLLM_DT_CHUNK_LEN is set to %d, not using model default of %d",
-                env_chunk_len,
-                default_chunk_size,
-            )
-
-        effective_chunk_size = env_chunk_len if env_chunk_len is not None else default_chunk_size
-        if effective_chunk_size is None:
-            return None
-
-        logger.debug(
-            "Set max_num_batched_tokens=%d for model %s (chunked prefill)",
-            effective_chunk_size,
-            self.model_config.name,
-        )
-
-        vllm_config.scheduler_config.max_num_batched_tokens = effective_chunk_size
-        return ConfigValue(expected=default_chunk_size, actual=effective_chunk_size)
 
 
 # Made with Bob

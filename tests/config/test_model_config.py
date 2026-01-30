@@ -98,7 +98,6 @@ class TestDeviceConfig:
         assert config.tp_size == 1
         assert config.env_vars == {}
         assert config.num_gpu_blocks_override is None
-        assert config.chunked_prefill_config is None
 
     def test_create_with_env_vars(self):
         """Test creating device config with environment variables."""
@@ -118,12 +117,6 @@ class TestDeviceConfig:
         config = DeviceConfig(tp_size=1, num_gpu_blocks_override=blocks_config)
         assert config.num_gpu_blocks_override == blocks_config
 
-    def test_create_with_chunked_prefill(self):
-        """Test creating device config with chunked prefill config."""
-        cp_config = {"max_num_batched_tokens": 512}
-        config = DeviceConfig(tp_size=1, chunked_prefill_config=cp_config)
-        assert config.chunked_prefill_config == cp_config
-
     def test_from_dict_minimal(self):
         """Test creating device config from minimal dict."""
         config = DeviceConfig.from_dict(tp_size=1, data={})
@@ -135,13 +128,11 @@ class TestDeviceConfig:
         data = {
             "env_vars": {"SOME_ENV_VAR": "some_value"},
             "num_gpu_blocks_override": {"default": 1000, "torch_sendnn_lt_1_0_3": 800},
-            "chunked_prefill_config": {"max_num_batched_tokens": 512},
         }
         config = DeviceConfig.from_dict(tp_size=2, data=data)
         assert config.tp_size == 2
         assert config.env_vars == data["env_vars"]
         assert config.num_gpu_blocks_override == data["num_gpu_blocks_override"]
-        assert config.chunked_prefill_config == data["chunked_prefill_config"]
 
 
 class TestWarmupShape:

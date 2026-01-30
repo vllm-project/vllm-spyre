@@ -18,8 +18,6 @@ device_config_templates:
     num_gpu_blocks_override:
       torch_sendnn_lt_1_0_3: 2080
       default: 8192
-    chunked_prefill_config:
-      max_num_batched_tokens: 1024
 
 models:
   # Granite 3.3 8B Instruct

@@ -97,8 +97,7 @@ maintain existing configurations.
            └─► ModelConfigurator (apply configs)
                     │
                     ├─► Environment variables
-                    ├─► GPU block overrides
-                    └─► Chunked prefill settings
+                    └─► GPU block overrides
 ```
 
 ## Adding a New Model
@@ -134,8 +133,6 @@ models:
           num_gpu_blocks_override:
             torch_sendnn_lt_1_0_3: 2080
             default: 8192
-          chunked_prefill_config:
-            max_num_batched_tokens: 1024
 ```
 
 **That's it!** No code changes needed for most models.
@@ -198,8 +195,6 @@ continuous_batching_configs:
       num_gpu_blocks_override:
         torch_sendnn_lt_1_0_3: 2080
         default: 8192
-      chunked_prefill_config:
-        max_num_batched_tokens: 1024
 ```
 
 ### Device Configuration Templates (YAML Anchors)
@@ -214,8 +209,6 @@ device_config_templates:
       FLEX_HDMA_P2PSIZE: 268435456
     num_gpu_blocks_override:
       default: 8192
-    chunked_prefill_config:
-      max_num_batched_tokens: 1024
 
 models:
   ibm-granite/granite-3.3-8b-instruct:
@@ -272,7 +265,6 @@ All device configuration features are optional:
 - **No device_config**: Model works with defaults
 - **No env_vars**: No environment variables set
 - **No num_gpu_blocks_override**: Uses vLLM's default calculation
-- **No chunked_prefill_config**: Uses command-line settings
 
 ## API Reference
 
@@ -314,10 +306,6 @@ class ModelConfigurator:
     def _configure_gpu_blocks(self, device_config: DeviceConfig,
                              vllm_config: VllmConfig) -> ConfigValue | None:
         """Configure GPU blocks with version-aware logic"""
-
-    def _configure_chunked_prefill(self, device_config: DeviceConfig,
-                                  vllm_config: VllmConfig) -> ConfigValue | None:
-        """Configure chunked prefill settings"""
 ```
 
 ### ConfigurationSummary
@@ -331,7 +319,6 @@ class ConfigurationSummary:
     tp_size: int
     env_vars: dict[str, ConfigValue]  # Tracks expected vs actual values
     num_blocks: ConfigValue | None    # GPU blocks override
-    chunk_size: ConfigValue | None    # Chunked prefill tokens
 
     def format_log_message(self) -> str:
         """Format summary for logging with override warnings"""
@@ -380,8 +367,6 @@ device_config_templates:
     num_gpu_blocks_override:
       torch_sendnn_lt_1_0_3: 2080
       default: 8192
-    chunked_prefill_config:
-      max_num_batched_tokens: 1024
 
 models:
   ibm-granite/granite-3.3-8b-instruct:
