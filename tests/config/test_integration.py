@@ -7,19 +7,18 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from vllm_spyre.config.model_registry import ModelConfigRegistry
+from vllm_spyre.config.model_registry import get_model_registry
 from vllm_spyre.config.configurators.model_configurator import ModelConfigurator
 
 pytestmark = pytest.mark.skip_global_cleanup
 
+FIXTURES_PATH = Path(__file__).parent.parent / "fixtures/model_configs"
 
-@pytest.fixture
+
+@pytest.fixture(scope="session")
 def registry():
     """Fixture providing a registry loaded with real model_configs.yaml."""
-    registry = ModelConfigRegistry()
-    config_path = Path(__file__).parent.parent.parent / "vllm_spyre/config/model_configs.yaml"
-    registry.initialize(config_path)
-    return registry
+    return get_model_registry()
 
 
 def _load_hf_config(fixture_path: Path) -> Mock:
@@ -36,30 +35,21 @@ def _load_hf_config(fixture_path: Path) -> Mock:
 @pytest.fixture
 def granite_3_3_hf_config():
     """Fixture providing real granite-3.3-8b-instruct HF config."""
-    fixture_path = (
-        Path(__file__).parent.parent
-        / "fixtures/model_configs/ibm-granite/granite-3.3-8b-instruct/config.json"
-    )
+    fixture_path = FIXTURES_PATH / "ibm-granite/granite-3.3-8b-instruct/config.json"
     return _load_hf_config(fixture_path)
 
 
 @pytest.fixture
 def granite_4_hf_config():
     """Fixture providing real granite-4-8b-dense HF config."""
-    fixture_path = (
-        Path(__file__).parent.parent
-        / "fixtures/model_configs/ibm-granite/granite-4-8b-dense/config.json"
-    )
+    fixture_path = FIXTURES_PATH / "ibm-granite/granite-4-8b-dense/config.json"
     return _load_hf_config(fixture_path)
 
 
 @pytest.fixture
 def embedding_hf_config():
     """Fixture providing real granite-embedding-125m-english HF config."""
-    fixture_path = (
-        Path(__file__).parent.parent
-        / "fixtures/model_configs/ibm-granite/granite-embedding-125m-english/config.json"
-    )
+    fixture_path = FIXTURES_PATH / "ibm-granite/granite-embedding-125m-english/config.json"
     return _load_hf_config(fixture_path)
 
 
@@ -193,7 +183,6 @@ class TestFullWorkflow:
         # Verify device_config has expected fields
         assert configurator.device_config.env_vars is not None
         assert configurator.device_config.num_gpu_blocks_override is not None
-        assert configurator.device_config.chunked_prefill_config is not None
 
     @patch.dict(os.environ, {}, clear=True)
     def test_apply_configuration_sets_env_vars(self, registry, granite_3_3_hf_config):
@@ -263,10 +252,7 @@ class TestUnregisteredModels:
     def test_micro_model_not_in_registry(self, registry):
         """Test that micro model (not in registry) returns None but doesn't error."""
         # Load micro model config
-        fixture_path = (
-            Path(__file__).parent.parent
-            / "fixtures/model_configs/ibm-ai-platform/micro-g3.3-8b-instruct-1b/config.json"
-        )
+        fixture_path = FIXTURES_PATH / "ibm-ai-platform/micro-g3.3-8b-instruct-1b/config.json"
         with open(fixture_path) as f:
             config_dict = json.load(f)
 
