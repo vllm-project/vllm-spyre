@@ -12,6 +12,7 @@ from vllm.connections import global_http_connection
 from vllm.distributed import cleanup_dist_env_and_memory
 
 from vllm_spyre import envs
+from vllm_spyre.platform import SpyrePlatform
 
 # Running with "fork" can lead to hangs/crashes
 # Specifically, our use of transformers to compare results causes an OMP thread
@@ -207,6 +208,10 @@ def should_do_global_cleanup_after_test(request) -> bool:
 
 @pytest.fixture(autouse=True)
 def cleanup_fixture(should_do_global_cleanup_after_test: bool):
+    # start with a clear env cache
+    envs.clear_env_cache()
+    # reset class variable in SpyrePlatform
+    SpyrePlatform._used_with_cli = False
     yield
     if should_do_global_cleanup_after_test:
         cleanup_dist_env_and_memory()
@@ -335,8 +340,3 @@ def caplog_vllm_spyre(temporary_enable_log_propagate, caplog):
     logging.getLogger("vllm_spyre").setLevel(logging.DEBUG)
 
     yield caplog
-
-
-@pytest.fixture(scope="function", autouse=True)
-def clear_env_cache():
-    envs.clear_env_cache()
