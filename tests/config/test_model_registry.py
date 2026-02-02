@@ -419,5 +419,99 @@ models:
         model_config = ModelConfig.from_dict("test-model", data["models"]["test-model"])
         assert len(model_config.static_batching_configs) == 2
 
+    def test_warmup_shapes_only_match_static_batching(self):
+        """Test that providing warmup_shapes only matches static batching configs.
+
+        This test verifies that when warmup_shapes are provided, the registry
+        prioritizes static batching configs over continuous batching configs,
+        even if a CB config exists with matching TP size.
+        """
+        yaml_content = """
+models:
+  test-model:
+    architecture:
+      model_type: test
+    continuous_batching_configs:
+      - tp_size: 1
+        max_model_len: 8192
+        max_num_seqs: 32
+    static_batching_configs:
+      - tp_size: 1
+        warmup_shapes:
+          - prompt_len: 64
+            new_tokens: 20
+            batch_size: 4
+        """
+        data = yaml.safe_load(yaml_content)
+        registry = ModelConfigRegistry()
+        model_config = ModelConfig.from_dict("test-model", data["models"]["test-model"])
+        registry.register_model(model_config)
+
+        # Create vllm config that would match the CB config
+        vllm_config = create_mock_vllm_config(world_size=1, max_model_len=8192, max_num_seqs=32)
+
+        # Provide warmup_shapes that DON'T match the static batching config
+        non_matching_warmup_shapes = [(128, 40, 2)]  # Not in static config
+
+        configurator = registry.get_configurator_for_runtime(
+            vllm_config, warmup_shapes=non_matching_warmup_shapes
+        )
+
+        # Should return None because warmup_shapes were provided but don't match
+        # the static batching config. The CB config should be ignored when
+        # warmup_shapes are provided.
+        assert configurator is None, (
+            "When warmup_shapes are provided, only static batching configs should be "
+            "considered, even if a CB config matches the runtime parameters"
+        )
+
+    def test_warmup_shapes_match_static_batching_ignores_cb(self):
+        """Test that matching warmup_shapes returns static config, ignoring CB config.
+
+        This test verifies that when warmup_shapes match a static batching config,
+        that config is used even if a CB config also matches the runtime parameters.
+        """
+        yaml_content = """
+models:
+  test-model:
+    architecture:
+      model_type: test
+    continuous_batching_configs:
+      - tp_size: 1
+        max_model_len: 8192
+        max_num_seqs: 32
+    static_batching_configs:
+      - tp_size: 1
+        warmup_shapes:
+          - prompt_len: 64
+            new_tokens: 20
+            batch_size: 4
+          - prompt_len: 128
+            new_tokens: 40
+            batch_size: 2
+        """
+        data = yaml.safe_load(yaml_content)
+        registry = ModelConfigRegistry()
+        model_config = ModelConfig.from_dict("test-model", data["models"]["test-model"])
+        registry.register_model(model_config)
+
+        # Create vllm config that would match the CB config
+        vllm_config = create_mock_vllm_config(world_size=1, max_model_len=8192, max_num_seqs=32)
+
+        # Provide warmup_shapes that DO match the static batching config
+        matching_warmup_shapes = [(64, 20, 4)]
+
+        configurator = registry.get_configurator_for_runtime(
+            vllm_config, warmup_shapes=matching_warmup_shapes
+        )
+
+        # Should return a configurator with no device_config (static batching)
+        assert configurator is not None, (
+            "When warmup_shapes match a static batching config, a configurator should be returned"
+        )
+        assert configurator.device_config is None, (
+            "Static batching configs should not have device_config"
+        )
+
 
 # Made with Bob

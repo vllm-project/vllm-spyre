@@ -241,27 +241,44 @@ class ModelConfigRegistry:
         max_model_len = vllm_config.model_config.max_model_len
         max_num_seqs = vllm_config.scheduler_config.max_num_seqs
 
-        # Check continuous batching configs first (they can have device configs)
-        cb_result = self._match_cb_config(model_config, tp_size, max_model_len, max_num_seqs)
-        if cb_result is not None:
-            return cb_result
+        if not warmup_shapes:
+            cb_result = self._match_cb_config(model_config, tp_size, max_model_len, max_num_seqs)
+            if cb_result is not None:
+                return cb_result
+            return False, None
 
-        # Check static batching configs
-        if warmup_shapes and any(
-            sb_config.tp_size == tp_size
-            and self._warmup_shapes_compatible(sb_config.warmup_shapes, warmup_shapes)
-            for sb_config in model_config.static_batching_configs
-        ):
+        if self._has_static_batching_match(model_config, tp_size, warmup_shapes):
             logger.debug(
                 "Found static batching config for model '%s' with TP=%d"
                 "and compatible warmup shapes.",
                 model_config.name,
                 tp_size,
             )
-            # no device config for static batching
             return True, None
 
         return False, None
+
+    def _has_static_batching_match(
+        self,
+        model_config: ModelConfig,
+        tp_size: int,
+        warmup_shapes: list[tuple[int, int, int]],
+    ) -> bool:
+        """Check if static batching config matches runtime parameters.
+
+        Args:
+            model_config: Model configuration
+            tp_size: Tensor parallel size
+            warmup_shapes: Warmup shapes from runtime
+
+        Returns:
+            True if a matching static batching config exists
+        """
+        return any(
+            sb_config.tp_size == tp_size
+            and self._warmup_shapes_compatible(sb_config.warmup_shapes, warmup_shapes)
+            for sb_config in model_config.static_batching_configs
+        )
 
     def _match_cb_config(
         self,
@@ -319,11 +336,8 @@ class ModelConfigRegistry:
         if not runtime_shapes:
             return False
 
-        # Convert config WarmupShape objects to tuples for comparison
-        config_tuples = [shape.to_tuple() for shape in config_shapes]
-
         # Runtime shapes must be a subset of config shapes
-        config_set = set(config_tuples)
+        config_set = {shape.to_tuple() for shape in config_shapes}
         runtime_set = set(runtime_shapes)
         return runtime_set.issubset(config_set)
 
