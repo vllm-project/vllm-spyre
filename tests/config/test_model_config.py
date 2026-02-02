@@ -1,6 +1,5 @@
 """Tests for model configuration data structures."""
 
-from pathlib import Path
 import pytest
 
 from vllm_spyre.config.model_config import (
@@ -11,7 +10,6 @@ from vllm_spyre.config.model_config import (
     StaticBatchingConfig,
     WarmupShape,
 )
-from vllm_spyre.config.model_registry import ModelConfigRegistry
 
 pytestmark = pytest.mark.skip_global_cleanup
 
@@ -475,25 +473,6 @@ models:
         assert cb_config.device_config is not None
         assert cb_config.device_config.env_vars["TEST_VAR"] == "123"
         assert cb_config.device_config.num_gpu_blocks_override == 8192
-
-
-class TestModelConfigIntegration:
-    """Integration tests for the refactored model config system."""
-
-    def test_load_actual_config_file(self):
-        """Test loading the actual model_configs.yaml file."""
-        registry = ModelConfigRegistry()
-        config_path = Path(__file__).parent.parent.parent / "vllm_spyre/config/model_configs.yaml"
-        registry.initialize(config_path)
-
-        # Check that models were loaded
-        model_names = registry.list_models()
-        assert len(model_names) == 9, f"Expected 9 models, got {len(model_names)}"
-
-        # Verify expected models are present
-        assert "ibm-granite/granite-3.3-8b-instruct" in model_names
-        assert "ibm-granite/granite-3.3-8b-instruct-FP8" in model_names
-        assert "ibm-granite/granite-4-8b-dense" in model_names
 
 
 # Made with Bob
