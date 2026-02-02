@@ -91,6 +91,16 @@ def test_compare_graphs_cb(
     monkeypatch.setenv("VLLM_ENABLE_V1_MULTIPROCESSING", 0)
     patch_environment(use_cb=True, warmup_shapes=None, backend="sendnn", monkeypatch=monkeypatch)
 
+    # NB: We need AFTU and vllm-spyre to have the same number of paged
+    # attention blocks for the graph comparison.
+    #
+    # vllm-spyre adds 1 block to the full batch count for the padding block and
+    # rounds up to a multiple of the batch size (see get_total_spyre_blocks in
+    # spyre_model_runner.py).
+    #
+    # Adjusting the context length for vLLM by the block size counters the
+    # padding block adjustment for alignment with AFTU
+    adjusted_max_model_len = max_model_len - 64
     original_cwd = os.getcwd()
     try:
         # Change to temp dir to set the test environment clean
@@ -101,7 +111,7 @@ def test_compare_graphs_cb(
             LLM(
                 model=model.name,
                 revision=model.revision,
-                max_model_len=max_model_len,
+                max_model_len=adjusted_max_model_len,
                 tensor_parallel_size=1,
                 max_num_seqs=max_num_seqs,
             )
@@ -253,6 +263,16 @@ def test_compare_graphs_chunked_prefill(
         use_chunked_prefill=True,
     )
 
+    # NB: We need AFTU and vllm-spyre to have the same number of paged
+    # attention blocks for the graph comparison.
+    #
+    # vllm-spyre adds 1 block to the full batch count for the padding block and
+    # rounds up to a multiple of the batch size (see get_total_spyre_blocks in
+    # spyre_model_runner.py).
+    #
+    # Adjusting the context length for vLLM by the block size counters the
+    # padding block adjustment for alignment with AFTU
+    adjusted_max_model_len = max_model_len - 64
     original_cwd = os.getcwd()
     try:
         # Change to temp dir to set the test environment clean
@@ -263,7 +283,7 @@ def test_compare_graphs_chunked_prefill(
             LLM(
                 model=model.name,
                 revision=model.revision,
-                max_model_len=max_model_len,
+                max_model_len=adjusted_max_model_len,
                 tensor_parallel_size=1,
                 max_num_batched_tokens=chunk_size,
                 max_num_seqs=max_num_seqs,
