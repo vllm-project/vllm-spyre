@@ -419,6 +419,7 @@ def validate_vllm_vs_hf_output(
     use_cb: bool = False,
     use_golden_token=True,
     max_num_batched_tokens: int | None = None,
+    use_pc: bool = False,
 ) -> None:
     hf_outputs = generate_hf_output(
         model=model,
@@ -442,6 +443,7 @@ def validate_vllm_vs_hf_output(
         max_num_seqs=max_num_seqs,
         max_num_batched_tokens=max_num_batched_tokens,
         use_cb=use_cb,
+        use_pc=use_pc,
     )
 
     compare_results(
@@ -467,6 +469,7 @@ def generate_spyre_vllm_output(
     max_num_seqs: int | None = None,
     use_cb: bool = False,
     max_num_batched_tokens: int | None = None,
+    use_pc: bool = False,
 ) -> list[dict[str, Any]]:
     # Allows to run multiprocess V1 engine without dumping meaningless logs at
     # shutdown engine this context.
@@ -482,6 +485,7 @@ def generate_spyre_vllm_output(
         max_num_seqs=max_num_seqs,
         max_num_batched_tokens=max_num_batched_tokens,
         use_cb=use_cb,
+        use_pc=use_pc,
     )
 
     vllm_outputs = vllm_model.generate(prompts, sampling_params)
@@ -492,6 +496,23 @@ def generate_spyre_vllm_output(
         results.append(result)
 
     return results
+
+
+def kwargs_for_mode(mode: str, max_num_seqs: int, warmup_shapes: DecodeWarmupShapes) -> dict:
+    """Returns kwargs for validate_vllm_vs_hf_output based on mode"""
+    return (
+        {
+            "max_num_seqs": max_num_seqs,
+            "use_cb": True,
+            "max_num_batched_tokens": 128 if mode in ["cp", "pc"] else None,
+            "use_pc": mode == "pc",
+            "warmup_shapes": None,
+        }
+        if mode != "sb"
+        else {
+            "warmup_shapes": warmup_shapes,
+        }
+    )
 
 
 def extract_output(req_output):

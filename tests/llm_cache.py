@@ -370,6 +370,7 @@ def get_cached_llm(
     max_num_seqs: int | None = None,
     use_cb: bool = False,
     max_num_batched_tokens: int | None = None,
+    use_pc: bool = False,
 ) -> LLM:
     # Clear other caches first
     API_SERVER_CACHE.clear()

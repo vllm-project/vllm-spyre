@@ -4,7 +4,7 @@ Run `python -m pytest tests/e2e/test_spyre_basic.py`.
 """
 
 import pytest
-from output_util import validate_vllm_vs_hf_output
+from output_util import validate_vllm_vs_hf_output, kwargs_for_mode
 from spyre_util import (
     DecodeWarmupShapes,
     ModelInfo,
@@ -63,9 +63,10 @@ def test_output(
         {
             "max_num_seqs": max_num_seqs,
             "use_cb": True,
-            "max_num_batched_tokens": 128 if mode == "cp" else None,
+            "max_num_batched_tokens": 128 if mode in ["cp", "pc"] else None,
+            "use_pc": mode == "pc",
         }
-        if mode == "cb" or mode == "cp"
+        if mode != "sb"
         else {
             "warmup_shapes": warmup_shapes,
         }
@@ -89,7 +90,7 @@ def test_output(
         monkeypatch=monkeypatch,
         max_model_len=max_model_len,
         max_new_tokens=max_new_tokens,
-        **kwargs,
+        **kwargs_for_mode(mode, max_num_seqs, warmup_shapes),
     )
 
 
@@ -128,16 +129,6 @@ def test_batch_handling(
         for i in range(len(max_new_tokens))
     ]
 
-    kwargs = (
-        {
-            "max_num_seqs": max_num_seqs,
-            "use_cb": True,
-            "max_num_batched_tokens": 128 if mode == "cp" else None,
-        }
-        if mode == "cb" or mode == "cp"
-        else {"warmup_shapes": warmup_shapes}
-    )
-
     validate_vllm_vs_hf_output(
         model=model,
         prompts=prompts,
@@ -147,7 +138,7 @@ def test_batch_handling(
         backend=backend,
         monkeypatch=monkeypatch,
         max_new_tokens=max_new_tokens,
-        **kwargs,
+        **kwargs_for_mode(mode, max_num_seqs, warmup_shapes),
     )
 
 
@@ -210,18 +201,9 @@ def test_max_model_len_override(model: ModelInfo, backend, warmup_shapes, mode: 
     warmup shapes"""
 
     max_model_len = 64
-    kwargs = (
-        {
-            "use_cb": True,
-            "warmup_shapes": None,
-            "use_chunked_prefill": mode == "cp",
-        }
-        if mode in ["cb", "cp", "pc"]
-        else {
-            "use_cb": False,
-            "warmup_shapes": warmup_shapes,
-        }
-    )
+    kwargs = kwargs_for_mode(mode, 2, warmup_shapes)
+    kwargs.pop("max_num_seqs")
+    kwargs.pop("use_pc")
 
     patch_environment(**kwargs, backend=backend, monkeypatch=monkeypatch)
     vllm_config = EngineArgs(
