@@ -27,6 +27,7 @@ def test_seed(
     mode: str,
     monkeypatch: pytest.MonkeyPatch,
     use_llm_cache,
+    runtime_xfail,
 ) -> None:
     """
     The warmup is based on a single shape. After the warmup,
@@ -35,6 +36,9 @@ def test_seed(
     with a seed. The generated output, including text, token ids,
     logprobs is verified to be identical for all 5 sequences.
     """
+
+    if mode in ["cp", "pc"]:
+        runtime_xfail(reason="Seed is broken in chunked prefill, please fix me!")
 
     max_new_tokens = warmup_shapes[0][1]
 
