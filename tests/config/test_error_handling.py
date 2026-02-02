@@ -10,6 +10,20 @@ import yaml
 from vllm_spyre.config.model_registry import ModelConfigRegistry
 
 
+@pytest.fixture
+def test_config_path():
+    """Provide path to test-specific model configuration YAML."""
+    return Path(__file__).parent / "fixtures" / "test_error_handling_models.yaml"
+
+
+@pytest.fixture
+def test_registry(test_config_path):
+    """Provide a registry initialized with test configuration."""
+    registry = ModelConfigRegistry()
+    registry.initialize(test_config_path)
+    return registry
+
+
 class TestRegistryErrorHandling:
     """Tests for registry error handling."""
 
@@ -43,17 +57,16 @@ class TestRegistryErrorHandling:
         finally:
             temp_path.unlink()
 
-    def test_initialize_twice_skips_second_load(self, caplog_vllm_spyre):
+    def test_initialize_twice_skips_second_load(self, test_config_path, caplog_vllm_spyre):
         """Test that initializing twice doesn't reload."""
         registry = ModelConfigRegistry()
-        config_path = Path(__file__).parent.parent.parent / "vllm_spyre/config/model_configs.yaml"
 
         # First initialization
-        registry.initialize(config_path)
+        registry.initialize(test_config_path)
         model_count_first = len(registry.list_models())
 
         # Second initialization should skip
-        registry.initialize(config_path)
+        registry.initialize(test_config_path)
         model_count_second = len(registry.list_models())
 
         # Should have same count
@@ -62,11 +75,9 @@ class TestRegistryErrorHandling:
         # Should log debug message about skipping
         assert any("already initialized" in record.message for record in caplog_vllm_spyre.records)
 
-    def test_find_matching_model_with_no_hf_config(self, caplog_vllm_spyre):
+    def test_find_matching_model_with_no_hf_config(self, test_registry, caplog_vllm_spyre):
         """Test matching when vllm_config has no HF config."""
-        registry = ModelConfigRegistry()
-        config_path = Path(__file__).parent.parent.parent / "vllm_spyre/config/model_configs.yaml"
-        registry.initialize(config_path)
+        registry = test_registry
 
         # Create mock vllm_config with no HF config
         vllm_model_config = Mock()
@@ -82,11 +93,11 @@ class TestRegistryErrorHandling:
             "No HF config available" in record.message for record in caplog_vllm_spyre.records
         )
 
-    def test_get_configurator_for_runtime_with_no_model_match(self, caplog_vllm_spyre):
+    def test_get_configurator_for_runtime_with_no_model_match(
+        self, test_registry, caplog_vllm_spyre
+    ):
         """Test getting configurator when model doesn't match."""
-        registry = ModelConfigRegistry()
-        config_path = Path(__file__).parent.parent.parent / "vllm_spyre/config/model_configs.yaml"
-        registry.initialize(config_path)
+        registry = test_registry
 
         # Create mock vllm_config with unknown model
         vllm_config = Mock()
@@ -103,30 +114,26 @@ class TestRegistryErrorHandling:
             "No model architecture match" in record.message for record in caplog_vllm_spyre.records
         )
 
-    def test_get_configurator_for_runtime_with_unsupported_runtime_config(self, caplog_vllm_spyre):
+    def test_get_configurator_for_runtime_with_unsupported_runtime_config(
+        self, test_registry, caplog_vllm_spyre
+    ):
         """Test getting configurator when model matches but runtime config doesn't."""
-        registry = ModelConfigRegistry()
-        config_path = Path(__file__).parent.parent.parent / "vllm_spyre/config/model_configs.yaml"
-        registry.initialize(config_path)
+        registry = test_registry
 
-        # Load a real HF config
-        fixture_path = (
-            Path(__file__).parent.parent
-            / "fixtures/model_configs/ibm-granite/granite-3.3-8b-instruct/config.json"
-        )
-        import json
-
-        with open(fixture_path) as f:
-            config_dict = json.load(f)
-
+        # Create HF config matching our test model architecture
         hf_config = Mock()
-        for key, value in config_dict.items():
-            setattr(hf_config, key, value)
+        hf_config.model_type = "granite"
+        hf_config.num_hidden_layers = 40
+        hf_config.max_position_embeddings = 131072
+        hf_config.hidden_size = 4096
+        hf_config.vocab_size = 49159
+        hf_config.num_key_value_heads = 8
+        hf_config.num_attention_heads = 32
 
         # Create vllm_config with unsupported runtime params (TP=8, which doesn't exist in config)
         vllm_config = Mock()
         vllm_config.model_config = Mock(
-            hf_config=hf_config, max_model_len=32768, model="granite-3.3-8b-instruct"
+            hf_config=hf_config, max_model_len=32768, model="test-granite-model"
         )
         vllm_config.parallel_config = Mock(world_size=8)  # TP=8 not in config
         vllm_config.scheduler_config = Mock(max_num_seqs=32)
