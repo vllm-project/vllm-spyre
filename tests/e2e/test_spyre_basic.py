@@ -58,22 +58,7 @@ def test_output(
         runtime_xfail(reason="SB sometimes causes failures with quantized model")
 
     prompts = get_chicken_soup_prompts(4)
-
-    kwargs = (
-        {
-            "max_num_seqs": max_num_seqs,
-            "use_cb": True,
-            "max_num_batched_tokens": 128 if mode in ["cp", "pc"] else None,
-            "use_pc": mode == "pc",
-        }
-        if mode != "sb"
-        else {
-            "warmup_shapes": warmup_shapes,
-        }
-    )
-
     max_new_tokens = warmup_shapes[0][1]
-
     vllm_sampling_params = SamplingParams(
         max_tokens=max_new_tokens,
         temperature=0,
@@ -115,9 +100,7 @@ def test_batch_handling(
     """
 
     prompts = get_chicken_soup_prompts(4)
-
     max_new_tokens = [5, 20, 10, 5]
-
     vllm_sampling_params = [
         SamplingParams(
             max_tokens=max_new_tokens[i],

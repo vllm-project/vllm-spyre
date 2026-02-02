@@ -385,6 +385,7 @@ def get_cached_llm(
         warmup_shapes=warmup_shapes,
         max_num_seqs=max_num_seqs,
         use_cb=use_cb,
+        use_pc=use_pc,
         max_num_batched_tokens=max_num_batched_tokens,
     )
 
