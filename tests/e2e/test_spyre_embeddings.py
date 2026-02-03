@@ -6,15 +6,21 @@ Run `python -m pytest tests/e2e/test_spyre_embeddings.py`.
 from functools import partial
 
 import pytest
-from output_util import compare_embedding_results, spyre_vllm_embeddings, st_embeddings
+from output_util import (
+    compare_embedding_results,
+    generate_spyre_vllm_output,
+    spyre_vllm_embeddings,
+    st_embeddings,
+)
 from spyre_util import (
+    DecodeWarmupShapes,
     EmbeddingWarmupShapes,
     ModelInfo,
     get_chicken_soup_prompts,
     get_spyre_model_list,
     patch_warmup_shapes,
 )
-from vllm import LLM
+from vllm import LLM, SamplingParams
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list(isEmbeddings=True))
@@ -127,3 +133,33 @@ def test_scheduling_invariance(
 
     # One requests with four prompts
     verify_vllm_results(vllm_results=batch_embeds(4))
+
+
+@pytest.mark.parametrize("prompts", [["Hello"]])
+@pytest.mark.parametrize("warmup_shapes", [[(65, 1, 1)]])
+def test_invalid_prompt_len(
+    model: ModelInfo,
+    prompts: list[str],
+    warmup_shapes: DecodeWarmupShapes,
+    backend: str,
+    monkeypatch: pytest.MonkeyPatch,
+    use_llm_cache,
+) -> None:
+    """
+    Expects an error to be raised if the warmup prompt length
+    is not divisible by 64.
+    """
+
+    vllm_sampling_params = SamplingParams(max_tokens=1, temperature=0, logprobs=0, ignore_eos=True)
+
+    with pytest.raises(RuntimeError, match="VLLM_SPYRE_WARMUP_PROMPT_LENS"):
+        generate_spyre_vllm_output(
+            model=model,
+            prompts=prompts,
+            warmup_shapes=warmup_shapes,
+            max_model_len=2048,
+            sampling_params=vllm_sampling_params,
+            tensor_parallel_size=1,
+            backend=backend,
+            monkeypatch=monkeypatch,
+        )

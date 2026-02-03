@@ -36,18 +36,13 @@ def test_stagger_output(
     monkeypatch.setenv("VLLM_SPYRE_MAX_LOAD_PROCESSES", "1")
 
     prompts = get_chicken_soup_prompts(4)
-    warmup_shape = (64, 20, 4)
 
-    kwargs = (
-        {
-            "max_num_seqs": max_num_seqs,
-            "use_cb": True,
-        }
-        if mode == "cb"
-        else {"warmup_shapes": warmup_shapes}
-    )
+    kwargs = {
+        "max_num_seqs": max_num_seqs,
+        "use_cb": True,
+    }
 
-    max_new_tokens = warmup_shape[1]
+    max_new_tokens = 20
 
     vllm_sampling_params = SamplingParams(
         max_tokens=max_new_tokens,
