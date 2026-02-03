@@ -205,9 +205,7 @@ class SpyrePlatform(Platform):
             model_config.max_model_len = max_seq_len
             scheduler_config.max_num_seqs = max_batch_size
 
-            scheduler_config.scheduler_cls = (
-                "vllm_spyre.v1.core.scheduler.PoolingSpyreScheduler"
-            )
+            scheduler_config.scheduler_cls = "vllm_spyre.v1.core.scheduler.PoolingSpyreScheduler"
 
         # Hardcode some things for granite-3.3-8b-instruct
         if cls.is_granite_3_8b(vllm_config.model_config) or cls.is_granite_4_8b_dense(
