@@ -49,7 +49,7 @@ def test_output(
 
     skip_unsupported_tp_size(tp_size, backend)
 
-    if mode == "cp" and model.is_quantized:
+    if (mode == "cp" or mode == "pc") and model.is_quantized:
         pytest.skip("Chunked prefill and FP8 not supported at the moment.")
 
     prompts = get_chicken_soup_prompts(4)
@@ -58,9 +58,9 @@ def test_output(
         {
             "max_num_seqs": max_num_seqs,
             "use_cb": True,
-            "max_num_batched_tokens": 128 if mode == "cp" else None,
+            "max_num_batched_tokens": 128 if (mode == "cp" or mode == "pc") else None,
         }
-        if mode == "cb" or mode == "cp"
+        if mode == "cb" or mode == "cp" or mode == "pc"
         else {
             "warmup_shapes": warmup_shapes,
         }
@@ -127,9 +127,9 @@ def test_batch_handling(
         {
             "max_num_seqs": max_num_seqs,
             "use_cb": True,
-            "max_num_batched_tokens": 128 if mode == "cp" else None,
+            "max_num_batched_tokens": 128 if (mode == "cp" or mode == "pc") else None,
         }
-        if mode == "cb" or mode == "cp"
+        if mode == "cb" or mode == "cp" or mode == "pc"
         else {"warmup_shapes": warmup_shapes}
     )
 
