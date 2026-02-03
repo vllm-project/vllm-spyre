@@ -185,8 +185,8 @@ def test_max_model_len_override(model: ModelInfo, backend, warmup_shapes, mode: 
 
     max_model_len = 64
     kwargs = kwargs_for_mode(mode, 2, warmup_shapes)
-    kwargs.pop("max_num_seqs")
-    kwargs.pop("use_pc")
+    kwargs.pop("max_num_seqs", None)
+    kwargs.pop("use_pc", None)
 
     patch_environment(**kwargs, backend=backend, monkeypatch=monkeypatch)
     vllm_config = EngineArgs(
