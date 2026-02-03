@@ -511,6 +511,9 @@ def kwargs_for_mode(mode: str, max_num_seqs: int, warmup_shapes: DecodeWarmupSha
         if mode != "sb"
         else {
             "warmup_shapes": warmup_shapes,
+            "use_cb": False,
+            "use_pc": False,
+            "max_num_batched_tokens": None,
         }
     )
 
