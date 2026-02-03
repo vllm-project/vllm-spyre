@@ -112,7 +112,6 @@ def pytest_generate_tests(metafunc):
         metafunc.parametrize(
             "mode",
             [
-                pytest.param("sb", marks=pytest.mark.sb, id="sb"),
                 pytest.param("cb", marks=pytest.mark.cb, id="cb"),
                 pytest.param("cp", marks=pytest.mark.chunked_prefill, id="cp"),
                 pytest.param("pc", marks=pytest.mark.prefix_caching, id="pc"),

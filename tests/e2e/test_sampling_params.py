@@ -7,7 +7,6 @@ from vllm import SamplingParams
 
 pytestmark = [pytest.mark.full_model, pytest.mark.other_e2e]
 
-sb_mark = pytest.param("sb", marks=pytest.mark.sb, id="sb")
 cb_mark = pytest.param("cb", marks=pytest.mark.cb, id="cb")
 cp_mark = pytest.param("cp", marks=pytest.mark.chunked_prefill, id="cp")
 
@@ -214,7 +213,7 @@ def test_spyre_batch1_top_k(model: ModelInfo, backend, monkeypatch, use_llm_cach
     assert token_div1 < token_div2
 
 
-@pytest.mark.parametrize("mode", [sb_mark, cb_mark, cp_mark])
+@pytest.mark.parametrize("mode", [cb_mark, cp_mark])
 def test_spyre_batch1_logit_bias(
     model: ModelInfo,
     backend,
@@ -231,7 +230,7 @@ def test_spyre_batch1_logit_bias(
         tensor_parallel_size=1,
         backend=backend,
         monkeypatch=monkeypatch,
-        warmup_shapes=warmup_shapes if mode == "sb" else None,
+        warmup_shapes=None,
         max_num_seqs=max_num_seqs if mode == "cb" or mode == "cp" else None,
         max_num_batched_tokens=128 if mode == "cp" else None,
         use_cb=mode == "cb" or mode == "cp",
@@ -266,7 +265,7 @@ def test_spyre_batch1_logit_bias(
     assert output[0].outputs[0].text != output[1].outputs[0].text
 
 
-@pytest.mark.parametrize("mode", [sb_mark, cb_mark, cp_mark])
+@pytest.mark.parametrize("mode", [cb_mark, cp_mark])
 def test_spyre_batch1_min_tokens(
     model: ModelInfo,
     backend,
@@ -283,7 +282,7 @@ def test_spyre_batch1_min_tokens(
         tensor_parallel_size=1,
         backend=backend,
         monkeypatch=monkeypatch,
-        warmup_shapes=warmup_shapes if mode == "sb" else None,
+        warmup_shapes=None,
         max_num_seqs=max_num_seqs if mode == "cb" or mode == "cp" else None,
         max_num_batched_tokens=128 if mode == "cp" else None,
         use_cb=mode == "cb" or mode == "cp",
@@ -333,7 +332,7 @@ def test_spyre_batch1_ignore_eos(
     assert output2.outputs[0].finish_reason != "length"
 
 
-@pytest.mark.parametrize("mode", [sb_mark, cb_mark, cp_mark])
+@pytest.mark.parametrize("mode", [cb_mark, cp_mark])
 def test_spyre_batch1_min_p(
     model: ModelInfo,
     backend,
@@ -350,7 +349,7 @@ def test_spyre_batch1_min_p(
         tensor_parallel_size=1,
         backend=backend,
         monkeypatch=monkeypatch,
-        warmup_shapes=warmup_shapes if mode == "sb" else None,
+        warmup_shapes=None,
         max_num_seqs=max_num_seqs if mode == "cb" or mode == "cp" else None,
         max_num_batched_tokens=128 if mode == "cp" else None,
         use_cb=mode == "cb" or mode == "cp",

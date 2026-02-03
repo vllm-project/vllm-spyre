@@ -224,9 +224,4 @@ def test_max_model_len_override(model: ModelInfo, backend, warmup_shapes, mode: 
     ).create_engine_config()
     model_config = vllm_config.model_config
 
-    if mode == "sb":
-        assert model_config.max_model_len == max(
-            [prompt_length + new_tokens for prompt_length, new_tokens, _ in warmup_shapes]
-        )
-    else:
-        assert model_config.max_model_len == max_model_len
+    assert model_config.max_model_len == max_model_len

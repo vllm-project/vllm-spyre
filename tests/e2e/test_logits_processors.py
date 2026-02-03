@@ -37,7 +37,7 @@ def test_custom_logits_processor(
 
     patch_environment(
         use_cb=mode in ["cb", "cp", "pc"],
-        warmup_shapes=warmup_shapes if mode == "sb" else None,
+        warmup_shapes=None,
         backend=backend,
         use_chunked_prefill=mode in ["cp", "pc"],
         monkeypatch=monkeypatch,
