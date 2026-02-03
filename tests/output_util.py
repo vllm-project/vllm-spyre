@@ -410,7 +410,7 @@ def setup_golden_token(
 def maybe_xfail(func):
     def wrapper(*args, **kwargs):
         model = kwargs["model"]
-        use_cb = kwargs.get("use_cb", False)
+        use_cb = kwargs.get("use_cb", True)
         if "micro-g3.3-8b-instruct-1b" in model.name and model.is_quantized and not use_cb:
             try:
                 func(*args, **kwargs)
@@ -437,7 +437,7 @@ def validate_vllm_vs_hf_output(
     backend: str,
     monkeypatch: pytest.MonkeyPatch,
     max_num_seqs: int | None = None,
-    use_cb: bool = False,
+    use_cb: bool = True,
     use_golden_token=True,
     max_num_batched_tokens: int | None = None,
 ) -> None:
@@ -484,7 +484,7 @@ def generate_spyre_vllm_output(
     backend: str,
     monkeypatch: pytest.MonkeyPatch,
     max_num_seqs: int | None = None,
-    use_cb: bool = False,
+    use_cb: bool = True,
     max_num_batched_tokens: int | None = None,
 ) -> list[dict[str, Any]]:
     # Allows to run multiprocess V1 engine without dumping meaningless logs at

@@ -110,7 +110,7 @@ class LLMCache:
         monkeypatch: pytest.MonkeyPatch,
         warmup_shapes: EmbeddingWarmupShapes | None = None,
         max_num_seqs: int | None = None,
-        use_cb: bool = False,
+        use_cb: bool = True,
         use_pc: bool = False,
         max_num_batched_tokens: int | None = None,
     ) -> LLM:
@@ -361,7 +361,7 @@ def get_cached_llm(
     monkeypatch: pytest.MonkeyPatch,
     warmup_shapes: EmbeddingWarmupShapes | None = None,
     max_num_seqs: int | None = None,
-    use_cb: bool = False,
+    use_cb: bool = True,
     max_num_batched_tokens: int | None = None,
 ) -> LLM:
     # Clear other caches first

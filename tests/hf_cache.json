@@ -31,6 +31,12 @@
                     "token_ids": [ 203, 203, 35, 32, 203, 203, 1318, 1256 ],
                     "tokens": [ "\n", "\n", "1", ".", "\n", "\n", "The", " user" ],
                     "logprobs": [ -0.03913814201951027, -1.4629193544387817, -2.2675654888153076, -0.10821957141160965, -2.4334921836853027, -0.7974967956542969, -2.3020193576812744, -2.239565849304199 ]
+                },
+                "4": {
+                    "text": "\n\n1.",
+                    "token_ids": [ 203, 203, 35, 32 ],
+                    "tokens": [ "\n", "\n", "1", "." ],
+                    "logprobs": [ -0.039138030260801315, -1.4629220962524414, -2.2675764560699463, -0.10821957141160965 ]
                 }
             },
             "Below is an instruction that describes a task. Write a response that appropriately completes the request. Be polite in your response to the user.\n\n### Instruction:\nProvide me a list of things that I can do with my new found wealth.\n\n### Response:": {
@@ -45,6 +51,12 @@
                     "token_ids": [ 203, 203, 59, 1098, 526, 15818 ],
                     "tokens": [ "\n", "\n", "I", " will", " be", " happy" ],
                     "logprobs": [ -0.03954844921827316, -1.3203511238098145, -2.2519102096557617, -1.8162301778793335, -1.7537648677825928, -2.4581241607666016 ]
+                },
+                "4": {
+                    "text": "\n\nI will",
+                    "token_ids": [ 203, 203, 59, 1098 ],
+                    "tokens": [ "\n", "\n", "I", " will" ],
+                    "logprobs": [ -0.039548102766275406, -1.3203502893447876, -2.251922130584717, -1.816227674484253 ]
                 }
             },
             "Below is an instruction that describes a task. Write a response that appropriately completes the request. Be polite in your response to the user.\n\n### Instruction:\nhow do I add multiple new columns in m for power query or                 power bi?\n\n### Response:": {
@@ -65,6 +77,12 @@
                     "token_ids": [ 203, 203, 59, 3860, 7667, 372 ],
                     "tokens": [ "\n", "\n", "I", " am", " trying", " to" ],
                     "logprobs": [ -0.057651810348033905, -1.2759267091751099, -3.0963268280029297, -2.0452775955200195, -1.9688712358474731, -0.05093619227409363 ]
+                },
+                "4": {
+                    "text": "\n\nI am",
+                    "token_ids": [ 203, 203, 59, 3860 ],
+                    "tokens": [ "\n", "\n", "I", " am" ],
+                    "logprobs": [ -0.057651810348033905, -1.2759264707565308, -3.096334218978882, -2.0452826023101807 ]
                 }
             },
             "Below is an instruction that describes a task. Write a response that appropriately completes the request. Be polite in your response to the user.\n\n### Instruction:\nConvert char to string in Java.\n\n### Response:": {
@@ -91,6 +109,12 @@
                     "token_ids": [ 203, 203, 914, 1859, 203, 652 ],
                     "tokens": [ "\n", "\n", "```", "java", "\n", "String" ],
                     "logprobs": [ -0.045518096536397934, -1.1725132465362549, -2.297534942626953, -1.8406871557235718, -0.08397945761680603, -1.1759214401245117 ]
+                },
+                "4": {
+                    "text": "\n\n```java",
+                    "token_ids": [ 203, 203, 914, 1859 ],
+                    "tokens": [ "\n", "\n", "```", "java" ],
+                    "logprobs": [ -0.04551832377910614, -1.172504186630249, -2.297534942626953, -1.8406847715377808 ]
                 }
             },
             "__tokens__27400_438_600_12404_688_18872_312_2899_32_5950_312_1789_688_36808_30772_322_1326_32_4261_7743_659_328_1370_1789_372_322_1256_32_203_203_1482_21081_44_203_15277_312_1149_432_9400_436_1406_26124_663_21217_31628_7947_623_540_565": {

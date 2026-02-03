@@ -85,7 +85,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "VLLM_SPYRE_DYNAMO_BACKEND": _backend_backwards_compat,
     # If set, use the V1 continuous batching implementation. Otherwise, static
     # batching mode will be enabled.
-    "VLLM_SPYRE_USE_CB": lambda: bool(int(os.getenv("VLLM_SPYRE_USE_CB", "0"))),
+    "VLLM_SPYRE_USE_CB": lambda: bool(int(os.getenv("VLLM_SPYRE_USE_CB", "1"))),
     # Enable performance metric logging. This captures startup information
     # such as warmup times, and loading times.
     # When `--disable-log-stats=False` is used, this will log timing metrics

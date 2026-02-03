@@ -54,7 +54,7 @@ class SortKey(NamedTuple):
     backend: str = ""
     model: str = ""
     tp_size: int = 1
-    use_cb: bool = False
+    use_cb: bool = True
     use_cp: bool = False
     use_pc: bool = False
     max_model_len: int = 0

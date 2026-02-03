@@ -133,59 +133,6 @@ def test_batch_handling(
     )
 
 
-def test_full_batch_scheduling(model: ModelInfo, backend: str, monkeypatch):
-    """Test that we can schedule a full batch of prompts."""
-
-    # We need to ensure here that the max number of tokens in a full batch
-    # is greater than the value set for `--max-num-batched-tokens`.
-    # This defaults to 2k in many cases for vllm.v1, which will cause problems
-    # when trying to schedule a static batch with more than 2k tokens.
-    # The plugin _should_ override this in config for the engine so that the
-    # scheduler can properly schedule a full batch.
-
-    # Here we set `--max-num-batched-tokens` to 64, and try to schedule a batch
-    # of 4 x 64-token prompts
-    max_batched_tokens = 64
-    batch_size = 4
-
-    # set batching config
-    monkeypatch.setenv("VLLM_SPYRE_WARMUP_BATCH_SIZES", f"{batch_size}")
-    monkeypatch.setenv("VLLM_SPYRE_WARMUP_PROMPT_LENS", f"{max_batched_tokens}")
-    monkeypatch.setenv("VLLM_SPYRE_WARMUP_NEW_TOKENS", "20")
-
-    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
-
-    # Setup the engine
-    engine_args = EngineArgs(
-        model=model.name,
-        tokenizer=model.name,
-        max_num_batched_tokens=max_batched_tokens,
-        max_num_seqs=batch_size,
-        revision=model.revision,
-        tokenizer_revision=model.revision,
-    )
-    vllm_config = engine_args.create_engine_config()
-    executor_class = Executor.get_class(vllm_config)
-    engine_core = EngineCore(
-        vllm_config=vllm_config, executor_class=executor_class, log_stats=False
-    )
-    scheduler: PoolingSpyreScheduler = engine_core.scheduler
-
-    vllm_sampling_params = SamplingParams(max_tokens=20, temperature=0, logprobs=0)
-    for i in range(batch_size):
-        engine_core.add_request(
-            create_random_request(
-                request_id=i,
-                num_tokens=max_batched_tokens,
-                sampling_params=vllm_sampling_params,
-                model=model,
-            )
-        )
-    schedule = scheduler.schedule()
-
-    assert len(schedule.scheduled_new_reqs) == batch_size
-
-
 def test_max_model_len_override(model: ModelInfo, backend, mode: str, monkeypatch):
     """Test that makes sure that --max-model-len
     doesn't affect SB, instead it is picked up from

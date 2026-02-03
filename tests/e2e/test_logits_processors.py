@@ -126,7 +126,12 @@ def test_cb_logits_processor(model: ModelInfo, backend, monkeypatch, max_model_l
                 spy_outputs[params.max_tokens].append(token_id)
             return logits
 
-    patch_environment(True, None, backend, monkeypatch)
+    patch_environment(
+        use_cb=True,
+        backend=backend,
+        use_chunked_prefill=False,
+        monkeypatch=monkeypatch,
+    )
 
     spyre_model = LLM(
         model=model.name,
