@@ -7,7 +7,7 @@ from typing import Callable, Generic, TypeVar
 
 import pytest
 from llm_cache_util import force_engine_core_shutdown, force_engine_shutdown
-from spyre_util import DecodeWarmupShapes, ModelInfo, RemoteOpenAIServer, patch_environment
+from spyre_util import EmbeddingWarmupShapes, ModelInfo, RemoteOpenAIServer, patch_environment
 from vllm import LLM, EngineArgs
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor
@@ -108,7 +108,7 @@ class LLMCache:
         tensor_parallel_size: int,
         backend: str,
         monkeypatch: pytest.MonkeyPatch,
-        warmup_shapes: DecodeWarmupShapes | None = None,
+        warmup_shapes: EmbeddingWarmupShapes | None = None,
         max_num_seqs: int | None = None,
         use_cb: bool = False,
         use_pc: bool = False,
@@ -139,7 +139,6 @@ class LLMCache:
             assert use_chunked_prefill
         patch_environment(
             use_cb,
-            warmup_shapes,
             backend,
             monkeypatch,
             use_chunked_prefill=use_chunked_prefill,
@@ -216,7 +215,6 @@ class EngineCache:
             assert use_chunked_prefill
         patch_environment(
             use_cb=True,
-            warmup_shapes=None,
             backend=backend,
             monkeypatch=monkeypatch,
             use_chunked_prefill=use_chunked_prefill,
@@ -361,7 +359,7 @@ def get_cached_llm(
     tensor_parallel_size: int,
     backend: str,
     monkeypatch: pytest.MonkeyPatch,
-    warmup_shapes: DecodeWarmupShapes | None = None,
+    warmup_shapes: EmbeddingWarmupShapes | None = None,
     max_num_seqs: int | None = None,
     use_cb: bool = False,
     max_num_batched_tokens: int | None = None,

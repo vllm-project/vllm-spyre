@@ -2,7 +2,7 @@
 
 from typing import NamedTuple
 
-from spyre_util import DecodeWarmupShapes, ModelInfo
+from spyre_util import EmbeddingWarmupShapes, ModelInfo
 from vllm import LLM
 
 
@@ -61,7 +61,7 @@ class SortKey(NamedTuple):
     max_num_seqs: int = 0
     num_blocks: int = 0
     max_num_batched_tokens: int = 0
-    warmup_shapes: DecodeWarmupShapes | None = None
+    warmup_shapes: EmbeddingWarmupShapes | None = None
 
     @staticmethod
     def from_item(item) -> "SortKey":

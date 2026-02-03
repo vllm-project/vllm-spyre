@@ -17,7 +17,6 @@ def _check_result(client, model, max_tokens=8, temperature=0.0, n=1) -> None:
 def test_openai_serving(
     remote_openai_server,
     model,
-    warmup_shapes,
     backend,
     tp_size,
     mode,

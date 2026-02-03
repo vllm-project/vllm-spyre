@@ -33,12 +33,11 @@ except ImportError:
 from vllm.v1.request import Request
 
 EmbeddingWarmupShapes = list[tuple[int, int]]
-DecodeWarmupShapes = list[tuple[int, int, int]]
 
 
 def patch_environment(
     use_cb: bool,
-    warmup_shapes: DecodeWarmupShapes | None,
+    warmup_shapes: EmbeddingWarmupShapes | None,
     backend: str,
     monkeypatch,
     use_chunked_prefill: bool = False,
@@ -65,7 +64,7 @@ def patch_environment(
         monkeypatch.setenv("VLLM_DT_CHUNK_LEN", str(max_num_batched_tokens))
 
 
-def patch_warmup_shapes(warmup_shapes: DecodeWarmupShapes | EmbeddingWarmupShapes, monkeypatch):
+def patch_warmup_shapes(warmup_shapes: EmbeddingWarmupShapes, monkeypatch):
     warmup_prompt_length = [t[0] for t in warmup_shapes]
     warmup_batch_size = [t[-1] for t in warmup_shapes]
 
@@ -75,12 +74,6 @@ def patch_warmup_shapes(warmup_shapes: DecodeWarmupShapes | EmbeddingWarmupShape
     monkeypatch.setenv(
         "VLLM_SPYRE_WARMUP_BATCH_SIZES", ",".join(str(val) for val in warmup_batch_size)
     )
-
-    if all(len(s) == 3 for s in warmup_shapes):
-        warmup_new_tokens = [t[1] for t in warmup_shapes]
-        monkeypatch.setenv(
-            "VLLM_SPYRE_WARMUP_NEW_TOKENS", ",".join(str(val) for val in warmup_new_tokens)
-        )
 
 
 class ModelInfo(NamedTuple):

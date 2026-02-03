@@ -7,7 +7,7 @@ import math
 
 import pytest
 from output_util import generate_spyre_vllm_output
-from spyre_util import DecodeWarmupShapes, ModelInfo, get_chicken_soup_prompts
+from spyre_util import ModelInfo, get_chicken_soup_prompts
 from vllm import SamplingParams
 
 cb_mark = pytest.param("cb", marks=pytest.mark.cb, id="cb")
@@ -23,7 +23,6 @@ def test_seed(
     seed: int,
     max_model_len: int,
     max_num_seqs: int,
-    warmup_shapes: DecodeWarmupShapes,
     backend: str,
     mode: str,
     monkeypatch: pytest.MonkeyPatch,
@@ -37,7 +36,7 @@ def test_seed(
     logprobs is verified to be identical for all 5 sequences.
     """
 
-    max_new_tokens = warmup_shapes[0][1]
+    max_new_tokens = 4
 
     prompts = get_chicken_soup_prompts(1) * 5
 
@@ -52,7 +51,6 @@ def test_seed(
     vllm_results = generate_spyre_vllm_output(
         model=model,
         prompts=prompts,
-        warmup_shapes=warmup_shapes,
         max_model_len=max_model_len,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,

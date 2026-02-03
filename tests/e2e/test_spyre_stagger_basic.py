@@ -20,7 +20,6 @@ def test_stagger_output(
     mode: str,
     max_num_seqs: int,
     max_model_len: int,
-    warmup_shapes,
     monkeypatch: pytest.MonkeyPatch,
     use_llm_cache,
 ) -> None:

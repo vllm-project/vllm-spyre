@@ -15,8 +15,8 @@ _known_model_configs_file = Path(__file__).parent / "known_model_configs.json"
 
 logger = init_logger(__name__)
 
-# warmup_shape = [prompt_length, new_tokens, batch_size]
-WarmupShapes = list[tuple[int, int, int]] | list[list[int]]
+# warmup_shape = [prompt_length, batch_size]
+WarmupShapes = list[tuple[int, int]] | list[list[int]]
 
 
 @dataclass(order=True)
@@ -29,7 +29,7 @@ class RuntimeConfiguration:
 
     def __post_init__(self):
         if self.warmup_shapes is not None:
-            self.warmup_shapes = [(ws[0], ws[1], ws[2])
+            self.warmup_shapes = [(ws[0], ws[1])
                                   if isinstance(ws, list) else ws
                                   for ws in self.warmup_shapes]  # yapf: disable
 
@@ -126,14 +126,14 @@ def verify_config_parameters(c: RuntimeConfiguration) -> bool:
         )
 
         for i, ws in enumerate(c.warmup_shapes or []):
-            # warmup_shape = [prompt_length, new_tokens, batch_size]
+            # warmup_shape = [prompt_length, batch_size]
             verify(
                 f"'prompt_length' must be a multiple of 64, found {ws[0]} in warmup_shapes[{i}]",
                 ws[0] % 64 == 0,
             )
             verify(
-                f"'batch_size' must be a power of 2, found {ws[2]} in warmup_shapes[{i}]",
-                is_power_of_2(ws[2]),
+                f"'batch_size' must be a power of 2, found {ws[1]} in warmup_shapes[{i}]",
+                is_power_of_2(ws[1]),
             )
 
     return not found_invalid_parameters
@@ -316,9 +316,9 @@ def is_context_length_supported(
     if len(requested_shapes) > 1:
         return False
 
-    request_batch_size = requested_shapes[0][2]
+    request_batch_size = requested_shapes[0][1]
     shapes_with_same_batch_size = [
-        (ws[0], ws[1], ws[2]) for ws in supported_shapes if request_batch_size <= ws[2]
+        (ws[0], ws[1]) for ws in supported_shapes if request_batch_size <= ws[1]
     ]
 
     return len(shapes_with_same_batch_size) > 0 and (
@@ -334,4 +334,4 @@ def get_max_model_length(warmup_shapes: WarmupShapes) -> int:
     # max_model_len = prompt_length + new_tokens
     # warmup_shape = [prompt_length, new_tokens, batch_size]
 
-    return max([ws[0] + ws[1] for ws in warmup_shapes or []])
+    return max([ws[0] for ws in warmup_shapes or []])

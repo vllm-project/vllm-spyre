@@ -6,7 +6,6 @@ Run `python -m pytest tests/e2e/test_spyre_basic.py`.
 import pytest
 from output_util import validate_vllm_vs_hf_output
 from spyre_util import (
-    DecodeWarmupShapes,
     ModelInfo,
     create_random_request,
     get_chicken_soup_prompts,
@@ -29,7 +28,6 @@ def test_output(
     mode: str,
     max_num_seqs: int,
     max_model_len: int,
-    warmup_shapes: DecodeWarmupShapes,
     monkeypatch: pytest.MonkeyPatch,
     use_llm_cache,
 ) -> None:
@@ -54,19 +52,13 @@ def test_output(
 
     prompts = get_chicken_soup_prompts(4)
 
-    kwargs = (
-        {
-            "max_num_seqs": max_num_seqs,
-            "use_cb": True,
-            "max_num_batched_tokens": 128 if (mode == "cp" or mode == "pc") else None,
-        }
-        if mode == "cb" or mode == "cp" or mode == "pc"
-        else {
-            "warmup_shapes": warmup_shapes,
-        }
-    )
+    kwargs = {
+        "max_num_seqs": max_num_seqs,
+        "use_cb": True,
+        "max_num_batched_tokens": 128 if (mode == "cp" or mode == "pc") else None,
+    }
 
-    max_new_tokens = warmup_shapes[0][1]
+    max_new_tokens = 4
 
     vllm_sampling_params = SamplingParams(
         max_tokens=max_new_tokens,
@@ -92,7 +84,6 @@ def test_batch_handling(
     model: ModelInfo,
     backend: str,
     mode: str,
-    warmup_shapes,
     max_num_seqs: int,
     max_model_len: int,
     monkeypatch: pytest.MonkeyPatch,
@@ -123,15 +114,11 @@ def test_batch_handling(
         for i in range(len(max_new_tokens))
     ]
 
-    kwargs = (
-        {
-            "max_num_seqs": max_num_seqs,
-            "use_cb": True,
-            "max_num_batched_tokens": 128 if (mode == "cp" or mode == "pc") else None,
-        }
-        if mode == "cb" or mode == "cp" or mode == "pc"
-        else {"warmup_shapes": warmup_shapes}
-    )
+    kwargs = {
+        "max_num_seqs": max_num_seqs,
+        "use_cb": True,
+        "max_num_batched_tokens": 128 if (mode == "cp" or mode == "pc") else None,
+    }
 
     validate_vllm_vs_hf_output(
         model=model,
@@ -199,24 +186,16 @@ def test_full_batch_scheduling(model: ModelInfo, backend: str, monkeypatch):
     assert len(schedule.scheduled_new_reqs) == batch_size
 
 
-def test_max_model_len_override(model: ModelInfo, backend, warmup_shapes, mode: str, monkeypatch):
+def test_max_model_len_override(model: ModelInfo, backend, mode: str, monkeypatch):
     """Test that makes sure that --max-model-len
     doesn't affect SB, instead it is picked up from
     warmup shapes"""
 
     max_model_len = 64
-    kwargs = (
-        {
-            "use_cb": True,
-            "warmup_shapes": None,
-            "use_chunked_prefill": mode == "cp",
-        }
-        if mode in ["cb", "cp", "pc"]
-        else {
-            "use_cb": False,
-            "warmup_shapes": warmup_shapes,
-        }
-    )
+    kwargs = {
+        "use_cb": True,
+        "use_chunked_prefill": mode == "cp",
+    }
 
     patch_environment(**kwargs, backend=backend, monkeypatch=monkeypatch)
     vllm_config = EngineArgs(

@@ -138,7 +138,6 @@ def test_chunked_prefill_correctness(
 async def test_chunked_prefill_kv_cache_stats(
     remote_openai_server: RemoteOpenAIServer,
     model,
-    warmup_shapes,
     backend,
     tp_size,
     mode,

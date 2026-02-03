@@ -2,7 +2,7 @@ import asyncio
 from contextlib import ExitStack
 
 import pytest
-from spyre_util import DecodeWarmupShapes, ModelInfo, get_chicken_soup_prompts, patch_environment
+from spyre_util import ModelInfo, get_chicken_soup_prompts, patch_environment
 from vllm import PromptType, SamplingParams
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
@@ -52,7 +52,6 @@ async def test_abort(
     max_model_len: int,
     max_num_seqs: int,
     max_num_batched_tokens: int,
-    warmup_shapes: DecodeWarmupShapes,
     output_kind: RequestOutputKind,
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -61,13 +60,11 @@ async def test_abort(
         patch_kwargs = (
             {
                 "use_cb": True,
-                "warmup_shapes": None,
                 "use_chunked_prefill": mode in ["cp", "pc"],
             }
             if mode in ["cb", "cp", "pc"]
             else {
                 "use_cb": False,
-                "warmup_shapes": warmup_shapes,
             }
         )
         patch_environment(
