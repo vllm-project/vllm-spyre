@@ -76,7 +76,7 @@ class SpyreCausalLM(nn.Module):
         if envs_spyre.VLLM_SPYRE_USE_CB:
             self.model = ContinuousBatchingFmsModel(vllm_config, rank)
         else:
-            self.model = StaticBatchingFmsModel(
+            self.model = PoolingFmsModel(
                 vllm_config,
                 max_prompt_length,
                 max_decode_length,
@@ -641,7 +641,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         return logits[0].unsqueeze(0)
 
 
-class StaticBatchingFmsModel(FmsModelBase):
+class PoolingFmsModel(FmsModelBase):
     def __init__(
         self,
         vllm_config: VllmConfig,
