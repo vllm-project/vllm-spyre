@@ -39,8 +39,8 @@ class SpyreScheduler(Scheduler):
         self.model_config = self.vllm_config.model_config
 
 
-class StaticBatchingSpyreScheduler(SpyreScheduler):
-    """Support of static batching"""
+class PoolingSpyreScheduler(SpyreScheduler):
+    """Support of pooling models"""
 
     def __init__(self, *args, **kwargs) -> None:
         # Initialize SpyreScheduler

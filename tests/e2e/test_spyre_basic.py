@@ -17,7 +17,7 @@ from vllm import EngineArgs, SamplingParams
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor
 
-from vllm_spyre.v1.core.scheduler import StaticBatchingSpyreScheduler
+from vllm_spyre.v1.core.scheduler import PoolingSpyreScheduler
 
 
 @pytest.mark.full_model
@@ -182,7 +182,7 @@ def test_full_batch_scheduling(model: ModelInfo, backend: str, monkeypatch):
     engine_core = EngineCore(
         vllm_config=vllm_config, executor_class=executor_class, log_stats=False
     )
-    scheduler: StaticBatchingSpyreScheduler = engine_core.scheduler
+    scheduler: PoolingSpyreScheduler = engine_core.scheduler
 
     vllm_sampling_params = SamplingParams(max_tokens=20, temperature=0, logprobs=0)
     for i in range(batch_size):

@@ -206,7 +206,7 @@ class SpyrePlatform(Platform):
             scheduler_config.max_num_seqs = max_batch_size
 
             scheduler_config.scheduler_cls = (
-                "vllm_spyre.v1.core.scheduler.StaticBatchingSpyreScheduler"
+                "vllm_spyre.v1.core.scheduler.PoolingSpyreScheduler"
             )
 
         # Hardcode some things for granite-3.3-8b-instruct
