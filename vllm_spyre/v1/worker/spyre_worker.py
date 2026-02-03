@@ -47,7 +47,6 @@ from vllm_spyre.v1.worker.spyre_model_runner import (
     ChunkedPrefillModelRunner,
     ContinuousBatchingSpyreModelRunner,
     SpyrePoolingModelRunner,
-    StaticBatchingSpyreModelRunner,
     SupportedTask,
 )
 
@@ -293,7 +292,6 @@ class SpyreWorker(WorkerBase):
 
             init_cached_hf_modules()
         self.model_runner: Union[
-            StaticBatchingSpyreModelRunner,
             ContinuousBatchingSpyreModelRunner,
             ChunkedPrefillModelRunner,
             SpyrePoolingModelRunner,
@@ -306,21 +304,15 @@ class SpyreWorker(WorkerBase):
                 self.vllm_config.scheduler_config
             )
         else:
-            if envs_spyre.VLLM_SPYRE_USE_CB and envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
+            if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
                 self.model_runner = ChunkedPrefillModelRunner(
                     self.vllm_config, self.is_driver_worker, self.rank
                 )
-            elif envs_spyre.VLLM_SPYRE_USE_CB:
+            else:
                 self.model_runner = ContinuousBatchingSpyreModelRunner(
                     self.vllm_config, self.is_driver_worker, self.rank
                 )
-            else:
-                self.model_runner = StaticBatchingSpyreModelRunner(
-                    self.vllm_config, self.is_driver_worker, self.rank
-                )
-                self.spyre_warmup_shapes = SpyrePlatform.get_warmup_shapes(
-                    self.vllm_config.scheduler_config
-                )
+
         self._env_initialized = False
         # Torch profiler. Enabled and configured through env vars:
         # VLLM_TORCH_PROFILER_DIR=/path/to/save/trace
