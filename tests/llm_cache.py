@@ -129,7 +129,7 @@ class LLMCache:
         }
         if use_cb:
             runtime_config.update({"max_model_len": max_model_len, "max_num_seqs": max_num_seqs})
-        else:
+        elif warmup_shapes:
             runtime_config.update({"warmup_shapes": tuple(warmup_shapes)})
 
         # Always patch the environment so that it's consistent with the LLM

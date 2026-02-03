@@ -37,11 +37,11 @@ EmbeddingWarmupShapes = list[tuple[int, int]]
 
 def patch_environment(
     use_cb: bool,
-    warmup_shapes: EmbeddingWarmupShapes | None,
     backend: str,
     monkeypatch,
     use_chunked_prefill: bool = False,
     max_num_batched_tokens: int | None = None,
+    warmup_shapes: EmbeddingWarmupShapes | None = None,
 ):
     # Setup the environment correctly for the LLM
 
