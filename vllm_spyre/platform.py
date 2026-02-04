@@ -234,6 +234,7 @@ class SpyrePlatform(Platform):
                     envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL
                     and os.getenv("VLLM_DT_CHUNK_LEN") is None
                     and vllm_config.scheduler_config.max_num_batched_tokens != 1024
+                    and vllm_config.parallel_config.world_size == 4
                     and configurator.model_config.name
                     in [
                         "ibm-granite/granite-3.3-8b-instruct",
