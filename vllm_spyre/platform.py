@@ -145,11 +145,9 @@ class SpyrePlatform(Platform):
             os.environ["FLEX_OVERWRITE_NMB_FRAME"] = "false"
             os.environ["COMPILATION_MODE"] = "offline"
 
-        assert (
-            envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL and envs_spyre.VLLM_SPYRE_USE_CB
-        ) or not envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL, (
-            "Cannot use chunked prefill without continuous batching."
-        )
+            assert not envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL, (
+                "Cannot use chunked prefill with pooling models."
+            )
 
         # enable_prefix_caching will be defaulted to True when used with LLM();
         # only assert if our arg parser default was applied
@@ -160,7 +158,7 @@ class SpyrePlatform(Platform):
                 "Cannot use prefix caching without chunked prefill."
             )
 
-        if envs_spyre.VLLM_SPYRE_USE_CB and is_decoder:
+        if is_decoder:
             if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
                 scheduler_config.scheduler_cls = (
                     "vllm_spyre.v1.core.scheduler.ChunkedPrefillSpyreScheduler"
@@ -193,7 +191,7 @@ class SpyrePlatform(Platform):
             max_seq_len = 0
             for shape in spyre_warmup_shapes:
                 max_batch_size = max(max_batch_size, shape["batch_size"])
-                max_seq_len = max(max_seq_len, shape["prompt_length"] + shape["new_tokens"])
+                max_seq_len = max(max_seq_len, shape["prompt_length"])
 
             if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS and max_batch_size > 1:
                 raise ValueError("Prompt logprobs only supported with batch size 1")
@@ -205,9 +203,7 @@ class SpyrePlatform(Platform):
             model_config.max_model_len = max_seq_len
             scheduler_config.max_num_seqs = max_batch_size
 
-            scheduler_config.scheduler_cls = (
-                "vllm_spyre.v1.core.scheduler.StaticBatchingSpyreScheduler"
-            )
+            scheduler_config.scheduler_cls = "vllm_spyre.v1.core.scheduler.PoolingSpyreScheduler"
 
         # Hardcode some things for granite-3.3-8b-instruct
         if cls.is_granite_3_8b(vllm_config.model_config) or cls.is_granite_4_8b_dense(
@@ -271,7 +267,7 @@ class SpyrePlatform(Platform):
 
         # set env vars for torch_sendnn to consume
         os.environ["VLLM_DT_MAX_CONTEXT_LEN"] = str(vllm_config.model_config.max_model_len)
-        if envs_spyre.VLLM_SPYRE_USE_CB and vllm_config.model_config.max_model_len > 32 * 1024:
+        if vllm_config.model_config.max_model_len > 32 * 1024:
             logger.warning(
                 "Max context length is too big. Currently only 32K (32768) context length is "
                 "supported on Spyre for continuous batching. Results might be off!"
@@ -301,8 +297,8 @@ class SpyrePlatform(Platform):
         from vllm_spyre.config.runtime_config_validator import validate_runtime_configuration
 
         warmup_shape_tuples = (
-            [(ws["prompt_length"], ws["new_tokens"], ws["batch_size"]) for ws in cls._warmup_shapes]
-            if cls._warmup_shapes and not envs_spyre.VLLM_SPYRE_USE_CB
+            [(ws["prompt_length"], ws["batch_size"]) for ws in cls._warmup_shapes]
+            if cls._warmup_shapes
             else None
         )
 
@@ -338,6 +334,7 @@ class SpyrePlatform(Platform):
 
     @classmethod
     def get_warmup_shapes(cls, scheduler_config) -> tuple[dict[str, int], ...]:
+        assert scheduler_config.runner_type == "pooling"
         if cls._warmup_shapes is not None:
             return cls._warmup_shapes
         # load warmup shapes and sort by "speed"
@@ -353,25 +350,15 @@ class SpyrePlatform(Platform):
                 "The lists in VLLM_SPYRE_WARMUP_PROMPT_LENS and "
                 "VLLM_SPYRE_WARMUP_BATCH_SIZES must have equal length"
             )
-        if scheduler_config.runner_type == "pooling":
-            wup_new_tokens = [0] * len(wup_prompt_lens)
-        else:
-            wup_new_tokens = envs_spyre.VLLM_SPYRE_WARMUP_NEW_TOKENS or []
-            if len(wup_new_tokens) != len(wup_prompt_lens):
-                raise RuntimeError(
-                    "The lists in VLLM_SPYRE_WARMUP_PROMPT_LENS and "
-                    "VLLM_SPYRE_WARMUP_NEW_TOKENS must have equal length"
-                )
 
         logger.info("VLLM_SPYRE_WARMUP_PROMPT_LENS = %s", wup_prompt_lens)
-        logger.info("VLLM_SPYRE_WARMUP_NEW_TOKENS = %s", wup_new_tokens)
         logger.info("VLLM_SPYRE_WARMUP_BATCH_SIZES = %s", wup_batch_sizes)
 
         cls._warmup_shapes = tuple(
             sorted(
                 [
-                    {"prompt_length": pl, "new_tokens": nt, "batch_size": bs}
-                    for pl, nt, bs in zip(wup_prompt_lens, wup_new_tokens, wup_batch_sizes)
+                    {"prompt_length": pl, "batch_size": bs}
+                    for pl, bs in zip(wup_prompt_lens, wup_batch_sizes)
                 ],
                 key=operator.itemgetter("batch_size", "prompt_length"),
             )
@@ -437,41 +424,20 @@ class SpyrePlatform(Platform):
         if params is not None and params.max_tokens is not None:
             max_tokens = params.max_tokens
 
-        if envs_spyre.VLLM_SPYRE_USE_CB:
-            # For continuous batching, check if the request is within the max
-            # context length. This needs to take the padded prompt length
-            # into account.
+        # For continuous batching, check if the request is within the max
+        # context length. This needs to take the padded prompt length
+        # into account.
 
-            # ceil division to pad to next block boundary
-            prompt_padding_len = math.ceil(prompt_len / cls._block_size) * cls._block_size
-            if prompt_padding_len + max_tokens > cls._config.model_config.max_model_len:
-                raise ValueError(
-                    "Could not add request: prompt length is "
-                    f"{prompt_len} tokens, which gets padded to "
-                    f"{prompt_padding_len} tokens, maximum number of output "
-                    f"tokens is {max_tokens} tokens, but max model context "
-                    f"length is {cls._config.model_config.max_model_len}."
-                )
-        else:
-            # For non-continuous batching, check if the request matches a warmup
-            # shape
-            assert cls._warmup_shapes is not None, "Warmup shapes must be set"
-            if (
-                len(
-                    cls._get_matching_warmup_shapes(
-                        prompt_len=prompt_len,
-                        max_tokens=max_tokens,
-                        warmup_shapes=cls._warmup_shapes,
-                    )
-                )
-                == 0
-            ):
-                raise ValueError(
-                    "No applicable warmup shape exists for "
-                    f"combination of prompt length ({prompt_len} tokens) "
-                    "and maximum number of output tokens to be "
-                    f"generated ({max_tokens} tokens)"
-                )
+        # ceil division to pad to next block boundary
+        prompt_padding_len = math.ceil(prompt_len / cls._block_size) * cls._block_size
+        if prompt_padding_len + max_tokens > cls._config.model_config.max_model_len:
+            raise ValueError(
+                "Could not add request: prompt length is "
+                f"{prompt_len} tokens, which gets padded to "
+                f"{prompt_padding_len} tokens, maximum number of output "
+                f"tokens is {max_tokens} tokens, but max model context "
+                f"length is {cls._config.model_config.max_model_len}."
+            )
 
     @classmethod
     def _get_matching_warmup_shapes(

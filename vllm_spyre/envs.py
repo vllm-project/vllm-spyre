@@ -6,9 +6,7 @@ from vllm.logger import init_logger
 if TYPE_CHECKING:
     VLLM_SPYRE_DYNAMO_BACKEND: str = "sendnn"
     VLLM_SPYRE_WARMUP_PROMPT_LENS: list[int] | None = None
-    VLLM_SPYRE_WARMUP_NEW_TOKENS: list[int] | None = None
     VLLM_SPYRE_WARMUP_BATCH_SIZES: list[int] | None = None
-    VLLM_SPYRE_USE_CB: bool = False
     VLLM_SPYRE_PERF_METRIC_LOGGING_ENABLED: int = 0
     VLLM_SPYRE_PERF_METRIC_LOGGING_DIR: str = "/tmp"
     VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER: bool = False
@@ -58,20 +56,12 @@ def _backend_backwards_compat() -> str:
 # --8<-- [start:env-vars-definition]
 environment_variables: dict[str, Callable[[], Any]] = {
     # Defines the prompt lengths the Spyre accelerator should be prepared
-    # for, formatted as comma separated list. Only applicable in static batching
-    # mode (VLLM_SPYRE_USE_CB=0).
+    # for, formatted as comma separated list. Only applicable in pooling.
     "VLLM_SPYRE_WARMUP_PROMPT_LENS": lambda: [
         int(p) for p in os.getenv(key="VLLM_SPYRE_WARMUP_PROMPT_LENS", default="64").split(",")
     ],
-    # Defines the max output tokens the Spyre accelerator should be prepared
-    # for, formatted as comma separated list. Only applicable in static batching
-    # mode (VLLM_SPYRE_USE_CB=0).
-    "VLLM_SPYRE_WARMUP_NEW_TOKENS": lambda: [
-        int(d) for d in os.getenv(key="VLLM_SPYRE_WARMUP_NEW_TOKENS", default="20").split(",")
-    ],
     # Defines the batch sizes the Spyre accelerator should be prepared
-    # for, formatted as comma separated list. Only applicable in static batching
-    # mode (VLLM_SPYRE_USE_CB=0).
+    # for, formatted as comma separated list. Only applicable in pooling.
     "VLLM_SPYRE_WARMUP_BATCH_SIZES": lambda: [
         int(b) for b in os.getenv(key="VLLM_SPYRE_WARMUP_BATCH_SIZES", default="1").split(",")
     ],
@@ -83,9 +73,6 @@ environment_variables: dict[str, Callable[[], Any]] = {
     #
     # - "sendnn_decoder": Deprecated in favor of "sendnn"
     "VLLM_SPYRE_DYNAMO_BACKEND": _backend_backwards_compat,
-    # If set, use the V1 continuous batching implementation. Otherwise, static
-    # batching mode will be enabled.
-    "VLLM_SPYRE_USE_CB": lambda: bool(int(os.getenv("VLLM_SPYRE_USE_CB", "0"))),
     # Enable performance metric logging. This captures startup information
     # such as warmup times, and loading times.
     # When `--disable-log-stats=False` is used, this will log timing metrics

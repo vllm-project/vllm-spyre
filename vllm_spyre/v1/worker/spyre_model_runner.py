@@ -2,7 +2,6 @@ import math
 import os
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from logging import DEBUG
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, Union, cast
@@ -205,7 +204,7 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
         return self.model.mm_model_utils
 
     @abstractmethod
-    def load_model(self, prompt_lens: Iterable[int], num_decode_tokens: Iterable[int]) -> None:
+    def load_model(self) -> None:
         raise NotImplementedError
 
     def _prepare_pad_input_ids(
@@ -341,13 +340,9 @@ class SpyreModelRunner(
     def __init__(self, vllm_config: VllmConfig, is_driver_worker: bool, rank: int):
         super().__init__(vllm_config=vllm_config, is_driver_worker=is_driver_worker, rank=rank)
 
-    def load_model(self, prompt_lens: Iterable[int], num_decode_tokens: Iterable[int]) -> None:
-        max_pad_length = max(prompt_lens)
-        max_decode_length = max(num_decode_tokens)
+    def load_model(self) -> None:
         self._model = SpyreCausalLM(
             vllm_config=self.vllm_config,
-            max_prompt_length=max_pad_length,
-            max_decode_length=max_decode_length,
             rank=self.rank,
         )
 
@@ -649,232 +644,6 @@ class SpyreModelRunner(
     def prompt_len(request: NewRequestData | Request) -> int:
         assert request.prompt_token_ids is not None, "prompt token ids are required"
         return len(request.prompt_token_ids)
-
-
-class WarmupShapesMixin:
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        vllm_config: VllmConfig = kwargs["vllm_config"]
-        self.spyre_warmup_shapes = SpyrePlatform.get_warmup_shapes(vllm_config.scheduler_config)
-
-    def _get_padded_batch_size(self, new_requests: list[NewRequestData]):
-        # find warmup shape to be used for padding and batching
-        applicable_spyre_warmup_shapes = [
-            shape for shape in self.spyre_warmup_shapes if len(new_requests) <= shape["batch_size"]
-        ]
-        for request_data in new_requests:
-            # retrieve initial (unpadded) tokens
-            prompt_tokens = request_data.prompt_token_ids
-            new_tokens = (
-                request_data.sampling_params.max_tokens
-                if request_data.sampling_params is not None
-                else 0
-            )
-
-            updated_spyre_warmup_shapes = [
-                shape
-                for shape in applicable_spyre_warmup_shapes
-                if len(prompt_tokens) <= shape["prompt_length"]  # ty: ignore[invalid-argument-type]
-                and new_tokens <= shape["new_tokens"]  # ty: ignore[unsupported-operator]
-            ]
-            applicable_spyre_warmup_shapes = updated_spyre_warmup_shapes
-
-        assert applicable_spyre_warmup_shapes, (
-            "No shapes available to run prefill batch. (This should not happen)"
-        )
-
-        # If multiple warmup shapes apply, the first one is selected.
-        # For improving performance, the warmup shapes in scheduler_config
-        # are ordered by "processing speed".
-        min_pad_length_batch = applicable_spyre_warmup_shapes[0]["prompt_length"]
-        padded_batch_size = applicable_spyre_warmup_shapes[0]["batch_size"]
-        return padded_batch_size, min_pad_length_batch
-
-
-class StaticBatchingSpyreModelRunner(WarmupShapesMixin, SpyreModelRunner):
-    def __init__(
-        self,
-        vllm_config: VllmConfig,
-        is_driver_worker: bool,
-        rank: int,
-    ):
-        super().__init__(vllm_config=vllm_config, is_driver_worker=is_driver_worker, rank=rank)
-
-        # position_ids of all the sequences in current batch
-        self._position_ids: torch.Tensor = None
-        # attention masks of all the sequences in current batch
-        self._mask: torch.Tensor = None
-
-    def _prepare_prompt(  # ty: ignore[invalid-method-override]
-        self,
-        new_requests: list[NewRequestData],
-    ) -> SamplingForwardInputs:
-        assert len(new_requests) > 0
-        input_token_list: list[torch.Tensor] = []
-        padded_batch_size, min_pad_length_batch = self._get_padded_batch_size(new_requests)
-
-        # Internal state is reset here.
-        # We don't support continuous batching, so we know all previous requests
-        # have finished decoding.
-        self.input_batch.clear_requests()
-        self.requests = {}
-
-        # Build batch and prepare input_token1
-        for request_data in new_requests:
-            # retrieve initial (unpadded) tokens
-            prompt_tokens = request_data.prompt_token_ids
-            # Empty list for non multimodal requests
-            mm_features = getattr(request_data, "mm_features", None)
-
-            input_token_list.append(
-                torch.tensor(prompt_tokens, dtype=torch.long, device=torch.device("cpu"))
-            )
-
-            # Add new requests to the cached states.
-            req_id = request_data.req_id
-            sampling_params = request_data.sampling_params
-            if sampling_params.sampling_type == SamplingType.RANDOM_SEED:
-                generator = torch.Generator(device=self.device)
-                generator.manual_seed(sampling_params.seed)  # ty: ignore[invalid-argument-type]
-            else:
-                generator = None
-
-            req_state = SamplingRequestState(
-                req_id=req_id,
-                prompt_token_ids=request_data.prompt_token_ids,  # ty: ignore[invalid-argument-type]
-                mm_features=mm_features if mm_features else None,
-                sampling_params=sampling_params,  # ty: ignore[invalid-argument-type]
-                generator=generator,
-                output_token_ids=[],
-                left_padding=0,
-            )
-            self.requests[req_id] = req_state
-            self.input_batch.add_request(req_state)
-
-        self.input_batch.padded_batch_size = padded_batch_size
-
-        # Refresh sampling metadata after all request are added to the batch
-        self.input_batch.refresh_metadata()
-
-        # padding to compiled batch size
-        while len(input_token_list) < padded_batch_size:
-            input_token_list.append(
-                torch.zeros(min_pad_length_batch, dtype=torch.long, device=torch.device("cpu"))
-            )
-
-        # get position ids and attention mask
-        input_tokens, self._position_ids, self._mask = self.pad_input_ids(
-            input_token_list, min_pad_length=min_pad_length_batch
-        )
-
-        model_input = SamplingForwardInputs(
-            input_tokens=input_tokens,
-            input_embeds=None,
-            input_positions=self._position_ids,
-            input_masks=self._mask,
-            is_prompt=True,
-            # unused params for static batching
-            current_tkv_mask=None,  # ty: ignore
-            left_padded_prompt_mask=None,  # ty: ignore
-            block_table=None,  # ty: ignore
-            slot_mapping=None,  # ty: ignore
-            scale_indices=None,  # ty: ignore
-        )
-
-        self._mark_input_tensors(model_input)
-        self.model.indices = self.input_batch.get_model_indices()
-
-        return model_input
-
-    def _prepare_decode(
-        self,
-        cached_request_data: CachedRequestData,
-    ) -> SamplingForwardInputs:
-        # TODO - ensure multimodal features are dropped in decode, because
-        # we only consider the multimodal encoder during prefill
-
-        assert len(cached_request_data.req_ids) > 0
-        input_tokens: list[list[int]] = [[0] for _ in range(self._position_ids.shape[0])]
-
-        for req_id in cached_request_data.req_ids:
-            # TODO: Will this always just be one token ID if there's no spec
-            # or jump decoding?
-            req_state: SamplingRequestState = self.requests[req_id]
-            output_token_ids = req_state.output_token_ids
-            generation_token = output_token_ids[-1]
-            input_tokens[self.input_batch.req_id_to_index[req_id]] = [generation_token]
-
-        # update position ids and attention mask
-        self._update_position_ids()
-        self._update_mask()
-
-        input_tokens = torch.tensor(input_tokens, dtype=torch.long, device=self.device)  # ty: ignore[invalid-assignment]
-        model_input = SamplingForwardInputs(
-            input_tokens=input_tokens,  # ty: ignore[invalid-argument-type]
-            input_embeds=None,
-            input_positions=self._position_ids,
-            input_masks=self._mask,
-            is_prompt=False,
-            # unused params for static batching
-            current_tkv_mask=None,  # ty: ignore
-            left_padded_prompt_mask=None,  # ty: ignore
-            block_table=None,  # ty: ignore
-            slot_mapping=None,  # ty: ignore
-            scale_indices=None,  # ty: ignore
-        )
-        self._mark_input_tensors(model_input)
-
-        # TODO: Added here temporarily until we can remove dummy token
-        # for batch_size=1. Once we can do that, we shall move it to
-        # execute_model on SpyreModelRunner for both static and CB.
-        self.model.indices = self.input_batch.get_model_indices()
-
-        return model_input
-
-    def _update_position_ids(self) -> None:
-        """Updating the position ids of all sequences
-        in a batch. Will be called in decoding phase"""
-
-        self._position_ids = self._position_ids[:, -1] + 1
-        self._position_ids = self._position_ids.unsqueeze(-1)
-
-    def _update_mask(self) -> None:
-        """Updating/extending the attention masks of all
-        sequences in a batch. Will be called in decoding phase"""
-
-        assert self._mask is not None
-        masks = self._mask
-
-        masks_new = []
-        for mask in masks:
-            # get the last row of the 3d mask
-            mask_new = mask[-1:, :]
-
-            # extend the mask one slot
-            mask_new = torch.cat(
-                (
-                    mask_new,
-                    torch.zeros(1, 1, dtype=mask_new.dtype, device=mask_new.device),
-                ),
-                dim=1,
-            )
-            masks_new.append(mask_new)
-
-        self._mask = torch.stack(masks_new, dim=0)
-
-    def _mark_input_tensors(self, model_input: SamplingForwardInputs) -> None:
-        super()._mark_input_tensors(model_input=model_input)
-        if not self.warmup_mode:
-            # Only mark tensors when we're warming up and compiling the graphs
-            return
-
-        if not model_input.is_prompt:
-            # here self.model.model is a StaticBatchingFmsModel
-            for layer in self.model.model.past_key_value_states:  # ty: ignore[not-iterable]
-                for tensor in layer:
-                    torch._dynamo.mark_static(tensor, 0)
-                    # This used to be baked into the model's forward pass
-                    torch._dynamo.mark_dynamic(tensor, 2)
 
 
 class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
@@ -1599,7 +1368,6 @@ def _cls(input: torch.Tensor) -> torch.Tensor:
 
 
 class SpyrePoolingModelRunner(
-    WarmupShapesMixin,
     BaseSpyreModelRunner[PoolingInputBatch, PoolingRequestState, PoolingForwardInputs],
 ):
     def __init__(
@@ -1610,6 +1378,8 @@ class SpyrePoolingModelRunner(
     ):
         super().__init__(vllm_config=vllm_config, is_driver_worker=is_driver_worker, rank=rank)
 
+        vllm_config: VllmConfig = vllm_config
+        self.spyre_warmup_shapes = SpyrePlatform.get_warmup_shapes(vllm_config.scheduler_config)
         # position_ids of all the sequences in current batch
         self._position_ids: torch.Tensor = None
         self.use_token_type_ids = False
@@ -1627,7 +1397,7 @@ class SpyrePoolingModelRunner(
             vocab_size=self.model_config.get_vocab_size(),
         )
 
-    def load_model(self, prompt_lens: Iterable[int], num_decode_tokens: Iterable[int]) -> None:
+    def load_model(self) -> None:
         assert len(self.model_config.architectures) == 1
         task = (
             "classify"
@@ -1793,6 +1563,32 @@ class SpyrePoolingModelRunner(
         else:
             locs = torch.where(input_ids == self.sep_token_id, 1, 0)
             return locs.cumsum(dim=1) - locs
+
+    def _get_padded_batch_size(self, new_requests: list[NewRequestData]):
+        # find warmup shape to be used for padding and batching
+        applicable_spyre_warmup_shapes = [
+            shape for shape in self.spyre_warmup_shapes if len(new_requests) <= shape["batch_size"]
+        ]
+        for request_data in new_requests:
+            # retrieve initial (unpadded) tokens
+            prompt_tokens = request_data.prompt_token_ids
+            updated_spyre_warmup_shapes = [
+                shape
+                for shape in applicable_spyre_warmup_shapes
+                if len(prompt_tokens) <= shape["prompt_length"]  # ty: ignore[invalid-argument-type]
+            ]
+            applicable_spyre_warmup_shapes = updated_spyre_warmup_shapes
+
+        assert applicable_spyre_warmup_shapes, (
+            "No shapes available to run prefill batch. (This should not happen)"
+        )
+
+        # If multiple warmup shapes apply, the first one is selected.
+        # For improving performance, the warmup shapes in scheduler_config
+        # are ordered by "processing speed".
+        min_pad_length_batch = applicable_spyre_warmup_shapes[0]["prompt_length"]
+        padded_batch_size = applicable_spyre_warmup_shapes[0]["batch_size"]
+        return padded_batch_size, min_pad_length_batch
 
     def _prepare_prompt(
         self,

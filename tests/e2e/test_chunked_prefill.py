@@ -90,7 +90,6 @@ def test_chunked_prefill_correctness(
         backend=backend,
         monkeypatch=monkeypatch,
         max_num_seqs=max_num_seqs,
-        use_cb=True,
         max_num_batched_tokens=chunk_size,
     )
     model_runner = get_model_runner(cp_model)
@@ -138,7 +137,6 @@ def test_chunked_prefill_correctness(
 async def test_chunked_prefill_kv_cache_stats(
     remote_openai_server: RemoteOpenAIServer,
     model,
-    warmup_shapes,
     backend,
     tp_size,
     mode,

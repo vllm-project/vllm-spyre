@@ -7,7 +7,7 @@ from typing import Callable, Generic, TypeVar
 
 import pytest
 from llm_cache_util import force_engine_core_shutdown, force_engine_shutdown
-from spyre_util import DecodeWarmupShapes, ModelInfo, RemoteOpenAIServer, patch_environment
+from spyre_util import EmbeddingWarmupShapes, ModelInfo, RemoteOpenAIServer, patch_environment
 from vllm import LLM, EngineArgs
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor
@@ -108,9 +108,8 @@ class LLMCache:
         tensor_parallel_size: int,
         backend: str,
         monkeypatch: pytest.MonkeyPatch,
-        warmup_shapes: DecodeWarmupShapes | None = None,
+        warmup_shapes: EmbeddingWarmupShapes | None = None,
         max_num_seqs: int | None = None,
-        use_cb: bool = False,
         use_pc: bool = False,
         max_num_batched_tokens: int | None = None,
     ) -> LLM:
@@ -119,27 +118,25 @@ class LLMCache:
         If the last LLM created matches the config, then returns the cached LLM
         instead to reduce LLM instantiation overhead.
         """
+        # Use chunked prefill if max_num_batched_tokens is set
+        use_chunked_prefill = bool(max_num_batched_tokens)
         runtime_config = {
             "model": model,
             "tensor_parallel_size": tensor_parallel_size,
             "backend": backend,
-            "use_cb": use_cb,
+            "use_cp": use_chunked_prefill,
             "use_pc": use_pc,
             "max_num_batched_tokens": max_num_batched_tokens,
         }
-        if use_cb:
-            runtime_config.update({"max_model_len": max_model_len, "max_num_seqs": max_num_seqs})
-        else:
+        if warmup_shapes:
             runtime_config.update({"warmup_shapes": tuple(warmup_shapes)})
+        else:
+            runtime_config.update({"max_model_len": max_model_len, "max_num_seqs": max_num_seqs})
 
         # Always patch the environment so that it's consistent with the LLM
-        # Use chunked prefill if max_num_batched_tokens is set
-        use_chunked_prefill = bool(max_num_batched_tokens)
         if use_pc:
             assert use_chunked_prefill
         patch_environment(
-            use_cb,
-            warmup_shapes,
             backend,
             monkeypatch,
             use_chunked_prefill=use_chunked_prefill,
@@ -197,26 +194,21 @@ class EngineCache:
         backend: str,
         monkeypatch,
     ) -> EngineCore:
+        use_chunked_prefill = bool(max_num_batched_tokens)
         runtime_config = {
             "model": model,
             "max_model_len": max_model_len,
             "max_num_seqs": max_num_seqs,
             "available_blocks": available_blocks,
+            "use_cp": use_chunked_prefill,
             "use_pc": use_pc,
             "max_num_batched_tokens": max_num_batched_tokens,
         }
 
         # Always patch the environment so that it's consistent with the engine
-        if max_num_batched_tokens is not None and max_num_batched_tokens > 0:
-            use_chunked_prefill = True
-        else:
-            use_chunked_prefill = False
-
         if use_pc:
             assert use_chunked_prefill
         patch_environment(
-            use_cb=True,
-            warmup_shapes=None,
             backend=backend,
             monkeypatch=monkeypatch,
             use_chunked_prefill=use_chunked_prefill,
@@ -366,9 +358,8 @@ def get_cached_llm(
     tensor_parallel_size: int,
     backend: str,
     monkeypatch: pytest.MonkeyPatch,
-    warmup_shapes: DecodeWarmupShapes | None = None,
+    warmup_shapes: EmbeddingWarmupShapes | None = None,
     max_num_seqs: int | None = None,
-    use_cb: bool = False,
     max_num_batched_tokens: int | None = None,
     use_pc: bool = False,
 ) -> LLM:
@@ -384,7 +375,6 @@ def get_cached_llm(
         monkeypatch=monkeypatch,
         warmup_shapes=warmup_shapes,
         max_num_seqs=max_num_seqs,
-        use_cb=use_cb,
         use_pc=use_pc,
         max_num_batched_tokens=max_num_batched_tokens,
     )

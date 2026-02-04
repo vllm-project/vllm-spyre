@@ -15,13 +15,13 @@ _known_model_configs_file = Path(__file__).parent / "known_model_configs.json"
 
 logger = init_logger(__name__)
 
-# warmup_shape = [prompt_length, new_tokens, batch_size]
-WarmupShapes = list[tuple[int, int, int]] | list[list[int]]
+# warmup_shape = [prompt_length, batch_size]
+WarmupShapes = list[tuple[int, int]] | list[list[int]]
 
 
 @dataclass(order=True)
 class RuntimeConfiguration:
-    cb: bool = False
+    cb: bool = True
     tp_size: int = 1
     max_model_len: int = 0
     max_num_seqs: int = 0
@@ -29,7 +29,7 @@ class RuntimeConfiguration:
 
     def __post_init__(self):
         if self.warmup_shapes is not None:
-            self.warmup_shapes = [(ws[0], ws[1], ws[2])
+            self.warmup_shapes = [(ws[0], ws[1])
                                   if isinstance(ws, list) else ws
                                   for ws in self.warmup_shapes]  # yapf: disable
 
@@ -126,14 +126,14 @@ def verify_config_parameters(c: RuntimeConfiguration) -> bool:
         )
 
         for i, ws in enumerate(c.warmup_shapes or []):
-            # warmup_shape = [prompt_length, new_tokens, batch_size]
+            # warmup_shape = [prompt_length, batch_size]
             verify(
                 f"'prompt_length' must be a multiple of 64, found {ws[0]} in warmup_shapes[{i}]",
                 ws[0] % 64 == 0,
             )
             verify(
-                f"'batch_size' must be a power of 2, found {ws[2]} in warmup_shapes[{i}]",
-                is_power_of_2(ws[2]),
+                f"'batch_size' must be a power of 2, found {ws[1]} in warmup_shapes[{i}]",
+                is_power_of_2(ws[1]),
             )
 
     return not found_invalid_parameters
@@ -230,14 +230,12 @@ def validate_runtime_configuration(
         logger.warning("Model '%s' is not supported", model)
         return False
 
-    use_cb = envs_spyre.VLLM_SPYRE_USE_CB
-
     requested_config = RuntimeConfiguration(
-        cb=use_cb,
+        cb=warmup_shapes is None,
         tp_size=tp_size,
-        max_model_len=max_model_len if use_cb else 0,
-        max_num_seqs=max_num_seqs if use_cb else 0,
-        warmup_shapes=warmup_shapes if not use_cb else None,
+        max_model_len=max_model_len,
+        max_num_seqs=max_num_seqs,
+        warmup_shapes=warmup_shapes,
     )
 
     if not verify_config_parameters(requested_config):
@@ -316,9 +314,9 @@ def is_context_length_supported(
     if len(requested_shapes) > 1:
         return False
 
-    request_batch_size = requested_shapes[0][2]
+    request_batch_size = requested_shapes[0][1]
     shapes_with_same_batch_size = [
-        (ws[0], ws[1], ws[2]) for ws in supported_shapes if request_batch_size <= ws[2]
+        (ws[0], ws[1]) for ws in supported_shapes if request_batch_size <= ws[1]
     ]
 
     return len(shapes_with_same_batch_size) > 0 and (
@@ -334,4 +332,4 @@ def get_max_model_length(warmup_shapes: WarmupShapes) -> int:
     # max_model_len = prompt_length + new_tokens
     # warmup_shape = [prompt_length, new_tokens, batch_size]
 
-    return max([ws[0] + ws[1] for ws in warmup_shapes or []])
+    return max([ws[0] for ws in warmup_shapes or []])

@@ -33,30 +33,22 @@ except ImportError:
 from vllm.v1.request import Request
 
 EmbeddingWarmupShapes = list[tuple[int, int]]
-DecodeWarmupShapes = list[tuple[int, int, int]]
 
 
 def patch_environment(
-    use_cb: bool,
-    warmup_shapes: DecodeWarmupShapes | None,
     backend: str,
     monkeypatch,
     use_chunked_prefill: bool = False,
     max_num_batched_tokens: int | None = None,
+    warmup_shapes: EmbeddingWarmupShapes | None = None,
 ):
     # Setup the environment correctly for the LLM
 
-    # ---- For static batching ----
+    # ---- For pooling ----
     if warmup_shapes:
-        assert not use_cb, (
-            "Warmup shapes through environment variables have "
-            "been deprecated in continuous batching"
-        )
-
         patch_warmup_shapes(warmup_shapes, monkeypatch)
 
     # --------------
-    monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1" if use_cb else "0")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", "1" if use_chunked_prefill else "0")
     # NB: setting this env var explicitly is needed to set the desired value for
@@ -65,7 +57,7 @@ def patch_environment(
         monkeypatch.setenv("VLLM_DT_CHUNK_LEN", str(max_num_batched_tokens))
 
 
-def patch_warmup_shapes(warmup_shapes: DecodeWarmupShapes | EmbeddingWarmupShapes, monkeypatch):
+def patch_warmup_shapes(warmup_shapes: EmbeddingWarmupShapes, monkeypatch):
     warmup_prompt_length = [t[0] for t in warmup_shapes]
     warmup_batch_size = [t[-1] for t in warmup_shapes]
 
@@ -75,12 +67,6 @@ def patch_warmup_shapes(warmup_shapes: DecodeWarmupShapes | EmbeddingWarmupShape
     monkeypatch.setenv(
         "VLLM_SPYRE_WARMUP_BATCH_SIZES", ",".join(str(val) for val in warmup_batch_size)
     )
-
-    if all(len(s) == 3 for s in warmup_shapes):
-        warmup_new_tokens = [t[1] for t in warmup_shapes]
-        monkeypatch.setenv(
-            "VLLM_SPYRE_WARMUP_NEW_TOKENS", ",".join(str(val) for val in warmup_new_tokens)
-        )
 
 
 class ModelInfo(NamedTuple):

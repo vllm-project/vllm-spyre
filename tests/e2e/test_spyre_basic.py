@@ -6,18 +6,11 @@ Run `python -m pytest tests/e2e/test_spyre_basic.py`.
 import pytest
 from output_util import validate_vllm_vs_hf_output, kwargs_for_mode
 from spyre_util import (
-    DecodeWarmupShapes,
     ModelInfo,
-    create_random_request,
     get_chicken_soup_prompts,
-    patch_environment,
     skip_unsupported_tp_size,
 )
-from vllm import EngineArgs, SamplingParams
-from vllm.v1.engine.core import EngineCore
-from vllm.v1.executor.abstract import Executor
-
-from vllm_spyre.v1.core.scheduler import StaticBatchingSpyreScheduler
+from vllm import SamplingParams
 
 
 @pytest.mark.full_model
@@ -29,10 +22,8 @@ def test_output(
     mode: str,
     max_num_seqs: int,
     max_model_len: int,
-    warmup_shapes: DecodeWarmupShapes,
     monkeypatch: pytest.MonkeyPatch,
     use_llm_cache,
-    runtime_xfail,
 ) -> None:
     """
     The warmup is based on a single shape. After the warmup,
@@ -50,15 +41,10 @@ def test_output(
 
     skip_unsupported_tp_size(tp_size, backend)
 
-    if (
-        "micro-g3.3-8b-instruct-1b" in model.name
-        and model.is_quantized
-        and mode not in ["cb", "cp", "pc"]
-    ):
-        runtime_xfail(reason="SB sometimes causes failures with quantized model")
-
     prompts = get_chicken_soup_prompts(4)
-    max_new_tokens = warmup_shapes[0][1]
+
+    max_new_tokens = 4
+
     vllm_sampling_params = SamplingParams(
         max_tokens=max_new_tokens,
         temperature=0,
@@ -75,7 +61,8 @@ def test_output(
         monkeypatch=monkeypatch,
         max_model_len=max_model_len,
         max_new_tokens=max_new_tokens,
-        **kwargs_for_mode(mode, max_num_seqs, warmup_shapes),
+        max_num_seqs=max_num_seqs,
+        **kwargs_for_mode(mode),
     )
 
 
@@ -83,7 +70,6 @@ def test_batch_handling(
     model: ModelInfo,
     backend: str,
     mode: str,
-    warmup_shapes,
     max_num_seqs: int,
     max_model_len: int,
     monkeypatch: pytest.MonkeyPatch,
@@ -121,82 +107,6 @@ def test_batch_handling(
         backend=backend,
         monkeypatch=monkeypatch,
         max_new_tokens=max_new_tokens,
-        **kwargs_for_mode(mode, max_num_seqs, warmup_shapes),
+        max_num_seqs=max_num_seqs,
+        **kwargs_for_mode(mode),
     )
-
-
-def test_full_batch_scheduling(model: ModelInfo, backend: str, monkeypatch):
-    """Test that we can schedule a full batch of prompts."""
-
-    # We need to ensure here that the max number of tokens in a full batch
-    # is greater than the value set for `--max-num-batched-tokens`.
-    # This defaults to 2k in many cases for vllm.v1, which will cause problems
-    # when trying to schedule a static batch with more than 2k tokens.
-    # The plugin _should_ override this in config for the engine so that the
-    # scheduler can properly schedule a full batch.
-
-    # Here we set `--max-num-batched-tokens` to 64, and try to schedule a batch
-    # of 4 x 64-token prompts
-    max_batched_tokens = 64
-    batch_size = 4
-
-    # set batching config
-    monkeypatch.setenv("VLLM_SPYRE_WARMUP_BATCH_SIZES", f"{batch_size}")
-    monkeypatch.setenv("VLLM_SPYRE_WARMUP_PROMPT_LENS", f"{max_batched_tokens}")
-    monkeypatch.setenv("VLLM_SPYRE_WARMUP_NEW_TOKENS", "20")
-
-    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
-
-    # Setup the engine
-    engine_args = EngineArgs(
-        model=model.name,
-        tokenizer=model.name,
-        max_num_batched_tokens=max_batched_tokens,
-        max_num_seqs=batch_size,
-        revision=model.revision,
-        tokenizer_revision=model.revision,
-    )
-    vllm_config = engine_args.create_engine_config()
-    executor_class = Executor.get_class(vllm_config)
-    engine_core = EngineCore(
-        vllm_config=vllm_config, executor_class=executor_class, log_stats=False
-    )
-    scheduler: StaticBatchingSpyreScheduler = engine_core.scheduler
-
-    vllm_sampling_params = SamplingParams(max_tokens=20, temperature=0, logprobs=0)
-    for i in range(batch_size):
-        engine_core.add_request(
-            create_random_request(
-                request_id=i,
-                num_tokens=max_batched_tokens,
-                sampling_params=vllm_sampling_params,
-                model=model,
-            )
-        )
-    schedule = scheduler.schedule()
-
-    assert len(schedule.scheduled_new_reqs) == batch_size
-
-
-def test_max_model_len_override(model: ModelInfo, backend, warmup_shapes, mode: str, monkeypatch):
-    """Test that makes sure that --max-model-len
-    doesn't affect SB, instead it is picked up from
-    warmup shapes"""
-
-    max_model_len = 64
-    kwargs = kwargs_for_mode(mode, 2, warmup_shapes)
-    kwargs.pop("max_num_seqs", None)
-    kwargs.pop("use_pc", None)
-
-    patch_environment(**kwargs, backend=backend, monkeypatch=monkeypatch)
-    vllm_config = EngineArgs(
-        model=model.name, revision=model.revision, max_model_len=max_model_len
-    ).create_engine_config()
-    model_config = vllm_config.model_config
-
-    if mode == "sb":
-        assert model_config.max_model_len == max(
-            [prompt_length + new_tokens for prompt_length, new_tokens, _ in warmup_shapes]
-        )
-    else:
-        assert model_config.max_model_len == max_model_len

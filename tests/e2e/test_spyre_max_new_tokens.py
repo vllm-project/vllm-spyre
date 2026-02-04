@@ -5,22 +5,20 @@ Run `python -m pytest tests/e2e/test_spyre_max_new_tokens.py`.
 
 import pytest
 from output_util import validate_vllm_vs_hf_output, kwargs_for_mode
-from spyre_util import DecodeWarmupShapes, ModelInfo, get_chicken_soup_prompts
+from spyre_util import ModelInfo, get_chicken_soup_prompts
 from vllm import SamplingParams
 
-sb_mark = pytest.param("sb", marks=pytest.mark.sb, id="sb")
 cb_mark = pytest.param("cb", marks=pytest.mark.cb, id="cb")
 cp_mark = pytest.param("cp", marks=pytest.mark.chunked_prefill, id="cp")
 
 
 @pytest.mark.parametrize("stop_last", [True, False])
-@pytest.mark.parametrize("mode", [sb_mark, cb_mark, cp_mark])
+@pytest.mark.parametrize("mode", [cb_mark, cp_mark])
 def test_output(
     model: ModelInfo,
     stop_last: bool,
     max_model_len: int,
     max_num_seqs: int,
-    warmup_shapes: DecodeWarmupShapes,
     backend: str,
     mode: str,
     monkeypatch: pytest.MonkeyPatch,
@@ -72,5 +70,6 @@ def test_output(
         monkeypatch=monkeypatch,
         max_new_tokens=hf_max_new_tokens,
         max_model_len=max_model_len,
-        **kwargs_for_mode(mode, max_num_seqs, warmup_shapes),
+        max_num_seqs=max_num_seqs,
+        **kwargs_for_mode(mode),
     )

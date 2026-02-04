@@ -17,7 +17,6 @@ def _check_result(client, model, max_tokens=8, temperature=0.0, n=1) -> None:
 def test_openai_serving(
     remote_openai_server,
     model,
-    warmup_shapes,
     backend,
     tp_size,
     mode,
@@ -32,9 +31,6 @@ def test_openai_serving(
     _check_result(client, model, n=1)
     _check_result(client, model, temperature=1.0, n=2)
 
-    # rest are SB tests
-    if mode == "sb":
-        return
     # Check some basic error handling as well. This is all done in one test
     # now to avoid server boot-up overhead to test each case.
     # To change this we'll need:

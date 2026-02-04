@@ -27,7 +27,6 @@ def pytest_generate_tests(metafunc):
     allows for dynamic parametrization."""
 
     # default parameterizations
-    default_warmup_shape = [[(64, 20, 4)]]
     default_max_num_seqs = [4]
     default_max_model_len = [512]
     default_max_num_batched_tokens = [128]
@@ -54,24 +53,12 @@ def pytest_generate_tests(metafunc):
                 metafunc,
                 existing_markers,
             )
-            _add_param(
-                "warmup_shapes",
-                [[(1024, 20, 4)]],
-                metafunc,
-                existing_markers,
-            )
     else:
         # Default parameters
         _add_param("model", get_spyre_model_list(), metafunc, existing_markers)
         _add_param(
             "backend",
             get_spyre_backend_list(),
-            metafunc,
-            existing_markers,
-        )
-        _add_param(
-            "warmup_shapes",
-            default_warmup_shape,
             metafunc,
             existing_markers,
         )
@@ -112,7 +99,6 @@ def pytest_generate_tests(metafunc):
         metafunc.parametrize(
             "mode",
             [
-                pytest.param("sb", marks=pytest.mark.sb, id="sb"),
                 pytest.param("cb", marks=pytest.mark.cb, id="cb"),
                 pytest.param("cp", marks=pytest.mark.chunked_prefill, id="cp"),
                 pytest.param("pc", marks=pytest.mark.prefix_caching, id="pc"),
@@ -258,7 +244,7 @@ def remote_openai_server(request):
     if "mode" in params and params["mode"] in ["cb", "cp", "pc"]:
         max_model_len = params["max_model_len"]
         max_num_seqs = params["max_num_seqs"]
-        env_dict = {"VLLM_SPYRE_USE_CB": "1", "VLLM_SPYRE_DYNAMO_BACKEND": backend}
+        env_dict = {"VLLM_SPYRE_DYNAMO_BACKEND": backend}
         server_args.extend(
             ["--max_num_seqs", str(max_num_seqs), "--max-model-len", str(max_model_len)]
         )
@@ -279,13 +265,12 @@ def remote_openai_server(request):
             )
 
     else:
+        # TODO: validate that only pooling models reach this place
         warmup_shapes = params["warmup_shapes"]
         warmup_prompt_length = [t[0] for t in warmup_shapes]
-        warmup_new_tokens = [t[1] for t in warmup_shapes]
         warmup_batch_size = [t[2] for t in warmup_shapes]
         env_dict = {
             "VLLM_SPYRE_WARMUP_PROMPT_LENS": ",".join(map(str, warmup_prompt_length)),
-            "VLLM_SPYRE_WARMUP_NEW_TOKENS": ",".join(map(str, warmup_new_tokens)),
             "VLLM_SPYRE_WARMUP_BATCH_SIZES": ",".join(map(str, warmup_batch_size)),
             "VLLM_SPYRE_DYNAMO_BACKEND": backend,
         }

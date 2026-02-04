@@ -193,7 +193,6 @@ def check_scheduler_inference_steps(
     max_model_len: int,
     available_blocks: int,
     max_batch_tkv_limit: int = -1,
-    use_cb: bool = True,
     max_num_batched_tokens: int = None,
     random_prompts: bool = False,
     prefix_caching: bool = False,

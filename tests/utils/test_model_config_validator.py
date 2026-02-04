@@ -9,7 +9,6 @@ from transformers import AutoConfig
 from transformers.configuration_utils import PretrainedConfig
 from vllm.config import ModelConfig
 
-from vllm_spyre import envs as envs_spyre
 from vllm_spyre.config import runtime_config_validator
 from vllm_spyre.config.runtime_config_validator import (
     find_known_models_by_model_config,
@@ -94,7 +93,7 @@ def test_model_runtime_configurations_file_is_valid(monkeypatch, caplog):
                     for ws in c.warmup_shapes:
                         assert ws[0] % 64 == 0
                         assert ws[0] <= 32 * 1024
-                        assert ws[2] in [1, 2, 4, 8, 16, 32, 64]
+                        assert ws[1] in [1, 2, 4, 8, 16, 32, 64]
 
 
 @pytest.mark.utils
@@ -111,9 +110,9 @@ def test_model_runtime_configurations(monkeypatch, caplog):
         { cb: True,  tp_size: 4, max_model_len: 2048, max_num_seqs: 8 },
         { cb: True,  tp_size: 4, max_model_len: 4096, max_num_seqs: 4 },
         { cb: True,  tp_size: 4, max_model_len: 8192, max_num_seqs: 2 },
-        { cb: False, tp_size: 1, warmup_shapes: [[64, 20, 4], [128, 20, 2]] },
-        { cb: False, tp_size: 1, warmup_shapes: [[256, 20, 1]] },
-        { cb: False, tp_size: 2, warmup_shapes: [[64, 20, 4]] },
+        { cb: False, tp_size: 1, warmup_shapes: [[64, 4], [128, 2]] },
+        { cb: False, tp_size: 1, warmup_shapes: [[256, 1]] },
+        { cb: False, tp_size: 2, warmup_shapes: [[64, 4]] },
       ]
     """)
     runtime_config_validator.initialize_supported_configurations(test_configs)
@@ -126,8 +125,7 @@ def test_model_runtime_configurations(monkeypatch, caplog):
     with monkeypatch.context() as m:
         m.setenv("VLLM_SPYRE_DYNAMO_BACKEND", "sendnn")
 
-        # continuous batching validations
-        m.setenv("VLLM_SPYRE_USE_CB", "1")
+        # continuous batching validations)
 
         assert validate(model, 4, 2048, 8)
         assert not validate(unknown_model, 4, 2048, 8)
@@ -140,26 +138,16 @@ def test_model_runtime_configurations(monkeypatch, caplog):
         assert not validate(model, 4, 2047, 4)
         assert not validate(model, 4, 2048, 3)
 
-        # static batching validations
-        envs_spyre.override("VLLM_SPYRE_USE_CB", "0")
+        # pooling validations
 
-        assert validate(model, 1, warmup_shapes=[[64, 20, 4]])
-        assert validate(model, 1, warmup_shapes=[[128, 20, 2]])
+        assert validate(model, 1, warmup_shapes=[[64, 4]])
+        assert validate(model, 1, warmup_shapes=[[128, 2]])
         # validate that warmup_shape values adhere to restrictions (n*64, 2^n)
-        assert not validate(model, 1, warmup_shapes=[[63, 20, 4]])
-        assert not validate(model, 1, warmup_shapes=[[64, 20, 3]])
+        assert not validate(model, 1, warmup_shapes=[[63, 4]])
+        assert not validate(model, 1, warmup_shapes=[[64, 3]])
         # validate that the sequence of warmup_shapes does not matter
-        assert validate(model, 1, warmup_shapes=[[64, 20, 4], [128, 20, 2]])
-        assert validate(model, 1, warmup_shapes=[[128, 20, 2], [64, 20, 4]])
-        # validate that individual components of a warmup_shapes can be less
-        # than the upper bound of a supported config
-        assert validate(model, 1, warmup_shapes=[[128, 19, 2]])
-        assert validate(model, 2, warmup_shapes=[[64, 19, 4]])
-        assert validate(model, 2, warmup_shapes=[[64, 19, 2]])
-        # validate that config parameters do not exceed upper bounds
-        assert not validate(model, 1, warmup_shapes=[[128, 20, 4]])
-        assert not validate(model, 2, warmup_shapes=[[64, 20, 4], [128, 20, 2]])
-        assert not validate(model, 1, warmup_shapes=[[64, 20, 4], [128, 20, 2], [256, 20, 1]])
+        assert validate(model, 1, warmup_shapes=[[64, 4], [128, 2]])
+        assert validate(model, 1, warmup_shapes=[[128, 2], [64, 4]])
 
     # restore default configs for following tests
     runtime_config_validator.initialize_supported_configurations_from_file()

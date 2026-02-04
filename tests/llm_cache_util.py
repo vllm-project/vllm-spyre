@@ -2,7 +2,7 @@
 
 from typing import NamedTuple
 
-from spyre_util import DecodeWarmupShapes, ModelInfo
+from spyre_util import EmbeddingWarmupShapes, ModelInfo
 from vllm import LLM
 
 
@@ -54,14 +54,13 @@ class SortKey(NamedTuple):
     backend: str = ""
     model: str = ""
     tp_size: int = 1
-    use_cb: bool = False
     use_cp: bool = False
     use_pc: bool = False
     max_model_len: int = 0
     max_num_seqs: int = 0
     num_blocks: int = 0
     max_num_batched_tokens: int = 0
-    warmup_shapes: DecodeWarmupShapes | None = None
+    warmup_shapes: EmbeddingWarmupShapes | None = None
 
     @staticmethod
     def from_item(item) -> "SortKey":
@@ -76,17 +75,18 @@ class SortKey(NamedTuple):
             # test has no parameters at all
             return SortKey(cache_type="")
 
-        use_cb = SortKey._uses_cb(item)
         use_cp = SortKey._uses_cp(item)
         use_pc = SortKey._uses_pc(item)
-        if use_cb or use_cp:
+        warmup_shapes = SortKey._get_warmup_shapes(item)
+
+        if warmup_shapes[0][0] == -1:
             sort_kwargs = {
                 "max_model_len": SortKey._get_max_model_len(item),
                 "max_num_seqs": SortKey._get_max_num_seqs(item),
             }
         else:
             sort_kwargs = {
-                "warmup_shapes": SortKey._get_warmup_shapes(item),
+                "warmup_shapes": warmup_shapes,
             }
 
         return SortKey(
@@ -94,7 +94,6 @@ class SortKey(NamedTuple):
             model=SortKey._get_model(item),
             backend=SortKey._get_backend(item),
             tp_size=SortKey._get_tp_size(item),
-            use_cb=use_cb,
             use_cp=use_cp,
             use_pc=use_pc,
             num_blocks=SortKey._get_num_blocks(item),
@@ -136,21 +135,21 @@ class SortKey(NamedTuple):
         """True if the test uses chunked prefill.
         Checks for the pytest.mark.chunked_prefill mark."""
         markers = {mark.name for mark in item.own_markers}
-        return "chunked_prefill" in markers
+        return "chunked_prefill" in markers or "cp" in markers
 
     @staticmethod
     def _uses_pc(item) -> bool:
         """True if the test uses prefix caching.
         Checks for the pytest.mark.prefix_caching mark."""
         markers = {mark.name for mark in item.own_markers}
-        return "chunked_prefill" in markers and "prefix_caching" in markers
+        return "prefix_caching" in markers or "pc" in markers
 
     def _get_max_num_batched_tokens(item) -> int:
         """Chunk size for chunked prefill, if enabled"""
         params = item.callspec.params
         if "max_num_batched_tokens" in params:
             SortKey._assert_param(
-                isinstance(params["max_model_len"], int),
+                isinstance(params["max_num_batched_tokens"], int),
                 "max_num_batched_tokens must be an int",
                 item,
             )

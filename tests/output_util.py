@@ -12,7 +12,7 @@ import torch
 from hf_result_cache import HFResultCache
 from llm_cache import LLM_CACHE, get_cached_llm
 from sentence_transformers import SentenceTransformer, util
-from spyre_util import DecodeWarmupShapes, EmbeddingWarmupShapes, ModelInfo
+from spyre_util import EmbeddingWarmupShapes, ModelInfo
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, SamplingParams
 from vllm.transformers_utils.tokenizer import get_tokenizer
@@ -414,9 +414,7 @@ def validate_vllm_vs_hf_output(
     tensor_parallel_size: int,
     backend: str,
     monkeypatch: pytest.MonkeyPatch,
-    warmup_shapes: DecodeWarmupShapes | None = None,
     max_num_seqs: int | None = None,
-    use_cb: bool = False,
     use_golden_token=True,
     max_num_batched_tokens: int | None = None,
     use_pc: bool = False,
@@ -439,10 +437,8 @@ def validate_vllm_vs_hf_output(
         tensor_parallel_size=tensor_parallel_size,
         backend=backend,
         monkeypatch=monkeypatch,
-        warmup_shapes=warmup_shapes,
         max_num_seqs=max_num_seqs,
         max_num_batched_tokens=max_num_batched_tokens,
-        use_cb=use_cb,
         use_pc=use_pc,
     )
 
@@ -465,9 +461,7 @@ def generate_spyre_vllm_output(
     tensor_parallel_size: int,
     backend: str,
     monkeypatch: pytest.MonkeyPatch,
-    warmup_shapes: DecodeWarmupShapes | None = None,
     max_num_seqs: int | None = None,
-    use_cb: bool = False,
     max_num_batched_tokens: int | None = None,
     use_pc: bool = False,
 ) -> list[dict[str, Any]]:
@@ -481,10 +475,8 @@ def generate_spyre_vllm_output(
         tensor_parallel_size=tensor_parallel_size,
         backend=backend,
         monkeypatch=monkeypatch,
-        warmup_shapes=warmup_shapes,
         max_num_seqs=max_num_seqs,
         max_num_batched_tokens=max_num_batched_tokens,
-        use_cb=use_cb,
         use_pc=use_pc,
     )
 
@@ -498,24 +490,12 @@ def generate_spyre_vllm_output(
     return results
 
 
-def kwargs_for_mode(mode: str, max_num_seqs: int, warmup_shapes: DecodeWarmupShapes) -> dict:
+def kwargs_for_mode(mode: str) -> dict:
     """Returns kwargs for validate_vllm_vs_hf_output based on mode"""
-    return (
-        {
-            "max_num_seqs": max_num_seqs,
-            "use_cb": True,
-            "max_num_batched_tokens": 128 if mode in ["cp", "pc"] else None,
-            "use_pc": mode == "pc",
-            "warmup_shapes": None,
-        }
-        if mode != "sb"
-        else {
-            "warmup_shapes": warmup_shapes,
-            "use_cb": False,
-            "use_pc": False,
-            "max_num_batched_tokens": None,
-        }
-    )
+    return {
+        "max_num_batched_tokens": 128 if mode in ["cp", "pc"] else None,
+        "use_pc": mode == "pc",
+    }
 
 
 def extract_output(req_output):

@@ -52,8 +52,6 @@ class SpyreCausalLM(nn.Module):
     def __init__(
         self,
         vllm_config: VllmConfig,
-        max_prompt_length: int,
-        max_decode_length: int,
         rank: int,
     ) -> None:
         super().__init__()
@@ -73,15 +71,7 @@ class SpyreCausalLM(nn.Module):
         )
 
         # FMS Model
-        if envs_spyre.VLLM_SPYRE_USE_CB:
-            self.model = ContinuousBatchingFmsModel(vllm_config, rank)
-        else:
-            self.model = StaticBatchingFmsModel(
-                vllm_config,
-                max_prompt_length,
-                max_decode_length,
-                rank,
-            )
+        self.model = ContinuousBatchingFmsModel(vllm_config, rank)
 
         # Pull mm model utils / is_multimodal up a level for convenience
         self.mm_model_utils = self.model.mm_model_utils
@@ -94,9 +84,6 @@ class SpyreCausalLM(nn.Module):
         masks: torch.Tensor,
         is_prompt: bool,
     ) -> torch.Tensor:
-        if is_prompt and not envs_spyre.VLLM_SPYRE_USE_CB:
-            self.model.past_key_value_states = None
-
         extra_kwargs: dict[str, Any] = {}
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn":
             # Bug in 2.3.1 fixed in 2.4.1 for SDPA flash
@@ -113,16 +100,12 @@ class SpyreCausalLM(nn.Module):
             **extra_kwargs,
         )
 
-        if envs_spyre.VLLM_SPYRE_USE_CB:
-            if is_prompt and self.n_pads_right > 0:
-                # get last token before the right padding
-                logits = logits[self.indices, -self.n_pads_right - 1, :]
-            else:
-                # just take last token if no right padding
-                logits = logits[self.indices, -1, :]
+        if is_prompt and self.n_pads_right > 0:
+            # get last token before the right padding
+            logits = logits[self.indices, -self.n_pads_right - 1, :]
         else:
-            # removing finished or padded sequences
-            logits = logits[self.indices]
+            # just take last token if no right padding
+            logits = logits[self.indices, -1, :]
 
         return logits
 
@@ -661,65 +644,3 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             return logits
 
         return logits[0].unsqueeze(0)
-
-
-class StaticBatchingFmsModel(FmsModelBase):
-    def __init__(
-        self,
-        vllm_config: VllmConfig,
-        max_prompt_length: int,
-        max_decode_length: int,
-        rank: int,
-    ) -> None:
-        super().__init__(
-            vllm_config, max_prompt_length, max_decode_length, rank, sendnn_dynamic=False
-        )
-
-        # dynamic KV cache
-        self.past_key_value_states = None
-
-        if self.model_config.quantization:
-            self.attention_name = "math_fp8"
-        else:
-            self.attention_name = "sdpa_causal"
-
-    def forward(
-        self,
-        input_ids: torch.Tensor,
-        position_ids: torch.Tensor,
-        mask: torch.Tensor,
-        use_cache: bool,
-        **extra_kwargs,
-    ) -> torch.Tensor:
-        # specify attention type for static batching
-        extra_kwargs["attn_name"] = self.attention_name
-
-        # In order to calculate prompt logprobs, we have to return the
-        # hidden states from the whole prompt. The static graphs need to be
-        # compiled with this set one way or the other.
-        last_n_tokens = 0 if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS else 1
-
-        output = self.model(
-            input_ids,
-            position_ids=position_ids,
-            mask=mask,
-            past_key_value_states=self.past_key_value_states,
-            use_cache=use_cache,
-            last_n_tokens=last_n_tokens,
-            **extra_kwargs,
-        )
-
-        logits, self.past_key_value_states = output
-
-        if not envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
-            logits = logits.squeeze(1)
-
-        return logits
-
-    def get_dtype(self) -> torch.dtype:
-        # For static batching, we set fp16 on spyre and fp32 on cpu
-        # (This applies even when running fp8 quantized models)
-        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in BACKEND_LIST:
-            return torch.float16
-        else:
-            return torch.float32

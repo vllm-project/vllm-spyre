@@ -9,11 +9,10 @@ from output_util import validate_vllm_vs_hf_output, kwargs_for_mode
 from spyre_util import ModelInfo, get_chicken_soup_prompts, skip_unsupported_tp_size
 from vllm import SamplingParams
 
-sb_mark = pytest.param("sb", marks=pytest.mark.sb, id="sb")
 cb_mark = pytest.param("cb", marks=pytest.mark.cb, id="cb")
 
 
-@pytest.mark.parametrize("mode", [sb_mark, cb_mark])
+@pytest.mark.parametrize("mode", [cb_mark])
 def test_stagger_output(
     model: ModelInfo,
     tp_size: int,
@@ -21,7 +20,6 @@ def test_stagger_output(
     mode: str,
     max_num_seqs: int,
     max_model_len: int,
-    warmup_shapes,
     monkeypatch: pytest.MonkeyPatch,
     use_llm_cache,
 ) -> None:
@@ -40,8 +38,8 @@ def test_stagger_output(
     monkeypatch.setenv("VLLM_SPYRE_MAX_LOAD_PROCESSES", "1")
 
     prompts = get_chicken_soup_prompts(4)
-    warmup_shape = (64, 20, 4)
-    max_new_tokens = warmup_shape[1]
+
+    max_new_tokens = 20
 
     vllm_sampling_params = SamplingParams(
         max_tokens=max_new_tokens,
@@ -59,5 +57,6 @@ def test_stagger_output(
         monkeypatch=monkeypatch,
         max_model_len=max_model_len,
         max_new_tokens=max_new_tokens,
-        **kwargs_for_mode(mode, max_num_seqs, warmup_shapes),
+        max_num_seqs=max_num_seqs,
+        **kwargs_for_mode(mode),
     )

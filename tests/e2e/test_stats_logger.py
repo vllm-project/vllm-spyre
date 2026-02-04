@@ -15,7 +15,6 @@ def test_file_stats_logger(model: ModelInfo, max_model_len, max_num_seqs, tmp_pa
 
     envs_spyre.override("VLLM_SPYRE_PERF_METRIC_LOGGING_ENABLED", "1")
     envs_spyre.override("VLLM_SPYRE_PERF_METRIC_LOGGING_DIR", str(tmp_path))
-    envs_spyre.override("VLLM_SPYRE_USE_CB", "1")
     envs_spyre.override("VLLM_SPYRE_DYNAMO_BACKEND", "eager")
 
     model = LLM(

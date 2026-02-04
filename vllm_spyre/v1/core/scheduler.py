@@ -39,8 +39,8 @@ class SpyreScheduler(Scheduler):
         self.model_config = self.vllm_config.model_config
 
 
-class StaticBatchingSpyreScheduler(SpyreScheduler):
-    """Support of static batching"""
+class PoolingSpyreScheduler(SpyreScheduler):
+    """Support of pooling models"""
 
     def __init__(self, *args, **kwargs) -> None:
         # Initialize SpyreScheduler
@@ -130,15 +130,10 @@ class StaticBatchingSpyreScheduler(SpyreScheduler):
         self, request: Request, warmup_shapes: list[dict[str, int]], current_batch_size: int
     ) -> list[dict[str, int]]:
         """Return the subset of shapes that match this request"""
-        max_tokens = 0
-        if request.sampling_params is not None and request.sampling_params.max_tokens is not None:
-            max_tokens = request.sampling_params.max_tokens
-
         return [
             shape
             for shape in warmup_shapes
             if request.num_prompt_tokens <= shape["prompt_length"]
-            and max_tokens <= shape["new_tokens"]
             and current_batch_size < shape["batch_size"]
         ]
 

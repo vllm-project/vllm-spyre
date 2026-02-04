@@ -194,27 +194,17 @@ def match_from_model_config_file(compilation_config: dict, vllm_config: VllmConf
         return False
 
     if "VLLM_SPYRE_WARMUP_PROMPT_LENS" in vllm_configs:
-        if envs_spyre.VLLM_SPYRE_USE_CB:
+        get_list = lambda x: [int(i) for i in x.split(",")]
+
+        prompt_lens = get_list(vllm_configs["VLLM_SPYRE_WARMUP_PROMPT_LENS"])
+        batch_sizes = get_list(vllm_configs["VLLM_SPYRE_WARMUP_BATCH_SIZES"])
+
+        if prompt_lens != envs_spyre.VLLM_SPYRE_WARMUP_PROMPT_LENS:
             return False
-        else:
-            get_list = lambda x: [int(i) for i in x.split(",")]
 
-            prompt_lens = get_list(vllm_configs["VLLM_SPYRE_WARMUP_PROMPT_LENS"])
-            new_tokens = get_list(vllm_configs["VLLM_SPYRE_WARMUP_NEW_TOKENS"])
-            batch_sizes = get_list(vllm_configs["VLLM_SPYRE_WARMUP_BATCH_SIZES"])
-
-            if prompt_lens != envs_spyre.VLLM_SPYRE_WARMUP_PROMPT_LENS:
-                return False
-
-            if new_tokens != envs_spyre.VLLM_SPYRE_WARMUP_NEW_TOKENS:
-                return False
-
-            if batch_sizes != envs_spyre.VLLM_SPYRE_WARMUP_BATCH_SIZES:
-                return False
+        if batch_sizes != envs_spyre.VLLM_SPYRE_WARMUP_BATCH_SIZES:
+            return False
     else:
-        if not envs_spyre.VLLM_SPYRE_USE_CB:
-            return False
-
         context_len = vllm_configs["VLLM_DT_MAX_CONTEXT_LEN"]
         batch_size = vllm_configs["VLLM_DT_MAX_BATCH_SIZE"]
 

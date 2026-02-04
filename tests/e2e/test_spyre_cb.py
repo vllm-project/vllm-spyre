@@ -55,7 +55,6 @@ def test_cb_max_tokens(
             tensor_parallel_size=1,
             backend=backend,
             max_num_seqs=max_num_seqs,
-            use_cb=True,
             max_num_batched_tokens=(128 if mode == "cp" else None),
             monkeypatch=monkeypatch,
         )
@@ -127,7 +126,6 @@ def test_long_context_batches(
 
     skip_unsupported_tp_size(tp_size, backend)
 
-    monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1")
 
@@ -284,7 +282,6 @@ def test_swap_decode_programs_for_cb(
         max_num_seqs=max_num_seqs,
         monkeypatch=monkeypatch,
         max_model_len=max_model_len,
-        use_cb=True,
     )
 
     # TODO: dummy validation, currently the outputs do not match with
