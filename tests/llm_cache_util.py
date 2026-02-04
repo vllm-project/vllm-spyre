@@ -79,7 +79,7 @@ class SortKey(NamedTuple):
         use_pc = SortKey._uses_pc(item)
         warmup_shapes = SortKey._get_warmup_shapes(item)
 
-        if warmup_shapes[0] == -1:
+        if warmup_shapes[0][0] == -1:
             sort_kwargs = {
                 "max_model_len": SortKey._get_max_model_len(item),
                 "max_num_seqs": SortKey._get_max_num_seqs(item),
@@ -149,7 +149,7 @@ class SortKey(NamedTuple):
         params = item.callspec.params
         if "max_num_batched_tokens" in params:
             SortKey._assert_param(
-                isinstance(params["max_model_len"], int),
+                isinstance(params["max_num_batched_tokens"], int),
                 "max_num_batched_tokens must be an int",
                 item,
             )

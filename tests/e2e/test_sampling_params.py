@@ -201,6 +201,7 @@ def test_spyre_batch1_logit_bias(
     use_llm_cache,
     max_model_len,
     max_num_seqs,
+    max_num_batched_tokens,
     mode: str,
 ):
     spyre_model = get_cached_llm(
@@ -210,7 +211,7 @@ def test_spyre_batch1_logit_bias(
         backend=backend,
         monkeypatch=monkeypatch,
         max_num_seqs=max_num_seqs if mode == "cb" or mode == "cp" else None,
-        max_num_batched_tokens=128 if mode == "cp" else None,
+        max_num_batched_tokens=max_num_batched_tokens if mode == "cp" else None,
     )
     tokenizer = spyre_model.get_tokenizer()
     banned_word = "train"
