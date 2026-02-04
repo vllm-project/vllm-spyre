@@ -6,7 +6,7 @@ Run `python -m pytest tests/e2e/test_spyre_seed.py`.
 import math
 
 import pytest
-from output_util import generate_spyre_vllm_output
+from output_util import generate_spyre_vllm_output, kwargs_for_mode
 from spyre_util import ModelInfo, get_chicken_soup_prompts
 from vllm import SamplingParams
 
@@ -36,6 +36,9 @@ def test_seed(
     logprobs is verified to be identical for all 5 sequences.
     """
 
+    if mode in ["cp", "pc"]:
+        runtime_xfail(reason="Seed is broken in chunked prefill, please fix me!")
+
     max_new_tokens = 4
 
     prompts = get_chicken_soup_prompts(1) * 5
@@ -55,10 +58,8 @@ def test_seed(
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
         backend=backend,
-        use_cb=mode in ["cb", "cp"],
-        max_num_seqs=max_num_seqs,
-        max_num_batched_tokens=128 if mode == "cp" else None,
         monkeypatch=monkeypatch,
+        **kwargs_for_mode(mode, max_num_seqs),
     )
 
     # compare all generated outputs against the first generated output

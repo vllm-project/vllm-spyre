@@ -5,7 +5,7 @@ Run `python -m pytest tests/e2e/test_stagger_spyre_basic.py`.
 """
 
 import pytest
-from output_util import validate_vllm_vs_hf_output
+from output_util import validate_vllm_vs_hf_output, kwargs_for_mode
 from spyre_util import ModelInfo, get_chicken_soup_prompts, skip_unsupported_tp_size
 from vllm import SamplingParams
 
@@ -32,6 +32,9 @@ def test_stagger_output(
     """
 
     skip_unsupported_tp_size(tp_size, backend)
+    if tp_size == 1:
+        pytest.skip("Stagger loading mode only relevant for TP>1")
+
     monkeypatch.setenv("VLLM_SPYRE_MAX_LOAD_PROCESSES", "1")
 
     prompts = get_chicken_soup_prompts(4)
@@ -59,5 +62,5 @@ def test_stagger_output(
         monkeypatch=monkeypatch,
         max_model_len=max_model_len,
         max_new_tokens=max_new_tokens,
-        **kwargs,
+        **kwargs_for_mode(mode, max_num_seqs),
     )

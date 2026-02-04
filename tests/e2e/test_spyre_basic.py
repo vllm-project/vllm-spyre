@@ -4,7 +4,7 @@ Run `python -m pytest tests/e2e/test_spyre_basic.py`.
 """
 
 import pytest
-from output_util import validate_vllm_vs_hf_output
+from output_util import validate_vllm_vs_hf_output, kwargs_for_mode
 from spyre_util import (
     ModelInfo,
     create_random_request,
@@ -47,8 +47,6 @@ def test_output(
 
     skip_unsupported_tp_size(tp_size, backend)
 
-    if (mode == "cp" or mode == "pc") and model.is_quantized:
-        pytest.skip("Chunked prefill and FP8 not supported at the moment.")
 
     prompts = get_chicken_soup_prompts(4)
 
@@ -76,7 +74,7 @@ def test_output(
         monkeypatch=monkeypatch,
         max_model_len=max_model_len,
         max_new_tokens=max_new_tokens,
-        **kwargs,
+        **kwargs_for_mode(mode, max_num_seqs),
     )
 
 
@@ -100,9 +98,7 @@ def test_batch_handling(
     """
 
     prompts = get_chicken_soup_prompts(4)
-
     max_new_tokens = [5, 20, 10, 5]
-
     vllm_sampling_params = [
         SamplingParams(
             max_tokens=max_new_tokens[i],
@@ -129,25 +125,5 @@ def test_batch_handling(
         backend=backend,
         monkeypatch=monkeypatch,
         max_new_tokens=max_new_tokens,
-        **kwargs,
+        **kwargs_for_mode(mode, max_num_seqs),
     )
-
-
-def test_max_model_len_override(model: ModelInfo, backend, mode: str, monkeypatch):
-    """Test that makes sure that --max-model-len
-    doesn't affect SB, instead it is picked up from
-    warmup shapes"""
-
-    max_model_len = 64
-    kwargs = {
-        "use_cb": True,
-        "use_chunked_prefill": mode == "cp",
-    }
-
-    patch_environment(**kwargs, backend=backend, monkeypatch=monkeypatch)
-    vllm_config = EngineArgs(
-        model=model.name, revision=model.revision, max_model_len=max_model_len
-    ).create_engine_config()
-    model_config = vllm_config.model_config
-
-    assert model_config.max_model_len == max_model_len

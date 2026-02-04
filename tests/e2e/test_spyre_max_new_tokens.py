@@ -4,7 +4,7 @@ Run `python -m pytest tests/e2e/test_spyre_max_new_tokens.py`.
 """
 
 import pytest
-from output_util import validate_vllm_vs_hf_output
+from output_util import validate_vllm_vs_hf_output, kwargs_for_mode
 from spyre_util import ModelInfo, get_chicken_soup_prompts
 from vllm import SamplingParams
 
@@ -76,5 +76,5 @@ def test_output(
         monkeypatch=monkeypatch,
         max_new_tokens=hf_max_new_tokens,
         max_model_len=max_model_len,
-        **kwargs,
+        **kwargs_for_mode(mode, max_num_seqs),
     )
