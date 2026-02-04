@@ -646,46 +646,6 @@ class SpyreModelRunner(
         return len(request.prompt_token_ids)
 
 
-class WarmupShapesMixin:
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        vllm_config: VllmConfig = kwargs["vllm_config"]
-        self.spyre_warmup_shapes = SpyrePlatform.get_warmup_shapes(vllm_config.scheduler_config)
-
-    def _get_padded_batch_size(self, new_requests: list[NewRequestData]):
-        # find warmup shape to be used for padding and batching
-        applicable_spyre_warmup_shapes = [
-            shape for shape in self.spyre_warmup_shapes if len(new_requests) <= shape["batch_size"]
-        ]
-        for request_data in new_requests:
-            # retrieve initial (unpadded) tokens
-            prompt_tokens = request_data.prompt_token_ids
-            new_tokens = (
-                request_data.sampling_params.max_tokens
-                if request_data.sampling_params is not None
-                else 0
-            )
-
-            updated_spyre_warmup_shapes = [
-                shape
-                for shape in applicable_spyre_warmup_shapes
-                if len(prompt_tokens) <= shape["prompt_length"]  # ty: ignore[invalid-argument-type]
-                and new_tokens <= shape["new_tokens"]  # ty: ignore[unsupported-operator]
-            ]
-            applicable_spyre_warmup_shapes = updated_spyre_warmup_shapes
-
-        assert applicable_spyre_warmup_shapes, (
-            "No shapes available to run prefill batch. (This should not happen)"
-        )
-
-        # If multiple warmup shapes apply, the first one is selected.
-        # For improving performance, the warmup shapes in scheduler_config
-        # are ordered by "processing speed".
-        min_pad_length_batch = applicable_spyre_warmup_shapes[0]["prompt_length"]
-        padded_batch_size = applicable_spyre_warmup_shapes[0]["batch_size"]
-        return padded_batch_size, min_pad_length_batch
-
-
 class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
     def __init__(
         self,
@@ -1408,7 +1368,6 @@ def _cls(input: torch.Tensor) -> torch.Tensor:
 
 
 class SpyrePoolingModelRunner(
-    WarmupShapesMixin,
     BaseSpyreModelRunner[PoolingInputBatch, PoolingRequestState, PoolingForwardInputs],
 ):
     def __init__(
@@ -1419,6 +1378,8 @@ class SpyrePoolingModelRunner(
     ):
         super().__init__(vllm_config=vllm_config, is_driver_worker=is_driver_worker, rank=rank)
 
+        vllm_config: VllmConfig = vllm_config
+        self.spyre_warmup_shapes = SpyrePlatform.get_warmup_shapes(vllm_config.scheduler_config)
         # position_ids of all the sequences in current batch
         self._position_ids: torch.Tensor = None
         self.use_token_type_ids = False
@@ -1602,6 +1563,32 @@ class SpyrePoolingModelRunner(
         else:
             locs = torch.where(input_ids == self.sep_token_id, 1, 0)
             return locs.cumsum(dim=1) - locs
+
+    def _get_padded_batch_size(self, new_requests: list[NewRequestData]):
+        # find warmup shape to be used for padding and batching
+        applicable_spyre_warmup_shapes = [
+            shape for shape in self.spyre_warmup_shapes if len(new_requests) <= shape["batch_size"]
+        ]
+        for request_data in new_requests:
+            # retrieve initial (unpadded) tokens
+            prompt_tokens = request_data.prompt_token_ids
+            updated_spyre_warmup_shapes = [
+                shape
+                for shape in applicable_spyre_warmup_shapes
+                if len(prompt_tokens) <= shape["prompt_length"]  # ty: ignore[invalid-argument-type]
+            ]
+            applicable_spyre_warmup_shapes = updated_spyre_warmup_shapes
+
+        assert applicable_spyre_warmup_shapes, (
+            "No shapes available to run prefill batch. (This should not happen)"
+        )
+
+        # If multiple warmup shapes apply, the first one is selected.
+        # For improving performance, the warmup shapes in scheduler_config
+        # are ordered by "processing speed".
+        min_pad_length_batch = applicable_spyre_warmup_shapes[0]["prompt_length"]
+        padded_batch_size = applicable_spyre_warmup_shapes[0]["batch_size"]
+        return padded_batch_size, min_pad_length_batch
 
     def _prepare_prompt(
         self,

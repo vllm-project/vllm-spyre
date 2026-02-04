@@ -191,7 +191,7 @@ class SpyrePlatform(Platform):
             max_seq_len = 0
             for shape in spyre_warmup_shapes:
                 max_batch_size = max(max_batch_size, shape["batch_size"])
-                max_seq_len = max(max_seq_len, shape["prompt_length"] + shape["new_tokens"])
+                max_seq_len = max(max_seq_len, shape["prompt_length"])
 
             if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS and max_batch_size > 1:
                 raise ValueError("Prompt logprobs only supported with batch size 1")
@@ -358,7 +358,7 @@ class SpyrePlatform(Platform):
             sorted(
                 [
                     {"prompt_length": pl, "batch_size": bs}
-                    for pl, nt, bs in zip(wup_prompt_lens, wup_batch_sizes)
+                    for pl, bs in zip(wup_prompt_lens, wup_batch_sizes)
                 ],
                 key=operator.itemgetter("batch_size", "prompt_length"),
             )
