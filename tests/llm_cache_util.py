@@ -135,14 +135,14 @@ class SortKey(NamedTuple):
         """True if the test uses chunked prefill.
         Checks for the pytest.mark.chunked_prefill mark."""
         markers = {mark.name for mark in item.own_markers}
-        return "chunked_prefill" in markers
+        return "chunked_prefill" in markers or "cp" in markers
 
     @staticmethod
     def _uses_pc(item) -> bool:
         """True if the test uses prefix caching.
         Checks for the pytest.mark.prefix_caching mark."""
         markers = {mark.name for mark in item.own_markers}
-        return "chunked_prefill" in markers and "prefix_caching" in markers
+        return "prefix_caching" in markers or "pc" in markers
 
     def _get_max_num_batched_tokens(item) -> int:
         """Chunk size for chunked prefill, if enabled"""
