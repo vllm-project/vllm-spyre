@@ -211,7 +211,6 @@ def test_spyre_batch1_logit_bias(
         monkeypatch=monkeypatch,
         max_num_seqs=max_num_seqs if mode == "cb" or mode == "cp" else None,
         max_num_batched_tokens=128 if mode == "cp" else None,
-        use_cb=mode == "cb" or mode == "cp",
     )
     tokenizer = spyre_model.get_tokenizer()
     banned_word = "train"
@@ -261,7 +260,6 @@ def test_spyre_batch1_min_tokens(
         monkeypatch=monkeypatch,
         max_num_seqs=max_num_seqs if mode == "cb" or mode == "cp" else None,
         max_num_batched_tokens=128 if mode == "cp" else None,
-        use_cb=mode == "cb" or mode == "cp",
     )
     prompt = "What is the capital of the USA?"
     tokenizer = spyre_model.get_tokenizer()
@@ -323,7 +321,6 @@ def test_spyre_batch1_min_p(
         monkeypatch=monkeypatch,
         max_num_seqs=max_num_seqs if mode == "cb" or mode == "cp" else None,
         max_num_batched_tokens=128 if mode == "cp" else None,
-        use_cb=mode == "cb" or mode == "cp",
     )
     prompt = "The opposite of black is"
     params1 = SamplingParams(min_p=0.5, temperature=1, max_tokens=5)

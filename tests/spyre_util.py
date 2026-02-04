@@ -36,7 +36,6 @@ EmbeddingWarmupShapes = list[tuple[int, int]]
 
 
 def patch_environment(
-    use_cb: bool,
     backend: str,
     monkeypatch,
     use_chunked_prefill: bool = False,
@@ -45,17 +44,11 @@ def patch_environment(
 ):
     # Setup the environment correctly for the LLM
 
-    # ---- For static batching ----
+    # ---- For pooling ----
     if warmup_shapes:
-        assert not use_cb, (
-            "Warmup shapes through environment variables have "
-            "been deprecated in continuous batching"
-        )
-
         patch_warmup_shapes(warmup_shapes, monkeypatch)
 
     # --------------
-    monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1" if use_cb else "0")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
     monkeypatch.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", "1" if use_chunked_prefill else "0")
     # NB: setting this env var explicitly is needed to set the desired value for

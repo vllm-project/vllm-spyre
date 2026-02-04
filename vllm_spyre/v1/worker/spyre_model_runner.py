@@ -2,7 +2,6 @@ import math
 import os
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from logging import DEBUG
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, Union, cast
@@ -205,7 +204,7 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
         return self.model.mm_model_utils
 
     @abstractmethod
-    def load_model(self, prompt_lens: Iterable[int], num_decode_tokens: Iterable[int]) -> None:
+    def load_model(self) -> None:
         raise NotImplementedError
 
     def _prepare_pad_input_ids(
@@ -341,13 +340,9 @@ class SpyreModelRunner(
     def __init__(self, vllm_config: VllmConfig, is_driver_worker: bool, rank: int):
         super().__init__(vllm_config=vllm_config, is_driver_worker=is_driver_worker, rank=rank)
 
-    def load_model(self, prompt_lens: Iterable[int], num_decode_tokens: Iterable[int]) -> None:
-        max_pad_length = max(prompt_lens)
-        max_decode_length = max(num_decode_tokens)
+    def load_model(self) -> None:
         self._model = SpyreCausalLM(
             vllm_config=self.vllm_config,
-            max_prompt_length=max_pad_length,
-            max_decode_length=max_decode_length,
             rank=self.rank,
         )
 
@@ -1441,7 +1436,7 @@ class SpyrePoolingModelRunner(
             vocab_size=self.model_config.get_vocab_size(),
         )
 
-    def load_model(self, prompt_lens: Iterable[int], num_decode_tokens: Iterable[int]) -> None:
+    def load_model(self) -> None:
         assert len(self.model_config.architectures) == 1
         task = (
             "classify"

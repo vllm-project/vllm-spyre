@@ -110,7 +110,6 @@ class LLMCache:
         monkeypatch: pytest.MonkeyPatch,
         warmup_shapes: EmbeddingWarmupShapes | None = None,
         max_num_seqs: int | None = None,
-        use_cb: bool = True,
         use_pc: bool = False,
         max_num_batched_tokens: int | None = None,
     ) -> LLM:
@@ -123,14 +122,13 @@ class LLMCache:
             "model": model,
             "tensor_parallel_size": tensor_parallel_size,
             "backend": backend,
-            "use_cb": use_cb,
             "use_pc": use_pc,
             "max_num_batched_tokens": max_num_batched_tokens,
         }
-        if use_cb:
-            runtime_config.update({"max_model_len": max_model_len, "max_num_seqs": max_num_seqs})
-        elif warmup_shapes:
+        if warmup_shapes:
             runtime_config.update({"warmup_shapes": tuple(warmup_shapes)})
+        else:
+            runtime_config.update({"max_model_len": max_model_len, "max_num_seqs": max_num_seqs})
 
         # Always patch the environment so that it's consistent with the LLM
         # Use chunked prefill if max_num_batched_tokens is set
@@ -138,7 +136,6 @@ class LLMCache:
         if use_pc:
             assert use_chunked_prefill
         patch_environment(
-            use_cb,
             backend,
             monkeypatch,
             use_chunked_prefill=use_chunked_prefill,
@@ -214,7 +211,6 @@ class EngineCache:
         if use_pc:
             assert use_chunked_prefill
         patch_environment(
-            use_cb=True,
             backend=backend,
             monkeypatch=monkeypatch,
             use_chunked_prefill=use_chunked_prefill,
@@ -366,7 +362,6 @@ def get_cached_llm(
     monkeypatch: pytest.MonkeyPatch,
     warmup_shapes: EmbeddingWarmupShapes | None = None,
     max_num_seqs: int | None = None,
-    use_cb: bool = True,
     max_num_batched_tokens: int | None = None,
     use_pc: bool = False,
 ) -> LLM:
@@ -382,7 +377,6 @@ def get_cached_llm(
         monkeypatch=monkeypatch,
         warmup_shapes=warmup_shapes,
         max_num_seqs=max_num_seqs,
-        use_cb=use_cb,
         use_pc=use_pc,
         max_num_batched_tokens=max_num_batched_tokens,
     )

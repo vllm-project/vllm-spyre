@@ -54,7 +54,6 @@ class SortKey(NamedTuple):
     backend: str = ""
     model: str = ""
     tp_size: int = 1
-    use_cb: bool = True
     use_cp: bool = False
     use_pc: bool = False
     max_model_len: int = 0
@@ -76,17 +75,18 @@ class SortKey(NamedTuple):
             # test has no parameters at all
             return SortKey(cache_type="")
 
-        use_cb = SortKey._uses_cb(item)
         use_cp = SortKey._uses_cp(item)
         use_pc = SortKey._uses_pc(item)
-        if use_cb or use_cp:
+        warmup_shapes = SortKey._get_warmup_shapes(item)
+
+        if warmup_shapes[0] == -1:
             sort_kwargs = {
                 "max_model_len": SortKey._get_max_model_len(item),
                 "max_num_seqs": SortKey._get_max_num_seqs(item),
             }
         else:
             sort_kwargs = {
-                "warmup_shapes": SortKey._get_warmup_shapes(item),
+                "warmup_shapes": warmup_shapes,
             }
 
         return SortKey(
@@ -94,7 +94,6 @@ class SortKey(NamedTuple):
             model=SortKey._get_model(item),
             backend=SortKey._get_backend(item),
             tp_size=SortKey._get_tp_size(item),
-            use_cb=use_cb,
             use_cp=use_cp,
             use_pc=use_pc,
             num_blocks=SortKey._get_num_blocks(item),

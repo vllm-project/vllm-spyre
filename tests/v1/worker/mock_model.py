@@ -290,7 +290,6 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
         """A fixture that returns a model runner configured for prefix caching."""
 
         patch_environment(
-            use_cb=True,
             warmup_shapes=None,
             backend="eager",
             monkeypatch=monkeypatch,

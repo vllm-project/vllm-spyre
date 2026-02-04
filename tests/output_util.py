@@ -415,7 +415,6 @@ def validate_vllm_vs_hf_output(
     backend: str,
     monkeypatch: pytest.MonkeyPatch,
     max_num_seqs: int | None = None,
-    use_cb: bool = True,
     use_golden_token=True,
     max_num_batched_tokens: int | None = None,
     use_pc: bool = False,
@@ -440,7 +439,6 @@ def validate_vllm_vs_hf_output(
         monkeypatch=monkeypatch,
         max_num_seqs=max_num_seqs,
         max_num_batched_tokens=max_num_batched_tokens,
-        use_cb=use_cb,
         use_pc=use_pc,
     )
 
@@ -464,7 +462,6 @@ def generate_spyre_vllm_output(
     backend: str,
     monkeypatch: pytest.MonkeyPatch,
     max_num_seqs: int | None = None,
-    use_cb: bool = True,
     max_num_batched_tokens: int | None = None,
     use_pc: bool = False,
 ) -> list[dict[str, Any]]:
@@ -480,7 +477,6 @@ def generate_spyre_vllm_output(
         monkeypatch=monkeypatch,
         max_num_seqs=max_num_seqs,
         max_num_batched_tokens=max_num_batched_tokens,
-        use_cb=use_cb,
         use_pc=use_pc,
     )
 
@@ -494,11 +490,9 @@ def generate_spyre_vllm_output(
     return results
 
 
-def kwargs_for_mode(mode: str, max_num_seqs: int) -> dict:
+def kwargs_for_mode(mode: str) -> dict:
     """Returns kwargs for validate_vllm_vs_hf_output based on mode"""
     return {
-        "max_num_seqs": max_num_seqs,
-        "use_cb": True,
         "max_num_batched_tokens": 128 if mode in ["cp", "pc"] else None,
         "use_pc": mode == "pc",
     }

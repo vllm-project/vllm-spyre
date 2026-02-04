@@ -168,7 +168,6 @@ def test_prompts_aligned_with_tkv_boundaries(
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=True,
     )
 
 
@@ -327,7 +326,6 @@ def test_prompts_misaligned_with_tkv_boundaries(
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=True,
     )
 
 
@@ -475,7 +473,6 @@ def test_two_sequences_finish_same_time_as_new_arrive(
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=True,
     )
 
 
@@ -661,7 +658,6 @@ def test_new_sequence_joins_during_decode(
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=True,
     )
 
 
@@ -798,7 +794,6 @@ def test_prompt_too_long_for_current_tkv(
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=True,
     )
 
 
@@ -961,7 +956,6 @@ def test_prefill_tkv_too_big(
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=True,
     )
 
 
@@ -1095,7 +1089,6 @@ def test_prefill_use_more_than_available_blocks(
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=True,
     )
 
 
@@ -1267,7 +1260,6 @@ def test_requested_tokens_not_fitting_remaining_space(
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=True,
     )
 
 
@@ -1407,7 +1399,6 @@ def test_requests_use_all_available_blocks(
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=True,
     )
 
 
@@ -1574,7 +1565,6 @@ def test_requests_use_more_than_available_blocks(
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=True,
     )
 
 
@@ -1682,7 +1672,6 @@ def test_requests_use_full_batch_tkv_limit(
         max_model_len=max_model_len,
         available_blocks=available_blocks,
         max_batch_tkv_limit=max_batch_tkv_limit,
-        use_cb=True,
     )
 
 
@@ -1804,5 +1793,4 @@ def test_requests_exceed_batch_tkv_limit(
         max_model_len=max_model_len,
         available_blocks=available_blocks,
         max_batch_tkv_limit=max_batch_tkv_limit,
-        use_cb=True,
     )

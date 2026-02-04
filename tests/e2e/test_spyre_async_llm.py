@@ -59,13 +59,10 @@ async def test_abort(
     with monkeypatch.context() as m, ExitStack() as after:
         patch_kwargs = (
             {
-                "use_cb": True,
                 "use_chunked_prefill": mode in ["cp", "pc"],
             }
-            if mode in ["cb", "cp", "pc"]
-            else {
-                "use_cb": False,
-            }
+            if mode in ["cp", "pc"]
+            else {}
         )
         patch_environment(
             **patch_kwargs,

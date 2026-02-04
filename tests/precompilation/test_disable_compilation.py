@@ -20,7 +20,6 @@ def test_handle_disable_compilation(model, caplog_vllm_spyre, monkeypatch, tmp_p
     # Patch version to avoid test failures around version mismatch
     monkeypatch.setattr("vllm_spyre._version.version", "0.8.0")
 
-    monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
     sample_model_config = {
         "vllm_spyre_version": "0.8.0",
         "data": {
@@ -69,7 +68,6 @@ def test_handle_disable_compilation_catalog(
     # Patch version to avoid test failures around version mismatch
     monkeypatch.setattr("vllm_spyre._version.version", "0.8.0")
 
-    monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
     sample_model_config1 = {
         "vllm_spyre_version": "0.8.0",
         "data": {
@@ -129,7 +127,6 @@ def test_catalog_config_mismatch(model, caplog_vllm_spyre, monkeypatch, tmp_path
     # Patch version to avoid test failures around version mismatch
     monkeypatch.setattr("vllm_spyre._version.version", "0.8.0")
 
-    monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
     sample_model_config1 = {
         "vllm_spyre_version": "0.8.0",
         "data": {

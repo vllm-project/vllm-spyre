@@ -9,7 +9,6 @@ from transformers import AutoConfig
 from transformers.configuration_utils import PretrainedConfig
 from vllm.config import ModelConfig
 
-from vllm_spyre import envs as envs_spyre
 from vllm_spyre.config import runtime_config_validator
 from vllm_spyre.config.runtime_config_validator import (
     find_known_models_by_model_config,
@@ -126,8 +125,7 @@ def test_model_runtime_configurations(monkeypatch, caplog):
     with monkeypatch.context() as m:
         m.setenv("VLLM_SPYRE_DYNAMO_BACKEND", "sendnn")
 
-        # continuous batching validations
-        m.setenv("VLLM_SPYRE_USE_CB", "1")
+        # continuous batching validations)
 
         assert validate(model, 4, 2048, 8)
         assert not validate(unknown_model, 4, 2048, 8)
@@ -140,8 +138,7 @@ def test_model_runtime_configurations(monkeypatch, caplog):
         assert not validate(model, 4, 2047, 4)
         assert not validate(model, 4, 2048, 3)
 
-        # static batching validations
-        envs_spyre.override("VLLM_SPYRE_USE_CB", "0")
+        # pooling validations
 
         assert validate(model, 1, warmup_shapes=[[64, 4]])
         assert validate(model, 1, warmup_shapes=[[128, 2]])

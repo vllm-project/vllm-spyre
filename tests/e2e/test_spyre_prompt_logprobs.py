@@ -74,7 +74,6 @@ def test_prompt_logprobs_not_supported_with_cb(model: str, monkeypatch: pytest.M
     # Server shouldn't boot with both prompt logprobs and continuous batching
     # enabled
     monkeypatch.setenv("VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS", "1")
-    monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
 
     with pytest.raises(ValueError, match="continuous batching"):
         VllmConfig(

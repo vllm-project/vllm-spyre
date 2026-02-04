@@ -89,7 +89,7 @@ def test_compare_graphs_cb(
 
     # need for the mocker
     monkeypatch.setenv("VLLM_ENABLE_V1_MULTIPROCESSING", 0)
-    patch_environment(use_cb=True, backend="sendnn", monkeypatch=monkeypatch)
+    patch_environment(backend="sendnn", monkeypatch=monkeypatch)
 
     # NB: We need AFTU and vllm-spyre to have the same number of paged
     # attention blocks for the graph comparison.
@@ -182,7 +182,6 @@ def test_compare_graphs_chunked_prefill(
 
     monkeypatch.setenv("VLLM_DT_CHUNK_LEN", str(chunk_size))
     patch_environment(
-        use_cb=True,
         backend="sendnn",
         monkeypatch=monkeypatch,
         use_chunked_prefill=True,

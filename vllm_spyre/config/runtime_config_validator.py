@@ -230,14 +230,11 @@ def validate_runtime_configuration(
         logger.warning("Model '%s' is not supported", model)
         return False
 
-    use_cb = envs_spyre.VLLM_SPYRE_USE_CB
-
     requested_config = RuntimeConfiguration(
-        cb=use_cb,
         tp_size=tp_size,
-        max_model_len=max_model_len if use_cb else 0,
-        max_num_seqs=max_num_seqs if use_cb else 0,
-        warmup_shapes=warmup_shapes if not use_cb else None,
+        max_model_len=max_model_len,
+        max_num_seqs=max_num_seqs,
+        warmup_shapes=warmup_shapes,
     )
 
     if not verify_config_parameters(requested_config):

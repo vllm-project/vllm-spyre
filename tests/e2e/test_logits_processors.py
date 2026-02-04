@@ -36,7 +36,6 @@ def test_custom_logits_processor(
             return logits
 
     patch_environment(
-        use_cb=mode in ["cb", "cp", "pc"],
         backend=backend,
         use_chunked_prefill=mode in ["cp", "pc"],
         monkeypatch=monkeypatch,
@@ -127,7 +126,6 @@ def test_cb_logits_processor(model: ModelInfo, backend, monkeypatch, max_model_l
             return logits
 
     patch_environment(
-        use_cb=True,
         backend=backend,
         use_chunked_prefill=False,
         monkeypatch=monkeypatch,

@@ -56,11 +56,12 @@ def test_seed(
         model=model,
         prompts=prompts,
         max_model_len=max_model_len,
+        max_num_seqs=max_num_seqs,
         sampling_params=vllm_sampling_params,
         tensor_parallel_size=1,
         backend=backend,
         monkeypatch=monkeypatch,
-        **kwargs_for_mode(mode, max_num_seqs),
+        **kwargs_for_mode(mode),
     )
 
     # compare all generated outputs against the first generated output

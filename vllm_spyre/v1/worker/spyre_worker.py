@@ -150,43 +150,29 @@ class SpyreWorker(WorkerBase):
     def compile_or_warm_up_model(self) -> None:
         """Prepare model for execution through compilation/warmup."""
 
-        if envs_spyre.VLLM_SPYRE_USE_CB:
+        if self.is_decoder:
             self._warmup_spyre_dynamic_size(self.restricted_tokens)
             return
         if self.model_runner.is_multimodal:
-            raise NotImplementedError(
-                "[WARMUP] Static batching is not supported for multimodal models."
-            )
+            raise NotImplementedError("[WARMUP] multimodal models are not supported yet.")
         num_shape_combinations = len(self.spyre_warmup_shapes)
         logger.info(
             "[WARMUP] Starting for %d prompt/decode/batchsize-shape combinations...",
             len(self.spyre_warmup_shapes),
         )
         all_warmup_start_t = time.time()
-        for i, (prompt_len, num_decode_tokens, batch_size) in enumerate(
-            [
-                (s["prompt_length"], s["new_tokens"], s["batch_size"])
-                for s in self.spyre_warmup_shapes
-            ]
+        for i, (prompt_len, batch_size) in enumerate(
+            [(s["prompt_length"], s["batch_size"]) for s in self.spyre_warmup_shapes]
         ):
-            if not self.is_pooling:
-                # TODO: remove if spyre supports
-                # lower number of output tokens
-                assert num_decode_tokens >= 2, (
-                    "VLLM_SPYRE_WARMUP_NEW_TOKENS must be at least 2 (spyre requirement)."
-                )
             # warmup individual combination
             logger.info(
-                "[WARMUP] (%d/%d) for prompt length %d, decoding %d tokens with batch size %d...",
+                "[WARMUP] (%d/%d) for prompt length %d with batch size %d...",
                 i + 1,
                 num_shape_combinations,
                 prompt_len,
-                num_decode_tokens,
                 batch_size,
             )
-            self._warmup_spyre_fixed_size(
-                prompt_len, num_decode_tokens, self.restricted_tokens, batch_size
-            )
+            self._warmup_spyre_fixed_size(prompt_len, self.restricted_tokens, batch_size)
 
         self.model_runner.complete_warmup()
 
@@ -465,30 +451,9 @@ class SpyreWorker(WorkerBase):
         # for all requested model warmups
         # printing env variables for debugging purposes
         load_model_start_t = time.time()
-
-        if envs_spyre.VLLM_SPYRE_USE_CB:
-            if self.is_pooling:
-                logger.warning(
-                    "Pooling models only support Static Batching. Using VLLM_SPYRE_USE_CB=0"
-                )
-                envs_spyre.override("VLLM_SPYRE_USE_CB", "0")
-            # unused for continuous batching: set here to use same API
-            wup_prompt_lens, wup_new_tokens = (0,), (0,)
-        else:
-            wup_prompt_lens, wup_new_tokens = zip(
-                *[(s["prompt_length"], s["new_tokens"]) for s in self.spyre_warmup_shapes]
-            )
-
-        self.model_runner.load_model(prompt_lens=wup_prompt_lens, num_decode_tokens=wup_new_tokens)
-
-        # Explode if we aren't using continuous batching; note that we currently need to do
-        # this after the model loads, since loading sets the properties we are checking.
-        if self.model_runner.is_multimodal and not envs_spyre.VLLM_SPYRE_USE_CB:
-            raise NotImplementedError(
-                "Multimodal is not enabled for static batching; use continuous batching instead!"
-            )
-
+        self.model_runner.load_model()
         load_model_end_t = time.time()
+
         load_model_total_t = load_model_end_t - load_model_start_t
         self.perf_metrics.log("load model time", load_model_total_t, model=self.model_config.model)
         logger.info("load model took %.3fs", load_model_total_t)
@@ -512,8 +477,7 @@ class SpyreWorker(WorkerBase):
         num_decode_tokens = 2
         # TODO: we need 2 requests for warmup on FP8+CB
         # Check if model is quantized
-        is_fp8_plus_cb = self.model_config.quantization is not None and envs_spyre.VLLM_SPYRE_USE_CB
-        req_count = 3 if is_fp8_plus_cb else 2
+        req_count = 3 if self.model_config.quantization is not None else 2
 
         mm_model_utils = self.model_runner.get_mm_utils()
         if mm_model_utils:
@@ -632,9 +596,8 @@ class SpyreWorker(WorkerBase):
         )
         model_runner.tkv = 0
 
-    def _warmup_spyre_fixed_size(
-        self, prompt_len, num_decode_tokens, special_token_ids, batch_size
-    ):
+    def _warmup_spyre_fixed_size(self, prompt_len, special_token_ids, batch_size):
+        assert self.is_pooling, "only pooling models have fixed warmup shapes"
         warmup_start_t = time.time()
         # NOTE(ngl): empty tensor causes spyre to hang, so using
         # randint without 0 and the eos and bos token
@@ -655,10 +618,8 @@ class SpyreWorker(WorkerBase):
         ]
 
         sampling_params, pooling_params = None, None
-        if not self.is_pooling:
-            sampling_params = SamplingParams(max_tokens=num_decode_tokens)
-        else:
-            pooling_params = PoolingParams(task="embed")  # for warmup any task will do
+
+        pooling_params = PoolingParams(task="embed")  # for warmup any task will do
 
         # Set up dummy requests for prefill steps
         dummy_requests = [
@@ -713,23 +674,18 @@ class SpyreWorker(WorkerBase):
         with _maybe_warmup_context(
             envs_spyre.VLLM_SPYRE_MAX_LOAD_PROCESSES, self.parallel_config.world_size, self.rank
         ):
-            self._warmup_model_forward_pass(
-                scheduler_output, dummy_requests, cached_request_data, num_decode_tokens
-            )
+            self._warmup_model_forward_pass(scheduler_output, dummy_requests, cached_request_data)
         self.perf_metrics.log(
             "warmup 1 time",
             time.time() - warmup_start_t,
             batch_size=batch_size,
-            max_tokens=num_decode_tokens,
             prompt_len=prompt_len,
         )
 
         # Second full forward pass
         logger.info("[WARMUP] Deploying to device...")
         warmup2_start_t = time.time()
-        self._warmup_model_forward_pass(
-            scheduler_output, dummy_requests, cached_request_data, num_decode_tokens
-        )
+        self._warmup_model_forward_pass(scheduler_output, dummy_requests, cached_request_data)
 
         warmup_end_t = time.time()
         warmup_total_t = warmup_end_t - warmup_start_t
@@ -737,17 +693,14 @@ class SpyreWorker(WorkerBase):
             "warmup 2 time",
             time.time() - warmup2_start_t,
             batch_size=batch_size,
-            max_tokens=num_decode_tokens,
             prompt_len=prompt_len,
         )
         compile_cache_str = (
             "enabled" if int(os.getenv("TORCH_SENDNN_CACHE_ENABLE", "0")) else "disabled"
         )
         logger.info(
-            "[WARMUP] Prompt length %d and max output tokens %d "
-            "finished in %.3fs (compilation cache %s)",
+            "[WARMUP] Prompt length %d finished in %.3fs (compilation cache %s)",
             prompt_len,
-            num_decode_tokens,
             warmup_total_t,
             compile_cache_str,
         )
@@ -818,22 +771,15 @@ class SpyreWorker(WorkerBase):
         scheduler_output: SchedulerOutput,
         requests: list[NewRequestData],
         cached_request_data: CachedRequestData,
-        num_decode_tokens,
     ):
         """Handle a complete forward pass"""
+        assert self.is_pooling, "only pooling models have fixed warmup shapes"
         scheduler_output.scheduled_new_reqs = requests
         scheduler_output.scheduled_cached_reqs = CachedRequestData.make_empty()
         scheduler_output.num_scheduled_tokens = {
             r.req_id: self._get_num_tokens(r) for r in requests
         }
         self.execute_model(scheduler_output)  # Prefill
-
-        # Switch to cached requests to trigger decoding steps
-        scheduler_output.scheduled_new_reqs = []
-        scheduler_output.scheduled_cached_reqs = cached_request_data
-        scheduler_output.num_scheduled_tokens = {r.req_id: 1 for r in requests}
-        for _ in range(num_decode_tokens - 1):
-            self.execute_model(scheduler_output)
 
     def profile(self, is_start=True):
         if self.profiler is None:

@@ -42,10 +42,8 @@ class SpyrePerfMetricFileLogger(SpyrePerfMetricLoggerBase):
         if os.path.exists(self.log_path):
             os.remove(self.log_path)
         # Output configuration variables to ease understanding of logs
-        self.log("VLLM_SPYRE_USE_CB", envs.VLLM_SPYRE_USE_CB)
         self.log("VLLM_SPYRE_WARMUP_BATCH_SIZES", envs.VLLM_SPYRE_WARMUP_BATCH_SIZES)
         self.log("VLLM_SPYRE_WARMUP_PROMPT_LENS", envs.VLLM_SPYRE_WARMUP_PROMPT_LENS)
-        self.log("VLLM_SPYRE_WARMUP_NEW_TOKENS", envs.VLLM_SPYRE_WARMUP_NEW_TOKENS)
         self.log("AIU_WORLD_SIZE", os.getenv("AIU_WORLD_SIZE", 0))
         self.log("DT_OPT", os.getenv("DT_OPT", ""))
 
