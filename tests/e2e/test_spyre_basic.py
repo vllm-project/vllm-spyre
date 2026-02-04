@@ -74,7 +74,7 @@ def test_output(
         monkeypatch=monkeypatch,
         max_model_len=max_model_len,
         max_new_tokens=max_new_tokens,
-        **kwargs_for_mode(mode, max_num_seqs),
+        **kwargs_for_mode(mode, max_num_seqs, warmup_shapes),
     )
 
 
