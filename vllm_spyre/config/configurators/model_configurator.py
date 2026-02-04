@@ -21,23 +21,23 @@ class ConfigValue:
     """Tracks a configuration value with override information.
 
     Attributes:
-        expected: The expected/default value from model configuration
-        actual: The actual value that was applied (may differ if overridden)
+        default: The expected/default value from model configuration
+        applied: The actual value that was applied (may differ if overridden)
     """
 
-    expected: str | int | None
-    actual: str | int | None
+    default: str | int | None
+    applied: str | int | None
 
     def was_overridden(self) -> bool:
-        """Check if the actual value differs from the expected value."""
-        return self.expected != self.actual
+        """Check if the applied value differs from the default value."""
+        return self.default != self.applied
 
     def __eq__(self, other: object) -> bool:
-        """Compare ConfigValue with another value using the actual value.
+        """Compare ConfigValue with another value using the applied value.
 
         This allows code that compares directly to values
         """
-        return self.actual == other
+        return self.applied == other
 
 
 @dataclass
@@ -65,8 +65,8 @@ class ConfigurationSummary:
 
         def format_config_line(name: str, config_value: ConfigValue) -> str:
             if config_value.was_overridden():
-                return f"  {name}={config_value.actual} ⚠ (expected: {config_value.expected})"
-            return f"  {name}={config_value.actual} ✓"
+                return f"  {name}={config_value.applied} ⚠ (default: {config_value.default})"
+            return f"  {name}={config_value.applied} ✓"
 
         def generate_lines():
             yield f"Applied registry configuration for '{self.model_name}' (TP={self.tp_size}):"
@@ -148,14 +148,14 @@ class ModelConfigurator:
         config_value: ConfigValue,
         error_context: str,
     ) -> None:
-        """Validate that actual config value matches expected value.
+        """Validate that applied config value matches default value.
 
         Handles the common pattern of checking if a user-provided value conflicts
-        with the expected model configuration value, and enforces VLLM_SPYRE_REQUIRE_KNOWN_CONFIG.
+        with the default model configuration value, and enforces VLLM_SPYRE_REQUIRE_KNOWN_CONFIG.
 
         Args:
             config_name: Name of the configuration parameter (for error messages)
-            config_value: ConfigValue with expected and actual values
+            config_value: ConfigValue with default and applied values
             error_context: Additional context for error messages (e.g., "it was already set to X")
 
         Raises:
@@ -165,15 +165,15 @@ class ModelConfigurator:
             if envs_spyre.VLLM_SPYRE_REQUIRE_KNOWN_CONFIG:
                 raise RuntimeError(
                     f"Model '{self.model_config.name}' configures "
-                    f"{config_name}={config_value.expected}, "
+                    f"{config_name}={config_value.default}, "
                     f"but {error_context}. "
                     f"VLLM_SPYRE_REQUIRE_KNOWN_CONFIG is enabled."
                 )
             logger.warning(
                 "%s was set to %s, not using model default of %s",
                 config_name,
-                config_value.actual,
-                config_value.expected,
+                config_value.applied,
+                config_value.default,
             )
 
     def set_env_var(
@@ -188,7 +188,7 @@ class ModelConfigurator:
             log_level: Logging level ('info', 'warning', 'debug')
 
         Returns:
-            ConfigValue tracking expected and actual values
+            ConfigValue tracking default and applied values
 
         Raises:
             RuntimeError: If VLLM_SPYRE_REQUIRE_KNOWN_CONFIG is set and existing value conflicts
@@ -197,7 +197,7 @@ class ModelConfigurator:
         existing = os.getenv(key)
 
         if existing is not None and not override:
-            config_value = ConfigValue(expected=str_value, actual=existing)
+            config_value = ConfigValue(default=str_value, applied=existing)
             if config_value.was_overridden():
                 self._validate_config_override(
                     config_name=key,
@@ -209,7 +209,7 @@ class ModelConfigurator:
         os.environ[key] = str_value
         log_func = getattr(logger, log_level)
         log_func("Set %s = %s", key, str_value)
-        return ConfigValue(expected=str_value, actual=str_value)
+        return ConfigValue(default=str_value, applied=str_value)
 
     def _parse_device_config_gpu_blocks(self, blocks_config: Any) -> int:
         # Determine which override to use
@@ -237,7 +237,7 @@ class ModelConfigurator:
             vllm_config: The vLLM configuration to modify
 
         Returns:
-            ConfigValue tracking expected and actual num_blocks, or None if not configured
+            ConfigValue tracking default and applied num_blocks, or None if not configured
 
         Raises:
             RuntimeError: If VLLM_SPYRE_REQUIRE_KNOWN_CONFIG is set and user override conflicts
@@ -259,11 +259,11 @@ class ModelConfigurator:
                 num_blocks_override,
                 self.model_config.name,
             )
-            return ConfigValue(expected=num_blocks_override, actual=num_blocks_override)
+            return ConfigValue(default=num_blocks_override, applied=num_blocks_override)
 
         # User already set a value - validate it
         user_value = vllm_config.cache_config.num_gpu_blocks_override
-        config_value = ConfigValue(expected=num_blocks_override, actual=user_value)
+        config_value = ConfigValue(default=num_blocks_override, applied=user_value)
         self._validate_config_override(
             config_name="num_gpu_blocks_override",
             config_value=config_value,

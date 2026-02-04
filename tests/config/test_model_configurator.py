@@ -49,8 +49,8 @@ class TestEnvironmentVariables:
         result = configurator.set_env_var("TEST_VAR", "123")
 
         assert isinstance(result, ConfigValue)
-        assert result.expected == "123"
-        assert result.actual == "123"
+        assert result.default == "123"
+        assert result.applied == "123"
         assert result.was_overridden() is False
         assert os.getenv("TEST_VAR") == "123"
 
@@ -64,8 +64,8 @@ class TestEnvironmentVariables:
         result = configurator.set_env_var("TEST_VAR", "123")
 
         assert isinstance(result, ConfigValue)
-        assert result.expected == "123"
-        assert result.actual == "123"
+        assert result.default == "123"
+        assert result.applied == "123"
         assert result.was_overridden() is False
         assert os.getenv("TEST_VAR") == "123"
 
@@ -82,8 +82,8 @@ class TestEnvironmentVariables:
         result = configurator.set_env_var("TEST_VAR", "123")
 
         assert isinstance(result, ConfigValue)
-        assert result.expected == "123"
-        assert result.actual == "456"
+        assert result.default == "123"
+        assert result.applied == "456"
         assert result.was_overridden() is True
         assert os.getenv("TEST_VAR") == "456"  # Not overridden
         assert "not using model default" in caplog_vllm_spyre.text.lower()
@@ -152,7 +152,7 @@ class TestGPUBlocksOverride:
         summary = configurator.configure(vllm_config)
 
         assert vllm_config.cache_config.num_gpu_blocks_override == 1000
-        assert summary.num_blocks.actual == 1000
+        assert summary.num_blocks.applied == 1000
         assert summary.num_blocks.was_overridden() is False
 
     @pytest.mark.parametrize(
@@ -191,7 +191,7 @@ class TestGPUBlocksOverride:
         summary = configurator.configure(vllm_config)
 
         assert vllm_config.cache_config.num_gpu_blocks_override == expected_blocks
-        assert summary.num_blocks.actual == expected_blocks
+        assert summary.num_blocks.applied == expected_blocks
         assert summary.num_blocks.was_overridden() is False
 
     def test_log_warning_when_user_set_different_value(
@@ -209,8 +209,8 @@ class TestGPUBlocksOverride:
         summary = configurator.configure(vllm_config)
 
         assert vllm_config.cache_config.num_gpu_blocks_override == 500  # Not changed
-        assert summary.num_blocks.expected == 1000  # Summary shows what we wanted
-        assert summary.num_blocks.actual == 500  # And what was actually set
+        assert summary.num_blocks.default == 1000  # Summary shows what we wanted
+        assert summary.num_blocks.applied == 500  # And what was actually set
         assert summary.num_blocks.was_overridden() is True
         assert "not using model default" in caplog_vllm_spyre.text.lower()
 
@@ -264,7 +264,7 @@ class TestGPUBlocksOverride:
 
         summary = configurator.configure(vllm_config)
 
-        assert summary.num_blocks.actual == 1000
+        assert summary.num_blocks.applied == 1000
         assert summary.num_blocks.was_overridden() is False
         assert vllm_config.cache_config.num_gpu_blocks_override == 1000
 
@@ -312,7 +312,7 @@ class TestConfigValue:
     )
     def test_was_overridden(self, expected, actual, should_be_overridden):
         """Test was_overridden method with various value combinations."""
-        config_value = ConfigValue(expected=expected, actual=actual)
+        config_value = ConfigValue(default=expected, applied=actual)
         assert config_value.was_overridden() is should_be_overridden
 
 
@@ -345,8 +345,8 @@ class TestOverrideTracking:
         result = configurator.set_env_var("TEST_VAR", expected_value)
 
         assert isinstance(result, ConfigValue)
-        assert result.expected == expected_value
-        assert result.actual == (existing_value if existing_value else expected_value)
+        assert result.default == expected_value
+        assert result.applied == (existing_value if existing_value else expected_value)
         assert result.was_overridden() is should_override
 
     @pytest.mark.parametrize(
@@ -375,8 +375,8 @@ class TestOverrideTracking:
 
         assert summary.num_blocks is not None
         assert isinstance(summary.num_blocks, ConfigValue)
-        assert summary.num_blocks.expected == expected_value
-        assert summary.num_blocks.actual == (user_value if user_value else expected_value)
+        assert summary.num_blocks.default == expected_value
+        assert summary.num_blocks.applied == (user_value if user_value else expected_value)
         assert summary.num_blocks.was_overridden() is (
             user_value is not None and user_value != expected_value
         )
@@ -400,13 +400,13 @@ class TestOverrideTracking:
         # Check env_vars contains ConfigValue
         assert "TEST_VAR" in summary.env_vars
         assert isinstance(summary.env_vars["TEST_VAR"], ConfigValue)
-        assert summary.env_vars["TEST_VAR"].expected == "123"
-        assert summary.env_vars["TEST_VAR"].actual == "123"
+        assert summary.env_vars["TEST_VAR"].default == "123"
+        assert summary.env_vars["TEST_VAR"].applied == "123"
 
         # Check num_blocks is ConfigValue
         assert isinstance(summary.num_blocks, ConfigValue)
-        assert summary.num_blocks.expected == 1000
-        assert summary.num_blocks.actual == 1000
+        assert summary.num_blocks.default == 1000
+        assert summary.num_blocks.applied == 1000
 
 
 class TestConfigurationSummaryLogging:
@@ -419,10 +419,10 @@ class TestConfigurationSummaryLogging:
             model_name="test-model",
             tp_size=4,
             env_vars={
-                "VLLM_DT_MAX_BATCH_TKV_LIMIT": ConfigValue(expected="131072", actual="131072"),
-                "FLEX_HDMA_P2PSIZE": ConfigValue(expected="268435456", actual="268435456"),
+                "VLLM_DT_MAX_BATCH_TKV_LIMIT": ConfigValue(default="131072", applied="131072"),
+                "FLEX_HDMA_P2PSIZE": ConfigValue(default="268435456", applied="268435456"),
             },
-            num_blocks=ConfigValue(expected=8192, actual=8192),
+            num_blocks=ConfigValue(default=8192, applied=8192),
         )
 
         # Actually print the log for human inspection as well
@@ -437,7 +437,7 @@ class TestConfigurationSummaryLogging:
         assert "num_gpu_blocks_override=8192 ✓" in log_text
         # Should not contain any override warnings
         assert "⚠" not in log_text
-        assert "expected:" not in log_text
+        assert "default:" not in log_text
 
     def test_log_format_with_overrides(self, caplog_vllm_spyre):
         """Test log format when values are overridden by user."""
@@ -446,10 +446,10 @@ class TestConfigurationSummaryLogging:
             model_name="granite-3.3-8b-instruct",
             tp_size=4,
             env_vars={
-                "VLLM_DT_MAX_BATCH_TKV_LIMIT": ConfigValue(expected="131072", actual="131072"),
-                "FLEX_HDMA_P2PSIZE": ConfigValue(expected="268435456", actual="134217728"),
+                "VLLM_DT_MAX_BATCH_TKV_LIMIT": ConfigValue(default="131072", applied="131072"),
+                "FLEX_HDMA_P2PSIZE": ConfigValue(default="268435456", applied="134217728"),
             },
-            num_blocks=ConfigValue(expected=8192, actual=8192),
+            num_blocks=ConfigValue(default=8192, applied=8192),
         )
 
         # Actually print the log for human inspection as well
@@ -465,7 +465,7 @@ class TestConfigurationSummaryLogging:
 
         # Check overridden env var
         assert "FLEX_HDMA_P2PSIZE=134217728 ⚠" in log_text
-        assert "expected: 268435456" in log_text
+        assert "default: 268435456" in log_text
 
         # Check non-overridden num_blocks
         assert "num_gpu_blocks_override=8192 ✓" in log_text
@@ -477,11 +477,11 @@ class TestConfigurationSummaryLogging:
             model_name="test-model",
             tp_size=2,
             env_vars={
-                "VAR1": ConfigValue(expected="100", actual="100"),
-                "VAR2": ConfigValue(expected="200", actual="300"),
-                "VAR3": ConfigValue(expected="400", actual="400"),
+                "VAR1": ConfigValue(default="100", applied="100"),
+                "VAR2": ConfigValue(default="200", applied="300"),
+                "VAR3": ConfigValue(default="400", applied="400"),
             },
-            num_blocks=ConfigValue(expected=1000, actual=500),
+            num_blocks=ConfigValue(default=1000, applied=500),
         )
 
         # Log using caplog's logger
@@ -496,12 +496,12 @@ class TestConfigurationSummaryLogging:
         # Check env vars
         assert "VAR1=100 ✓" in log_text
         assert "VAR2=300 ⚠" in log_text
-        assert "expected: 200" in log_text
+        assert "default: 200" in log_text
         assert "VAR3=400 ✓" in log_text
 
         # Check num_blocks override
         assert "num_gpu_blocks_override=500 ⚠" in log_text
-        assert "expected: 1000" in log_text
+        assert "default: 1000" in log_text
 
     def test_log_format_with_empty_config(self, caplog_vllm_spyre):
         """Test log format when no device-specific configs are present."""

@@ -317,7 +317,7 @@ Returned by `configure()` to track what was applied:
 class ConfigurationSummary:
     model_name: str
     tp_size: int
-    env_vars: dict[str, ConfigValue]  # Tracks expected vs actual values
+    env_vars: dict[str, ConfigValue]  # Tracks default vs applied values
     num_blocks: ConfigValue | None    # GPU blocks override
 
     def format_log_message(self) -> str:
@@ -331,11 +331,11 @@ Tracks configuration values with override detection:
 ```python
 @dataclass
 class ConfigValue:
-    expected: str | int | None  # Expected value from config
-    actual: str | int | None    # Actual value applied (possibly from user override)
+    default: str | int | None  # Default value from config
+    applied: str | int | None  # Applied value (possibly from user override)
 
     def was_overridden(self) -> bool:
-        """Check if actual differs from expected"""
+        """Check if applied differs from default"""
 ```
 
 ## Examples
