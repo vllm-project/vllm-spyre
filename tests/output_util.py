@@ -496,14 +496,12 @@ def generate_spyre_vllm_output(
 
 def kwargs_for_mode(mode: str, max_num_seqs: int) -> dict:
     """Returns kwargs for validate_vllm_vs_hf_output based on mode"""
-    return (
-        {
-            "max_num_seqs": max_num_seqs,
-            "use_cb": True,
-            "max_num_batched_tokens": 128 if mode in ["cp", "pc"] else None,
-            "use_pc": mode == "pc",
-        }
-    )
+    return {
+        "max_num_seqs": max_num_seqs,
+        "use_cb": True,
+        "max_num_batched_tokens": 128 if mode in ["cp", "pc"] else None,
+        "use_pc": mode == "pc",
+    }
 
 
 def extract_output(req_output):

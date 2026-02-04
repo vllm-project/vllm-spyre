@@ -61,12 +61,6 @@ def test_output(
         vllm_sampling_params = [vllm_sampling_params_early_stop] + vllm_sampling_params
         hf_max_new_tokens = [max_new_tokens_early_stop] + hf_max_new_tokens
 
-    kwargs = {
-        "max_num_seqs": max_num_seqs,
-        "use_cb": True,
-        "max_num_batched_tokens": 128 if mode == "cp" else None,
-    }
-
     validate_vllm_vs_hf_output(
         model=model,
         prompts=prompts,

@@ -39,11 +39,6 @@ def test_stagger_output(
 
     prompts = get_chicken_soup_prompts(4)
 
-    kwargs = {
-        "max_num_seqs": max_num_seqs,
-        "use_cb": True,
-    }
-
     max_new_tokens = 20
 
     vllm_sampling_params = SamplingParams(

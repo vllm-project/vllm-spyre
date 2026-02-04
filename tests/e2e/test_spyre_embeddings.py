@@ -8,7 +8,6 @@ from functools import partial
 import pytest
 from output_util import (
     compare_embedding_results,
-    generate_spyre_vllm_output,
     spyre_vllm_embeddings,
     st_embeddings,
 )
@@ -19,7 +18,7 @@ from spyre_util import (
     get_spyre_model_list,
     patch_warmup_shapes,
 )
-from vllm import LLM, SamplingParams
+from vllm import LLM
 
 
 @pytest.mark.parametrize("model", get_spyre_model_list(isEmbeddings=True))

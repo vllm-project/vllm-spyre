@@ -7,16 +7,10 @@ import pytest
 from output_util import validate_vllm_vs_hf_output, kwargs_for_mode
 from spyre_util import (
     ModelInfo,
-    create_random_request,
     get_chicken_soup_prompts,
-    patch_environment,
     skip_unsupported_tp_size,
 )
-from vllm import EngineArgs, SamplingParams
-from vllm.v1.engine.core import EngineCore
-from vllm.v1.executor.abstract import Executor
-
-from vllm_spyre.v1.core.scheduler import PoolingSpyreScheduler
+from vllm import SamplingParams
 
 
 @pytest.mark.full_model
@@ -47,14 +41,7 @@ def test_output(
 
     skip_unsupported_tp_size(tp_size, backend)
 
-
     prompts = get_chicken_soup_prompts(4)
-
-    kwargs = {
-        "max_num_seqs": max_num_seqs,
-        "use_cb": True,
-        "max_num_batched_tokens": 128 if (mode == "cp" or mode == "pc") else None,
-    }
 
     max_new_tokens = 4
 
@@ -109,12 +96,6 @@ def test_batch_handling(
         )
         for i in range(len(max_new_tokens))
     ]
-
-    kwargs = {
-        "max_num_seqs": max_num_seqs,
-        "use_cb": True,
-        "max_num_batched_tokens": 128 if (mode == "cp" or mode == "pc") else None,
-    }
 
     validate_vllm_vs_hf_output(
         model=model,
