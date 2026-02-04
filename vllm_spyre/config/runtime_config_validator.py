@@ -21,7 +21,7 @@ WarmupShapes = list[tuple[int, int]] | list[list[int]]
 
 @dataclass(order=True)
 class RuntimeConfiguration:
-    cb: bool = False
+    cb: bool = True
     tp_size: int = 1
     max_model_len: int = 0
     max_num_seqs: int = 0
@@ -231,6 +231,7 @@ def validate_runtime_configuration(
         return False
 
     requested_config = RuntimeConfiguration(
+        cb=warmup_shapes is None,
         tp_size=tp_size,
         max_model_len=max_model_len,
         max_num_seqs=max_num_seqs,
