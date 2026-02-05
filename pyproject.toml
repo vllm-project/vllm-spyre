@@ -150,6 +150,7 @@ markers = [
     "worker: Tests for worker logic",
     "basic: Basic correctness tests",
     "compat: Tests readiness to remove backwards compatibility code",
+    "precompilation: Tests related to precompiled model cache",
 
     # Hardware backends
     "cpu: Tests using CPU (i.e. eager) backend",
@@ -166,6 +167,8 @@ markers = [
     "embedding: Tests for embedding models",
     "quantized: Tests for quantized models",
     "full_model: Tests with a full-sized decoder model (instead of a micro model)",
+    "scoring: Tests for scoring models",
+    "multimodal: Tests for multimodal models",
 
 ]
 # --8<-- [end:test-markers-definition]

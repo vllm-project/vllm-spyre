@@ -59,14 +59,18 @@ def test_spyre_max_tokens(
     )
 
     prompt = "Count to twenty"
-    params1 = SamplingParams(temperature=0, seed=8780, max_tokens=5)
-    params2 = SamplingParams(temperature=0, seed=8780, max_tokens=10)
+    params = [
+        SamplingParams(temperature=0, seed=8780, max_tokens=5),
+        SamplingParams(temperature=0, seed=8780, max_tokens=10),
+        SamplingParams(temperature=0, seed=8780, max_tokens=1),
+        SamplingParams(temperature=0, seed=8780, max_tokens=6),
+        SamplingParams(temperature=0, seed=8780, max_tokens=12),
+    ]
 
-    outputs = spyre_model.generate([prompt, prompt], [params1, params2])
-    output1, output2 = outputs[0], outputs[1]
+    outputs = spyre_model.generate([prompt] * len(params), params)
 
-    assert len(output1.outputs[0].token_ids) == 5
-    assert len(output2.outputs[0].token_ids) == 10
+    for i in range(len(params)):
+        assert len(outputs[i].outputs[0].token_ids) == params[i].max_tokens
 
 
 def test_spyre_stop_sequence(
