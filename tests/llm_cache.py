@@ -353,9 +353,9 @@ ENGINE_CACHE = EngineCache()
 def get_cached_llm(
     model: str | ModelInfo,
     max_model_len: int,
-    tensor_parallel_size: int,
     backend: str,
     monkeypatch: pytest.MonkeyPatch,
+    tensor_parallel_size: int = 1,
     warmup_shapes: EmbeddingWarmupShapes | None = None,
     max_num_seqs: int | None = None,
     max_num_batched_tokens: int | None = None,
