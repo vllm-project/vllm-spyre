@@ -150,7 +150,6 @@ markers = [
     "worker: Tests for worker logic",
     "basic: Basic correctness tests",
     "compat: Tests readiness to remove backwards compatibility code",
-    "other_e2e: Pretty unclear",
 
     # Hardware backends
     "cpu: Tests using CPU (i.e. eager) backend",

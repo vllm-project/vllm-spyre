@@ -58,7 +58,7 @@ def test_custom_logits_processor(
 
 
 # TODO: validate that this test case is valid for chunked prefill
-def test_cb_logits_processor(model: ModelInfo, backend, monkeypatch, max_model_len, mode: str):
+def test_logits_processor(model: ModelInfo, backend, monkeypatch, max_model_len, mode: str):
     """
     Test if the state of logits processors are correct due to the switch of
     prefill/decode in a step engine. The LLM is initialized with bs=2,

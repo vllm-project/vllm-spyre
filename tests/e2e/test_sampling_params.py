@@ -3,9 +3,9 @@ from collections import defaultdict
 import pytest
 from llm_cache import get_cached_llm
 from spyre_util import ModelInfo
-from vllm import SamplingParams
+from vllm import SamplingParams, LLM
 
-pytestmark = [pytest.mark.full_model, pytest.mark.other_e2e]
+pytestmark = [pytest.mark.chunked_prefill]
 
 
 def test_spyre_temperature(
@@ -204,14 +204,26 @@ def test_spyre_n_generations(
     assert output.outputs[1].text != output.outputs[2].text
 
 
-def token_diversity(spyre_model, prompt, params, n_experiments):
-    tokens = []
+def token_diversity(spyre_model: LLM, prompt: str, params: list[SamplingParams], n_experiments) -> list[int]:
+    """Runs multiple prompts for every sampling param provided. Returns a list of the number of 
+    unique tokens generated for each sampling param."""
+    num_params = len(params)
+    token_sets = []
 
-    outputs = spyre_model.generate([prompt] * n_experiments, params, use_tqdm=False)
-    for output in outputs:
-        tokens.extend(output.outputs[0].token_ids)
+    expanded_params = []
+    for param in params:
+        expanded_params.extend([param] * n_experiments)
 
-    return len(set(tokens))
+    outputs = spyre_model.generate([prompt] * n_experiments * num_params, expanded_params, use_tqdm=False)
+    
+    for i in range(num_params):
+        param_outputs = outputs[i * n_experiments: (i + 1) * n_experiments]
+        token_set = set()
+        for output in param_outputs:
+            token_set.update(output.outputs[0].token_ids)
+        token_sets.append(token_set)
+
+    return [len(token_set) for token_set in token_sets]
 
 
 def test_spyre_top_p(
@@ -236,8 +248,8 @@ def test_spyre_top_p(
     params1 = SamplingParams(top_p=0.01, temperature=1, max_tokens=10)
     params2 = SamplingParams(temperature=1, max_tokens=10)
 
-    token_div1 = token_diversity(spyre_model, prompt, params1, 3)
-    token_div2 = token_diversity(spyre_model, prompt, params2, 3)
+    token_div1, token_div2 = token_diversity(spyre_model, prompt, [params1, params2], 3)
+
     assert token_div1 < token_div2
 
 
@@ -263,8 +275,7 @@ def test_spyre_top_k(
     params1 = SamplingParams(temperature=1, top_k=1, max_tokens=5)
     params2 = SamplingParams(temperature=1, max_tokens=5)
 
-    token_div1 = token_diversity(spyre_model, prompt, params1, 3)
-    token_div2 = token_diversity(spyre_model, prompt, params2, 3)
+    token_div1, token_div2 = token_diversity(spyre_model, prompt, [params1, params2], 3)
     assert token_div1 < token_div2
 
 
@@ -408,8 +419,7 @@ def test_spyre_min_p(
     params1 = SamplingParams(min_p=0.5, temperature=1, max_tokens=5)
     params2 = SamplingParams(temperature=1, max_tokens=5)
 
-    token_div1 = token_diversity(spyre_model, prompt, params1, 3)
-    token_div2 = token_diversity(spyre_model, prompt, params2, 3)
+    token_div1, token_div2 = token_diversity(spyre_model, prompt, [params1, params2], 3)
 
     assert token_div1 < token_div2
 
