@@ -5,7 +5,6 @@ from typing import Any
 
 from vllm.envs import VLLM_CONFIGURE_LOGGING, VLLM_LOGGING_CONFIG_PATH
 from vllm.logger import DEFAULT_LOGGING_CONFIG
-import vllm_spyre.envs as envs_spyre
 
 __version__ = importlib.metadata.version("vllm_spyre")
 
