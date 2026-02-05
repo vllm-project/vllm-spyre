@@ -8,7 +8,7 @@ from vllm import SamplingParams
 pytestmark = [pytest.mark.full_model, pytest.mark.other_e2e]
 
 
-def test_spyre_batch1_temperature(
+def test_spyre_temperature(
     model: ModelInfo,
     backend,
     monkeypatch,
@@ -32,15 +32,14 @@ def test_spyre_batch1_temperature(
     params2 = SamplingParams(temperature=0.5, seed=8780, max_tokens=20)
     params3 = SamplingParams(temperature=1.0, seed=8780, max_tokens=20)
 
-    output1 = spyre_model.generate(prompt, params1)[0]
-    output2 = spyre_model.generate(prompt, params2)[0]
-    output3 = spyre_model.generate(prompt, params3)[0]
+    outputs = spyre_model.generate([prompt, prompt, prompt], [params1, params2, params3])
+    output1, output2, output3 = outputs[0], outputs[1], outputs[2]
 
     assert output1.outputs[0].text != output2.outputs[0].text
     assert output2.outputs[0].text != output3.outputs[0].text
 
 
-def test_spyre_batch1_max_tokens(
+def test_spyre_max_tokens(
     model: ModelInfo,
     backend,
     monkeypatch,
@@ -63,14 +62,14 @@ def test_spyre_batch1_max_tokens(
     params1 = SamplingParams(temperature=0, seed=8780, max_tokens=5)
     params2 = SamplingParams(temperature=0, seed=8780, max_tokens=10)
 
-    output1 = spyre_model.generate(prompt, params1)[0]
-    output2 = spyre_model.generate(prompt, params2)[0]
+    outputs = spyre_model.generate([prompt, prompt], [params1, params2])
+    output1, output2 = outputs[0], outputs[1]
 
     assert len(output1.outputs[0].token_ids) == 5
     assert len(output2.outputs[0].token_ids) == 10
 
 
-def test_spyre_batch1_stop_sequence(
+def test_spyre_stop_sequence(
     model: ModelInfo,
     backend,
     monkeypatch,
@@ -94,8 +93,8 @@ def test_spyre_batch1_stop_sequence(
     params1 = SamplingParams(stop=[stop_str], max_tokens=10, seed=8780)
     params2 = SamplingParams(max_tokens=10, seed=8780)
 
-    output1 = spyre_model.generate(prompt, params1)[0]
-    output2 = spyre_model.generate(prompt, params2)[0]
+    outputs = spyre_model.generate([prompt, prompt], [params1, params2])
+    output1, output2 = outputs[0], outputs[1]
 
     assert stop_str not in output1.outputs[0].text
     assert output1.outputs[0].finish_reason == "stop"
@@ -110,7 +109,7 @@ def max_repetitions(output):
     return max(histo.values())
 
 
-def test_spyre_batch1_presence_penalty(
+def test_spyre_presence_penalty(
     model: ModelInfo,
     backend,
     monkeypatch,
@@ -133,8 +132,8 @@ def test_spyre_batch1_presence_penalty(
     param1 = SamplingParams(presence_penalty=2.0, seed=8780, max_tokens=20)
     param2 = SamplingParams(presence_penalty=-2.0, seed=8780, max_tokens=20)
 
-    with_penalty = spyre_model.generate(prompt, param1)[0]
-    no_penalty = spyre_model.generate(prompt, param2)[0]
+    outputs = spyre_model.generate([prompt, prompt], [param1, param2])
+    with_penalty, no_penalty = outputs[0], outputs[1]
 
     with_penalty_max = max_repetitions(with_penalty)
     no_penalty_max = max_repetitions(no_penalty)
@@ -143,7 +142,7 @@ def test_spyre_batch1_presence_penalty(
     assert no_penalty_max > with_penalty_max
 
 
-def test_spyre_batch1_frequency_penalty(
+def test_spyre_frequency_penalty(
     model: ModelInfo,
     backend,
     monkeypatch,
@@ -167,8 +166,8 @@ def test_spyre_batch1_frequency_penalty(
     param1 = SamplingParams(frequency_penalty=2.0, seed=8780, max_tokens=20)
     param2 = SamplingParams(frequency_penalty=-2.0, seed=8780, max_tokens=20)
 
-    with_penalty = spyre_model.generate(prompt, param1)[0]
-    no_penalty = spyre_model.generate(prompt, param2)[0]
+    outputs = spyre_model.generate([prompt, prompt], [param1, param2])
+    with_penalty, no_penalty = outputs[0], outputs[1]
 
     with_penalty_max = max_repetitions(with_penalty)
     no_penalty_max = max_repetitions(no_penalty)
@@ -176,7 +175,7 @@ def test_spyre_batch1_frequency_penalty(
     assert no_penalty_max > with_penalty_max
 
 
-def test_spyre_batch1_n_generations(
+def test_spyre_n_generations(
     model: ModelInfo,
     backend,
     monkeypatch,
@@ -215,7 +214,7 @@ def token_diversity(spyre_model, prompt, params, n_experiments):
     return len(set(tokens))
 
 
-def test_spyre_batch1_top_p(
+def test_spyre_top_p(
     model: ModelInfo,
     backend,
     monkeypatch,
@@ -242,7 +241,7 @@ def test_spyre_batch1_top_p(
     assert token_div1 < token_div2
 
 
-def test_spyre_batch1_top_k(
+def test_spyre_top_k(
     model: ModelInfo,
     backend,
     monkeypatch,
@@ -269,7 +268,7 @@ def test_spyre_batch1_top_k(
     assert token_div1 < token_div2
 
 
-def test_spyre_batch1_logit_bias(
+def test_spyre_logit_bias(
     model: ModelInfo,
     backend,
     monkeypatch,
@@ -317,7 +316,7 @@ def test_spyre_batch1_logit_bias(
     assert output[0].outputs[0].text != output[1].outputs[0].text
 
 
-def test_spyre_batch1_min_tokens(
+def test_spyre_min_tokens(
     model: ModelInfo,
     backend,
     monkeypatch,
@@ -352,7 +351,7 @@ def test_spyre_batch1_min_tokens(
     assert len(output[1].outputs[0].token_ids) == 1
 
 
-def test_spyre_batch1_ignore_eos(
+def test_spyre_ignore_eos(
     model: ModelInfo,
     backend,
     monkeypatch,
@@ -377,8 +376,8 @@ def test_spyre_batch1_ignore_eos(
     params1 = SamplingParams(ignore_eos=True, logit_bias={eos_id: 50}, seed=8780, max_tokens=20)
     params2 = SamplingParams(ignore_eos=False, logit_bias={eos_id: 50}, seed=8780, max_tokens=20)
 
-    output1 = spyre_model.generate(prompt, params1)[0]
-    output2 = spyre_model.generate(prompt, params2)[0]
+    outputs = spyre_model.generate([prompt, prompt], [params1, params2])
+    output1, output2 = outputs[0], outputs[1]
 
     assert len(output1.outputs[0].token_ids) == 20
     assert len(output2.outputs[0].token_ids) != len(output1.outputs[0].token_ids)
@@ -387,7 +386,7 @@ def test_spyre_batch1_ignore_eos(
     assert output2.outputs[0].finish_reason != "length"
 
 
-def test_spyre_batch1_min_p(
+def test_spyre_min_p(
     model: ModelInfo,
     backend,
     monkeypatch,
@@ -415,7 +414,7 @@ def test_spyre_batch1_min_p(
     assert token_div1 < token_div2
 
 
-def test_spyre_batch1_bad_words(
+def test_spyre_bad_words(
     model: ModelInfo,
     backend,
     monkeypatch,
@@ -439,15 +438,15 @@ def test_spyre_batch1_bad_words(
     )
     params2 = SamplingParams(max_tokens=5, seed=8780, temperature=0)
 
-    output1 = spyre_model.generate(prompt, params1)[0]
-    output2 = spyre_model.generate(prompt, params2)[0]
+    outputs = spyre_model.generate([prompt, prompt], [params1, params2])
+    output1, output2 = outputs[0], outputs[1]
 
     assert "Paris" not in output1.outputs[0].text
     assert "France" not in output1.outputs[0].text
     assert output1.outputs[0].text != output2.outputs[0].text
 
 
-def test_spyre_batch1_detokenize(
+def test_spyre_detokenize(
     model: ModelInfo,
     backend,
     monkeypatch,
@@ -473,7 +472,7 @@ def test_spyre_batch1_detokenize(
     assert len(output.outputs[0].token_ids) > 0
 
 
-def test_spyre_batch1_logprobs(
+def test_spyre_logprobs(
     model: ModelInfo,
     backend,
     monkeypatch,
