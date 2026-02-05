@@ -4,14 +4,22 @@ from logging.config import dictConfig
 from typing import Any
 
 from vllm.envs import VLLM_CONFIGURE_LOGGING, VLLM_LOGGING_CONFIG_PATH
-from vllm.logger import DEFAULT_LOGGING_CONFIG
+from vllm.logger import DEFAULT_LOGGING_CONFIG, init_logger
+import vllm_spyre.envs as envs_spyre
 
 __version__ = importlib.metadata.version("vllm_spyre")
+
+logger = init_logger(__name__)
 
 
 def register():
     """Register the Spyre platform."""
-    return "vllm_spyre.platform.SpyrePlatform"
+    if envs_spyre.VLLM_SPYRE_USE_TORCH_SPYRE:
+        platform_class = "vllm_spyre.platform_torch_spyre.TorchSpyrePlatform"
+    else:
+        platform_class = "vllm_spyre.platform.SpyrePlatform"
+    logger.info("Registering platform from: %s", platform_class)
+    return platform_class
 
 
 def _init_logging():
