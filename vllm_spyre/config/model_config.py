@@ -78,7 +78,8 @@ class ArchitecturePattern:
                     if nested_value is None:
                         raise ValueError(
                             f"Model '{model_name}': Nested attribute '{attr_name}.{nested_key}' "
-                            f"cannot be None. Only include attributes that are required for matching."
+                            f"cannot be None. Only include attributes that are required for "
+                            f"matching."
                         )
 
         return cls(
