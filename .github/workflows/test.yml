@@ -206,7 +206,7 @@ jobs:
       - name: "Install vLLM with Spyre plugin"
         if: steps.changed-src-files.outputs.any_changed == 'true'
         run: |
-          uv venv .venv --system-site-packages
+          uv venv .venv --system-site-packages --clear
           source .venv/bin/activate
 
           # Syncs both the runtime and dev deps, based on the lockfile contents
