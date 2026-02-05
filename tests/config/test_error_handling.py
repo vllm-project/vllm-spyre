@@ -32,14 +32,8 @@ class TestRegistryErrorHandling:
         registry = ModelConfigRegistry()
         nonexistent_path = Path("/nonexistent/path/to/config.yaml")
 
-        # Should not raise, just log warning
-        registry.initialize(nonexistent_path)
-
-        # Registry should be empty
-        assert len(registry.list_models()) == 0
-
-        # Should log warning
-        assert any("not found" in record.message for record in caplog_vllm_spyre.records)
+        with pytest.raises(FileNotFoundError, match="Model configuration file not found"):
+            registry.initialize(nonexistent_path)
 
     def test_initialize_with_invalid_yaml(self):
         """Test that registry handles invalid YAML gracefully."""

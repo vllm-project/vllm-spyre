@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 import yaml
 from vllm.logger import init_logger
 
+from vllm_spyre import envs
 from vllm_spyre.config.model_config import ModelConfig
 from vllm_spyre.config.model_matcher import ModelMatcher
 
@@ -59,27 +60,28 @@ class ModelConfigRegistry:
             return
 
         resolved_path = self._resolve_config_path(config_path)
-        if not self._validate_config_path(resolved_path):
-            return
+        if not resolved_path.exists():
+            raise FileNotFoundError(f"Model configuration file not found at {config_path}")
 
         self._load_and_register_models(resolved_path)
         self._initialized = True
 
     def _resolve_config_path(self, config_path: Path | None) -> Path:
-        """Resolve config path to absolute path."""
-        if config_path is None:
-            return Path(__file__).parent / "model_configs.yaml"
-        return config_path
+        """Resolve config path to absolute path.
 
-    def _validate_config_path(self, config_path: Path) -> bool:
-        """Validate that config path exists."""
-        if not config_path.exists():
-            logger.warning(
-                "Model configuration file not found at %s. Registry will be empty.",
-                config_path,
-            )
-            return False
-        return True
+        Priority order:
+        1. Explicit config_path parameter
+        2. VLLM_SPYRE_MODEL_CONFIG_FILE environment variable
+        3. Default location (vllm_spyre/config/model_configs.yaml)
+        """
+        if config_path is not None:
+            return config_path
+
+        env_path = envs.VLLM_SPYRE_MODEL_CONFIG_FILE
+        if env_path is not None:
+            return Path(env_path)
+
+        return Path(__file__).parent / "model_configs.yaml"
 
     def _load_and_register_models(self, config_path: Path) -> None:
         """Load YAML and register all models.

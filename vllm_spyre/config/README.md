@@ -39,7 +39,7 @@ To use the configuration system:
 ```python
 from vllm_spyre.config.model_registry import get_model_registry
 
-# Get the registry (auto-initializes)
+# Get the registry (auto-initializes with default or env var path)
 registry = get_model_registry()
 
 # Get configurator for your runtime
@@ -51,6 +51,22 @@ if configurator:
     summary = configurator.configure(vllm_config)
     logger.info(summary.format_log_message())
 ```
+
+### Custom Configuration File
+
+By default, the registry loads from `vllm_spyre/config/model_configs.yaml`. You can override this in three ways (in priority order):
+
+1. **Explicit path**: Pass `config_path` to `initialize()`
+   ```python
+   registry.initialize(config_path=Path("/path/to/custom_config.yaml"))
+   ```
+
+2. **Environment variable**: Set `VLLM_SPYRE_MODEL_CONFIG_FILE`
+   ```bash
+   export VLLM_SPYRE_MODEL_CONFIG_FILE=/path/to/custom_config.yaml
+   ```
+
+3. **Default**: Uses built-in `model_configs.yaml`
 
 ## Overview
 
