@@ -57,15 +57,8 @@ async def test_abort(
 ):
     """Test handling of cancelled requests"""
     with monkeypatch.context() as m, ExitStack() as after:
-        patch_kwargs = (
-            {
-                "use_chunked_prefill": mode in ["cp", "pc"],
-            }
-            if mode in ["cp", "pc"]
-            else {}
-        )
         patch_environment(
-            **patch_kwargs,
+            use_chunked_prefill=True,
             backend=backend,
             monkeypatch=m,
         )
@@ -77,7 +70,7 @@ async def test_abort(
                 tokenizer=model.name,
                 max_model_len=max_model_len,
                 max_num_seqs=max_num_seqs,
-                max_num_batched_tokens=max_num_batched_tokens if mode in ["cp", "pc"] else None,
+                max_num_batched_tokens=max_num_batched_tokens,
                 enable_prefix_caching=mode == "pc",
                 revision=model.revision,
                 tokenizer_revision=model.revision,
