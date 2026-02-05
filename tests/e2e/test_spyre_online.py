@@ -1,6 +1,8 @@
 import openai
 import pytest
 
+from spyre_util import ModelInfo, RemoteOpenAIServer, get_chicken_soup_prompts
+
 
 def _check_result(client, model, max_tokens=8, temperature=0.0, n=1) -> None:
     completion = client.completions.create(
@@ -33,17 +35,34 @@ def test_openai_serving(
 
     # Check some basic error handling as well. This is all done in one test
     # now to avoid server boot-up overhead to test each case.
-    # To change this we'll need:
-    # - A better way to share a server as a test fixture, or
-    # - Much less overhead on server boot (e.g. cached compiled graphs)
+
+    # FIXME: Add matching strings here for the user-facing error message
     with pytest.raises(openai.APIError):
         # Prompt too long should raise
-        long_prompt = "Hello " * 1000
-        client.completions.create(model=model, prompt=long_prompt, max_tokens=500)
+        long_prompt = "Hello " * max_model_len * 2
+        client.completions.create(model=model, prompt=long_prompt, max_tokens=1)
 
-    # Short prompt under context length but requesting too many tokens for
-    # the warmup shape should return an empty result
-    try:
-        client.completions.create(model=model, prompt="Hello World!", max_tokens=25)
-    except openai.BadRequestError as e:
-        assert "warmup" in str(e)
+    # Short prompt under context length but requesting too many tokens should raise
+    with pytest.raises(openai.APIError):        
+        client.completions.create(model=model, prompt="Hello World!", max_tokens=max_model_len*2)
+
+
+@pytest.mark.parametrize("backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
+def test_api_generates_correct_max_tokens(
+    remote_openai_server: RemoteOpenAIServer,
+    model: ModelInfo,
+    backend: str,
+    max_model_len: int,
+    max_num_seqs: int,
+    mode: bool,
+):
+    """Verify API generates the correct numbers of tokens with CB enabled"""
+
+    client = remote_openai_server.get_client()
+    max_tokens = 10
+
+    response = client.completions.create(
+        model=model.name, prompt=get_chicken_soup_prompts(1), max_tokens=max_tokens, temperature=0
+    )
+
+    assert response.usage.completion_tokens == max_tokens

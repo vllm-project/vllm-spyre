@@ -4,7 +4,7 @@ Run `python -m pytest tests/e2e/test_spyre_basic.py`.
 """
 
 import pytest
-from output_util import validate_vllm_vs_hf_output, kwargs_for_mode
+from output_util import validate_vllm_vs_hf_output, kwargs_for_mode, generate_spyre_vllm_output
 from spyre_util import (
     ModelInfo,
     get_chicken_soup_prompts,
@@ -110,3 +110,39 @@ def test_batch_handling(
         max_num_seqs=max_num_seqs,
         **kwargs_for_mode(mode),
     )
+
+
+@pytest.mark.parametrize("backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
+def test_max_tokens(
+    model: ModelInfo,
+    backend: str,
+    max_model_len: int,
+    max_num_seqs: int,
+    monkeypatch: pytest.MonkeyPatch,
+    use_llm_cache,
+    mode: str,
+):
+    """Test that batches of requests that are longer than the `max_model_len` are correctly 
+    rejected"""
+    max_tokens = 20
+
+    overflow_prompt = " ".join(["a"] * max_model_len)
+
+    vllm_sampling_params = SamplingParams(
+        max_tokens=max_tokens, temperature=0, ignore_eos=True, logprobs=0
+    )
+
+    # The text of the error raised by vllm changed from 0.11.0 to 0.11.1
+    with pytest.raises(ValueError, match="(max model context length|maximum model length)"):
+        generate_spyre_vllm_output(
+            model=model,
+            prompts=[overflow_prompt],
+            max_model_len=max_model_len,
+            sampling_params=vllm_sampling_params,
+            tensor_parallel_size=1,
+            backend=backend,
+            max_num_seqs=max_num_seqs,
+            max_num_batched_tokens=(128 if mode == "cp" else None),
+            monkeypatch=monkeypatch,
+        )
+
