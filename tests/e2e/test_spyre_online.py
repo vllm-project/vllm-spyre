@@ -43,8 +43,8 @@ def test_openai_serving(
         client.completions.create(model=model, prompt=long_prompt, max_tokens=1)
 
     # Short prompt under context length but requesting too many tokens should raise
-    with pytest.raises(openai.APIError):        
-        client.completions.create(model=model, prompt="Hello World!", max_tokens=max_model_len*2)
+    with pytest.raises(openai.APIError):
+        client.completions.create(model=model, prompt="Hello World!", max_tokens=max_model_len * 2)
 
 
 @pytest.mark.parametrize("backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])

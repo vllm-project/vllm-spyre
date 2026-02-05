@@ -3,7 +3,6 @@ returning the results"""
 
 import math
 import os
-from pathlib import Path
 from typing import Any, Union
 
 import numpy as np

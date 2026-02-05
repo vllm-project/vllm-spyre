@@ -122,7 +122,7 @@ def test_max_tokens(
     use_llm_cache,
     mode: str,
 ):
-    """Test that batches of requests that are longer than the `max_model_len` are correctly 
+    """Test that batches of requests that are longer than the `max_model_len` are correctly
     rejected"""
     max_tokens = 20
 
@@ -145,4 +145,3 @@ def test_max_tokens(
             max_num_batched_tokens=(128 if mode == "cp" else None),
             monkeypatch=monkeypatch,
         )
-
