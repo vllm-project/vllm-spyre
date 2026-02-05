@@ -9,7 +9,7 @@ import torch._inductor.config
 import torch.distributed as dist
 import torch.nn as nn
 from fms.models import get_model
-from transformers import PretrainedConfig
+from transformers import PretrainedConfig, Mistral3Config
 from vllm.config import ModelConfig, VllmConfig
 from vllm.forward_context import get_forward_context
 from vllm.logger import init_logger
@@ -182,7 +182,7 @@ class FmsModelBase(nn.Module):
     ) -> None:
         super().__init__()
 
-        self.config: PretrainedConfig = vllm_config.model_config.hf_config
+        self.config: PretrainedConfig = self.may_be_get_typed_hf_config(vllm_config.model_config.hf_config)
 
         # Actual FMS model
         self.model: nn.Module
@@ -362,6 +362,18 @@ class FmsModelBase(nn.Module):
                 name,
             )
             param.data = param.data.to(dtype=torch.float32)
+
+    @staticmethod
+    def may_be_get_typed_hf_config(hf_config: PretrainedConfig):
+        """Get a properly typed HF config by manually casting if necessary
+        This is similar to vLLM's ctx.get_hf_config() pattern for type casting configs.
+        """
+
+        if hf_config.model_type == "pixtral":
+            # Convert to dict and back to avoid double-nesting of vision_config
+            return Mistral3Config(**hf_config.to_dict())
+        else:
+            return hf_config
 
 
 class ContinuousBatchingFmsModel(FmsModelBase):
