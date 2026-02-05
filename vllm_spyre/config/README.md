@@ -54,14 +54,17 @@ if configurator:
 
 ### Custom Configuration File
 
-By default, the registry loads from `vllm_spyre/config/model_configs.yaml`. You can override this in three ways (in priority order):
+By default, the registry loads from `vllm_spyre/config/model_configs.yaml`. You
+can override this in three ways (in priority order):
 
 1. **Explicit path**: Pass `config_path` to `initialize()`
+
    ```python
    registry.initialize(config_path=Path("/path/to/custom_config.yaml"))
    ```
 
 2. **Environment variable**: Set `VLLM_SPYRE_MODEL_CONFIG_FILE`
+
    ```bash
    export VLLM_SPYRE_MODEL_CONFIG_FILE=/path/to/custom_config.yaml
    ```
