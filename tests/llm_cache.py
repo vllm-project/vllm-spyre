@@ -68,7 +68,7 @@ class ModelCache(Generic[T]):
             self._teardown(self._model)
             self._model = None
             self._runtime_config = None
-        self._reset_vllm_dt_env_vars()
+            self._reset_vllm_dt_env_vars()
 
     def _type(self) -> type | None:
         if hasattr(self, "__orig_class__"):
