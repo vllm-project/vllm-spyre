@@ -23,7 +23,8 @@ def parse_args():
         "--max-tokens",
         type=str,
         default="20,65",
-        help="Comma separated list of max tokens to use for each prompt. This list is repeated until prompts are exhausted.",
+        help="Comma separated list of max tokens to use for each prompt. "
+        "This list is repeated until prompts are exhausted.",
     )
     parser.add_argument("--compare-with-cpu", action=argparse.BooleanOptionalAction)
     return parser.parse_args()
@@ -42,6 +43,7 @@ def main():
         os.environ["HF_HUB_OFFLINE"] = "1"
 
     if args.new_stack:
+        # TODO this switch is just in place until we install the package vllm_spyre_next correctly
         # activate new stack
         os.environ["VLLM_SPYRE_USE_TORCH_SPYRE"] = "1"
     else:
@@ -66,7 +68,8 @@ def main():
     )
 
     instructions = [
-        # -> interestingly, for above default args, this prompt yields different outputs new stack vs HF. Old stack vs HF matches...
+        # -> interestingly, for above default args, this prompt yields different outputs
+        # for new stack vs HF. Old stack vs HF matches though... Probably just a numerical issue
         # "Provide a list of instructions for preparing chicken soup for a family" + " of four.",
         "Provide instructions for preparing chicken soup.",
         "Provide a list of instructions for preparing chicken soup for a family.",

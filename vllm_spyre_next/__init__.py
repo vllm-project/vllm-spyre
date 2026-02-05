@@ -4,23 +4,14 @@ from logging.config import dictConfig
 from typing import Any
 
 from vllm.envs import VLLM_CONFIGURE_LOGGING, VLLM_LOGGING_CONFIG_PATH
-from vllm.logger import DEFAULT_LOGGING_CONFIG, init_logger
-import vllm_spyre.envs as envs_spyre
+from vllm.logger import DEFAULT_LOGGING_CONFIG
 
-__version__ = importlib.metadata.version("vllm_spyre")
-
-logger = init_logger(__name__)
+__version__ = importlib.metadata.version("vllm_spyre_next")
 
 
 def register():
     """Register the Spyre platform."""
-    # TODO this switch is just in place until we install the package vllm_spyre_next correctly
-    if envs_spyre.VLLM_SPYRE_USE_TORCH_SPYRE:
-        platform_class = "vllm_spyre_next.platform.TorchSpyrePlatform"
-    else:
-        platform_class = "vllm_spyre.platform.SpyrePlatform"
-    logger.info("Registering platform from: %s", platform_class)
-    return platform_class
+    return "vllm_spyre_next.platform.TorchSpyrePlatform"
 
 
 def _init_logging():
@@ -37,27 +28,29 @@ def _init_logging():
 
     if VLLM_CONFIGURE_LOGGING:
         # Copy the vLLM logging configurations for our package
-        if "vllm_spyre" not in config["formatters"]:
+        if "vllm_spyre_next" not in config["formatters"]:
             if "vllm" in config["formatters"]:
-                config["formatters"]["vllm_spyre"] = config["formatters"]["vllm"]
+                config["formatters"]["vllm_spyre_next"] = config["formatters"]["vllm"]
             else:
-                config["formatters"]["vllm_spyre"] = DEFAULT_LOGGING_CONFIG["formatters"]["vllm"]
+                config["formatters"]["vllm_spyre_next"] = DEFAULT_LOGGING_CONFIG["formatters"][
+                    "vllm"
+                ]
 
-        if "vllm_spyre" not in config["handlers"]:
+        if "vllm_spyre_next" not in config["handlers"]:
             if "vllm" in config["handlers"]:
                 handler_config = config["handlers"]["vllm"]
             else:
                 handler_config = DEFAULT_LOGGING_CONFIG["handlers"]["vllm"]
-            handler_config["formatter"] = "vllm_spyre"
-            config["handlers"]["vllm_spyre"] = handler_config
+            handler_config["formatter"] = "vllm_spyre_next"
+            config["handlers"]["vllm_spyre_next"] = handler_config
 
-        if "vllm_spyre" not in config["loggers"]:
+        if "vllm_spyre_next" not in config["loggers"]:
             if "vllm" in config["loggers"]:
                 logger_config = config["loggers"]["vllm"]
             else:
                 logger_config = DEFAULT_LOGGING_CONFIG["loggers"]["vllm"]
-            logger_config["handlers"] = ["vllm_spyre"]
-            config["loggers"]["vllm_spyre"] = logger_config
+            logger_config["handlers"] = ["vllm_spyre_next"]
+            config["loggers"]["vllm_spyre_next"] = logger_config
 
     dictConfig(config)
 

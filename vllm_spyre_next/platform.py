@@ -44,21 +44,22 @@ class TorchSpyrePlatform(CpuPlatform):
             # "auto" defaults to the CPUWorker as we inherit from the CpuPlatform
             worker_class = "vllm.v1.worker.cpu_worker.CPUWorker"
             # if a torch spyre specific worker class is needed it can be loaded with
-            # worker_class = "vllm_spyre.v1.worker.spyre_worker.TorchSpyreWorker"
+            # worker_class = "vllm_spyre_next.v1.worker.spyre_worker.TorchSpyreWorker"
             logger.info("Loading worker from: %s", worker_class)
             parallel_config.worker_cls = worker_class
 
         # ---- model runner ----
         # A custom model runner has to be added to a potential TorchSpyreWorker class:
         # TorchSpyreWorker.model_runner = TorchSpyreModelRunner (see SpyreWorker for reference)
-        # The default vllm.v1.worker.cpu_worker.CPUWorker uses vllm.v1.worker.cpu_model_runner.CPUModelRunner
+        # The default vllm.v1.worker.cpu_worker.CPUWorker uses
+        # vllm.v1.worker.cpu_model_runner.CPUModelRunner
 
         # ---- scheduler ----
         scheduler_config = vllm_config.scheduler_config
         # default scheduler
         scheduler_class = "vllm.v1.core.sched.scheduler.Scheduler"
         # if a torch spyre specific scheduler class is needed it can be loaded with
-        # scheduler_class = "vllm_spyre.v1.core.scheduler.TorchSpyreScheduler"
+        # scheduler_class = "vllm_spyre_next.v1.core.scheduler.TorchSpyreScheduler"
         logger.info("Loading scheduler from: %s", scheduler_class)
         scheduler_config.scheduler_cls = scheduler_class
 
