@@ -37,6 +37,11 @@ def stagger_region(limit: int, world_size: int, rank: int):
             if rank >= (_set + 1) * limit:
                 continue
             torch.distributed.barrier()
+
+        import traceback
+
+        traceback.print_stack()
+
         logger.info("Stagger Region: All Complete")
 
 

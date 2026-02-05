@@ -142,6 +142,7 @@ async def test_chunked_prefill_kv_cache_stats(
     mode,
     max_num_seqs,
     max_model_len,
+    max_num_batched_tokens,
 ):
     # Test that vllm metrics include prefix caching data
     client = remote_openai_server.get_async_client()
