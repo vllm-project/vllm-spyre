@@ -162,9 +162,6 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "VLLM_SPYRE_CP_INTERLEAVE_STEPS": lambda: bool(
         int(os.getenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "1"))
     ),
-    # Feature Flag
-    # Use the new torch-spyre SW stack (default off -> using old SW stack)
-    "VLLM_SPYRE_USE_TORCH_SPYRE": lambda: bool(int(os.getenv("VLLM_SPYRE_USE_TORCH_SPYRE", "0"))),
 }
 # --8<-- [end:env-vars-definition]
 
