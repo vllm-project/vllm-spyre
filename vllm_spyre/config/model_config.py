@@ -11,8 +11,9 @@ class ArchitecturePattern:
     Attributes:
         model_name: The model name/identifier (e.g., 'ibm-granite/granite-3.3-8b-instruct')
         model_type: The model type (e.g., 'granite', 'llama', 'roberta')
-        attributes: Dictionary of arbitrary attributes to match against HF config.
-                   Keys are attribute names, values are expected values (None means optional).
+        attributes: Dictionary of attributes that MUST match against HF config.
+                   Only include attributes that are required for matching.
+                   Values cannot be None - only include fields needed for matching.
                    Common attributes include: num_hidden_layers, max_position_embeddings,
                    hidden_size, vocab_size, num_key_value_heads, num_attention_heads,
                    num_experts_per_tok, quantization_config, etc.
@@ -23,33 +24,26 @@ class ArchitecturePattern:
     attributes: dict[str, Any] = field(default_factory=dict)
 
     @property
-    def complexity_score(self) -> int:
-        """Calculate complexity score for pattern prioritization.
+    def field_count(self) -> int:
+        """Count the number of fields in the pattern.
 
-        More complex patterns (with more constraints) get higher scores,
-        ensuring they are matched before simpler, more generic patterns.
+        Used for pattern prioritization: patterns with more fields are more specific
+        and should be matched first (e.g., quantized models have more fields than base models).
+
+        For nested dictionaries (like quantization_config), counts the dict itself as 1
+        plus each key within it as an additional 1.
 
         Returns:
-            Complexity score (higher = more specific/complex pattern)
+            Number of fields in the pattern
         """
-        score = 0
+        count = len(self.attributes)
 
-        # Count non-None attributes
-        for attr_name, attr_value in self.attributes.items():
-            if attr_value is None:
-                continue
+        # Add nested dict fields
+        for attr_value in self.attributes.values():
+            if isinstance(attr_value, dict):
+                count += len(attr_value)
 
-            # Quantization config gets extra weight as it's a key differentiator
-            if attr_name == "quantization_config" and isinstance(attr_value, dict):
-                # Base score for having quantization_config
-                score += 10
-                # Additional score for each key in quantization_config
-                score += len(attr_value)
-            else:
-                # Regular attribute match
-                score += 1
-
-        return score
+        return count
 
     @classmethod
     def from_dict(cls, model_name: str, data: dict[str, Any]) -> "ArchitecturePattern":
@@ -61,12 +55,31 @@ class ArchitecturePattern:
 
         Returns:
             ArchitecturePattern instance
+
+        Raises:
+            ValueError: If any attribute value is None
         """
         # Extract model_type (required)
         model_type = data["model_type"]
 
         # All other keys become attributes
         attributes = {k: v for k, v in data.items() if k != "model_type"}
+
+        # Validate no None values in attributes
+        for attr_name, attr_value in attributes.items():
+            if attr_value is None:
+                raise ValueError(
+                    f"Model '{model_name}': Attribute '{attr_name}' cannot be None. "
+                    f"Only include attributes that are required for matching."
+                )
+            # Also check nested dicts for None values
+            if isinstance(attr_value, dict):
+                for nested_key, nested_value in attr_value.items():
+                    if nested_value is None:
+                        raise ValueError(
+                            f"Model '{model_name}': Nested attribute '{attr_name}.{nested_key}' "
+                            f"cannot be None. Only include attributes that are required for matching."
+                        )
 
         return cls(
             model_name=model_name,

@@ -129,7 +129,7 @@ class ModelConfigRegistry:
     def find_matching_model(self, vllm_model_config: "VllmModelConfig") -> ModelConfig | None:
         """Find model config by matching HF config.
 
-        When multiple patterns match, returns the one with the highest complexity score
+        When multiple patterns match, returns the one with the most fields
         to prioritize more specific patterns (e.g., quantized models) over generic ones.
 
         Args:
@@ -144,28 +144,28 @@ class ModelConfigRegistry:
             return None
 
         best_match: ModelConfig | None = None
-        best_score = -1
+        best_field_count = -1
 
         for model_name, model_config in self._models.items():
             if self._matcher.matches(hf_config, model_config.architecture):
-                score = model_config.architecture.complexity_score
+                field_count = model_config.architecture.field_count
                 logger.debug(
-                    "Model '%s' matches configuration '%s' with complexity score %d",
+                    "Model '%s' matches configuration '%s' with %d fields",
                     vllm_model_config.model,
                     model_name,
-                    score,
+                    field_count,
                 )
 
-                if score > best_score:
+                if field_count > best_field_count:
                     best_match = model_config
-                    best_score = score
+                    best_field_count = field_count
 
         if best_match:
             logger.info(
-                "Matched model '%s' to configuration '%s' (complexity score: %d)",
+                "Matched model '%s' to configuration '%s' (%d fields)",
                 vllm_model_config.model,
                 best_match.name,
-                best_score,
+                best_field_count,
             )
         else:
             logger.debug("No matching model configuration found for '%s'", vllm_model_config.model)

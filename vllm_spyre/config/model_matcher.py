@@ -56,14 +56,11 @@ class ModelMatcher:
             hf_config: HuggingFace model configuration object
             model_name: Model name for logging purposes
             attr_name: Name of the attribute to validate
-            pattern_value: Expected value for the attribute
+            pattern_value: Expected value for the attribute (never None)
 
         Returns:
-            True if the attribute matches or is not required, False otherwise
+            True if the attribute matches, False otherwise
         """
-        if pattern_value is None:
-            return True
-
         if not hasattr(hf_config, attr_name):
             logger.debug(
                 "Model '%s': HF config missing attribute '%s' required by pattern",

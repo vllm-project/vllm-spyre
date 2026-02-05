@@ -86,13 +86,13 @@ class TestArchitecturePattern:
         assert pattern.attributes["num_experts_per_tok"] == 2
         assert pattern.attributes["quantization_config"] == {"format": "float-quantized"}
 
-    def test_complexity_score_minimal_pattern(self):
-        """Test complexity score for minimal pattern (no attributes)."""
+    def test_field_count_minimal_pattern(self):
+        """Test field count for minimal pattern (no attributes)."""
         pattern = ArchitecturePattern(model_name="test-model", model_type="llama")
-        assert pattern.complexity_score == 0
+        assert pattern.field_count == 0
 
-    def test_complexity_score_with_attributes(self):
-        """Test complexity score increases with attributes."""
+    def test_field_count_with_attributes(self):
+        """Test field count increases with attributes."""
         pattern = ArchitecturePattern(
             model_name="test-model",
             model_type="granite",
@@ -101,10 +101,10 @@ class TestArchitecturePattern:
                 "hidden_size": 4096,
             },
         )
-        assert pattern.complexity_score == 2
+        assert pattern.field_count == 2
 
-    def test_complexity_score_with_quantization_config(self):
-        """Test complexity score gives extra weight to quantization_config."""
+    def test_field_count_with_quantization_config(self):
+        """Test field count counts quantization_config and its nested fields."""
         pattern = ArchitecturePattern(
             model_name="test-model-fp8",
             model_type="granite",
@@ -116,20 +116,30 @@ class TestArchitecturePattern:
                 },
             },
         )
-        # 1 for num_hidden_layers + 10 for quantization_config + 2 for keys in quantization_config
-        assert pattern.complexity_score == 13
+        # 1 for num_hidden_layers + 1 for quantization_config + 2 for keys in quantization_config
+        assert pattern.field_count == 4
 
-    def test_complexity_score_ignores_none_values(self):
-        """Test complexity score ignores None attribute values."""
-        pattern = ArchitecturePattern(
-            model_name="test-model",
-            model_type="granite",
-            attributes={
-                "num_hidden_layers": 32,
-                "hidden_size": None,  # Should be ignored
+    def test_from_dict_rejects_none_values(self):
+        """Test that from_dict rejects None attribute values."""
+        data = {
+            "model_type": "granite",
+            "num_hidden_layers": 32,
+            "hidden_size": None,  # Should be rejected
+        }
+        with pytest.raises(ValueError, match="cannot be None"):
+            ArchitecturePattern.from_dict("test-model", data)
+
+    def test_from_dict_rejects_nested_none_values(self):
+        """Test that from_dict rejects None values in nested dicts."""
+        data = {
+            "model_type": "granite",
+            "quantization_config": {
+                "format": "float-quantized",
+                "quant_method": None,  # Should be rejected
             },
-        )
-        assert pattern.complexity_score == 1
+        }
+        with pytest.raises(ValueError, match="cannot be None"):
+            ArchitecturePattern.from_dict("test-model", data)
 
 
 class TestDeviceConfig:

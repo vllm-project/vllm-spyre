@@ -124,30 +124,6 @@ class TestModelMatcherHappyPath:
 
         assert matcher.matches(hf_config, pattern)
 
-    def test_pattern_with_none_values_matches_any(self, matcher):
-        """Test that pattern with None values (optional attributes) matches any value."""
-        pattern = ArchitecturePattern(
-            model_name="test-model",
-            model_type="granite",
-            attributes={
-                "num_hidden_layers": 32,
-                "hidden_size": None,  # None means optional/any value
-            },
-        )
-
-        # Test with attribute present
-        hf_config = Mock(
-            model_type="granite",
-            num_hidden_layers=32,
-            hidden_size=4096,
-        )
-        assert matcher.matches(hf_config, pattern)
-
-        # Test with attribute missing (seal to prevent auto-attribute creation)
-        hf_config = Mock(model_type="granite", num_hidden_layers=32)
-        seal(hf_config)
-        assert matcher.matches(hf_config, pattern)
-
 
 class TestModelMatcherEdgeCases:
     """Tests for edge cases and error conditions."""
