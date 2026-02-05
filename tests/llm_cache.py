@@ -119,12 +119,12 @@ class LLMCache:
         instead to reduce LLM instantiation overhead.
         """
         # Use chunked prefill if max_num_batched_tokens is set
-        use_chunked_prefill = bool(max_num_batched_tokens)
+        # use_chunked_prefill = bool(max_num_batched_tokens)
         runtime_config = {
             "model": model,
             "tensor_parallel_size": tensor_parallel_size,
             "backend": backend,
-            "use_cp": use_chunked_prefill,
+            "use_cp": True,
             "use_pc": use_pc,
             "max_num_batched_tokens": max_num_batched_tokens,
         }
@@ -134,12 +134,10 @@ class LLMCache:
             runtime_config.update({"max_model_len": max_model_len, "max_num_seqs": max_num_seqs})
 
         # Always patch the environment so that it's consistent with the LLM
-        if use_pc:
-            assert use_chunked_prefill
         patch_environment(
             backend,
             monkeypatch,
-            use_chunked_prefill=use_chunked_prefill,
+            use_chunked_prefill=True,
             max_num_batched_tokens=max_num_batched_tokens,
         )
 

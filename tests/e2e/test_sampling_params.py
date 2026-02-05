@@ -5,19 +5,22 @@ from llm_cache import get_cached_llm
 from spyre_util import ModelInfo
 from vllm import SamplingParams
 
+from tests.output_util import kwargs_for_mode
+
 pytestmark = [pytest.mark.full_model, pytest.mark.other_e2e]
 
 cb_mark = pytest.param("cb", marks=pytest.mark.cb, id="cb")
 cp_mark = pytest.param("cp", marks=pytest.mark.chunked_prefill, id="cp")
 
 
-def test_spyre_batch1_temperature(model: ModelInfo, backend, monkeypatch, use_llm_cache):
+def test_spyre_batch1_temperature(model: ModelInfo, backend, monkeypatch, mode, use_llm_cache):
     spyre_model = get_cached_llm(
         model=model,
         max_model_len=128,
         tensor_parallel_size=1,
         backend=backend,
         monkeypatch=monkeypatch,
+        **kwargs_for_mode(mode),
     )
 
     prompt = "The capital of the United Kingdom is"

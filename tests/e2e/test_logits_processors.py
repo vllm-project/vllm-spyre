@@ -1,4 +1,3 @@
-import pytest
 import torch
 from llm_cache import patch_environment
 from llm_cache_util import force_engine_shutdown
@@ -37,7 +36,6 @@ def test_custom_logits_processor(
 
     patch_environment(
         backend=backend,
-        use_chunked_prefill=mode in ["cp", "pc"],
         monkeypatch=monkeypatch,
     )
 
@@ -46,7 +44,7 @@ def test_custom_logits_processor(
         revision=model.revision,
         max_model_len=max_model_len,
         max_num_seqs=max_num_seqs,
-        max_num_batched_tokens=128 if mode in ["cp", "pc"] else None,
+        max_num_batched_tokens=128,
         enable_prefix_caching=mode == "pc",
         logits_processors=[DummyLogitsProcessor],
     )
@@ -59,10 +57,10 @@ def test_custom_logits_processor(
     assert has_invoked_logits_processor
 
 
-@pytest.mark.cb
-def test_cb_logits_processor(model: ModelInfo, backend, monkeypatch, max_model_len):
+# TODO: validate that this test case is valid for chunked prefill
+def test_cb_logits_processor(model: ModelInfo, backend, monkeypatch, max_model_len, mode: str):
     """
-    Test if the state of logits for CB are correct due to the switch of
+    Test if the state of logits processors are correct due to the switch of
     prefill/decode in a step engine. The LLM is initialized with bs=2,
     we send 3 requests, one of them should be waiting for the other 2
     to complete. The first request should finish and give its slot to
@@ -127,7 +125,6 @@ def test_cb_logits_processor(model: ModelInfo, backend, monkeypatch, max_model_l
 
     patch_environment(
         backend=backend,
-        use_chunked_prefill=False,
         monkeypatch=monkeypatch,
     )
 
@@ -137,6 +134,8 @@ def test_cb_logits_processor(model: ModelInfo, backend, monkeypatch, max_model_l
         max_model_len=max_model_len,
         max_num_seqs=2,
         logits_processors=[SpyLogitsProcessor],
+        max_num_batched_tokens=128,
+        enable_prefix_caching=mode == "pc",
     )
     prompt = ["Hello Logits Processors"] * 3
     params0 = SamplingParams(max_tokens=5, temperature=0, logprobs=0, ignore_eos=True)
