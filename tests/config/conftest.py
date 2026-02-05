@@ -51,55 +51,59 @@ def embedding_hf_config():
 
 
 @pytest.fixture
-def create_vllm_config():
-    """Factory fixture to create mock vllm_config with specified parameters."""
+def micro_model_hf_config():
+    """Fixture providing real micro-g3.3-8b-instruct-1b HF config."""
+    fixture_path = FIXTURES_PATH / "ibm-ai-platform" / "micro-g3.3-8b-instruct-1b" / "config.json"
+    return _load_hf_config(fixture_path)
 
-    def _create(
-        hf_config=None,
-        world_size=1,
-        max_model_len=None,
-        max_num_seqs=None,
-        max_num_batched_tokens=None,
-        num_gpu_blocks_override=None,
-        model_path=None,
-    ):
-        """Create a mock vllm_config.
 
-        Args:
-            hf_config: HF config object (Mock or real)
-            world_size: Tensor parallel size
-            max_model_len: Maximum model length
-            max_num_seqs: Max sequences (None for static batching)
-            max_num_batched_tokens: Max batched tokens
-            num_gpu_blocks_override: GPU blocks override value
-            model_path: Model path string
-        """
-        vllm_config = Mock()
+def create_vllm_config(
+    hf_config=None,
+    world_size=1,
+    max_model_len=None,
+    max_num_seqs=None,
+    max_num_batched_tokens=None,
+    num_gpu_blocks_override=None,
+    model_path=None,
+):
+    """Create a mock vllm_config for testing.
 
-        # Model config
-        model_config_attrs = {}
-        if hf_config is not None:
-            model_config_attrs["hf_config"] = hf_config
-        if max_model_len is not None:
-            model_config_attrs["max_model_len"] = max_model_len
-        if model_path is not None:
-            model_config_attrs["model"] = model_path
-        vllm_config.model_config = Mock(**model_config_attrs)
+    Args:
+        hf_config: HF config object (Mock or real)
+        world_size: Tensor parallel size
+        max_model_len: Maximum model length
+        max_num_seqs: Max sequences (None for static batching)
+        max_num_batched_tokens: Max batched tokens
+        num_gpu_blocks_override: GPU blocks override value
+        model_path: Model path string
 
-        # Parallel config
-        vllm_config.parallel_config = Mock(world_size=world_size)
+    Returns:
+        Mock vllm_config with specified attributes
+    """
+    vllm_config = Mock()
 
-        # Scheduler config
-        vllm_config.scheduler_config = Mock(
-            max_num_seqs=max_num_seqs, max_num_batched_tokens=max_num_batched_tokens
-        )
+    # Model config
+    model_config_attrs = {}
+    if hf_config is not None:
+        model_config_attrs["hf_config"] = hf_config
+    if max_model_len is not None:
+        model_config_attrs["max_model_len"] = max_model_len
+    if model_path is not None:
+        model_config_attrs["model"] = model_path
+    vllm_config.model_config = Mock(**model_config_attrs)
 
-        # Cache config
-        vllm_config.cache_config = Mock(num_gpu_blocks_override=num_gpu_blocks_override)
+    # Parallel config
+    vllm_config.parallel_config = Mock(world_size=world_size)
 
-        return vllm_config
+    # Scheduler config
+    vllm_config.scheduler_config = Mock(
+        max_num_seqs=max_num_seqs, max_num_batched_tokens=max_num_batched_tokens
+    )
 
-    return _create
+    # Cache config
+    vllm_config.cache_config = Mock(num_gpu_blocks_override=num_gpu_blocks_override)
+
+    return vllm_config
 
 
 # Made with Bob

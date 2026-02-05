@@ -1,7 +1,7 @@
 """Tests for ModelMatcher - pattern-based model matching logic."""
 
 import pytest
-from unittest.mock import Mock
+from unittest.mock import Mock, seal
 
 from vllm_spyre.config.model_config import ArchitecturePattern
 from vllm_spyre.config.model_matcher import ModelMatcher
@@ -143,8 +143,9 @@ class TestModelMatcherHappyPath:
         )
         assert matcher.matches(hf_config, pattern)
 
-        # Test with attribute missing
+        # Test with attribute missing (seal to prevent auto-attribute creation)
         hf_config = Mock(model_type="granite", num_hidden_layers=32)
+        seal(hf_config)
         assert matcher.matches(hf_config, pattern)
 
 
@@ -170,15 +171,28 @@ class TestModelMatcherEdgeCases:
         ],
         ids=["attribute_missing", "attribute_value_differs"],
     )
-    def test_no_match_when_attribute_mismatch(self, matcher, hf_config_attrs, reason):
+    def test_no_match_when_attribute_mismatch(
+        self, matcher, hf_config_attrs, reason, caplog_vllm_spyre
+    ):
         """Test that missing or different attribute causes no match."""
         pattern = ArchitecturePattern(
             model_name="test-model",
             model_type="granite",
             attributes={"num_hidden_layers": 32},
         )
+        # Create Mock and seal to prevent auto-attribute creation
         hf_config = Mock(model_type="granite", **hf_config_attrs)
+        seal(hf_config)
+
         assert not matcher.matches(hf_config, pattern)
+
+        # Verify debug log for missing attribute case
+        if reason == "missing":
+            assert any(
+                "missing attribute" in record.message.lower()
+                and "num_hidden_layers" in record.message
+                for record in caplog_vllm_spyre.records
+            )
 
     def test_no_match_when_quantization_config_format_differs(self, matcher):
         """Test that non-dict quantization_config causes no match."""

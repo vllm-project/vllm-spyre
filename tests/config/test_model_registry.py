@@ -6,6 +6,7 @@ from unittest.mock import Mock
 
 from vllm_spyre.config.model_config import ModelConfig
 from vllm_spyre.config.model_registry import ModelConfigRegistry
+from .conftest import create_vllm_config
 
 pytestmark = pytest.mark.skip_global_cleanup
 
@@ -38,23 +39,11 @@ models:
 @pytest.fixture
 def mock_static_vllm_config():
     """Fixture providing a mock vllm config for static batching."""
-    vllm_config = Mock()
-    vllm_config.model_config = Mock(hf_config=Mock(model_type="test"))
-    vllm_config.parallel_config = Mock(world_size=1)
-    vllm_config.scheduler_config = Mock(max_num_seqs=None)
-    vllm_config.cache_config = Mock(num_gpu_blocks_override=None)
-    return vllm_config
-
-
-def create_mock_vllm_config(world_size, max_model_len, max_num_seqs):
-    """Create a mock vllm config with specified parameters."""
-    vllm_config = Mock()
-    vllm_config.model_config = Mock()
-    vllm_config.model_config.hf_config = Mock(model_type="test")
-    vllm_config.parallel_config = Mock(world_size=world_size)
-    vllm_config.model_config.max_model_len = max_model_len
-    vllm_config.scheduler_config = Mock(max_num_seqs=max_num_seqs)
-    return vllm_config
+    return create_vllm_config(
+        hf_config=Mock(model_type="test"),
+        world_size=1,
+        max_num_seqs=None,
+    )
 
 
 class TestCBConfigMatchingLogic:
@@ -90,7 +79,12 @@ models:
         model_config = ModelConfig.from_dict("test-model", data["models"]["test-model"])
         registry.register_model(model_config)
 
-        vllm_config = create_mock_vllm_config(world_size, test_max_model_len, test_max_num_seqs)
+        vllm_config = create_vllm_config(
+            hf_config=Mock(model_type="test"),
+            world_size=world_size,
+            max_model_len=test_max_model_len,
+            max_num_seqs=test_max_num_seqs,
+        )
         configurator = registry.get_configurator_for_runtime(vllm_config)
 
         if should_match:
@@ -448,7 +442,12 @@ models:
         registry.register_model(model_config)
 
         # Create vllm config that would match the CB config
-        vllm_config = create_mock_vllm_config(world_size=1, max_model_len=8192, max_num_seqs=32)
+        vllm_config = create_vllm_config(
+            hf_config=Mock(model_type="test"),
+            world_size=1,
+            max_model_len=8192,
+            max_num_seqs=32,
+        )
 
         # Provide warmup_shapes that DON'T match the static batching config
         non_matching_warmup_shapes = [(128, 40, 2)]  # Not in static config
@@ -496,7 +495,12 @@ models:
         registry.register_model(model_config)
 
         # Create vllm config that would match the CB config
-        vllm_config = create_mock_vllm_config(world_size=1, max_model_len=8192, max_num_seqs=32)
+        vllm_config = create_vllm_config(
+            hf_config=Mock(model_type="test"),
+            world_size=1,
+            max_model_len=8192,
+            max_num_seqs=32,
+        )
 
         # Provide warmup_shapes that DO match the static batching config
         matching_warmup_shapes = [(64, 20, 4)]
