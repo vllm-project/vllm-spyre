@@ -192,24 +192,23 @@ class EngineCache:
         backend: str,
         monkeypatch,
     ) -> EngineCore:
-        use_chunked_prefill = bool(max_num_batched_tokens)
         runtime_config = {
             "model": model,
             "max_model_len": max_model_len,
             "max_num_seqs": max_num_seqs,
             "available_blocks": available_blocks,
-            "use_cp": use_chunked_prefill,
+            "use_cp": True,
             "use_pc": use_pc,
             "max_num_batched_tokens": max_num_batched_tokens,
         }
 
         # Always patch the environment so that it's consistent with the engine
         if use_pc:
-            assert use_chunked_prefill
+            assert max_num_batched_tokens is not None
         patch_environment(
             backend=backend,
             monkeypatch=monkeypatch,
-            use_chunked_prefill=use_chunked_prefill,
+            use_chunked_prefill=True,
         )
 
         maybe_engine = self._cache.maybe_get(runtime_config)
