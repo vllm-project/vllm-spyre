@@ -204,8 +204,10 @@ def test_spyre_n_generations(
     assert output.outputs[1].text != output.outputs[2].text
 
 
-def token_diversity(spyre_model: LLM, prompt: str, params: list[SamplingParams], n_experiments) -> list[int]:
-    """Runs multiple prompts for every sampling param provided. Returns a list of the number of 
+def token_diversity(
+    spyre_model: LLM, prompt: str, params: list[SamplingParams], n_experiments
+) -> list[int]:
+    """Runs multiple prompts for every sampling param provided. Returns a list of the number of
     unique tokens generated for each sampling param."""
     num_params = len(params)
     token_sets = []
@@ -214,10 +216,12 @@ def token_diversity(spyre_model: LLM, prompt: str, params: list[SamplingParams],
     for param in params:
         expanded_params.extend([param] * n_experiments)
 
-    outputs = spyre_model.generate([prompt] * n_experiments * num_params, expanded_params, use_tqdm=False)
-    
+    outputs = spyre_model.generate(
+        [prompt] * n_experiments * num_params, expanded_params, use_tqdm=False
+    )
+
     for i in range(num_params):
-        param_outputs = outputs[i * n_experiments: (i + 1) * n_experiments]
+        param_outputs = outputs[i * n_experiments : (i + 1) * n_experiments]
         token_set = set()
         for output in param_outputs:
             token_set.update(output.outputs[0].token_ids)
