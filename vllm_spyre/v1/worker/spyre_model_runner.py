@@ -999,7 +999,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
     def _get_blocks(self, request_id: str) -> list[KVCacheBlock]:
         return self.kv_cache_manager.req_to_blocks[request_id]
 
-    def get_total_spyre_blocks(self) -> int:
+    def get_total_spyre_blocks(self) -> int:  
         """Returns the total number of KV cache blocks available for spyre.
         This currently returns the number of blocks required for a full-sized
         batch, which may be greater than the available memory.
