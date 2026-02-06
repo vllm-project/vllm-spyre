@@ -517,67 +517,28 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             assert logits.shape[1] == SpyrePlatform.get_block_size()
 
         if self.is_fp8_model:
-            # If we weren't using static scaling, we would need to update the scales here
+            # If we weren't using static scaling, we would need to update the scales here.
+            # This adjustment is for the extra padding to batch size 2 required by pytorch<=2.7
             logits = self._adjust_output_for_fp8(logits, attn_metadata)
 
         return logits
 
     def _set_scale_for_fp8(self, attn_metadata: SpyreAttentionMetadata):
-        for layer_idx, (k, v) in enumerate(self.past_key_value_states):
-            if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
-                # static scaling
-                if attn_metadata.is_prefill:
-                    k._scale = torch.ones(1, dtype=torch.float32)
-                    v._scale = torch.ones(1, dtype=torch.float32)
-                elif len(attn_metadata.scale_indices) == 1:
-                    k._scale = torch.ones(2, dtype=torch.float32)
-                    v._scale = torch.ones(2, dtype=torch.float32)
-                else:
-                    k._scale = torch.ones(len(attn_metadata.scale_indices), dtype=torch.float32)
-                    v._scale = torch.ones(len(attn_metadata.scale_indices), dtype=torch.float32)
-
-                # interesting- no mark_dynamic required on decode here
-
-                k._scaled = True
-                v._scaled = True
-                continue
-
+        for _, (k, v) in enumerate(self.past_key_value_states):
+            # Static scaling: We always set the scale to 1.0
+            # There is probably an optimization here to not rebuild these [1.0] tensors
             if attn_metadata.is_prefill:
-                # NOTE: Currently, prefill is only for a single prompt
-                # In prefill, we restore the scale (no scale) and
-                # reset to 1.
-                assert len(attn_metadata.scale_indices) == 1
-                prefill_index = attn_metadata.scale_indices[0]
-                k._scale = self.current_kv_scales[layer_idx][0][prefill_index] = torch.ones(
-                    1, dtype=torch.float32
-                )
-                v._scale = self.current_kv_scales[layer_idx][1][prefill_index] = torch.ones(
-                    1, dtype=torch.float32
-                )
-                k._scaled = False
-                v._scaled = False
+                k._scale = torch.ones(1, dtype=torch.float32)
+                v._scale = torch.ones(1, dtype=torch.float32)
             elif len(attn_metadata.scale_indices) == 1:
-                # Decode
-                # Special case for decode of bs=1, pad the batch to be bs=2
-                dec_index = attn_metadata.scale_indices[0]
-                k._scale = self.current_kv_scales[layer_idx][0][dec_index].repeat(2)
-                v._scale = self.current_kv_scales[layer_idx][1][dec_index].repeat(2)
-
+                k._scale = torch.ones(2, dtype=torch.float32)
+                v._scale = torch.ones(2, dtype=torch.float32)
             else:
-                # Set scale only for the requests of the batch
-                k._scale = self.current_kv_scales[layer_idx][0][
-                    attn_metadata.scale_indices
-                ].reshape(-1)
-                v._scale = self.current_kv_scales[layer_idx][1][
-                    attn_metadata.scale_indices
-                ].reshape(-1)
+                k._scale = torch.ones(len(attn_metadata.scale_indices), dtype=torch.float32)
+                v._scale = torch.ones(len(attn_metadata.scale_indices), dtype=torch.float32)
 
-            # We set dynamic only for the first dimension of scale
-            # during decoding
-            is_dynamic_flag = 0 if attn_metadata.is_prefill else 1
-
-            torch._dynamo.mark_dynamic(v._scale, is_dynamic_flag)
-            torch._dynamo.mark_dynamic(k._scale, is_dynamic_flag)
+            k._scaled = True
+            v._scaled = True
 
     def get_dtype(self) -> torch.dtype:
         # Get the model's data type
