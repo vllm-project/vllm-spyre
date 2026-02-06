@@ -10,13 +10,10 @@ from output_util import generate_spyre_vllm_output, kwargs_for_mode
 from spyre_util import ModelInfo, get_chicken_soup_prompts
 from vllm import SamplingParams
 
-cb_mark = pytest.param("cb", marks=pytest.mark.cb, id="cb")
-
 
 @pytest.mark.xfail(reason="Failing currently because of output mismatch")
 @pytest.mark.parametrize("temperature", [0.1, 1.0])
 @pytest.mark.parametrize("seed", [42])
-@pytest.mark.parametrize("mode", [cb_mark])
 def test_seed(
     model: ModelInfo,
     temperature: float,

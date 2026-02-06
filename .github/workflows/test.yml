@@ -43,9 +43,9 @@ jobs:
             repo: "git+https://github.com/vllm-project/vllm --branch main"
         test_suite:
           - name: "chunked prefill"
-            markers: "cpu and chunked_prefill and not prefix_caching and not quantized and not multimodal"
+            markers: "cpu and decoder and not prefix_caching and not quantized and not multimodal"
           - name: "prefix caching"
-            markers: "cpu and prefix_caching and not quantized"
+            markers: "cpu and decoder and prefix_caching and not quantized"
           - name: "fp8"
             markers: "cpu and quantized and multi"
             flags: "--timeout=600 -k 'basic and test_output' --durations=0"
@@ -61,14 +61,8 @@ jobs:
             flags: "--timeout=300"
             hf_model: "cross-encoder/stsb-roberta-large"
             hf_model_rev: "2b12c2c0088918e76151fd5937b7bba986ef1f98"
-          - name: "continuous batching"
-            markers: "cpu and cb and not quantized and not multimodal"
-            flags: "--timeout=300  --durations=0 -s"
           - name: "worker and utils"
             markers: "not e2e and not quantized and not spyre and not multimodal"
-            flags: "--timeout=300"
-          - name: "other e2e"
-            markers: "cpu and other_e2e and not quantized"
             flags: "--timeout=300"
           - name: "multimodal"
             markers: "cpu and multimodal"
@@ -203,7 +197,7 @@ jobs:
       - name: "Install vLLM with Spyre plugin"
         if: steps.changed-src-files.outputs.any_changed == 'true'
         run: |
-          uv venv .venv --system-site-packages
+          uv venv .venv --system-site-packages --clear
           source .venv/bin/activate
 
           # Syncs both the runtime and dev deps, based on the lockfile contents

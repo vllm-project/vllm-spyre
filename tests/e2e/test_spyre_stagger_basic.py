@@ -9,10 +9,7 @@ from output_util import validate_vllm_vs_hf_output, kwargs_for_mode
 from spyre_util import ModelInfo, get_chicken_soup_prompts, skip_unsupported_tp_size
 from vllm import SamplingParams
 
-cb_mark = pytest.param("cb", marks=pytest.mark.cb, id="cb")
 
-
-@pytest.mark.parametrize("mode", [cb_mark])
 def test_stagger_output(
     model: ModelInfo,
     tp_size: int,

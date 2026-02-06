@@ -38,7 +38,7 @@ EmbeddingWarmupShapes = list[tuple[int, int]]
 def patch_environment(
     backend: str,
     monkeypatch,
-    use_chunked_prefill: bool = False,
+    use_chunked_prefill: bool = True,
     max_num_batched_tokens: int | None = None,
     warmup_shapes: EmbeddingWarmupShapes | None = None,
 ):
