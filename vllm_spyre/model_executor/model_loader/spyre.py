@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass
 from typing import Any, cast
 
+from fms_mo.aiu_addons.fp8.fp8_utils import ScaledTensor
 import torch
 import torch._inductor.config
 import torch.distributed as dist
@@ -63,7 +64,7 @@ class SpyreCausalLM(nn.Module):
         # False for finished or padded sequences
         self.indices = None
 
-        # number of right pads (relevant for continuous batching only)
+        # number of right pads
         self.n_pads_right = 0
 
         self._mask_dtype = (
@@ -71,7 +72,7 @@ class SpyreCausalLM(nn.Module):
         )
 
         # FMS Model
-        self.model = ContinuousBatchingFmsModel(vllm_config, rank)
+        self.model = FmsModelBase(vllm_config, rank)
 
         # Pull mm model utils / is_multimodal up a level for convenience
         self.mm_model_utils = self.model.mm_model_utils
@@ -85,12 +86,7 @@ class SpyreCausalLM(nn.Module):
         is_prompt: bool,
     ) -> torch.Tensor:
         extra_kwargs: dict[str, Any] = {}
-        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn":
-            # Bug in 2.3.1 fixed in 2.4.1 for SDPA flash
-            # cpu impl when padding too much
-            extra_kwargs["attn_algorithm"] = "math"
 
-        # normal prefill or decoding step
         logits = self.model(
             input_ids_or_embeds,
             position_ids=positions,
@@ -158,17 +154,13 @@ class FmsModelBase(nn.Module):
     def __init__(
         self,
         vllm_config: VllmConfig,
-        max_prompt_length: int,
-        max_decode_length: int,
         rank: int,
-        sendnn_dynamic: bool,
     ) -> None:
         super().__init__()
 
         self.config: PretrainedConfig = vllm_config.model_config.hf_config
 
         # Actual FMS model
-        self.model: nn.Module
         self.model_config = vllm_config.model_config
         self.parallel_config = vllm_config.parallel_config
         self.cache_config = vllm_config.cache_config
@@ -179,19 +171,67 @@ class FmsModelBase(nn.Module):
         self.mm_model_utils: spyre_mm.MMUtilsBase | None = None
         self.is_multimodal = False
 
+        BLOCK_SIZE = SpyrePlatform.get_block_size()
+        max_model_len = vllm_config.model_config.max_model_len
+
+        # edge case: prompt fills model length: can produce 1 token with prefill
+        max_prompt_length = max_model_len
+        # edge case: prompt will be padded to first block:
+        # can produce 1 token with prefill plus rest of model length
+        max_decode_length = max_model_len - BLOCK_SIZE + 1
+
         # Load the weights from the cached or downloaded files.
         self.load_weights(
             model_config=self.model_config,
             max_prompt_length=max_prompt_length,
             max_decode_length=max_decode_length,
             distributed_strategy="tp" if self.parallel_config.world_size > 1 else None,
-            sendnn_dynamic=sendnn_dynamic,
+            sendnn_dynamic=True,
             rank=rank,
             world_size=self.parallel_config.world_size,
         )
 
-    def get_dtype(self) -> torch.dtype:
-        raise NotImplementedError()
+        # physical KV cache on AIU Spyre: will eventually not live in this class
+        self.kv_cache_specs = {}
+        self.kv_cache_specs["block_size"] = BLOCK_SIZE
+        self.kv_cache_specs["num_kv_heads"] = self.model_config.get_num_kv_heads(
+            self.parallel_config
+        )
+
+        if self.config.model_type in {"llama", "granite", "granitemoehybrid"}:
+            self.kv_cache_specs["num_layers"] = self.config.num_hidden_layers
+            self.kv_cache_specs["head_dim"] = getattr(
+                self.model.config,
+                "head_dim",
+                self.config.hidden_size // self.config.num_attention_heads,
+            )
+        elif self.config.model_type == "gpt_bigcode":
+            self.kv_cache_specs["num_layers"] = self.config.n_layer
+            self.kv_cache_specs["head_dim"] = self.config.n_embd // self.config.n_head
+        elif self.is_multimodal and self.mm_model_utils is not None:
+            # Handle multimodal separately for now since we need to unwrap the
+            # text configs and technically (outside FMS) the LLM could be
+            # generic; the instance of mm_model_utils encapsulates the configs,
+            # so no need to pass them again.
+            unwrapped_opts = self.mm_model_utils.unwrap_mm_kv_cache_opts()
+            self.kv_cache_specs.update(unwrapped_opts)
+        else:
+            raise NotImplementedError(
+                f"[SpyreCausalLM] model type {self.config.model_type} "
+                f"not supported in ContinuousBatchingFmsModel"
+            )
+
+        if self.model_config.quantization:
+            self.attention_name = "spyre_paged_attn_fp8"
+            self.is_fp8_model = True
+        else:
+            self.attention_name = "spyre_paged_attn"
+            self.is_fp8_model = False
+
+        self.current_scale: list[tuple] | None = None
+        self.past_key_value_states: list[
+            tuple[torch.Tensor | ScaledTensor, torch.Tensor | ScaledTensor]
+        ] = []
 
     def load_weights(
         self,
@@ -346,67 +386,6 @@ class FmsModelBase(nn.Module):
             )
             param.data = param.data.to(dtype=torch.float32)
 
-
-class ContinuousBatchingFmsModel(FmsModelBase):
-    def __init__(
-        self,
-        vllm_config: VllmConfig,
-        rank: int,
-    ) -> None:
-        BLOCK_SIZE = SpyrePlatform.get_block_size()
-        max_model_len = vllm_config.model_config.max_model_len
-
-        # edge case: prompt fills model length: can produce 1 token with prefill
-        max_prompt_length = max_model_len
-        # edge case: prompt will be padded to first block:
-        # can produce 1 token with prefill plus rest of model length
-        max_decode_length = max_model_len - BLOCK_SIZE + 1
-
-        super().__init__(
-            vllm_config, max_prompt_length, max_decode_length, rank, sendnn_dynamic=True
-        )
-
-        self.prefill_past_key_values = None
-
-        # physical KV cache on AIU Spyre: will eventually not live in this class
-        self.kv_cache_specs = {}
-        self.kv_cache_specs["block_size"] = BLOCK_SIZE
-        self.kv_cache_specs["num_kv_heads"] = self.model_config.get_num_kv_heads(
-            self.parallel_config
-        )
-
-        if self.config.model_type in {"llama", "granite", "granitemoehybrid"}:
-            self.kv_cache_specs["num_layers"] = self.config.num_hidden_layers
-            self.kv_cache_specs["head_dim"] = getattr(
-                self.model.config,
-                "head_dim",
-                self.config.hidden_size // self.config.num_attention_heads,
-            )
-        elif self.config.model_type == "gpt_bigcode":
-            self.kv_cache_specs["num_layers"] = self.config.n_layer
-            self.kv_cache_specs["head_dim"] = self.config.n_embd // self.config.n_head
-        elif self.is_multimodal and self.mm_model_utils is not None:
-            # Handle multimodal separately for now since we need to unwrap the
-            # text configs and technically (outside FMS) the LLM could be
-            # generic; the instance of mm_model_utils encapsulates the configs,
-            # so no need to pass them again.
-            unwrapped_opts = self.mm_model_utils.unwrap_mm_kv_cache_opts()
-            self.kv_cache_specs.update(unwrapped_opts)
-        else:
-            raise NotImplementedError(
-                f"[SpyreCausalLM] model type {self.config.model_type} "
-                f"not supported in ContinuousBatchingFmsModel"
-            )
-
-        if self.model_config.quantization:
-            self.attention_name = "spyre_paged_attn_fp8"
-            self.is_fp8_model = True
-        else:
-            self.attention_name = "spyre_paged_attn"
-            self.is_fp8_model = False
-
-        self.current_scale: list[tuple] | None = None
-
     def set_past_key_value_states(self, num_blocks) -> None:
         # List[layers] of Tuple[k,v] of
         # Tensor[num_blocks, block_size, num_kv_heads, head_dim]
@@ -461,11 +440,6 @@ class ContinuousBatchingFmsModel(FmsModelBase):
                 )
                 for _ in range(self.kv_cache_specs["num_layers"])
             ]
-            # This list keep the reference of scales of the quantized weights
-            # that will be updated after model execution
-            self.current_kv_scales = [
-                (k_cache._scale, v_cache._scale) for k_cache, v_cache in self.past_key_value_states
-            ]
 
     def forward(
         self,
@@ -480,7 +454,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
 
         attn_metadata = cast(SpyreAttentionMetadata, forward_context.attn_metadata)
         assert attn_metadata is not None
-        # import will be not be needed/ handled by FMS soon
+        # FMS does not eagerly register the paged attention algorithm, we must import it here
         import fms.utils.spyre.paged  # noqa # pylint: disable=unused-import
 
         # specify attention type for continuous batching
@@ -527,6 +501,8 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         for _, (k, v) in enumerate(self.past_key_value_states):
             # Static scaling: We always set the scale to 1.0
             # There is probably an optimization here to not rebuild these [1.0] tensors
+            k = cast(ScaledTensor, k)
+            v = cast(ScaledTensor, v)
             if attn_metadata.is_prefill:
                 k._scale = torch.ones(1, dtype=torch.float32)
                 v._scale = torch.ones(1, dtype=torch.float32)
