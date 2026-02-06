@@ -1,0 +1,30 @@
+# Test fixture for error handling tests
+# Minimal model configuration for testing registry behavior
+
+models:
+  # Test model for error handling scenarios
+  test-granite-model:
+    architecture:
+      model_type: granite
+      num_hidden_layers: 40
+      max_position_embeddings: 131072
+      hidden_size: 4096
+      vocab_size: 49159
+      num_key_value_heads: 8
+      num_attention_heads: 32
+
+    # Continuous batching configurations
+    continuous_batching_configs:
+      - tp_size: 1
+        max_model_len: 8192
+        max_num_seqs: 4
+      - tp_size: 4
+        max_model_len: 32768
+        max_num_seqs: 32
+        device_config:
+          env_vars:
+            VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072
+          num_gpu_blocks_override:
+            default: 8192
+
+# Made with Bob
