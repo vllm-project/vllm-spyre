@@ -75,7 +75,6 @@ class SortKey(NamedTuple):
             # test has no parameters at all
             return SortKey(cache_type="")
 
-        use_cp = SortKey._uses_cp(item)
         use_pc = SortKey._uses_pc(item)
         warmup_shapes = SortKey._get_warmup_shapes(item)
 
@@ -94,7 +93,6 @@ class SortKey(NamedTuple):
             model=SortKey._get_model(item),
             backend=SortKey._get_backend(item),
             tp_size=SortKey._get_tp_size(item),
-            use_cp=use_cp,
             use_pc=use_pc,
             num_blocks=SortKey._get_num_blocks(item),
             max_num_batched_tokens=SortKey._get_max_num_batched_tokens(item),
@@ -122,20 +120,6 @@ class SortKey(NamedTuple):
 
         # Else shouldn't be using any cache
         return ""
-
-    @staticmethod
-    def _uses_cb(item) -> bool:
-        """True if the test uses continuous batching, false for static batching.
-        Checks for the pytest.mark.cb mark."""
-        markers = {mark.name for mark in item.own_markers}
-        return "cb" in markers
-
-    @staticmethod
-    def _uses_cp(item) -> bool:
-        """True if the test uses chunked prefill.
-        Checks for the pytest.mark.chunked_prefill mark."""
-        markers = {mark.name for mark in item.own_markers}
-        return "chunked_prefill" in markers or "cp" in markers
 
     @staticmethod
     def _uses_pc(item) -> bool:
