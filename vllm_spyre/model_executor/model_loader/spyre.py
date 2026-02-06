@@ -517,9 +517,7 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             assert logits.shape[1] == SpyrePlatform.get_block_size()
 
         if self.is_fp8_model:
-            # update scale for kv_cache after execute model
-            self._update_scale_for_fp8(attn_metadata)
-
+            # If we weren't using static scaling, we would need to update the scales here
             logits = self._adjust_output_for_fp8(logits, attn_metadata)
 
         return logits
@@ -580,21 +578,6 @@ class ContinuousBatchingFmsModel(FmsModelBase):
 
             torch._dynamo.mark_dynamic(v._scale, is_dynamic_flag)
             torch._dynamo.mark_dynamic(k._scale, is_dynamic_flag)
-
-    def _update_scale_for_fp8(self, attn_metadata: SpyreAttentionMetadata):
-        if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
-            # static scaling
-            return
-
-        for layer_idx, (k, v) in enumerate(self.past_key_value_states):
-            if attn_metadata.is_prefill or len(attn_metadata.scale_indices) > 1:
-                self.current_kv_scales[layer_idx][0][attn_metadata.scale_indices] = k._scale
-                self.current_kv_scales[layer_idx][1][attn_metadata.scale_indices] = v._scale
-            else:
-                # if we did the padding, then we need to update only the scale
-                # for the decoding index
-                self.current_kv_scales[layer_idx][0][attn_metadata.scale_indices[0]] = k._scale[0]
-                self.current_kv_scales[layer_idx][1][attn_metadata.scale_indices[0]] = v._scale[0]
 
     def get_dtype(self) -> torch.dtype:
         # Get the model's data type
