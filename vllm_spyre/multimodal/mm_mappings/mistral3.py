@@ -34,9 +34,7 @@ class Mistral3MMUtils(MMUtilsBase):
         # variant supported in FMS is currently pixtral.
         kv_cache_specs["num_layers"] = self.hf_config.text_config.num_hidden_layers
         kv_cache_specs["head_dim"] = getattr(
-            self.fms_config.text_config,
-            "head_dim",
-            self.hf_config.text_config.head_dim
+            self.fms_config.text_config, "head_dim", self.hf_config.text_config.head_dim
         )
         return kv_cache_specs
 
@@ -91,10 +89,10 @@ class Mistral3MMUtils(MMUtilsBase):
         # Warmup text is just an image token
         dummy_tokens = [self.hf_processor.decode(self.get_multimodal_token_id())]
 
-        # number of image tokens only depends on shape;
-        # using a smaller image here uses less context.
-        tile_size = self.hf_config.vision_config.image_size
-        side_dim = tile_size // 2
+        # Warmup with the minimal nontrivial case (2x2 patch); note that mistral
+        # positionally encodes the image directly and does not break into tiles
+        # like many VLMs
+        side_dim = self.hf_config.vision_config.patch_size * 2
         dummy_img = torch.zeros((3, side_dim, side_dim), dtype=torch.uint8)
 
         proc_res = self.hf_processor(
@@ -110,7 +108,7 @@ class Mistral3MMUtils(MMUtilsBase):
         emb_dim = self.hf_config.text_config.hidden_size
         warmup_embeds = torch.rand((seq_len, emb_dim))
         # Get the multimodal features spec
-        warmup_mm_features = Mistral3MMUtils._build_multimodal_spec(proc_res)
+        warmup_mm_features = self._build_multimodal_spec(proc_res)
 
         return MMWarmupInputs(
             input_ids=[warmup_input_ids.tolist()] * req_count,
@@ -118,15 +116,24 @@ class Mistral3MMUtils(MMUtilsBase):
             mm_features=warmup_mm_features,
         )
 
-    @staticmethod
-    def _build_multimodal_spec(proc_res):
-        """Given output of the processor on warmup data, build MM features"""
+    def _build_multimodal_spec(self, proc_res):
+        """Given output of the processor on warmup data, build MM features.
 
-        # Squeeze down batch dim here; all token inputs are image tokens
-        num_img_toks = proc_res.input_ids.shape[-1]
+        NOTE: Currently assuming single image inputs for warmup, since we just
+        use the minimal case.
+        """
+        # HF Processing will add image break / end tokens etc, so we need to make sure
+        # offsets correspond to the image tokens, and not the delimiter toks
+        # https://github.com/huggingface/transformers/blob/v4.57.6/src/transformers/models/pixtral/processing_pixtral.py#L192
+        input_ids = proc_res.input_ids.squeeze(0)
+
+        img_tok_mask = input_ids == self.get_multimodal_token_id()
+        # Currently we should just have one img tok since we just give a small patch.
+        img_start = torch.where(input_ids == self.get_multimodal_token_id())[0].item()
+        num_img_toks = torch.sum(img_tok_mask).item()
 
         # Multimodal features / feature spec
-        mm_position = PlaceholderRange(offset=0, length=num_img_toks)
+        mm_position = PlaceholderRange(offset=img_start, length=num_img_toks)
         mm_data = {
             "pixel_values": proc_res.pixel_values.squeeze(axis=0),
             "image_sizes": proc_res.image_sizes.squeeze(axis=0),
@@ -144,7 +151,7 @@ class Mistral3MMUtils(MMUtilsBase):
             MultiModalFeatureSpec(
                 data=mm_fields,
                 modality="image",
-                identifier="MM-warmup-mistral3-next",
+                identifier="MM-warmup-mistral3",
                 mm_position=mm_position,
             )
         ]
