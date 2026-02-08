@@ -53,28 +53,34 @@ class Mistral3MMUtils(MMUtilsBase):
 
         # Only merge multimodal features in prefill; nothing mm in decode
         if mm_features:
-            raise NotImplementedError()
-            # assert not is_decode  # We never pass features in decode
-            # if len(mm_features) != 1:
-            #     raise ValueError("Currently we assume we only embed one mm request at a time")
-            # mm_spec = mm_features[0].data
-            # if mm_spec is not None:
-            #     # NOTE: This should be pretty safe as it's dependent on the
-            #     # vLLM/HF processor objects, but we check it anyway to be safe
-            #     # for now, since transformers 5.0 is just around the corner.
-            #     if any(k not in mm_spec for k in mm_spec_keys):
-            #         raise KeyError(f"Llava Next requires kwargs: {mm_spec_keys}")
 
-            #     fms_kwargs["pixel_values"] = mm_spec["pixel_values"].data
-            #     image_sizes = mm_spec["image_sizes"].data
+            if len(mm_features) != 1:
+                raise ValueError("Currently we assume we only embed one mm request at a time")
+            mm_spec = mm_features[0].data
+            if mm_spec is not None:
+                # NOTE: This should be pretty safe as it's dependent on the
+                # vLLM/HF processor objects, but we check it anyway to be safe
+                # for now, since transformers 5.0 is just around the corner.
+                if any(k not in mm_spec for k in mm_spec_keys):
+                    raise KeyError(f"Mistral3 requires kwargs: {mm_spec_keys}")
 
-            #     # Careful about this; if it's 1D, we'll a tensor of shape
-            #     # [x, y], which will break in a weird way in image packing,
-            #     # since it assumes it's 2D and will get sad about getting
-            #     # an int instead of an iterable
-            #     if image_sizes.ndim == 1:
-            #         image_sizes = image_sizes.unsqueeze(0)
-            #     fms_kwargs["image_sizes"] = image_sizes
+                pixel_values = mm_spec["pixel_values"].data
+                # FMS vision tower expects pixel_values with batch dimension
+                # If squeezed during spec building, add it back
+                if pixel_values.ndim == 3:
+                    pixel_values = pixel_values.unsqueeze(0)
+                fms_kwargs["pixel_values"] = pixel_values
+
+                # Use the processor's image_sizes which tracks the logical image dimensions
+                # This is used by the projector to correctly split/merge patches
+                image_sizes_tensor = mm_spec["image_sizes"].data
+                if image_sizes_tensor.ndim == 1:
+                    # Single image: convert to list of tuples
+                    image_sizes = [(image_sizes_tensor[0].item(), image_sizes_tensor[1].item())]
+                else:
+                    # Multiple images
+                    image_sizes = [(h.item(), w.item()) for h, w in image_sizes_tensor]
+                fms_kwargs["image_sizes"] = image_sizes
 
         # The value of iteration does not matter for decode as long as it's > 0
         input_embeds, _ = fms_model.prepare_inputs_for_generation(
@@ -89,10 +95,14 @@ class Mistral3MMUtils(MMUtilsBase):
         # Warmup text is just an image token
         dummy_tokens = [self.hf_processor.decode(self.get_multimodal_token_id())]
 
-        # Warmup with the minimal nontrivial case (2x2 patch); note that mistral
+        # Warmup with the minimal nontrivial case (4x4 patch); note that mistral
         # positionally encodes the image directly and does not break into tiles
-        # like many VLMs
-        side_dim = self.hf_config.vision_config.patch_size * 2
+        # like many VLMs.
+        # Note: spatial_merge_size for mistral is 2, in FMS currently, we do
+        # squeeze(0) on image features in _get_image_features function
+        # before splitting, which means, if we only have 1 patch, and 1st dim is is 1, we get
+        # incorrect dimension of image_features
+        side_dim = self.hf_config.vision_config.patch_size * 4
         dummy_img = torch.zeros((3, side_dim, side_dim), dtype=torch.uint8)
 
         proc_res = self.hf_processor(
@@ -128,8 +138,9 @@ class Mistral3MMUtils(MMUtilsBase):
         input_ids = proc_res.input_ids.squeeze(0)
 
         img_tok_mask = input_ids == self.get_multimodal_token_id()
-        # Currently we should just have one img tok since we just give a small patch.
-        img_start = torch.where(input_ids == self.get_multimodal_token_id())[0].item()
+        # Get the position of image tokens
+        img_token_positions = torch.where(input_ids == self.get_multimodal_token_id())[0]
+        img_start = img_token_positions[0].item()  # First image token position
         num_img_toks = torch.sum(img_tok_mask).item()
 
         # Multimodal features / feature spec
