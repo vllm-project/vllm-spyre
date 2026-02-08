@@ -53,7 +53,6 @@ class Mistral3MMUtils(MMUtilsBase):
 
         # Only merge multimodal features in prefill; nothing mm in decode
         if mm_features:
-
             if len(mm_features) != 1:
                 raise ValueError("Currently we assume we only embed one mm request at a time")
             mm_spec = mm_features[0].data

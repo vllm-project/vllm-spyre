@@ -182,7 +182,9 @@ class FmsModelBase(nn.Module):
     ) -> None:
         super().__init__()
 
-        self.config: PretrainedConfig = self.may_be_get_typed_hf_config(vllm_config.model_config.hf_config)
+        self.config: PretrainedConfig = self.may_be_get_typed_hf_config(
+            vllm_config.model_config.hf_config
+        )
 
         # Actual FMS model
         self.model: nn.Module
