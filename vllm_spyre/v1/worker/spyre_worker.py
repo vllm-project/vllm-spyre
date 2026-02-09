@@ -107,6 +107,8 @@ def _maybe_warmup_context(limit: int, world_size: int, rank: int):
     # Replace `warmup_context.__exit__` with our new wrapper
     warmup_context.__exit__ = __stagger_exit__  # type: ignore[method-assign]
 
+    # FIXME: This is now staggering on every forward call, which is not great
+
     with warmup_context():
         _inside_warmup_mode = True
         yield
@@ -295,6 +297,7 @@ class SpyreWorker(WorkerBase):
                     self.vllm_config, self.is_driver_worker, self.rank
                 )
             else:
+                raise ValueError("No test should invoke this")
                 self.model_runner = ContinuousBatchingSpyreModelRunner(
                     self.vllm_config, self.is_driver_worker, self.rank
                 )

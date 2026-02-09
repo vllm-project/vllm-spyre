@@ -3,21 +3,28 @@ from collections import defaultdict
 import pytest
 from llm_cache import get_cached_llm
 from spyre_util import ModelInfo
-from vllm import SamplingParams
+from vllm import SamplingParams, LLM
 
-pytestmark = [pytest.mark.full_model, pytest.mark.other_e2e]
-
-cb_mark = pytest.param("cb", marks=pytest.mark.cb, id="cb")
-cp_mark = pytest.param("cp", marks=pytest.mark.chunked_prefill, id="cp")
+pytestmark = [pytest.mark.chunked_prefill]
 
 
-def test_spyre_batch1_temperature(model: ModelInfo, backend, monkeypatch, use_llm_cache):
+def test_spyre_temperature(
+    model: ModelInfo,
+    backend,
+    monkeypatch,
+    max_model_len,
+    max_num_seqs,
+    max_num_batched_tokens,
+    use_llm_cache,
+):
     spyre_model = get_cached_llm(
         model=model,
-        max_model_len=128,
-        tensor_parallel_size=1,
+        max_model_len=max_model_len,
+        max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=max_num_batched_tokens,
         backend=backend,
         monkeypatch=monkeypatch,
+        use_pc=True,
     )
 
     prompt = "The capital of the United Kingdom is"
@@ -25,51 +32,73 @@ def test_spyre_batch1_temperature(model: ModelInfo, backend, monkeypatch, use_ll
     params2 = SamplingParams(temperature=0.5, seed=8780, max_tokens=20)
     params3 = SamplingParams(temperature=1.0, seed=8780, max_tokens=20)
 
-    output1 = spyre_model.generate(prompt, params1)[0]
-    output2 = spyre_model.generate(prompt, params2)[0]
-    output3 = spyre_model.generate(prompt, params3)[0]
+    outputs = spyre_model.generate([prompt, prompt, prompt], [params1, params2, params3])
+    output1, output2, output3 = outputs[0], outputs[1], outputs[2]
 
     assert output1.outputs[0].text != output2.outputs[0].text
     assert output2.outputs[0].text != output3.outputs[0].text
 
 
-def test_spyre_batch1_max_tokens(model: ModelInfo, backend, monkeypatch, use_llm_cache):
+def test_spyre_max_tokens(
+    model: ModelInfo,
+    backend,
+    monkeypatch,
+    max_model_len,
+    max_num_seqs,
+    max_num_batched_tokens,
+    use_llm_cache,
+):
     spyre_model = get_cached_llm(
         model=model,
-        max_model_len=128,
-        tensor_parallel_size=1,
+        max_model_len=max_model_len,
+        max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=max_num_batched_tokens,
         backend=backend,
         monkeypatch=monkeypatch,
+        use_pc=True,
     )
 
     prompt = "Count to twenty"
-    params1 = SamplingParams(temperature=0, seed=8780, max_tokens=15)
-    params2 = SamplingParams(temperature=0, seed=8780)
+    params = [
+        SamplingParams(temperature=0, seed=8780, max_tokens=5),
+        SamplingParams(temperature=0, seed=8780, max_tokens=10),
+        SamplingParams(temperature=0, seed=8780, max_tokens=1),
+        SamplingParams(temperature=0, seed=8780, max_tokens=6),
+        SamplingParams(temperature=0, seed=8780, max_tokens=12),
+    ]
 
-    output1 = spyre_model.generate(prompt, params1)[0]
-    output2 = spyre_model.generate(prompt, params2)[0]
+    outputs = spyre_model.generate([prompt] * len(params), params)
 
-    assert len(output1.outputs[0].token_ids) == 15
-    assert len(output2.outputs[0].token_ids) > 15
+    for i in range(len(params)):
+        assert len(outputs[i].outputs[0].token_ids) == params[i].max_tokens
 
 
-@pytest.mark.xfail(reason="Failing currently because of output mismatch")
-def test_spyre_batch1_stop_sequence(model: ModelInfo, backend, monkeypatch, use_llm_cache):
+def test_spyre_stop_sequence(
+    model: ModelInfo,
+    backend,
+    monkeypatch,
+    max_model_len,
+    max_num_seqs,
+    max_num_batched_tokens,
+    use_llm_cache,
+):
     spyre_model = get_cached_llm(
         model=model,
-        max_model_len=128,
-        tensor_parallel_size=1,
+        max_model_len=max_model_len,
+        max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=max_num_batched_tokens,
         backend=backend,
         monkeypatch=monkeypatch,
+        use_pc=True,
     )
-    stop_str = "train"
-    prompt = "The best way to travel from Paris to Berlim is by "
+    stop_str = "7"
+    prompt = "1 2 3 4 5 "
 
-    params1 = SamplingParams(stop=[stop_str], max_tokens=20, seed=8780)
-    params2 = SamplingParams(max_tokens=20, seed=8780)
+    params1 = SamplingParams(stop=[stop_str], max_tokens=10, seed=8780)
+    params2 = SamplingParams(max_tokens=10, seed=8780)
 
-    output1 = spyre_model.generate(prompt, params1)[0]
-    output2 = spyre_model.generate(prompt, params2)[0]
+    outputs = spyre_model.generate([prompt, prompt], [params1, params2])
+    output1, output2 = outputs[0], outputs[1]
 
     assert stop_str not in output1.outputs[0].text
     assert output1.outputs[0].finish_reason == "stop"
@@ -84,21 +113,31 @@ def max_repetitions(output):
     return max(histo.values())
 
 
-def test_spyre_batch1_presence_penalty(model: ModelInfo, backend, monkeypatch, use_llm_cache):
+def test_spyre_presence_penalty(
+    model: ModelInfo,
+    backend,
+    monkeypatch,
+    max_model_len,
+    max_num_seqs,
+    max_num_batched_tokens,
+    use_llm_cache,
+):
     spyre_model = get_cached_llm(
         model=model,
-        max_model_len=128,
-        tensor_parallel_size=1,
+        max_model_len=max_model_len,
+        max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=max_num_batched_tokens,
         backend=backend,
         monkeypatch=monkeypatch,
+        use_pc=True,
     )
     prompt = "REPEAT OVER AND OVER AGAIN THE MINIMUM TIMES POSSIBLE: one one one one one"
 
     param1 = SamplingParams(presence_penalty=2.0, seed=8780, max_tokens=20)
     param2 = SamplingParams(presence_penalty=-2.0, seed=8780, max_tokens=20)
 
-    with_penalty = spyre_model.generate(prompt, param1)[0]
-    no_penalty = spyre_model.generate(prompt, param2)[0]
+    outputs = spyre_model.generate([prompt, prompt], [param1, param2])
+    with_penalty, no_penalty = outputs[0], outputs[1]
 
     with_penalty_max = max_repetitions(with_penalty)
     no_penalty_max = max_repetitions(no_penalty)
@@ -107,13 +146,23 @@ def test_spyre_batch1_presence_penalty(model: ModelInfo, backend, monkeypatch, u
     assert no_penalty_max > with_penalty_max
 
 
-def test_spyre_batch1_frequency_penalty(model: ModelInfo, backend, monkeypatch, use_llm_cache):
+def test_spyre_frequency_penalty(
+    model: ModelInfo,
+    backend,
+    monkeypatch,
+    max_model_len,
+    max_num_seqs,
+    max_num_batched_tokens,
+    use_llm_cache,
+):
     spyre_model = get_cached_llm(
         model=model,
-        max_model_len=128,
-        tensor_parallel_size=1,
+        max_model_len=max_model_len,
+        max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=max_num_batched_tokens,
         backend=backend,
         monkeypatch=monkeypatch,
+        use_pc=True,
     )
 
     prompt = "repeat the word hi ten times:"
@@ -121,8 +170,8 @@ def test_spyre_batch1_frequency_penalty(model: ModelInfo, backend, monkeypatch, 
     param1 = SamplingParams(frequency_penalty=2.0, seed=8780, max_tokens=20)
     param2 = SamplingParams(frequency_penalty=-2.0, seed=8780, max_tokens=20)
 
-    with_penalty = spyre_model.generate(prompt, param1)[0]
-    no_penalty = spyre_model.generate(prompt, param2)[0]
+    outputs = spyre_model.generate([prompt, prompt], [param1, param2])
+    with_penalty, no_penalty = outputs[0], outputs[1]
 
     with_penalty_max = max_repetitions(with_penalty)
     no_penalty_max = max_repetitions(no_penalty)
@@ -130,13 +179,23 @@ def test_spyre_batch1_frequency_penalty(model: ModelInfo, backend, monkeypatch, 
     assert no_penalty_max > with_penalty_max
 
 
-def test_spyre_batch1_n_generations(model: ModelInfo, backend, monkeypatch, use_llm_cache):
+def test_spyre_n_generations(
+    model: ModelInfo,
+    backend,
+    monkeypatch,
+    max_model_len,
+    max_num_seqs,
+    max_num_batched_tokens,
+    use_llm_cache,
+):
     spyre_model = get_cached_llm(
         model=model,
-        max_model_len=128,
-        tensor_parallel_size=1,
+        max_model_len=max_model_len,
+        max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=max_num_batched_tokens,
         backend=backend,
         monkeypatch=monkeypatch,
+        use_pc=True,
     )
     prompt = "The three most popular sports in the world are: "
 
@@ -149,52 +208,86 @@ def test_spyre_batch1_n_generations(model: ModelInfo, backend, monkeypatch, use_
     assert output.outputs[1].text != output.outputs[2].text
 
 
-def token_diversity(spyre_model, prompt, params, n_experiments):
-    tokens = []
+def token_diversity(
+    spyre_model: LLM, prompt: str, params: list[SamplingParams], n_experiments
+) -> list[int]:
+    """Runs multiple prompts for every sampling param provided. Returns a list of the number of
+    unique tokens generated for each sampling param."""
+    num_params = len(params)
+    token_sets = []
 
-    outputs = spyre_model.generate([prompt] * n_experiments, params, use_tqdm=False)
-    for output in outputs:
-        tokens.extend(output.outputs[0].token_ids)
+    expanded_params = []
+    for param in params:
+        expanded_params.extend([param] * n_experiments)
 
-    return len(set(tokens))
+    outputs = spyre_model.generate(
+        [prompt] * n_experiments * num_params, expanded_params, use_tqdm=False
+    )
+
+    for i in range(num_params):
+        param_outputs = outputs[i * n_experiments : (i + 1) * n_experiments]
+        token_set = set()
+        for output in param_outputs:
+            token_set.update(output.outputs[0].token_ids)
+        token_sets.append(token_set)
+
+    return [len(token_set) for token_set in token_sets]
 
 
-def test_spyre_batch1_top_p(model: ModelInfo, backend, monkeypatch, use_llm_cache):
+def test_spyre_top_p(
+    model: ModelInfo,
+    backend,
+    monkeypatch,
+    max_model_len,
+    max_num_seqs,
+    max_num_batched_tokens,
+    use_llm_cache,
+):
     spyre_model = get_cached_llm(
         model=model,
-        max_model_len=128,
-        tensor_parallel_size=1,
+        max_model_len=max_model_len,
+        max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=max_num_batched_tokens,
         backend=backend,
         monkeypatch=monkeypatch,
+        use_pc=True,
     )
     prompt = "The first three letters of the alphabet are"
     params1 = SamplingParams(top_p=0.01, temperature=1, max_tokens=10)
     params2 = SamplingParams(temperature=1, max_tokens=10)
 
-    token_div1 = token_diversity(spyre_model, prompt, params1, 10)
-    token_div2 = token_diversity(spyre_model, prompt, params2, 10)
+    token_div1, token_div2 = token_diversity(spyre_model, prompt, [params1, params2], 3)
+
     assert token_div1 < token_div2
 
 
-def test_spyre_batch1_top_k(model: ModelInfo, backend, monkeypatch, use_llm_cache):
+def test_spyre_top_k(
+    model: ModelInfo,
+    backend,
+    monkeypatch,
+    max_model_len,
+    max_num_seqs,
+    max_num_batched_tokens,
+    use_llm_cache,
+):
     spyre_model = get_cached_llm(
         model=model,
-        max_model_len=128,
-        tensor_parallel_size=1,
+        max_model_len=max_model_len,
+        max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=max_num_batched_tokens,
         backend=backend,
         monkeypatch=monkeypatch,
+        use_pc=True,
     )
     prompt = "The opposite of hot is"
     params1 = SamplingParams(temperature=1, top_k=1, max_tokens=5)
     params2 = SamplingParams(temperature=1, max_tokens=5)
 
-    token_div1 = token_diversity(spyre_model, prompt, params1, 10)
-    token_div2 = token_diversity(spyre_model, prompt, params2, 10)
+    token_div1, token_div2 = token_diversity(spyre_model, prompt, [params1, params2], 3)
     assert token_div1 < token_div2
 
 
-@pytest.mark.parametrize("mode", [cb_mark, cp_mark])
-def test_spyre_batch1_logit_bias(
+def test_spyre_logit_bias(
     model: ModelInfo,
     backend,
     monkeypatch,
@@ -202,16 +295,15 @@ def test_spyre_batch1_logit_bias(
     max_model_len,
     max_num_seqs,
     max_num_batched_tokens,
-    mode: str,
 ):
     spyre_model = get_cached_llm(
         model=model,
         max_model_len=max_model_len,
-        tensor_parallel_size=1,
+        max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=max_num_batched_tokens,
         backend=backend,
         monkeypatch=monkeypatch,
-        max_num_seqs=max_num_seqs if mode == "cb" or mode == "cp" else None,
-        max_num_batched_tokens=max_num_batched_tokens if mode == "cp" else None,
+        use_pc=True,
     )
     tokenizer = spyre_model.get_tokenizer()
     banned_word = "train"
@@ -243,24 +335,23 @@ def test_spyre_batch1_logit_bias(
     assert output[0].outputs[0].text != output[1].outputs[0].text
 
 
-@pytest.mark.parametrize("mode", [cb_mark, cp_mark])
-def test_spyre_batch1_min_tokens(
+def test_spyre_min_tokens(
     model: ModelInfo,
     backend,
     monkeypatch,
     use_llm_cache,
     max_model_len,
     max_num_seqs,
-    mode: str,
+    max_num_batched_tokens,
 ):
     spyre_model = get_cached_llm(
         model=model,
         max_model_len=max_model_len,
-        tensor_parallel_size=1,
+        max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=max_num_batched_tokens,
         backend=backend,
         monkeypatch=monkeypatch,
-        max_num_seqs=max_num_seqs if mode == "cb" or mode == "cp" else None,
-        max_num_batched_tokens=128 if mode == "cp" else None,
+        use_pc=True,
     )
     prompt = "What is the capital of the USA?"
     tokenizer = spyre_model.get_tokenizer()
@@ -279,13 +370,23 @@ def test_spyre_batch1_min_tokens(
     assert len(output[1].outputs[0].token_ids) == 1
 
 
-def test_spyre_batch1_ignore_eos(model: ModelInfo, backend, monkeypatch, use_llm_cache):
+def test_spyre_ignore_eos(
+    model: ModelInfo,
+    backend,
+    monkeypatch,
+    max_model_len,
+    max_num_seqs,
+    max_num_batched_tokens,
+    use_llm_cache,
+):
     spyre_model = get_cached_llm(
         model=model,
-        max_model_len=128,
-        tensor_parallel_size=1,
+        max_model_len=max_model_len,
+        max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=max_num_batched_tokens,
         backend=backend,
         monkeypatch=monkeypatch,
+        use_pc=True,
     )
     tokenizer = spyre_model.get_tokenizer()
     eos_id = tokenizer.eos_token_id
@@ -294,8 +395,8 @@ def test_spyre_batch1_ignore_eos(model: ModelInfo, backend, monkeypatch, use_llm
     params1 = SamplingParams(ignore_eos=True, logit_bias={eos_id: 50}, seed=8780, max_tokens=20)
     params2 = SamplingParams(ignore_eos=False, logit_bias={eos_id: 50}, seed=8780, max_tokens=20)
 
-    output1 = spyre_model.generate(prompt, params1)[0]
-    output2 = spyre_model.generate(prompt, params2)[0]
+    outputs = spyre_model.generate([prompt, prompt], [params1, params2])
+    output1, output2 = outputs[0], outputs[1]
 
     assert len(output1.outputs[0].token_ids) == 20
     assert len(output2.outputs[0].token_ids) != len(output1.outputs[0].token_ids)
@@ -304,43 +405,50 @@ def test_spyre_batch1_ignore_eos(model: ModelInfo, backend, monkeypatch, use_llm
     assert output2.outputs[0].finish_reason != "length"
 
 
-@pytest.mark.parametrize("mode", [cb_mark, cp_mark])
-def test_spyre_batch1_min_p(
+def test_spyre_min_p(
     model: ModelInfo,
     backend,
     monkeypatch,
     use_llm_cache,
     max_model_len,
     max_num_seqs,
-    mode: str,
+    max_num_batched_tokens,
 ):
     spyre_model = get_cached_llm(
         model=model,
         max_model_len=max_model_len,
-        tensor_parallel_size=1,
+        max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=max_num_batched_tokens,
         backend=backend,
         monkeypatch=monkeypatch,
-        max_num_seqs=max_num_seqs if mode == "cb" or mode == "cp" else None,
-        max_num_batched_tokens=128 if mode == "cp" else None,
+        use_pc=True,
     )
     prompt = "The opposite of black is"
     params1 = SamplingParams(min_p=0.5, temperature=1, max_tokens=5)
     params2 = SamplingParams(temperature=1, max_tokens=5)
 
-    token_div1 = token_diversity(spyre_model, prompt, params1, 10)
-    token_div2 = token_diversity(spyre_model, prompt, params2, 10)
+    token_div1, token_div2 = token_diversity(spyre_model, prompt, [params1, params2], 3)
 
     assert token_div1 < token_div2
 
 
-@pytest.mark.xfail(reason="Failing currently because of output mismatch")
-def test_spyre_batch1_bad_words(model: ModelInfo, backend, monkeypatch, use_llm_cache):
+def test_spyre_bad_words(
+    model: ModelInfo,
+    backend,
+    monkeypatch,
+    max_model_len,
+    max_num_seqs,
+    max_num_batched_tokens,
+    use_llm_cache,
+):
     spyre_model = get_cached_llm(
         model=model,
-        max_model_len=128,
-        tensor_parallel_size=1,
+        max_model_len=max_model_len,
+        max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=max_num_batched_tokens,
         backend=backend,
         monkeypatch=monkeypatch,
+        use_pc=True,
     )
     prompt = "The capital of France is"
     params1 = SamplingParams(
@@ -348,21 +456,31 @@ def test_spyre_batch1_bad_words(model: ModelInfo, backend, monkeypatch, use_llm_
     )
     params2 = SamplingParams(max_tokens=5, seed=8780, temperature=0)
 
-    output1 = spyre_model.generate(prompt, params1)[0]
-    output2 = spyre_model.generate(prompt, params2)[0]
+    outputs = spyre_model.generate([prompt, prompt], [params1, params2])
+    output1, output2 = outputs[0], outputs[1]
 
     assert "Paris" not in output1.outputs[0].text
     assert "France" not in output1.outputs[0].text
     assert output1.outputs[0].text != output2.outputs[0].text
 
 
-def test_spyre_batch1_detokenize(model: ModelInfo, backend, monkeypatch, use_llm_cache):
+def test_spyre_detokenize(
+    model: ModelInfo,
+    backend,
+    monkeypatch,
+    max_model_len,
+    max_num_seqs,
+    max_num_batched_tokens,
+    use_llm_cache,
+):
     spyre_model = get_cached_llm(
         model=model,
-        max_model_len=128,
-        tensor_parallel_size=1,
+        max_model_len=max_model_len,
+        max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=max_num_batched_tokens,
         backend=backend,
         monkeypatch=monkeypatch,
+        use_pc=True,
     )
     prompt = "Hello, world!"
     params = SamplingParams(max_tokens=5, seed=8780, temperature=0, detokenize=False)
@@ -372,13 +490,23 @@ def test_spyre_batch1_detokenize(model: ModelInfo, backend, monkeypatch, use_llm
     assert len(output.outputs[0].token_ids) > 0
 
 
-def test_spyre_batch1_logprobs(model: ModelInfo, backend, monkeypatch, use_llm_cache):
+def test_spyre_logprobs(
+    model: ModelInfo,
+    backend,
+    monkeypatch,
+    max_model_len,
+    max_num_seqs,
+    max_num_batched_tokens,
+    use_llm_cache,
+):
     spyre_model = get_cached_llm(
         model=model,
-        max_model_len=128,
-        tensor_parallel_size=1,
+        max_model_len=max_model_len,
+        max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=max_num_batched_tokens,
         backend=backend,
         monkeypatch=monkeypatch,
+        use_pc=True,
     )
     num_logprobs = 5
     prompt = "The sky is"
