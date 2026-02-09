@@ -92,7 +92,12 @@ def get_vllm_prompts(num_prompts, model_path):
 
 
 def compare_results(
-    prompts: list[str], outputs_a: list[str], outputs_b: list[str], name_a: str, name_b: str, image_token: str
+    prompts: list[str],
+    outputs_a: list[str],
+    outputs_b: list[str],
+    name_a: str,
+    name_b: str,
+    image_token: str,
 ):
     """Utils for comparing outputs from differing engines/implementations,
     e.g., transformers & vLLM.
@@ -144,7 +149,9 @@ def get_fms_results(model_path, vllm_prompts):
 
     if model_config.model_type == "llava_next":
         # head_dim expansion required for granite vision
-        serialization.extend_adapter("llava_next", "hf", ["weight_expansion_for_mismatched_head_dim"])
+        serialization.extend_adapter(
+            "llava_next", "hf", ["weight_expansion_for_mismatched_head_dim"]
+        )
 
         kwargs = {
             "text_config": {"head_dim": 128},
@@ -157,7 +164,7 @@ def get_fms_results(model_path, vllm_prompts):
         model_path,
         data_type=torch.bfloat16,  # Matches default in vLLM for this model
         fused_weights=False,
-        **kwargs
+        **kwargs,
     )
 
     return process_prompts(
@@ -258,7 +265,7 @@ if __name__ == "__main__":
         max_model_len=args.max_model_len,
         max_num_seqs=max_num_seqs,
         tensor_parallel_size=args.tp,
-        limit_mm_per_prompt={"image": 1}  # Required for multimodal models
+        limit_mm_per_prompt={"image": 1},  # Required for multimodal models
     )
 
     # Generate texts from the prompts. The output is a list of RequestOutput

@@ -44,7 +44,7 @@ class MMUtilsBase(ABC):
                 trust_remote_code=True,
             )
         except AttributeError as err:
-            raise AttributeError(f"{str(err)}. Please try upgrading transformers to 4.57.6+")
+            raise AttributeError("Please try upgrading transformers to 4.57.6+") from err
 
     @staticmethod
     def _validate_configs(fms_config: ModelConfig, hf_config: PretrainedConfig):
