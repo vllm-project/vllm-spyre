@@ -369,7 +369,7 @@ class SpyreModelRunner(
 
     @property
     def vocab_size(self) -> int:
-        model_cfg = self.model.model.model.config
+        model_cfg = self.model.model.config
         if self.model.is_multimodal:
             return self.model.mm_model_utils.resolve_multimodal_vocab_size()
         return model_cfg.src_vocab_size  # ty: ignore[invalid-return-type]
@@ -693,7 +693,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self._set_blocks(num_blocks=n_blocks_warmup)
         # TODO: fixup the typing here. Things are getting tripped up by having all of our "model"
         # classes inherit from `nn.Module` when maybe they don't need to
-        self.model.model.set_past_key_value_states(num_blocks=n_blocks_warmup)  # ty: ignore[call-non-callable]
+        self.model.set_past_key_value_states(num_blocks=n_blocks_warmup)  # ty: ignore[call-non-callable]
 
         # Future code:
 
@@ -715,7 +715,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self._set_blocks(num_blocks=n_blocks_avail)
         # TODO: fixup the typing here. Things are getting tripped up by having all of our "model"
         # classes inherit from `nn.Module` when maybe they don't need to
-        self.model.model.set_past_key_value_states(num_blocks=n_blocks_avail)  # ty: ignore[call-non-callable]
+        self.model.set_past_key_value_states(num_blocks=n_blocks_avail)  # ty: ignore[call-non-callable]
 
     def _set_blocks(self, num_blocks: int) -> None:
         # set number of available blocks, populate block_pool and

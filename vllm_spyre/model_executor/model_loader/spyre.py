@@ -2,7 +2,7 @@
 
 import os
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import cast
 
 from fms_mo.aiu_addons.fp8.fp8_utils import ScaledTensor
 import torch
@@ -70,93 +70,6 @@ class SpyreCausalLM(nn.Module):
         self._mask_dtype = (
             torch.float16 if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn" else torch.float32
         )
-
-        # FMS Model
-        self.model = FmsModelBase(vllm_config, rank)
-
-        # Pull mm model utils / is_multimodal up a level for convenience
-        self.mm_model_utils = self.model.mm_model_utils
-        self.is_multimodal = self.model.is_multimodal
-
-    def forward(
-        self,
-        input_ids_or_embeds: torch.Tensor,
-        positions: torch.Tensor,
-        masks: torch.Tensor,
-        is_prompt: bool,
-    ) -> torch.Tensor:
-        extra_kwargs: dict[str, Any] = {}
-
-        logits = self.model(
-            input_ids_or_embeds,
-            position_ids=positions,
-            mask=masks,
-            use_cache=True,
-            is_prompt=is_prompt,
-            **extra_kwargs,
-        )
-
-        if is_prompt and self.n_pads_right > 0:
-            # get last token before the right padding
-            logits = logits[self.indices, -self.n_pads_right - 1, :]
-        else:
-            # just take last token if no right padding
-            logits = logits[self.indices, -1, :]
-
-        return logits
-
-    def get_maybe_mm_embeddings(self, input_ids, mm_features, is_decode):
-        """If the model is multimodal, get the (maybe) multimodal embeddings.
-        If it isn't, return None, since we only use embeddings for multimodal.
-
-        In the case of prefill / decode; we should only have mm features in
-        prefill, because by that point, the multimodal data will already be
-        merged into the embeddings to be cached. As such we explicitly explode
-        if mm_features are passed in decode, because it's likely a mistake.
-
-        NOTE: generally is_decode will set iteration > 0 in FMS; failing to do
-        this will cause it to return the raw input id and try to embed in the
-        forward call, which may break on AIU due to misalignment with prefill's
-        embedding call.
-        """
-        if not self.model.is_multimodal or self.mm_model_utils is None:
-            # The model is likely implemented incorrectly or not initialized,
-            # or we are passing multimodal features to a model that should not
-            # take them.
-            if mm_features:
-                raise ValueError("mm_features were provided, but model is not multimodal!")
-            # We do not use embeddings for models that aren't multimodal.
-            return None
-
-        # Delegate to this model architecture's multimodal helpers to
-        # get the (potentially) multimodal embeddings from the FMS model.
-        fms_model = self.model.model
-        return self.mm_model_utils.get_maybe_mm_embeddings(
-            fms_model,
-            input_ids,
-            mm_features,
-            is_decode,
-        )
-
-    def sample(
-        self,
-        logits: torch.Tensor,
-        sampling_metadata: SamplingMetadata,
-    ) -> SamplerOutput | None:
-        next_tokens = self.sampler(logits, sampling_metadata)
-        return next_tokens
-
-    def get_mask_dtype(self) -> torch.dtype:
-        return self._mask_dtype
-
-
-class FmsModelBase(nn.Module):
-    def __init__(
-        self,
-        vllm_config: VllmConfig,
-        rank: int,
-    ) -> None:
-        super().__init__()
 
         self.config: PretrainedConfig = vllm_config.model_config.hf_config
 
@@ -443,12 +356,10 @@ class FmsModelBase(nn.Module):
 
     def forward(
         self,
-        input_ids: torch.Tensor,
-        position_ids: torch.Tensor,
-        mask: torch.Tensor,
-        use_cache: bool,
+        input_ids_or_embeds: torch.Tensor,
+        positions: torch.Tensor,
+        masks: torch.Tensor,
         is_prompt: bool,
-        **extra_kwargs,
     ) -> torch.Tensor:
         forward_context = get_forward_context()
 
@@ -457,31 +368,28 @@ class FmsModelBase(nn.Module):
         # FMS does not eagerly register the paged attention algorithm, we must import it here
         import fms.utils.spyre.paged  # noqa # pylint: disable=unused-import
 
-        # specify attention type for continuous batching
-        extra_kwargs["attn_name"] = self.attention_name
-
         if self.is_fp8_model:
             # set scale for kv_cache
             self._set_scale_for_fp8(attn_metadata)
 
             # Adjust decode for bs=1 if needed
-            input_ids, position_ids, attn_metadata = self._adjust_input_for_fp8(
-                input_ids=input_ids, position_ids=position_ids, attn_metadata=attn_metadata
+            input_ids_or_embeds, positions, attn_metadata = self._adjust_input_for_fp8(
+                input_ids=input_ids_or_embeds, position_ids=positions, attn_metadata=attn_metadata
             )
 
         # Run the model
         output = self.model(
-            input_ids,
-            position_ids=position_ids,
-            mask=mask,
+            input_ids_or_embeds,
+            position_ids=positions,
+            mask=masks,
             past_key_value_states=self.past_key_value_states,
-            use_cache=use_cache,
+            use_cache=True,
             last_n_tokens=SpyrePlatform.get_block_size() if is_prompt else 1,
             current_tkv_mask=attn_metadata.current_tkv_mask,
             left_padded_prompt_mask=attn_metadata.left_padded_prompt_mask,
             block_table=attn_metadata.block_table,
             slot_mapping=attn_metadata.slot_mapping,
-            **extra_kwargs,
+            attn_name=self.attention_name,
         )
 
         logits, self.past_key_value_states = output
@@ -495,7 +403,58 @@ class FmsModelBase(nn.Module):
             # This adjustment is for the extra padding to batch size 2 required by pytorch<=2.7
             logits = self._adjust_output_for_fp8(logits, attn_metadata)
 
+        if is_prompt and self.n_pads_right > 0:
+            # get last token before the right padding
+            logits = logits[self.indices, -self.n_pads_right - 1, :]
+        else:
+            # just take last token if no right padding
+            logits = logits[self.indices, -1, :]
+
         return logits
+
+    def get_maybe_mm_embeddings(self, input_ids, mm_features, is_decode):
+        """If the model is multimodal, get the (maybe) multimodal embeddings.
+        If it isn't, return None, since we only use embeddings for multimodal.
+
+        In the case of prefill / decode; we should only have mm features in
+        prefill, because by that point, the multimodal data will already be
+        merged into the embeddings to be cached. As such we explicitly explode
+        if mm_features are passed in decode, because it's likely a mistake.
+
+        NOTE: generally is_decode will set iteration > 0 in FMS; failing to do
+        this will cause it to return the raw input id and try to embed in the
+        forward call, which may break on AIU due to misalignment with prefill's
+        embedding call.
+        """
+        if not self.is_multimodal or self.mm_model_utils is None:
+            # The model is likely implemented incorrectly or not initialized,
+            # or we are passing multimodal features to a model that should not
+            # take them.
+            if mm_features:
+                raise ValueError("mm_features were provided, but model is not multimodal!")
+            # We do not use embeddings for models that aren't multimodal.
+            return None
+
+        # Delegate to this model architecture's multimodal helpers to
+        # get the (potentially) multimodal embeddings from the FMS model.
+        fms_model = self.model
+        return self.mm_model_utils.get_maybe_mm_embeddings(
+            fms_model,
+            input_ids,
+            mm_features,
+            is_decode,
+        )
+
+    def sample(
+        self,
+        logits: torch.Tensor,
+        sampling_metadata: SamplingMetadata,
+    ) -> SamplerOutput | None:
+        next_tokens = self.sampler(logits, sampling_metadata)
+        return next_tokens
+
+    def get_mask_dtype(self) -> torch.dtype:
+        return self._mask_dtype
 
     def _set_scale_for_fp8(self, attn_metadata: SpyreAttentionMetadata):
         for _, (k, v) in enumerate(self.past_key_value_states):
