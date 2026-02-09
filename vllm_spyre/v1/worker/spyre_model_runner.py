@@ -2,7 +2,7 @@ import math
 import os
 import time
 from abc import ABC, abstractmethod
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from logging import DEBUG
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, Union, cast
 
@@ -646,704 +646,6 @@ class SpyreModelRunner(
         return len(request.prompt_token_ids)
 
 
-class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
-    def __init__(
-        self,
-        vllm_config: VllmConfig,
-        is_driver_worker: bool,
-        rank: int,
-    ):
-        super().__init__(vllm_config=vllm_config, is_driver_worker=is_driver_worker, rank=rank)
-
-        self.block_size = SpyrePlatform.get_block_size()
-
-        # max number of blocks needed (reserved) per request id
-        self.req_ids2num_reserved_blocks: dict[str, int] = {}
-
-        self.tkv: int = 0
-
-        self._enable_prefix_caching = vllm_config.cache_config.enable_prefix_caching
-
-        # TODO: Remove this once we can prefill and decode in the same step
-        self.prefill_batch = SamplingInputBatch(
-            # TODO: review this, currently we only support prefill for
-            # `batch_size=1`
-            # TODO: when considering multimodal inputs for larger batches, we
-            # should also ensure that prefill correctly handles the case in
-            # which we mix mm + text-only requests in the same prefill batch.
-            max_num_reqs=1,
-            max_model_len=vllm_config.model_config.max_model_len,
-            device=self.device,
-            pin_memory=self.pin_memory,
-            vocab_size=vllm_config.model_config.get_vocab_size(),
-        )
-
-    @property
-    def enable_prefix_caching(self):
-        return self._enable_prefix_caching and not self.warmup_mode
-
-    def pre_warmup(self) -> None:
-        # Set the number of kv cache blocks to the minimal value of 2 which is
-        # required for warmup. After the warmup, the number of blocks will be
-        # set to the value returned by the Spyre compiler (see complete_warmup)
-        # Note: Until this feature is supported by the compiler we have to set:
-        # n_blocks_warmup = n_blocks_avail
-
-        n_blocks_warmup = self.get_total_spyre_blocks()
-        self._set_blocks(num_blocks=n_blocks_warmup)
-        # TODO: fixup the typing here. Things are getting tripped up by having all of our "model"
-        # classes inherit from `nn.Module` when maybe they don't need to
-        self.model.model.set_past_key_value_states(num_blocks=n_blocks_warmup)  # ty: ignore[call-non-callable]
-
-        # Future code:
-
-        # self._set_blocks(num_blocks=2)
-        # self.model.model.set_past_key_value_states(num_blocks=2)
-
-        # mark the num_blocks dimension dynamic for Spyre compiler for warmup
-        # only, compiler will return the number of blocks it can accommodate.
-        # (This is not yet supported by the compiler)
-        # for layer in self.model.model.past_key_value_states:
-        #     for tensor in layer:
-        #         torch._dynamo.mark_dynamic(tensor, 0)
-
-    def complete_warmup(self) -> None:
-        super().complete_warmup()
-        # get the number or pages from the actual Spyre card after the warmup
-        # and set it accordingly in the model runner and for the kv cache size
-        n_blocks_avail = self.get_total_spyre_blocks()
-        self._set_blocks(num_blocks=n_blocks_avail)
-        # TODO: fixup the typing here. Things are getting tripped up by having all of our "model"
-        # classes inherit from `nn.Module` when maybe they don't need to
-        self.model.model.set_past_key_value_states(num_blocks=n_blocks_avail)  # ty: ignore[call-non-callable]
-
-    def _set_blocks(self, num_blocks: int) -> None:
-        # set number of available blocks, populate block_pool and
-        # create the kv_cache_manager
-        # Note: block 0 is reserved for padding and cannot be reused, hence
-        # number of actually usable blocks for kv caching = num_blocks - 1
-        self.n_blocks = num_blocks - 1
-        self.block_pool = self._make_block_pool()
-        self.kv_cache_manager = self._make_kv_cache_manager()
-
-    def _make_block_pool(self) -> BlockPool:
-        kwargs = {}
-        if has_argument(BlockPool, "hash_block_size"):
-            kwargs["hash_block_size"] = self.block_size
-        return BlockPool(
-            num_gpu_blocks=self.n_blocks + 1,
-            enable_caching=self.enable_prefix_caching,
-            enable_kv_cache_events=False,
-            **kwargs,
-        )
-
-    def _make_kv_cache_manager(self) -> FullAttentionManager:
-        self._attn_spec = FullAttentionSpec(
-            block_size=self.block_size,
-            # dummy values
-            num_kv_heads=1,
-            head_size=1,
-            dtype=torch.float16,
-        )
-
-        # Enable_caching parameter added in vllm v0.14.0
-        kwargs = {
-            "kv_cache_spec": self._attn_spec,
-            "block_pool": self.block_pool,
-            # Currently don't support models with more than one
-            # attention type, e.g. full and sliding window, so
-            # there is only one group.
-            "kv_cache_group_id": 0,
-            # We don't support DCP
-            # https://docs.vllm.ai/en/latest/serving/context_parallel_deployment/#decode-context-parallel
-            "dcp_world_size": 1,
-        }
-
-        # Conditionally add param for vLLM >= 0.14.0
-        if has_argument(FullAttentionManager.__init__, "enable_caching"):
-            kwargs["enable_caching"] = self.enable_prefix_caching
-
-        return FullAttentionManager(**kwargs)  # ty: ignore[invalid-argument-type]
-
-    def _get_blocks(self, request_id: str) -> list[KVCacheBlock]:
-        return self.kv_cache_manager.req_to_blocks[request_id]
-
-    def get_total_spyre_blocks(self) -> int:
-        """Returns the total number of KV cache blocks available for spyre.
-        This currently returns the number of blocks required for a full-sized
-        batch, which may be greater than the available memory.
-
-        Until a correct available memory api is available, the number of blocks
-        must be overridden with a known good value via
-        cache_config.num_gpu_blocks_override
-        """
-        max_batch_size = self.scheduler_config.max_num_seqs
-        max_model_len = self.model_config.max_model_len
-        block_size = SpyrePlatform.get_block_size()
-        max_blocks_per_seq = max_model_len // block_size
-        num_blocks_full_batch = max_batch_size * max_blocks_per_seq
-
-        blocks_override = self.cache_config.num_gpu_blocks_override
-        if blocks_override is not None and blocks_override > 0:
-            num_blocks = blocks_override
-            # Total number of blocks needs to be a multiple of the batch size on Spyre
-            # -> round down to not exceed the Spyre cards hard-coded limits of detected models
-            old_num_blocks = num_blocks
-            num_blocks = math.floor(num_blocks / max_batch_size) * max_batch_size
-        else:
-            # Note on "+1": We need to add one additional block used exclusively for padding (idx 0)
-            num_blocks = num_blocks_full_batch + 1
-            # Total number of blocks needs to be a multiple of the batch size on Spyre
-            # -> round up as not among detected models (rounding down might cut the padding block)
-            old_num_blocks = num_blocks
-            num_blocks = math.ceil(num_blocks / max_batch_size) * max_batch_size
-
-        if num_blocks != old_num_blocks:
-            logger.info(
-                "Spyre constraint: num blocks rounded from %d to %d (multiple of batch size=%d)",
-                old_num_blocks,
-                num_blocks,
-                max_batch_size,
-            )
-
-        if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
-            # As we drop the block reservation for chunked prefill the number of available blocks
-            # needs to be at least as big as the smaller of the batch tkv limit
-            # (VLLM_DT_MAX_BATCH_TKV_LIMIT) and a full batch (max_num_seqs * max_model_len)
-            batch_tkv_limit = int(
-                os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", num_blocks_full_batch * block_size)
-            )
-            num_blocks_batch_tkv_limit = batch_tkv_limit // block_size
-            # Note on "+1": We need to add one additional block used exclusively for padding (idx 0)
-            min_req_num_blocks = min(num_blocks_full_batch, num_blocks_batch_tkv_limit) + 1
-        else:
-            # default value: serve at least one sequence of full context (consistent with upstream)
-            min_req_num_blocks = max_blocks_per_seq + 1
-
-        # min_req_num_blocks := minimum required number of blocks
-        if num_blocks < min_req_num_blocks:
-            raise ValueError(
-                f"Number of pages available on Spyre {num_blocks} is not "
-                f"enough to serve the current model (need at least "
-                f"{min_req_num_blocks} pages)."
-            )
-
-        max_concurrency = num_blocks * block_size / max_model_len
-        backend = "Spyre" if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn" else "CPU"
-        logger.info("%s KV cache size: %s tokens", backend, num_blocks * block_size)
-        logger.info(
-            "Maximum concurrency for %s tokens per request: %.2fx",
-            str(max_model_len),
-            max_concurrency,
-        )
-
-        return num_blocks
-
-    def update_states(self, scheduler_output):
-        super().update_states(scheduler_output)
-
-        # TODO: move to kv cache manager
-        # Continuous batching: free blocks
-        for req_id in scheduler_output.finished_req_ids:
-            if logger.isEnabledFor(DEBUG) and (blocks_to_free := self._get_blocks(req_id)):
-                logger.debug("Freeing request id: %s", req_id)
-                for block in blocks_to_free:
-                    logger.debug("Freeing block with id: %s", block.block_id)
-            self.req_ids2num_reserved_blocks.pop(req_id, None)
-            self.kv_cache_manager.free(req_id)
-
-    def _prepare_prompt(self, new_request_data: list[NewRequestData]) -> SamplingForwardInputs:
-        # currently all prefills are of batch size 1
-        assert len(new_request_data) == 1
-
-        request = new_request_data[0]
-        req_id = request.req_id
-        prompt_token_ids = request.prompt_token_ids
-        sampling_params = request.sampling_params
-        is_new_batch = len(self.req_ids2num_reserved_blocks) == 0
-        prompt_len = len(prompt_token_ids)  # ty: ignore[invalid-argument-type]
-        mm_features = getattr(request, "mm_features", None)
-
-        # make sure that the current tkv of the decode batch is greater or
-        # equal to the prompt length of the new joining sequence
-        if not is_new_batch and prompt_len > self.tkv:
-            # increasing the current tkv by a multiple of the block size
-            tkv_offset = math.ceil((prompt_len - self.tkv) / self.block_size) * self.block_size
-            if tkv_offset > 0:
-                # Note: drawing explaining this optimization in more detail
-                # can be found here (see page 3 in particular):
-                # https://github.com/vllm-project/vllm-spyre/pull/340#issuecomment-3179337304
-                logger.debug(
-                    "Prefill optimization: Adding %d blocks per "
-                    "sequence in the decode batch to prefill the current "
-                    "sequence.",
-                    tkv_offset // self.block_size,
-                )
-                self.tkv += tkv_offset
-
-                # adding left pads to the requests in the current decode batch
-                requests = self.requests.values()
-                for req in requests:
-                    if req.req_id != req_id:
-                        req.left_padding += tkv_offset
-
-        self.prefill_batch.clear_requests()
-
-        # right padding to the next block boundary (ceil division)
-        # -> prefills must to be multiples of the block size (Spyre constraint)
-        n = prompt_len if is_new_batch else self.tkv
-        right_padding_tkv = math.ceil(n / self.block_size) * self.block_size
-
-        # set the tkv to the block padding if starting a new decode batch
-        self.tkv = right_padding_tkv if is_new_batch else self.tkv
-
-        # number of left pads to align the prefill sequence with the tkv of the
-        # current decode batch (Spyre constraint)
-        left_padding = self.tkv - prompt_len
-
-        # optimization: cut out fully padded blocks on the left
-        n_pad_blocks = (self.tkv - prompt_len) // self.block_size
-        right_padding_tkv -= n_pad_blocks * self.block_size
-        left_padding_tkv = self.tkv - n_pad_blocks * self.block_size
-        if n_pad_blocks > 0:
-            # Note: drawing explaining this optimization in more detail can
-            # be found here (see page 2 in particular):
-            # https://github.com/vllm-project/vllm-spyre/pull/340#issuecomment-3179337304
-            logger.debug("Prefill reduced by %d blocks due to optimization.", n_pad_blocks)
-
-        # Reserve the number of blocks that this new sequence requires in the
-        # worst case (it might always stop early by producing the EOS token)
-        new_tokens = sampling_params.max_tokens if sampling_params is not None else 0
-        n = self.tkv + new_tokens - 1  # ty: ignore[unsupported-operator]
-        # subtract the padding blocks from the reserved blocks
-        n_fully_padded_blocks = math.floor((self.tkv - len(prompt_token_ids)) / self.block_size)  # ty: ignore[invalid-argument-type]
-        n_reserved_blocks = math.ceil(n / self.block_size) - n_fully_padded_blocks
-        self.req_ids2num_reserved_blocks[req_id] = n_reserved_blocks
-
-        # filling block table and slot mapping
-
-        blocks = self.kv_cache_manager.allocate_new_blocks(req_id, right_padding_tkv)
-
-        block_offsets = [block.block_id * self.block_size for block in blocks]
-        slot_mapping = torch.arange(self.block_size, dtype=torch.int64).repeat(len(blocks))
-        slot_mapping += torch.tensor(block_offsets, dtype=torch.int64).repeat_interleave(
-            self.block_size
-        )
-        slot_mapping.unsqueeze_(0)
-
-        # Add new request to the cached states.
-        if sampling_params.sampling_type == SamplingType.RANDOM_SEED:
-            generator = torch.Generator(device=self.device)
-            generator.manual_seed(sampling_params.seed)  # ty: ignore[invalid-argument-type]
-        else:
-            generator = None
-
-        req_state = SamplingRequestState(
-            req_id=req_id,
-            prompt_token_ids=prompt_token_ids,  # ty: ignore[invalid-argument-type]
-            mm_features=mm_features,
-            sampling_params=sampling_params,  # ty: ignore[invalid-argument-type]
-            generator=generator,
-            output_token_ids=[],
-            left_padding=left_padding,
-        )
-        self.requests[req_id] = req_state
-        prefill_index = self.input_batch.add_request(req_state)
-        self.prefill_batch.add_request(req_state)
-
-        # set prefill index for logits processor
-        for logitsproc in self.input_batch.logitsprocs_wrappers:
-            logitsproc.set_prefill_index(prefill_index)
-
-        # Refresh sampling metadata after all request are added to the batch
-        self.input_batch.refresh_metadata()
-        self.prefill_batch.refresh_metadata()
-
-        self.model.indices = torch.ones(1, dtype=torch.bool, device="cpu")
-        prompt_token_ids_tensor = torch.tensor(
-            prompt_token_ids, dtype=torch.long, device=torch.device("cpu")
-        )
-
-        # get position ids and attention mask
-        # applies left padding to ensure that the tkv of the new sequence
-        # tkv_prefill aligns with tkv of current decode batch tkv_decode:
-        # tkv_prefill % block_size = tkv_decode % block_size
-        # and right padding to align with the next block boundary
-        input_tokens, position_ids, mask = self.pad_input_ids(
-            [prompt_token_ids_tensor],
-            min_pad_left=left_padding_tkv,
-            min_pad_right=right_padding_tkv,
-        )
-        mask = mask.unsqueeze(1).contiguous()
-
-        # not needed for prefill
-        current_tkv_mask = None
-        # left padding info is stored in CachedRequestState of self.requests
-        left_padded_prompt_mask = None
-        # block table is only passed for decode
-        block_table = None
-
-        # None unless this model is multimodal
-        input_embeds = self.model.get_maybe_mm_embeddings(
-            input_tokens,
-            mm_features=mm_features,
-            is_decode=False,
-        )
-
-        model_inputs = SamplingForwardInputs(
-            input_tokens=input_tokens,
-            input_embeds=input_embeds,
-            input_positions=position_ids,
-            input_masks=mask,
-            current_tkv_mask=current_tkv_mask,  # ty: ignore[invalid-argument-type]
-            left_padded_prompt_mask=left_padded_prompt_mask,  # ty: ignore[invalid-argument-type]
-            block_table=block_table,  # ty: ignore[invalid-argument-type]
-            slot_mapping=slot_mapping,
-            is_prompt=True,
-            # used only for quantized model
-            scale_indices=[prefill_index],
-        )
-
-        self._mark_input_tensors(model_inputs)
-
-        return model_inputs
-
-    def _prepare_decode(
-        self,
-        cached_request_data: CachedRequestData,
-    ) -> SamplingForwardInputs:
-        assert len(cached_request_data.req_ids) > 0
-
-        input_tokens = []
-        input_positions = []
-        block_table = []
-        slot_mapping = []
-        left_padded_prompt_mask = []
-
-        assert len(self.input_batch.req_id_to_index) == len(cached_request_data.req_ids)
-        # TODO(wallas): I think we can do better here, without sorting or
-        # creating an intermediary dictionary
-        cached_reqs_map = {req_id: i for i, req_id in enumerate(cached_request_data.req_ids)}
-        req_ids = self.input_batch.sorted_requests_ids
-
-        n_blocks = 0  # maximal number of blocks used by any seq in the batch
-        for req_id in req_ids:
-            # adding new blocks if needed
-            if self.tkv % self.block_size == 0:
-                req_state: SamplingRequestState = self.requests[req_id]
-                # we want to allocate the block for 1 next token.
-                # So we need to compute the number of tokens that the
-                # kv_cache_manager knows about: the number of computed
-                # tokens so far plus any intra-block padding.
-                total_tokens = (
-                    req_state.left_padding % self.block_size + req_state.num_computed_tokens + 1
-                )
-                blocks = self.kv_cache_manager.allocate_new_blocks(req_id, total_tokens)
-                assert len(blocks) == 1
-            n_blocks = max(n_blocks, len(self._get_blocks(req_id)))
-
-        for req_id in req_ids:
-            # TODO: Will this always just be one token ID if there's no spec
-            # or jump decoding?
-
-            req_state = self.requests[req_id]
-
-            # filling block table with padding blocks to make it rectangular
-            # Note: the padding block id 0 here is chosen arbitrarily, it can
-            # be any allocated block id on the Sypre card (has to be in range
-            # [0, self.n_blocks - 1]). Further, it also be a block id that holds
-            # actual KV cache for another (or the same) sequence.
-            blocks = self._get_blocks(req_id)
-            left_padding_blocks = n_blocks - len(blocks)
-
-            req_block_ids = [0] * left_padding_blocks + [block.block_id for block in blocks]
-            block_table.append(req_block_ids)
-
-            # slot_mapping for all blocks of sequence
-            start_slot = block_table[-1][-1] * self.block_size
-            offset = self.tkv % self.block_size
-            slot = [start_slot + offset]
-            slot_mapping.append(slot)
-
-            # input token and position of the token generated in the last step
-            generation_token = req_state.output_token_ids[-1]
-            input_tokens.append([generation_token])
-            seq_len = cached_request_data.num_computed_tokens[cached_reqs_map[req_id]]
-            input_positions.append([seq_len])
-
-            # retrieve left padding information stored during prefill and
-            # updated when calling reduce_left_padding()
-            left_padded_prompt_mask.append(req_state.left_padding)
-
-        # update tkv
-        self.tkv = self.tkv + 1
-
-        # construct tensors from lists
-        input_tokens = torch.tensor(input_tokens, dtype=torch.long, device=self.device)
-        position_ids = torch.tensor(input_positions, dtype=torch.long, device=self.device)
-        current_tkv_mask = torch.tensor([self.tkv] * len(input_tokens), dtype=torch.int64)
-        left_padded_prompt_mask = torch.tensor(
-            left_padded_prompt_mask, dtype=torch.long, device=self.device
-        )
-        block_table = torch.tensor(block_table, dtype=torch.int64)
-        slot_mapping = torch.tensor(slot_mapping, dtype=torch.int64)
-        self.model.indices = torch.ones(
-            len(cached_request_data.req_ids), dtype=torch.bool, device="cpu"
-        )
-
-        # mask not needed during decode
-        mask = None
-
-        # None unless this model is multimodal; no mm_features since
-        # all multimodal features are merged in prefill.
-        input_embeds = self.model.get_maybe_mm_embeddings(
-            input_tokens,
-            mm_features=None,
-            is_decode=True,
-        )
-
-        model_inputs = SamplingForwardInputs(
-            input_tokens=input_tokens,
-            input_embeds=input_embeds,
-            input_positions=position_ids,
-            input_masks=mask,
-            current_tkv_mask=current_tkv_mask,
-            left_padded_prompt_mask=left_padded_prompt_mask,
-            block_table=block_table,
-            slot_mapping=slot_mapping,
-            is_prompt=False,
-            scale_indices=self.input_batch.request_indices,
-        )
-
-        self._mark_input_tensors(model_inputs)
-
-        return model_inputs
-
-    def reduce_left_padding(self) -> None:
-        """Optimizes the decode batch by removing entire columns that consist
-        solely of left pads. This reduces unnecessary decode computation.
-
-        Note: drawing explaining the optimization in more detail uploaded here:
-        https://github.com/vllm-project/vllm-spyre/pull/131#issuecomment-3233440852
-        """
-
-        requests = self.requests.values()
-        if len(self.requests) == 0:
-            return
-
-        min_left_pad = min([r.left_padding for r in requests])
-        n_padded_blocks = min_left_pad // self.block_size
-        offset = n_padded_blocks * self.block_size
-
-        if offset > 0:
-            logger.debug("Reducing left padding by %d blocks", n_padded_blocks)
-
-            for req in requests:
-                req.left_padding -= offset
-
-        # update tkv
-        self.tkv -= offset
-
-    def pad_input_ids(  # ty: ignore[invalid-method-override]
-        self,
-        input_ids_list: list[torch.Tensor],
-        min_pad_left: int = 0,
-        min_pad_right: int = 0,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        # left padding to align with tkv of current decode batch
-        input_tokens_left, position_ids_left, mask_left = super().pad_input_ids(
-            input_ids_list, min_pad_length=min_pad_left
-        )
-
-        # right padding to align with the next block boundary
-        left_pad_len = input_tokens_left.shape[1]
-        n_pads_right = min_pad_right - left_pad_len
-
-        # set number of right pads for the next model forward pass:
-        # need to be excluded before sampling tokens
-        self.model.n_pads_right = n_pads_right
-
-        if n_pads_right > 0:
-            # apply right padding to input_tokens, position_ids and mask
-            logger.info(
-                "Right padding request of length %d tokens to %d tokens.",
-                left_pad_len,
-                min_pad_right,
-            )
-
-            input_tokens_right = torch.tensor(
-                [[self.pad_token_id for i in range(n_pads_right)]],
-                device=input_tokens_left.device,
-                dtype=input_tokens_left.dtype,
-            )
-            input_tokens = torch.concat((input_tokens_left, input_tokens_right), dim=1)
-
-            # Note: same output with i as padding for position ids
-            pos_start = position_ids_left[0][-1] + 1
-            position_ids_right = torch.tensor(
-                [[0 for i in range(pos_start, pos_start + n_pads_right)]],
-                device=position_ids_left.device,
-                dtype=position_ids_left.dtype,
-            )
-            position_ids = torch.concat((position_ids_left, position_ids_right), dim=1)
-
-            # pad left padded mask with -inf to the next block boundary
-            mask = torch.nn.functional.pad(
-                mask_left, (0, n_pads_right, 0, n_pads_right), value=-torch.inf
-            )
-
-            # lower triangle: 0.0, upper triangle -inf
-            mask_pads = torch.zeros(n_pads_right, n_pads_right)
-            mask_pads[~torch.tril(torch.ones(n_pads_right, n_pads_right)).bool()] = float("-inf")
-
-            # insert triangular matrix for right pads
-            mask[:, -n_pads_right:, -n_pads_right:] = mask_pads.unsqueeze(0)
-        else:
-            # no right padding needed
-            input_tokens = input_tokens_left
-            position_ids = position_ids_left
-            mask = mask_left
-
-        return input_tokens, position_ids, mask
-
-    def build_attn_metadata(self, model_input: SamplingForwardInputs) -> SpyreAttentionMetadata:
-        # TODO: probably we can remove some fields of the model input and
-        # update only the SpyreAttentionMetadata
-
-        return SpyreAttentionMetadata(
-            slot_mapping=model_input.slot_mapping,
-            current_tkv_mask=model_input.current_tkv_mask,
-            left_padded_prompt_mask=model_input.left_padded_prompt_mask,
-            block_table=model_input.block_table,
-            scale_indices=torch.tensor(model_input.scale_indices, dtype=torch.int32),
-            is_prefill=model_input.is_prompt,
-        )
-
-    def get_sampling_metadata(self, is_prefill: bool) -> SamplingMetadata:
-        if is_prefill:
-            sampling_data = self.prefill_batch.sampling_metadata
-            sampling_data.logitsprocs = self.input_batch.logitsprocs
-            return sampling_data
-        else:
-            return self.input_batch.sampling_metadata
-
-    def get_req_id_to_index(self, is_prefill: bool) -> dict[str, int]:
-        req_id_to_index = (
-            self.prefill_batch.get_unpadded_output_indices()
-            if is_prefill
-            else self.input_batch.get_unpadded_output_indices()
-        )
-
-        return req_id_to_index
-
-    def get_n_free_blocks(self) -> int:
-        return self.n_blocks - sum(self.req_ids2num_reserved_blocks.values())
-
-    def no_prompt_logprob(self, is_prefill: bool) -> bool:
-        if is_prefill:
-            return self.prefill_batch.no_prompt_logprob
-        # If we're not running a prefill then this is a decode-only batch
-        return True
-
-    def get_num_prompt_logprobs(self) -> dict[str, int]:
-        # Prompt logprobs will always be set on the prefill batch
-        return self.prefill_batch.num_prompt_logprobs
-
-    def prepare_model_input(self, scheduler_output: SchedulerOutput) -> SamplingForwardInputs:
-        # remove left padding if applicable before next prefill/decode step
-        self.reduce_left_padding()
-
-        return super().prepare_model_input(scheduler_output)
-
-    @SpyrePlatform.inference_mode()
-    def execute_model(
-        self,
-        scheduler_output: SchedulerOutput,
-        **kwargs,
-    ) -> ModelRunnerOutput:
-        output = super().execute_model(scheduler_output, **kwargs)
-
-        return CBSpyreModelRunnerOutput(
-            **asdict(output),
-            tkv=self.tkv if scheduler_output.total_num_scheduled_tokens > 0 else 0,
-            n_free_blocks=self.get_n_free_blocks(),
-        )
-
-    def _mark_input_tensors(self, model_input: SamplingForwardInputs) -> None:
-        # Marking dimensions static/dynamic
-        if model_input.is_prompt:
-            # batch static (batch size 1)
-            torch._dynamo.mark_static(model_input.slot_mapping, 0)
-            torch._dynamo.mark_static(model_input.input_positions, 0)
-            torch._dynamo.mark_static(model_input.input_masks, 0)
-
-            # sequence dynamic
-            torch._dynamo.mark_dynamic(model_input.slot_mapping, 1)
-            torch._dynamo.mark_dynamic(model_input.input_positions, 1)
-            torch._dynamo.mark_dynamic(model_input.input_masks, 2)
-            torch._dynamo.mark_dynamic(model_input.input_masks, 3)
-
-            # In the case that the input tokens are 3D, i.e., they're actually
-            # embeddings, The last dimension (embedding dimension) is static.
-            # This is mostly for multimodal models.
-            if model_input.input_embeds is not None:
-                torch._dynamo.mark_static(model_input.input_embeds, 0)
-                torch._dynamo.mark_dynamic(model_input.input_embeds, 1)
-                torch._dynamo.mark_static(model_input.input_embeds, 2)
-            else:
-                torch._dynamo.mark_static(model_input.input_tokens, 0)
-                torch._dynamo.mark_dynamic(model_input.input_tokens, 1)
-
-        # decode
-        else:
-            # mask is no longer used here
-
-            # batch dynamic
-            torch._dynamo.mark_dynamic(model_input.block_table, 0)
-            torch._dynamo.mark_dynamic(model_input.slot_mapping, 0)
-            torch._dynamo.mark_dynamic(model_input.input_positions, 0)
-            torch._dynamo.mark_dynamic(model_input.current_tkv_mask, 0)
-            torch._dynamo.mark_dynamic(model_input.left_padded_prompt_mask, 0)
-
-            # sequence
-            torch._dynamo.mark_dynamic(model_input.block_table, 1)
-            torch._dynamo.mark_static(model_input.slot_mapping, 1)  # always 1
-            torch._dynamo.mark_static(model_input.input_positions, 1)  # always 1
-
-            # for multimodal models, we also don't use input_embeds
-            if model_input.input_embeds is not None:
-                torch._dynamo.mark_dynamic(model_input.input_embeds, 0)
-                torch._dynamo.mark_static(model_input.input_embeds, 1)  # always 1
-                torch._dynamo.mark_static(model_input.input_embeds, 2)
-            else:
-                torch._dynamo.mark_dynamic(model_input.input_tokens, 0)
-                torch._dynamo.mark_static(model_input.input_tokens, 1)  # always 1
-
-    def build_input_batch(self) -> SamplingInputBatch:
-        # Define logits processors.
-
-        custom_logitsprocs = self.vllm_config.model_config.logits_processors
-
-        batch_size = self.scheduler_config.max_num_seqs
-        logits_processors = build_logitsprocs_for_cb(
-            vllm_config=self.vllm_config,
-            device=self.device,
-            is_pin_memory=self.pin_memory,
-            is_pooling_model=False,
-            custom_logitsprocs=custom_logitsprocs,
-            batch_size=batch_size,
-        )
-
-        return SamplingInputBatch(
-            max_num_reqs=batch_size,
-            max_model_len=self.model_config.max_model_len,
-            device=self.device,
-            pin_memory=self.pin_memory,
-            vocab_size=self.model_config.get_vocab_size(),
-            logitsprocs=logits_processors,
-        )
-
-
 class PoolerAdapter(torch.nn.Module):
     def __init__(self, pooler: torch.nn.Module):
         super().__init__()
@@ -1774,7 +1076,7 @@ class ChunkedPrefillPlan:
     total_cache_blocks: int
 
 
-class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
+class ChunkedPrefillModelRunner(SpyreModelRunner):
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -1782,6 +1084,29 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         rank: int,
     ):
         super().__init__(vllm_config=vllm_config, is_driver_worker=is_driver_worker, rank=rank)
+
+        self.block_size = SpyrePlatform.get_block_size()
+
+        # max number of blocks needed (reserved) per request id
+        self.req_ids2num_reserved_blocks: dict[str, int] = {}
+
+        self.tkv: int = 0
+
+        self._enable_prefix_caching = vllm_config.cache_config.enable_prefix_caching
+
+        # TODO: Remove this once we can prefill and decode in the same step
+        self.prefill_batch = SamplingInputBatch(
+            # TODO: review this, currently we only support prefill for
+            # `batch_size=1`
+            # TODO: when considering multimodal inputs for larger batches, we
+            # should also ensure that prefill correctly handles the case in
+            # which we mix mm + text-only requests in the same prefill batch.
+            max_num_reqs=1,
+            max_model_len=vllm_config.model_config.max_model_len,
+            device=self.device,
+            pin_memory=self.pin_memory,
+            vocab_size=vllm_config.model_config.get_vocab_size(),
+        )
 
         self.chunk_size = self.scheduler_config.max_num_batched_tokens
         self.chunk_blocks_count = self.chunk_size // self.block_size
@@ -1804,6 +1129,217 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             self.request_block_hasher = None
 
         self.prefix_cache_stats = None
+
+    @property
+    def enable_prefix_caching(self):
+        return self._enable_prefix_caching and not self.warmup_mode
+
+    def pre_warmup(self) -> None:
+        # Set the number of kv cache blocks to the minimal value of 2 which is
+        # required for warmup. After the warmup, the number of blocks will be
+        # set to the value returned by the Spyre compiler (see complete_warmup)
+        # Note: Until this feature is supported by the compiler we have to set:
+        # n_blocks_warmup = n_blocks_avail
+
+        n_blocks_warmup = self.get_total_spyre_blocks()
+        self._set_blocks(num_blocks=n_blocks_warmup)
+        # TODO: fixup the typing here. Things are getting tripped up by having all of our "model"
+        # classes inherit from `nn.Module` when maybe they don't need to
+        self.model.model.set_past_key_value_states(num_blocks=n_blocks_warmup)  # ty: ignore[call-non-callable]
+
+        # Future code:
+
+        # self._set_blocks(num_blocks=2)
+        # self.model.model.set_past_key_value_states(num_blocks=2)
+
+        # mark the num_blocks dimension dynamic for Spyre compiler for warmup
+        # only, compiler will return the number of blocks it can accommodate.
+        # (This is not yet supported by the compiler)
+        # for layer in self.model.model.past_key_value_states:
+        #     for tensor in layer:
+        #         torch._dynamo.mark_dynamic(tensor, 0)
+
+    def complete_warmup(self) -> None:
+        super().complete_warmup()
+        # get the number or pages from the actual Spyre card after the warmup
+        # and set it accordingly in the model runner and for the kv cache size
+        n_blocks_avail = self.get_total_spyre_blocks()
+        self._set_blocks(num_blocks=n_blocks_avail)
+        # TODO: fixup the typing here. Things are getting tripped up by having all of our "model"
+        # classes inherit from `nn.Module` when maybe they don't need to
+        self.model.model.set_past_key_value_states(num_blocks=n_blocks_avail)  # ty: ignore[call-non-callable]
+
+    def get_total_spyre_blocks(self) -> int:
+        """Returns the total number of KV cache blocks available for spyre.
+        This currently returns the number of blocks required for a full-sized
+        batch, which may be greater than the available memory.
+
+        Until a correct available memory api is available, the number of blocks
+        must be overridden with a known good value via
+        cache_config.num_gpu_blocks_override
+        """
+        max_batch_size = self.scheduler_config.max_num_seqs
+        max_model_len = self.model_config.max_model_len
+        block_size = SpyrePlatform.get_block_size()
+        max_blocks_per_seq = max_model_len // block_size
+        num_blocks_full_batch = max_batch_size * max_blocks_per_seq
+
+        blocks_override = self.cache_config.num_gpu_blocks_override
+        if blocks_override is not None and blocks_override > 0:
+            num_blocks = blocks_override
+            # Total number of blocks needs to be a multiple of the batch size on Spyre
+            # -> round down to not exceed the Spyre cards hard-coded limits of detected models
+            old_num_blocks = num_blocks
+            num_blocks = math.floor(num_blocks / max_batch_size) * max_batch_size
+        else:
+            # Note on "+1": We need to add one additional block used exclusively for padding (idx 0)
+            num_blocks = num_blocks_full_batch + 1
+            # Total number of blocks needs to be a multiple of the batch size on Spyre
+            # -> round up as not among detected models (rounding down might cut the padding block)
+            old_num_blocks = num_blocks
+            num_blocks = math.ceil(num_blocks / max_batch_size) * max_batch_size
+
+        if num_blocks != old_num_blocks:
+            logger.info(
+                "Spyre constraint: num blocks rounded from %d to %d (multiple of batch size=%d)",
+                old_num_blocks,
+                num_blocks,
+                max_batch_size,
+            )
+
+        # As we drop the block reservation for chunked prefill the number of available blocks
+        # needs to be at least as big as the smaller of the batch tkv limit
+        # (VLLM_DT_MAX_BATCH_TKV_LIMIT) and a full batch (max_num_seqs * max_model_len)
+        batch_tkv_limit = int(
+            os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", num_blocks_full_batch * block_size)
+        )
+        num_blocks_batch_tkv_limit = batch_tkv_limit // block_size
+        # Note on "+1": We need to add one additional block used exclusively for padding (idx 0)
+        min_req_num_blocks = min(num_blocks_full_batch, num_blocks_batch_tkv_limit) + 1
+
+        # min_req_num_blocks := minimum required number of blocks
+        if num_blocks < min_req_num_blocks:
+            raise ValueError(
+                f"Number of pages available on Spyre {num_blocks} is not "
+                f"enough to serve the current model (need at least "
+                f"{min_req_num_blocks} pages)."
+            )
+
+        max_concurrency = num_blocks * block_size / max_model_len
+        backend = "Spyre" if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn" else "CPU"
+        logger.info("%s KV cache size: %s tokens", backend, num_blocks * block_size)
+        logger.info(
+            "Maximum concurrency for %s tokens per request: %.2fx",
+            str(max_model_len),
+            max_concurrency,
+        )
+
+        return num_blocks
+
+    def _set_blocks(self, num_blocks: int) -> None:
+        # set number of available blocks, populate block_pool and
+        # create the kv_cache_manager
+        # Note: block 0 is reserved for padding and cannot be reused, hence
+        # number of actually usable blocks for kv caching = num_blocks - 1
+        self.n_blocks = num_blocks - 1
+        self.block_pool = self._make_block_pool()
+        self.kv_cache_manager = self._make_kv_cache_manager()
+
+    def _make_block_pool(self) -> BlockPool:
+        kwargs = {}
+        if has_argument(BlockPool, "hash_block_size"):
+            kwargs["hash_block_size"] = self.block_size
+        return BlockPool(
+            num_gpu_blocks=self.n_blocks + 1,
+            enable_caching=self.enable_prefix_caching,
+            enable_kv_cache_events=False,
+            **kwargs,
+        )
+
+    def _make_kv_cache_manager(self) -> FullAttentionManager:
+        self._attn_spec = FullAttentionSpec(
+            block_size=self.block_size,
+            # dummy values
+            num_kv_heads=1,
+            head_size=1,
+            dtype=torch.float16,
+        )
+
+        # Enable_caching parameter added in vllm v0.14.0
+        kwargs = {
+            "kv_cache_spec": self._attn_spec,
+            "block_pool": self.block_pool,
+            # Currently don't support models with more than one
+            # attention type, e.g. full and sliding window, so
+            # there is only one group.
+            "kv_cache_group_id": 0,
+            # We don't support DCP
+            # https://docs.vllm.ai/en/latest/serving/context_parallel_deployment/#decode-context-parallel
+            "dcp_world_size": 1,
+        }
+
+        # Conditionally add param for vLLM >= 0.14.0
+        if has_argument(FullAttentionManager.__init__, "enable_caching"):
+            kwargs["enable_caching"] = self.enable_prefix_caching
+
+        return FullAttentionManager(**kwargs)  # ty: ignore[invalid-argument-type]
+
+    def _get_blocks(self, request_id: str) -> list[KVCacheBlock]:
+        return self.kv_cache_manager.req_to_blocks[request_id]
+
+    def build_attn_metadata(self, model_input: SamplingForwardInputs) -> SpyreAttentionMetadata:
+        # TODO: probably we can remove some fields of the model input and
+        # update only the SpyreAttentionMetadata
+
+        return SpyreAttentionMetadata(
+            slot_mapping=model_input.slot_mapping,
+            current_tkv_mask=model_input.current_tkv_mask,
+            left_padded_prompt_mask=model_input.left_padded_prompt_mask,
+            block_table=model_input.block_table,
+            scale_indices=torch.tensor(model_input.scale_indices, dtype=torch.int32),
+            is_prefill=model_input.is_prompt,
+        )
+
+    def build_input_batch(self) -> SamplingInputBatch:
+        # Define logits processors.
+
+        custom_logitsprocs = self.vllm_config.model_config.logits_processors
+
+        batch_size = self.scheduler_config.max_num_seqs
+        logits_processors = build_logitsprocs_for_cb(
+            vllm_config=self.vllm_config,
+            device=self.device,
+            is_pin_memory=self.pin_memory,
+            is_pooling_model=False,
+            custom_logitsprocs=custom_logitsprocs,
+            batch_size=batch_size,
+        )
+
+        return SamplingInputBatch(
+            max_num_reqs=batch_size,
+            max_model_len=self.model_config.max_model_len,
+            device=self.device,
+            pin_memory=self.pin_memory,
+            vocab_size=self.model_config.get_vocab_size(),
+            logitsprocs=logits_processors,
+        )
+
+    def get_sampling_metadata(self, is_prefill: bool) -> SamplingMetadata:
+        if is_prefill:
+            sampling_data = self.prefill_batch.sampling_metadata
+            sampling_data.logitsprocs = self.input_batch.logitsprocs
+            return sampling_data
+        else:
+            return self.input_batch.sampling_metadata
+
+    def get_req_id_to_index(self, is_prefill: bool) -> dict[str, int]:
+        req_id_to_index = (
+            self.prefill_batch.get_unpadded_output_indices()
+            if is_prefill
+            else self.input_batch.get_unpadded_output_indices()
+        )
+
+        return req_id_to_index
 
     def _prepare_prompt(self, new_request_data: list[NewRequestData]) -> SamplingForwardInputs:
         raise NotImplementedError
@@ -2398,10 +1934,22 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
                 # hide the prefill request from the super class
                 scheduler_output.scheduled_cached_reqs = CachedRequestData.make_empty()
                 super().update_states(scheduler_output)
+                self._free_blocks(scheduler_output)
                 scheduler_output.scheduled_cached_reqs = cached_reqs
                 return
 
         super().update_states(scheduler_output)
+        self._free_blocks(scheduler_output)
+
+    def _free_blocks(self, scheduler_output: SchedulerOutput) -> None:
+        """Free blocks for finished requests"""
+        for req_id in scheduler_output.finished_req_ids:
+            if logger.isEnabledFor(DEBUG) and (blocks_to_free := self._get_blocks(req_id)):
+                logger.debug("Freeing request id: %s", req_id)
+                for block in blocks_to_free:
+                    logger.debug("Freeing block with id: %s", block.block_id)
+            self.req_ids2num_reserved_blocks.pop(req_id, None)
+            self.kv_cache_manager.free(req_id)
 
     def maybe_setup_new_prefill(self, scheduler_output: SchedulerOutput):
         """If this schedule is for the first chunk of a new prefill, set up the internal state
