@@ -93,7 +93,6 @@ class SamplingForwardInputs(ModelForwardInputs):
     left_padded_prompt_mask: torch.Tensor
     block_table: torch.Tensor
     slot_mapping: torch.Tensor
-    scale_indices: list[int]
 
 
 @dataclass
@@ -1000,8 +999,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             block_table=block_table,  # ty: ignore[invalid-argument-type]
             slot_mapping=slot_mapping,
             is_prompt=True,
-            # used only for quantized model
-            scale_indices=[prefill_index],
         )
 
         self._mark_input_tensors(model_inputs)
@@ -1112,7 +1109,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             block_table=block_table,
             slot_mapping=slot_mapping,
             is_prompt=False,
-            scale_indices=self.input_batch.request_indices,
         )
 
         self._mark_input_tensors(model_inputs)
@@ -1215,7 +1211,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             current_tkv_mask=model_input.current_tkv_mask,
             left_padded_prompt_mask=model_input.left_padded_prompt_mask,
             block_table=model_input.block_table,
-            scale_indices=torch.tensor(model_input.scale_indices, dtype=torch.int32),
             is_prefill=model_input.is_prompt,
         )
 
@@ -2005,7 +2000,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             block_table=block_table,
             slot_mapping=slot_mapping,
             is_prompt=True,
-            scale_indices=self.input_batch.request_indices,
             input_masks=None,  # Unused
         )
 
@@ -2115,7 +2109,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             block_table=block_table,
             slot_mapping=slot_mapping,
             is_prompt=False,
-            scale_indices=self.input_batch.request_indices,
             input_masks=None,  # Unused
         )
 

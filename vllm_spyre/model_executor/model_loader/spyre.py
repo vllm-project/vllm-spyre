@@ -42,11 +42,6 @@ class SpyreAttentionMetadata:
     left_padded_prompt_mask: torch.Tensor
     block_table: torch.Tensor
     is_prefill: bool
-    # We need this indices because when requests are removed from the
-    # persistent batch, we need to keep the reference of the remaining
-    # requests, that is, this index must be the same from the prefill until
-    # the end.
-    scale_indices: torch.Tensor
 
 
 class SpyreCausalLM(nn.Module):
@@ -62,7 +57,7 @@ class SpyreCausalLM(nn.Module):
         # boolean tensor of length batch size with indices:
         # True for unfinished sequences and
         # False for finished or padded sequences
-        self.indices = None
+        self.indices = torch.ones(0)
 
         # number of right pads
         self.n_pads_right = 0
@@ -465,12 +460,12 @@ class SpyreCausalLM(nn.Module):
             if attn_metadata.is_prefill:
                 k._scale = torch.ones(1, dtype=torch.float32)
                 v._scale = torch.ones(1, dtype=torch.float32)
-            elif len(attn_metadata.scale_indices) == 1:
+            elif len(self.indices) == 1:
                 k._scale = torch.ones(2, dtype=torch.float32)
                 v._scale = torch.ones(2, dtype=torch.float32)
             else:
-                k._scale = torch.ones(len(attn_metadata.scale_indices), dtype=torch.float32)
-                v._scale = torch.ones(len(attn_metadata.scale_indices), dtype=torch.float32)
+                k._scale = torch.ones(len(self.indices), dtype=torch.float32)
+                v._scale = torch.ones(len(self.indices), dtype=torch.float32)
 
             k._scaled = True
             v._scaled = True
@@ -511,14 +506,11 @@ class SpyreCausalLM(nn.Module):
             left_padded_prompt_mask=attn_metadata.left_padded_prompt_mask.repeat(2),
             block_table=attn_metadata.block_table.repeat(2, 1),
             is_prefill=attn_metadata.is_prefill,
-            # NOTE: we don't change here, because we'll need this untouched
-            # when we update the the scale after run the model
-            scale_indices=attn_metadata.scale_indices,
         )
         return input_ids, position_ids, attn_metadata
 
     def _adjust_output_for_fp8(self, logits: torch.Tensor, attn_metadata: SpyreAttentionMetadata):
-        if attn_metadata.is_prefill or len(attn_metadata.scale_indices) > 1:
+        if attn_metadata.is_prefill or len(self.indices) > 1:
             # skip for prefill or decode for bs>1
             return logits
 
