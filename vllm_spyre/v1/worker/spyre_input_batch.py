@@ -188,7 +188,6 @@ class BaseInputBatch(Generic[RequestState]):
 class SamplingRequestState(BaseRequestState):
     num_computed_tokens: int = 0
     mm_features: list[MultiModalFeatureSpec] | None = None
-    left_padding: int = 0  # Defaults to 0, i. e. not padding
 
     sampling_params: SamplingParams = SamplingParams()
     generator: torch.Generator | None = None

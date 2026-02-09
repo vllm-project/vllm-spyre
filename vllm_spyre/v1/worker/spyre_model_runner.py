@@ -1504,10 +1504,6 @@ class ChunkedPrefillModelRunner(
             sampling_params=sampling_params,
             generator=generator,
             output_token_ids=[],
-            # We do not store it, we calculate it on the fly
-            # to always use the optimizations of blocks
-            # usage
-            left_padding=0,
             scheduler_request=scheduler_request,
             chunk_count=chunk_plan.chunk_count,
             padding_blocks=chunk_plan.padding_blocks,
