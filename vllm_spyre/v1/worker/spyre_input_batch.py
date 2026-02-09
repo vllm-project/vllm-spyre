@@ -194,6 +194,13 @@ class SamplingRequestState(BaseRequestState):
 
     output_token_ids: list[int] = field(default_factory=list)
 
+    # TODO: is this required?
+    scheduler_request: Request = None  # ty: ignore[invalid-assignment]
+    chunk_count: int = 0
+    padding_blocks: int = 0
+    usable_blocks: int = 0
+    total_hit_blocks: int = 0
+
     @property
     def num_tokens(self) -> int:
         # NOTE: In the case of multimodal, multimodal token expansion
@@ -202,15 +209,6 @@ class SamplingRequestState(BaseRequestState):
         #
         # This is done by vLLM, *not* in the spyre plugin.
         return len(self.prompt_token_ids) + len(self.output_token_ids)
-
-
-@dataclass
-class ChunkedPrefillRequestState(SamplingRequestState):
-    scheduler_request: Request = None  # ty: ignore[invalid-assignment]
-    chunk_count: int = 0
-    padding_blocks: int = 0
-    usable_blocks: int = 0
-    total_hit_blocks: int = 0
 
     def __post_init__(self):
         assert self.scheduler_request is not None

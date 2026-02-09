@@ -4,7 +4,7 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from logging import DEBUG
-from typing import TYPE_CHECKING, Any, Generic, TypeVar, Union, cast
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, Union
 
 import numpy
 import torch
@@ -47,7 +47,6 @@ from vllm_spyre.v1.sample.spyre_logits_processor import build_logitsprocs_for_cb
 # yapf: disable
 from vllm_spyre.v1.worker.spyre_input_batch import (BaseInputBatch,
                                                     BaseRequestState,
-                                                    ChunkedPrefillRequestState,
                                                     PoolingInputBatch,
                                                     PoolingRequestState,
                                                     SamplingInputBatch,
@@ -764,7 +763,7 @@ class ChunkedPrefillPlan:
 
 
 class ChunkedPrefillModelRunner(
-    BaseSpyreModelRunner[SamplingInputBatch, ChunkedPrefillRequestState, SamplingForwardInputs]
+    BaseSpyreModelRunner[SamplingInputBatch, SamplingRequestState, SamplingForwardInputs]
 ):
     def __init__(
         self,
@@ -1127,7 +1126,6 @@ class ChunkedPrefillModelRunner(
 
         """
         request = self.requests[req_id]
-        assert isinstance(request, ChunkedPrefillRequestState)
 
         chunk_size = self.chunk_size
         left_padding = request.padding_blocks * self.block_size
@@ -1303,7 +1301,7 @@ class ChunkedPrefillModelRunner(
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
 
-            req_state = cast(ChunkedPrefillRequestState, self.requests[req_id])
+            req_state = self.requests[req_id]
 
             # filling block table with padding blocks to make it rectangular
             # Note: the padding block id 0 here is chosen arbitrarily, it can
@@ -1497,7 +1495,7 @@ class ChunkedPrefillModelRunner(
         else:
             generator = None
 
-        req_state = ChunkedPrefillRequestState(
+        req_state = SamplingRequestState(
             req_id=req_id,
             prompt_token_ids=prompt_token_ids,
             mm_features=mm_features,
@@ -1629,7 +1627,6 @@ class ChunkedPrefillModelRunner(
             # input batch, and update states try to access it there.
             req_id = cached_reqs.req_ids[0]
             req_state = self.requests[req_id]
-            assert isinstance(req_state, ChunkedPrefillRequestState)
             num_computed_tokens = cached_reqs.num_computed_tokens[0]
             if num_computed_tokens < len(req_state.prompt_token_ids):
                 # For now, if it is prefilling, we only need to update num of
@@ -1743,8 +1740,6 @@ class ChunkedPrefillModelRunner(
             return False
 
         request = self.requests[req_id]
-        assert isinstance(request, ChunkedPrefillRequestState)
-
         num_computed_tokens = request.num_computed_tokens
         num_computed_blocks = exact_div(num_computed_tokens, self.block_size)
 
@@ -1841,7 +1836,6 @@ class ChunkedPrefillModelRunner(
 
         for i, req_id in enumerate(req_ids):
             req_state = self.requests[req_id]
-            assert isinstance(req_state, ChunkedPrefillRequestState)
             assert req_state.scheduler_request is not None
             req_state.scheduler_request.append_output_token_ids(sampled_ids[i])
             if self.enable_prefix_caching:
@@ -1860,8 +1854,7 @@ class ChunkedPrefillModelRunner(
     def prefill_output(self) -> CPSpyreModelRunnerOutput:
         req_id_to_index = self.get_req_id_to_index(is_prefill=True)
         left_padding = {
-            req_id: cast(ChunkedPrefillRequestState, self.requests[req_id]).padding_blocks
-            * self.block_size
+            req_id: self.requests[req_id].padding_blocks * self.block_size
             for req_id in req_id_to_index
         }
 
@@ -1883,8 +1876,7 @@ class ChunkedPrefillModelRunner(
     def sampled_output(self, output: SamplerOutput, is_prefill: bool) -> CPSpyreModelRunnerOutput:
         req_id_to_index = self.get_req_id_to_index(is_prefill)
         left_padding = {
-            req_id: cast(ChunkedPrefillRequestState, self.requests[req_id]).padding_blocks
-            * self.block_size
+            req_id: self.requests[req_id].padding_blocks * self.block_size
             for req_id in req_id_to_index
         }
 
@@ -1921,7 +1913,6 @@ class ChunkedPrefillModelRunner(
         result = {}
         for req_id in self.prefill_batch.requests_ids:
             request = self.requests[req_id]
-            assert isinstance(request, ChunkedPrefillRequestState)
             result[req_id] = request.usable_blocks * self.block_size
         return result
 
