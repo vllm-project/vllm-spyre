@@ -57,11 +57,8 @@ class Mistral3MMUtils(MMUtilsBase):
                 raise ValueError("Currently we assume we only embed one mm request at a time")
             mm_spec = mm_features[0].data
             if mm_spec is not None:
-                # NOTE: This should be pretty safe as it's dependent on the
-                # vLLM/HF processor objects, but we check it anyway to be safe
-                # for now, since transformers 5.0 is just around the corner.
-                if any(k not in mm_spec for k in mm_spec_keys):
-                    raise KeyError(f"Mistral3 requires kwargs: {mm_spec_keys}")
+                if "pixel_values" not in mm_spec:
+                    raise KeyError(f"Mistral3 requires pixel_values")
 
                 pixel_values = mm_spec["pixel_values"].data
                 # FMS vision tower expects pixel_values with batch dimension
@@ -70,15 +67,22 @@ class Mistral3MMUtils(MMUtilsBase):
                     pixel_values = pixel_values.unsqueeze(0)
                 fms_kwargs["pixel_values"] = pixel_values
 
-                # Use the processor's image_sizes which tracks the logical image dimensions
-                # This is used by the projector to correctly split/merge patches
-                image_sizes_tensor = mm_spec["image_sizes"].data
-                if image_sizes_tensor.ndim == 1:
-                    # Single image: convert to list of tuples
-                    image_sizes = [(image_sizes_tensor[0].item(), image_sizes_tensor[1].item())]
+                if "image_sizes" in mm_spec:
+                    # Use the processor's image_sizes which tracks the logical image dimensions
+                    # This is used by the projector to correctly split/merge patches
+                    image_sizes_tensor = mm_spec["image_sizes"].data
+                    if image_sizes_tensor.ndim == 1:
+                        # Single image: convert to list of tuples
+                        image_sizes = [(image_sizes_tensor[0].item(), image_sizes_tensor[1].item())]
+                    else:
+                        # Multiple images
+                        image_sizes = [(h.item(), w.item()) for h, w in image_sizes_tensor]
                 else:
-                    # Multiple images
-                    image_sizes = [(h.item(), w.item()) for h, w in image_sizes_tensor]
+                    # Mistral image input in vLLM doesn't contain image_sizes as attribute, so we
+                    # are calculating based on pixel_values
+                    # Ref: https://github.com/vllm-project/vllm/blob/f97ca671766c5201404e9fc812e35bf2c4e95a01/vllm/model_executor/models/mistral3.py#L516C9-L518C10
+                    image_sizes = [(img.shape[-2], img.shape[-1]) for img in pixel_values]
+
                 fms_kwargs["image_sizes"] = image_sizes
 
         # The value of iteration does not matter for decode as long as it's > 0
