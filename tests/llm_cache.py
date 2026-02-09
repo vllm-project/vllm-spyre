@@ -118,8 +118,6 @@ class LLMCache:
         If the last LLM created matches the config, then returns the cached LLM
         instead to reduce LLM instantiation overhead.
         """
-        # Use chunked prefill if max_num_batched_tokens is set
-        # use_chunked_prefill = bool(max_num_batched_tokens)
         runtime_config = {
             "model": model,
             "tensor_parallel_size": tensor_parallel_size,
@@ -203,8 +201,6 @@ class EngineCache:
         }
 
         # Always patch the environment so that it's consistent with the engine
-        if use_pc:
-            assert max_num_batched_tokens is not None
         patch_environment(
             backend=backend,
             monkeypatch=monkeypatch,
