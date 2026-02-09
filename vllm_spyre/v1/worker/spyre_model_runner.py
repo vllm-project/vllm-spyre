@@ -369,7 +369,7 @@ class SpyreModelRunner(
 
     @property
     def vocab_size(self) -> int:
-        model_cfg = self.model.model.config
+        model_cfg = self.model.fms_model.config
         if self.model.is_multimodal:
             return self.model.mm_model_utils.resolve_multimodal_vocab_size()
         return model_cfg.src_vocab_size  # ty: ignore[invalid-return-type]

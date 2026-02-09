@@ -114,7 +114,7 @@ class SpyreCausalLM(nn.Module):
         if self.config.model_type in {"llama", "granite", "granitemoehybrid"}:
             self.kv_cache_specs["num_layers"] = self.config.num_hidden_layers
             self.kv_cache_specs["head_dim"] = getattr(
-                self.model.config,
+                self.fms_model.config,
                 "head_dim",
                 self.config.hidden_size // self.config.num_attention_heads,
             )
@@ -193,7 +193,7 @@ class SpyreCausalLM(nn.Module):
             kwargs["world_size"],
             kwargs["rank"],
         ):
-            self.model = get_model(
+            self.fms_model = get_model(
                 architecture="hf_pretrained",
                 model_path=model_path,
                 distributed_strategy=distributed_strategy,
@@ -202,7 +202,7 @@ class SpyreCausalLM(nn.Module):
                 **model_kwargs,
             )
 
-        self.model.eval()
+        self.fms_model.eval()
         torch.set_grad_enabled(False)
 
         _target_cache_size = max(int(max_decode_length * 2), int(max_prompt_length * 2.5))
@@ -252,8 +252,8 @@ class SpyreCausalLM(nn.Module):
             if SpyrePlatform.sendnn_configured():
                 pass
 
-            self.model = torch.compile(
-                self.model,
+            self.fms_model = torch.compile(
+                self.fms_model,
                 backend=envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND,
                 options=options,
             )
@@ -269,7 +269,7 @@ class SpyreCausalLM(nn.Module):
         # corresponding mm utils helper; this is arch specific.
         self.mm_model_utils = spyre_mm.maybe_get_mm_utils(
             model_path=model_path,
-            fms_config=self.model.config,
+            fms_config=self.fms_model.config,
             hf_config=self.config,
         )
         self.is_multimodal = self.mm_model_utils is not None
@@ -277,7 +277,7 @@ class SpyreCausalLM(nn.Module):
 
     def _cast_bf16_to_f16(self):
         """Cast all bf16 params in the model to f16."""
-        for name, param in self.model.named_parameters():
+        for name, param in self.fms_model.named_parameters():
             if param.dtype == torch.bfloat16:
                 logger.debug(
                     "You are casting param %s to fp16, which"
@@ -290,7 +290,7 @@ class SpyreCausalLM(nn.Module):
 
     def _cast_to_f32(self):
         """Cast model parameters to f32."""
-        for name, param in self.model.named_parameters():
+        for name, param in self.fms_model.named_parameters():
             logger.debug(
                 "Casting param %s to fp32. This is required"
                 " for attention implementations that only support"
@@ -378,7 +378,7 @@ class SpyreCausalLM(nn.Module):
             )
 
         # Run the model
-        output = self.model(
+        output = self.fms_model(
             input_ids_or_embeds,
             position_ids=positions,
             mask=masks,
@@ -437,7 +437,7 @@ class SpyreCausalLM(nn.Module):
 
         # Delegate to this model architecture's multimodal helpers to
         # get the (potentially) multimodal embeddings from the FMS model.
-        fms_model = self.model
+        fms_model = self.fms_model
         return self.mm_model_utils.get_maybe_mm_embeddings(
             fms_model,
             input_ids,
