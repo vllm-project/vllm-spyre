@@ -1497,7 +1497,7 @@ class ChunkedPrefillModelRunner(
 
         req_state = SamplingRequestState(
             generator=generator,
-            scheduler_request=scheduler_request,
+            vllm_request=scheduler_request,
             chunk_count=chunk_plan.chunk_count,
             padding_blocks=chunk_plan.padding_blocks,
             usable_blocks=chunk_plan.usable_cache_blocks,
@@ -1639,9 +1639,7 @@ class ChunkedPrefillModelRunner(
                 # is updated right after sampling)
                 num_cached_blocks: int = self.kv_cache_manager.num_cached_block[req_id]
                 if num_computed_tokens > num_cached_blocks * self.block_size:
-                    self.kv_cache_manager.cache_blocks(
-                        req_state.scheduler_request, num_computed_tokens
-                    )
+                    self.kv_cache_manager.cache_blocks(req_state.vllm_request, num_computed_tokens)
 
         if scheduler_output.finished_req_ids:
             for req_id in scheduler_output.finished_req_ids:
@@ -1787,9 +1785,7 @@ class ChunkedPrefillModelRunner(
             req_state = self.requests[req_id]
             req_state.append_output_token_ids(sampled_ids[i])
             if self.enable_prefix_caching:
-                self.kv_cache_manager.cache_blocks(
-                    req_state.scheduler_request, req_state.num_tokens
-                )
+                self.kv_cache_manager.cache_blocks(req_state.vllm_request, req_state.num_tokens)
 
         # Only return outputs from the driver worker
         if not self.is_driver_worker:

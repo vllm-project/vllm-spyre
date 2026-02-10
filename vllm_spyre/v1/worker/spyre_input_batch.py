@@ -193,7 +193,7 @@ class SamplingRequestState:
 
     # output_token_ids: list[int] = field(default_factory=list)
 
-    scheduler_request: Request = None  # ty: ignore[invalid-assignment]
+    vllm_request: Request = None  # ty: ignore[invalid-assignment]
     chunk_count: int = 0
     padding_blocks: int = 0
     usable_blocks: int = 0
@@ -201,11 +201,11 @@ class SamplingRequestState:
 
     @property
     def req_id(self) -> str:
-        return self.scheduler_request.request_id
+        return self.vllm_request.request_id
 
     @property
     def prompt_token_ids(self) -> list[int]:
-        prompt_token_ids = self.scheduler_request.prompt_token_ids
+        prompt_token_ids = self.vllm_request.prompt_token_ids
         assert prompt_token_ids is not None, "Sampling requests require prompt token ids"
         return prompt_token_ids
 
@@ -216,36 +216,36 @@ class SamplingRequestState:
         # i.e., "<image>" -> "<image>" * num_image_features
         #
         # This is done by vLLM, *not* in the spyre plugin.
-        return self.scheduler_request.num_tokens
+        return self.vllm_request.num_tokens
 
     @property
     def num_computed_tokens(self) -> int:
-        return self.scheduler_request.num_computed_tokens
+        return self.vllm_request.num_computed_tokens
 
     @num_computed_tokens.setter
     def num_computed_tokens(self, value: int):
-        self.scheduler_request.num_computed_tokens = value
+        self.vllm_request.num_computed_tokens = value
 
     @property
     def output_token_ids(self) -> list[int]:
-        return self.scheduler_request.output_token_ids
+        return self.vllm_request.output_token_ids
 
     @property
     def sampling_params(self) -> SamplingParams:
-        params = self.scheduler_request.sampling_params
+        params = self.vllm_request.sampling_params
         assert params is not None, "Sampling requests require sampling params"
         return params
 
     @property
     def mm_features(self) -> list[MultiModalFeatureSpec] | None:
-        return self.scheduler_request.mm_features
+        return self.vllm_request.mm_features
 
     def append_output_token_ids(self, token_ids: int | list[int]) -> None:
         # Passthrough to let vllm handle the tokens
-        self.scheduler_request.append_output_token_ids(token_ids)
+        self.vllm_request.append_output_token_ids(token_ids)
 
     def __post_init__(self):
-        assert self.scheduler_request is not None
+        assert self.vllm_request is not None
 
 
 class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):

@@ -158,7 +158,7 @@ def _construct_cached_request_state(req_id_suffix: int):
     )
     vllm_request.append_output_token_ids(output_token_ids)
     return SamplingRequestState(
-        scheduler_request=vllm_request,
+        vllm_request=vllm_request,
         generator=None,
     )
 
@@ -279,13 +279,13 @@ def test_sampling_metadata_topk_edges():
     # top_k should be clamped to VOCAB_SIZE
     req = _construct_cached_request_state(0)
     # NB: sampling_params not directly settably by design
-    req.scheduler_request.sampling_params = SamplingParams(temperature=1.0, top_k=VOCAB_SIZE + 1)
+    req.vllm_request.sampling_params = SamplingParams(temperature=1.0, top_k=VOCAB_SIZE + 1)
     input_batch.add_request(req, 0)
 
     # in a batch with both greedy and sampling, default top_k should be
     # VOCAB_SIZE
     req = _construct_cached_request_state(1)
-    req.scheduler_request.sampling_params = SamplingParams(temperature=0)
+    req.vllm_request.sampling_params = SamplingParams(temperature=0)
     input_batch.add_request(req, 1)
 
     assert input_batch.top_k[0] == VOCAB_SIZE
