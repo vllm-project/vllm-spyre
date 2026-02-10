@@ -159,14 +159,10 @@ class SpyrePlatform(Platform):
             )
 
         if is_decoder:
-            if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
-                scheduler_config.scheduler_cls = (
-                    "vllm_spyre.v1.core.scheduler.ChunkedPrefillSpyreScheduler"
-                )
-            else:
-                scheduler_config.scheduler_cls = (
-                    "vllm_spyre.v1.core.scheduler.ContinuousBatchingSpyreScheduler"
-                )
+            scheduler_config.scheduler_cls = (
+                "vllm_spyre.v1.core.scheduler.ChunkedPrefillSpyreScheduler"
+            )
+
             # Overwrite so that vLLM prints our value in the "Initializing a V1
             # LLM engine" log message
             # TODO: With the arg parser defaulting, this can be removed when we
