@@ -3,9 +3,8 @@
 
 # Based on vllm/vllm/v1/worker/gpu_input_batch.py
 
-from abc import abstractmethod
-from dataclasses import dataclass, field
-from typing import Any, Generic, TypeVar, cast
+from dataclasses import dataclass
+from typing import Any, Generic, Protocol, TypeVar, cast
 
 import numpy as np
 import torch
@@ -23,21 +22,21 @@ from vllm_spyre.v1.sample.spyre_logits_processor import LogitProcessorWrapper
 from vllm_spyre.compat_utils import has_argument
 
 
-@dataclass
-class BaseRequestState:
-    req_id: str
-    prompt_token_ids: list[int]
+class RequestState(Protocol):
+    @property
+    def num_tokens(self) -> int: ...
 
     @property
-    @abstractmethod
-    def num_tokens(self) -> int:
-        raise NotImplementedError
+    def req_id(self) -> str: ...
+
+    @property
+    def prompt_token_ids(self) -> list[int]: ...
 
 
-RequestState = TypeVar("RequestState", bound=BaseRequestState)
+RequestStateT = TypeVar("RequestStateT", bound=RequestState)
 
 
-class BaseInputBatch(Generic[RequestState]):
+class BaseInputBatch(Generic[RequestStateT]):
     def __init__(
         self,
         max_num_reqs: int,
@@ -87,7 +86,7 @@ class BaseInputBatch(Generic[RequestState]):
 
     def add_request(
         self,
-        request: RequestState,
+        request: RequestStateT,
         req_index: int | None = None,
     ) -> int:
         if req_index is None:
@@ -185,15 +184,30 @@ class BaseInputBatch(Generic[RequestState]):
 
 
 @dataclass
-class SamplingRequestState(BaseRequestState):
-    num_computed_tokens: int = 0
-    mm_features: list[MultiModalFeatureSpec] | None = None
-    left_padding: int = 0  # Defaults to 0, i. e. not padding
+class SamplingRequestState:
+    # num_computed_tokens: int = 0
+    # mm_features: list[MultiModalFeatureSpec] | None = None
 
-    sampling_params: SamplingParams = SamplingParams()
+    # sampling_params: SamplingParams = SamplingParams()
     generator: torch.Generator | None = None
 
-    output_token_ids: list[int] = field(default_factory=list)
+    # output_token_ids: list[int] = field(default_factory=list)
+
+    vllm_request: Request = None  # ty: ignore[invalid-assignment]
+    chunk_count: int = 0
+    padding_blocks: int = 0
+    usable_blocks: int = 0
+    total_hit_blocks: int = 0
+
+    @property
+    def req_id(self) -> str:
+        return self.vllm_request.request_id
+
+    @property
+    def prompt_token_ids(self) -> list[int]:
+        prompt_token_ids = self.vllm_request.prompt_token_ids
+        assert prompt_token_ids is not None, "Sampling requests require prompt token ids"
+        return prompt_token_ids
 
     @property
     def num_tokens(self) -> int:
@@ -202,19 +216,36 @@ class SamplingRequestState(BaseRequestState):
         # i.e., "<image>" -> "<image>" * num_image_features
         #
         # This is done by vLLM, *not* in the spyre plugin.
-        return len(self.prompt_token_ids) + len(self.output_token_ids)
+        return self.vllm_request.num_tokens
 
+    @property
+    def num_computed_tokens(self) -> int:
+        return self.vllm_request.num_computed_tokens
 
-@dataclass
-class ChunkedPrefillRequestState(SamplingRequestState):
-    scheduler_request: Request = None  # ty: ignore[invalid-assignment]
-    chunk_count: int = 0
-    padding_blocks: int = 0
-    usable_blocks: int = 0
-    total_hit_blocks: int = 0
+    @num_computed_tokens.setter
+    def num_computed_tokens(self, value: int):
+        self.vllm_request.num_computed_tokens = value
+
+    @property
+    def output_token_ids(self) -> list[int]:
+        return self.vllm_request.output_token_ids
+
+    @property
+    def sampling_params(self) -> SamplingParams:
+        params = self.vllm_request.sampling_params
+        assert params is not None, "Sampling requests require sampling params"
+        return params
+
+    @property
+    def mm_features(self) -> list[MultiModalFeatureSpec] | None:
+        return self.vllm_request.mm_features
+
+    def append_output_token_ids(self, token_ids: int | list[int]) -> None:
+        # Passthrough to let vllm handle the tokens
+        self.vllm_request.append_output_token_ids(token_ids)
 
     def __post_init__(self):
-        assert self.scheduler_request is not None
+        assert self.vllm_request is not None
 
 
 class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
@@ -677,7 +708,9 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
 
 
 @dataclass
-class PoolingRequestState(BaseRequestState):
+class PoolingRequestState:
+    req_id: str
+    prompt_token_ids: list[int]
     pooling_params: PoolingParams = PoolingParams()
 
     def __post_init__(self):

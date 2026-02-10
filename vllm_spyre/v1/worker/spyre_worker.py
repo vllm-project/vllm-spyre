@@ -45,7 +45,6 @@ from vllm_spyre.model_executor.model_loader import spyre_setup
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import (
     ChunkedPrefillModelRunner,
-    ContinuousBatchingSpyreModelRunner,
     SpyrePoolingModelRunner,
     SupportedTask,
 )
@@ -280,7 +279,6 @@ class SpyreWorker(WorkerBase):
 
             init_cached_hf_modules()
         self.model_runner: Union[
-            ContinuousBatchingSpyreModelRunner,
             ChunkedPrefillModelRunner,
             SpyrePoolingModelRunner,
         ]
@@ -292,15 +290,9 @@ class SpyreWorker(WorkerBase):
                 self.vllm_config.scheduler_config
             )
         else:
-            if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
-                self.model_runner = ChunkedPrefillModelRunner(
-                    self.vllm_config, self.is_driver_worker, self.rank
-                )
-            else:
-                raise ValueError("No test should invoke this")
-                self.model_runner = ContinuousBatchingSpyreModelRunner(
-                    self.vllm_config, self.is_driver_worker, self.rank
-                )
+            self.model_runner = ChunkedPrefillModelRunner(
+                self.vllm_config, self.is_driver_worker, self.rank
+            )
 
         self._env_initialized = False
         # Torch profiler. Enabled and configured through env vars:
@@ -465,9 +457,7 @@ class SpyreWorker(WorkerBase):
         warmup_start_t = time.time()
 
         # satisfy mypy
-        model_runner: ContinuousBatchingSpyreModelRunner = cast(
-            ContinuousBatchingSpyreModelRunner, self.model_runner
-        )
+        model_runner: ChunkedPrefillModelRunner = cast(ChunkedPrefillModelRunner, self.model_runner)
 
         vocab_size = model_runner.vocab_size
 
@@ -594,9 +584,7 @@ class SpyreWorker(WorkerBase):
         )
         self.execute_model(scheduler_output)
         # satisfy mypy
-        model_runner: ContinuousBatchingSpyreModelRunner = cast(
-            ContinuousBatchingSpyreModelRunner, self.model_runner
-        )
+        model_runner: ChunkedPrefillModelRunner = cast(ChunkedPrefillModelRunner, self.model_runner)
         model_runner.tkv = 0
 
     def _warmup_spyre_fixed_size(self, prompt_len, special_token_ids, batch_size):

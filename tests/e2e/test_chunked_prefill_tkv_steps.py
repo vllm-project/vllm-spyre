@@ -19,7 +19,7 @@ from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request, SamplingParams
 
 from vllm_spyre.platform import SpyrePlatform
-from vllm_spyre.v1.worker.spyre_model_runner import SpyreModelRunner
+from vllm_spyre.v1.worker.spyre_model_runner import ChunkedPrefillModelRunner
 from vllm_spyre.v1.worker.spyre_worker import _get_extra_args
 
 
@@ -65,7 +65,7 @@ def get_cpu_model_runner(
     max_num_seqs: int,
     max_num_batched_tokens: int,
     monkeypatch: pytest.MonkeyPatch,
-) -> SpyreModelRunner:
+) -> ChunkedPrefillModelRunner:
     # TODO: Need to add chunked prefill mode + params to get_cached_engine
     engine_core: EngineCore = get_cached_engine(
         model=model,
@@ -78,7 +78,7 @@ def get_cpu_model_runner(
     )
 
     # NB: Only works because this engine is run with no multiprocessing and TP=1
-    runner: SpyreModelRunner = engine_core.model_executor.driver_worker.worker.model_runner
+    runner: ChunkedPrefillModelRunner = engine_core.model_executor.driver_worker.worker.model_runner
 
     # Clean things up, this isn't a fixture that cleans up after previous tests
     if runner.requests:
@@ -151,7 +151,7 @@ def test_single_block_chunked_prefill(
 ):
     """A request that fits within a single block should be prefilled in one
     step and should not be padded out to the chunk boundary on decode"""
-    runner: SpyreModelRunner = get_cpu_model_runner(
+    runner: ChunkedPrefillModelRunner = get_cpu_model_runner(
         model=model,
         max_model_len=max_model_len,
         max_num_seqs=max_num_seqs,
@@ -201,7 +201,7 @@ def test_multi_chunk_padded_prefill(
     """A request that's longer than a chunk is split into multiple chunks, and
     left-padded only with full size blocks to the end of the last chunk boundary
     """
-    runner: SpyreModelRunner = get_cpu_model_runner(
+    runner: ChunkedPrefillModelRunner = get_cpu_model_runner(
         model=model,
         max_model_len=max_model_len,
         max_num_seqs=max_num_seqs,
@@ -261,7 +261,7 @@ def test_multi_chunk_unpadded_prefill(
     """A request that's longer than a chunk can be split into multiple chunks
     with no padding required when the prompt is within one block of the end of
     a chunk"""
-    runner: SpyreModelRunner = get_cpu_model_runner(
+    runner: ChunkedPrefillModelRunner = get_cpu_model_runner(
         model=model,
         max_model_len=max_model_len,
         max_num_seqs=max_num_seqs,
@@ -313,7 +313,7 @@ def test_decode_padding_to_same_block(
 ):
     """Test that decode batches will use full blocks of left-padding to align
     themselves into the same last block of tokens in the sequence"""
-    runner: SpyreModelRunner = get_cpu_model_runner(
+    runner: ChunkedPrefillModelRunner = get_cpu_model_runner(
         model=model,
         max_model_len=max_model_len,
         max_num_seqs=max_num_seqs,
