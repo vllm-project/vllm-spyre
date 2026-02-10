@@ -180,7 +180,6 @@ def test_compare_graphs_chunked_prefill(
     # Disable cache to produce the graphs
     monkeypatch.setenv("TORCH_SENDNN_CACHE_ENABLE", "0")
 
-    monkeypatch.setenv("VLLM_DT_CHUNK_LEN", str(chunk_size))
     patch_environment(
         backend="sendnn",
         monkeypatch=monkeypatch,

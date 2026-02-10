@@ -4,10 +4,7 @@ from vllm.entrypoints.openai.cli_args import make_arg_parser
 from vllm import EngineArgs
 
 
-from vllm_spyre.config.model_config import ArchitecturePattern, ModelConfig
-from vllm_spyre.config.configurators.model_configurator import ModelConfigurator
 from vllm_spyre.platform import SpyrePlatform
-from vllm_spyre.config.model_registry import get_model_registry
 from spyre_util import environ_checkpoint, REFERENCE_MODELS
 
 try:
@@ -17,44 +14,18 @@ except ImportError:
     # new
     from vllm.utils.argparse_utils import FlexibleArgumentParser
 
-global_default = 192
 
-
-# The default chunk size we set for all models when chunked prefill
-# is enabled is 1024. For some models (granite-3.3-8b-instruct)
-# we force a model-specific value that the user can't change except
-# by using VLLM_DT_CHUNK_LEN. In the case of granite the default is
-# also 1024, so to be able to verify that the special model logic
-# is working, we change the default to 192 (3 blocks), which is very
-# unlikely to be used for specific models in the future.
-# In the parametrization below, micro-g3 represents a generic model
-# which will use the global default.
-@pytest.mark.parametrize(
-    "model_name, chunk_size",
-    [
-        ("ibm-ai-platform/micro-g3.3-8b-instruct-1b", global_default),
-        ("ibm-granite/granite-3.3-8b-instruct", 1024),
-    ],
-)
-def test_generic_model_chunk_size_default(
-    model_name: str, chunk_size: int, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # Change the default so that we can differentiate the global
-    # default from model-specific defaults.
-    monkeypatch.setattr(SpyrePlatform, "DEFAULT_CHUNK_SIZE", global_default)
-
-    # Some configuration code paths are only activate with sendnn and tp=4.
-    # We want to enable them because they are the ones we care about for production.
-    # But we need to patch sendnn_configured to prevent exceptions
+# Test that the default chunk size is 1024 when chunked prefill is enabled,
+# and that --max-num-batched-tokens overrides this default.
+def test_chunk_size_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", "sendnn")
+    monkeypatch.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", "1")
 
     def sendnn_configured() -> bool:
         return False
 
     monkeypatch.setattr(SpyrePlatform, "sendnn_configured", sendnn_configured)
-    # We always use the micro model because we can't download all model
-    # configurations in the GHA environment, but we patch SpyrePlatform
-    # to test the behavior for all models.
+
     model = REFERENCE_MODELS["ibm-ai-platform/micro-g3.3-8b-instruct-1b"]
     common_args = [
         "--model",
@@ -71,113 +42,26 @@ def test_generic_model_chunk_size_default(
         "1",
     ]
 
-    if model_name == "ibm-granite/granite-3.3-8b-instruct":
-        registry = get_model_registry()
-
-        # Mock the registry to return a configurator for the 8b model
-        def mock_get_configurator(self, vllm_model_config):
-            return ModelConfigurator(
-                ModelConfig(
-                    name="ibm-granite/granite-3.3-8b-instruct",
-                    architecture=ArchitecturePattern(
-                        model_name="ibm-granite/granite-3.3-8b-instruct",
-                        model_type="granite",
-                    ),
-                )
-            )
-
-        monkeypatch.setattr(registry, "get_configurator_for_runtime", mock_get_configurator)
-
     with environ_checkpoint():
-        # Test that the upstream default is None but is changed to 2048 by
-        # the VllmConfig initialization (when using CLI), but is then
-        # overridden in our platform.py
-        engine_args = _build_engine_args(
-            [
-                *common_args,
-            ]
-        )
-
-        assert engine_args.max_num_batched_tokens is None
+        # Test default chunk size is 1024
+        engine_args = _build_engine_args(common_args)
+        assert engine_args.max_num_batched_tokens == 1024
         vllm_config = engine_args.create_engine_config()
-        # TODO: this behavior of changing the engine_args was introduced in v0.12.0.
-        # Uncomment below when this version becomes the lowest supported version.
-        # assert engine_args.max_num_batched_tokens == 2048
-        # we override this in platform.py
-        assert (
-            vllm_config.scheduler_config.max_num_batched_tokens
-            == vllm_config.model_config.max_model_len * vllm_config.scheduler_config.max_num_seqs
-        )
+        assert vllm_config.scheduler_config.max_num_batched_tokens == 1024
 
     with environ_checkpoint():
-        # Test that we override the default and even the user provided setting
+        # Test that --max-num-batched-tokens overrides the default
         engine_args = _build_engine_args([*common_args, "--max-num-batched-tokens", "128"])
         assert engine_args.max_num_batched_tokens == 128
         vllm_config = engine_args.create_engine_config()
-        assert engine_args.max_num_batched_tokens == 128
-        # we override this in platform.py
-        assert (
-            vllm_config.scheduler_config.max_num_batched_tokens
-            == vllm_config.model_config.max_model_len * vllm_config.scheduler_config.max_num_seqs
-        )
-
-    # Enable CP
-    monkeypatch.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", "1")
-
-    with environ_checkpoint():
-        # Test that the default is 192 when CP is enabled
-        engine_args = _build_engine_args(
-            [
-                *common_args,
-            ]
-        )
-        assert engine_args.max_num_batched_tokens == 192
-        vllm_config = engine_args.create_engine_config()
-        assert engine_args.max_num_batched_tokens == 192
-        assert vllm_config.scheduler_config.max_num_batched_tokens == chunk_size
-
-    with environ_checkpoint():
-        # Test that we can still change the default
-        engine_args = _build_engine_args([*common_args, "--max-num-batched-tokens", "128"])
-        assert engine_args.max_num_batched_tokens == 128
-        vllm_config = engine_args.create_engine_config()
-        assert engine_args.max_num_batched_tokens == 128
-        if chunk_size == global_default:
-            assert vllm_config.scheduler_config.max_num_batched_tokens == 128
-        else:
-            assert vllm_config.scheduler_config.max_num_batched_tokens == chunk_size
+        assert vllm_config.scheduler_config.max_num_batched_tokens == 128
 
     with environ_checkpoint():
         # Test that an invalid value will trigger an error (42 is not a multiple of the block size)
         engine_args = _build_engine_args([*common_args, "--max-num-batched-tokens", "42"])
         assert engine_args.max_num_batched_tokens == 42
-        if chunk_size == global_default:
-            with pytest.raises(ValidationError):
-                vllm_config = engine_args.create_engine_config()
-        else:
-            assert vllm_config.scheduler_config.max_num_batched_tokens == chunk_size
-
-    monkeypatch.setenv("VLLM_DT_CHUNK_LEN", "512")
-
-    with environ_checkpoint():
-        # Verify that VLLM_DT_CHUNK_LEN overrides the default
-        engine_args = _build_engine_args(
-            [
-                *common_args,
-            ]
-        )
-        assert engine_args.max_num_batched_tokens == 192
-        vllm_config = engine_args.create_engine_config()
-        assert engine_args.max_num_batched_tokens == 192
-        assert vllm_config.scheduler_config.max_num_batched_tokens == 512
-
-    with environ_checkpoint():
-        # Verify that VLLM_DT_CHUNK_LEN overrides the cli setting
-        engine_args = _build_engine_args([*common_args, "--max-num-batched-tokens", "64"])
-        assert engine_args.max_num_batched_tokens == 64
-        vllm_config = engine_args.create_engine_config()
-        assert engine_args.max_num_batched_tokens == 64
-        assert vllm_config.scheduler_config.max_num_batched_tokens == 512
+        with pytest.raises(ValidationError):
+            engine_args.create_engine_config()
 
 
 def test_prefix_caching_is_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
