@@ -20,11 +20,6 @@ from vllm_spyre.v1.worker.spyre_model_runner import ChunkedPrefillModelRunner, C
 from spyre_util import REFERENCE_MODELS
 
 
-class MockContinuousBatchingFmsModel:
-    def set_past_key_value_states(self, num_blocks) -> None:
-        pass
-
-
 class MockSpyreCausalLM:
     def __init__(
         self,
@@ -39,8 +34,6 @@ class MockSpyreCausalLM:
 
         # number of right pads (relevant for continuous batching only)
         self.n_pads_right = 0
-
-        self.model = MockContinuousBatchingFmsModel()
 
         self.vocab_size = vllm_config.model_config.get_vocab_size()
 
@@ -90,6 +83,9 @@ class MockSpyreCausalLM:
     ) -> SamplerOutput | None:
         next_tokens = self.sampler(logits, sampling_metadata)
         return next_tokens
+
+    def set_past_key_value_states(self, num_blocks) -> None:
+        pass
 
 
 class InstrumentedModelRunner(ChunkedPrefillModelRunner):
