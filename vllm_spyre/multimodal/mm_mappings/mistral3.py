@@ -58,6 +58,12 @@ class Mistral3MMUtils(MMUtilsBase):
             if len(mm_features) != 1:
                 raise ValueError("Currently we assume we only embed one mm request at a time")
             mm_spec = mm_features[0].data
+
+            # when using config and tokenizer are set to `mistral` we don't get
+            # pixel_values in mm_spec. So we are mapping these back here
+            if "images" in mm_spec:
+                mm_spec["pixel_values"] = mm_spec.pop("images")
+
             if mm_spec is not None:
                 if "pixel_values" not in mm_spec:
                     raise KeyError(f"Mistral3 requires pixel_values")
