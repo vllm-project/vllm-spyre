@@ -252,7 +252,7 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
         assert model_runner_output.req_ids == req_ids
         assert len(model_runner_output.sampled_token_ids) == num_sampled_token_ids
         assert model_runner_output.tkv == tkv
-        assert model_runner_output.n_free_blocks == n_free_blocks
+        assert self.get_n_free_blocks() == n_free_blocks
         assert model_runner_output.left_padding == left_padding, (
             f"Expected {left_padding}, got {model_runner_output.left_padding}"
         )
