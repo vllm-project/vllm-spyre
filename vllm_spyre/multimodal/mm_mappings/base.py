@@ -4,7 +4,7 @@ from typing import NamedTuple
 
 import torch
 from fms.utils.config import ModelConfig
-from transformers import AutoConfig, AutoProcessor, PretrainedConfig
+from transformers import AutoProcessor, PretrainedConfig
 from vllm.multimodal.inputs import MultiModalFeatureSpec
 
 
@@ -37,14 +37,7 @@ class MMUtilsBase(ABC):
     @functools.cached_property
     def hf_processor(self):
         """Get the Transformers processor, but only if we need it."""
-        try:
-            # Now load the processor with the explicit config
-            return AutoProcessor.from_pretrained(
-                self.model_path,
-                trust_remote_code=True,
-            )
-        except AttributeError as err:
-            raise AttributeError("Please try upgrading transformers to 4.57.6+") from err
+        return AutoProcessor.from_pretrained(self.model_path)
 
     @staticmethod
     def _validate_configs(fms_config: ModelConfig, hf_config: PretrainedConfig):

@@ -14,6 +14,8 @@ from vllm_spyre.multimodal.mm_mappings import MMUtilsBase, MMWarmupInputs
 
 
 class Mistral3MMUtils(MMUtilsBase):
+    image_token = "[IMG]"
+
     @staticmethod
     def _validate_configs(fms_config: ModelConfig, hf_config: PretrainedConfig):
         """Ensure that configs are properly typed. Additional validation, e.g.,
@@ -92,65 +94,42 @@ class Mistral3MMUtils(MMUtilsBase):
         return input_embeds
 
     def get_warmup_inputs(self, req_count: int) -> MMWarmupInputs:
-        """Get the inputs to the huggingface processor to create the warmup
-        features or feature shapes.
-        """
-        # Warmup text is just an image token
-        dummy_tokens = [self.hf_processor.decode(self.get_multimodal_token_id())]
+        """Generate input for warmup using using dummy image."""
 
-        # Warmup with the minimal nontrivial case (4x4 patch); note that mistral
-        # positionally encodes the image directly and does not break into tiles
-        # like many VLMs.
-        # Note: spatial_merge_size for mistral is 2, in FMS currently, we do
-        # squeeze(0) on image features in _get_image_features function
-        # before splitting, which means, if we only have 1 patch, and 1st dim is is 1, we get
-        # incorrect dimension of image_features
-        side_dim = self.hf_config.vision_config.patch_size * 4
-        dummy_img = torch.zeros((3, side_dim, side_dim), dtype=torch.uint8)
-
-        proc_res = self.hf_processor(
-            text=dummy_tokens,
-            images=dummy_img,
-            return_tensors="pt",
-        )
-
-        seq_len = proc_res.input_ids.shape[-1]
-        # Get the input tokens and embeddings; currently embeddings are used,
-        # but tokens are still required for the interfaces to be happy.
-        warmup_input_ids = proc_res.input_ids.squeeze(0)
+        # Get vision config parameters
+        patch_size = self.hf_config.vision_config.patch_size
+        spatial_merge_size = getattr(self.hf_config, "spatial_merge_size", 2)
+        image_token_id = self.hf_config.image_token_index
         emb_dim = self.hf_config.text_config.hidden_size
-        warmup_embeds = torch.rand((seq_len, emb_dim))
-        # Get the multimodal features spec
-        warmup_mm_features = self._build_multimodal_spec(proc_res)
 
-        return MMWarmupInputs(
-            input_ids=[warmup_input_ids.tolist()] * req_count,
-            input_embeds=[warmup_embeds] * req_count,
-            mm_features=warmup_mm_features,
-        )
+        # Warmup with minimal nontrivial case (4x4 patches)
+        # Note: spatial_merge_size for mistral is 2, which means after merging,
+        # a 4x4 patch grid becomes 2x2 = 4 image tokens
+        # In FMS currently, we do squeeze(0) on image features in
+        # _get_image_features function before splitting, which means, if we only have 1
+        # patch, and 1st dim is is 1, we get incorrect dimension of image_features
+        side_dim = patch_size * 4
+        num_patches_per_side = 4
+        num_merged_patches_per_side = num_patches_per_side // spatial_merge_size  # 2
+        num_image_tokens = num_merged_patches_per_side * num_merged_patches_per_side  # 4
 
-    def _build_multimodal_spec(self, proc_res):
-        """Given output of the processor on warmup data, build MM features.
+        # Create input_ids using image tokens
+        warmup_input_ids = torch.full((num_image_tokens,), image_token_id, dtype=torch.long)
 
-        NOTE: Currently assuming single image inputs for warmup, since we just
-        use the minimal case.
-        """
-        # HF Processing will add image break / end tokens etc, so we need to make sure
-        # offsets correspond to the image tokens, and not the delimiter toks
-        # https://github.com/huggingface/transformers/blob/v4.57.6/src/transformers/models/pixtral/processing_pixtral.py#L192
-        input_ids = proc_res.input_ids.squeeze(0)
+        # Create random embeddings
+        warmup_embeds = torch.rand((num_image_tokens, emb_dim))
 
-        img_tok_mask = input_ids == self.get_multimodal_token_id()
-        # Get the position of image tokens
-        img_token_positions = torch.where(input_ids == self.get_multimodal_token_id())[0]
-        img_start = img_token_positions[0].item()  # First image token position
-        num_img_toks = torch.sum(img_tok_mask).item()
+        # Create dummy pixel_values: normalized float16 tensor (legal format for vision encoder)
+        dummy_pixel_values = torch.rand((3, side_dim, side_dim), dtype=torch.float16)
 
-        # Multimodal features / feature spec
-        mm_position = PlaceholderRange(offset=img_start, length=num_img_toks)
+        # Create image_sizes: logical dimensions of the image
+        dummy_image_sizes = torch.tensor([side_dim, side_dim], dtype=torch.long)
+
+        # Build multimodal features spec
+        mm_position = PlaceholderRange(offset=0, length=num_image_tokens)
         mm_data = {
-            "pixel_values": proc_res.pixel_values.squeeze(axis=0),
-            "image_sizes": proc_res.image_sizes.squeeze(axis=0),
+            "pixel_values": dummy_pixel_values,
+            "image_sizes": dummy_image_sizes,
         }
         mm_fields = MultiModalKwargsItem(
             {
@@ -160,8 +139,7 @@ class Mistral3MMUtils(MMUtilsBase):
                 for mm_key, mm_data in mm_data.items()
             }
         )
-
-        return [
+        warmup_mm_features = [
             MultiModalFeatureSpec(
                 data=mm_fields,
                 modality="image",
@@ -169,6 +147,12 @@ class Mistral3MMUtils(MMUtilsBase):
                 mm_position=mm_position,
             )
         ]
+
+        return MMWarmupInputs(
+            input_ids=[warmup_input_ids.tolist()] * req_count,
+            input_embeds=[warmup_embeds] * req_count,
+            mm_features=warmup_mm_features,
+        )
 
     def get_multimodal_token_id(self) -> int:
         return self.hf_config.image_token_index

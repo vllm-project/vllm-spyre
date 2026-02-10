@@ -373,7 +373,20 @@ class FmsModelBase(nn.Module):
 
         if hf_config.model_type == "pixtral":
             # Convert to dict and back to avoid double-nesting of vision_config
-            return Mistral3Config(**hf_config.to_dict())
+            # When using "mistral" as tokenizer_mode (required for mistral3), the
+            # model_type comes out to be '', which messess up all the configuration
+            # We are removing those explicitely to leverage defaults in mistral3
+            # config in vLLM
+            hf_config_dict = hf_config.to_dict()
+            if hf_config.text_config.model_type == "transformer":
+                hf_config_dict["text_config"].pop("model_type")
+            if hf_config.vision_config.model_type == "":
+                hf_config_dict["vision_config"].pop("model_type")
+
+            mistral_config = Mistral3Config(**hf_config_dict)
+            if mistral_config.model_type == "":
+                mistral_config.model_type = "mistral3"
+            return mistral_config
         else:
             return hf_config
 
