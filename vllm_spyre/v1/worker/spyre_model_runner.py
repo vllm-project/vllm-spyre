@@ -1291,7 +1291,7 @@ class ChunkedPrefillModelRunner(
                 blocks = self.kv_cache_manager.allocate_new_blocks(
                     req_id, req_state.num_computed_tokens + 1
                 )
-                assert len(blocks) == 1
+                assert len(blocks) == 1, f"Expected 1 block but got {len(blocks)}"
             max_n_blocks = max(max_n_blocks, len(self._get_blocks(req_id)))
 
         # We'll calculate tkv on the fly, it is the max num computed tokens
@@ -1496,12 +1496,7 @@ class ChunkedPrefillModelRunner(
             generator = None
 
         req_state = SamplingRequestState(
-            req_id=req_id,
-            prompt_token_ids=prompt_token_ids,
-            mm_features=mm_features,
-            sampling_params=sampling_params,
             generator=generator,
-            output_token_ids=[],
             scheduler_request=scheduler_request,
             chunk_count=chunk_plan.chunk_count,
             padding_blocks=chunk_plan.padding_blocks,
@@ -1631,7 +1626,7 @@ class ChunkedPrefillModelRunner(
             if num_computed_tokens < len(req_state.prompt_token_ids):
                 # For now, if it is prefilling, we only need to update num of
                 # computed tokens of the request
-                req_state.num_computed_tokens = num_computed_tokens
+                req_state.scheduler_request.num_computed_tokens = num_computed_tokens
                 if self.enable_prefix_caching:
                     num_cached_blocks = self.kv_cache_manager.num_cached_block[req_id]
                     # if the number of cached tokens is larger or equal to the
@@ -1642,51 +1637,55 @@ class ChunkedPrefillModelRunner(
                         self.kv_cache_manager.cache_blocks(
                             req_state.scheduler_request, num_computed_tokens
                         )
-                # hide the prefill request from the super class
-                scheduler_output.scheduled_cached_reqs = CachedRequestData.make_empty()
-                self._internal_state_update(scheduler_output)
-                self._free_blocks(scheduler_output)
-                scheduler_output.scheduled_cached_reqs = cached_reqs
+                # NB important early return here....
                 return
-
-        self._internal_state_update(scheduler_output)
+        
+        self._update_decode_batch(scheduler_output)
+        # Free blocks for any requests that finished
         self._free_blocks(scheduler_output)
 
-    def _internal_state_update(self, scheduler_output: SchedulerOutput):
-        # Update the states of the running/resumed requests.
-        # Update input_batch's `token_ids_cpu`,
-        # `num_tokens`. For continuous batching it cleans
-        # finished requests from the batch
-        #
-        # NOTE: req_state.output_token_ids will be mutated when
-        # PP will be enabled in the future
+    def _update_decode_batch(self, scheduler_output: SchedulerOutput):
+        """Updates the states for the decoding request batch, including the final chunk of a prefill
+        - Bumps the count of computed tokens for each request
+        - Safely removes finished requests from the batch
+        - Refreshes metadata for logits processors
+        """
         req_data = scheduler_output.scheduled_cached_reqs
         for i, req_id in enumerate(req_data.req_ids):
             req_state: SamplingRequestState = self.requests[req_id]
 
             # Update the cached states.
             num_computed_tokens = req_data.num_computed_tokens[i]
-            req_state.num_computed_tokens = num_computed_tokens
-            # The scheduler will send the sampled tokens back
-            # when PP will be enabled in the future
-            new_token_ids = req_data.new_token_ids[i] if len(req_data.new_token_ids) > 0 else []
-            # Add the sampled token(s) from the previous step (if any).
-            # This doesn't include "unverified" tokens like spec decode tokens.
-            num_new_tokens = num_computed_tokens + len(new_token_ids) - req_state.num_tokens
-            if num_new_tokens == 1:
-                # Avoid slicing list in most common case.
-                req_state.output_token_ids.append(new_token_ids[-1])
-            elif num_new_tokens > 0:
-                req_state.output_token_ids.extend(new_token_ids[-num_new_tokens:])
 
-            req_index = self.input_batch.get_req_index(req_id)
-            # Add new_token_ids to token_ids_cpu.
-            # TODO: Update for spec decoding in the future
-            start_token_index = num_computed_tokens
-            end_token_index = num_computed_tokens + len(new_token_ids)
-            self.input_batch.token_ids_cpu[req_index, start_token_index:end_token_index] = (
-                new_token_ids
-            )
+            print("\n\n\n\n")
+            print(num_computed_tokens)
+            print(req_state.num_computed_tokens)
+            print("\n\n")
+
+            # TODO: Do we need to bump this ourselves?
+            # req_state.num_computed_tokens = num_computed_tokens
+            req_state.scheduler_request.num_computed_tokens = num_computed_tokens
+
+            # # The scheduler will send the sampled tokens back
+            # # when PP will be enabled in the future
+            # new_token_ids = req_data.new_token_ids[i] if len(req_data.new_token_ids) > 0 else []
+            # # Add the sampled token(s) from the previous step (if any).
+            # # This doesn't include "unverified" tokens like spec decode tokens.
+            # num_new_tokens = num_computed_tokens + len(new_token_ids) - req_state.num_tokens
+            # if num_new_tokens == 1:
+            #     # Avoid slicing list in most common case.
+            #     req_state.output_token_ids.append(new_token_ids[-1])
+            # elif num_new_tokens > 0:
+            #     req_state.output_token_ids.extend(new_token_ids[-num_new_tokens:])
+
+            # req_index = self.input_batch.get_req_index(req_id)
+            # # Add new_token_ids to token_ids_cpu.
+            # # TODO: Update for spec decoding in the future
+            # start_token_index = num_computed_tokens
+            # end_token_index = num_computed_tokens + len(new_token_ids)
+            # self.input_batch.token_ids_cpu[req_index, start_token_index:end_token_index] = (
+            #     new_token_ids
+            # )
             # Remove the entry for prompt_logprobs for this request,
             # if it exists
             self.input_batch.num_prompt_logprobs.pop(req_id, None)
@@ -1836,13 +1835,12 @@ class ChunkedPrefillModelRunner(
 
         for i, req_id in enumerate(req_ids):
             req_state = self.requests[req_id]
-            assert req_state.scheduler_request is not None
             req_state.scheduler_request.append_output_token_ids(sampled_ids[i])
             if self.enable_prefix_caching:
                 self.kv_cache_manager.cache_blocks(
                     req_state.scheduler_request, req_state.scheduler_request.num_tokens
                 )
-            req_state.output_token_ids.extend(sampled_ids[i])
+            # req_state.output_token_ids.extend(sampled_ids[i])
 
         # Only return outputs from the driver worker
         if not self.is_driver_worker:

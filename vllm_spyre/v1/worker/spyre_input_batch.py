@@ -4,7 +4,7 @@
 # Based on vllm/vllm/v1/worker/gpu_input_batch.py
 
 from abc import abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Generic, TypeVar, cast
 
 import numpy as np
@@ -23,14 +23,20 @@ from vllm_spyre.v1.sample.spyre_logits_processor import LogitProcessorWrapper
 from vllm_spyre.compat_utils import has_argument
 
 
-@dataclass
 class BaseRequestState:
-    req_id: str
-    prompt_token_ids: list[int]
-
     @property
     @abstractmethod
     def num_tokens(self) -> int:
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def req_id(self) -> str:
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def prompt_token_ids(self) -> list[int]:
         raise NotImplementedError
 
 
@@ -185,21 +191,30 @@ class BaseInputBatch(Generic[RequestState]):
 
 
 @dataclass
-class SamplingRequestState(BaseRequestState):
-    num_computed_tokens: int = 0
-    mm_features: list[MultiModalFeatureSpec] | None = None
+class SamplingRequestState:
+    # num_computed_tokens: int = 0
+    # mm_features: list[MultiModalFeatureSpec] | None = None
 
-    sampling_params: SamplingParams = SamplingParams()
+    # sampling_params: SamplingParams = SamplingParams()
     generator: torch.Generator | None = None
 
-    output_token_ids: list[int] = field(default_factory=list)
+    # output_token_ids: list[int] = field(default_factory=list)
 
-    # TODO: is this required?
     scheduler_request: Request = None  # ty: ignore[invalid-assignment]
     chunk_count: int = 0
     padding_blocks: int = 0
     usable_blocks: int = 0
     total_hit_blocks: int = 0
+
+    @property
+    def req_id(self) -> str:
+        return self.scheduler_request.request_id
+
+    @property
+    def prompt_token_ids(self) -> list[int]:
+        prompt_token_ids = self.scheduler_request.prompt_token_ids
+        assert prompt_token_ids is not None, "Sampling requests require prompt token ids"
+        return prompt_token_ids
 
     @property
     def num_tokens(self) -> int:
@@ -209,6 +224,24 @@ class SamplingRequestState(BaseRequestState):
         #
         # This is done by vLLM, *not* in the spyre plugin.
         return len(self.prompt_token_ids) + len(self.output_token_ids)
+
+    @property
+    def num_computed_tokens(self) -> int:
+        return self.scheduler_request.num_computed_tokens
+
+    @property
+    def output_token_ids(self) -> list[int]:
+        return self.scheduler_request.output_token_ids
+
+    @property
+    def sampling_params(self) -> SamplingParams:
+        params = self.scheduler_request.sampling_params
+        assert params is not None, "Sampling requests require sampling params"
+        return params
+
+    @property
+    def mm_features(self) -> list[MultiModalFeatureSpec] | None:
+        return self.scheduler_request.mm_features
 
     def __post_init__(self):
         assert self.scheduler_request is not None
@@ -675,6 +708,8 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
 
 @dataclass
 class PoolingRequestState(BaseRequestState):
+    req_id: str
+    prompt_token_ids: list[int]
     pooling_params: PoolingParams = PoolingParams()
 
     def __post_init__(self):
