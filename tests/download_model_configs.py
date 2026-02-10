@@ -6,7 +6,7 @@ from urllib.request import urlretrieve
 
 from transformers import AutoConfig, PretrainedConfig
 
-from vllm_spyre.config.runtime_config_validator import get_supported_models_list
+from vllm_spyre.config.model_registry import get_model_registry
 
 _configs_path = Path(__file__).parent / "fixtures" / "model_configs"
 
@@ -38,7 +38,7 @@ def download_model_config_from_hf(hf_model_id: str, revision: str = "main"):
 
 
 if __name__ == "__main__":
-    model_ids = get_supported_models_list()
+    model_ids = get_model_registry().list_models()
     for model_id in model_ids:
         config = download_hf_model_config(model_id)
         # download_model_config_from_hf(model_id)
