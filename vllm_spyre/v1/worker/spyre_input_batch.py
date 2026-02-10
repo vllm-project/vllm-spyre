@@ -216,11 +216,15 @@ class SamplingRequestState:
         # i.e., "<image>" -> "<image>" * num_image_features
         #
         # This is done by vLLM, *not* in the spyre plugin.
-        return len(self.prompt_token_ids) + len(self.output_token_ids)
+        return self.scheduler_request.num_tokens
 
     @property
     def num_computed_tokens(self) -> int:
         return self.scheduler_request.num_computed_tokens
+
+    @num_computed_tokens.setter
+    def num_computed_tokens(self, value: int):
+        self.scheduler_request.num_computed_tokens = value
 
     @property
     def output_token_ids(self) -> list[int]:
@@ -235,6 +239,10 @@ class SamplingRequestState:
     @property
     def mm_features(self) -> list[MultiModalFeatureSpec] | None:
         return self.scheduler_request.mm_features
+
+    def append_output_token_ids(self, token_ids: int | list[int]) -> None:
+        # Passthrough to let vllm handle the tokens
+        self.scheduler_request.append_output_token_ids(token_ids)
 
     def __post_init__(self):
         assert self.scheduler_request is not None
