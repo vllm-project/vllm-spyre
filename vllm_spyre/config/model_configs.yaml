@@ -34,24 +34,6 @@ models:
   ibm-granite/granite-3.3-8b-instruct:
     architecture: *granite_33_8b_architecture
 
-    # Static batching configurations
-    static_batching_configs:
-      - tp_size: 1
-        warmup_shapes:
-          - prompt_len: 2048
-            new_tokens: 1024
-            batch_size: 16
-      - tp_size: 4
-        warmup_shapes:
-          - prompt_len: 6144
-            new_tokens: 2048
-            batch_size: 1
-      - tp_size: 4
-        warmup_shapes:
-          - prompt_len: 7168
-            new_tokens: 1024
-            batch_size: 4
-
     # Continuous batching configurations
     continuous_batching_configs:
       - tp_size: 1
@@ -101,24 +83,6 @@ models:
       num_key_value_heads: 8
       num_attention_heads: 32
 
-    # Static batching configurations
-    static_batching_configs:
-      - tp_size: 1
-        warmup_shapes:
-          - prompt_len: 2048
-            new_tokens: 1024
-            batch_size: 16
-      - tp_size: 4
-        warmup_shapes:
-          - prompt_len: 6144
-            new_tokens: 2048
-            batch_size: 1
-      - tp_size: 4
-        warmup_shapes:
-          - prompt_len: 7168
-            new_tokens: 1024
-            batch_size: 4
-
     # Continuous batching configurations
     continuous_batching_configs:
       - tp_size: 1
@@ -146,7 +110,6 @@ models:
       - tp_size: 1
         warmup_shapes:
           - prompt_len: 512
-            new_tokens: 0
             batch_size: 64
 
   ibm-granite/granite-embedding-278m-multilingual:
@@ -159,7 +122,6 @@ models:
       - tp_size: 1
         warmup_shapes:
           - prompt_len: 512
-            new_tokens: 0
             batch_size: 64
 
   # Other supported models (static batching only)
@@ -173,7 +135,6 @@ models:
       - tp_size: 1
         warmup_shapes:
           - prompt_len: 512
-            new_tokens: 0
             batch_size: 64
 
   BAAI/bge-reranker-v2-m3:
@@ -187,7 +148,6 @@ models:
       - tp_size: 1
         warmup_shapes:
           - prompt_len: 8192
-            new_tokens: 0
             batch_size: 1
 
   BAAI/bge-reranker-large:
@@ -201,7 +161,6 @@ models:
       - tp_size: 1
         warmup_shapes:
           - prompt_len: 512
-            new_tokens: 0
             batch_size: 64
 
   sentence-transformers/all-roberta-large-v1:
@@ -214,7 +173,6 @@ models:
       - tp_size: 1
         warmup_shapes:
           - prompt_len: 128
-            new_tokens: 0
             batch_size: 8
 
 # Made with Bob

@@ -115,25 +115,23 @@ class DeviceConfig:
 
 @dataclass
 class WarmupShape:
-    """Warmup shape configuration for static batching.
+    """Warmup shape configuration for static batching (pooling models only).
 
     Attributes:
         prompt_len: Prompt length
-        new_tokens: Number of new tokens to generate
         batch_size: Batch size
     """
 
     prompt_len: int
-    new_tokens: int
     batch_size: int
 
-    def to_tuple(self) -> tuple[int, int, int]:
+    def to_tuple(self) -> tuple[int, int]:
         """Convert WarmupShape to tuple format.
 
         Returns:
-            Tuple of (prompt_len, new_tokens, batch_size)
+            Tuple of (prompt_len, batch_size)
         """
-        return (self.prompt_len, self.new_tokens, self.batch_size)
+        return (self.prompt_len, self.batch_size)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "WarmupShape":
@@ -141,7 +139,7 @@ class WarmupShape:
 
         Args:
             data: Dictionary containing warmup shape data with keys:
-                  prompt_len, new_tokens, batch_size
+                  prompt_len, batch_size
 
         Returns:
             WarmupShape instance
@@ -153,13 +151,11 @@ class WarmupShape:
         try:
             return cls(
                 prompt_len=int(data["prompt_len"]),
-                new_tokens=int(data["new_tokens"]),
                 batch_size=int(data["batch_size"]),
             )
         except KeyError as e:
             raise ValueError(
-                f"Warmup shape must have 'prompt_len', 'new_tokens', and 'batch_size' keys. "
-                f"Missing key: {e}"
+                f"Warmup shape must have 'prompt_len' and 'batch_size' keys. Missing key: {e}"
             ) from e
         except (ValueError, TypeError) as e:
             raise ValueError(f"Warmup shape values must be valid integers: {e}") from e
@@ -167,7 +163,7 @@ class WarmupShape:
 
 @dataclass
 class StaticBatchingConfig:
-    """Static batching configuration.
+    """Static batching configuration (pooling models only).
 
     Attributes:
         tp_size: Tensor parallel size
@@ -236,8 +232,8 @@ class ModelConfig:
     Attributes:
         name: Model name/identifier
         architecture: Architecture pattern for matching
-        static_batching_configs: List of static batching configurations
-        continuous_batching_configs: List of continuous batching configurations
+        static_batching_configs: List of static batching configurations (pooling models only)
+        continuous_batching_configs: List of continuous batching configurations (decoder models)
             (each may have its own device_config)
     """
 

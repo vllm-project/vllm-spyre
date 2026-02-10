@@ -23,13 +23,10 @@ models:
       - tp_size: 1
         warmup_shapes:
           - prompt_len: 64
-            new_tokens: 20
             batch_size: 4
           - prompt_len: 128
-            new_tokens: 40
             batch_size: 2
           - prompt_len: 256
-            new_tokens: 80
             batch_size: 1
     """
     data = yaml.safe_load(yaml_content)
@@ -250,11 +247,11 @@ class TestWarmupShapesSubset:
     @pytest.mark.parametrize(
         "runtime_shapes,should_match,description",
         [
-            ([(64, 20, 4), (128, 40, 2)], True, "Subset of shapes should match"),
-            ([(256, 80, 1)], True, "Single shape should match if in config"),
-            ([(512, 100, 1)], False, "Non-matching shape should not match"),
-            ([(64, 20, 4), (512, 100, 1)], False, "Partial match should fail"),
-            ([(256, 80, 1), (64, 20, 4)], True, "Different order should match"),
+            ([(64, 4), (128, 2)], True, "Subset of shapes should match"),
+            ([(256, 1)], True, "Single shape should match if in config"),
+            ([(512, 1)], False, "Non-matching shape should not match"),
+            ([(64, 4), (512, 1)], False, "Partial match should fail"),
+            ([(256, 1), (64, 4)], True, "Different order should match"),
             ([], False, "Empty shapes should not match"),
         ],
         ids=["subset", "single", "no_match", "partial_fail", "order_independent", "empty"],
@@ -347,18 +344,14 @@ models:
       - tp_size: 1
         warmup_shapes:
           - prompt_len: 64
-            new_tokens: 20
             batch_size: 4
           - prompt_len: 128
-            new_tokens: 40
             batch_size: 2
       - tp_size: 1
         warmup_shapes:
           - prompt_len: 128
-            new_tokens: 40
             batch_size: 2
           - prompt_len: 64
-            new_tokens: 20
             batch_size: 4
         """
 
@@ -433,7 +426,6 @@ models:
       - tp_size: 1
         warmup_shapes:
           - prompt_len: 64
-            new_tokens: 20
             batch_size: 4
         """
         data = yaml.safe_load(yaml_content)
@@ -450,7 +442,7 @@ models:
         )
 
         # Provide warmup_shapes that DON'T match the static batching config
-        non_matching_warmup_shapes = [(128, 40, 2)]  # Not in static config
+        non_matching_warmup_shapes = [(128, 2)]  # Not in static config
 
         configurator = registry.get_configurator_for_runtime(
             vllm_config, warmup_shapes=non_matching_warmup_shapes
@@ -483,10 +475,8 @@ models:
       - tp_size: 1
         warmup_shapes:
           - prompt_len: 64
-            new_tokens: 20
             batch_size: 4
           - prompt_len: 128
-            new_tokens: 40
             batch_size: 2
         """
         data = yaml.safe_load(yaml_content)
@@ -503,7 +493,7 @@ models:
         )
 
         # Provide warmup_shapes that DO match the static batching config
-        matching_warmup_shapes = [(64, 20, 4)]
+        matching_warmup_shapes = [(64, 4)]
 
         configurator = registry.get_configurator_for_runtime(
             vllm_config, warmup_shapes=matching_warmup_shapes

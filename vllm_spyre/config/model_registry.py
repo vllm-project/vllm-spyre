@@ -177,7 +177,7 @@ class ModelConfigRegistry:
     def get_configurator_for_runtime(
         self,
         vllm_config: "VllmConfig",
-        warmup_shapes: list[tuple[int, int, int]] | None = None,
+        warmup_shapes: list[tuple[int, int]] | None = None,
     ) -> "ModelConfigurator | None":
         """Get configurator for a model with runtime-specific device config.
 
@@ -194,6 +194,7 @@ class ModelConfigRegistry:
         Args:
             vllm_config: vLLM configuration containing model and runtime parameters
             warmup_shapes: Optional warmup shapes for static batching validation
+                (prompt_len, batch_size) tuples for pooling models
 
         Returns:
             ModelConfigurator instance if model matches AND has supported runtime config,
@@ -221,7 +222,7 @@ class ModelConfigRegistry:
         self,
         model_config: ModelConfig,
         vllm_config: "VllmConfig",
-        warmup_shapes: list[tuple[int, int, int]] | None = None,
+        warmup_shapes: list[tuple[int, int]] | None = None,
     ) -> tuple[bool, "DeviceConfig | None"]:
         """Find matching runtime config and associated device config.
 
@@ -233,6 +234,7 @@ class ModelConfigRegistry:
             model_config: Model configuration
             vllm_config: vLLM configuration
             warmup_shapes: Optional warmup shapes for static batching validation
+                (prompt_len, batch_size) tuples for pooling models
 
         Returns:
             Tuple of (has_match, device_config) where:
@@ -264,14 +266,14 @@ class ModelConfigRegistry:
         self,
         model_config: ModelConfig,
         tp_size: int,
-        warmup_shapes: list[tuple[int, int, int]],
+        warmup_shapes: list[tuple[int, int]],
     ) -> bool:
         """Check if static batching config matches runtime parameters.
 
         Args:
             model_config: Model configuration
             tp_size: Tensor parallel size
-            warmup_shapes: Warmup shapes from runtime
+            warmup_shapes: Warmup shapes from runtime (prompt_len, batch_size) tuples
 
         Returns:
             True if a matching static batching config exists
@@ -321,7 +323,7 @@ class ModelConfigRegistry:
         return None
 
     def _warmup_shapes_compatible(
-        self, config_shapes: list["WarmupShape"], runtime_shapes: list[tuple[int, int, int]]
+        self, config_shapes: list["WarmupShape"], runtime_shapes: list[tuple[int, int]]
     ) -> bool:
         """Check if runtime warmup shapes are compatible with config warmup shapes.
 
@@ -330,7 +332,7 @@ class ModelConfigRegistry:
         Args:
             config_shapes: WarmupShapes from model config
             runtime_shapes: Warmup shapes from runtime
-                [(prompt_len, new_tokens, batch_size), ...]
+                [(prompt_len, batch_size), ...]
 
         Returns:
             True if all runtime shapes are in config shapes

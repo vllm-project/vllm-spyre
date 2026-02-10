@@ -50,23 +50,6 @@ class TestModelMatching:
         assert configurator.device_config is not None
         assert "VLLM_DT_MAX_BATCH_TKV_LIMIT" in configurator.device_config.env_vars
 
-    def test_match_granite_3_3_static_config(self, registry, granite_3_3_hf_config):
-        """Test matching granite-3.3-8b-instruct with static batching config."""
-        vllm_config = create_vllm_config(
-            hf_config=granite_3_3_hf_config,
-            world_size=4,
-        )
-
-        warmup_shapes = [(6144, 2048, 1)]
-        configurator = registry.get_configurator_for_runtime(vllm_config, warmup_shapes)
-
-        assert configurator is not None
-        assert isinstance(configurator, ModelConfigurator)
-        assert configurator.model_config.name == "ibm-granite/granite-3.3-8b-instruct"
-        assert (
-            configurator.device_config is None
-        )  # Static batching configs don't have device_config
-
     def test_match_granite_4_cb_config(self, registry, granite_4_hf_config):
         """Test matching granite-4-8b-dense with CB config."""
         vllm_config = create_vllm_config(
@@ -88,7 +71,7 @@ class TestModelMatching:
             max_num_seqs=None,  # Static batching
         )
 
-        warmup_shapes = [(512, 0, 64)]
+        warmup_shapes = [(512, 64)]
         configurator = registry.get_configurator_for_runtime(vllm_config, warmup_shapes)
 
         assert configurator is not None
