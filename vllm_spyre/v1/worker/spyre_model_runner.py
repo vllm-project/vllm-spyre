@@ -46,7 +46,7 @@ from vllm_spyre.v1.sample.spyre_logits_processor import build_logitsprocs_for_cb
 # yapf conflicts with ruff for this block
 # yapf: disable
 from vllm_spyre.v1.worker.spyre_input_batch import (BaseInputBatch,
-                                                    BaseRequestState,
+                                                    RequestStateT,
                                                     PoolingInputBatch,
                                                     PoolingRequestState,
                                                     SamplingInputBatch,
@@ -117,7 +117,6 @@ class CPSpyreModelRunnerOutput(CBSpyreModelRunnerOutput):
 
 
 InputBatchT = TypeVar("InputBatchT", bound=BaseInputBatch)
-RequestStateT = TypeVar("RequestStateT", bound=BaseRequestState)
 ModelInputsT = TypeVar("ModelInputsT", bound=ModelForwardInputs)
 
 
@@ -1473,6 +1472,7 @@ class ChunkedPrefillModelRunner(
             pooling_params=None,
             eos_token_id=None,
             block_hasher=self.request_block_hasher,
+            mm_features=mm_features,
         )
         chunk_plan = self._plan_chunking(scheduler_request)
         num_cached_tokens = chunk_plan.usable_cache_blocks * self.block_size
@@ -1639,7 +1639,7 @@ class ChunkedPrefillModelRunner(
                         )
                 # NB important early return here....
                 return
-        
+
         self._update_decode_batch(scheduler_output)
         # Free blocks for any requests that finished
         self._free_blocks(scheduler_output)

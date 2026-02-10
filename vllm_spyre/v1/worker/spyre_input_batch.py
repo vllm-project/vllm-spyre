@@ -3,9 +3,8 @@
 
 # Based on vllm/vllm/v1/worker/gpu_input_batch.py
 
-from abc import abstractmethod
 from dataclasses import dataclass
-from typing import Any, Generic, TypeVar, cast
+from typing import Any, Generic, Protocol, TypeVar, cast
 
 import numpy as np
 import torch
@@ -23,27 +22,21 @@ from vllm_spyre.v1.sample.spyre_logits_processor import LogitProcessorWrapper
 from vllm_spyre.compat_utils import has_argument
 
 
-class BaseRequestState:
+class RequestState(Protocol):
     @property
-    @abstractmethod
-    def num_tokens(self) -> int:
-        raise NotImplementedError
+    def num_tokens(self) -> int: ...
 
     @property
-    @abstractmethod
-    def req_id(self) -> str:
-        raise NotImplementedError
+    def req_id(self) -> str: ...
 
     @property
-    @abstractmethod
-    def prompt_token_ids(self) -> list[int]:
-        raise NotImplementedError
+    def prompt_token_ids(self) -> list[int]: ...
 
 
-RequestState = TypeVar("RequestState", bound=BaseRequestState)
+RequestStateT = TypeVar("RequestStateT", bound=RequestState)
 
 
-class BaseInputBatch(Generic[RequestState]):
+class BaseInputBatch(Generic[RequestStateT]):
     def __init__(
         self,
         max_num_reqs: int,
@@ -93,7 +86,7 @@ class BaseInputBatch(Generic[RequestState]):
 
     def add_request(
         self,
-        request: RequestState,
+        request: RequestStateT,
         req_index: int | None = None,
     ) -> int:
         if req_index is None:
@@ -707,7 +700,7 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
 
 
 @dataclass
-class PoolingRequestState(BaseRequestState):
+class PoolingRequestState:
     req_id: str
     prompt_token_ids: list[int]
     pooling_params: PoolingParams = PoolingParams()
