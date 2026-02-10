@@ -93,7 +93,6 @@ class SamplingForwardInputs(ModelForwardInputs):
     left_padded_prompt_mask: torch.Tensor
     block_table: torch.Tensor
     slot_mapping: torch.Tensor
-    scale_indices: list[int]
 
 
 @dataclass
@@ -369,7 +368,7 @@ class SpyreModelRunner(
 
     @property
     def vocab_size(self) -> int:
-        model_cfg = self.model.model.model.config
+        model_cfg = self.model.fms_model.config
         if self.model.is_multimodal:
             return self.model.mm_model_utils.resolve_multimodal_vocab_size()
         return model_cfg.src_vocab_size  # ty: ignore[invalid-return-type]
@@ -693,7 +692,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self._set_blocks(num_blocks=n_blocks_warmup)
         # TODO: fixup the typing here. Things are getting tripped up by having all of our "model"
         # classes inherit from `nn.Module` when maybe they don't need to
-        self.model.model.set_past_key_value_states(num_blocks=n_blocks_warmup)  # ty: ignore[call-non-callable]
+        self.model.set_past_key_value_states(num_blocks=n_blocks_warmup)  # ty: ignore[call-non-callable]
 
         # Future code:
 
@@ -715,7 +714,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self._set_blocks(num_blocks=n_blocks_avail)
         # TODO: fixup the typing here. Things are getting tripped up by having all of our "model"
         # classes inherit from `nn.Module` when maybe they don't need to
-        self.model.model.set_past_key_value_states(num_blocks=n_blocks_avail)  # ty: ignore[call-non-callable]
+        self.model.set_past_key_value_states(num_blocks=n_blocks_avail)  # ty: ignore[call-non-callable]
 
     def _set_blocks(self, num_blocks: int) -> None:
         # set number of available blocks, populate block_pool and
@@ -1000,8 +999,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             block_table=block_table,  # ty: ignore[invalid-argument-type]
             slot_mapping=slot_mapping,
             is_prompt=True,
-            # used only for quantized model
-            scale_indices=[prefill_index],
         )
 
         self._mark_input_tensors(model_inputs)
@@ -1112,7 +1109,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             block_table=block_table,
             slot_mapping=slot_mapping,
             is_prompt=False,
-            scale_indices=self.input_batch.request_indices,
         )
 
         self._mark_input_tensors(model_inputs)
@@ -1215,7 +1211,6 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             current_tkv_mask=model_input.current_tkv_mask,
             left_padded_prompt_mask=model_input.left_padded_prompt_mask,
             block_table=model_input.block_table,
-            scale_indices=torch.tensor(model_input.scale_indices, dtype=torch.int32),
             is_prefill=model_input.is_prompt,
         )
 
@@ -2005,7 +2000,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             block_table=block_table,
             slot_mapping=slot_mapping,
             is_prompt=True,
-            scale_indices=self.input_batch.request_indices,
             input_masks=None,  # Unused
         )
 
@@ -2115,7 +2109,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             block_table=block_table,
             slot_mapping=slot_mapping,
             is_prompt=False,
-            scale_indices=self.input_batch.request_indices,
             input_masks=None,  # Unused
         )
 
