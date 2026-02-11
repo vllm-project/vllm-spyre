@@ -1,3 +1,4 @@
+import os
 import pytest
 from pydantic import ValidationError
 from vllm.entrypoints.openai.cli_args import make_arg_parser
@@ -48,6 +49,7 @@ def test_chunk_size_default(monkeypatch: pytest.MonkeyPatch) -> None:
         assert engine_args.max_num_batched_tokens == 1024
         vllm_config = engine_args.create_engine_config()
         assert vllm_config.scheduler_config.max_num_batched_tokens == 1024
+        assert os.environ.get("VLLM_DT_CHUNK_LEN") == "1024"
 
     with environ_checkpoint():
         # Test that --max-num-batched-tokens overrides the default
@@ -55,6 +57,7 @@ def test_chunk_size_default(monkeypatch: pytest.MonkeyPatch) -> None:
         assert engine_args.max_num_batched_tokens == 128
         vllm_config = engine_args.create_engine_config()
         assert vllm_config.scheduler_config.max_num_batched_tokens == 128
+        assert os.environ.get("VLLM_DT_CHUNK_LEN") == "128"
 
     with environ_checkpoint():
         # Test that an invalid value will trigger an error (42 is not a multiple of the block size)
