@@ -19,7 +19,7 @@ def _generate_two_outputs(
     **kwargs,
 ):
     """Helper to generate multiple separate requests with the same configuration."""
-    max_new_tokens = kwargs["warmup_shapes"][0][1]
+    max_new_tokens = 4
     prompts = get_chicken_soup_prompts(1) * kwargs["batch_size"]
 
     sampling_params = SamplingParams(
@@ -31,7 +31,7 @@ def _generate_two_outputs(
         seed=seed,
     )
 
-    mode_kwargs = kwargs_for_mode(kwargs["mode"], kwargs["max_num_seqs"], kwargs["warmup_shapes"])
+    mode_kwargs = kwargs_for_mode(kwargs["mode"])
 
     results = []
     for _ in range(2):
@@ -43,6 +43,7 @@ def _generate_two_outputs(
             tensor_parallel_size=1,
             backend=kwargs["backend"],
             monkeypatch=kwargs["monkeypatch"],
+            max_num_seqs=kwargs["max_num_seqs"],
             **mode_kwargs,
         )
         results.append(outputs)

@@ -269,7 +269,7 @@ def remote_openai_server(request):
         # TODO: validate that only pooling models reach this place
         warmup_shapes = params["warmup_shapes"]
         warmup_prompt_length = [t[0] for t in warmup_shapes]
-        warmup_batch_size = [t[2] for t in warmup_shapes]
+        warmup_batch_size = [t[1] for t in warmup_shapes]
         env_dict.update(
             {
                 "VLLM_SPYRE_WARMUP_PROMPT_LENS": ",".join(map(str, warmup_prompt_length)),
