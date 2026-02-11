@@ -40,7 +40,7 @@ def _generate_two_outputs(
             prompts=prompts,
             max_model_len=kwargs["max_model_len"],
             sampling_params=sampling_params,
-            tensor_parallel_size=1,
+            tensor_parallel_size=kwargs["tp_size"],
             backend=kwargs["backend"],
             monkeypatch=kwargs["monkeypatch"],
             max_num_seqs=kwargs["max_num_seqs"],
@@ -55,17 +55,19 @@ def _generate_two_outputs(
 @pytest.mark.parametrize("seed", [42])
 @pytest.mark.parametrize("batch_size", [1, 3])
 def test_seed_deterministic(
+    # standard params (needed for llm_cache test ordering)
     model: ModelInfo,
+    tp_size: int,
+    backend: str,
+    mode: str,
+    max_num_seqs: int,
+    max_model_len: int,
+    monkeypatch: pytest.MonkeyPatch,
+    use_llm_cache,
+    # extra params for this test
     temperature: float,
     seed: int,
     batch_size: int,
-    max_model_len: int,
-    max_num_seqs: int,
-    backend: str,
-    mode: str,
-    monkeypatch: pytest.MonkeyPatch,
-    use_llm_cache,
-    runtime_xfail,
 ) -> None:
     """Test that seeded sampling produces identical results across requests.
 
@@ -101,15 +103,18 @@ def test_seed_deterministic(
 @pytest.mark.parametrize("temperature", [1.5])
 @pytest.mark.parametrize("batch_size", [1, 3])
 def test_seed_variability(
+    # standard params (needed for llm_cache test ordering)
     model: ModelInfo,
-    temperature: float,
-    batch_size: int,
-    max_model_len: int,
-    max_num_seqs: int,
+    tp_size: int,
     backend: str,
     mode: str,
+    max_num_seqs: int,
+    max_model_len: int,
     monkeypatch: pytest.MonkeyPatch,
     use_llm_cache,
+    # extra params for this test
+    temperature: float,
+    batch_size: int,
 ) -> None:
     """Test that unseeded sampling produces different results across requests.
 
