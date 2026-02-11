@@ -3,7 +3,7 @@ import copy
 import dataclasses
 import os
 from collections import defaultdict, deque
-from typing import Any, Callable, Union
+from typing import Any, Callable
 
 import pytest
 from llm_cache import get_cached_engine
@@ -25,7 +25,6 @@ from vllm.v1.request import Request
 
 from vllm_spyre.v1.core.scheduler import (
     ChunkedPrefillSpyreScheduler,
-    ContinuousBatchingSpyreScheduler,
 )
 
 
@@ -320,13 +319,9 @@ def validate_scheduler_steps(
         backend=backend,
         monkeypatch=monkeypatch,
     )
-    scheduler: Union[ContinuousBatchingSpyreScheduler, ChunkedPrefillSpyreScheduler] = (
-        engine_core.scheduler
-    )
+    scheduler: ChunkedPrefillSpyreScheduler = engine_core.scheduler
 
     tokenizer = get_tokenizer(model.name, revision=model.revision)
-    # clear the cache of function scheduler.check_batch_tkv_limit()
-    scheduler._cache_check_batch_tkv_limit.clear()
 
     # Override the TKV limit in the scheduler if needed
     if max_batch_tkv_limit >= 0:
@@ -383,7 +378,7 @@ def validate_scheduler_steps(
             model_runner = engine_core.model_executor.driver_worker.worker.model_runner
             n_blocks = model_runner.n_blocks
             block_size = model_runner.block_size
-            n_reserved_blocks = n_blocks - scheduler.n_free_blocks
+            n_reserved_blocks = n_blocks - model_runner.get_n_free_blocks()
 
             kv_cache_manager = model_runner.kv_cache_manager
 

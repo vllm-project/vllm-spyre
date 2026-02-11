@@ -94,14 +94,9 @@ class SamplingForwardInputs(ModelForwardInputs):
 
 
 @dataclass
-class CBSpyreModelRunnerOutput(ModelRunnerOutput):
-    # Add the current tkv and the number of free blocks to the output
+class SpyreModelRunnerOutput(ModelRunnerOutput):
+    # Current tkv: this is the maximum padded request length in the batch)
     tkv: int = 0
-    n_free_blocks: int = 0
-
-
-@dataclass
-class CPSpyreModelRunnerOutput(CBSpyreModelRunnerOutput):
     # Left padding of each request that was calculated by model runner
     left_padding: dict[str, int] = field(default_factory=dict)
     # Percentage of kv cache blocks allocated from our internal kv cache
@@ -1572,7 +1567,7 @@ class ChunkedPrefillModelRunner(
             return self._prepare_decode(scheduler_output.scheduled_cached_reqs)
 
     def get_empty_output(self):
-        return CPSpyreModelRunnerOutput(
+        return SpyreModelRunnerOutput(
             req_ids=[],
             req_id_to_index={},
             sampled_token_ids=[],
@@ -1581,7 +1576,6 @@ class ChunkedPrefillModelRunner(
             pooler_output=[],
             num_nans_in_logits=None,
             tkv=0,
-            n_free_blocks=self.get_n_free_blocks(),
             left_padding={},
             kv_cache_usage=self.get_kv_cache_usage(),
             prefix_cache_stats=None,
@@ -1790,14 +1784,14 @@ class ChunkedPrefillModelRunner(
         model_output = self.sampled_output(output, is_prefill)
         return model_output
 
-    def prefill_output(self) -> CPSpyreModelRunnerOutput:
+    def prefill_output(self) -> SpyreModelRunnerOutput:
         req_id_to_index = self.get_req_id_to_index(is_prefill=True)
         left_padding = {
             req_id: self.requests[req_id].padding_blocks * self.block_size
             for req_id in req_id_to_index
         }
 
-        return CPSpyreModelRunnerOutput(
+        return SpyreModelRunnerOutput(
             req_ids=list(req_id_to_index.keys()),
             req_id_to_index=req_id_to_index,
             sampled_token_ids=[],
@@ -1805,14 +1799,13 @@ class ChunkedPrefillModelRunner(
             prompt_logprobs_dict={},
             pooler_output=[],
             tkv=self.tkv,
-            n_free_blocks=self.get_n_free_blocks(),
             left_padding=left_padding,
             kv_cache_usage=self.get_kv_cache_usage(),
             prefix_cache_stats=self.prefix_cache_stats,
             prefix_cache_hit_len=self.get_prefix_cache_len(),
         )
 
-    def sampled_output(self, output: SamplerOutput, is_prefill: bool) -> CPSpyreModelRunnerOutput:
+    def sampled_output(self, output: SamplerOutput, is_prefill: bool) -> SpyreModelRunnerOutput:
         req_id_to_index = self.get_req_id_to_index(is_prefill)
         left_padding = {
             req_id: self.requests[req_id].padding_blocks * self.block_size
@@ -1824,7 +1817,7 @@ class ChunkedPrefillModelRunner(
             output.sampled_token_ids
         )  # ty: ignore[invalid-assignment]
 
-        return CPSpyreModelRunnerOutput(
+        return SpyreModelRunnerOutput(
             req_ids=list(req_id_to_index.keys()),
             req_id_to_index=req_id_to_index,
             sampled_token_ids=sampled_token_ids,
@@ -1832,7 +1825,6 @@ class ChunkedPrefillModelRunner(
             prompt_logprobs_dict={},
             pooler_output=[],
             tkv=self.tkv,
-            n_free_blocks=self.get_n_free_blocks(),
             left_padding=left_padding,
             kv_cache_usage=self.get_kv_cache_usage(),
             prefix_cache_stats=self.prefix_cache_stats,
