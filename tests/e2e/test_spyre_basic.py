@@ -24,7 +24,6 @@ def test_output(
     max_model_len: int,
     monkeypatch: pytest.MonkeyPatch,
     use_llm_cache,
-    runtime_xfail,
 ) -> None:
     """
     The warmup is based on a single shape. After the warmup,
@@ -143,6 +142,6 @@ def test_max_tokens(
             tensor_parallel_size=1,
             backend=backend,
             max_num_seqs=max_num_seqs,
-            max_num_batched_tokens=(128 if mode == "cp" else None),
             monkeypatch=monkeypatch,
+            **kwargs_for_mode(mode),
         )

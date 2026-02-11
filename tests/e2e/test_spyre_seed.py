@@ -40,7 +40,7 @@ def _generate_two_outputs(
             prompts=prompts,
             max_model_len=kwargs["max_model_len"],
             sampling_params=sampling_params,
-            tensor_parallel_size=kwargs["tp_size"],
+            tensor_parallel_size=1,
             backend=kwargs["backend"],
             monkeypatch=kwargs["monkeypatch"],
             max_num_seqs=kwargs["max_num_seqs"],
@@ -57,7 +57,6 @@ def _generate_two_outputs(
 def test_seed_deterministic(
     # standard params (needed for llm_cache test ordering)
     model: ModelInfo,
-    tp_size: int,
     backend: str,
     mode: str,
     max_num_seqs: int,
@@ -105,7 +104,6 @@ def test_seed_deterministic(
 def test_seed_variability(
     # standard params (needed for llm_cache test ordering)
     model: ModelInfo,
-    tp_size: int,
     backend: str,
     mode: str,
     max_num_seqs: int,
