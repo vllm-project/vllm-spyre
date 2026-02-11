@@ -209,13 +209,9 @@ class SpyrePlatform(Platform):
 
             registry = get_model_registry()
 
-            # For static batching, pass warmup shapes for validation
-
+            # For static batching (pooling models), pass warmup shapes for validation
             warmup_shape_tuples = (
-                [
-                    (ws["prompt_length"], ws["new_tokens"], ws["batch_size"])
-                    for ws in cls._warmup_shapes
-                ]
+                [(ws["prompt_length"], ws["batch_size"]) for ws in cls._warmup_shapes]
                 if cls._warmup_shapes and not envs_spyre.VLLM_SPYRE_USE_CB
                 else None
             )
@@ -473,14 +469,10 @@ class SpyrePlatform(Platform):
 
     @classmethod
     def _get_matching_warmup_shapes(
-        cls, prompt_len: int, max_tokens: int, warmup_shapes: tuple[dict[str, int], ...]
+        cls, prompt_len: int, warmup_shapes: tuple[dict[str, int], ...]
     ) -> list[dict[str, int]]:
-        """Return the subset of shapes that match this request"""
-        return [
-            shape
-            for shape in warmup_shapes
-            if prompt_len <= shape["prompt_length"] and max_tokens <= shape["new_tokens"]
-        ]
+        """Return the subset of shapes that match this request (pooling models only)"""
+        return [shape for shape in warmup_shapes if prompt_len <= shape["prompt_length"]]
 
     # Defined here for testing purposes
     DEFAULT_CHUNK_SIZE = 1024
