@@ -9,14 +9,6 @@ configurations.
 
 ### Decoder Models
 
-**_Static Batching:_**
-
-| Model                | AIUs | Prompt Length | New Tokens | Batch Size |
-|----------------------|------|---------------|------------|------------|
-| [Granite-3.3-8b][]   | 4    | 7168          | 1024       | 4          |
-
-**_Continuous Batching:_**
-
 | Model                     | AIUs | Context Length | Batch Size |
 |---------------------------|------|----------------|------------|
 | [Granite-3.3-8b][]        | 1    | 3072           | 16         |
