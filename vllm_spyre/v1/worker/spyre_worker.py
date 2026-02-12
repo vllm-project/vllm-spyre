@@ -19,28 +19,17 @@ from huggingface_hub import hf_hub_download
 from vllm.config import VllmConfig
 from vllm.distributed import ensure_model_parallel_initialized, init_distributed_environment
 from vllm.logger import init_logger
-
-try:
-    # vllm >= v0.14.0
-    from vllm.utils.torch_utils import set_random_seed
-except ImportError:
-    # vllm < v0.14.0
-    from vllm.model_executor import set_random_seed  # ty: ignore[unresolved-import]
-
 from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import SamplingParams
+from vllm.utils.torch_utils import set_random_seed
 from vllm.v1.core.sched.output import CachedRequestData, NewRequestData, SchedulerOutput
 from vllm.v1.kv_cache_interface import KVCacheConfig, KVCacheSpec
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.worker.worker_base import WorkerBase
 
-if TYPE_CHECKING:
-    from vllm.v1.core.sched.output import GrammarOutput
-
 import vllm_spyre.envs as envs_spyre
 import vllm_spyre.perf_metrics as perf_metrics
 import vllm_spyre.utils as utils_spyre
-from vllm_spyre.compat_utils import dataclass_fields
 from vllm_spyre.model_executor.model_loader import spyre_setup
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import (
@@ -48,6 +37,10 @@ from vllm_spyre.v1.worker.spyre_model_runner import (
     SpyrePoolingModelRunner,
     SupportedTask,
 )
+
+if TYPE_CHECKING:
+    from vllm.v1.core.sched.output import GrammarOutput
+
 
 logger = init_logger(__name__)
 
@@ -63,24 +56,19 @@ def new_request_data_builder(
     prompt_embeds: torch.Tensor | None,
     mm_features: list | None,
 ) -> NewRequestData:
-    kwargs = {
-        "req_id": req_id,
-        "prompt_token_ids": prompt_token_ids,
-        "sampling_params": sampling_params,
-        "pooling_params": pooling_params,
-        "block_ids": [0],  # not actually used
-        "num_computed_tokens": len(prompt_token_ids),
-        "lora_request": None,
-        "mm_features": mm_features or [],
-    }
-
-    # Only in newer versions, need to selectively add for compatibility
-    if "prompt_embeds" in dataclass_fields(NewRequestData):
-        kwargs["prompt_embeds"] = (prompt_embeds,)
-
     # type checker is sad here because `kwargs` is dict[str, Union[everything]]
     # It's our responsibility to ensure the values here have the right types
-    return NewRequestData(**kwargs)  # ty: ignore[invalid-argument-type]
+    return NewRequestData(
+        req_id=req_id,
+        prompt_token_ids=prompt_token_ids,
+        sampling_params=sampling_params,
+        pooling_params=pooling_params,
+        block_ids=([0],),  # not actually used
+        num_computed_tokens=len(prompt_token_ids),
+        lora_request=None,
+        mm_features=mm_features or [],
+        prompt_embeds=prompt_embeds,
+    )  # ty: ignore[invalid-argument-type]
 
 
 @contextlib.contextmanager
@@ -242,24 +230,13 @@ class SpyreWorker(WorkerBase):
         distributed_init_method: str,
         is_driver_worker: bool = False,
     ) -> None:
-        try:
-            # pre 0.11.1 compatibility with old worker base class
-            from vllm.worker.worker_base import WorkerBase as LegacyWorkerBase  # ty: ignore
-
-            LegacyWorkerBase.__init__(self, vllm_config=vllm_config)
-            self.local_rank = local_rank
-            self.rank = rank
-            self.distributed_init_method = distributed_init_method
-            self.is_driver_worker = is_driver_worker
-        except ImportError:
-            # From 0.11.1 and on we should only have to call the super init
-            super().__init__(
-                vllm_config=vllm_config,
-                local_rank=local_rank,
-                rank=rank,
-                distributed_init_method=distributed_init_method,
-                is_driver_worker=is_driver_worker,
-            )
+        super().__init__(
+            vllm_config=vllm_config,
+            local_rank=local_rank,
+            rank=rank,
+            distributed_init_method=distributed_init_method,
+            is_driver_worker=is_driver_worker,
+        )
 
         # For power-user debugging of spyre logs for tensor parallel ops
         self.redirect_logs_to_files()
@@ -271,11 +248,7 @@ class SpyreWorker(WorkerBase):
             )
         if self.model_config.trust_remote_code:
             # note: lazy import to avoid importing torch before initializing
-            try:
-                # pre 0.11.1 compatibility
-                from vllm.utils import init_cached_hf_modules  # ty: ignore[unresolved-import]
-            except ImportError:
-                from vllm.utils.import_utils import init_cached_hf_modules  # ty: ignore[unresolved-import]
+            from vllm.utils.import_utils import init_cached_hf_modules
 
             init_cached_hf_modules()
         self.model_runner: Union[
@@ -544,9 +517,6 @@ class SpyreWorker(WorkerBase):
             scheduled_cached_reqs=CachedRequestData.make_empty(),
             num_scheduled_tokens={deploy_req.req_id: prompt_len},
             total_num_scheduled_tokens=prompt_len,
-            scheduled_spec_decode_tokens={},
-            scheduled_encoder_inputs={},
-            num_common_prefix_blocks=[],
             finished_req_ids=set(),
             **_get_extra_args(),
         )
@@ -835,12 +805,9 @@ def maybe_override_signals_handler():
 def _get_extra_args() -> dict:
     """Add any required backwards compatibility code for constructing
     SchedulerOutputs here"""
-    extra_args: dict = {}
-    extra_args.update({"free_encoder_mm_hashes": []})
-
-    if "structured_output_request_ids" in dataclass_fields(SchedulerOutput):
-        extra_args["structured_output_request_ids"] = {}
-    if "grammar_bitmask" in dataclass_fields(SchedulerOutput):
-        extra_args["grammar_bitmask"] = None
-
-    return extra_args
+    return {
+        "free_encoder_mm_hashes": [],
+        "scheduled_spec_decode_tokens": {},
+        "scheduled_encoder_inputs": {},
+        "num_common_prefix_blocks": [],
+    }

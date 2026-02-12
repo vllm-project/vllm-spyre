@@ -1,126 +1,16 @@
+"""
+Tests checking for vLLM upstream compatibility requirements.
+
+As we remove support for old vLLM versions, we want to keep track of the
+compatibility code that can be cleaned up.
+"""
+
 import os
 
 import pytest
-from vllm.v1.core.block_pool import BlockPool
-from vllm.v1.core.sched.output import SchedulerOutput
-from vllm.v1.core.single_type_kv_cache_manager import FullAttentionManager
-
-from vllm_spyre.compat_utils import dataclass_fields, has_argument
 
 pytestmark = pytest.mark.compat
 
 VLLM_VERSION = os.getenv("TEST_VLLM_VERSION", "default")
 
-
-def test_pin_memory_available():
-    if VLLM_VERSION == "vLLM:lowest":
-        try:
-            from vllm.utils import is_pin_memory_available  # # noqa #ty: ignore
-            from vllm.utils import make_tensor_with_pad  # # noqa #ty: ignore
-            from vllm.utils import init_cached_hf_modules  # # noqa #ty: ignore
-        except ImportError as e:
-            raise AssertionError(
-                "remove backwards compatibility imports for "
-                "is_pin_memory_available, "
-                "make_tensor_with_pad and init_cached_hf_modules"
-            ) from e
-
-
-def test_multi_modal_cache_stats():
-    if VLLM_VERSION == "vLLM:lowest":
-        # If this import succeeds then remove the backwards compatibility type
-        # def for MultiModalCacheStats
-        with pytest.raises(ImportError):
-            from vllm.v1.metrics.stats import MultiModalCacheStats  # # noqa #ty: ignore
-
-
-def test_v0_worker_base():
-    if VLLM_VERSION == "vLLM:lowest":
-        try:
-            from vllm.worker.worker_base import WorkerBase  # # noqa #ty: ignore
-        except ImportError as e:
-            raise AssertionError(
-                "remove the backwards compatibility code from the SpyreWorker initializer"
-            ) from e
-
-
-def test_structured_output_request_ids():
-    if VLLM_VERSION == "vLLM:lowest":
-        # Can remove "structured_output_request_ids" and "grammar_bitmask"
-        # from backwards compat
-        assert "structured_output_request_ids" in dataclass_fields(SchedulerOutput)
-
-
-def test_hash_block_size():
-    if VLLM_VERSION == "vLLM:lowest":
-        # Can supply `hash_block_size` everywhere, this was added in 0.12.0
-        assert not has_argument(BlockPool, "hash_block_size")
-
-
-def test_alignment_tokens():
-    if VLLM_VERSION == "vLLM:lowest":
-        # Can supply `alignment_tokens` everywhere, this was added in 0.12.0
-        assert not has_argument(FullAttentionManager.find_longest_cache_hit, "alignment_tokens")
-
-
-def test_argparse_utils():
-    if VLLM_VERSION == "vLLM:lowest":
-        try:
-            from vllm.utils import FlexibleArgumentParser  # noqa
-        except ImportError as e:
-            raise AssertionError(
-                "Fix backward compatible imports of "
-                "FlexibleArgumentParser which is no longer required"
-            ) from e
-
-
-def test_pooler_api():
-    if VLLM_VERSION == "vLLM:lowest":
-        try:
-            from vllm.model_executor.layers.pooler import ClassifierPooler, Pooler  # noqa
-        except ImportError as e:
-            raise AssertionError(
-                "Backwards compatibility code for old pooler API "
-                "ClassifierPooler no longer required, related to vLLM PR #31973"
-            ) from e
-
-
-def test_set_random_seed():
-    if VLLM_VERSION == "vLLM:lowest":
-        try:
-            from vllm.model_executor import set_random_seed  # noqa
-        except ImportError as e:
-            raise AssertionError(
-                "Backwards compatibility code for set_random_seed import no longer required"
-            ) from e
-
-
-def test_enable_caching():
-    if VLLM_VERSION == "vLLM:lowest":
-        # Can supply enable_caching everywhere, added in v0.14.0
-        assert not has_argument(FullAttentionManager.__init__, "enable_caching"), (
-            "Backwards compatibility code for enable_caching parameter "
-            "in FullAttentionManager no longer required"
-        )
-
-
-def test_pooling_metadata_build_cursor():
-    if VLLM_VERSION == "vLLM:lowest":
-        from vllm.v1.pool.metadata import PoolingMetadata
-
-        assert has_argument(PoolingMetadata.build_pooling_cursor, "num_scheduled_tokens"), (
-            "Backwards compatibility code for num_scheduled_tokens parameter "
-            "in PoolingMetadata.build_pooling_cursor no longer required "
-        )
-
-
-def test_allocate_new_computed_blocks():
-    if VLLM_VERSION == "vLLM:lowest":
-        # allocate_new_computed_blocks was added in v0.14.0
-        # When save_new_computed_blocks no longer exists, remove the
-        # try/except compatibility code in spyre_model_runner.py
-        assert hasattr(FullAttentionManager, "save_new_computed_blocks"), (
-            "Backwards compatibility code for save_new_computed_blocks "
-            "in FullAttentionManager no longer required, can use "
-            "allocate_new_computed_blocks everywhere"
-        )
+# We reset the minimum version, so no tests currently

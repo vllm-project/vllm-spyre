@@ -18,12 +18,7 @@ from typing import TYPE_CHECKING, Union, cast
 import torch
 from vllm.inputs import ProcessorInputs, PromptType, TokenInputs
 from vllm.logger import init_logger
-
-try:
-    # pre 0.11.1 compatibility
-    from vllm.utils import FlexibleArgumentParser  # ty: ignore[unresolved-import]
-except ImportError:
-    from vllm.utils.argparse_utils import FlexibleArgumentParser
+from vllm.utils.argparse_utils import FlexibleArgumentParser
 
 if TYPE_CHECKING:
     # NB: We can't eagerly import many things from vllm since vllm.config
@@ -232,7 +227,7 @@ class SpyrePlatform(Platform):
                 envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND,
             )
 
-        # v0.14.0+ defaults to async scheduling
+        # TODO: try to support async scheduling
         scheduler_config.async_scheduling = False
 
         # To disable any paged attention ops in the base scheduler, we:
