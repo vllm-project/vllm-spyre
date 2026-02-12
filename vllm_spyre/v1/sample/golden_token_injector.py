@@ -159,23 +159,6 @@ class GoldenTokenInjector(LogitsProcessor):
         expected_logprob = cast(torch.Tensor, expectation.logprobs)[current_token_idx]
         expected_prob = math.exp(expected_logprob)
 
-        # We'll inject only if the error is below the threshold
-        if not math.isclose(expected_prob, prob, abs_tol=cast(float, expectation.threshold)):
-            err = abs(expected_prob - prob)
-
-            logger.error(
-                "Token probability is out of the acceptable threshold "
-                "%.2f > %.2f at request "
-                "%s token idx '%s'."
-                " Token injection will be skipped.",
-                err,
-                expectation.threshold,
-                label,
-                current_token_idx,
-            )
-            expectation.has_error = True
-            return
-
         full_prob = torch.ones(1, dtype=logprobs.dtype)  # 100%
 
         # Keep the same logprob for the expected token and

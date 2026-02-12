@@ -30,13 +30,7 @@ class MockSpyreCausalLM:
         self,
         vllm_config: VllmConfig,
     ) -> None:
-        try:
-            ## Temporary backwards compatibility for 0.10.2
-            from vllm.model_executor.layers.sampler import get_sampler
-
-            self.sampler = get_sampler()
-        except (ImportError, ModuleNotFoundError):
-            self.sampler = Sampler()
+        self.sampler = Sampler()
 
         # boolean tensor of length batch size with indices:
         # True for unfinished sequences and
@@ -57,18 +51,23 @@ class MockSpyreCausalLM:
         self.last_is_prompt: bool | None = None
         self.last_attn_metadata: SpyreAttentionMetadata | None = None
 
+    def get_maybe_mm_embeddings(self, *args, **kwargs):
+        # This model is not multimodal
+        return None
+
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
 
     def forward(
         self,
-        input_ids: torch.Tensor,
+        input_ids_or_embeds: torch.Tensor,
         positions: torch.Tensor,
         masks: torch.Tensor,
         is_prompt: bool,
     ) -> torch.Tensor:
-        # These variables are here for future test scenarios to use
-        self.last_input_ids = input_ids
+        # These variables are here for future test scenarios to use;
+        # NOTE: for now, we always use input IDs since this isn't multimodal.
+        self.last_input_ids = input_ids_or_embeds
         self.last_positions = positions
         self.last_masks = masks
         self.last_is_prompt = is_prompt
@@ -78,10 +77,10 @@ class MockSpyreCausalLM:
         assert isinstance(forward_context.attn_metadata, SpyreAttentionMetadata)
         self.last_attn_metadata = forward_context.attn_metadata
 
-        batch_size = input_ids.shape[0]
+        batch_size = input_ids_or_embeds.shape[0]
 
         return torch.empty(
-            (batch_size, self.vocab_size), dtype=torch.float32, device=input_ids.device
+            (batch_size, self.vocab_size), dtype=torch.float32, device=input_ids_or_embeds.device
         )
 
     def sample(
@@ -105,7 +104,7 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
     ):
         super().__init__(vllm_config=vllm_config, is_driver_worker=is_driver_worker, rank=rank)
 
-        self.model = MockSpyreCausalLM(vllm_config=vllm_config)
+        self._model = MockSpyreCausalLM(vllm_config=vllm_config)
 
     @SpyrePlatform.inference_mode()
     def execute_model(
@@ -258,7 +257,9 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
         assert len(model_runner_output.sampled_token_ids) == num_sampled_token_ids
         assert model_runner_output.tkv == tkv
         assert model_runner_output.n_free_blocks == n_free_blocks
-        assert model_runner_output.left_padding == left_padding
+        assert model_runner_output.left_padding == left_padding, (
+            f"Expected {left_padding}, got {model_runner_output.left_padding}"
+        )
         if prefix_cache_hit_len is not None:
             assert model_runner_output.prefix_cache_hit_len == prefix_cache_hit_len
 

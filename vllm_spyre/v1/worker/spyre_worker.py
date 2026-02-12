@@ -10,7 +10,7 @@ import sys
 import time
 from datetime import timedelta
 from pathlib import Path
-from typing import Union, cast
+from typing import TYPE_CHECKING, Union, cast
 
 import torch
 import torch.distributed as dist
@@ -19,13 +19,23 @@ from huggingface_hub import hf_hub_download
 from vllm.config import VllmConfig
 from vllm.distributed import ensure_model_parallel_initialized, init_distributed_environment
 from vllm.logger import init_logger
-from vllm.model_executor import set_random_seed
+
+try:
+    # vllm >= v0.14.0
+    from vllm.utils.torch_utils import set_random_seed
+except ImportError:
+    # vllm < v0.14.0
+    from vllm.model_executor import set_random_seed  # ty: ignore[unresolved-import]
+
 from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import SamplingParams
 from vllm.v1.core.sched.output import CachedRequestData, NewRequestData, SchedulerOutput
 from vllm.v1.kv_cache_interface import KVCacheConfig, KVCacheSpec
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.worker.worker_base import WorkerBase
+
+if TYPE_CHECKING:
+    from vllm.v1.core.sched.output import GrammarOutput
 
 import vllm_spyre.envs as envs_spyre
 import vllm_spyre.perf_metrics as perf_metrics
@@ -52,6 +62,8 @@ def new_request_data_builder(
     prompt_token_ids: list[int],
     sampling_params: SamplingParams | None,
     pooling_params: PoolingParams | None,
+    prompt_embeds: torch.Tensor | None,
+    mm_features: list | None,
 ) -> NewRequestData:
     kwargs = {
         "req_id": req_id,
@@ -61,21 +73,16 @@ def new_request_data_builder(
         "block_ids": [0],  # not actually used
         "num_computed_tokens": len(prompt_token_ids),
         "lora_request": None,
+        "mm_features": mm_features or [],
     }
 
-    ## Temporary backwards compatibility for 0.10.2
-    if "mm_kwargs" in dataclass_fields(NewRequestData):
-        kwargs["mm_kwargs"] = []
-    if "mm_hashes" in dataclass_fields(NewRequestData):
-        kwargs["mm_hashes"] = []
-    if "mm_positions" in dataclass_fields(NewRequestData):
-        kwargs["mm_positions"] = []
+    # Only in newer versions, need to selectively add for compatibility
+    if "prompt_embeds" in dataclass_fields(NewRequestData):
+        kwargs["prompt_embeds"] = (prompt_embeds,)
 
-    # Newly required in 0.11.0
-    if "mm_features" in dataclass_fields(NewRequestData):
-        kwargs["mm_features"] = []
-
-    return NewRequestData(**kwargs)
+    # type checker is sad here because `kwargs` is dict[str, Union[everything]]
+    # It's our responsibility to ensure the values here have the right types
+    return NewRequestData(**kwargs)  # ty: ignore[invalid-argument-type]
 
 
 @contextlib.contextmanager
@@ -83,7 +90,7 @@ def _maybe_warmup_context(limit: int, world_size: int, rank: int):
     global _inside_warmup_mode
     warmup_context = contextlib.nullcontext
     if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
-        from torch_sendnn import warmup_mode
+        from torch_sendnn import warmup_mode  # ty: ignore
 
         warmup_context = warmup_mode
 
@@ -114,7 +121,7 @@ def use_torch_fx_backed_size_oblivious():
     # NB: this setting is disabled at the end of this function
     from torch.fx.experimental import _config as config
 
-    config.backed_size_oblivious = True
+    config.backed_size_oblivious = True  # ty: ignore[invalid-assignment]
     yield
     config.backed_size_oblivious = False
 
@@ -130,7 +137,7 @@ class SpyreWorker(WorkerBase):
     def is_decoder(self) -> bool:
         return self.model_config.runner_type == "generate"
 
-    def get_kv_cache_spec(self) -> KVCacheSpec:
+    def get_kv_cache_spec(self) -> dict[str, KVCacheSpec]:
         """Get specifications for KV cache implementation.
 
         These specs are used to:
@@ -143,10 +150,14 @@ class SpyreWorker(WorkerBase):
 
     def compile_or_warm_up_model(self) -> None:
         """Prepare model for execution through compilation/warmup."""
+
         if envs_spyre.VLLM_SPYRE_USE_CB:
             self._warmup_spyre_dynamic_size(self.restricted_tokens)
             return
-
+        if self.model_runner.is_multimodal:
+            raise NotImplementedError(
+                "[WARMUP] Static batching is not supported for multimodal models."
+            )
         num_shape_combinations = len(self.spyre_warmup_shapes)
         logger.info(
             "[WARMUP] Starting for %d prompt/decode/batchsize-shape combinations...",
@@ -217,6 +228,9 @@ class SpyreWorker(WorkerBase):
         """
         # The fake kv_cache config specified by the model runner sets 4 bytes
         # per token.
+        # TODO: For multimodal, we may want to explicitly validate that the max
+        # len is less than the maximum size of one multimodal object prior to
+        # this, otherwise we can see some cryptic behaviors here.
         accurate_fake_kv_cache_size = (
             4 * self.model_config.max_model_len * self.scheduler_config.max_num_seqs
         )
@@ -244,7 +258,7 @@ class SpyreWorker(WorkerBase):
     ) -> None:
         try:
             # pre 0.11.1 compatibility with old worker base class
-            from vllm.worker.worker_base import WorkerBase as LegacyWorkerBase
+            from vllm.worker.worker_base import WorkerBase as LegacyWorkerBase  # ty: ignore
 
             LegacyWorkerBase.__init__(self, vllm_config=vllm_config)
             self.local_rank = local_rank
@@ -273,9 +287,9 @@ class SpyreWorker(WorkerBase):
             # note: lazy import to avoid importing torch before initializing
             try:
                 # pre 0.11.1 compatibility
-                from vllm.utils import init_cached_hf_modules
+                from vllm.utils import init_cached_hf_modules  # ty: ignore[unresolved-import]
             except ImportError:
-                from vllm.utils.import_utils import init_cached_hf_modules
+                from vllm.utils.import_utils import init_cached_hf_modules  # ty: ignore[unresolved-import]
 
             init_cached_hf_modules()
         self.model_runner: Union[
@@ -340,12 +354,14 @@ class SpyreWorker(WorkerBase):
                 envs.VLLM_TORCH_PROFILER_WITH_FLOPS,
             )
 
+            # TODO: These flags should be set as bools, but are passed through as strings.
+            # This is probably a bug.
             self.profiler = torch.profiler.profile(
                 activities=[torch.profiler.ProfilerActivity.CPU],
-                record_shapes=envs.VLLM_TORCH_PROFILER_RECORD_SHAPES,
-                profile_memory=envs.VLLM_TORCH_PROFILER_WITH_PROFILE_MEMORY,
-                with_stack=envs.VLLM_TORCH_PROFILER_WITH_STACK,
-                with_flops=envs.VLLM_TORCH_PROFILER_WITH_FLOPS,
+                record_shapes=envs.VLLM_TORCH_PROFILER_RECORD_SHAPES,  # ty: ignore
+                profile_memory=envs.VLLM_TORCH_PROFILER_WITH_PROFILE_MEMORY,  # ty: ignore
+                with_stack=envs.VLLM_TORCH_PROFILER_WITH_STACK,  # ty: ignore
+                with_flops=envs.VLLM_TORCH_PROFILER_WITH_FLOPS,  # ty: ignore
                 on_trace_ready=torch.profiler.tensorboard_trace_handler(
                     torch_profiler_trace_dir, use_gzip=True
                 ),
@@ -473,6 +489,13 @@ class SpyreWorker(WorkerBase):
 
         self.model_runner.load_model(prompt_lens=wup_prompt_lens, num_decode_tokens=wup_new_tokens)
 
+        # Explode if we aren't using continuous batching; note that we currently need to do
+        # this after the model loads, since loading sets the properties we are checking.
+        if self.model_runner.is_multimodal and not envs_spyre.VLLM_SPYRE_USE_CB:
+            raise NotImplementedError(
+                "Multimodal is not enabled for static batching; use continuous batching instead!"
+            )
+
         load_model_end_t = time.time()
         load_model_total_t = load_model_end_t - load_model_start_t
         self.perf_metrics.log("load model time", load_model_total_t, model=self.model_config.model)
@@ -494,24 +517,41 @@ class SpyreWorker(WorkerBase):
         valid_token_ids_tensor = torch.tensor(
             valid_token_ids, dtype=torch.long, device=torch.device("cpu")
         )
-        prompt_len = 42
         num_decode_tokens = 2
-
-        # Sample from the valid token ids
-        warmup_tokens_tensor = valid_token_ids_tensor[
-            torch.randint(0, len(valid_token_ids_tensor), (3, prompt_len))
-        ]
-
         # TODO: we need 2 requests for warmup on FP8+CB
         # Check if model is quantized
         is_fp8_plus_cb = self.model_config.quantization is not None and envs_spyre.VLLM_SPYRE_USE_CB
         req_count = 3 if is_fp8_plus_cb else 2
+
+        mm_model_utils = self.model_runner.get_mm_utils()
+        if mm_model_utils:
+            # In the case of multimodal, delegate to the MM utils class to get
+            # the appropriate features; note prompt length is currently
+            # determined purely by the multimodal input encoding.
+            mm_warmup_inputs = mm_model_utils.get_warmup_inputs(req_count)
+            warmup_tokens = mm_warmup_inputs.input_ids
+            warmup_embeds_tensor = mm_warmup_inputs.input_embeds
+            mm_features = mm_warmup_inputs.mm_features
+            prompt_len = len(warmup_tokens[0])
+        else:
+            prompt_len = 42
+            warmup_tokens_tensor = valid_token_ids_tensor[
+                torch.randint(0, len(valid_token_ids_tensor), (3, prompt_len))
+            ]
+            warmup_tokens = [wt.tolist() for wt in warmup_tokens_tensor]
+            # Text only models don't use mm features, and currently we only
+            # use embeddings as inputs to multimodal models.
+            warmup_embeds_tensor = [None] * req_count
+            mm_features = None
+
         requests = [
             new_request_data_builder(
                 req_id="warmup-%d" % (i),
-                prompt_token_ids=warmup_tokens_tensor[i].tolist(),
+                prompt_token_ids=warmup_tokens[i],
                 sampling_params=SamplingParams(max_tokens=num_decode_tokens),
                 pooling_params=None,
+                prompt_embeds=warmup_embeds_tensor[i],
+                mm_features=mm_features,
             )
             for i in range(req_count)
         ]
@@ -557,7 +597,7 @@ class SpyreWorker(WorkerBase):
             total_num_scheduled_tokens=prompt_len,
             scheduled_spec_decode_tokens={},
             scheduled_encoder_inputs={},
-            num_common_prefix_blocks=0,
+            num_common_prefix_blocks=[],
             finished_req_ids=set(),
             **_get_extra_args(),
         )
@@ -588,7 +628,7 @@ class SpyreWorker(WorkerBase):
             total_num_scheduled_tokens=0,
             scheduled_spec_decode_tokens={},
             scheduled_encoder_inputs={},
-            num_common_prefix_blocks=0,
+            num_common_prefix_blocks=[],
             # The requests to be removed
             finished_req_ids=set([r.req_id for r in request]),
             **_get_extra_args(),
@@ -631,10 +671,12 @@ class SpyreWorker(WorkerBase):
         # Set up dummy requests for prefill steps
         dummy_requests = [
             new_request_data_builder(
-                req_id="warmup",
+                req_id=f"warmup_{i}",
                 prompt_token_ids=warmup_tokens_tensor[i].tolist(),
                 sampling_params=sampling_params,
                 pooling_params=pooling_params,
+                prompt_embeds=None,
+                mm_features=None,
             )
             for i in range(batch_size)
         ]
@@ -647,7 +689,7 @@ class SpyreWorker(WorkerBase):
         for req in dummy_requests:
             req_ids.append(req.req_id)
             new_token_ids.append(
-                [valid_token_ids_tensor[torch.randint(0, len(valid_token_ids_tensor), (1,)).item()]]
+                [valid_token_ids_tensor[torch.randint(0, len(valid_token_ids_tensor), (1,)).item()]]  # ty: ignore
             )  # placeholder token
             new_block_ids.append([req.block_ids])
             num_computed_tokens.append(req.num_computed_tokens)
@@ -659,14 +701,16 @@ class SpyreWorker(WorkerBase):
         cached_request_data.num_computed_tokens = num_computed_tokens
 
         # Set up scheduler_output for execute_model
+        for r in dummy_requests:
+            assert r.prompt_token_ids is not None
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=dummy_requests,
             scheduled_cached_reqs=cached_request_data,
-            num_scheduled_tokens={r.req_id: len(r.prompt_token_ids) for r in dummy_requests},
+            num_scheduled_tokens={r.req_id: self._get_num_tokens(r) for r in dummy_requests},
             total_num_scheduled_tokens=sum(prompt_len for _ in range(batch_size)),
             scheduled_spec_decode_tokens={},
             scheduled_encoder_inputs={},
-            num_common_prefix_blocks=0,
+            num_common_prefix_blocks=[],
             finished_req_ids=set(),
             **_get_extra_args(),
         )
@@ -738,7 +782,7 @@ class SpyreWorker(WorkerBase):
                 total_num_scheduled_tokens=prompt_len,
                 scheduled_spec_decode_tokens={},
                 scheduled_encoder_inputs={},
-                num_common_prefix_blocks=0,
+                num_common_prefix_blocks=[],
                 finished_req_ids=set(),
                 **_get_extra_args(),
             )
@@ -769,7 +813,7 @@ class SpyreWorker(WorkerBase):
             total_num_scheduled_tokens=1,
             scheduled_spec_decode_tokens={},
             scheduled_encoder_inputs={},
-            num_common_prefix_blocks=0,
+            num_common_prefix_blocks=[],
             finished_req_ids=set(),
             **_get_extra_args(),
         )
@@ -788,7 +832,7 @@ class SpyreWorker(WorkerBase):
         scheduler_output.scheduled_new_reqs = requests
         scheduler_output.scheduled_cached_reqs = CachedRequestData.make_empty()
         scheduler_output.num_scheduled_tokens = {
-            r.req_id: len(r.prompt_token_ids) for r in requests
+            r.req_id: self._get_num_tokens(r) for r in requests
         }
         self.execute_model(scheduler_output)  # Prefill
 
@@ -818,6 +862,11 @@ class SpyreWorker(WorkerBase):
     def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
         return self.model_runner.get_supported_tasks()
 
+    def sample_tokens(self, grammar_output: "GrammarOutput | None") -> ModelRunnerOutput:
+        from vllm.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT
+
+        return EMPTY_MODEL_RUNNER_OUTPUT
+
     @SpyrePlatform.inference_mode()
     def execute_model(
         self,
@@ -825,6 +874,10 @@ class SpyreWorker(WorkerBase):
     ) -> ModelRunnerOutput | None:
         output = self.model_runner.execute_model(scheduler_output)
         return output if self.is_driver_worker else None
+
+    def _get_num_tokens(self, r: NewRequestData) -> int:
+        assert r.prompt_token_ids is not None, "requests should have tokens!"
+        return len(r.prompt_token_ids)
 
 
 # Ref: https://github.com/vllm-project/vllm/blob/5fbbfe9a4c13094ad72ed3d6b4ef208a7ddc0fd7/vllm/v1/executor/multiproc_executor.py#L446 # noqa: E501

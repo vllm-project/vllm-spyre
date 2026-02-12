@@ -252,10 +252,11 @@ class EngineCache:
         # then adjust these limits in the engine's scheduler for tests.
 
         # Setup the engine
-        # Round max_num_seqs (batch size) to the next power of two for
-        # Spyre compilation. This seems more robust and helps that all tests in
-        # tests/e2e/test_spyre_cb_inference_steps.py pass on Spyre.
-        max_num_seqs_compiled = 1 << (max_num_seqs - 1).bit_length()
+        # Round max_num_seqs (batch size) to the next power of two (minimum of 4) for
+        # Spyre compilation. This seems more robust and helps all tests using this cache not fail
+        # compilation.
+        max_num_seqs_compiled: int = max(4, 1 << (max_num_seqs - 1).bit_length())
+
         engine_args = EngineArgs(
             model=model_name,
             tokenizer=model_name,
@@ -279,6 +280,10 @@ class EngineCache:
         # original values. They were changed for more robust compilation only.
         engine_core.scheduler.model_config.max_model_len = max_model_len
         engine_core.scheduler.scheduler_config.max_num_seqs = max_num_seqs
+        engine_core.scheduler.max_num_running_reqs = max_num_seqs
+        engine_core.model_executor.driver_worker.worker.model_runner.model_config.max_model_len = (
+            max_model_len
+        )
 
         if available_blocks is not None:
             worker = engine_core.model_executor.driver_worker.worker
@@ -365,6 +370,7 @@ def get_cached_llm(
     max_num_seqs: int | None = None,
     use_cb: bool = False,
     max_num_batched_tokens: int | None = None,
+    use_pc: bool = False,
 ) -> LLM:
     # Clear other caches first
     API_SERVER_CACHE.clear()
@@ -379,6 +385,7 @@ def get_cached_llm(
         warmup_shapes=warmup_shapes,
         max_num_seqs=max_num_seqs,
         use_cb=use_cb,
+        use_pc=use_pc,
         max_num_batched_tokens=max_num_batched_tokens,
     )
 

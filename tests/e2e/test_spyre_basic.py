@@ -4,7 +4,7 @@ Run `python -m pytest tests/e2e/test_spyre_basic.py`.
 """
 
 import pytest
-from output_util import validate_vllm_vs_hf_output
+from output_util import validate_vllm_vs_hf_output, kwargs_for_mode
 from spyre_util import (
     DecodeWarmupShapes,
     ModelInfo,
@@ -32,6 +32,7 @@ def test_output(
     warmup_shapes: DecodeWarmupShapes,
     monkeypatch: pytest.MonkeyPatch,
     use_llm_cache,
+    runtime_xfail,
 ) -> None:
     """
     The warmup is based on a single shape. After the warmup,
@@ -49,25 +50,15 @@ def test_output(
 
     skip_unsupported_tp_size(tp_size, backend)
 
-    if mode == "cp" and model.is_quantized:
-        pytest.skip("Chunked prefill and FP8 not supported at the moment.")
+    if (
+        "micro-g3.3-8b-instruct-1b" in model.name
+        and model.is_quantized
+        and mode not in ["cb", "cp", "pc"]
+    ):
+        runtime_xfail(reason="SB sometimes causes failures with quantized model")
 
     prompts = get_chicken_soup_prompts(4)
-
-    kwargs = (
-        {
-            "max_num_seqs": max_num_seqs,
-            "use_cb": True,
-            "max_num_batched_tokens": 128 if mode == "cp" else None,
-        }
-        if mode == "cb" or mode == "cp"
-        else {
-            "warmup_shapes": warmup_shapes,
-        }
-    )
-
     max_new_tokens = warmup_shapes[0][1]
-
     vllm_sampling_params = SamplingParams(
         max_tokens=max_new_tokens,
         temperature=0,
@@ -84,7 +75,7 @@ def test_output(
         monkeypatch=monkeypatch,
         max_model_len=max_model_len,
         max_new_tokens=max_new_tokens,
-        **kwargs,
+        **kwargs_for_mode(mode, max_num_seqs, warmup_shapes),
     )
 
 
@@ -109,9 +100,7 @@ def test_batch_handling(
     """
 
     prompts = get_chicken_soup_prompts(4)
-
     max_new_tokens = [5, 20, 10, 5]
-
     vllm_sampling_params = [
         SamplingParams(
             max_tokens=max_new_tokens[i],
@@ -123,16 +112,6 @@ def test_batch_handling(
         for i in range(len(max_new_tokens))
     ]
 
-    kwargs = (
-        {
-            "max_num_seqs": max_num_seqs,
-            "use_cb": True,
-            "max_num_batched_tokens": 128 if mode == "cp" else None,
-        }
-        if mode == "cb" or mode == "cp"
-        else {"warmup_shapes": warmup_shapes}
-    )
-
     validate_vllm_vs_hf_output(
         model=model,
         prompts=prompts,
@@ -142,7 +121,7 @@ def test_batch_handling(
         backend=backend,
         monkeypatch=monkeypatch,
         max_new_tokens=max_new_tokens,
-        **kwargs,
+        **kwargs_for_mode(mode, max_num_seqs, warmup_shapes),
     )
 
 
@@ -205,18 +184,9 @@ def test_max_model_len_override(model: ModelInfo, backend, warmup_shapes, mode: 
     warmup shapes"""
 
     max_model_len = 64
-    kwargs = (
-        {
-            "use_cb": True,
-            "warmup_shapes": None,
-            "use_chunked_prefill": mode == "cp",
-        }
-        if mode in ["cb", "cp", "pc"]
-        else {
-            "use_cb": False,
-            "warmup_shapes": warmup_shapes,
-        }
-    )
+    kwargs = kwargs_for_mode(mode, 2, warmup_shapes)
+    kwargs.pop("max_num_seqs", None)
+    kwargs.pop("use_pc", None)
 
     patch_environment(**kwargs, backend=backend, monkeypatch=monkeypatch)
     vllm_config = EngineArgs(

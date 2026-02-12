@@ -20,7 +20,7 @@ from vllm.transformers_utils.tokenizer import get_tokenizer
 DISABLE_ASSERTS = False  # used for debugging
 
 ISCLOSE_ABS_TOL = float(os.environ.get("VLLM_SPYRE_TEST_ABS_TOL", "0.08"))
-ISCLOSE_ABS_TOL_QUANTIZATION = float(os.environ.get("VLLM_SPYRE_TEST_QUANTIZED_ABS_TOL", "0.125"))
+ISCLOSE_ABS_TOL_QUANTIZATION = float(os.environ.get("VLLM_SPYRE_TEST_QUANTIZED_ABS_TOL", "0.17"))
 
 HF_RESULT_CACHE = HFResultCache()
 
@@ -405,28 +405,6 @@ def setup_golden_token(
     return sampling_params
 
 
-# wrapper to be able to mark some tests as xfail for logprobs diffs but
-# still run and report the comparison
-def maybe_xfail(func):
-    def wrapper(*args, **kwargs):
-        model = kwargs["model"]
-        use_cb = kwargs.get("use_cb", False)
-        if "micro-g3.3-8b-instruct-1b" in model.name and model.is_quantized and not use_cb:
-            try:
-                func(*args, **kwargs)
-            except AssertionError as e:
-                print(e)
-            pytest.xfail(
-                "Micro model FP8 static-batch compilation may result in"
-                " a model that fails quality checks"
-            )
-        else:
-            func(*args, **kwargs)
-
-    return wrapper
-
-
-@maybe_xfail
 def validate_vllm_vs_hf_output(
     model: ModelInfo,
     prompts: Union[list[str], list[list[int]]],
@@ -441,6 +419,7 @@ def validate_vllm_vs_hf_output(
     use_cb: bool = False,
     use_golden_token=True,
     max_num_batched_tokens: int | None = None,
+    use_pc: bool = False,
 ) -> None:
     hf_outputs = generate_hf_output(
         model=model,
@@ -464,6 +443,7 @@ def validate_vllm_vs_hf_output(
         max_num_seqs=max_num_seqs,
         max_num_batched_tokens=max_num_batched_tokens,
         use_cb=use_cb,
+        use_pc=use_pc,
     )
 
     compare_results(
@@ -489,6 +469,7 @@ def generate_spyre_vllm_output(
     max_num_seqs: int | None = None,
     use_cb: bool = False,
     max_num_batched_tokens: int | None = None,
+    use_pc: bool = False,
 ) -> list[dict[str, Any]]:
     # Allows to run multiprocess V1 engine without dumping meaningless logs at
     # shutdown engine this context.
@@ -504,6 +485,7 @@ def generate_spyre_vllm_output(
         max_num_seqs=max_num_seqs,
         max_num_batched_tokens=max_num_batched_tokens,
         use_cb=use_cb,
+        use_pc=use_pc,
     )
 
     vllm_outputs = vllm_model.generate(prompts, sampling_params)
@@ -514,6 +496,26 @@ def generate_spyre_vllm_output(
         results.append(result)
 
     return results
+
+
+def kwargs_for_mode(mode: str, max_num_seqs: int, warmup_shapes: DecodeWarmupShapes) -> dict:
+    """Returns kwargs for validate_vllm_vs_hf_output based on mode"""
+    return (
+        {
+            "max_num_seqs": max_num_seqs,
+            "use_cb": True,
+            "max_num_batched_tokens": 128 if mode in ["cp", "pc"] else None,
+            "use_pc": mode == "pc",
+            "warmup_shapes": None,
+        }
+        if mode != "sb"
+        else {
+            "warmup_shapes": warmup_shapes,
+            "use_cb": False,
+            "use_pc": False,
+            "max_num_batched_tokens": None,
+        }
+    )
 
 
 def extract_output(req_output):

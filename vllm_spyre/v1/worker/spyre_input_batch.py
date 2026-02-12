@@ -9,6 +9,7 @@ from typing import Any, Generic, TypeVar, cast
 
 import numpy as np
 import torch
+from vllm.multimodal.inputs import MultiModalFeatureSpec
 from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import SamplingParams, SamplingType
 from vllm.v1.pool.metadata import PoolingMetadata
@@ -186,7 +187,7 @@ class BaseInputBatch(Generic[RequestState]):
 @dataclass
 class SamplingRequestState(BaseRequestState):
     num_computed_tokens: int = 0
-
+    mm_features: list[MultiModalFeatureSpec] | None = None
     left_padding: int = 0  # Defaults to 0, i. e. not padding
 
     sampling_params: SamplingParams = SamplingParams()
@@ -196,16 +197,24 @@ class SamplingRequestState(BaseRequestState):
 
     @property
     def num_tokens(self) -> int:
+        # NOTE: In the case of multimodal, multimodal token expansion
+        # is done prior to the creation of this object.
+        # i.e., "<image>" -> "<image>" * num_image_features
+        #
+        # This is done by vLLM, *not* in the spyre plugin.
         return len(self.prompt_token_ids) + len(self.output_token_ids)
 
 
 @dataclass
 class ChunkedPrefillRequestState(SamplingRequestState):
-    scheduler_request: Request | None = None
+    scheduler_request: Request = None  # ty: ignore[invalid-assignment]
     chunk_count: int = 0
     padding_blocks: int = 0
     usable_blocks: int = 0
     total_hit_blocks: int = 0
+
+    def __post_init__(self):
+        assert self.scheduler_request is not None
 
 
 class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
@@ -358,7 +367,7 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
         Convert a request index to a dense index. See `req_id_to_dense_index`
         for more.
         """
-        return self.req_indices_mask[:req_index].sum().item()
+        return int(self.req_indices_mask[:req_index].sum().item())
 
     def get_available_index(self) -> int | None:
         """

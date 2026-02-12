@@ -10,7 +10,7 @@ from vllm.v1.core.sched.scheduler import Scheduler
 from vllm.v1.engine import EngineCoreOutputs
 from vllm.v1.metrics.stats import PrefixCacheStats, SchedulerStats
 from vllm.v1.outputs import ModelRunnerOutput
-from vllm.v1.request import Request
+from vllm.v1.request import Request, RequestStatus
 
 import vllm_spyre.envs as envs_spyre
 from vllm_spyre.platform import SpyrePlatform
@@ -72,6 +72,7 @@ class StaticBatchingSpyreScheduler(SpyreScheduler):
         if len(self.running) == 0:
             # Make a copy of the warmup shapes
             available_warmup_shapes = list(self.spyre_warmup_shapes)
+            last_available_warmup_shapes = available_warmup_shapes
 
             while holdback_queue:
                 request = holdback_queue[0]
@@ -205,7 +206,7 @@ class ContinuousBatchingSpyreScheduler(SpyreScheduler):
             self.running = []
             logger.debug(
                 "Scheduling a prefill step (%d prompt tokens), holding back %d requests",
-                self.waiting[-1].num_prompt_tokens,
+                self.waiting[-1].num_prompt_tokens,  # ty: ignore[not-subscriptable]
                 len(holdback_queue),
             )
         else:
@@ -516,6 +517,23 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         while holdback_queue:
             if self.can_schedule_prefill(holdback_queue[0]):
                 new_request = holdback_queue.popleft()
+                # Remove structured_output_request
+                # NB: SpyrePlatform.validate_request() removes structured_output
+                # before the request gets here in most cases
+                # TODO: We don't currently support structured output and it
+                # breaks some assumptions the code makes. The problems is that
+                # a structured output request will stay in waiting for multiple
+                # iterations with status WAITING_FOR_FSM. To handle this
+                # properly we need to exclude such requests from entering
+                # ongoing_prefills but still pass them in the waiting queue to
+                # the base scheduler to track the FSM initialization.
+                if new_request.structured_output_request is not None:
+                    logger.warning(
+                        "Removing structured output from request: %s", new_request.request_id
+                    )
+                    new_request.structured_output_request = None
+                    new_request.status = RequestStatus.WAITING
+
                 logger.debug(
                     "Scheduling a new request (%d prompt tokens), holding back %d requests",
                     new_request.num_prompt_tokens,
@@ -623,8 +641,7 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
 
     def _satisfies_first_chunk_constraints(self, request: Request) -> bool:
         """First chunked prefill can be scheduled only if there is space in the
-        prefill batch and if there is enough blocks to accommodate entire
-        request"""
+        input batch (cond1) and in the prefill batch (cond2)."""
 
         # TODO theoretically we could already do a chunked prefill even
         # if the decode batch is full, but the current implementation of input
@@ -636,17 +653,7 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         max_prefill_batch_size = 1
         cond2 = len(self.waiting) < max_prefill_batch_size
 
-        # all the blocks for the request are allocated at the time of the first
-        # chunked prefill. We need to check here that there are enough free
-        # blocks/pages remaining
-        # Note: we only have to do check in case of a running batches
-        # (not start_new_batch), because the minimal number of blocks covers
-        # the context length for a single sequence, so tkv < block size is ok
-        prompt_len = request.num_prompt_tokens
-        total_tokens = prompt_len + request.max_tokens - 1
-        num_blocks_required = math.ceil(total_tokens / self.block_size)
-        cond3 = num_blocks_required <= self.n_free_blocks
-        return cond1 and cond2 and cond3
+        return cond1 and cond2
 
     def _satisfies_last_chunk_constraints(self, request: Request) -> bool:
         """Last chunked prefill can be scheduled only if there is enough space

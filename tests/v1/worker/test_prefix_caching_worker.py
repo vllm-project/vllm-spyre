@@ -4,6 +4,7 @@ from scheduling_utils import create_request_for_scheduler_test, random_prompt
 from v1.worker.mock_model import InstrumentedModelRunner
 
 from spyre_util import REFERENCE_MODELS
+from vllm_spyre.compat_utils import has_argument
 
 
 @pytest.mark.cpu
@@ -50,7 +51,11 @@ def test_block_sharing_for_2_chunks(
 
     kv_cache_manager = pc_model_runner.kv_cache_manager
 
-    kv_cache_manager.allocate_new_blocks(request1.request.request_id, 192)
+    # compat: vLLM 0.15.0 added an argument
+    if has_argument(kv_cache_manager.allocate_new_blocks, "num_tokens_main_model"):
+        kv_cache_manager.allocate_new_blocks(request1.request.request_id, 192, 192)
+    else:
+        kv_cache_manager.allocate_new_blocks(request1.request.request_id, 192)
     kv_cache_manager.cache_blocks(request1.request, 192)
     kv_cache_manager.free(request1.request.request_id)
 
@@ -89,7 +94,9 @@ def test_multi_chunk_partial_match_misaligned(
     pc_model_runner = InstrumentedModelRunner.build(
         monkeypatch=monkeypatch,
         max_num_batched_tokens=128,
-        available_blocks=16,
+        # needed number of available blocks: 16 + padding block = 17
+        # needs to be multiple of batch size (2): 17 -> 18
+        available_blocks=18,
     )
 
     # twice the same seed for a sequence of length 384
@@ -136,7 +143,8 @@ def test_multi_chunk_partial_match_misaligned(
         req_ids=["0"],
         num_sampled_token_ids=0,
         tkv=384,
-        n_free_blocks=8,
+        # actual number of available blocks: 18 - 1 (padding block) = 17
+        n_free_blocks=11,  # 17 - 6 = 11
         left_padding={"0": 0},
         prefix_cache_hit_len={"0": 0},
     )
@@ -156,7 +164,7 @@ def test_multi_chunk_partial_match_misaligned(
         req_ids=["0"],
         num_sampled_token_ids=0,
         tkv=384,
-        n_free_blocks=8,
+        n_free_blocks=11,
         left_padding={"0": 0},
         prefix_cache_hit_len={"0": 0},
     )
@@ -176,7 +184,7 @@ def test_multi_chunk_partial_match_misaligned(
         req_ids=["0"],
         num_sampled_token_ids=1,
         tkv=384,
-        n_free_blocks=8,
+        n_free_blocks=11,
         left_padding={"0": 0},
     )
 
@@ -191,7 +199,7 @@ def test_multi_chunk_partial_match_misaligned(
         req_ids=["1"],
         num_sampled_token_ids=0,
         tkv=384,
-        n_free_blocks=1,
+        n_free_blocks=8,  # 11 - (6 - 3 (prefixes)) = 8
         left_padding={"1": 0},
         prefix_cache_hit_len={"1": 128},
     )
@@ -213,7 +221,7 @@ def test_multi_chunk_partial_match_misaligned(
         req_ids=["1"],
         num_sampled_token_ids=0,
         tkv=384,
-        n_free_blocks=1,
+        n_free_blocks=8,
         left_padding={"1": 0},
         prefix_cache_hit_len={"1": 128},
     )
@@ -233,7 +241,7 @@ def test_multi_chunk_partial_match_misaligned(
         req_ids=["1"],
         num_sampled_token_ids=1,
         tkv=384,
-        n_free_blocks=1,
+        n_free_blocks=8,
         left_padding={"1": 0},
     )
 
@@ -253,7 +261,7 @@ def test_multi_chunk_partial_match_misaligned(
         req_ids=["0", "1"],
         num_sampled_token_ids=2,
         tkv=385,
-        n_free_blocks=1,
+        n_free_blocks=6,  # 8 - 2 (both seqs need 1 block for decodes) = 6
         left_padding={"0": 0, "1": 0},
     )
 
@@ -285,7 +293,9 @@ def test_first_chunk_recomputation(
     pc_model_runner = InstrumentedModelRunner.build(
         monkeypatch=monkeypatch,
         max_num_batched_tokens=256,
-        available_blocks=16,
+        # needed number of available blocks: 16 + padding block = 17
+        # needs to be multiple of batch size (2): 17 -> 18
+        available_blocks=18,
     )
 
     model = REFERENCE_MODELS[InstrumentedModelRunner.DEFAULT_TEST_MODEL]
@@ -327,7 +337,8 @@ def test_first_chunk_recomputation(
         req_ids=["0"],
         num_sampled_token_ids=1,
         tkv=128,
-        n_free_blocks=12,
+        # actual number of available blocks: 18 - 1 (padding block) = 17
+        n_free_blocks=15,  # 17 - (4 - 2 (pads)) = 15
         left_padding={"0": 128},
     )
 
@@ -351,7 +362,7 @@ def test_first_chunk_recomputation(
         req_ids=["1"],
         num_sampled_token_ids=1,
         tkv=128,
-        n_free_blocks=9,
+        n_free_blocks=14,  # 15 - (4 - 2 (pads) - 1 (prefix)) = 14
         left_padding={"1": 128},
     )
 
@@ -371,7 +382,7 @@ def test_first_chunk_recomputation(
         req_ids=["0", "1"],
         num_sampled_token_ids=2,
         tkv=129,
-        n_free_blocks=9,
+        n_free_blocks=12,  # 14 - 2 (both seqs need 1 block for decodes) = 12
         left_padding={"0": 0, "1": 0},
     )
 
@@ -410,7 +421,9 @@ def test_middle_chunk_recomputation_with_padding(
     pc_model_runner = InstrumentedModelRunner.build(
         monkeypatch=monkeypatch,
         max_num_batched_tokens=256,
-        available_blocks=32,
+        # needed number of available blocks: 32 + padding block = 33
+        # needs to be multiple of batch size (2): 33 -> 34
+        available_blocks=34,
         max_model_len=1024,
     )
 
@@ -454,7 +467,8 @@ def test_middle_chunk_recomputation_with_padding(
         req_ids=["0"],
         num_sampled_token_ids=0,
         tkv=512,
-        n_free_blocks=22,
+        # actual number of available blocks: 34 - 1 (padding block) = 33
+        n_free_blocks=25,  # 33 - 8 = 25
         left_padding={"0": 0},
         prefix_cache_hit_len={"0": 0},
     )
@@ -474,7 +488,7 @@ def test_middle_chunk_recomputation_with_padding(
         req_ids=["0"],
         num_sampled_token_ids=1,
         tkv=512,
-        n_free_blocks=22,
+        n_free_blocks=25,
         left_padding={"0": 0},
     )
 
@@ -490,7 +504,7 @@ def test_middle_chunk_recomputation_with_padding(
         req_ids=["1"],
         num_sampled_token_ids=0,
         tkv=512,
-        n_free_blocks=11,
+        n_free_blocks=23,  # 25 - (12 - 2 (pads) - 8 (prefix)) = 23
         left_padding={"1": 128},
         prefix_cache_hit_len={"1": 384},
     )
@@ -513,7 +527,7 @@ def test_middle_chunk_recomputation_with_padding(
         req_ids=["1"],
         num_sampled_token_ids=1,
         tkv=640,
-        n_free_blocks=11,
+        n_free_blocks=23,
         left_padding={"1": 128},
     )
 
@@ -534,6 +548,6 @@ def test_middle_chunk_recomputation_with_padding(
         req_ids=["0", "1"],
         num_sampled_token_ids=2,
         tkv=641,
-        n_free_blocks=11,
+        n_free_blocks=21,  # 23 - 2 (both seqs need 1 block for decodes) = 21
         left_padding={"0": 128, "1": 0},
     )

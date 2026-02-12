@@ -19,11 +19,12 @@ from vllm.v1.sample.metadata import SamplingMetadata
 from vllm.v1.sample.sampler import Sampler
 
 import vllm_spyre.envs as envs_spyre
+import vllm_spyre.multimodal as spyre_mm
 import vllm_spyre.utils as utils_spyre
 from vllm_spyre.platform import SpyrePlatform
 
 try:
-    import backends.dynamo_tracer  # noqa: F401
+    import backends.dynamo_tracer  # ty: ignore[unresolved-import] # noqa
 except ImportError:
     print("WARNING: Disabled: dynamo_tracer")
     pass
@@ -35,16 +36,16 @@ logger = init_logger(__name__)
 
 @dataclass
 class SpyreAttentionMetadata:
-    slot_mapping: torch.Tensor = None
-    current_tkv_mask: torch.Tensor = None
-    left_padded_prompt_mask: torch.Tensor = None
-    block_table: torch.Tensor = None
-    is_prefill: bool = False
+    slot_mapping: torch.Tensor
+    current_tkv_mask: torch.Tensor
+    left_padded_prompt_mask: torch.Tensor
+    block_table: torch.Tensor
+    is_prefill: bool
     # We need this indices because when requests are removed from the
     # persistent batch, we need to keep the reference of the remaining
     # requests, that is, this index must be the same from the prefill until
     # the end.
-    scale_indices: torch.Tensor = None
+    scale_indices: torch.Tensor
 
 
 class SpyreCausalLM(nn.Module):
@@ -57,13 +58,7 @@ class SpyreCausalLM(nn.Module):
     ) -> None:
         super().__init__()
 
-        try:
-            ## Temporary backwards compatibility for 0.10.2
-            from vllm.model_executor.layers.sampler import get_sampler
-
-            self.sampler = get_sampler()
-        except (ImportError, ModuleNotFoundError):
-            self.sampler = Sampler()
+        self.sampler = Sampler()
 
         # boolean tensor of length batch size with indices:
         # True for unfinished sequences and
@@ -88,15 +83,19 @@ class SpyreCausalLM(nn.Module):
                 rank,
             )
 
+        # Pull mm model utils / is_multimodal up a level for convenience
+        self.mm_model_utils = self.model.mm_model_utils
+        self.is_multimodal = self.model.is_multimodal
+
     def forward(
         self,
-        input_ids: torch.Tensor,
+        input_ids_or_embeds: torch.Tensor,
         positions: torch.Tensor,
         masks: torch.Tensor,
         is_prompt: bool,
     ) -> torch.Tensor:
         if is_prompt and not envs_spyre.VLLM_SPYRE_USE_CB:
-            self.model.past_key_value_states = None  # type: ignore
+            self.model.past_key_value_states = None
 
         extra_kwargs: dict[str, Any] = {}
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn":
@@ -106,7 +105,7 @@ class SpyreCausalLM(nn.Module):
 
         # normal prefill or decoding step
         logits = self.model(
-            input_ids,
+            input_ids_or_embeds,
             position_ids=positions,
             mask=masks,
             use_cache=True,
@@ -126,6 +125,39 @@ class SpyreCausalLM(nn.Module):
             logits = logits[self.indices]
 
         return logits
+
+    def get_maybe_mm_embeddings(self, input_ids, mm_features, is_decode):
+        """If the model is multimodal, get the (maybe) multimodal embeddings.
+        If it isn't, return None, since we only use embeddings for multimodal.
+
+        In the case of prefill / decode; we should only have mm features in
+        prefill, because by that point, the multimodal data will already be
+        merged into the embeddings to be cached. As such we explicitly explode
+        if mm_features are passed in decode, because it's likely a mistake.
+
+        NOTE: generally is_decode will set iteration > 0 in FMS; failing to do
+        this will cause it to return the raw input id and try to embed in the
+        forward call, which may break on AIU due to misalignment with prefill's
+        embedding call.
+        """
+        if not self.model.is_multimodal or self.mm_model_utils is None:
+            # The model is likely implemented incorrectly or not initialized,
+            # or we are passing multimodal features to a model that should not
+            # take them.
+            if mm_features:
+                raise ValueError("mm_features were provided, but model is not multimodal!")
+            # We do not use embeddings for models that aren't multimodal.
+            return None
+
+        # Delegate to this model architecture's multimodal helpers to
+        # get the (potentially) multimodal embeddings from the FMS model.
+        fms_model = self.model.model
+        return self.mm_model_utils.get_maybe_mm_embeddings(
+            fms_model,
+            input_ids,
+            mm_features,
+            is_decode,
+        )
 
     def sample(
         self,
@@ -160,6 +192,10 @@ class FmsModelBase(nn.Module):
         self.scheduler_config = vllm_config.scheduler_config
         self.dtype = self.get_dtype()
 
+        # Wrappers for utils for multimodal
+        self.mm_model_utils: spyre_mm.MMUtilsBase | None = None
+        self.is_multimodal = False
+
         # Load the weights from the cached or downloaded files.
         self.load_weights(
             model_config=self.model_config,
@@ -170,6 +206,9 @@ class FmsModelBase(nn.Module):
             rank=rank,
             world_size=self.parallel_config.world_size,
         )
+
+    def get_dtype(self) -> torch.dtype:
+        raise NotImplementedError()
 
     def load_weights(
         self,
@@ -209,6 +248,10 @@ class FmsModelBase(nn.Module):
                 revision=model_config.revision,
             )
 
+        # Get any fixes needed that must be patched into the kwargs;
+        # currently this is only use for multimodal models / llava next
+        model_kwargs = spyre_mm.get_mm_specific_load_overrides(self.config)
+
         with utils_spyre.stagger_region(
             envs_spyre.VLLM_SPYRE_MAX_LOAD_PROCESSES,
             kwargs["world_size"],
@@ -220,6 +263,7 @@ class FmsModelBase(nn.Module):
                 distributed_strategy=distributed_strategy,
                 group=dist.group.WORLD,
                 fused_weights=False,
+                **model_kwargs,
             )
 
         self.model.eval()
@@ -270,7 +314,7 @@ class FmsModelBase(nn.Module):
             # of caching even though the test run in isolated subprocesses.
 
             if SpyrePlatform.sendnn_configured():
-                from torch_sendnn import torch_sendnn  # noqa: F401
+                pass
 
             self.model = torch.compile(
                 self.model,
@@ -285,6 +329,14 @@ class FmsModelBase(nn.Module):
                 assert self.dtype == torch.float32
                 self._cast_to_f32()
 
+        # If it's multimodal, create an instance of the
+        # corresponding mm utils helper; this is arch specific.
+        self.mm_model_utils = spyre_mm.maybe_get_mm_utils(
+            model_path=model_path,
+            fms_config=self.model.config,
+            hf_config=self.config,
+        )
+        self.is_multimodal = self.mm_model_utils is not None
         logger.debug("Model weights loaded successfully.")
 
     def _cast_bf16_to_f16(self):
@@ -350,6 +402,13 @@ class ContinuousBatchingFmsModel(FmsModelBase):
         elif self.config.model_type == "gpt_bigcode":
             self.kv_cache_specs["num_layers"] = self.config.n_layer
             self.kv_cache_specs["head_dim"] = self.config.n_embd // self.config.n_head
+        elif self.is_multimodal and self.mm_model_utils is not None:
+            # Handle multimodal separately for now since we need to unwrap the
+            # text configs and technically (outside FMS) the LLM could be
+            # generic; the instance of mm_model_utils encapsulates the configs,
+            # so no need to pass them again.
+            unwrapped_opts = self.mm_model_utils.unwrap_mm_kv_cache_opts()
+            self.kv_cache_specs.update(unwrapped_opts)
         else:
             raise NotImplementedError(
                 f"[SpyreCausalLM] model type {self.config.model_type} "
@@ -484,6 +543,24 @@ class ContinuousBatchingFmsModel(FmsModelBase):
 
     def _set_scale_for_fp8(self, attn_metadata: SpyreAttentionMetadata):
         for layer_idx, (k, v) in enumerate(self.past_key_value_states):
+            if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
+                # static scaling
+                if attn_metadata.is_prefill:
+                    k._scale = torch.ones(1, dtype=torch.float32)
+                    v._scale = torch.ones(1, dtype=torch.float32)
+                elif len(attn_metadata.scale_indices) == 1:
+                    k._scale = torch.ones(2, dtype=torch.float32)
+                    v._scale = torch.ones(2, dtype=torch.float32)
+                else:
+                    k._scale = torch.ones(len(attn_metadata.scale_indices), dtype=torch.float32)
+                    v._scale = torch.ones(len(attn_metadata.scale_indices), dtype=torch.float32)
+
+                # interesting- no mark_dynamic required on decode here
+
+                k._scaled = True
+                v._scaled = True
+                continue
+
             if attn_metadata.is_prefill:
                 # NOTE: Currently, prefill is only for a single prompt
                 # In prefill, we restore the scale (no scale) and
@@ -522,6 +599,10 @@ class ContinuousBatchingFmsModel(FmsModelBase):
             torch._dynamo.mark_dynamic(k._scale, is_dynamic_flag)
 
     def _update_scale_for_fp8(self, attn_metadata: SpyreAttentionMetadata):
+        if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
+            # static scaling
+            return
+
         for layer_idx, (k, v) in enumerate(self.past_key_value_states):
             if attn_metadata.is_prefill or len(attn_metadata.scale_indices) > 1:
                 self.current_kv_scales[layer_idx][0][attn_metadata.scale_indices] = k._scale
