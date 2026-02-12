@@ -216,26 +216,6 @@ class SpyrePlatform(Platform):
             if configurator:
                 config_summary = configurator.configure(vllm_config)
                 logger.info(config_summary.format_log_message())
-                # TODO: This is a temporary check for backwards compatibility that should be
-                # removed when we can make breaking changes.
-                if (
-                    envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL
-                    and os.getenv("VLLM_DT_CHUNK_LEN") is None
-                    and vllm_config.scheduler_config.max_num_batched_tokens != 1024
-                    and vllm_config.parallel_config.world_size == 4
-                    and configurator.model_config.name
-                    in [
-                        "ibm-granite/granite-3.3-8b-instruct",
-                        "ibm-granite/granite-3.3-8b-instruct-FP8",
-                        "ibm-granite/granite-4-8b-dense",
-                    ]
-                ):
-                    logger.info(
-                        "Granite model detected. For backwards compatibility, "
-                        "defaulting --max-num-batched-tokens to 1024"
-                    )
-                    vllm_config.scheduler_config.max_num_batched_tokens = 1024
-
             else:
                 error_msg = f"No model-specific configuration found for '{model_config.model}'"
                 if envs_spyre.VLLM_SPYRE_REQUIRE_KNOWN_CONFIG:
@@ -269,23 +249,8 @@ class SpyrePlatform(Platform):
                     model_config.max_model_len * scheduler_config.max_num_seqs
                 )
             else:
-                # TODO: As a breaking change, remove the ability to override the
-                # chunk_len from VLLM_DT_CHUNK_LEN. It should be treated more like
-                # VLLM_DT_MAX_BATCH_SIZE wherein it is set based on the vllm_config.
-                # User overrides should only come from --max-num-batch-tokens.
-                if (chunk_len := os.getenv("VLLM_DT_CHUNK_LEN")) is None:
-                    os.environ["VLLM_DT_CHUNK_LEN"] = str(scheduler_config.max_num_batched_tokens)
-                else:
-                    try:
-                        chunk_len_int = int(chunk_len)
-                    except (ValueError, TypeError) as e:
-                        raise Exception("VLLM_DT_CHUNK_LEN must be an integer") from e
-
-                    logger.info(
-                        "VLLM_DT_CHUNK_LEN was provided. Overriding max_num_batched_tokens to %d",
-                        chunk_len_int,
-                    )
-                    scheduler_config.max_num_batched_tokens = chunk_len_int
+                # Set VLLM_DT_CHUNK_LEN based on scheduler_config.max_num_batched_tokens
+                os.environ["VLLM_DT_CHUNK_LEN"] = str(scheduler_config.max_num_batched_tokens)
 
                 assert scheduler_config.max_num_batched_tokens % cls._block_size == 0, (
                     "`max_num_batched_tokens` must"
