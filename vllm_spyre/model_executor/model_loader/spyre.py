@@ -182,9 +182,7 @@ class FmsModelBase(nn.Module):
     ) -> None:
         super().__init__()
 
-        self.config: PretrainedConfig = self.may_be_get_typed_hf_config(
-            vllm_config.model_config.hf_config
-        )
+        self.config = self.resolve_hf_config(vllm_config)
 
         # Actual FMS model
         self.model: nn.Module
@@ -366,29 +364,50 @@ class FmsModelBase(nn.Module):
             param.data = param.data.to(dtype=torch.float32)
 
     @staticmethod
-    def may_be_get_typed_hf_config(hf_config: PretrainedConfig):
-        """Get a properly typed HF config by manually casting if necessary
-        This is similar to vLLM's ctx.get_hf_config() pattern for type casting configs.
+    def resolve_hf_config(vllm_config: VllmConfig):
+        """Ensure that we convert to the correctly typed subclass of PretrainedConfig;
+        this is largely done to handle external config formats consistently, such
+        as Mistral.
+
+        NOTE: We should be careful about considering the implications of the external
+        format with respect to the model arch used in upline vLLM (outside of Spyre),
+        because in some cases, i.e., Mistral3, we map to a different vLLM class;
+        this also may have implications for the preprocessing used by the input processor
+        that runs in the frontend process, so we need to be sure that things are handled
+        correctly on the mm utils side as well.
         """
+        model_config: ModelConfig = vllm_config.model_config
+        hf_config: PretrainedConfig = model_config.hf_config
+        is_hf_format = model_config.config_format == "hf"
+        vllm_arch = model_config.architecture
 
-        if hf_config.model_type == "pixtral":
-            # Convert to dict and back to avoid double-nesting of vision_config
-            # When using "mistral" as tokenizer_mode (required for mistral3), the
-            # model_type comes out to be '', which messess up all the configuration
-            # We are removing those explicitely to leverage defaults in mistral3
-            # config in vLLM
-            hf_config_dict = hf_config.to_dict()
-            if hf_config.text_config.model_type == "transformer":
-                hf_config_dict["text_config"].pop("model_type")
-            if hf_config.vision_config.model_type == "":
-                hf_config_dict["vision_config"].pop("model_type")
+        # For multimodal mistral, passing auto / mistral format may result in passing a
+        # PretrainedConfig that should be cast to Mistral3; In this case, we expect to
+        # have arch PixtralForConditionalGeneration (mistral format for mistral3), as
+        # opposed to Mistral3ForConditionalGeneration (HF format).
+        # Ref: https://github.com/vllm-project/vllm/blob/v0.15.0/docs/models/supported_models.md
+        if vllm_arch == "PixtralForConditionalGeneration" and type(hf_config) is PretrainedConfig:
+            if is_hf_format:
+                raise AssertionError(
+                    "Mistral3 config format should not be hf with PixtralForConditionalGeneration"
+                )
+            if not hasattr(hf_config, "text_config") or not hasattr(hf_config, "vision_config"):
+                raise AttributeError(
+                    "Mistral3 config to be converted must have text/vision subconfigs"
+                )
 
-            mistral_config = Mistral3Config(**hf_config_dict)
-            if mistral_config.model_type == "":
-                mistral_config.model_type = "mistral3"
-            return mistral_config
-        else:
-            return hf_config
+            logger.info("Converting from Mistral -> HF Config format for Mistral3")
+
+            # Clobber the text / language model_types with the mistral/pixtral key, which
+            # are currently the only models that we support in FMS with mistral3 at the moment,
+            # and the values we would expect if we passed the config in HF format.
+            config_dict = hf_config.to_dict()
+            config_dict["text_config"]["model_type"] = "mistral"
+            config_dict["vision_config"]["model_type"] = "pixtral"
+            config_dict["model_type"] = "mistral3"
+            return Mistral3Config(**config_dict)
+
+        return hf_config
 
 
 class ContinuousBatchingFmsModel(FmsModelBase):
