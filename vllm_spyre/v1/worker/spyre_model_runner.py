@@ -77,7 +77,7 @@ class ModelForwardInputs:
 
 @dataclass(frozen=True)
 class PoolingForwardInputs(ModelForwardInputs):
-    input_masks: torch.Tensor | None  # pooling and static batching only
+    input_masks: torch.Tensor
     token_type_ids: torch.Tensor | None
 
 
@@ -639,9 +639,6 @@ class SpyrePoolingModelRunner(
             # Only mark tensors when we're warming up and compiling the graphs
             return
 
-        # To produce like graphs during pre-fill, we mark the prefill
-        # batch x seq as static, but relax this for decode for the seq
-        # we always want prefill to be static to produce same-like graph
         torch._dynamo.mark_static(model_input.input_tokens, 0)
         torch._dynamo.mark_static(model_input.input_tokens, 1)
         torch._dynamo.mark_static(model_input.input_masks, 0)
