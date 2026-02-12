@@ -56,8 +56,6 @@ def new_request_data_builder(
     prompt_embeds: torch.Tensor | None,
     mm_features: list | None,
 ) -> NewRequestData:
-    # type checker is sad here because `kwargs` is dict[str, Union[everything]]
-    # It's our responsibility to ensure the values here have the right types
     return NewRequestData(
         req_id=req_id,
         prompt_token_ids=prompt_token_ids,
@@ -68,7 +66,7 @@ def new_request_data_builder(
         lora_request=None,
         mm_features=mm_features or [],
         prompt_embeds=prompt_embeds,
-    )  # ty: ignore[invalid-argument-type]
+    )
 
 
 @contextlib.contextmanager

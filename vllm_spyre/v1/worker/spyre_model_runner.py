@@ -730,11 +730,6 @@ class ChunkedPrefillModelRunner(
         self.chunk_size = self.scheduler_config.max_num_batched_tokens
         self.chunk_blocks_count = self.chunk_size // self.block_size
 
-        # For hybrid KV caches, the `alignment_tokens` arg needs to be set to
-        # the lowest common multiple of kv cache block sizes. Currently we only
-        # support homogeneous kv caches with a single block size though.
-        self._alignment_token_kwargs = {"alignment_tokens": self.block_size}
-
         if vllm_config.cache_config.enable_prefix_caching:
             caching_hash_fn = get_hash_fn_by_name(vllm_config.cache_config.prefix_caching_hash_algo)
             init_none_hash(caching_hash_fn)
@@ -1309,7 +1304,10 @@ class ChunkedPrefillModelRunner(
                 kv_cache_spec=self._attn_spec,
                 use_eagle=False,
                 dcp_world_size=1,
-                **self._alignment_token_kwargs,
+                # For hybrid KV caches, the `alignment_tokens` arg needs to be set to
+                # the lowest common multiple of kv cache block sizes. Currently we only
+                # support homogeneous kv caches with a single block size though.
+                alignment_tokens=self.block_size,
             )[0]
             n_hit = len(computed_blocks)
 
