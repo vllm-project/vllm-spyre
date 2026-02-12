@@ -1,0 +1,178 @@
+# Model Configuration Schema
+# This file defines all supported models and their configurations
+#
+# Each model entry contains:
+# - architecture: Pattern for matching HuggingFace model configs
+# - static_batching_configs: List of static batching configurations (optional)
+# - continuous_batching_configs: List of continuous batching configurations (optional)
+#   - Each CB config may have a nested device_config for device-specific settings
+
+# templates for reuse via YAML anchors
+_templates:
+  # model architecture for Granite 8
+  granite_33_8b_architecture: &granite_33_8b_architecture
+    model_type: granite
+    num_hidden_layers: 40
+    max_position_embeddings: 131072
+    hidden_size: 4096
+    vocab_size: 49159
+    num_key_value_heads: 8
+    num_attention_heads: 32
+
+  # device config for TP=4 Granite 8b models
+  granite_8b_tp4_device_config: &granite_8b_tp4_device_config
+    env_vars:
+      VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072  # 128k
+      FLEX_HDMA_P2PSIZE: 268435456  # 256MB
+      FLEX_HDMA_COLLSIZE: 33554432  # 32MB
+    num_gpu_blocks_override:
+      torch_sendnn_lt_1_0_3: 2080
+      default: 8192
+
+models:
+  # Granite 3.3 8B Instruct
+  ibm-granite/granite-3.3-8b-instruct:
+    architecture: *granite_33_8b_architecture
+
+    # Continuous batching configurations
+    continuous_batching_configs:
+      - tp_size: 1
+        max_model_len: 3072
+        max_num_seqs: 16
+      - tp_size: 1
+        max_model_len: 8192
+        max_num_seqs: 4
+      - tp_size: 2
+        max_model_len: 8192
+        max_num_seqs: 4
+      - tp_size: 4
+        max_model_len: 32768
+        max_num_seqs: 32
+        device_config: *granite_8b_tp4_device_config
+
+  # Granite 3.3 8B Instruct FP8
+  ibm-granite/granite-3.3-8b-instruct-FP8:
+    architecture:
+      <<: *granite_33_8b_architecture
+      quantization_config:
+        format: float-quantized
+
+    # Continuous batching configurations only
+    continuous_batching_configs:
+      - tp_size: 1
+        max_model_len: 3072
+        max_num_seqs: 16
+      - tp_size: 4
+        max_model_len: 16384
+        max_num_seqs: 4
+        device_config: *granite_8b_tp4_device_config
+      - tp_size: 4
+        max_model_len: 32768
+        max_num_seqs: 32
+        device_config: *granite_8b_tp4_device_config
+
+  # Granite 4 8B Dense
+  ibm-granite/granite-4-8b-dense:
+    architecture:
+      model_type: granitemoehybrid
+      num_hidden_layers: 40
+      num_experts_per_tok: 0  # dense model
+      max_position_embeddings: 131072
+      hidden_size: 4096
+      vocab_size: 100352
+      num_key_value_heads: 8
+      num_attention_heads: 32
+
+    # Continuous batching configurations
+    continuous_batching_configs:
+      - tp_size: 1
+        max_model_len: 3072
+        max_num_seqs: 16
+      - tp_size: 1
+        max_model_len: 8192
+        max_num_seqs: 4
+      - tp_size: 2
+        max_model_len: 8192
+        max_num_seqs: 4
+      - tp_size: 4
+        max_model_len: 32768
+        max_num_seqs: 32
+        device_config: *granite_8b_tp4_device_config
+
+  # Embedding models (static batching only, no device configs needed)
+  ibm-granite/granite-embedding-125m-english:
+    architecture:
+      model_type: roberta
+      num_hidden_layers: 12
+      vocab_size: 50265
+
+    static_batching_configs:
+      - tp_size: 1
+        warmup_shapes:
+          - prompt_len: 512
+            batch_size: 64
+
+  ibm-granite/granite-embedding-278m-multilingual:
+    architecture:
+      model_type: xlm-roberta
+      num_hidden_layers: 12
+      vocab_size: 250002
+
+    static_batching_configs:
+      - tp_size: 1
+        warmup_shapes:
+          - prompt_len: 512
+            batch_size: 64
+
+  # Other supported models (static batching only)
+  intfloat/multilingual-e5-large:
+    architecture:
+      model_type: xlm-roberta
+      num_hidden_layers: 24
+      vocab_size: 250002
+
+    static_batching_configs:
+      - tp_size: 1
+        warmup_shapes:
+          - prompt_len: 512
+            batch_size: 64
+
+  BAAI/bge-reranker-v2-m3:
+    architecture:
+      model_type: xlm-roberta
+      max_position_embeddings: 8194
+      num_hidden_layers: 24
+      vocab_size: 250002
+
+    static_batching_configs:
+      - tp_size: 1
+        warmup_shapes:
+          - prompt_len: 8192
+            batch_size: 1
+
+  BAAI/bge-reranker-large:
+    architecture:
+      model_type: xlm-roberta
+      max_position_embeddings: 514
+      num_hidden_layers: 24
+      vocab_size: 250002
+
+    static_batching_configs:
+      - tp_size: 1
+        warmup_shapes:
+          - prompt_len: 512
+            batch_size: 64
+
+  sentence-transformers/all-roberta-large-v1:
+    architecture:
+      model_type: roberta
+      num_hidden_layers: 24
+      vocab_size: 50265
+
+    static_batching_configs:
+      - tp_size: 1
+        warmup_shapes:
+          - prompt_len: 128
+            batch_size: 8
+
+# Made with Bob
