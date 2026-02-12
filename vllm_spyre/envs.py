@@ -11,12 +11,6 @@ if TYPE_CHECKING:
     VLLM_SPYRE_PERF_METRIC_LOGGING_DIR: str = "/tmp"
     VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER: bool = False
     VLLM_SPYRE_CP_INTERLEAVE_STEPS: bool = True
-    # Prompt logprobs are behind a flag because they're only supported for
-    # static batching and require passing back the hidden states for the full
-    # prefill on every request. This could incur a heavy performance penalty in
-    # many cases, so it should only be enabled when prompt_logprobs are required
-    # for experimentation purposes.
-    VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS: bool = False
     VLLM_SPYRE_UPDATE_THREAD_CONFIG: bool = True
     VLLM_SPYRE_MAX_LOAD_PROCESSES: int = 0
     VLLM_SPYRE_WORKER_LOG_REDIRECT_DIR: str = ""
@@ -85,9 +79,6 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER": lambda: bool(
         int(os.getenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1"))
     ),
-    # If set, enables the `prompt_logprobs` sampling parameter.
-    # Currently, prompt_logprobs aren't supported
-    "VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS": lambda: False,
     # Allow vllm-spyre to update env vars related to multi-threading (eg. OMP)
     # based on the detected CPU cores and server configuration
     "VLLM_SPYRE_UPDATE_THREAD_CONFIG": lambda: bool(

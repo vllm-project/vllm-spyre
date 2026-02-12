@@ -154,8 +154,6 @@ class SpyrePlatform(Platform):
             if hasattr(scheduler_config, "chunked_prefill_enabled"):
                 scheduler_config.chunked_prefill_enabled = True  # ty: ignore
 
-            if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
-                raise ValueError("Prompt logprobs not supported with continuous batching")
             if (
                 vllm_config.model_config.quantization
                 and vllm_config.scheduler_config.max_num_seqs == 1
@@ -172,9 +170,6 @@ class SpyrePlatform(Platform):
             for shape in spyre_warmup_shapes:
                 max_batch_size = max(max_batch_size, shape["batch_size"])
                 max_seq_len = max(max_seq_len, shape["prompt_length"])
-
-            if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS and max_batch_size > 1:
-                raise ValueError("Prompt logprobs only supported with batch size 1")
 
             # verify that warmup shapes are not too large
             model_config.get_and_verify_max_len(max_model_len=max_seq_len)
@@ -371,9 +366,7 @@ class SpyrePlatform(Platform):
             # Only validating generation requests for now
             return None
 
-        # Note: Currently prompt logprobs are not supported, therefore
-        # envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS is hardcoded to False
-        if params.prompt_logprobs is not None and not envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
+        if params.prompt_logprobs is not None:
             raise ValueError("Prompt logprobs are currently not supported.")
 
         # Structured Outputs are not supported yet and cause issues in our
