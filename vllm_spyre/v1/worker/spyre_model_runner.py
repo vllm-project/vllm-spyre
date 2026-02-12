@@ -72,12 +72,12 @@ class ModelForwardInputs:
     input_tokens: torch.Tensor | None  # For non multimodal
     input_embeds: torch.Tensor | None  # For multimodal
     input_positions: torch.Tensor
-    input_masks: torch.Tensor | None  # pooling and static batching only
     is_prompt: bool
 
 
 @dataclass(frozen=True)
 class PoolingForwardInputs(ModelForwardInputs):
+    input_masks: torch.Tensor | None  # pooling and static batching only
     token_type_ids: torch.Tensor | None
 
 
@@ -197,40 +197,6 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
     @abstractmethod
     def load_model(self) -> None:
         raise NotImplementedError
-
-    def _prepare_pad_input_ids(
-        self,
-        input_ids_list: list[torch.Tensor],
-        min_pad_length: int = 0,
-    ) -> tuple[list[torch.Tensor], list[torch.Tensor], list[torch.Tensor]]:
-        """left side padding implemented as
-        in fms.utils.generation.pad_input_id"""
-        max_len = max([min_pad_length] + [seq.size(0) for seq in input_ids_list])
-        padded_input_ids_list = []
-        mask_list = []
-        position_ids_list = []
-        for input_ids_i in input_ids_list:
-            seq_len = input_ids_i.size(0)
-            if max_len > seq_len:
-                logger.info(
-                    "Left padding request of length %d tokens to %d tokens.", seq_len, max_len
-                )
-            pads = (
-                torch.ones(max_len - seq_len, dtype=torch.long, device=input_ids_i.device)
-                * self.pad_token_id
-            )
-            non_pads = torch.ones(seq_len, dtype=torch.long, device=input_ids_i.device)
-
-            pos_ids_seq = torch.arange(0, seq_len, dtype=torch.long, device=input_ids_i.device)
-
-            # Setting this to 0, however if 0 is the eos, we will end up
-            # truncating the output if using truncate_after_eos once this
-            # workflow works for nested tensor, this can probably be removed
-            padded_input_ids_list.append(torch.cat((pads, input_ids_i)))
-            mask_list.append(torch.cat((torch.zeros_like(pads), non_pads)))
-            position_ids_list.append(torch.cat((torch.zeros_like(pads), pos_ids_seq)))
-
-        return padded_input_ids_list, mask_list, position_ids_list
 
     def get_kv_cache_spec(self) -> dict[str, KVCacheSpec]:
         """
@@ -486,6 +452,40 @@ class SpyrePoolingModelRunner(
         # self.model here is probably a transformers model class
         return self.model.config.vocab_size  # ty: ignore[invalid-return-type]
 
+    def _prepare_pad_input_ids(
+        self,
+        input_ids_list: list[torch.Tensor],
+        min_pad_length: int = 0,
+    ) -> tuple[list[torch.Tensor], list[torch.Tensor], list[torch.Tensor]]:
+        """left side padding implemented as
+        in fms.utils.generation.pad_input_id"""
+        max_len = max([min_pad_length] + [seq.size(0) for seq in input_ids_list])
+        padded_input_ids_list = []
+        mask_list = []
+        position_ids_list = []
+        for input_ids_i in input_ids_list:
+            seq_len = input_ids_i.size(0)
+            if max_len > seq_len:
+                logger.info(
+                    "Left padding request of length %d tokens to %d tokens.", seq_len, max_len
+                )
+            pads = (
+                torch.ones(max_len - seq_len, dtype=torch.long, device=input_ids_i.device)
+                * self.pad_token_id
+            )
+            non_pads = torch.ones(seq_len, dtype=torch.long, device=input_ids_i.device)
+
+            pos_ids_seq = torch.arange(0, seq_len, dtype=torch.long, device=input_ids_i.device)
+
+            # Setting this to 0, however if 0 is the eos, we will end up
+            # truncating the output if using truncate_after_eos once this
+            # workflow works for nested tensor, this can probably be removed
+            padded_input_ids_list.append(torch.cat((pads, input_ids_i)))
+            mask_list.append(torch.cat((torch.zeros_like(pads), non_pads)))
+            position_ids_list.append(torch.cat((torch.zeros_like(pads), pos_ids_seq)))
+
+        return padded_input_ids_list, mask_list, position_ids_list
+
     def pad_input_ids(
         self,
         input_ids_list: list[torch.Tensor],
@@ -633,8 +633,8 @@ class SpyrePoolingModelRunner(
             input_tokens=input_tokens,
             input_embeds=None,
             input_positions=position_ids,
-            input_masks=mask,
             is_prompt=True,
+            input_masks=mask,
             token_type_ids=token_type_ids,
         )
 
