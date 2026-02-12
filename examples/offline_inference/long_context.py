@@ -39,8 +39,8 @@ parser.add_argument("--tp", type=int, default=1)
 parser.add_argument("--num-prompts", "-n", type=int, default=8)
 parser.add_argument("--compare-with-cpu", action=argparse.BooleanOptionalAction)
 parser.add_argument("--trunc_print_len", "--trunc-print-len", type=int, required=False)
-parser.add_argument('--enable-prefix-caching', action=argparse.BooleanOptionalAction, default=True)
-parser.add_argument("--max-num-batched-tokens", type=int, default=None)
+parser.add_argument("--enable-prefix-caching", action=argparse.BooleanOptionalAction, default=True)
+parser.add_argument("--max-num-batched-tokens", type=int, default=1024)
 parser.add_argument("--backend", type=str, default="sendnn", choices=["eager", "sendnn"])
 
 
@@ -61,6 +61,7 @@ if platform.machine() == "arm64":
 os.environ["VLLM_SPYRE_DYNAMO_BACKEND"] = args.backend
 
 template = "Summarize the following code: \n\n{}"
+
 
 def get_python_file(source_file):
     for path in sys.path:
@@ -118,10 +119,6 @@ sampling_params = [
 vllm_token_prompts = [TokensPrompt(prompt_token_ids=p) for p in tokenized_prompts]
 
 # Create an LLM.
-extra_kwargs = {}
-if args.max_num_batched_tokens is not None:
-    # Don't set this if the user didn't pass anything, that way we use vllm's defaults
-    extra_kwargs["max_num_batched_tokens"] = args.max_num_batched_tokens
 llm = LLM(
     model=args.model,
     tokenizer=args.model,
@@ -129,7 +126,7 @@ llm = LLM(
     max_num_seqs=args.max_num_seqs,
     tensor_parallel_size=args.tp,
     enable_prefix_caching=args.enable_prefix_caching,
-    **extra_kwargs
+    max_num_batched_tokens=args.max_num_batched_tokens,
 )
 
 # Generate texts from the prompts. The output is a list of RequestOutput objects
