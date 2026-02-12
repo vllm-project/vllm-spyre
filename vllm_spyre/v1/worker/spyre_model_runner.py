@@ -240,29 +240,6 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
     def update_states(self, scheduler_output: SchedulerOutput):
         raise NotImplementedError
 
-    def _mark_input_tensors(self, model_input: ModelInputsT) -> None:
-        """Yoinked from
-        https://github.com/foundation-model-stack/aiu-fms-testing-utils/pull/13
-        """
-        if not self.warmup_mode:
-            # Only mark tensors when we're warming up and compiling the graphs
-            return
-
-        # To produce like graphs during pre-fill, we mark the prefill
-        # batch x seq as static, but relax this for decode for the seq
-        if model_input.is_prompt:
-            # we always want prefill to be static to produce same-like graph
-            torch._dynamo.mark_static(model_input.input_tokens, 0)
-            torch._dynamo.mark_static(model_input.input_tokens, 1)
-            torch._dynamo.mark_static(model_input.input_masks, 0)
-            torch._dynamo.mark_static(model_input.input_masks, 1)
-            torch._dynamo.mark_static(model_input.input_masks, 2)
-            torch._dynamo.mark_static(model_input.input_positions, 0)
-            torch._dynamo.mark_static(model_input.input_positions, 1)
-        else:
-            # we always want the decode to be dynamic on sequence
-            torch._dynamo.mark_dynamic(model_input.input_masks, 2)
-
     @SpyrePlatform.inference_mode()
     @abstractmethod
     def execute_model(
@@ -655,10 +632,23 @@ class SpyrePoolingModelRunner(
         return self._prepare_prompt(scheduler_output.scheduled_new_reqs)
 
     def _mark_input_tensors(self, model_input: PoolingForwardInputs) -> None:
-        super()._mark_input_tensors(model_input=model_input)
+        """Yoinked from
+        https://github.com/foundation-model-stack/aiu-fms-testing-utils/pull/13
+        """
         if not self.warmup_mode:
             # Only mark tensors when we're warming up and compiling the graphs
             return
+
+        # To produce like graphs during pre-fill, we mark the prefill
+        # batch x seq as static, but relax this for decode for the seq
+        # we always want prefill to be static to produce same-like graph
+        torch._dynamo.mark_static(model_input.input_tokens, 0)
+        torch._dynamo.mark_static(model_input.input_tokens, 1)
+        torch._dynamo.mark_static(model_input.input_masks, 0)
+        torch._dynamo.mark_static(model_input.input_masks, 1)
+        torch._dynamo.mark_static(model_input.input_masks, 2)
+        torch._dynamo.mark_static(model_input.input_positions, 0)
+        torch._dynamo.mark_static(model_input.input_positions, 1)
         if self.use_token_type_ids:
             torch._dynamo.mark_static(model_input.token_type_ids, 0)
             torch._dynamo.mark_static(model_input.token_type_ids, 1)
@@ -1249,7 +1239,6 @@ class ChunkedPrefillModelRunner(
             block_table=block_table,
             slot_mapping=slot_mapping,
             is_prompt=True,
-            input_masks=None,  # Unused
         )
 
         self._mark_input_tensors(model_inputs)
@@ -1358,7 +1347,6 @@ class ChunkedPrefillModelRunner(
             block_table=block_table,
             slot_mapping=slot_mapping,
             is_prompt=False,
-            input_masks=None,  # Unused
         )
 
         self._mark_input_tensors(model_inputs)
@@ -1730,7 +1718,7 @@ class ChunkedPrefillModelRunner(
             logits = self.model(
                 input_ids_or_embeds=input_ids_or_embeds,
                 positions=model_input.input_positions,
-                masks=model_input.input_masks,
+                masks=None,
                 is_prompt=model_input.is_prompt,
             )
 
