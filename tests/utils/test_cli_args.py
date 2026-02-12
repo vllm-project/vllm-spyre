@@ -4,7 +4,10 @@ from vllm.entrypoints.openai.cli_args import make_arg_parser
 from vllm import EngineArgs
 
 
+from vllm_spyre.config.model_config import ArchitecturePattern, ModelConfig
+from vllm_spyre.config.configurators.model_configurator import ModelConfigurator
 from vllm_spyre.platform import SpyrePlatform
+from vllm_spyre.config.model_registry import get_model_registry
 from spyre_util import environ_checkpoint, REFERENCE_MODELS
 
 try:
@@ -71,7 +74,21 @@ def test_generic_model_chunk_size_default(
     ]
 
     if model_name == "ibm-granite/granite-3.3-8b-instruct":
-        monkeypatch.setattr(SpyrePlatform, "is_granite_3_8b", lambda _config: True)
+        registry = get_model_registry()
+
+        # Mock the registry to return a configurator for the 8b model
+        def mock_get_configurator(self, vllm_model_config):
+            return ModelConfigurator(
+                ModelConfig(
+                    name="ibm-granite/granite-3.3-8b-instruct",
+                    architecture=ArchitecturePattern(
+                        model_name="ibm-granite/granite-3.3-8b-instruct",
+                        model_type="granite",
+                    ),
+                )
+            )
+
+        monkeypatch.setattr(registry, "get_configurator_for_runtime", mock_get_configurator)
 
     with environ_checkpoint():
         # Test that the upstream default is None but is changed to 2048 by
