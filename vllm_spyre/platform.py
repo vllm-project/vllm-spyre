@@ -142,19 +142,6 @@ class SpyrePlatform(Platform):
             os.environ["FLEX_OVERWRITE_NMB_FRAME"] = "false"
             os.environ["COMPILATION_MODE"] = "offline"
 
-            assert not envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL, (
-                "Cannot use chunked prefill with pooling models."
-            )
-
-        # enable_prefix_caching will be defaulted to True when used with LLM();
-        # only assert if our arg parser default was applied
-        if cls._used_with_cli:
-            assert (
-                cache_config.enable_prefix_caching and envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL
-            ) or not cache_config.enable_prefix_caching, (
-                "Cannot use prefix caching without chunked prefill."
-            )
-
         if is_decoder:
             scheduler_config.scheduler_cls = (
                 "vllm_spyre.v1.core.scheduler.ChunkedPrefillSpyreScheduler"
@@ -165,7 +152,7 @@ class SpyrePlatform(Platform):
             # TODO: With the arg parser defaulting, this can be removed when we
             # only support vllm >= v0.11.1
             if hasattr(scheduler_config, "chunked_prefill_enabled"):
-                scheduler_config.chunked_prefill_enabled = envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL  # ty: ignore
+                scheduler_config.chunked_prefill_enabled = True  # ty: ignore
 
             if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
                 raise ValueError("Prompt logprobs not supported with continuous batching")
@@ -239,12 +226,14 @@ class SpyrePlatform(Platform):
         # - Set the block size (in tokens) to the maximum sequence length
         #       so that the scheduler thinks an entire sequence will fit in
         #       one single block.
-        # - Set `max_num_batched_tokens` to the size of a full batch of full
-        #       length requests, so that the scheduler will always have token
-        #       budget available to schedule a full batch
+        # - For pooling models, set `max_num_batched_tokens` to the size of a
+        #       full batch of full length requests, so that the scheduler will
+        #       always have token budget available to schedule a full batch
+        # - For generative models, set `max_num_batched_tokens` to the chunk
+        #       chunk size used for chunked prefill.
         if cache_config is not None:
             cache_config.block_size = model_config.max_model_len  # ty: ignore[invalid-assignment]
-            if not envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
+            if not is_decoder:
                 scheduler_config.max_num_batched_tokens = (
                     model_config.max_model_len * scheduler_config.max_num_seqs
                 )
@@ -268,7 +257,7 @@ class SpyrePlatform(Platform):
             scheduler_config.max_num_seqs,
             cache_config.block_size,
             scheduler_config.max_num_batched_tokens,
-            envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL,
+            is_decoder,
             cache_config.enable_prefix_caching,
         )
 
@@ -449,9 +438,8 @@ class SpyrePlatform(Platform):
             # but setting the default makes logs match our setting.
             # vLLM >= 0.11.1 does not override the arg, so we could remove the
             # env var for v2 if we update our minimum support
-            parser.set_defaults(enable_chunked_prefill=envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL)
-            if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
-                parser.set_defaults(max_num_batched_tokens=cls.DEFAULT_CHUNK_SIZE)
+            parser.set_defaults(enable_chunked_prefill=True)
+            parser.set_defaults(max_num_batched_tokens=cls.DEFAULT_CHUNK_SIZE)
 
     @classmethod
     def _check_threading_config(cls, worker_count: int):

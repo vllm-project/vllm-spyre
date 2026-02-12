@@ -38,7 +38,6 @@ EmbeddingWarmupShapes = list[tuple[int, int]]
 def patch_environment(
     backend: str,
     monkeypatch,
-    use_chunked_prefill: bool = True,
     max_num_batched_tokens: int | None = None,
     warmup_shapes: EmbeddingWarmupShapes | None = None,
 ):
@@ -50,7 +49,6 @@ def patch_environment(
 
     # --------------
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
-    monkeypatch.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", "1" if use_chunked_prefill else "0")
 
 
 def patch_warmup_shapes(warmup_shapes: EmbeddingWarmupShapes, monkeypatch):

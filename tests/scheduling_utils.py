@@ -387,8 +387,6 @@ def validate_scheduler_steps(
                 for req_id, blocks in kv_cache_manager.req_to_blocks.items()
                 if blocks
             }
-            # req_ids2num_reserved_blocks is only populated for continuous batching
-            req_ids2num_reserved_blocks = model_runner.req_ids2num_reserved_blocks
             # Account for blocks reused via prefix caching
             used_blocks = set()
             for blocks in req_ids2blocks.values():
@@ -433,22 +431,6 @@ def validate_scheduler_steps(
                     or "n_cached_blocks" not in step_ref
                     or (n_cached_blocks == step_ref["n_cached_blocks"])
                 ), f"Step {step}, n_cached_blocks: {n_cached_blocks}"
-
-            # do not update reserved blocks for chunked prefill as the concept has been removed
-            is_chunked_prefill = bool(int(os.getenv("VLLM_SPYRE_USE_CHUNKED_PREFILL")))
-            if not is_chunked_prefill:
-                assert DISABLE_ASSERTS or len(req_ids2blocks) == len(req_ids2num_reserved_blocks)
-                for req_id in req_ids2blocks:
-                    # current number of used blocks should be less than reserved
-                    assert (
-                        DISABLE_ASSERTS
-                        or len(req_ids2blocks[req_id]) <= req_ids2num_reserved_blocks[req_id]
-                    )
-                    # update requested/reserved blocks to check in last step
-                    # Note: overwrite and not max
-                    # because of reduce_left_padding()
-                    requested_blocks[req_id] = len(req_ids2blocks[req_id])
-                    reserved_blocks[req_id] = req_ids2num_reserved_blocks[req_id]
 
             for extra_assert_func in extra_assert_funcs:
                 extra_assert_func(engine_core, step_ref, DISABLE_ASSERTS)

@@ -135,7 +135,6 @@ class LLMCache:
         patch_environment(
             backend,
             monkeypatch,
-            use_chunked_prefill=True,
             max_num_batched_tokens=max_num_batched_tokens,
         )
 
@@ -204,7 +203,6 @@ class EngineCache:
         patch_environment(
             backend=backend,
             monkeypatch=monkeypatch,
-            use_chunked_prefill=True,
         )
 
         maybe_engine = self._cache.maybe_get(runtime_config)

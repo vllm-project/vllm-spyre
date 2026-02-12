@@ -251,7 +251,6 @@ def remote_openai_server(request):
         server_args.extend(
             ["--max_num_seqs", str(max_num_seqs), "--max-model-len", str(max_model_len)]
         )
-        env_dict.update({"VLLM_SPYRE_USE_CHUNKED_PREFILL": "1"})
         server_args.extend(
             [
                 "--max_num_batched_tokens",

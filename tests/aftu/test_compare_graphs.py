@@ -183,7 +183,6 @@ def test_compare_graphs_chunked_prefill(
     patch_environment(
         backend="sendnn",
         monkeypatch=monkeypatch,
-        use_chunked_prefill=True,
     )
 
     # NB: We need AFTU and vllm-spyre to have the same number of paged
