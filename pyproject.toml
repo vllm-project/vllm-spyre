@@ -13,7 +13,7 @@ license = {text = "Apache 2"}
 dependencies = [
     "fms-model-optimizer[fp8]>=0.8.0",
     "ibm-fms>=1.6.0,<2.0",
-    "vllm>=0.14.1,<=0.14.1",
+    "vllm>=0.14.1,<=0.15.0",
 ]
 requires-python = ">=3.11"
 dynamic = ["version"]
@@ -54,12 +54,15 @@ override-dependencies = [
     # opencv-python-headless==4.13.0.90 has a packaging bug that incorrectly depends on libxcb.so.1,
     # causing import failure on headless Linux systems.
     "opencv-python-headless==4.12.0.88",
-    
+
     # Skip packages on s390x and ppc64le, expected to be pre-installed
     "vllm ; platform_machine not in 's390x, ppc64le'",
     "ray; platform_machine not in 's390x, ppc64le'",
-    "llvmlite; platform_machine not in 's390x, ppc64le'",
     "pyarrow; platform_machine not in 's390x, ppc64le'",
+
+    # uv doesn't resolve numba->llvmlite constraint correctly...
+    #   if numba is updated, this will likely need to be too
+    "llvmlite==0.44.0; platform_machine not in 's390x, ppc64le'",
 ]
 # fms-mo doesn't support python 3.9, so don't have UV try to resolve it
 environments = [
@@ -67,7 +70,7 @@ environments = [
 ]
 
 [tool.uv.sources]
-vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.14.1" }
+vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.15.0" }
 
 [tool.ty.rules]
 possibly-missing-attribute = "ignore"
