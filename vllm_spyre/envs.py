@@ -44,17 +44,6 @@ def clear_env_cache():
     _cache.clear()
 
 
-def _backend_backwards_compat() -> str:
-    val = os.getenv("VLLM_SPYRE_DYNAMO_BACKEND", "sendnn")
-    if val == "sendnn_decoder":
-        logger.warning_once(
-            "Using 'sendnn_decoder' for "
-            "VLLM_SPYRE_DYNAMO_BACKEND is deprecated. Use 'sendnn' instead"
-        )
-        val = "sendnn"
-    return val
-
-
 # --8<-- [start:env-vars-definition]
 environment_variables: dict[str, Callable[[], Any]] = {
     # Defines the prompt lengths the Spyre accelerator should be prepared
@@ -73,8 +62,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # - "inductor": Compile for execution on CPU (for debug and testing)
     # - "eager": Skip compile entirely (for debug and testing)
     #
-    # - "sendnn_decoder": Deprecated in favor of "sendnn"
-    "VLLM_SPYRE_DYNAMO_BACKEND": _backend_backwards_compat,
+    "VLLM_SPYRE_DYNAMO_BACKEND": os.getenv("VLLM_SPYRE_DYNAMO_BACKEND", "sendnn"),
     # Enable performance metric logging. This captures startup information
     # such as warmup times, and loading times.
     # When `--disable-log-stats=False` is used, this will log timing metrics
