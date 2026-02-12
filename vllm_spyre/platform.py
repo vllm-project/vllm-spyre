@@ -226,12 +226,14 @@ class SpyrePlatform(Platform):
         # - Set the block size (in tokens) to the maximum sequence length
         #       so that the scheduler thinks an entire sequence will fit in
         #       one single block.
-        # - Set `max_num_batched_tokens` to the size of a full batch of full
-        #       length requests, so that the scheduler will always have token
-        #       budget available to schedule a full batch
+        # - For pooling models, set `max_num_batched_tokens` to the size of a
+        #       full batch of full length requests, so that the scheduler will
+        #       always have token budget available to schedule a full batch
+        # - For generative models, set `max_num_batched_tokens` to the chunk
+        #       chunk size used for chunked prefill.
         if cache_config is not None:
             cache_config.block_size = model_config.max_model_len  # ty: ignore[invalid-assignment]
-            if is_pooling:
+            if not is_decoder:
                 scheduler_config.max_num_batched_tokens = (
                     model_config.max_model_len * scheduler_config.max_num_seqs
                 )
@@ -250,11 +252,12 @@ class SpyrePlatform(Platform):
 
         logger.info(
             "Configurations for Spyre. max_model_len=%d, max_num_seqs=%d, block_size=%d, "
-            "max_num_batched_tokens=%d, enable_prefix_caching=%r",
+            "max_num_batched_tokens=%d, enable_chunked_prefill=%r, enable_prefix_caching=%r",
             model_config.max_model_len,
             scheduler_config.max_num_seqs,
             cache_config.block_size,
             scheduler_config.max_num_batched_tokens,
+            is_decoder,
             cache_config.enable_prefix_caching,
         )
 
