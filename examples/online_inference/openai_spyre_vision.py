@@ -5,7 +5,6 @@ static baching.
 
 First, start the server with the following command:
 
-VLLM_SPYRE_USE_CB=1 \
 VLLM_SPYRE_DYNAMO_BACKEND=<your backend, e.g., sendnn/eager> \
 vllm serve 'ibm-granite/granite-vision-3.3-2b' \
     --max-model-len=16384 \

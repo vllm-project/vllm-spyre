@@ -220,8 +220,6 @@ if __name__ == "__main__":
         os.environ["HF_HUB_OFFLINE"] = "1"
 
     os.environ["VLLM_SPYRE_DYNAMO_BACKEND"] = args.backend
-    os.environ["VLLM_SPYRE_USE_CB"] = "1"
-    os.environ["VLLM_SPYRE_USE_CHUNKED_PREFILL"] = "1"
 
     prompts = get_vllm_prompts(args.num_prompts)
 
