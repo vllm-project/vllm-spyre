@@ -244,11 +244,6 @@ class SpyreWorker(WorkerBase):
             assert rank % self.parallel_config.tensor_parallel_size == 0, (
                 "Driver worker should be rank 0 of tensor parallel group."
             )
-        if self.model_config.trust_remote_code:
-            # note: lazy import to avoid importing torch before initializing
-            from vllm.utils.import_utils import init_cached_hf_modules
-
-            init_cached_hf_modules()
         self.model_runner: Union[
             ChunkedPrefillModelRunner,
             SpyrePoolingModelRunner,
