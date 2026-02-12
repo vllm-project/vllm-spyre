@@ -31,7 +31,7 @@ In chunked prefill mode, the `vllm:kv_cache_usage_perc` metric will report the c
 
 ### Prefix Caching
 
-When running generative models, prefix caching is enabled by default, and can be disabled with the  `--no-enable-prefix-caching` CLI flag. An overview of prefix caching can be found in the [vLLM official documentation on Automatic Prefix Caching](https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/#limits).
+When running generative models, prefix caching is disabled by default, and can be enabled with the  `--enable-prefix-caching` CLI flag. An overview of prefix caching can be found in the [vLLM official documentation on Automatic Prefix Caching](https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/#limits).
 
 Prefix caching mirrors upstream vLLM, though the requirement for fixed-size prefill chunks means the number of chunks in a prefill is only reduced if an entire chunk is available in cache. Therefore, workloads may show lower hit rates when compared to other accelerators.
 
