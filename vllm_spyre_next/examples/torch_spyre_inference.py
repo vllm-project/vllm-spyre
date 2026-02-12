@@ -1,7 +1,7 @@
 """
-This example shows how to run offline inference on CPU using the old and new (torch-spyre)
-plugin code. Use the flag '--new_stack' to exercise the torch-spyre execution.
-Note: So far the new stack (torch-spyre) is simply using upstream vLLM CPU worker/runner classes.
+This example shows how to run offline inference on CPU using the new (torch-spyre)
+plugin code. So far the new stack (torch-spyre) is simply using upstream vLLM CPU
+worker/runner classes.
 """
 
 import argparse
@@ -13,7 +13,6 @@ import os
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--new_stack", action="store_true")
     parser.add_argument("--model", type=str, default="ibm-ai-platform/micro-g3.3-8b-instruct-1b")
     parser.add_argument("--max_model_len", "--max-model-len", type=int, default=2048)
     parser.add_argument("--max_num_seqs", "--max-num-seqs", type=int, default=2)
@@ -41,25 +40,6 @@ def main():
             "locally on arm64."
         )
         os.environ["HF_HUB_OFFLINE"] = "1"
-
-    if args.new_stack:
-        # TODO this switch is just in place until we install the package vllm_spyre_next correctly
-        # activate new stack
-        os.environ["VLLM_SPYRE_USE_TORCH_SPYRE"] = "1"
-    else:
-        # using the old stack with continuouse batching and chunked prefill
-        os.environ["VLLM_SPYRE_USE_CB"] = "1"
-        os.environ["VLLM_SPYRE_USE_CHUNKED_PREFILL"] = "1"
-
-        # fall back to eager CPU execution if no Spyre card is detected
-        if "VLLM_SPYRE_DYNAMO_BACKEND" not in os.environ:
-            os.environ["VLLM_SPYRE_DYNAMO_BACKEND"] = "eager"
-
-            # set these if not set for local execution
-            if "MASTER_ADDR" not in os.environ:
-                os.environ["MASTER_ADDR"] = "localhost"
-            if "MASTER_PORT" not in os.environ:
-                os.environ["MASTER_PORT"] = "12355"
 
     template = (
         "Below is an instruction that describes a task. Write a response that "
