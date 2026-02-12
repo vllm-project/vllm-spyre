@@ -124,3 +124,16 @@ def test_allocate_new_computed_blocks():
             "in FullAttentionManager no longer required, can use "
             "allocate_new_computed_blocks everywhere"
         )
+
+
+def test_allocate_new_blocks_new_arg():
+    if VLLM_VERSION == "vLLM:lowest":
+        # allocate_new_blocks added an argument in v0.15.0
+        # When that is our lowest, we can remove compat code that checks for the
+        # num_tokens_main_model argument (see _allocate_new_blocks_wrapper in
+        # spyre_model_runner.py)
+        assert not hasattr(FullAttentionManager.allocate_new_blocks, "num_tokens_main_model"), (
+            "Backwards compatibility code checking existence of "
+            "num_tokens_main_model argument to allocate_new_blocks "
+            "in FullAttentionManager no longer required"
+        )
