@@ -545,9 +545,6 @@ class SpyreWorker(WorkerBase):
             num_scheduled_tokens={},
             # NOTE: this means no work to do
             total_num_scheduled_tokens=0,
-            scheduled_spec_decode_tokens={},
-            scheduled_encoder_inputs={},
-            num_common_prefix_blocks=[],
             # The requests to be removed
             finished_req_ids=set([r.req_id for r in request]),
             **_get_extra_args(),
@@ -622,9 +619,6 @@ class SpyreWorker(WorkerBase):
             scheduled_cached_reqs=cached_request_data,
             num_scheduled_tokens={r.req_id: self._get_num_tokens(r) for r in dummy_requests},
             total_num_scheduled_tokens=sum(prompt_len for _ in range(batch_size)),
-            scheduled_spec_decode_tokens={},
-            scheduled_encoder_inputs={},
-            num_common_prefix_blocks=[],
             finished_req_ids=set(),
             **_get_extra_args(),
         )
@@ -686,9 +680,6 @@ class SpyreWorker(WorkerBase):
                 scheduled_cached_reqs=CachedRequestData.make_empty(),
                 num_scheduled_tokens={req.req_id: prompt_len},
                 total_num_scheduled_tokens=prompt_len,
-                scheduled_spec_decode_tokens={},
-                scheduled_encoder_inputs={},
-                num_common_prefix_blocks=[],
                 finished_req_ids=set(),
                 **_get_extra_args(),
             )
@@ -717,9 +708,6 @@ class SpyreWorker(WorkerBase):
             scheduled_cached_reqs=cached_request_data,
             num_scheduled_tokens={req.req_id: 1 for req in requests},
             total_num_scheduled_tokens=1,
-            scheduled_spec_decode_tokens={},
-            scheduled_encoder_inputs={},
-            num_common_prefix_blocks=[],
             finished_req_ids=set(),
             **_get_extra_args(),
         )
