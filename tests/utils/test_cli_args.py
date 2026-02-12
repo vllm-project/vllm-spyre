@@ -20,7 +20,6 @@ except ImportError:
 # and that --max-num-batched-tokens overrides this default.
 def test_chunk_size_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", "sendnn")
-    monkeypatch.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", "1")
 
     def sendnn_configured() -> bool:
         return False
@@ -77,9 +76,6 @@ def test_prefix_caching_is_off_by_default(monkeypatch: pytest.MonkeyPatch) -> No
         "--max-model-len",
         "1024",
     ]
-
-    # only care about prefix caching with chunked prefill
-    monkeypatch.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", "1")
 
     with (
         environ_checkpoint(),

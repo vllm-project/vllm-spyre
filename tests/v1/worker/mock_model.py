@@ -289,7 +289,6 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
             warmup_shapes=None,
             backend="eager",
             monkeypatch=monkeypatch,
-            use_chunked_prefill=True,
             max_num_batched_tokens=max_num_batched_tokens,
         )
 

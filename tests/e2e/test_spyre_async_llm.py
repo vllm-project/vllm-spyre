@@ -58,7 +58,6 @@ async def test_abort(
     """Test handling of cancelled requests"""
     with monkeypatch.context() as m, ExitStack() as after:
         patch_environment(
-            use_chunked_prefill=True,
             backend=backend,
             monkeypatch=m,
         )
