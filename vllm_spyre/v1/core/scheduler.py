@@ -672,11 +672,14 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
         new_tkv_block = math.floor(request.num_prompt_tokens / self.block_size)
         if new_tkv_block > curr_tkv_block > 0:
             logger.debug(
-                "Number of blocks needed to prefill the new sequence " \
-                "(%d blocks) exceeds the number of blocks per sequence " \
-                "needed in the current decode batch (%d blocks) -> " \
+                "Number of blocks needed to prefill the new sequence "
+                "(%d blocks) exceeds the number of blocks per sequence "
+                "needed in the current decode batch (%d blocks) -> "
                 "request %s is not scheduled.",
-                new_tkv_block, curr_tkv_block, request.request_id)
+                new_tkv_block,
+                curr_tkv_block,
+                request.request_id,
+            )
             return False
 
         # calculate new max tkv of the batch given the new sequence joins
