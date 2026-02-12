@@ -72,12 +72,12 @@ class ModelForwardInputs:
     input_tokens: torch.Tensor | None  # For non multimodal
     input_embeds: torch.Tensor | None  # For multimodal
     input_positions: torch.Tensor
-    input_masks: torch.Tensor | None  # pooling and static batching only
     is_prompt: bool
 
 
 @dataclass(frozen=True)
 class PoolingForwardInputs(ModelForwardInputs):
+    input_masks: torch.Tensor
     token_type_ids: torch.Tensor | None
 
 
@@ -198,40 +198,6 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
     def load_model(self) -> None:
         raise NotImplementedError
 
-    def _prepare_pad_input_ids(
-        self,
-        input_ids_list: list[torch.Tensor],
-        min_pad_length: int = 0,
-    ) -> tuple[list[torch.Tensor], list[torch.Tensor], list[torch.Tensor]]:
-        """left side padding implemented as
-        in fms.utils.generation.pad_input_id"""
-        max_len = max([min_pad_length] + [seq.size(0) for seq in input_ids_list])
-        padded_input_ids_list = []
-        mask_list = []
-        position_ids_list = []
-        for input_ids_i in input_ids_list:
-            seq_len = input_ids_i.size(0)
-            if max_len > seq_len:
-                logger.info(
-                    "Left padding request of length %d tokens to %d tokens.", seq_len, max_len
-                )
-            pads = (
-                torch.ones(max_len - seq_len, dtype=torch.long, device=input_ids_i.device)
-                * self.pad_token_id
-            )
-            non_pads = torch.ones(seq_len, dtype=torch.long, device=input_ids_i.device)
-
-            pos_ids_seq = torch.arange(0, seq_len, dtype=torch.long, device=input_ids_i.device)
-
-            # Setting this to 0, however if 0 is the eos, we will end up
-            # truncating the output if using truncate_after_eos once this
-            # workflow works for nested tensor, this can probably be removed
-            padded_input_ids_list.append(torch.cat((pads, input_ids_i)))
-            mask_list.append(torch.cat((torch.zeros_like(pads), non_pads)))
-            position_ids_list.append(torch.cat((torch.zeros_like(pads), pos_ids_seq)))
-
-        return padded_input_ids_list, mask_list, position_ids_list
-
     def get_kv_cache_spec(self) -> dict[str, KVCacheSpec]:
         """
         This method should generate the KVCache spec by parsing the kv cache
@@ -273,29 +239,6 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
     @abstractmethod
     def update_states(self, scheduler_output: SchedulerOutput):
         raise NotImplementedError
-
-    def _mark_input_tensors(self, model_input: ModelInputsT) -> None:
-        """Yoinked from
-        https://github.com/foundation-model-stack/aiu-fms-testing-utils/pull/13
-        """
-        if not self.warmup_mode:
-            # Only mark tensors when we're warming up and compiling the graphs
-            return
-
-        # To produce like graphs during pre-fill, we mark the prefill
-        # batch x seq as static, but relax this for decode for the seq
-        if model_input.is_prompt:
-            # we always want prefill to be static to produce same-like graph
-            torch._dynamo.mark_static(model_input.input_tokens, 0)
-            torch._dynamo.mark_static(model_input.input_tokens, 1)
-            torch._dynamo.mark_static(model_input.input_masks, 0)
-            torch._dynamo.mark_static(model_input.input_masks, 1)
-            torch._dynamo.mark_static(model_input.input_masks, 2)
-            torch._dynamo.mark_static(model_input.input_positions, 0)
-            torch._dynamo.mark_static(model_input.input_positions, 1)
-        else:
-            # we always want the decode to be dynamic on sequence
-            torch._dynamo.mark_dynamic(model_input.input_masks, 2)
 
     @SpyrePlatform.inference_mode()
     @abstractmethod
@@ -486,6 +429,40 @@ class SpyrePoolingModelRunner(
         # self.model here is probably a transformers model class
         return self.model.config.vocab_size  # ty: ignore[invalid-return-type]
 
+    def _prepare_pad_input_ids(
+        self,
+        input_ids_list: list[torch.Tensor],
+        min_pad_length: int = 0,
+    ) -> tuple[list[torch.Tensor], list[torch.Tensor], list[torch.Tensor]]:
+        """left side padding implemented as
+        in fms.utils.generation.pad_input_id"""
+        max_len = max([min_pad_length] + [seq.size(0) for seq in input_ids_list])
+        padded_input_ids_list = []
+        mask_list = []
+        position_ids_list = []
+        for input_ids_i in input_ids_list:
+            seq_len = input_ids_i.size(0)
+            if max_len > seq_len:
+                logger.info(
+                    "Left padding request of length %d tokens to %d tokens.", seq_len, max_len
+                )
+            pads = (
+                torch.ones(max_len - seq_len, dtype=torch.long, device=input_ids_i.device)
+                * self.pad_token_id
+            )
+            non_pads = torch.ones(seq_len, dtype=torch.long, device=input_ids_i.device)
+
+            pos_ids_seq = torch.arange(0, seq_len, dtype=torch.long, device=input_ids_i.device)
+
+            # Setting this to 0, however if 0 is the eos, we will end up
+            # truncating the output if using truncate_after_eos once this
+            # workflow works for nested tensor, this can probably be removed
+            padded_input_ids_list.append(torch.cat((pads, input_ids_i)))
+            mask_list.append(torch.cat((torch.zeros_like(pads), non_pads)))
+            position_ids_list.append(torch.cat((torch.zeros_like(pads), pos_ids_seq)))
+
+        return padded_input_ids_list, mask_list, position_ids_list
+
     def pad_input_ids(
         self,
         input_ids_list: list[torch.Tensor],
@@ -633,8 +610,8 @@ class SpyrePoolingModelRunner(
             input_tokens=input_tokens,
             input_embeds=None,
             input_positions=position_ids,
-            input_masks=mask,
             is_prompt=True,
+            input_masks=mask,
             token_type_ids=token_type_ids,
         )
 
@@ -655,10 +632,20 @@ class SpyrePoolingModelRunner(
         return self._prepare_prompt(scheduler_output.scheduled_new_reqs)
 
     def _mark_input_tensors(self, model_input: PoolingForwardInputs) -> None:
-        super()._mark_input_tensors(model_input=model_input)
+        """Yoinked from
+        https://github.com/foundation-model-stack/aiu-fms-testing-utils/pull/13
+        """
         if not self.warmup_mode:
             # Only mark tensors when we're warming up and compiling the graphs
             return
+
+        torch._dynamo.mark_static(model_input.input_tokens, 0)
+        torch._dynamo.mark_static(model_input.input_tokens, 1)
+        torch._dynamo.mark_static(model_input.input_masks, 0)
+        torch._dynamo.mark_static(model_input.input_masks, 1)
+        torch._dynamo.mark_static(model_input.input_masks, 2)
+        torch._dynamo.mark_static(model_input.input_positions, 0)
+        torch._dynamo.mark_static(model_input.input_positions, 1)
         if self.use_token_type_ids:
             torch._dynamo.mark_static(model_input.token_type_ids, 0)
             torch._dynamo.mark_static(model_input.token_type_ids, 1)
@@ -1249,7 +1236,6 @@ class ChunkedPrefillModelRunner(
             block_table=block_table,
             slot_mapping=slot_mapping,
             is_prompt=True,
-            input_masks=None,  # Unused
         )
 
         self._mark_input_tensors(model_inputs)
@@ -1358,7 +1344,6 @@ class ChunkedPrefillModelRunner(
             block_table=block_table,
             slot_mapping=slot_mapping,
             is_prompt=False,
-            input_masks=None,  # Unused
         )
 
         self._mark_input_tensors(model_inputs)
@@ -1730,7 +1715,7 @@ class ChunkedPrefillModelRunner(
             logits = self.model(
                 input_ids_or_embeds=input_ids_or_embeds,
                 positions=model_input.input_positions,
-                masks=model_input.input_masks,
+                masks=None,
                 is_prompt=model_input.is_prompt,
             )
 
