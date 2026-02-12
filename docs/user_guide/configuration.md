@@ -54,7 +54,7 @@ export VLLM_SPYRE_WARMUP_PROMPT_LENS=4096,1024
 ```
 
 !!! note
-    Prefix caching is not available for pooling models.
+    The standard CLI args `--max-num-seqs` and `--max-model-len` are ignored for all pooling models, and prefix caching is not supported.
 
 ## Caching Compiled Graphs
 
