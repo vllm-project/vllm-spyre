@@ -5,9 +5,9 @@ import random
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, NamedTuple
-from contextlib import contextmanager
 
 import openai
 import pytest
@@ -17,20 +17,13 @@ from transformers import AutoTokenizer
 from vllm import SamplingParams
 from vllm.assets.image import ImageAsset
 from vllm.entrypoints.openai.cli_args import make_arg_parser
+from vllm.utils.argparse_utils import FlexibleArgumentParser
+from vllm.utils.network_utils import get_open_port
 from vllm.v1.engine.core import EngineCore
-
-from vllm_spyre.platform import SpyrePlatform
-from vllm_spyre import envs
-
-try:
-    # old
-    from vllm.utils import FlexibleArgumentParser, get_open_port
-except ImportError:
-    # new
-    from vllm.utils.argparse_utils import FlexibleArgumentParser
-    from vllm.utils.network_utils import get_open_port
-
 from vllm.v1.request import Request
+
+from vllm_spyre import envs
+from vllm_spyre.platform import SpyrePlatform
 
 EmbeddingWarmupShapes = list[tuple[int, int]]
 

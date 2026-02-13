@@ -6,34 +6,34 @@ from dataclasses import dataclass, field
 from logging import DEBUG
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, Union
 
-import numpy
 import torch
 from transformers import AutoModel, AutoModelForSequenceClassification, AutoTokenizer
 from vllm.config import DeviceConfig, VllmConfig, set_current_vllm_config
 from vllm.forward_context import set_forward_context
 from vllm.logger import init_logger
+from vllm.model_executor.layers.pooler.activations import (
+    get_cross_encoder_act_fn,
+)
+from vllm.model_executor.layers.pooler.seqwise.poolers import (
+    pooler_for_classify,
+    pooler_for_embed,
+)
 from vllm.sampling_params import SamplingType
-
-try:
-    # pre 0.11.1 compatibility
-    from vllm.utils import get_hash_fn_by_name, is_pin_memory_available  # ty: ignore[unresolved-import]
-except ImportError:
-    from vllm.utils.platform_utils import is_pin_memory_available
-    from vllm.utils.hashing import get_hash_fn_by_name
-
+from vllm.tasks import SupportedTask
+from vllm.utils.hashing import get_hash_fn_by_name
+from vllm.utils.platform_utils import is_pin_memory_available
 from vllm.v1.core.block_pool import BlockPool
 from vllm.v1.core.kv_cache_utils import KVCacheBlock, get_request_block_hasher, init_none_hash
 from vllm.v1.core.sched.output import CachedRequestData
 from vllm.v1.core.single_type_kv_cache_manager import FullAttentionManager
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.metrics.stats import PrefixCacheStats
-from vllm.v1.outputs import SamplerOutput
+from vllm.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, ModelRunnerOutput, SamplerOutput
 from vllm.v1.pool.metadata import PoolingMetadata
 from vllm.v1.request import Request
 
 import vllm_spyre.envs as envs_spyre
 import vllm_spyre.utils as utils_spyre
-from vllm_spyre.compat_utils import has_argument
 from vllm_spyre.model_executor.model_loader.spyre import (
     BACKEND_LIST,
     SpyreAttentionMetadata,
@@ -45,12 +45,14 @@ from vllm_spyre.v1.sample.spyre_logits_processor import build_logitsprocs_for_cb
 
 # yapf conflicts with ruff for this block
 # yapf: disable
-from vllm_spyre.v1.worker.spyre_input_batch import (BaseInputBatch,
-                                                    RequestStateT,
-                                                    PoolingInputBatch,
-                                                    PoolingRequestState,
-                                                    SamplingInputBatch,
-                                                    SamplingRequestState)
+from vllm_spyre.v1.worker.spyre_input_batch import (
+    BaseInputBatch,
+    PoolingInputBatch,
+    PoolingRequestState,
+    RequestStateT,
+    SamplingInputBatch,
+    SamplingRequestState,
+)
 
 # yapf: enable
 if TYPE_CHECKING:
@@ -60,9 +62,6 @@ else:
     SchedulerOutput = None
     NewRequestData = None
     SamplingMetadata = None
-
-from vllm.tasks import SupportedTask
-from vllm.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, ModelRunnerOutput
 
 logger = init_logger(__name__)
 
@@ -249,24 +248,6 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
     ) -> ModelRunnerOutput:
         raise NotImplementedError
 
-    def _make_compatible_sampled_token_ids(
-        self, sampled_token_ids: torch.Tensor
-    ) -> list[list[int]] | list[numpy.ndarray]:
-        """Some versions of vllm required a list of numpy arrays as output.
-        This was ultimately rejected, see:
-        https://github.com/vllm-project/vllm/pull/29121
-
-        This can be removed once the *lower bound* of the vllm dependency is
-        >= 0.12.0
-        """
-        # ty ignore comments here because the typing is all dependent on the specific version of
-        # vllm installed
-        if ModelRunnerOutput.__dataclass_fields__["sampled_token_ids"].type == list[numpy.ndarray]:
-            sampled_token_ids = [x for x in sampled_token_ids.numpy()]  # ty: ignore
-        else:
-            sampled_token_ids = sampled_token_ids.tolist()  # ty: ignore
-        return sampled_token_ids  # ty: ignore
-
 
 class PoolerAdapter(torch.nn.Module):
     def __init__(self, pooler: torch.nn.Module):
@@ -388,41 +369,17 @@ class SpyrePoolingModelRunner(
         pooler_config = self.model_config.pooler_config
         assert pooler_config is not None, "Pooler config is require for pooling models"
 
-        try:
-            # vllm >= v0.14.0
-            from vllm.model_executor.layers.pooler.seqwise.poolers import (
-                pooler_for_classify,
-                pooler_for_embed,
-            )
-            from vllm.model_executor.layers.pooler.activations import (
-                get_cross_encoder_act_fn,
-            )
-
-            if task == "embed":
-                with set_current_vllm_config(self.vllm_config):
-                    self.pooler = pooler_for_embed(pooler_config=pooler_config)
-            elif task == "classify":
-                with set_current_vllm_config(self.vllm_config):
-                    self.pooler = pooler_for_classify(
-                        pooler_config=pooler_config,
-                        pooling=self._pooler,
-                        classifier=self.classifier,
-                        act_fn=get_cross_encoder_act_fn(self.model_config.hf_config),
-                    )
-        except ImportError:
-            # vllm < v0.14.0
-            from vllm.model_executor.layers.pooler import ClassifierPooler, Pooler  # ty: ignore[unresolved-import]
-
-            if task == "embed":
-                with set_current_vllm_config(self.vllm_config):
-                    self.pooler = Pooler.for_embed(pooler_config=pooler_config)  # ty: ignore[unresolved-attribute]
-            elif task == "classify":
-                with set_current_vllm_config(self.vllm_config):
-                    self.pooler = ClassifierPooler(
-                        pooling=self._pooler,
-                        classifier=self.classifier,
-                        act_fn=ClassifierPooler.act_fn_for_cross_encoder(self.model_config),
-                    )
+        if task == "embed":
+            with set_current_vllm_config(self.vllm_config):
+                self.pooler = pooler_for_embed(pooler_config=pooler_config)
+        elif task == "classify":
+            with set_current_vllm_config(self.vllm_config):
+                self.pooler = pooler_for_classify(
+                    pooler_config=pooler_config,
+                    pooling=self._pooler,
+                    classifier=self.classifier,
+                    act_fn=get_cross_encoder_act_fn(self.model_config.hf_config),
+                )
 
     @property
     def vocab_size(self) -> int:
@@ -696,17 +653,11 @@ class SpyrePoolingModelRunner(
         pooling_metadata = self.input_batch.make_pooling_metadata()
 
         ## No partial prefill, hence we can use the prompt lens here
-        cursor_kwargs: dict[str, Any] = {}
-        if has_argument(pooling_metadata.build_pooling_cursor, "seq_lens_cpu"):
-            cursor_kwargs["seq_lens_cpu"] = pooling_metadata.prompt_lens
-
-        # v0.14.0 uses param "num_scheduled_tokens_np"
-        if has_argument(pooling_metadata.build_pooling_cursor, "num_scheduled_tokens_np"):
-            cursor_kwargs["num_scheduled_tokens_np"] = pooling_metadata.prompt_lens.numpy()
-        else:
-            cursor_kwargs["num_scheduled_tokens"] = pooling_metadata.prompt_lens.tolist()
-
-        pooling_metadata.build_pooling_cursor(device=self.device, **cursor_kwargs)
+        pooling_metadata.build_pooling_cursor(
+            num_scheduled_tokens_np=pooling_metadata.prompt_lens.numpy(),
+            seq_lens_cpu=pooling_metadata.prompt_lens,
+            device=self.device,
+        )
 
         # prepare unpadded output for the pooler
         hidden_state_list: list[torch.Tensor] = []
@@ -778,15 +729,6 @@ class ChunkedPrefillModelRunner(
 
         self.chunk_size = self.scheduler_config.max_num_batched_tokens
         self.chunk_blocks_count = self.chunk_size // self.block_size
-
-        # For hybrid KV caches, the `alignment_tokens` arg needs to be set to
-        # the lowest common multiple of kv cache block sizes. Currently we only
-        # support homogeneous kv caches with a single block size though.
-        self._alignment_token_kwargs = (
-            {"alignment_tokens": self.block_size}
-            if has_argument(FullAttentionManager.find_longest_cache_hit, "alignment_tokens")
-            else {}
-        )
 
         if vllm_config.cache_config.enable_prefix_caching:
             caching_hash_fn = get_hash_fn_by_name(vllm_config.cache_config.prefix_caching_hash_algo)
@@ -943,14 +885,11 @@ class ChunkedPrefillModelRunner(
         self.kv_cache_manager = self._make_kv_cache_manager()
 
     def _make_block_pool(self) -> BlockPool:
-        kwargs = {}
-        if has_argument(BlockPool, "hash_block_size"):
-            kwargs["hash_block_size"] = self.block_size
         return BlockPool(
             num_gpu_blocks=self.n_blocks + 1,
             enable_caching=self.enable_prefix_caching,
             enable_kv_cache_events=False,
-            **kwargs,
+            hash_block_size=self.block_size,
         )
 
     def _make_kv_cache_manager(self) -> FullAttentionManager:
@@ -962,7 +901,6 @@ class ChunkedPrefillModelRunner(
             dtype=torch.float16,
         )
 
-        # Enable_caching parameter added in vllm v0.14.0
         kwargs = {
             "kv_cache_spec": self._attn_spec,
             "block_pool": self.block_pool,
@@ -973,11 +911,8 @@ class ChunkedPrefillModelRunner(
             # We don't support DCP
             # https://docs.vllm.ai/en/latest/serving/context_parallel_deployment/#decode-context-parallel
             "dcp_world_size": 1,
+            "enable_caching": self.enable_prefix_caching,
         }
-
-        # Conditionally add param for vLLM >= 0.14.0
-        if has_argument(FullAttentionManager.__init__, "enable_caching"):
-            kwargs["enable_caching"] = self.enable_prefix_caching
 
         return FullAttentionManager(**kwargs)  # ty: ignore[invalid-argument-type]
 
@@ -1369,7 +1304,10 @@ class ChunkedPrefillModelRunner(
                 kv_cache_spec=self._attn_spec,
                 use_eagle=False,
                 dcp_world_size=1,
-                **self._alignment_token_kwargs,
+                # For hybrid KV caches, the `alignment_tokens` arg needs to be set to
+                # the lowest common multiple of kv cache block sizes. Currently we only
+                # support homogeneous kv caches with a single block size though.
+                alignment_tokens=self.block_size,
             )[0]
             n_hit = len(computed_blocks)
 
@@ -1398,20 +1336,12 @@ class ChunkedPrefillModelRunner(
             # blocks in the last chunk to deduplicate the used blocks. So
             # although we will recompute, we'll still point the block table
             # to the cached blocks.
-            try:
-                # vllm >= v0.14.0
-                self.kv_cache_manager.allocate_new_computed_blocks(
-                    request_id=scheduler_request.request_id,
-                    new_computed_blocks=computed_blocks,
-                    num_local_computed_tokens=len(computed_blocks) * self.block_size,
-                    num_external_computed_tokens=0,
-                )
-            except (AttributeError, TypeError):
-                # vllm < v0.14.0
-                self.kv_cache_manager.save_new_computed_blocks(
-                    scheduler_request.request_id,
-                    computed_blocks,
-                )
+            self.kv_cache_manager.allocate_new_computed_blocks(
+                request_id=scheduler_request.request_id,
+                new_computed_blocks=computed_blocks,
+                num_local_computed_tokens=len(computed_blocks) * self.block_size,
+                num_external_computed_tokens=0,
+            )
         else:
             usable_blocks = 0
             n_hit = 0
@@ -1797,15 +1727,10 @@ class ChunkedPrefillModelRunner(
             for req_id in req_id_to_index
         }
 
-        # list[int[int]] should be the correct type for vllm 0.12.0+
-        sampled_token_ids: list[list[int]] = self._make_compatible_sampled_token_ids(
-            output.sampled_token_ids
-        )  # ty: ignore[invalid-assignment]
-
         return SpyreModelRunnerOutput(
             req_ids=list(req_id_to_index.keys()),
             req_id_to_index=req_id_to_index,
-            sampled_token_ids=sampled_token_ids,
+            sampled_token_ids=output.sampled_token_ids.tolist(),
             logprobs=(output.logprobs_tensors.tolists() if output.logprobs_tensors else None),
             prompt_logprobs_dict={},
             pooler_output=[],
