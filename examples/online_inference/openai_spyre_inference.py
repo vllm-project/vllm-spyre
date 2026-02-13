@@ -27,7 +27,7 @@ parser.add_argument(
     "--max_tokens",
     type=int,
     default=20,
-    help="Maximum tokens. Must match VLLM_SPYRE_WARMUP_NEW_TOKENS",
+    help="Maximum new tokens.",
 )
 parser.add_argument(
     "--batch_size",
