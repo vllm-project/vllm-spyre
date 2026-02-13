@@ -127,7 +127,7 @@ class GoldenTokenInjector(LogitsProcessor):
             return
 
         expected_token_id = expectation.token_ids[current_token_idx]
-        token_id = torch.argmax(logits[req_idx], dim=-1)
+        token_id = cast(int, torch.argmax(logits[req_idx], dim=-1))
 
         if expected_token_id == token_id:
             # Expectation is met, nothing to do.
