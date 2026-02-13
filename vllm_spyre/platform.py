@@ -74,9 +74,6 @@ class SpyrePlatform(Platform):
     # TODO: this `None` is dangerous
     _config: VllmConfig = None  # ty: ignore[invalid-assignment]
     _torch_sendnn_version = None
-    # tracks if we are being configured via CLI or LLM() so that we know if
-    # default arg parser changes actually have an effect
-    _used_with_cli = False
 
     # Backend for dynamic compilation ops
     # See vllm batched_count_greater_than method
@@ -146,13 +143,6 @@ class SpyrePlatform(Platform):
             scheduler_config.scheduler_cls = (
                 "vllm_spyre.v1.core.scheduler.ChunkedPrefillSpyreScheduler"
             )
-
-            # Overwrite so that vLLM prints our value in the "Initializing a V1
-            # LLM engine" log message
-            # TODO: With the arg parser defaulting, this can be removed when we
-            # only support vllm >= v0.11.1
-            if hasattr(scheduler_config, "chunked_prefill_enabled"):
-                scheduler_config.chunked_prefill_enabled = True  # ty: ignore
 
             if (
                 vllm_config.model_config.quantization
@@ -423,15 +413,7 @@ class SpyrePlatform(Platform):
     @classmethod
     def pre_register_and_update(cls, parser: FlexibleArgumentParser | None = None) -> None:
         if parser is not None:
-            # let's us know that defaults were applied to the parser
-            cls._used_with_cli = True
-
             parser.set_defaults(enable_prefix_caching=False)
-            # TODO: We don't use the value of the enable_chunked_prefill arg,
-            # but setting the default makes logs match our setting.
-            # vLLM >= 0.11.1 does not override the arg, so we could remove the
-            # env var for v2 if we update our minimum support
-            parser.set_defaults(enable_chunked_prefill=True)
             parser.set_defaults(max_num_batched_tokens=cls.DEFAULT_CHUNK_SIZE)
 
     @classmethod
