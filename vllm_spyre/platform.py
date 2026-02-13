@@ -74,9 +74,6 @@ class SpyrePlatform(Platform):
     # TODO: this `None` is dangerous
     _config: VllmConfig = None  # ty: ignore[invalid-assignment]
     _torch_sendnn_version = None
-    # tracks if we are being configured via CLI or LLM() so that we know if
-    # default arg parser changes actually have an effect
-    _used_with_cli = False
 
     # Backend for dynamic compilation ops
     # See vllm batched_count_greater_than method
@@ -416,9 +413,6 @@ class SpyrePlatform(Platform):
     @classmethod
     def pre_register_and_update(cls, parser: FlexibleArgumentParser | None = None) -> None:
         if parser is not None:
-            # let's us know that defaults were applied to the parser
-            cls._used_with_cli = True
-
             parser.set_defaults(enable_prefix_caching=False)
             parser.set_defaults(max_num_batched_tokens=cls.DEFAULT_CHUNK_SIZE)
 
