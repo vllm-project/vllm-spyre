@@ -1,19 +1,13 @@
 import os
+
 import pytest
 from pydantic import ValidationError
-from vllm.entrypoints.openai.cli_args import make_arg_parser
 from vllm import EngineArgs
-
+from vllm.entrypoints.openai.cli_args import make_arg_parser
+from vllm.utils.argparse_utils import FlexibleArgumentParser
 
 from vllm_spyre.platform import SpyrePlatform
-from spyre_util import environ_checkpoint, REFERENCE_MODELS
-
-try:
-    # old
-    from vllm.utils import FlexibleArgumentParser
-except ImportError:
-    # new
-    from vllm.utils.argparse_utils import FlexibleArgumentParser
+from spyre_util import REFERENCE_MODELS, environ_checkpoint
 
 
 # Test that the default chunk size is 1024 when chunked prefill is enabled,

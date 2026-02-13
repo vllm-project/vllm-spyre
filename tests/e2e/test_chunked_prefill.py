@@ -190,7 +190,6 @@ async def test_chunked_prefill_kv_cache_stats(
 
     # Check the prefix cache counters
     # vLLM should be reporting these counters based on the last 1000 requests
-    # (as of v0.12.0)
     metrics = get_metrics(remote_openai_server)
     total_tokens = get_metric_value(metrics, "vllm:prefix_cache_queries_total")
     hit_tokens = get_metric_value(metrics, "vllm:prefix_cache_hits_total")

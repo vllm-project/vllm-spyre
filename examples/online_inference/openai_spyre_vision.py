@@ -32,7 +32,7 @@ parser.add_argument(
     "--max_tokens",
     type=int,
     default=8,
-    help="Maximum tokens.",
+    help="Maximum new tokens.",
 )
 parser.add_argument(
     "--num_prompts",
