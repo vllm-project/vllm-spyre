@@ -219,6 +219,10 @@ if __name__ == "__main__":
         )
         os.environ["HF_HUB_OFFLINE"] = "1"
 
+    if platform.system() == "Darwin":
+        print("Setting VLLM_WORKER_MULTIPROC_METHOD=spawn to avoid forking problems on Mac OS")
+        os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
+
     os.environ["VLLM_SPYRE_DYNAMO_BACKEND"] = args.backend
 
     prompts = get_vllm_prompts(args.num_prompts)
