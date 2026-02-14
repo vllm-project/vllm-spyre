@@ -14,7 +14,7 @@ from sentence_transformers import SentenceTransformer, util
 from spyre_util import EmbeddingWarmupShapes, ModelInfo
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, SamplingParams
-from vllm.transformers_utils.tokenizer import get_tokenizer
+from vllm.tokenizers import get_tokenizer
 
 DISABLE_ASSERTS = False  # used for debugging
 

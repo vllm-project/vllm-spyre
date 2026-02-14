@@ -257,10 +257,10 @@ def remote_openai_server(request):
                 str(params.get("max_num_batched_tokens", 128)),
             ]
         )
-        if params["mode"] == "pc":
+        if params["mode"] != "pc":
             server_args.extend(
                 [
-                    "--enable-prefix-caching",
+                    "--no-enable-prefix-caching",
                 ]
             )
 

@@ -60,7 +60,7 @@ def test_chunk_size_default(monkeypatch: pytest.MonkeyPatch) -> None:
             engine_args.create_engine_config()
 
 
-def test_prefix_caching_is_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_prefix_caching_is_on_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     model = REFERENCE_MODELS["ibm-ai-platform/micro-g3.3-8b-instruct-1b"]
     common_args = [
         "--model",
@@ -71,46 +71,25 @@ def test_prefix_caching_is_off_by_default(monkeypatch: pytest.MonkeyPatch) -> No
         "1024",
     ]
 
-    with (
-        environ_checkpoint(),
-        pytest.MonkeyPatch.context() as m,
-    ):
-        # Verify that prefix caching is on by default unless we change that in
-        # pre_register_and_update
-        def pre_register_and_update(cls, parser: FlexibleArgumentParser | None = None) -> None:
-            pass
-
-        m.setattr(SpyrePlatform, "pre_register_and_update", pre_register_and_update)
-
+    with environ_checkpoint():
+        # Verify that prefix caching is on by default with vllm-spyre
         engine_args = _build_engine_args(
             [
                 *common_args,
             ]
         )
-        assert engine_args.enable_prefix_caching is None
+        assert engine_args.enable_prefix_caching
         vllm_config = engine_args.create_engine_config()
         assert engine_args.enable_prefix_caching
         assert vllm_config.cache_config.enable_prefix_caching
 
     with environ_checkpoint():
-        # Verify that prefix caching is off by default with vllm-spyre
-        engine_args = _build_engine_args(
-            [
-                *common_args,
-            ]
-        )
+        # Test that it can be disabled
+        engine_args = _build_engine_args([*common_args, "--no-enable-prefix-caching"])
         assert not engine_args.enable_prefix_caching
         vllm_config = engine_args.create_engine_config()
         assert not engine_args.enable_prefix_caching
         assert not vllm_config.cache_config.enable_prefix_caching
-
-    with environ_checkpoint():
-        # Test that it can be enabled
-        engine_args = _build_engine_args([*common_args, "--enable-prefix-caching"])
-        assert engine_args.enable_prefix_caching
-        vllm_config = engine_args.create_engine_config()
-        assert engine_args.enable_prefix_caching
-        assert vllm_config.cache_config.enable_prefix_caching
 
 
 def _build_engine_args(cli_args: list[str]) -> EngineArgs:
