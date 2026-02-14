@@ -175,7 +175,7 @@ class SpyrePlatform(Platform):
             # For static batching (pooling models), pass warmup shapes for validation
             warmup_shape_tuples = (
                 [(ws["prompt_length"], ws["batch_size"]) for ws in cls._warmup_shapes]
-                if cls._warmup_shapes and not envs_spyre.VLLM_SPYRE_USE_CB
+                if cls._warmup_shapes
                 else None
             )
             configurator = registry.get_configurator_for_runtime(vllm_config, warmup_shape_tuples)
