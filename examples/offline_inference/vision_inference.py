@@ -1,9 +1,9 @@
 """
-This example shows how to run offline inference using continuous batching.
+This example shows how to run offline inference with a vision language model.
 
 NOTE: At the moment, if you are checking parity, things may not line up
 unless you compare eager against the FMS cpu model, i.e.,
-    $ python cb_spyre_vision.py --backend eager --compare-target fms
+    $ python vision_inference.py --backend eager --compare-target fms
 """
 
 import argparse

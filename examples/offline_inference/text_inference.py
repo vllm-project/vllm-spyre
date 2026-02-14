@@ -1,5 +1,5 @@
 """
-This example shows how to run offline inference using continuous batching.
+This example shows how to run offline inference with a text generation model.
 """
 
 import argparse
