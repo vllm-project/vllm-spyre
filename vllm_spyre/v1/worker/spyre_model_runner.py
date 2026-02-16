@@ -996,6 +996,15 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         return FullAttentionManager(**kwargs)  # ty: ignore[invalid-argument-type]
 
+    def _allocate_new_blocks_wrapper(self, req_id: str, num_tokens: int):
+        """Backwards compatibility for change to interface in v0.15.0"""
+        kwargs: dict[str, Any] = {
+            "num_tokens": num_tokens,
+        }
+        if has_argument(self.kv_cache_manager.allocate_new_blocks, "num_tokens_main_model"):
+            kwargs["num_tokens_main_model"] = num_tokens
+        return self.kv_cache_manager.allocate_new_blocks(req_id, **kwargs)
+
     def _get_blocks(self, request_id: str) -> list[KVCacheBlock]:
         return self.kv_cache_manager.req_to_blocks[request_id]
 
@@ -1153,7 +1162,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
 
         # filling block table and slot mapping
 
-        blocks = self.kv_cache_manager.allocate_new_blocks(req_id, right_padding_tkv)
+        blocks = self._allocate_new_blocks_wrapper(req_id, right_padding_tkv)
 
         block_offsets = [block.block_id * self.block_size for block in blocks]
         slot_mapping = torch.arange(self.block_size, dtype=torch.int64).repeat(len(blocks))
@@ -1269,7 +1278,10 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
                 total_tokens = (
                     req_state.left_padding % self.block_size + req_state.num_computed_tokens + 1
                 )
-                blocks = self.kv_cache_manager.allocate_new_blocks(req_id, total_tokens)
+                blocks = self._allocate_new_blocks_wrapper(
+                    req_id,
+                    total_tokens,
+                )
                 assert len(blocks) == 1
             n_blocks = max(n_blocks, len(self._get_blocks(req_id)))
 
@@ -2240,7 +2252,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             # adding new blocks if needed
             req_state = self.requests[req_id]
             if req_state.num_computed_tokens % self.block_size == 0:
-                blocks = self.kv_cache_manager.allocate_new_blocks(
+                blocks = self._allocate_new_blocks_wrapper(
                     req_id, req_state.num_computed_tokens + 1
                 )
                 assert len(blocks) == 1
@@ -2438,7 +2450,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         )
 
         # allocate blocks
-        self.kv_cache_manager.allocate_new_blocks(req_id, prompt_len)
+        self._allocate_new_blocks_wrapper(req_id, prompt_len)
 
         # Add new request to the cached states.
         if sampling_params.sampling_type == SamplingType.RANDOM_SEED:
