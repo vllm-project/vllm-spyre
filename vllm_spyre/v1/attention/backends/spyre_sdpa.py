@@ -9,6 +9,7 @@ from torch.nn.functional import scaled_dot_product_attention
 
 from vllm.config import VllmConfig
 from vllm.v1.attention.backend import (
+    AttentionMetadata,
     AttentionBackend,
     AttentionImpl,
     AttentionLayer,
@@ -56,7 +57,7 @@ class SpyreSDPABackend(AttentionBackend):
 
 
 @dataclass
-class SpyreSDPAMetadata:
+class SpyreSDPAMetadata(AttentionMetadata):
     prompt_padding: torch.Tensor
     padded_num_seqs: int
     padded_seq_len: int
@@ -110,6 +111,7 @@ class SpyreSDPABackendImpl(AttentionImpl[SpyreSDPAMetadata]):
         self.num_heads = num_heads
         self.head_size = head_size
         self.scale = float(scale)
+        assert num_kv_heads is not None
         self.num_kv_heads = num_kv_heads
 
         self.kv_cache_dtype = kv_cache_dtype

@@ -142,6 +142,6 @@ def test_max_tokens(
             tensor_parallel_size=1,
             backend=backend,
             max_num_seqs=max_num_seqs,
-            max_num_batched_tokens=(128 if mode == "cp" else None),
             monkeypatch=monkeypatch,
+            **kwargs_for_mode(mode),
         )

@@ -9,14 +9,6 @@ configurations.
 
 ### Decoder Models
 
-**_Static Batching:_**
-
-| Model                | AIUs | Prompt Length | New Tokens | Batch Size |
-|----------------------|------|---------------|------------|------------|
-| [Granite-3.3-8b][]   | 4    | 7168          | 1024       | 4          |
-
-**_Continuous Batching:_**
-
 | Model                     | AIUs | Context Length | Batch Size |
 |---------------------------|------|----------------|------------|
 | [Granite-3.3-8b][]        | 1    | 3072           | 16         |
@@ -45,13 +37,39 @@ configurations.
 [BAAI/BGE-Reranker (Large)]: https://huggingface.co/BAAI/bge-reranker-large
 [Multilingual-E5-large]: https://huggingface.co/intfloat/multilingual-e5-large
 
-## Runtime Validation
+## Model Configuration
 
-At runtime, the Spyre engine validates the requested model and configurations against the list
-of supported models and configurations based on the entries in the file
-<gh-file:vllm_spyre/config/supported_configs.yaml>. If a requested model or configuration
-is not found, a warning message will be logged.
+The Spyre engine uses a model registry to manage model-specific configurations. Model configurations
+are defined in <gh-file:vllm_spyre/config/model_configs.yaml> and include:
 
-```python
---8<-- "vllm_spyre/config/supported_configs.yaml:supported-model-runtime-configurations"
+- Architecture patterns for model matching
+- Device-specific configurations (environment variables, GPU block overrides)
+- Supported runtime configurations (static batching warmup shapes, continuous batching parameters)
+
+When a model is loaded, the registry automatically matches it to the appropriate configuration and
+applies model-specific settings.
+
+### Supported Configurations
+
+The following configurations are supported for each model:
+
+```yaml
+--8<-- "vllm_spyre/config/model_configs.yaml:supported-model-runtime-configuration"
 ```
+
+### Configuration Validation
+
+By default, the Spyre engine will log warnings if a requested model or configuration is not found
+in the registry. To enforce strict validation and fail if an unknown configuration is requested,
+set the environment variable:
+
+```bash
+export VLLM_SPYRE_REQUIRE_KNOWN_CONFIG=1
+```
+
+When this flag is enabled, the engine will raise a `RuntimeError` if:
+
+- The model cannot be matched to a known configuration
+- The requested runtime parameters are not in the supported configurations list
+
+See the [Configuration Guide](configuration.md) for more details on model configuration.

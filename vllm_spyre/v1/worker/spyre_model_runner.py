@@ -5,23 +5,19 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from collections import defaultdict
 from logging import DEBUG
-from typing import TYPE_CHECKING, cast, Any, Generic, TypeVar, NamedTuple, TypeAlias
+from typing import TYPE_CHECKING, cast, Any, Generic, TypeVar, NamedTuple, TypeAlias, Protocol
 from copy import deepcopy, copy
 
 import numpy
 import torch
+from transformers import AutoTokenizer
 from vllm.config import DeviceConfig, VllmConfig, get_layers_from_vllm_config
 from vllm.forward_context import set_forward_context
 from vllm.logger import init_logger
 from vllm.sampling_params import SamplingType
-
-try:
-    # pre 0.11.1 compatibility
-    from vllm.utils import get_hash_fn_by_name, is_pin_memory_available  # ty: ignore[unresolved-import]
-except ImportError:
-    from vllm.utils.platform_utils import is_pin_memory_available
-    from vllm.utils.hashing import get_hash_fn_by_name
-
+from vllm.tasks import SupportedTask
+from vllm.utils.hashing import get_hash_fn_by_name
+from vllm.utils.platform_utils import is_pin_memory_available
 from vllm.attention.layer import Attention
 from vllm.v1.core.block_pool import BlockPool
 from vllm.v1.core.kv_cache_utils import KVCacheBlock, get_request_block_hasher, init_none_hash
@@ -42,16 +38,15 @@ from vllm.v1.attention.backend import (
     CommonAttentionMetadata,
 )
 from vllm.v1.metrics.stats import PrefixCacheStats
-from vllm.v1.outputs import SamplerOutput
+from vllm.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, ModelRunnerOutput, SamplerOutput
 from vllm.v1.request import Request
 from vllm.v1.worker.utils import AttentionGroup
-
+from vllm.model_executor.models.interfaces_base import VllmModelForPooling
 from vllm.model_executor.model_loader import get_model_loader
 from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
 
 
 import vllm_spyre.envs as envs_spyre
-from vllm_spyre.compat_utils import has_argument
 from vllm_spyre.model_executor.model_loader.spyre import (
     SpyreAttentionMetadata,
     SpyreCausalLM,
@@ -60,15 +55,16 @@ from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.utils import exact_div
 from vllm_spyre.v1.sample.spyre_logits_processor import build_logitsprocs_for_cb
 
-
 # yapf conflicts with ruff for this block
 # yapf: disable
-from vllm_spyre.v1.worker.spyre_input_batch import (BaseInputBatch,
-                                                    RequestStateT,
-                                                    PoolingInputBatch,
-                                                    PoolingRequestState,
-                                                    SamplingInputBatch,
-                                                    SamplingRequestState)
+from vllm_spyre.v1.worker.spyre_input_batch import (
+    BaseInputBatch,
+    PoolingInputBatch,
+    PoolingRequestState,
+    RequestStateT,
+    SamplingInputBatch,
+    SamplingRequestState,
+)
 
 # yapf: enable
 if TYPE_CHECKING:
@@ -79,8 +75,6 @@ else:
     NewRequestData = None
     SamplingMetadata = None
 
-from vllm.tasks import SupportedTask
-from vllm.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, ModelRunnerOutput
 
 PerLayerAttnMetadata: TypeAlias = dict[str, AttentionMetadata]
 # list when ubatching is enabled
@@ -98,7 +92,7 @@ class ModelForwardInputs:
 
 @dataclass(frozen=True)
 class PoolingForwardInputs(ModelForwardInputs):
-    input_masks: torch.Tensor | None  # pooling and static batching only
+    input_masks: torch.Tensor
     token_type_ids: torch.Tensor | None
 
 
@@ -258,29 +252,6 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
     def update_states(self, scheduler_output: SchedulerOutput):
         raise NotImplementedError
 
-    def _mark_input_tensors(self, model_input: ModelInputsT) -> None:
-        """Yoinked from
-        https://github.com/foundation-model-stack/aiu-fms-testing-utils/pull/13
-        """
-        if not self.warmup_mode:
-            # Only mark tensors when we're warming up and compiling the graphs
-            return
-
-        # To produce like graphs during pre-fill, we mark the prefill
-        # batch x seq as static, but relax this for decode for the seq
-        if model_input.is_prompt:
-            # we always want prefill to be static to produce same-like graph
-            torch._dynamo.mark_static(model_input.input_tokens, 0)
-            torch._dynamo.mark_static(model_input.input_tokens, 1)
-            torch._dynamo.mark_static(model_input.input_masks, 0)
-            torch._dynamo.mark_static(model_input.input_masks, 1)
-            torch._dynamo.mark_static(model_input.input_masks, 2)
-            torch._dynamo.mark_static(model_input.input_positions, 0)
-            torch._dynamo.mark_static(model_input.input_positions, 1)
-        else:
-            # we always want the decode to be dynamic on sequence
-            torch._dynamo.mark_dynamic(model_input.input_masks, 2)
-
     @SpyrePlatform.inference_mode()
     @abstractmethod
     def execute_model(
@@ -307,6 +278,16 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
         else:
             sampled_token_ids = sampled_token_ids.tolist()  # ty: ignore
         return sampled_token_ids  # ty: ignore
+
+
+class PoolingModel(VllmModelForPooling, Protocol):
+    def __call__(self, *args, **kwargs) -> torch.Tensor:
+        pass
+
+    def eval(
+        self,
+    ) -> None:
+        pass
 
 
 class SpyrePoolingModelRunner(
@@ -449,14 +430,20 @@ class SpyrePoolingModelRunner(
 
     def load_model(self) -> None:
         model_loader = get_model_loader(self.load_config)
-        self.vllm_model = model_loader.load_model(
+        self.vllm_model: PoolingModel = model_loader.load_model(
             vllm_config=self.vllm_config, model_config=self.model_config
         )
         self.vllm_model.eval()
+        self.use_token_type_ids = False
+        if tokenizer := AutoTokenizer.from_pretrained(self.model_config.model):
+            output = tokenizer(text="foo", text_pair="bar")
+            self.use_token_type_ids = "token_type_ids" in output
+            if self.use_token_type_ids:
+                self.sep_token_id = tokenizer.sep_token_id
 
     @property
     def vocab_size(self) -> int:
-        return self.model_config.get_vocab_size()  # ty: ignore[invalid-return-type]
+        return self.model_config.get_vocab_size()
 
     def _prepare_pad_input_ids(
         self,
@@ -657,10 +644,20 @@ class SpyrePoolingModelRunner(
         return self._prepare_prompt(scheduler_output.scheduled_new_reqs)
 
     def _mark_input_tensors(self, model_input: PoolingForwardInputs) -> None:
-        super()._mark_input_tensors(model_input=model_input)
+        """Yoinked from
+        https://github.com/foundation-model-stack/aiu-fms-testing-utils/pull/13
+        """
         if not self.warmup_mode:
             # Only mark tensors when we're warming up and compiling the graphs
             return
+
+        torch._dynamo.mark_static(model_input.input_tokens, 0)
+        torch._dynamo.mark_static(model_input.input_tokens, 1)
+        torch._dynamo.mark_static(model_input.input_masks, 0)
+        torch._dynamo.mark_static(model_input.input_masks, 1)
+        torch._dynamo.mark_static(model_input.input_masks, 2)
+        torch._dynamo.mark_static(model_input.input_positions, 0)
+        torch._dynamo.mark_static(model_input.input_positions, 1)
         if self.use_token_type_ids:
             torch._dynamo.mark_static(model_input.token_type_ids, 0)
             torch._dynamo.mark_static(model_input.token_type_ids, 1)
@@ -767,17 +764,11 @@ class SpyrePoolingModelRunner(
         pooling_metadata = self.input_batch.make_pooling_metadata()
 
         ## No partial prefill, hence we can use the prompt lens here
-        cursor_kwargs: dict[str, Any] = {}
-        if has_argument(pooling_metadata.build_pooling_cursor, "seq_lens_cpu"):
-            cursor_kwargs["seq_lens_cpu"] = pooling_metadata.prompt_lens
-
-        # v0.14.0 uses param "num_scheduled_tokens_np"
-        if has_argument(pooling_metadata.build_pooling_cursor, "num_scheduled_tokens_np"):
-            cursor_kwargs["num_scheduled_tokens_np"] = pooling_metadata.prompt_lens.numpy()
-        else:
-            cursor_kwargs["num_scheduled_tokens"] = pooling_metadata.prompt_lens.tolist()
-
-        pooling_metadata.build_pooling_cursor(device=self.device, **cursor_kwargs)
+        pooling_metadata.build_pooling_cursor(
+            num_scheduled_tokens_np=pooling_metadata.prompt_lens.numpy(),
+            seq_lens_cpu=pooling_metadata.prompt_lens,
+            device=self.device,
+        )
 
         # prepare unpadded output for the pooler
         hidden_state_list: list[torch.Tensor] = []
@@ -850,15 +841,6 @@ class ChunkedPrefillModelRunner(
         self.chunk_size = self.scheduler_config.max_num_batched_tokens
         self.chunk_blocks_count = self.chunk_size // self.block_size
 
-        # For hybrid KV caches, the `alignment_tokens` arg needs to be set to
-        # the lowest common multiple of kv cache block sizes. Currently we only
-        # support homogeneous kv caches with a single block size though.
-        self._alignment_token_kwargs = (
-            {"alignment_tokens": self.block_size}
-            if has_argument(FullAttentionManager.find_longest_cache_hit, "alignment_tokens")
-            else {}
-        )
-
         if vllm_config.cache_config.enable_prefix_caching:
             caching_hash_fn = get_hash_fn_by_name(vllm_config.cache_config.prefix_caching_hash_algo)
             init_none_hash(caching_hash_fn)
@@ -880,7 +862,7 @@ class ChunkedPrefillModelRunner(
         model_cfg = self.model.fms_model.config
         if self.model.is_multimodal:
             return self.model.mm_model_utils.resolve_multimodal_vocab_size()
-        return model_cfg.src_vocab_size  # ty: ignore[invalid-return-type]
+        return model_cfg.src_vocab_size
 
     @property
     def enable_prefix_caching(self):
@@ -913,7 +895,7 @@ class ChunkedPrefillModelRunner(
         self._set_blocks(num_blocks=n_blocks_warmup)
         # TODO: fixup the typing here. Things are getting tripped up by having all of our "model"
         # classes inherit from `nn.Module` when maybe they don't need to
-        self.model.set_past_key_value_states(num_blocks=n_blocks_warmup)  # ty: ignore[call-non-callable]
+        self.model.set_past_key_value_states(num_blocks=n_blocks_warmup)
 
         # Future code:
 
@@ -935,7 +917,7 @@ class ChunkedPrefillModelRunner(
         self._set_blocks(num_blocks=n_blocks_avail)
         # TODO: fixup the typing here. Things are getting tripped up by having all of our "model"
         # classes inherit from `nn.Module` when maybe they don't need to
-        self.model.set_past_key_value_states(num_blocks=n_blocks_avail)  # ty: ignore[call-non-callable]
+        self.model.set_past_key_value_states(num_blocks=n_blocks_avail)
 
     def get_total_spyre_blocks(self) -> int:
         """Returns the total number of KV cache blocks available for spyre.
@@ -1014,14 +996,11 @@ class ChunkedPrefillModelRunner(
         self.kv_cache_manager = self._make_kv_cache_manager()
 
     def _make_block_pool(self) -> BlockPool:
-        kwargs = {}
-        if has_argument(BlockPool, "hash_block_size"):
-            kwargs["hash_block_size"] = self.block_size
         return BlockPool(
             num_gpu_blocks=self.n_blocks + 1,
             enable_caching=self.enable_prefix_caching,
             enable_kv_cache_events=False,
-            **kwargs,
+            hash_block_size=self.block_size,
         )
 
     def _make_kv_cache_manager(self) -> FullAttentionManager:
@@ -1033,7 +1012,6 @@ class ChunkedPrefillModelRunner(
             dtype=torch.float16,
         )
 
-        # Enable_caching parameter added in vllm v0.14.0
         kwargs = {
             "kv_cache_spec": self._attn_spec,
             "block_pool": self.block_pool,
@@ -1044,11 +1022,8 @@ class ChunkedPrefillModelRunner(
             # We don't support DCP
             # https://docs.vllm.ai/en/latest/serving/context_parallel_deployment/#decode-context-parallel
             "dcp_world_size": 1,
+            "enable_caching": self.enable_prefix_caching,
         }
-
-        # Conditionally add param for vLLM >= 0.14.0
-        if has_argument(FullAttentionManager.__init__, "enable_caching"):
-            kwargs["enable_caching"] = self.enable_prefix_caching
 
         return FullAttentionManager(**kwargs)  # ty: ignore[invalid-argument-type]
 
@@ -1307,7 +1282,6 @@ class ChunkedPrefillModelRunner(
             block_table=block_table,
             slot_mapping=slot_mapping,
             is_prompt=True,
-            input_masks=None,  # Unused
         )
 
         self._mark_input_tensors(model_inputs)
@@ -1416,7 +1390,6 @@ class ChunkedPrefillModelRunner(
             block_table=block_table,
             slot_mapping=slot_mapping,
             is_prompt=False,
-            input_masks=None,  # Unused
         )
 
         self._mark_input_tensors(model_inputs)
@@ -1442,7 +1415,10 @@ class ChunkedPrefillModelRunner(
                 kv_cache_spec=self._attn_spec,
                 use_eagle=False,
                 dcp_world_size=1,
-                **self._alignment_token_kwargs,
+                # For hybrid KV caches, the `alignment_tokens` arg needs to be set to
+                # the lowest common multiple of kv cache block sizes. Currently we only
+                # support homogeneous kv caches with a single block size though.
+                alignment_tokens=self.block_size,
             )[0]
             n_hit = len(computed_blocks)
 
@@ -1471,20 +1447,12 @@ class ChunkedPrefillModelRunner(
             # blocks in the last chunk to deduplicate the used blocks. So
             # although we will recompute, we'll still point the block table
             # to the cached blocks.
-            try:
-                # vllm >= v0.14.0
-                self.kv_cache_manager.allocate_new_computed_blocks(
-                    request_id=scheduler_request.request_id,
-                    new_computed_blocks=computed_blocks,
-                    num_local_computed_tokens=len(computed_blocks) * self.block_size,
-                    num_external_computed_tokens=0,
-                )
-            except (AttributeError, TypeError):
-                # vllm < v0.14.0
-                self.kv_cache_manager.save_new_computed_blocks(
-                    scheduler_request.request_id,
-                    computed_blocks,
-                )
+            self.kv_cache_manager.allocate_new_computed_blocks(
+                request_id=scheduler_request.request_id,
+                new_computed_blocks=computed_blocks,
+                num_local_computed_tokens=len(computed_blocks) * self.block_size,
+                num_external_computed_tokens=0,
+            )
         else:
             usable_blocks = 0
             n_hit = 0
@@ -1788,7 +1756,7 @@ class ChunkedPrefillModelRunner(
             logits = self.model(
                 input_ids_or_embeds=input_ids_or_embeds,
                 positions=model_input.input_positions,
-                masks=model_input.input_masks,
+                masks=None,
                 is_prompt=model_input.is_prompt,
             )
 
@@ -1870,15 +1838,10 @@ class ChunkedPrefillModelRunner(
             for req_id in req_id_to_index
         }
 
-        # list[int[int]] should be the correct type for vllm 0.12.0+
-        sampled_token_ids: list[list[int]] = self._make_compatible_sampled_token_ids(
-            output.sampled_token_ids
-        )  # ty: ignore[invalid-assignment]
-
         return SpyreModelRunnerOutput(
             req_ids=list(req_id_to_index.keys()),
             req_id_to_index=req_id_to_index,
-            sampled_token_ids=sampled_token_ids,
+            sampled_token_ids=output.sampled_token_ids.tolist(),
             logprobs=(output.logprobs_tensors.tolists() if output.logprobs_tensors else None),
             prompt_logprobs_dict={},
             pooler_output=[],

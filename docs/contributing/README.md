@@ -95,12 +95,22 @@ Here is a list of `pytest` markers you can use to filter them:
 --8<-- "pyproject.toml:test-markers-definition"
 ```
 
-### Testing Continuous Batching
+### Testing Specific Features
 
-Run the continuous batching tests:
+For most of the supported features the testing code can be run in isolation by passing
+the appropriate marker to pytest. Note the markers can be combined with boolean logic
+operators "and", "or" "not" and parentheses "()".
+
+- **prefix_caching**: Runs only the prefix caching tests
+- **quantized**: Runs all the tests with quantized models weights (FP8)
+- **embedding**: Runs only embedding model tests
+- **scoring**: Runs only reranker or scoring model tests
+- **multimodal**: Runs only multimodal model tests
+
+Example, run the prefix caching tests:
 
 ```sh
-python -m pytest -v -x tests/e2e -m cb
+python -m pytest -v -x tests/e2e -m prefix_caching
 ```
 
 ## Debugging

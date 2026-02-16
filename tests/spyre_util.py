@@ -5,9 +5,9 @@ import random
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, NamedTuple
-from contextlib import contextmanager
 
 import openai
 import pytest
@@ -17,20 +17,13 @@ from transformers import AutoTokenizer
 from vllm import SamplingParams
 from vllm.assets.image import ImageAsset
 from vllm.entrypoints.openai.cli_args import make_arg_parser
+from vllm.utils.argparse_utils import FlexibleArgumentParser
+from vllm.utils.network_utils import get_open_port
 from vllm.v1.engine.core import EngineCore
-
-from vllm_spyre.platform import SpyrePlatform
-from vllm_spyre import envs
-
-try:
-    # old
-    from vllm.utils import FlexibleArgumentParser, get_open_port
-except ImportError:
-    # new
-    from vllm.utils.argparse_utils import FlexibleArgumentParser
-    from vllm.utils.network_utils import get_open_port
-
 from vllm.v1.request import Request
+
+from vllm_spyre import envs
+from vllm_spyre.platform import SpyrePlatform
 
 EmbeddingWarmupShapes = list[tuple[int, int]]
 
@@ -38,7 +31,6 @@ EmbeddingWarmupShapes = list[tuple[int, int]]
 def patch_environment(
     backend: str,
     monkeypatch,
-    use_chunked_prefill: bool = True,
     max_num_batched_tokens: int | None = None,
     warmup_shapes: EmbeddingWarmupShapes | None = None,
 ):
@@ -50,11 +42,6 @@ def patch_environment(
 
     # --------------
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
-    monkeypatch.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", "1" if use_chunked_prefill else "0")
-    # NB: setting this env var explicitly is needed to set the desired value for
-    # the chunk size in the case that granite 8b TP4 is detected
-    if max_num_batched_tokens is not None:
-        monkeypatch.setenv("VLLM_DT_CHUNK_LEN", str(max_num_batched_tokens))
 
 
 def patch_warmup_shapes(warmup_shapes: EmbeddingWarmupShapes, monkeypatch):

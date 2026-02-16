@@ -4,7 +4,7 @@
 # Based on vllm/vllm/v1/worker/gpu_input_batch.py
 
 from dataclasses import dataclass
-from typing import Any, Generic, Protocol, TypeVar, cast
+from typing import Generic, Protocol, TypeVar, cast
 
 import numpy as np
 import torch
@@ -13,13 +13,10 @@ from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import SamplingParams, SamplingType
 from vllm.v1.pool.metadata import PoolingMetadata
 from vllm.v1.request import Request
-
-# from vllm.v1.sample.logits_processor.state import LogitsProcessors
 from vllm.v1.sample.logits_processor import BatchUpdateBuilder, LogitsProcessors, MoveDirectionality
 from vllm.v1.sample.metadata import SamplingMetadata
 
 from vllm_spyre.v1.sample.spyre_logits_processor import LogitProcessorWrapper
-from vllm_spyre.compat_utils import has_argument
 
 
 class RequestState(Protocol):
@@ -323,9 +320,6 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
         self.generators: dict[int, torch.Generator] = {}
 
         self.num_logprobs: dict[str, int] = {}
-        # NOTE(rob): num_prompt_logprobs only includes reqs
-        # that are currently in the prefill phase.
-        self.num_prompt_logprobs: dict[str, int] = {}
 
         # Internal representation of per-step batch state changes, used for
         # reordering persistent batch and generating logitsprocs batch state
@@ -477,8 +471,6 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
 
         if sampling_params.logprobs is not None:
             self.num_logprobs[req_id] = sampling_params.logprobs
-        if sampling_params.prompt_logprobs is not None:
-            self.num_prompt_logprobs[req_id] = sampling_params.prompt_logprobs
 
         if sampling_params.allowed_token_ids:
             self.has_allowed_token_ids.add(req_id)
@@ -510,7 +502,6 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
         self.repetition_penalties_reqs = set()
         self.generators = {}
         self.num_logprobs = {}
-        self.num_prompt_logprobs = {}
 
         self.has_allowed_token_ids = set()
         if self.allowed_token_ids_mask is not None:
@@ -566,7 +557,6 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
         self.repetition_penalties_reqs.discard(req_id)
         self.generators.pop(req_index, None)
         self.num_logprobs.pop(req_id, None)
-        self.num_prompt_logprobs.pop(req_id, None)
 
         self.has_allowed_token_ids.discard(req_id)
 
@@ -695,10 +685,6 @@ class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):
         return max(self.num_logprobs.values()) if self.num_logprobs else None
 
     @property
-    def no_prompt_logprob(self) -> bool:
-        return not self.num_prompt_logprobs
-
-    @property
     def no_allowed_token_ids(self) -> bool:
         return len(self.has_allowed_token_ids) == 0
 
@@ -775,12 +761,9 @@ class PoolingInputBatch(BaseInputBatch[PoolingRequestState]):
         assert len(self.requests_ids) == len(self.pooling_params)
         pooling_params = [self.pooling_params[req_id] for req_id in self.requests_ids]
 
-        kwargs: dict[str, Any] = {}
-        if has_argument(PoolingMetadata, "pooling_states"):
-            kwargs["pooling_states"] = []
         return PoolingMetadata(
             prompt_lens=torch.from_numpy(self._get_num_prompt_tokens()).to(self.device),
             prompt_token_ids=prompt_token_ids,
             pooling_params=pooling_params,
-            **kwargs,
+            pooling_states=[],
         )
