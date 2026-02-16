@@ -45,9 +45,10 @@ from vllm.model_executor.models.interfaces_base import VllmModelForPooling
 from vllm.model_executor.model_loader import get_model_loader
 from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
 
-
+import vllm_spyre.utils as utils_spyre
 import vllm_spyre.envs as envs_spyre
 from vllm_spyre.model_executor.model_loader.spyre import (
+    BACKEND_LIST,
     SpyreAttentionMetadata,
     SpyreCausalLM,
 )
@@ -434,6 +435,29 @@ class SpyrePoolingModelRunner(
             vllm_config=self.vllm_config, model_config=self.model_config
         )
         self.vllm_model.eval()
+        torch.set_grad_enabled(False)
+
+        # TODO: figure out how to make this work on spyre
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in BACKEND_LIST:
+            # Lazy import to avoid load torch_sendnn runtime before it is really
+            # necessary. This solve issues of running forked tests that share
+            # some resources from parent to children which can have problems
+            # of caching even though the test run in isolated subprocesses.
+
+            if SpyrePlatform.sendnn_configured():
+                pass
+
+            with utils_spyre.stagger_region(
+                envs_spyre.VLLM_SPYRE_MAX_LOAD_PROCESSES, self.parallel_config.world_size, self.rank
+            ):
+                # Not clear how to make the type checking happy with the torch.compile return
+                self.vllm_model = torch.compile(  # ty: ignore[invalid-assignment]
+                    self.vllm_model,
+                    mode="default",
+                    dynamic=False,
+                    backend=envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND,
+                )
+
         self.use_token_type_ids = False
         if "score" in self.vllm_model.pooler.get_supported_tasks() and (
             tokenizer := AutoTokenizer.from_pretrained(self.model_config.model)
