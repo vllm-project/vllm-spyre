@@ -16,7 +16,7 @@ from output_util import (
 from spyre_util import ModelInfo, create_random_request
 from typing_extensions import deprecated
 from vllm import SamplingParams
-from vllm.transformers_utils.tokenizer import get_tokenizer
+from vllm.tokenizers import get_tokenizer
 from vllm.v1.core.kv_cache_utils import BlockHash
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
