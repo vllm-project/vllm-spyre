@@ -1,5 +1,4 @@
 import torch
-from fms.utils import serialization
 from fms.utils.config import ModelConfig
 from transformers import PretrainedConfig
 from vllm.multimodal.inputs import (
@@ -61,12 +60,12 @@ class Mistral3MMUtils(MMUtilsBase):
 
             # when using config and tokenizer are set to `mistral` we don't get
             # pixel_values in mm_spec. So we are mapping these back here
-            if "images" in mm_spec:
+            if isinstance(mm_spec, dict) and "images" in mm_spec:
                 mm_spec["pixel_values"] = mm_spec.pop("images")
 
             if mm_spec is not None:
                 if "pixel_values" not in mm_spec:
-                    raise KeyError(f"Mistral3 requires pixel_values")
+                    raise KeyError("Mistral3 requires pixel_values")
 
                 pixel_values = mm_spec["pixel_values"].data
                 # FMS vision tower expects pixel_values with batch dimension
@@ -154,8 +153,10 @@ class Mistral3MMUtils(MMUtilsBase):
             )
         ]
 
+        warmup_input_ids: list[int] = [warmup_input_ids.tolist()] * req_count
+
         return MMWarmupInputs(
-            input_ids=[warmup_input_ids.tolist()] * req_count,
+            input_ids=warmup_input_ids,
             input_embeds=[warmup_embeds] * req_count,
             mm_features=warmup_mm_features,
         )
