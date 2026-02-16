@@ -36,9 +36,11 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             # Extract version from tag (e.g., v0.14.0 -> 0.14.0)
             VERSION="${GITHUB_REF#refs/tags/v}"
+
+            # This updates the gh-pages branch, adding the new version of the docs
             mike deploy --push --update-aliases "$VERSION" latest
             
-            # Uncomment this if we want to update the default version to this version.
+            # Uncomment this if we want to update the default version to the newly deployed version.
             # For now we can keep the default version set to a specific version while we
             # work on the transition to 2.0
             # mike set-default --push latest
