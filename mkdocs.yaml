@@ -107,3 +107,8 @@ extra_javascript:
 # So index.md generates as index.html and is available under URL /index.html
 # https://www.mkdocs.org/user-guide/configuration/#use_directory_urls
 use_directory_urls: false
+
+extra:
+  version:
+    provider: mike
+    default: dev

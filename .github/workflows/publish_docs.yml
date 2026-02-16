@@ -2,7 +2,10 @@ name: Publish docs
 
 on:
   push:
-    branches: [ main ]
+    tags:
+      - 'v*.*.*'  # Triggers on version tags like v1.2.3
+    branches:
+      - main  # Also deploy from main as 'dev'
     paths:
       - "**/*.md"
       - "docs/**"
@@ -27,5 +30,22 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: pip install -r docs/requirements-docs.txt
-      - name: Deploy docs
-        run: mkdocs gh-deploy --force
+      
+      - name: Deploy documentation
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            # Extract version from tag (e.g., v0.14.0 -> 0.14.0)
+            VERSION="${GITHUB_REF#refs/tags/v}"
+            mike deploy --push --update-aliases "$VERSION" latest
+            
+            # Uncomment this if we want to update the default version to this version.
+            # For now we can keep the default version set to a specific version while we
+            # work on the transition to 2.0
+            # mike set-default --push latest
+          else
+            # Deploy development version from main branch
+            mike deploy --push dev
+          fi
+
+
+
