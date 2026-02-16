@@ -38,7 +38,6 @@ else:
 
 from vllm.v1.attention.backend import AttentionType
 from vllm.platforms import Platform, PlatformEnum
-
 import vllm_spyre.envs as envs_spyre
 from vllm_spyre.compilation_utils import handle_disable_compilation
 
@@ -214,6 +213,18 @@ class SpyrePlatform(Platform):
                 "Registry validation is only performed for 'sendnn'.",
                 envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND,
             )
+
+        # avoid circular imports
+        from vllm.config.compilation import CompilationMode
+        from vllm_spyre.model_executor.model_loader.spyre import BACKEND_LIST
+
+        # verify compilation config
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "eager":
+            vllm_config.compilation_config.mode = CompilationMode.NONE
+        else:
+            assert envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in BACKEND_LIST
+            vllm_config.compilation_config.mode = CompilationMode.STOCK_TORCH_COMPILE
+            vllm_config.compilation_config.backend = envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND
 
         # TODO: try to support async scheduling
         scheduler_config.async_scheduling = False
