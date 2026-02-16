@@ -435,7 +435,9 @@ class SpyrePoolingModelRunner(
         )
         self.vllm_model.eval()
         self.use_token_type_ids = False
-        if tokenizer := AutoTokenizer.from_pretrained(self.model_config.model):
+        if "score" in self.vllm_model.pooler.get_supported_tasks() and (
+            tokenizer := AutoTokenizer.from_pretrained(self.model_config.model)
+        ):
             output = tokenizer(text="foo", text_pair="bar")
             self.use_token_type_ids = "token_type_ids" in output
             if self.use_token_type_ids:
