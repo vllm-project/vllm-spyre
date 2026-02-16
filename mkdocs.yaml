@@ -111,4 +111,4 @@ use_directory_urls: false
 extra:
   version:
     provider: mike
-    default: dev
+    default: latest
