@@ -229,10 +229,10 @@ class SpyreWorker(WorkerBase):
         # This can probably be fixed in a nicer way.
         return 2 * accurate_fake_kv_cache_size
 
-    def initialize_from_config(self, kv_cache_configs: list[KVCacheConfig]) -> None:
+    def initialize_from_config(self, kv_cache_config: KVCacheConfig) -> None:
         """Construct the KV cache from the provided configs.
         Currently, we do not support paged attention or kv caching"""
-        pass
+        self.model_runner.initialize_kv_cache(kv_cache_config)
 
     def __init__(
         self,

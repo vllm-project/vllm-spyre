@@ -3,13 +3,14 @@ import os
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from collections import defaultdict
 from logging import DEBUG
-from typing import TYPE_CHECKING, Any, Generic, TypeVar, Union
+from typing import TYPE_CHECKING, cast, Any, Generic, TypeVar, NamedTuple, TypeAlias
+from copy import deepcopy, copy
 
 import numpy
 import torch
-from transformers import AutoModel, AutoModelForSequenceClassification, AutoTokenizer
-from vllm.config import DeviceConfig, VllmConfig, set_current_vllm_config
+from vllm.config import DeviceConfig, VllmConfig, get_layers_from_vllm_config
 from vllm.forward_context import set_forward_context
 from vllm.logger import init_logger
 from vllm.sampling_params import SamplingType
@@ -21,27 +22,44 @@ except ImportError:
     from vllm.utils.platform_utils import is_pin_memory_available
     from vllm.utils.hashing import get_hash_fn_by_name
 
+from vllm.attention.layer import Attention
 from vllm.v1.core.block_pool import BlockPool
 from vllm.v1.core.kv_cache_utils import KVCacheBlock, get_request_block_hasher, init_none_hash
 from vllm.v1.core.sched.output import CachedRequestData
 from vllm.v1.core.single_type_kv_cache_manager import FullAttentionManager
-from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
+from vllm.v1.kv_cache_interface import (
+    AttentionSpec,
+    EncoderOnlyAttentionSpec,
+    FullAttentionSpec,
+    KVCacheConfig,
+    KVCacheGroupSpec,
+    KVCacheSpec,
+)
+from vllm.v1.attention.backend import (
+    AttentionBackend,
+    AttentionMetadata,
+    AttentionType,
+    CommonAttentionMetadata,
+)
 from vllm.v1.metrics.stats import PrefixCacheStats
 from vllm.v1.outputs import SamplerOutput
-from vllm.v1.pool.metadata import PoolingMetadata
 from vllm.v1.request import Request
+from vllm.v1.worker.utils import AttentionGroup
+
+from vllm.model_executor.model_loader import get_model_loader
+from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
+
 
 import vllm_spyre.envs as envs_spyre
-import vllm_spyre.utils as utils_spyre
 from vllm_spyre.compat_utils import has_argument
 from vllm_spyre.model_executor.model_loader.spyre import (
-    BACKEND_LIST,
     SpyreAttentionMetadata,
     SpyreCausalLM,
 )
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.utils import exact_div
 from vllm_spyre.v1.sample.spyre_logits_processor import build_logitsprocs_for_cb
+
 
 # yapf conflicts with ruff for this block
 # yapf: disable
@@ -64,6 +82,9 @@ else:
 from vllm.tasks import SupportedTask
 from vllm.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, ModelRunnerOutput
 
+PerLayerAttnMetadata: TypeAlias = dict[str, AttentionMetadata]
+# list when ubatching is enabled
+
 logger = init_logger(__name__)
 
 
@@ -72,12 +93,12 @@ class ModelForwardInputs:
     input_tokens: torch.Tensor | None  # For non multimodal
     input_embeds: torch.Tensor | None  # For multimodal
     input_positions: torch.Tensor
-    input_masks: torch.Tensor | None  # pooling and static batching only
     is_prompt: bool
 
 
 @dataclass(frozen=True)
 class PoolingForwardInputs(ModelForwardInputs):
+    input_masks: torch.Tensor | None  # pooling and static batching only
     token_type_ids: torch.Tensor | None
 
 
@@ -172,6 +193,9 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
     def build_input_batch(self) -> InputBatchT:
         raise NotImplementedError
 
+    def initialize_kv_cache(self, kv_cache_config: KVCacheConfig) -> None:
+        pass
+
     @property
     def model(self) -> SpyreCausalLM:
         assert self._model is not None, "model accessed before loading"
@@ -197,40 +221,6 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
     @abstractmethod
     def load_model(self) -> None:
         raise NotImplementedError
-
-    def _prepare_pad_input_ids(
-        self,
-        input_ids_list: list[torch.Tensor],
-        min_pad_length: int = 0,
-    ) -> tuple[list[torch.Tensor], list[torch.Tensor], list[torch.Tensor]]:
-        """left side padding implemented as
-        in fms.utils.generation.pad_input_id"""
-        max_len = max([min_pad_length] + [seq.size(0) for seq in input_ids_list])
-        padded_input_ids_list = []
-        mask_list = []
-        position_ids_list = []
-        for input_ids_i in input_ids_list:
-            seq_len = input_ids_i.size(0)
-            if max_len > seq_len:
-                logger.info(
-                    "Left padding request of length %d tokens to %d tokens.", seq_len, max_len
-                )
-            pads = (
-                torch.ones(max_len - seq_len, dtype=torch.long, device=input_ids_i.device)
-                * self.pad_token_id
-            )
-            non_pads = torch.ones(seq_len, dtype=torch.long, device=input_ids_i.device)
-
-            pos_ids_seq = torch.arange(0, seq_len, dtype=torch.long, device=input_ids_i.device)
-
-            # Setting this to 0, however if 0 is the eos, we will end up
-            # truncating the output if using truncate_after_eos once this
-            # workflow works for nested tensor, this can probably be removed
-            padded_input_ids_list.append(torch.cat((pads, input_ids_i)))
-            mask_list.append(torch.cat((torch.zeros_like(pads), non_pads)))
-            position_ids_list.append(torch.cat((torch.zeros_like(pads), pos_ids_seq)))
-
-        return padded_input_ids_list, mask_list, position_ids_list
 
     def get_kv_cache_spec(self) -> dict[str, KVCacheSpec]:
         """
@@ -263,12 +253,6 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
     def complete_warmup(self):
         """Turn off warmup mode once the warmup is complete"""
         self.warmup_mode = False
-
-    def build_attn_metadata(self, model_input: ModelInputsT) -> SpyreAttentionMetadata:
-        # TODO: probably sooner we will need a more sophisticated way to switch
-        # build attention metadata based on model/attention. But for now, a
-        # simple method override is good enough.
-        return None  # ty: ignore
 
     @abstractmethod
     def update_states(self, scheduler_output: SchedulerOutput):
@@ -325,29 +309,6 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
         return sampled_token_ids  # ty: ignore
 
 
-class PoolerAdapter(torch.nn.Module):
-    def __init__(self, pooler: torch.nn.Module):
-        super().__init__()
-        self.pooler = pooler
-
-    def forward(
-        self,
-        hidden_states: Union[torch.Tensor, tuple[torch.Tensor, ...]],
-        pooling_metadata: PoolingMetadata,
-    ) -> Union[torch.Tensor, list[torch.Tensor]]:
-        # Because we're using transformers to load the pooler
-        # and classifier layers and the assumption there is that
-        # we have a right padded batch, we need to split
-        # and at the batch dimension.
-        if isinstance(hidden_states, torch.Tensor):
-            hidden_states = torch.split(hidden_states, pooling_metadata.prompt_lens.tolist())
-        return [self.pooler(h.unsqueeze(dim=0)) for h in hidden_states]
-
-
-def _cls(input: torch.Tensor) -> torch.Tensor:
-    return input[:, 0]
-
-
 class SpyrePoolingModelRunner(
     BaseSpyreModelRunner[PoolingInputBatch, PoolingRequestState, PoolingForwardInputs],
 ):
@@ -365,6 +326,12 @@ class SpyrePoolingModelRunner(
         self._position_ids: torch.Tensor = None
         self.use_token_type_ids = False
 
+        # Attention layers that are only in the KVCacheConfig of the runner
+        # (e.g., KV sharing, encoder-only attention), but not in the
+        # KVCacheConfig of the scheduler.
+        self.runner_only_attn_layers: set[str] = set()
+        self.attn_groups: list[list[AttentionGroup]] = []
+
     @property
     def model(self) -> torch.nn.Module:
         return self._model  # ty: ignore[invalid-return-type]
@@ -378,113 +345,152 @@ class SpyrePoolingModelRunner(
             vocab_size=self.model_config.get_vocab_size(),
         )
 
+    def get_kv_cache_spec(self) -> dict[str, KVCacheSpec]:
+        # No KV cache for encoder-only attention
+        return {}
+
+    # I've kept the organization of methods the same as in the
+    # GPU model runner, so that it's easier to recognize the
+    # pattern
+    def initialize_kv_cache(self, kv_cache_config: KVCacheConfig) -> None:
+        kv_cache_config = deepcopy(kv_cache_config)
+        self.kv_cache_config = kv_cache_config
+        self.may_add_encoder_only_layers_to_kv_cache_config()
+        self.initialize_attn_backend(kv_cache_config)
+        self.initialize_metadata_builders(kv_cache_config)
+
+    def may_add_encoder_only_layers_to_kv_cache_config(self) -> None:
+        """
+        Add encoder-only layers to the KV cache config.
+        """
+        block_size = self.vllm_config.cache_config.block_size
+        encoder_only_attn_specs: dict[AttentionSpec, list[str]] = defaultdict(list)
+        attn_layers = get_layers_from_vllm_config(self.vllm_config, Attention)
+        for layer_name, attn_module in attn_layers.items():
+            assert attn_module.attn_type == AttentionType.ENCODER_ONLY
+            attn_spec: AttentionSpec = EncoderOnlyAttentionSpec(
+                block_size=block_size,
+                num_kv_heads=attn_module.num_kv_heads,
+                head_size=attn_module.head_size,
+                dtype=torch.float16,
+            )
+            encoder_only_attn_specs[attn_spec].append(layer_name)
+            self.runner_only_attn_layers.add(layer_name)
+        if len(encoder_only_attn_specs) > 0:
+            assert len(encoder_only_attn_specs) == 1, (
+                "Only support one encoder-only attention spec now"
+            )
+            spec, layer_names = encoder_only_attn_specs.popitem()
+            self.kv_cache_config.kv_cache_groups.append(
+                KVCacheGroupSpec(layer_names=layer_names, kv_cache_spec=spec)
+            )
+
+    def initialize_metadata_builders(self, kv_cache_config: KVCacheConfig) -> None:
+        for kv_cache_group_id in range(len(kv_cache_config.kv_cache_groups)):
+            for attn_group in self.attn_groups[kv_cache_group_id]:
+                attn_group.create_metadata_builders(
+                    self.vllm_config,
+                    self.device,
+                    None,
+                )
+
+    def initialize_attn_backend(self, kv_cache_config: KVCacheConfig) -> None:
+        """
+        Initialize the attention backends and attention metadata builders.
+        """
+        assert len(self.attn_groups) == 0, "Attention backends are already initialized"
+
+        class AttentionGroupKey(NamedTuple):
+            attn_backend: type[AttentionBackend]
+            kv_cache_spec: KVCacheSpec
+
+        def get_attn_backends_for_group(
+            kv_cache_group_spec: KVCacheGroupSpec,
+        ) -> tuple[dict[AttentionGroupKey, list[str]], set[type[AttentionBackend]]]:
+            layer_type = cast(type[Any], AttentionLayerBase)
+            layers = get_layers_from_vllm_config(
+                self.vllm_config, layer_type, kv_cache_group_spec.layer_names
+            )
+            attn_backends = {}
+            attn_backend_layers = defaultdict(list)
+
+            for layer_name in kv_cache_group_spec.layer_names:
+                attn_backend = layers[layer_name].get_attn_backend()
+
+                full_cls_name = attn_backend.full_cls_name()
+                layer_kv_cache_spec = kv_cache_group_spec.kv_cache_spec
+                key = (full_cls_name, layer_kv_cache_spec)
+                attn_backends[key] = AttentionGroupKey(attn_backend, layer_kv_cache_spec)
+                attn_backend_layers[key].append(layer_name)
+            return (
+                {attn_backends[k]: v for k, v in attn_backend_layers.items()},
+                set(group_key.attn_backend for group_key in attn_backends.values()),
+            )
+
+        def create_attn_groups(
+            attn_backends_map: dict[AttentionGroupKey, list[str]],
+            kv_cache_group_id: int,
+        ) -> list[AttentionGroup]:
+            attn_groups: list[AttentionGroup] = []
+            for (attn_backend, kv_cache_spec), layer_names in attn_backends_map.items():
+                attn_group = AttentionGroup(
+                    attn_backend,
+                    layer_names,
+                    kv_cache_spec,
+                    kv_cache_group_id,
+                )
+
+                attn_groups.append(attn_group)
+            return attn_groups
+
+        for i, kv_cache_group_spec in enumerate(kv_cache_config.kv_cache_groups):
+            attn_backends = get_attn_backends_for_group(kv_cache_group_spec)
+            self.attn_groups.append(create_attn_groups(attn_backends[0], i))
+
     def load_model(self) -> None:
-        assert len(self.model_config.architectures) == 1
-        task = (
-            "classify"
-            if self.model_config.architectures[0].endswith("ForSequenceClassification")
-            else "embed"
+        model_loader = get_model_loader(self.load_config)
+        self.vllm_model = model_loader.load_model(
+            vllm_config=self.vllm_config, model_config=self.model_config
         )
-
-        if task == "embed":
-            self._model = AutoModel.from_pretrained(self.model_config.model)
-        elif task == "classify":
-            class_model = AutoModelForSequenceClassification.from_pretrained(
-                self.model_config.model
-            )
-            if hasattr(class_model, "bert"):
-                self._model = class_model.bert
-                self._pooler = PoolerAdapter(self.model.pooler)  # ty:ignore[invalid-argument-type]
-            elif hasattr(class_model, "roberta"):
-                self._model = class_model.roberta
-                self._pooler = PoolerAdapter(_cls)  # ty:ignore[invalid-argument-type]
-            else:
-                raise ValueError(
-                    f"Unsupported model {self.model_config.model}: Expected "
-                    "Bert or Roberta for sequence classification"
-                )
-            self.classifier = class_model.classifier
-
-        # Disable pooler because in transformers it's
-        # always run even tough we don't use the outputs
-        # directly.
-        self._model.pooler = None
-
-        model_class_name = type(self.model).__name__
-        self.is_roberta = "roberta" in model_class_name.lower()
-
-        self.model.eval()
-        torch.set_grad_enabled(False)
-        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in BACKEND_LIST:
-            # Lazy import to avoid load torch_sendnn runtime before it is really
-            # necessary. This solve issues of running forked tests that share
-            # some resources from parent to children which can have problems
-            # of caching even though the test run in isolated subprocesses.
-
-            if SpyrePlatform.sendnn_configured():
-                pass
-
-            with utils_spyre.stagger_region(
-                envs_spyre.VLLM_SPYRE_MAX_LOAD_PROCESSES, self.parallel_config.world_size, self.rank
-            ):
-                # Not clear how to make the type checking happy with the torch.compile return
-                self._model = torch.compile(  # ty: ignore[invalid-assignment]
-                    self.model,
-                    mode="default",
-                    dynamic=False,
-                    backend=envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND,
-                )
-
-        if task == "classify":
-            tokenizer = AutoTokenizer.from_pretrained(self.model_config.model)
-            output = tokenizer(text="foo", text_pair="bar")
-            self.use_token_type_ids = "token_type_ids" in output
-            if self.use_token_type_ids:
-                self.sep_token_id = tokenizer.sep_token_id
-
-        pooler_config = self.model_config.pooler_config
-        assert pooler_config is not None, "Pooler config is require for pooling models"
-
-        try:
-            # vllm >= v0.14.0
-            from vllm.model_executor.layers.pooler.seqwise.poolers import (
-                pooler_for_classify,
-                pooler_for_embed,
-            )
-            from vllm.model_executor.layers.pooler.activations import (
-                get_cross_encoder_act_fn,
-            )
-
-            if task == "embed":
-                with set_current_vllm_config(self.vllm_config):
-                    self.pooler = pooler_for_embed(pooler_config=pooler_config)
-            elif task == "classify":
-                with set_current_vllm_config(self.vllm_config):
-                    self.pooler = pooler_for_classify(
-                        pooler_config=pooler_config,
-                        pooling=self._pooler,
-                        classifier=self.classifier,
-                        act_fn=get_cross_encoder_act_fn(self.model_config.hf_config),
-                    )
-        except ImportError:
-            # vllm < v0.14.0
-            from vllm.model_executor.layers.pooler import ClassifierPooler, Pooler  # ty: ignore[unresolved-import]
-
-            if task == "embed":
-                with set_current_vllm_config(self.vllm_config):
-                    self.pooler = Pooler.for_embed(pooler_config=pooler_config)  # ty: ignore[unresolved-attribute]
-            elif task == "classify":
-                with set_current_vllm_config(self.vllm_config):
-                    self.pooler = ClassifierPooler(
-                        pooling=self._pooler,
-                        classifier=self.classifier,
-                        act_fn=ClassifierPooler.act_fn_for_cross_encoder(self.model_config),
-                    )
+        self.vllm_model.eval()
 
     @property
     def vocab_size(self) -> int:
-        # self.model here is probably a transformers model class
-        return self.model.config.vocab_size  # ty: ignore[invalid-return-type]
+        return self.model_config.get_vocab_size()  # ty: ignore[invalid-return-type]
+
+    def _prepare_pad_input_ids(
+        self,
+        input_ids_list: list[torch.Tensor],
+        min_pad_length: int = 0,
+    ) -> tuple[list[torch.Tensor], list[torch.Tensor], list[torch.Tensor]]:
+        """left side padding implemented as
+        in fms.utils.generation.pad_input_id"""
+        max_len = max([min_pad_length] + [seq.size(0) for seq in input_ids_list])
+        padded_input_ids_list = []
+        mask_list = []
+        position_ids_list = []
+        for input_ids_i in input_ids_list:
+            seq_len = input_ids_i.size(0)
+            if max_len > seq_len:
+                logger.info(
+                    "Left padding request of length %d tokens to %d tokens.", seq_len, max_len
+                )
+            pads = (
+                torch.ones(max_len - seq_len, dtype=torch.long, device=input_ids_i.device)
+                * self.pad_token_id
+            )
+            non_pads = torch.ones(seq_len, dtype=torch.long, device=input_ids_i.device)
+
+            pos_ids_seq = torch.arange(0, seq_len, dtype=torch.long, device=input_ids_i.device)
+
+            # Setting this to 0, however if 0 is the eos, we will end up
+            # truncating the output if using truncate_after_eos once this
+            # workflow works for nested tensor, this can probably be removed
+            padded_input_ids_list.append(torch.cat((pads, input_ids_i)))
+            mask_list.append(torch.cat((torch.zeros_like(pads), non_pads)))
+            position_ids_list.append(torch.cat((torch.zeros_like(pads), pos_ids_seq)))
+
+        return padded_input_ids_list, mask_list, position_ids_list
 
     def pad_input_ids(
         self,
@@ -625,16 +631,12 @@ class SpyrePoolingModelRunner(
         if self.use_token_type_ids:
             token_type_ids = self._token_types(input_tokens)
 
-        if self.is_roberta:
-            position_ids += self.pad_token_id + 1
-            position_ids *= mask
-
         model_input = PoolingForwardInputs(
             input_tokens=input_tokens,
             input_embeds=None,
             input_positions=position_ids,
-            input_masks=mask,
             is_prompt=True,
+            input_masks=mask,
             token_type_ids=token_type_ids,
         )
 
@@ -664,7 +666,57 @@ class SpyrePoolingModelRunner(
             torch._dynamo.mark_static(model_input.token_type_ids, 1)
 
     def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
-        return tuple(self.pooler.get_supported_tasks())
+        return tuple(self.vllm_model.pooler.get_supported_tasks())
+
+    def build_attn_metadata(
+        self,
+        input: PoolingForwardInputs,
+    ) -> PerLayerAttnMetadata:
+        num_tokens_padded = input.input_tokens.numel()
+        num_reqs_padded = self.input_batch.padded_batch_size
+
+        prompt_tokens = torch.from_numpy(self.input_batch._get_num_prompt_tokens())
+        num_reqs = len(prompt_tokens)
+        max_seq_len = max(prompt_tokens)
+
+        padded_prompt_len = input.input_tokens.shape[1]
+        prompt_paddings = padded_prompt_len - prompt_tokens
+
+        query_start_locs = torch.zeros(num_reqs_padded, dtype=torch.int32)
+        query_start_locs[:num_reqs] = prompt_paddings
+
+        cm_base = CommonAttentionMetadata(
+            query_start_loc=query_start_locs,
+            query_start_loc_cpu=query_start_locs,
+            seq_lens=prompt_tokens,
+            num_reqs=self.input_batch.num_reqs,
+            num_actual_tokens=num_tokens_padded,
+            max_query_len=max_seq_len,
+            max_seq_len=max_seq_len,
+            block_table_tensor=torch.zeros(0),
+            slot_mapping=torch.zeros(0),
+            causal=False,
+        )
+
+        # Prepare the attention metadata for each KV cache group and make layers
+        # in the same group share the same metadata.
+        attn_metadata: PerLayerAttnMetadata = {}
+        for kv_cache_gid, _ in enumerate(self.kv_cache_config.kv_cache_groups):
+            cm = copy(cm_base)  # shallow copy
+
+            for attn_gid in range(len(self.attn_groups[kv_cache_gid])):
+                attn_group = self.attn_groups[kv_cache_gid][attn_gid]
+                builder = attn_group.get_metadata_builder()
+
+                attn_metadata_i = builder.build(
+                    common_prefix_len=0,
+                    common_attn_metadata=cm,
+                )
+
+                for layer_name in attn_group.layer_names:
+                    attn_metadata[layer_name] = attn_metadata_i
+
+        return attn_metadata
 
     @SpyrePlatform.inference_mode()
     def execute_model(
@@ -688,16 +740,22 @@ class SpyrePoolingModelRunner(
         if self.use_token_type_ids:
             model_kwargs["token_type_ids"] = model_input.token_type_ids
 
-        # Execute the model
         with set_forward_context(attn_metadata, self.vllm_config):
-            outputs = self.model(
-                input_ids=model_input.input_tokens,
-                position_ids=model_input.input_positions,
-                attention_mask=model_input.input_masks,
+            assert model_input.input_tokens is not None
+            assert model_input.input_positions is not None
+            batch, seqlen = model_input.input_tokens.shape
+            # We need to flatten the batch dimension here to be
+            # compatible with the transformers backend. The vllm
+            # code doesn't care.
+            if (token_typed_ids := model_kwargs.get("token_typed_ids")) is not None:
+                model_kwargs["token_typed_ids"] = token_typed_ids.view(batch * seqlen)
+
+            hidden_states = self.vllm_model(
+                input_ids=model_input.input_tokens.view(batch * seqlen),
+                positions=model_input.input_positions.view(batch * seqlen),
                 **model_kwargs,
             )
-
-            hidden_states = outputs["last_hidden_state"]
+            hidden_states = hidden_states.view(batch, seqlen, -1)
 
         # Only perform sampling in the driver worker.
         if not self.is_driver_worker:
@@ -727,7 +785,7 @@ class SpyrePoolingModelRunner(
             # we're left padding
             hidden_state_list.append(hidden_state[-prompt_len:])
 
-        raw_pooler_output = self.pooler(
+        raw_pooler_output = self.vllm_model.pooler(
             hidden_states=torch.cat(hidden_state_list), pooling_metadata=pooling_metadata
         )
 

@@ -22,6 +22,7 @@ from transformers.models.granite import GraniteConfig
 from vllm.inputs import ProcessorInputs, PromptType, TokenInputs
 from vllm.logger import init_logger
 
+
 try:
     # pre 0.11.1 compatibility
     from vllm.utils import FlexibleArgumentParser  # ty: ignore[unresolved-import]
@@ -34,11 +35,17 @@ if TYPE_CHECKING:
     from vllm.config import ModelConfig, VllmConfig
     from vllm.pooling_params import PoolingParams
     from vllm.sampling_params import SamplingParams
+    from vllm.v1.attention.backends.registry import AttentionBackendEnum
+    from vllm.v1.attention.selector import AttentionSelectorConfig
 else:
     ModelConfig = None
     VllmConfig = None
     SamplingParams = None
     PoolingParams = None
+    AttentionBackendEnum = None
+    AttentionSelectorConfig = None
+
+from vllm.v1.attention.backend import AttentionType
 from vllm.platforms import Platform, PlatformEnum
 
 import vllm_spyre.envs as envs_spyre
@@ -95,6 +102,16 @@ class SpyrePlatform(Platform):
     @classmethod
     def import_kernels(cls) -> None:
         pass  # suppress warning
+
+    @classmethod
+    def get_attn_backend_cls(
+        cls,
+        selected_backend: "AttentionBackendEnum",
+        attn_selector_config: "AttentionSelectorConfig",
+    ) -> str:
+        assert attn_selector_config.attn_type == AttentionType.ENCODER_ONLY
+        logger.info("Using Torch SDPA backend.")
+        return "vllm_spyre.v1.attention.backends.spyre_sdpa.SpyreSDPABackend"
 
     @classmethod
     def is_async_output_supported(cls, enforce_eager: bool | None) -> bool:
