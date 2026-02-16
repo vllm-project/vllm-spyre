@@ -1,9 +1,9 @@
 """
-This example shows how to run offline inference using continuous batching.
+This example shows how to run offline inference with a vision language model.
 
 NOTE: At the moment, if you are checking parity, things may not line up
 unless you compare eager against the FMS cpu model, i.e.,
-    $ python cb_spyre_vision.py --backend eager --compare-target fms
+    $ python vision_inference.py --backend eager --compare-target fms
 """
 
 import argparse
@@ -218,6 +218,10 @@ if __name__ == "__main__":
             "locally on arm64."
         )
         os.environ["HF_HUB_OFFLINE"] = "1"
+
+    if platform.system() == "Darwin":
+        print("Setting VLLM_WORKER_MULTIPROC_METHOD=spawn to avoid forking problems on Mac OS")
+        os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 
     os.environ["VLLM_SPYRE_DYNAMO_BACKEND"] = args.backend
 
