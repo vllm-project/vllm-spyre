@@ -12,8 +12,7 @@ vllm serve 'ibm-granite/granite-vision-3.3-2b' \
 
 NOTE: in the max feature case, a single image for granite vision can take
 around 5k tokens, so keep this in mind when setting the max model length.
-Also, although you should configure this to run as CB (as static batch is
-not supported), this script does *not* submit multiple requests as a batch.
+Also this script does *not* submit multiple requests as a batch.
 This is because multimodal inputs are only supported for chat completions,
 not completions, and the chat completions endpoint does not support batched
 inputs.
