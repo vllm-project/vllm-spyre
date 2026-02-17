@@ -4,6 +4,7 @@ from scheduling_utils import create_request_for_scheduler_test, random_prompt
 from v1.worker.mock_model import InstrumentedModelRunner
 
 from spyre_util import REFERENCE_MODELS
+from vllm_spyre.compat_utils import has_argument
 
 
 @pytest.mark.cpu
@@ -50,7 +51,11 @@ def test_block_sharing_for_2_chunks(
 
     kv_cache_manager = pc_model_runner.kv_cache_manager
 
-    kv_cache_manager.allocate_new_blocks(request1.request.request_id, 192)
+    # compat: vLLM 0.15.0 added an argument
+    if has_argument(kv_cache_manager.allocate_new_blocks, "num_tokens_main_model"):
+        kv_cache_manager.allocate_new_blocks(request1.request.request_id, 192, 192)
+    else:
+        kv_cache_manager.allocate_new_blocks(request1.request.request_id, 192)
     kv_cache_manager.cache_blocks(request1.request, 192)
     kv_cache_manager.free(request1.request.request_id)
 
