@@ -959,6 +959,193 @@ def test_cp_prefill_interleave2(
     )
 
 
+@pytest.mark.chunked_prefill
+@pytest.mark.full_model
+# These values are all parameterized for test sorting
+@pytest.mark.parametrize("max_num_seqs", [2])
+@pytest.mark.parametrize("max_model_len", [2048])
+@pytest.mark.parametrize("max_num_batched_tokens", [128])
+@pytest.mark.parametrize("available_blocks", [None])
+def test_cp_prefill_full_decode_batch(
+    model: ModelInfo,
+    backend: str,
+    monkeypatch: pytest.MonkeyPatch,
+    set_random_seed,
+    max_num_seqs: int,
+    max_model_len: int,
+    max_num_batched_tokens: int,
+    available_blocks: int,
+):
+    """Tests that a new request can start prefilling even when the decode batch
+    is full. With a batch size of 2 and three requests, the third request begins
+    prefilling while two other requests are decoding, but must wait for the
+    first request to finish before prefilling the last chunk.
+
+    Configuration:
+        * max_num_seqs: 2
+        * number of prompts: 3
+            * 0: len = 10,  max tokens = 5, step joining = 0
+            * 1: len = 10, max tokens = 5, step joining = 0
+            * 2: len = 133, max tokens = 3, step joining = 0
+    """
+
+    seqs_max_tokens = [5, 5, 3]
+    prompts_lengths = [10, 10, 133]
+    steps_add_reqs = [0, 0, 0]
+
+    checked_steps = [
+        {
+            "step": 0,
+            "tkv": 0,
+            "waiting": ["0", "1", "2"],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0,
+        },
+        {
+            # Request 0 is prefilled with a single chunk
+            # Token 0 is generated
+            "step": 1,
+            "tkv": 10,
+            "waiting": ["1", "2"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 1,
+            "n_used_blocks": 1,
+        },
+        {
+            # Decode 1 of request 0.
+            "step": 2,
+            "tkv": 11,
+            "waiting": ["1", "2"],
+            "running": ["0"],
+            "request_outputs": ["0"],
+            "n_reserved_blocks": 1,
+            "n_used_blocks": 1,
+        },
+        {
+            # Request 1 is prefilled with a single chunk
+            "step": 3,
+            "tkv": 11,
+            "waiting": ["2"],
+            "running": ["1", "0"],
+            "request_outputs": ["1"],
+            "n_reserved_blocks": 2,
+            "n_used_blocks": 2,
+        },
+        {
+            # Decode 2 of request 0.
+            # Decode 1 of request 1.
+            # Sequence 0 finishes
+            "step": 4,
+            "tkv": 12,
+            "waiting": ["2"],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"],
+            "n_reserved_blocks": 2,
+            "n_used_blocks": 2,
+        },
+        {
+            # Chunk 0 of request 2 prefill
+            # Request 2 can start prefill even if the decode batch is full
+            "step": 5,
+            "tkv": 12,
+            "waiting": [],
+            "running": ["2", "1", "0"],
+            "request_outputs": [],
+            "n_reserved_blocks": 5,
+            "n_used_blocks": 5,
+        },
+        {
+            # Decode 3 of request 0.
+            # Decode 2 of request 1.
+            "step": 6,
+            "tkv": 13,
+            "waiting": [],
+            "running": ["1", "0", "2"],
+            "request_outputs": ["1", "0"],
+            "n_reserved_blocks": 5,
+            "n_used_blocks": 5,
+        },
+        {
+            # Request 2 can't finish prefilling because the decode batch is full
+            # Decode 4 of request 0.
+            # Decode 3 of request 1.
+            "step": 7,
+            "tkv": 14,
+            "waiting": [],
+            "running": ["1", "2"],
+            "finished_requests": ["0"],
+            "request_outputs": ["1", "0"],
+            "n_reserved_blocks": 5,
+            "n_used_blocks": 5,
+        },
+        {
+            # Chunk 1 of request 2 prefill
+            # Request 2 can complete prefill now that request 0 finished
+            "step": 8,
+            "tkv": 14,
+            "waiting": [],
+            "running": ["2", "1"],
+            "request_outputs": ["2"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 4,
+        },
+        {
+            # Decode 4 of request 1.
+            # Decode 1 of request 2.
+            # Sequence 1 finishes
+            "step": 9,
+            "tkv": 142,
+            "waiting": [],
+            "running": ["2"],
+            "finished_requests": ["1"],
+            "request_outputs": ["2", "1"],
+            "n_reserved_blocks": 4,
+            "n_used_blocks": 4,
+        },
+        {
+            # Decode 2 of request 2.
+            # Sequence 2 finishes
+            "step": 10,
+            "tkv": 135,
+            "waiting": [],
+            "running": [],
+            "finished_requests": ["2"],
+            "request_outputs": ["2"],
+            "n_reserved_blocks": 3,
+            "n_used_blocks": 3,
+        },
+        {
+            # Tkv should be cleared one step later
+            "step": 11,
+            "tkv": 0,
+            "waiting": [],
+            "running": [],
+            "request_outputs": [],
+            "n_reserved_blocks": 0,
+            "n_used_blocks": 0,
+        },
+    ]
+
+    check_scheduler_inference_steps(
+        model=model,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        seqs_max_tokens=seqs_max_tokens,
+        prompts_lengths=prompts_lengths,
+        steps_add_reqs=steps_add_reqs,
+        checked_steps=checked_steps,
+        max_num_seqs=max_num_seqs,
+        max_model_len=max_model_len,
+        available_blocks=available_blocks,
+        use_cb=False,
+        random_prompts=True,
+        max_num_batched_tokens=max_num_batched_tokens,
+    )
+
+
 # TODO had to move test at the end, having it after test_prefill_tkv_too_big
 # was breaking the ordering ("error in test ordering!")
 # looks like an issue with sorting the runtime configurations

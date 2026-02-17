@@ -641,19 +641,10 @@ class ChunkedPrefillSpyreScheduler(ContinuousBatchingSpyreScheduler):
 
     def _satisfies_first_chunk_constraints(self, request: Request) -> bool:
         """First chunked prefill can be scheduled only if there is space in the
-        input batch (cond1) and in the prefill batch (cond2)."""
-
-        # TODO theoretically we could already do a chunked prefill even
-        # if the decode batch is full, but the current implementation of input
-        # batch doesn't allow to do so.
-        num_running = len(self.running)
-        cond1 = num_running + len(self.waiting) < self.max_num_running_reqs
-
+        prefill batch"""
         # check that there is space in the prefill batch
         max_prefill_batch_size = 1
-        cond2 = len(self.waiting) < max_prefill_batch_size
-
-        return cond1 and cond2
+        return len(self.waiting) < max_prefill_batch_size
 
     def _satisfies_last_chunk_constraints(self, request: Request) -> bool:
         """Last chunked prefill can be scheduled only if there is enough space
