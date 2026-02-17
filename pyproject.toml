@@ -13,7 +13,7 @@ license = {text = "Apache 2"}
 dependencies = [
     "fms-model-optimizer[fp8]>=0.8.0",
     "ibm-fms>=1.6.0,<2.0",
-    "vllm>=0.14.1,<=0.15.1",
+    "vllm>=0.15.1,<=0.15.1",
 ]
 requires-python = ">=3.11"
 dynamic = ["version"]
