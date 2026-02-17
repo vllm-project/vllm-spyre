@@ -30,6 +30,11 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: pip install -r docs/requirements-docs.txt
+
+      - name: Configure Git
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
       
       - name: Deploy documentation
         run: |
