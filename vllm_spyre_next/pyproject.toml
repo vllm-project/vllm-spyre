@@ -1,0 +1,171 @@
+[build-system]
+requires = [
+  "setuptools>=64",
+  "setuptools_scm>=8"
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vllm-spyre-next"
+description = "Next iteration of vllm-spyre on the torch-spyre stack"
+readme = "README.md"
+license = {text = "Apache 2"}
+dependencies = [
+    # "torch-sypre"
+    "vllm>=0.11.0,<=0.14.1",
+]
+requires-python = ">=3.11"
+dynamic = ["version"]
+
+[project.entry-points."vllm.platform_plugins"]
+spyre_next = "vllm_spyre_next:register"
+
+[tool.setuptools.packages.find]
+where = ["."]  # list of folders that contain the packages (["."] by default)
+include = ["vllm_spyre_next*"]  # package names should match these glob patterns (["*"] by default)
+exclude = []  # exclude packages matching these glob patterns (empty by default)
+namespaces = false  # to disable scanning PEP 420 namespaces (true by default)
+
+[tool.setuptools_scm]
+# Version files are optional, this just marginally speeds up version inspection
+# at runtime
+version_file = "vllm_spyre_next/_version.py"
+# Version strings are formatted as `{version}+{local}`, e.g. "0.1.dev1+gb1a7032"
+# Local versioning is incompatible with pypi, so we disable it by default.
+local_scheme = "no-local-version"
+root = ".."
+# For more version configuration, see 
+# https://setuptools-scm.readthedocs.io/en/latest/config/
+
+
+[tool.uv]
+# Never install torch, so that no dependencies can override it.
+# This requires that torch is installed separately in the target environment.
+# Triton is optional in most dependencies, however, xgrammar requires it.
+# So we set to 'never' to prevent installing it or eventually any other 
+# by accident
+override-dependencies = [
+    "intel-extension-for-pytorch; sys_platform == 'never'",
+
+    # opencv-python-headless==4.13.0.90 has a packaging bug that incorrectly depends on libxcb.so.1,
+    # causing import failure on headless Linux systems.
+    "opencv-python-headless==4.12.0.88",
+
+    # Skip packages on s390x and ppc64le, expected to be pre-installed
+    "vllm ; platform_machine not in 's390x, ppc64le'",
+    "torch ; platform_machine not in 's390x, ppc64le'",
+    "ray; platform_machine not in 's390x, ppc64le'",
+    "llvmlite; platform_machine not in 's390x, ppc64le'",
+    "pyarrow; platform_machine not in 's390x, ppc64le'",
+]
+environments = [
+    "python_version > '3.9'"
+]
+
+[tool.uv.sources]
+vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.14.1" }
+
+[tool.ty.rules]
+possibly-missing-attribute = "ignore"
+
+[tool.ty.src]
+exclude = ["vllm_spyre_next/__init__.py"]
+
+[tool.ruff]
+# Use widescreen monitors 😎😎😎
+line-length = 100
+
+[tool.ruff.lint.per-file-ignores]
+"vllm_spyre_next/version.py" = ["F401"]
+"vllm_spyre_next/_version.py" = ["ALL"]
+
+[tool.ruff.lint]
+select = [
+    # pycodestyle
+    "E",
+    # Pyflakes
+    "F",
+    # pyupgrade
+    "UP",
+    # flake8-bugbear
+    "B",
+    # flake8-simplify
+    "SIM",
+    # isort
+    # "I",
+    "G",
+]
+ignore = [
+    # star imports
+    "F405", "F403",
+    # lambda expression assignment
+    "E731",
+    # Loop control variable not used within loop body
+    "B007",
+    # f-string format
+    "UP032",
+    # % formatters
+    "UP031",
+    # ternary operators
+    "SIM108",
+
+
+    # TODO: Fix all of these in code instead
+
+    # Type unions
+    "UP007",
+    # Callable
+    "UP035",
+    # Zip
+    "B905",
+]
+
+[tool.codespell]
+ignore-words-list = "dout, te, indicies, subtile, ElementE"
+skip = "*.svg,./tests/hf_cache.json"
+#skip = "./tests/models/fixtures,./tests/prompts,./benchmarks/sonnet.txt,./tests/lora/data,./build"
+
+[tool.isort]
+use_parentheses = true
+skip_gitignore = true
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+asyncio_default_fixture_loop_scope = "function"
+
+# --8<-- [start:test-markers-definition]
+markers = [
+    # TODO add any
+]
+# --8<-- [end:test-markers-definition]
+
+[tool.markdownlint]
+#MD013.line_length = 100
+MD013 = false # line-length
+MD033 = false # inline-html
+MD038 = false # no-space-in-code
+MD041 = false # first-line-h1
+MD046 = false # code-block-style
+MD024.allow_different_nesting = true # no-duplicate-headers
+MD007.indent = 4 # ul-indent
+MD037 = false # no-space-in-emphasis (allow MkDocs Admonitions)
+
+[tool.pymarkdown]
+plugins.md013.enabled = false # line-length
+plugins.md033.enabled = false # inline-html
+plugins.md041.enabled = false # first-line-h1
+plugins.md046.enabled = false # code-block-style
+plugins.md024.allow_different_nesting = true # no-duplicate-headers
+plugins.md007.enabled = true
+plugins.md007.indent = 4
+
+[dependency-groups]
+dev = [
+    "pytest==8.3.4",
+    "pytest-asyncio>=1.0.0",
+    "pytest-forked>=1.6.0",
+    "pytest-timeout==2.3.1",
+    "requests==2.32.3",
+    "sentence-transformers==3.4.1",
+    "pytest-mock>=3.15.0",
+]
