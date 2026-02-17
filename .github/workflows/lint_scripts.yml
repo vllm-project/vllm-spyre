@@ -10,6 +10,7 @@ on:
   push:
     branches:
       - main
+      - stable/1.x
     paths:
       - '**/*.sh'
       - '.github/workflows/lint_scripts.yml'
