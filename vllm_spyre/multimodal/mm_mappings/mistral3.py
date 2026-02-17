@@ -60,7 +60,7 @@ class Mistral3MMUtils(MMUtilsBase):
 
             # when using config and tokenizer are set to `mistral` we don't get
             # pixel_values in mm_spec. So we are mapping these back here
-            if isinstance(mm_spec, dict) and "images" in mm_spec:
+            if isinstance(mm_spec, MultiModalKwargsItem) and "images" in mm_spec:
                 mm_spec["pixel_values"] = mm_spec.pop("images")
 
             if mm_spec is not None:
