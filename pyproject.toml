@@ -13,7 +13,7 @@ license = {text = "Apache 2"}
 dependencies = [
     "fms-model-optimizer[fp8]>=0.8.0",
     "ibm-fms>=1.7.0,<2.0",
-    "vllm>=0.11.0,<=0.15.1",
+    "vllm>=0.15.1,<=0.15.1",
 ]
 requires-python = ">=3.11"
 dynamic = ["version"]
@@ -153,14 +153,13 @@ markers = [
     "worker: Tests for worker logic",
     "basic: Basic correctness tests",
     "compat: Tests readiness to remove backwards compatibility code",
-    "other_e2e: Pretty unclear",
+    "precompilation: Tests related to precompiled model cache",
 
     # Hardware backends
     "cpu: Tests using CPU (i.e. eager) backend",
     "spyre: Tests using Spyre hardware backend",
 
     # Operational modes
-    "sb: Static batching tests",
     "cb: Continuous batching tests",
     "chunked_prefill: Tests with chunked prefill enabled",
     "prefix_caching: Tests for prefix caching",
@@ -171,6 +170,8 @@ markers = [
     "embedding: Tests for embedding models",
     "quantized: Tests for quantized models",
     "full_model: Tests with a full-sized decoder model (instead of a micro model)",
+    "scoring: Tests for scoring models",
+    "multimodal: Tests for multimodal models",
 
 ]
 # --8<-- [end:test-markers-definition]

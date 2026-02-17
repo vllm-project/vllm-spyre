@@ -103,12 +103,6 @@ The vLLM Documentation on [Deploying with Kubernetes](https://docs.vllm.ai/en/la
                 value: "1"
               - name: TORCH_SENDNN_CACHE_DIR
                 value: /root/.cache/torch
-              - name: VLLM_SPYRE_WARMUP_BATCH_SIZES
-                value: "1,4"
-              - name: VLLM_SPYRE_WARMUP_PROMPT_LENS
-                value: "1024,256"
-              - name: VLLM_SPYRE_WARMUP_NEW_TOKENS
-                value: "256,64"
               ports:
               - containerPort: 8000
               resources:

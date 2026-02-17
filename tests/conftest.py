@@ -29,7 +29,6 @@ def pytest_generate_tests(metafunc):
     allows for dynamic parametrization."""
 
     # default parameterizations
-    default_warmup_shape = [[(64, 20, 4)]]
     default_max_num_seqs = [4]
     default_max_model_len = [512]
     default_max_num_batched_tokens = [128]
@@ -56,24 +55,12 @@ def pytest_generate_tests(metafunc):
                 metafunc,
                 existing_markers,
             )
-            _add_param(
-                "warmup_shapes",
-                [[(1024, 20, 4)]],
-                metafunc,
-                existing_markers,
-            )
     else:
         # Default parameters
         _add_param("model", get_spyre_model_list(), metafunc, existing_markers)
         _add_param(
             "backend",
             get_spyre_backend_list(),
-            metafunc,
-            existing_markers,
-        )
-        _add_param(
-            "warmup_shapes",
-            default_warmup_shape,
             metafunc,
             existing_markers,
         )
@@ -114,8 +101,6 @@ def pytest_generate_tests(metafunc):
         metafunc.parametrize(
             "mode",
             [
-                pytest.param("sb", marks=pytest.mark.sb, id="sb"),
-                pytest.param("cb", marks=pytest.mark.cb, id="cb"),
                 pytest.param("cp", marks=pytest.mark.chunked_prefill, id="cp"),
                 pytest.param("pc", marks=pytest.mark.prefix_caching, id="pc"),
             ],
@@ -248,11 +233,7 @@ def remote_openai_server(request):
     except KeyError as e:
         raise pytest.UsageError("Error setting up remote_openai_server params") from e
 
-    # Default to None if not present
-    quantization = params.get("quantization", None)
-
-    # Add extra server args if present in test
-    server_args = ["--quantization", quantization] if quantization else []
+    server_args = []
 
     if "tp_size" in params:
         tp_size = params["tp_size"]
@@ -261,40 +242,39 @@ def remote_openai_server(request):
             skip_unsupported_tp_size(int(tp_size), backend)
             server_args.extend(["--tensor-parallel-size", str(tp_size)])
 
-    if "mode" in params and params["mode"] in ["cb", "cp", "pc"]:
+    env_dict = {"VLLM_SPYRE_DYNAMO_BACKEND": backend}
+
+    if "max_model_len" in params:
+        # decoder model, probably
         max_model_len = params["max_model_len"]
         max_num_seqs = params["max_num_seqs"]
-        env_dict = {"VLLM_SPYRE_USE_CB": "1", "VLLM_SPYRE_DYNAMO_BACKEND": backend}
         server_args.extend(
             ["--max_num_seqs", str(max_num_seqs), "--max-model-len", str(max_model_len)]
         )
-        # Chunked prefill extra
-        if params["mode"] in ["cp", "pc"]:
-            env_dict.update({"VLLM_SPYRE_USE_CHUNKED_PREFILL": "1"})
+        server_args.extend(
+            [
+                "--max_num_batched_tokens",
+                str(params.get("max_num_batched_tokens", 128)),
+            ]
+        )
+        if params["mode"] != "pc":
             server_args.extend(
                 [
-                    "--max_num_batched_tokens",
-                    str(128),
-                ]
-            )
-        if params["mode"] == "pc":
-            server_args.extend(
-                [
-                    "--enable-prefix-caching",
+                    "--no-enable-prefix-caching",
                 ]
             )
 
     else:
+        # TODO: validate that only pooling models reach this place
         warmup_shapes = params["warmup_shapes"]
         warmup_prompt_length = [t[0] for t in warmup_shapes]
-        warmup_new_tokens = [t[1] for t in warmup_shapes]
-        warmup_batch_size = [t[2] for t in warmup_shapes]
-        env_dict = {
-            "VLLM_SPYRE_WARMUP_PROMPT_LENS": ",".join(map(str, warmup_prompt_length)),
-            "VLLM_SPYRE_WARMUP_NEW_TOKENS": ",".join(map(str, warmup_new_tokens)),
-            "VLLM_SPYRE_WARMUP_BATCH_SIZES": ",".join(map(str, warmup_batch_size)),
-            "VLLM_SPYRE_DYNAMO_BACKEND": backend,
-        }
+        warmup_batch_size = [t[1] for t in warmup_shapes]
+        env_dict.update(
+            {
+                "VLLM_SPYRE_WARMUP_PROMPT_LENS": ",".join(map(str, warmup_prompt_length)),
+                "VLLM_SPYRE_WARMUP_BATCH_SIZES": ",".join(map(str, warmup_batch_size)),
+            }
+        )
 
     try:
         server = get_cached_api_server(model, server_args=server_args, server_env=env_dict)

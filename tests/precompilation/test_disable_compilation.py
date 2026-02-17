@@ -2,14 +2,14 @@ import logging
 import os
 
 import pytest
-from spyre_util import DecodeWarmupShapes, patch_warmup_shapes, write_sample_model_config
+from spyre_util import write_sample_model_config
 from vllm.config import ModelConfig, ParallelConfig, SchedulerConfig, VllmConfig
 
 from vllm_spyre.compilation_utils import PRE_COMPILE_MODEL_CATALOG_FILENAME
 
 
 @pytest.mark.precompilation
-@pytest.mark.parametrize("batch_type", ["sb", "cb"])
+@pytest.mark.parametrize("batch_type", ["cb"])
 def test_handle_disable_compilation(model, caplog_vllm_spyre, monkeypatch, tmp_path, batch_type):
     """
     Test handle_disable_compilation for static and continuous batching.
@@ -20,30 +20,15 @@ def test_handle_disable_compilation(model, caplog_vllm_spyre, monkeypatch, tmp_p
     # Patch version to avoid test failures around version mismatch
     monkeypatch.setattr("vllm_spyre._version.version", "0.8.0")
 
-    if batch_type == "sb":
-        patch_warmup_shapes(DecodeWarmupShapes([(128, 128, 1)]), monkeypatch)
-        sample_model_config = {
-            "vllm_spyre_version": "0.8.0",
-            "data": {
-                "MODEL_NAME": "/models/granite-3.3-8b-instruct-FP8",
-                "NUM_AIUS": 2,
-                "VLLM_SPYRE_WARMUP_PROMPT_LENS": "128",
-                "VLLM_SPYRE_WARMUP_NEW_TOKENS": "128",
-                "VLLM_SPYRE_WARMUP_BATCH_SIZES": "1",
-            },
-        }
-
-    else:
-        monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
-        sample_model_config = {
-            "vllm_spyre_version": "0.8.0",
-            "data": {
-                "MODEL_NAME": "/models/granite-3.3-8b-instruct-FP8",
-                "NUM_AIUS": 2,
-                "VLLM_DT_MAX_CONTEXT_LEN": 256,
-                "VLLM_DT_MAX_BATCH_SIZE": 2,
-            },
-        }
+    sample_model_config = {
+        "vllm_spyre_version": "0.8.0",
+        "data": {
+            "MODEL_NAME": "/models/granite-3.3-8b-instruct-FP8",
+            "NUM_AIUS": 2,
+            "VLLM_DT_MAX_CONTEXT_LEN": 256,
+            "VLLM_DT_MAX_BATCH_SIZE": 2,
+        },
+    }
 
     write_sample_model_config(tmp_path, sample_model_config)
 
@@ -70,7 +55,7 @@ def test_handle_disable_compilation(model, caplog_vllm_spyre, monkeypatch, tmp_p
 
 
 @pytest.mark.precompilation
-@pytest.mark.parametrize("batch_type", ["sb", "cb"])
+@pytest.mark.parametrize("batch_type", ["cb"])
 def test_handle_disable_compilation_catalog(
     model, caplog_vllm_spyre, monkeypatch, tmp_path, batch_type
 ):
@@ -83,52 +68,24 @@ def test_handle_disable_compilation_catalog(
     # Patch version to avoid test failures around version mismatch
     monkeypatch.setattr("vllm_spyre._version.version", "0.8.0")
 
-    if batch_type == "sb":
-        monkeypatch.setenv("VLLM_SPYRE_WARMUP_PROMPT_LENS", "128")
-        monkeypatch.setenv("VLLM_SPYRE_WARMUP_NEW_TOKENS", "128")
-        monkeypatch.setenv("VLLM_SPYRE_WARMUP_BATCH_SIZES", "1")
-        monkeypatch.setenv("VLLM_SPYRE_USE_CB", "0")
-        sample_model_config1 = {
-            "vllm_spyre_version": "0.8.0",
-            "data": {
-                "MODEL_NAME": "/models/granite-3.3-8b-instruct-FP8",
-                "NUM_AIUS": 2,
-                "VLLM_SPYRE_WARMUP_PROMPT_LENS": "128",
-                "VLLM_SPYRE_WARMUP_NEW_TOKENS": "128",
-                "VLLM_SPYRE_WARMUP_BATCH_SIZES": "1",
-            },
-        }
-        sample_model_config2 = {
-            "vllm_spyre_version": "0.8.0",
-            "data": {
-                "MODEL_NAME": "/models/granite-3.3-8b-instruct-FP8",
-                "NUM_AIUS": 2,
-                "VLLM_SPYRE_WARMUP_PROMPT_LENS": "256",
-                "VLLM_SPYRE_WARMUP_NEW_TOKENS": "256",
-                "VLLM_SPYRE_WARMUP_BATCH_SIZES": "1",
-            },
-        }
-
-    else:
-        monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
-        sample_model_config1 = {
-            "vllm_spyre_version": "0.8.0",
-            "data": {
-                "MODEL_NAME": "/models/granite-3.3-8b-instruct-FP8",
-                "NUM_AIUS": 2,
-                "VLLM_DT_MAX_CONTEXT_LEN": 256,
-                "VLLM_DT_MAX_BATCH_SIZE": 2,
-            },
-        }
-        sample_model_config2 = {
-            "vllm_spyre_version": "0.8.0",
-            "data": {
-                "MODEL_NAME": "/models/granite-3.3-8b-instruct-FP8",
-                "NUM_AIUS": 2,
-                "VLLM_DT_MAX_CONTEXT_LEN": 512,
-                "VLLM_DT_MAX_BATCH_SIZE": 2,
-            },
-        }
+    sample_model_config1 = {
+        "vllm_spyre_version": "0.8.0",
+        "data": {
+            "MODEL_NAME": "/models/granite-3.3-8b-instruct-FP8",
+            "NUM_AIUS": 2,
+            "VLLM_DT_MAX_CONTEXT_LEN": 256,
+            "VLLM_DT_MAX_BATCH_SIZE": 2,
+        },
+    }
+    sample_model_config2 = {
+        "vllm_spyre_version": "0.8.0",
+        "data": {
+            "MODEL_NAME": "/models/granite-3.3-8b-instruct-FP8",
+            "NUM_AIUS": 2,
+            "VLLM_DT_MAX_CONTEXT_LEN": 512,
+            "VLLM_DT_MAX_BATCH_SIZE": 2,
+        },
+    }
 
     sample_model_config = [sample_model_config1, sample_model_config2]
 
@@ -160,7 +117,7 @@ def test_handle_disable_compilation_catalog(
 
 
 @pytest.mark.precompilation
-@pytest.mark.parametrize("batch_type", ["sb", "cb"])
+@pytest.mark.parametrize("batch_type", ["cb"])
 def test_catalog_config_mismatch(model, caplog_vllm_spyre, monkeypatch, tmp_path, batch_type):
     """
     Test handle_disable_compilation for static and continuous batching
@@ -170,52 +127,24 @@ def test_catalog_config_mismatch(model, caplog_vllm_spyre, monkeypatch, tmp_path
     # Patch version to avoid test failures around version mismatch
     monkeypatch.setattr("vllm_spyre._version.version", "0.8.0")
 
-    if batch_type == "sb":
-        monkeypatch.setenv("VLLM_SPYRE_WARMUP_PROMPT_LENS", "64")
-        monkeypatch.setenv("VLLM_SPYRE_WARMUP_NEW_TOKENS", "128")
-        monkeypatch.setenv("VLLM_SPYRE_WARMUP_BATCH_SIZES", "1")
-        monkeypatch.setenv("VLLM_SPYRE_USE_CB", "0")
-        sample_model_config1 = {
-            "vllm_spyre_version": "0.8.0",
-            "data": {
-                "MODEL_NAME": "/models/granite-3.3-8b-instruct-FP8",
-                "NUM_AIUS": 2,
-                "VLLM_SPYRE_WARMUP_PROMPT_LENS": "128",
-                "VLLM_SPYRE_WARMUP_NEW_TOKENS": "128",
-                "VLLM_SPYRE_WARMUP_BATCH_SIZES": "1",
-            },
-        }
-        sample_model_config2 = {
-            "vllm_spyre_version": "0.8.0",
-            "data": {
-                "MODEL_NAME": "/models/granite-3.3-8b-instruct-FP8",
-                "NUM_AIUS": 2,
-                "VLLM_SPYRE_WARMUP_PROMPT_LENS": "256",
-                "VLLM_SPYRE_WARMUP_NEW_TOKENS": "256",
-                "VLLM_SPYRE_WARMUP_BATCH_SIZES": "1",
-            },
-        }
-
-    else:
-        monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1")
-        sample_model_config1 = {
-            "vllm_spyre_version": "0.8.0",
-            "data": {
-                "MODEL_NAME": "/models/granite-3.3-8b-instruct-FP8",
-                "NUM_AIUS": 2,
-                "VLLM_DT_MAX_CONTEXT_LEN": 256,
-                "VLLM_DT_MAX_BATCH_SIZE": 2,
-            },
-        }
-        sample_model_config2 = {
-            "vllm_spyre_version": "0.8.0",
-            "data": {
-                "MODEL_NAME": "/models/granite-3.3-8b-instruct-FP8",
-                "NUM_AIUS": 2,
-                "VLLM_DT_MAX_CONTEXT_LEN": 512,
-                "VLLM_DT_MAX_BATCH_SIZE": 2,
-            },
-        }
+    sample_model_config1 = {
+        "vllm_spyre_version": "0.8.0",
+        "data": {
+            "MODEL_NAME": "/models/granite-3.3-8b-instruct-FP8",
+            "NUM_AIUS": 2,
+            "VLLM_DT_MAX_CONTEXT_LEN": 256,
+            "VLLM_DT_MAX_BATCH_SIZE": 2,
+        },
+    }
+    sample_model_config2 = {
+        "vllm_spyre_version": "0.8.0",
+        "data": {
+            "MODEL_NAME": "/models/granite-3.3-8b-instruct-FP8",
+            "NUM_AIUS": 2,
+            "VLLM_DT_MAX_CONTEXT_LEN": 512,
+            "VLLM_DT_MAX_BATCH_SIZE": 2,
+        },
+    }
 
     sample_model_config = [sample_model_config1, sample_model_config2]
 

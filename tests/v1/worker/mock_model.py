@@ -1,9 +1,7 @@
-from dataclasses import fields
 from typing import Any
 
 import pytest
 import torch
-from spyre_util import patch_environment
 from vllm import EngineArgs
 from vllm.config import VllmConfig
 from vllm.forward_context import get_forward_context
@@ -17,12 +15,7 @@ from vllm_spyre.model_executor.model_loader.spyre import SpyreAttentionMetadata
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import ChunkedPrefillModelRunner, ChunkedPrefillPlan
 
-from spyre_util import REFERENCE_MODELS
-
-
-class MockContinuousBatchingFmsModel:
-    def set_past_key_value_states(self, num_blocks) -> None:
-        pass
+from spyre_util import REFERENCE_MODELS, patch_environment
 
 
 class MockSpyreCausalLM:
@@ -39,8 +32,6 @@ class MockSpyreCausalLM:
 
         # number of right pads (relevant for continuous batching only)
         self.n_pads_right = 0
-
-        self.model = MockContinuousBatchingFmsModel()
 
         self.vocab_size = vllm_config.model_config.get_vocab_size()
 
@@ -90,6 +81,9 @@ class MockSpyreCausalLM:
     ) -> SamplerOutput | None:
         next_tokens = self.sampler(logits, sampling_metadata)
         return next_tokens
+
+    def set_past_key_value_states(self, num_blocks) -> None:
+        pass
 
 
 class InstrumentedModelRunner(ChunkedPrefillModelRunner):
@@ -147,12 +141,8 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
             scheduled_cached_reqs=CachedRequestData.make_empty(),
             num_scheduled_tokens=num_scheduled_tokens,
             total_num_scheduled_tokens=tokens_to_schedule,
-            scheduled_spec_decode_tokens={},
-            scheduled_encoder_inputs={},
-            num_common_prefix_blocks=[],
             finished_req_ids=set(),
-            free_encoder_mm_hashes=[],
-            **self._compat_sched_output_kwargs(),
+            **self._extra_sched_output_kwargs(),
         )
 
     def _schedule_running_requests(
@@ -163,10 +153,12 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
     ) -> SchedulerOutput:
         cached_reqs = CachedRequestData(
             req_ids=req_ids,
+            resumed_req_ids=set(),
             new_token_ids=[],
+            all_token_ids={},
             new_block_ids=[],
             num_computed_tokens=num_computed_tokens,
-            **self._compat_request_data_kwargs(),
+            num_output_tokens=[],
         )
 
         num_scheduled_tokens = {}
@@ -180,35 +172,17 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
             scheduled_cached_reqs=cached_reqs,
             num_scheduled_tokens=num_scheduled_tokens,
             total_num_scheduled_tokens=total_num_scheduled_tokens,
-            scheduled_spec_decode_tokens={},
-            scheduled_encoder_inputs={},
-            num_common_prefix_blocks=[],
             finished_req_ids=set(),
-            free_encoder_mm_hashes=[],
-            **self._compat_sched_output_kwargs(),
+            **self._extra_sched_output_kwargs(),
         )
 
-    def _compat_sched_output_kwargs(self) -> dict[str, Any]:
-        field_names = [field.name for field in fields(SchedulerOutput)]
-        kwargs: dict[str, Any] = {}
-        if "structured_output_request_ids" in field_names:
-            kwargs["structured_output_request_ids"] = {}
-        if "grammar_bitmask" in field_names:
-            kwargs["grammar_bitmask"] = None
-        return kwargs
-
-    def _compat_request_data_kwargs(self) -> dict[str, Any]:
-        field_names = [field.name for field in fields(CachedRequestData)]
-        kwargs: dict[str, Any] = {}
-        if "resumed_req_ids" in field_names:
-            kwargs["resumed_req_ids"] = set()
-        if "all_token_ids" in field_names:
-            kwargs["all_token_ids"] = {}
-        if "num_output_tokens" in field_names:
-            kwargs["num_output_tokens"] = {}
-        if "resumed_from_preemption" in field_names:
-            kwargs["resumed_from_preemption"] = []
-        return kwargs
+    def _extra_sched_output_kwargs(self) -> dict[str, Any]:
+        return {
+            "scheduled_spec_decode_tokens": {},
+            "scheduled_encoder_inputs": {},
+            "num_common_prefix_blocks": [],
+            "free_encoder_mm_hashes": [],
+        }
 
     def assert_block_tables_and_slot_mappings(
         self,
@@ -256,7 +230,7 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
         assert model_runner_output.req_ids == req_ids
         assert len(model_runner_output.sampled_token_ids) == num_sampled_token_ids
         assert model_runner_output.tkv == tkv
-        assert model_runner_output.n_free_blocks == n_free_blocks
+        assert self.get_n_free_blocks() == n_free_blocks
         assert model_runner_output.left_padding == left_padding, (
             f"Expected {left_padding}, got {model_runner_output.left_padding}"
         )
@@ -290,11 +264,9 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
         """A fixture that returns a model runner configured for prefix caching."""
 
         patch_environment(
-            use_cb=True,
             warmup_shapes=None,
             backend="eager",
             monkeypatch=monkeypatch,
-            use_chunked_prefill=True,
             max_num_batched_tokens=max_num_batched_tokens,
         )
 

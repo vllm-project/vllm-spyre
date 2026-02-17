@@ -3,7 +3,7 @@ import copy
 import dataclasses
 import os
 from collections import defaultdict, deque
-from typing import Any, Callable, Union
+from typing import Any, Callable
 
 import pytest
 from llm_cache import get_cached_engine
@@ -16,7 +16,7 @@ from output_util import (
 from spyre_util import ModelInfo, create_random_request
 from typing_extensions import deprecated
 from vllm import SamplingParams
-from vllm.transformers_utils.tokenizer import get_tokenizer
+from vllm.tokenizers import get_tokenizer
 from vllm.v1.core.kv_cache_utils import BlockHash
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
@@ -25,7 +25,6 @@ from vllm.v1.request import Request
 
 from vllm_spyre.v1.core.scheduler import (
     ChunkedPrefillSpyreScheduler,
-    ContinuousBatchingSpyreScheduler,
 )
 
 
@@ -193,7 +192,6 @@ def check_scheduler_inference_steps(
     max_model_len: int,
     available_blocks: int,
     max_batch_tkv_limit: int = -1,
-    use_cb: bool = True,
     max_num_batched_tokens: int = None,
     random_prompts: bool = False,
     prefix_caching: bool = False,
@@ -321,13 +319,9 @@ def validate_scheduler_steps(
         backend=backend,
         monkeypatch=monkeypatch,
     )
-    scheduler: Union[ContinuousBatchingSpyreScheduler, ChunkedPrefillSpyreScheduler] = (
-        engine_core.scheduler
-    )
+    scheduler: ChunkedPrefillSpyreScheduler = engine_core.scheduler
 
     tokenizer = get_tokenizer(model.name, revision=model.revision)
-    # clear the cache of function scheduler.check_batch_tkv_limit()
-    scheduler._cache_check_batch_tkv_limit.clear()
 
     # Override the TKV limit in the scheduler if needed
     if max_batch_tkv_limit >= 0:
@@ -384,7 +378,7 @@ def validate_scheduler_steps(
             model_runner = engine_core.model_executor.driver_worker.worker.model_runner
             n_blocks = model_runner.n_blocks
             block_size = model_runner.block_size
-            n_reserved_blocks = n_blocks - scheduler.n_free_blocks
+            n_reserved_blocks = n_blocks - model_runner.get_n_free_blocks()
 
             kv_cache_manager = model_runner.kv_cache_manager
 
@@ -393,8 +387,6 @@ def validate_scheduler_steps(
                 for req_id, blocks in kv_cache_manager.req_to_blocks.items()
                 if blocks
             }
-            # req_ids2num_reserved_blocks is only populated for continuous batching
-            req_ids2num_reserved_blocks = model_runner.req_ids2num_reserved_blocks
             # Account for blocks reused via prefix caching
             used_blocks = set()
             for blocks in req_ids2blocks.values():
@@ -439,22 +431,6 @@ def validate_scheduler_steps(
                     or "n_cached_blocks" not in step_ref
                     or (n_cached_blocks == step_ref["n_cached_blocks"])
                 ), f"Step {step}, n_cached_blocks: {n_cached_blocks}"
-
-            # do not update reserved blocks for chunked prefill as the concept has been removed
-            is_chunked_prefill = bool(int(os.getenv("VLLM_SPYRE_USE_CHUNKED_PREFILL")))
-            if not is_chunked_prefill:
-                assert DISABLE_ASSERTS or len(req_ids2blocks) == len(req_ids2num_reserved_blocks)
-                for req_id in req_ids2blocks:
-                    # current number of used blocks should be less than reserved
-                    assert (
-                        DISABLE_ASSERTS
-                        or len(req_ids2blocks[req_id]) <= req_ids2num_reserved_blocks[req_id]
-                    )
-                    # update requested/reserved blocks to check in last step
-                    # Note: overwrite and not max
-                    # because of reduce_left_padding()
-                    requested_blocks[req_id] = len(req_ids2blocks[req_id])
-                    reserved_blocks[req_id] = req_ids2num_reserved_blocks[req_id]
 
             for extra_assert_func in extra_assert_funcs:
                 extra_assert_func(engine_core, step_ref, DISABLE_ASSERTS)

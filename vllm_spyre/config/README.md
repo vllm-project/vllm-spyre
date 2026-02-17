@@ -131,10 +131,12 @@ models:
       num_hidden_layers: 32  # Optional: for precise matching
       vocab_size: 128256  # Optional: for precise matching
 
-    # Static batching configuration (if supported)
+    # Static batching configuration (pooling models only)
     static_batching_configs:
       - tp_size: 1
-        warmup_shapes: [[2048, 1024, 16]]  # [prompt_len, new_tokens, batch_size]
+        warmup_shapes:
+          - prompt_len: 512
+            batch_size: 64
 
     # Continuous batching configuration (if supported)
     continuous_batching_configs:
@@ -178,18 +180,19 @@ architecture:
 
 ### Static Batching Configurations
 
-For models that support static batching (fixed batch sizes):
+For pooling models (embeddings, scoring) that use static batching:
 
 ```yaml
 static_batching_configs:
   - tp_size: 1
     warmup_shapes:
-      - [2048, 1024, 16]  # [prompt_length, new_tokens, batch_size]
-      - [4096, 512, 8]
-  - tp_size: 4
-    warmup_shapes:
-      - [6144, 2048, 1]
+      - prompt_len: 512
+        batch_size: 64
+      - prompt_len: 128
+        batch_size: 8
 ```
+
+**Note**: Decoder models (generation) only support continuous batching. Static batching is exclusively for pooling models.
 
 ### Continuous Batching Configurations
 
@@ -370,7 +373,9 @@ sentence-transformers/all-roberta-large-v1:
 
   static_batching_configs:
     - tp_size: 1
-      warmup_shapes: [[128, 0, 8]]
+      warmup_shapes:
+        - prompt_len: 128
+          batch_size: 8
 ```
 
 ### Complex Generation Model with Device Config
@@ -397,12 +402,6 @@ models:
       vocab_size: 49159
       num_key_value_heads: 8
       num_attention_heads: 32
-
-    static_batching_configs:
-      - tp_size: 1
-        warmup_shapes: [[2048, 1024, 16]]
-      - tp_size: 4
-        warmup_shapes: [[6144, 2048, 1]]
 
     continuous_batching_configs:
       - tp_size: 1
