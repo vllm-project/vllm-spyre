@@ -28,6 +28,25 @@ _templates:
     num_gpu_blocks_override:
       torch_sendnn_lt_1_0_3: 2080
       default: 8192
+  
+  llama3_8b_architecture: &llama3_8b_architecture
+    model_type: llama
+    num_hidden_layers: 32
+    max_position_embeddings: 131072
+    hidden_size: 4096
+    vocab_size: 128256
+    num_key_value_heads: 8
+    num_attention_heads: 32
+  
+  # device config for TP=4 Llama3 8b models
+  llama3_8b_tp4_device_config: &llama3_8b_tp4_device_config
+    env_vars:
+      VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072  # 128k
+      FLEX_HDMA_P2PSIZE: 268435456  # 256MB
+      FLEX_HDMA_COLLSIZE: 33554432  # 32MB
+    num_gpu_blocks_override:
+      torch_sendnn_lt_1_0_3: 2080
+      default: 8192
 
 models:
   # Granite 3.3 8B Instruct
@@ -70,6 +89,22 @@ models:
         max_model_len: 32768
         max_num_seqs: 32
         device_config: *granite_8b_tp4_device_config
+  
+  # Llama 3.1 8B Instruct
+  meta-llama/Llama-3.1-8B-Instruct:
+    architecture: *llama3_8b_architecture
+    continuous_batching_configs:
+      - tp_size: 1
+        max_model_len: 3072
+        max_num_seqs: 16
+      - tp_size: 4
+        max_model_len: 16384
+        max_num_seqs: 4
+        device_config: *llama3_8b_tp4_device_config
+      - tp_size: 4
+        max_model_len: 32768
+        max_num_seqs: 32
+        device_config: *llama3_8b_tp4_device_config
 
   # Granite 4 8B Dense
   ibm-granite/granite-4-8b-dense:

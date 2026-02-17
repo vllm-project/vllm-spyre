@@ -1,10 +1,11 @@
 import transformers
 
-from vllm_spyre.multimodal.mm_mappings import LlavaNextMMUtils, MMUtilsBase
+from vllm_spyre.multimodal.mm_mappings import LlavaNextMMUtils, Mistral3MMUtils, MMUtilsBase
 
 # Maps transformers classes to the corresponding utils
 MM_HF_CFG_REGISTRY = {
     transformers.LlavaNextConfig: LlavaNextMMUtils,
+    transformers.Mistral3Config: Mistral3MMUtils,
 }
 
 
@@ -20,6 +21,10 @@ def maybe_get_mm_utils(model_path, fms_config, hf_config) -> MMUtilsBase | None:
     """Create an instance of the corresponding multimodal model's utils
     if one exists; if it doesn't, the model is not multimodal.
     """
+    # Note: mistral doesn't come up with transformers.Mistral3Config and needs to be
+    # typecasted separately. So for now, we are just checking with its detected model_type,
+    # which is pixtral
+
     if type(hf_config) in MM_HF_CFG_REGISTRY:
         util_cls = MM_HF_CFG_REGISTRY[type(hf_config)]
         return util_cls(
