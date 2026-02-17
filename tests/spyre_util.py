@@ -278,9 +278,18 @@ register_model_info(
     name="ibm-granite/granite-3.3-8b-instruct-FP8",
     revision="4b5990b8d402a75febe0086abbf1e490af494e3d",
 )
+### Multimodal
 register_model_info(
     name="ibm-granite/granite-vision-3.2-2b",
     revision="2818ae5b93cb750b099df1b65f7864e4a0401271",
+)
+register_model_info(
+    name="mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+    revision="68faf511d618ef198fef186659617cfd2eb8e33a",
+)
+register_model_info(
+    name="mistralai/Mistral-Small-3.2-24B-Instruct-2506",
+    revision="95a6d26c4bfb886c58daf9d3f7332c857cb27b43",
 )
 
 
