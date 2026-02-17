@@ -679,38 +679,16 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#batching-modes" class="md-nav__link">
+  <a href="#generative-models" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Batching Modes
+        Generative Models
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Batching Modes">
+    <nav class="md-nav" aria-label="Generative Models">
       <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#static-batching-legacy" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Static Batching (Legacy)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#continuous-batching-legacy" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Continuous Batching (Legacy)
-      
-    </span>
-  </a>
-  
-</li>
         
           <li class="md-nav__item">
   <a href="#chunked-prefill" class="md-nav__link">
@@ -721,8 +699,7 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Chunked Prefill">
-      <ul class="md-nav__list">
+</li>
         
           <li class="md-nav__item">
   <a href="#prefix-caching" class="md-nav__link">
@@ -739,9 +716,15 @@
     </nav>
   
 </li>
-        
-      </ul>
-    </nav>
+      
+        <li class="md-nav__item">
+  <a href="#pooling-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pooling Models
+      
+    </span>
+  </a>
   
 </li>
       
@@ -964,38 +947,16 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#batching-modes" class="md-nav__link">
+  <a href="#generative-models" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Batching Modes
+        Generative Models
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Batching Modes">
+    <nav class="md-nav" aria-label="Generative Models">
       <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#static-batching-legacy" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Static Batching (Legacy)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#continuous-batching-legacy" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Continuous Batching (Legacy)
-      
-    </span>
-  </a>
-  
-</li>
         
           <li class="md-nav__item">
   <a href="#chunked-prefill" class="md-nav__link">
@@ -1006,8 +967,7 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Chunked Prefill">
-      <ul class="md-nav__list">
+</li>
         
           <li class="md-nav__item">
   <a href="#prefix-caching" class="md-nav__link">
@@ -1024,9 +984,15 @@
     </nav>
   
 </li>
-        
-      </ul>
-    </nav>
+      
+        <li class="md-nav__item">
+  <a href="#pooling-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pooling Models
+      
+    </span>
+  </a>
   
 </li>
       
@@ -1085,51 +1051,35 @@
 <p>All models can be tested on CPU by setting this to <code>eager</code>.
 To run inference on IBM Spyre Accelerators, this should be set to <code>sendnn</code>.</p>
 <p>Support for the vLLM v0 backend has been removed, only the vLLM v1 backend is supported.</p>
-<h2 id="batching-modes">Batching Modes<a class="headerlink" href="#batching-modes" title="Permanent link">&para;</a></h2>
-<p>When running decoder models, vLLM-Spyre supports:</p>
-<ol>
-<li>A legacy static batching mode</li>
-<li>A legacy continuous batching mode without chunked prefill support</li>
-<li>A continuous batching mode with chunked prefill and prefix caching</li>
-</ol>
-<h3 id="static-batching-legacy">Static Batching (Legacy)<a class="headerlink" href="#static-batching-legacy" title="Permanent link">&para;</a></h3>
-<p>With static batching, graphs are pre-compiled for the configured batch shapes and each batch must finish processing before a new batch can be scheduled. This adds extra constraints on the sizes of inputs and outputs for each request, and requests that do not fit the precompiled graphs will be rejected.</p>
-<p>Static batching mode is enabled by default, and can be explicitly enabled by setting <code>VLLM_SPYRE_USE_CB=0</code>.</p>
+<h2 id="generative-models">Generative Models<a class="headerlink" href="#generative-models" title="Permanent link">&para;</a></h2>
+<p>When running decoder models for text generation, vLLM-Spyre uses dynamic batching with chunked prefill and automatic prefix caching.
+This looks and feels like running vllm on any other accelerator, with a few minor differences.</p>
+<h3 id="chunked-prefill">Chunked Prefill<a class="headerlink" href="#chunked-prefill" title="Permanent link">&para;</a></h3>
+<p>Chunked prefill is a technique that improves Inter-Token Latency (ITL) in continuous batching mode when large prompts need to be prefetched. Without it, these large prefills can negatively impact the performance of ongoing decodes. In essence, chunked prefill divides incoming prompts into smaller segments and processes them incrementally, allowing the system to balance prefill work with active decoding tasks.</p>
+<p>For configuration and tuning guidance, see the <a href="https://docs.vllm.ai/en/latest/configuration/optimization/#chunked-prefill">vLLM official documentation on chunked prefill</a>.</p>
+<p>As in vLLM, the <code>max_num_batched_tokens</code> parameter controls how chunks are formed. While vLLM can dynamically schedule mixed batches of prefill and decode with arbitrary chunk sizes, the vLLM-Spyre implementation is limited to compiling prefill programs for a single fixed chunk size.
+vLLM-Spyre interleaves decode passes with these fixed-chunk-size prefill passes to emulate chunked prefill. The <code>max_num_batched_tokens</code> parameter controls this fixed chunk size for prefill passes in vLLM-Spyre.</p>
+<p>This parameter should be tuned according to your infrastructure, it is recommended to set it from <code>1024</code> to <code>4096</code> tokens and it <strong>must</strong> be multiple of the block size (currently fixed to <code>64</code>). For convenience, when using the model <code>ibm-granite/granite-3.3-8b-instruct</code> with <code>tp=4</code>, vLLM-Spyre automatically sets <code>max_num_batched_tokens</code> to <code>1024</code>, a value known to produce good hardware utilization in this setup.</p>
+<p>In chunked prefill mode, the <code>vllm:kv_cache_usage_perc</code> metric will report the correct KV cache usage on the Spyre cards for all active requests.</p>
+<h3 id="prefix-caching">Prefix Caching<a class="headerlink" href="#prefix-caching" title="Permanent link">&para;</a></h3>
+<p>When running generative models, prefix caching is disabled by default, and can be enabled with the  <code>--enable-prefix-caching</code> CLI flag. An overview of prefix caching can be found in the <a href="https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/#limits">vLLM official documentation on Automatic Prefix Caching</a>.</p>
+<p>Prefix caching mirrors upstream vLLM, though the requirement for fixed-size prefill chunks means the number of chunks in a prefill is only reduced if an entire chunk is available in cache. Therefore, workloads may show lower hit rates when compared to other accelerators.</p>
+<p>When prefix caching is enabled, the <code>vllm:prefix_cache_queries</code> and <code>vllm:prefix_cache_hits</code> metrics correctly report prefix cache stats in tokens.</p>
+<h2 id="pooling-models">Pooling Models<a class="headerlink" href="#pooling-models" title="Permanent link">&para;</a></h2>
+<p>For the embedding, scoring, and reranking tasks, vLLM supports running Pooling Models. More information on Pooling Models can be found in the <a href="https://docs.vllm.ai/en/latest/models/pooling_models/">vLLM official documentation</a>.</p>
+<p>vLLM Spyre runs all pooling models using static batching, where graphs are pre-compiled for each configured batch shape. This adds extra constraints on the sizes of inputs for each request, and requests that do not fit the precompiled graphs will be rejected.</p>
 <div class="admonition caution">
 <p class="admonition-title">Caution</p>
 <p>There are no up-front checks that the compiled graphs will fit into the available memory on the Spyre cards. If the graphs are too large for the available memory, vllm will crash during model warmup.</p>
 </div>
-<p>The batch shapes are configured with the <code>VLLM_SPYRE_WARMUP_*</code> environment variables. For example, to warm up two graph shapes for one single large request and four smaller requests you could use:</p>
+<p>These batch shapes must be configured with the <code>VLLM_SPYRE_WARMUP_*</code> environment variables. For example, to warm up two graph shapes for one single large request and four smaller requests you could use:</p>
 <div class="language-shell highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">VLLM_SPYRE_WARMUP_BATCH_SIZES</span><span class="o">=</span><span class="m">1</span>,4
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">VLLM_SPYRE_WARMUP_PROMPT_LENS</span><span class="o">=</span><span class="m">4096</span>,1024
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">VLLM_SPYRE_WARMUP_NEW_TOKENS</span><span class="o">=</span><span class="m">1024</span>,256
 </span></code></pre></div>
-<h3 id="continuous-batching-legacy">Continuous Batching (Legacy)<a class="headerlink" href="#continuous-batching-legacy" title="Permanent link">&para;</a></h3>
-<div class="admonition attention">
-<p class="admonition-title">Attention</p>
-<p>Continuous batching can be enabled with <code>VLLM_SPYRE_USE_CB=1</code>.</p>
-</div>
-<p>Continuous batching works much more like other accelerator implementations on vLLM. Requests can be continually appended to a running batch, and requests that finish generating can be evicted from the batch to make room for more requests. Neither chunked prefill nor prefix caching are currently supported in this mode, so when a request is added to the running batch it must first be paused for a full prefill of the incoming prompt.</p>
-<p>Unlike static batching, no warmup shapes need to be provided for continuous batching. While the user does not have to specify the prompt lengths explicitly (see <code>VLLM_SPYRE_WARMUP_PROMPT_LENS</code> for static batching), the vLLM argument <code>max-num-seqs</code> is used to set the maximum batch size (analogous to <code>VLLM_SPYRE_WARMUP_BATCH_SIZES</code> for static batching). The number of generated output tokens is implicitly limited by <code>max-model-len - padded_prompt_length</code> (see <code>VLLM_SPYRE_WARMUP_NEW_TOKENS</code> for static batching), where <code>padded_prompt_length</code> is the prompt length rounded up to the next multiple of the block size (64).</p>
-<div class="admonition attention">
-<p class="admonition-title">Attention</p>
-<p>Currently the maximal context length for which continuous batching is supported on IBM Spyre Accelerators is 32K (32,768). Therefore the length of the submitted prompts plus the number of requested output tokens should be less than 32K. We strongly recommend not setting the <code>max_tokens</code> too high, such that prompt lengths plus output tokens are well below 32K. Otherwise there is a risk of performance degradation due to scheduling constraints.</p>
-</div>
-<h3 id="chunked-prefill">Chunked Prefill<a class="headerlink" href="#chunked-prefill" title="Permanent link">&para;</a></h3>
-<p>Chunked prefill is a technique that improves Inter-Token Latency (ITL) in continuous batching mode when large prompts need to be prefetched. Without it, these large prefills can negatively impact the performance of ongoing decodes. In essence, chunked prefill divides incoming prompts into smaller segments and processes them incrementally, allowing the system to balance prefill work with active decoding tasks.</p>
-<p>For configuration and tuning guidance, see the <a href="https://docs.vllm.ai/en/latest/configuration/optimization/#chunked-prefill">vLLM official documentation on chunked prefill</a>.</p>
-<p>In the vLLM v1 engine, this feature is enabled by default. In vLLM-Spyre, however, users must explicitly enable it by setting the environment variable <code>VLLM_SPYRE_USE_CHUNKED_PREFILL=1</code>.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>Chunked prefill requires continuous batching to be enabled by setting <code>VLLM_SPYRE_USE_CB=1</code>.</p>
+<p>The standard CLI args <code>--max-num-seqs</code> and <code>--max-model-len</code> are ignored for all pooling models, and prefix caching is not supported.</p>
 </div>
-<p>As in vLLM, the <code>max_num_batched_tokens</code> parameter controls how chunks are formed. However, because current versions of vLLM-Spyre cannot prefill and decode within the same engine step and only prefill a single prompt at a time, <code>max_num_batched_tokens</code> specifies the chunk size, whereas in upstream vLLM it represents a shared token budget for both prefills and decodes.</p>
-<p>This parameter should be tuned according to your infrastructure, it is recommended to set it from <code>1024</code> to <code>4096</code> tokens and it <strong>must</strong> be multiple of the block size (currently fixed to <code>64</code>). For convenience, when using the model <code>ibm-granite/granite-3.3-8b-instruct</code> with <code>tp=4</code>, vLLM-Spyre automatically sets <code>max_num_batched_tokens</code> to <code>1024</code>, a value known to produce good hardware utilization in this setup.</p>
-<p>In chunked prefill mode, the <code>vllm:kv_cache_usage_perc</code> metric will report the correct KV cache usage on the Spyre cards for all active requests.</p>
-<h4 id="prefix-caching">Prefix Caching<a class="headerlink" href="#prefix-caching" title="Permanent link">&para;</a></h4>
-<p>When running in chunked prefill mode, prefix caching can be enabled with the <code>--enable-prefix-caching</code> CLI flag. An overview of prefix caching can be found in the <a href="https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/#limits">vLLM official documentation on Automatic Prefix Caching</a>.</p>
-<p>Prefix caching mirrors upstream vLLM, though the requirement for fixed-size prefill chunks means the number of chunks in a prefill is only reduced if an entire chunk is available in cache. Therefore, workloads may show slightly lower hit rates compared to other accelerators.</p>
-<p>When prefix caching is enabled, the <code>vllm:prefix_cache_queries</code> and <code>vllm:prefix_cache_hits</code> metrics correctly report prefix cache stats in tokens.</p>
 <h2 id="caching-compiled-graphs">Caching Compiled Graphs<a class="headerlink" href="#caching-compiled-graphs" title="Permanent link">&para;</a></h2>
 <p><code>torch_sendnn</code> supports caching compiled model graphs, which can vastly speed up warmup time when loading models in a distributed setting.</p>
 <p>To enable this, set <code>TORCH_SENDNN_CACHE_ENABLE=1</code> and configure <code>TORCH_SENDNN_CACHE_DIR</code> to a directory to hold the cache files. By default, this feature is disabled.</p>
@@ -1152,6 +1102,10 @@ To run inference on IBM Spyre Accelerators, this should be set to <code>sendnn</
 <div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>RuntimeError: Compilation disabled
 </span></code></pre></div>
 <p>Scripts to generate and update pre_compiled_cache_catalog.json will be provided in future releases.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This feature is only available for generative models, pooling models are not supported.</p>
+</div>
 
 
 

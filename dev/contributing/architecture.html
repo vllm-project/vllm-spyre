@@ -14,8 +14,6 @@
         <link rel="prev" href="index.html">
       
       
-        <link rel="next" href="continuous_batching/overview.html">
-      
       
         
       
@@ -720,153 +718,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-        
-          
-          
-        
-      
-    
-    
-      
-    
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3" >
-        
-          
-          <label class="md-nav__link" for="__nav_5_3" id="__nav_5_3_label" tabindex="">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Continuous Batching
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_3_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_5_3">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Continuous Batching
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="continuous_batching/overview.html" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Overview
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-        
-      
-    
-    
-      
-        
-        
-      
-    
-    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
-      
-        
-  
-  
-  
-    <a href="continuous_batching/tests/output_tests.html" class="md-nav__link">
-      
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Tests
-  
-
-    
-  </span>
-  
-  
-
-      
-        <span class="md-nav__icon md-icon"></span>
-      
-    </a>
-  
-
-      
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -932,17 +783,15 @@ loaded at the vLLM startup time and bootstraps all other components.</p>
 and worker processes. The platform API includes request validation hooks
 that the API server invokes to ensure that the requests
 can be handled by the backend.</p>
-<p>In the engine core, we customize the scheduler to handle the constraints
-of static batching and continuous batching.</p>
+<p>In the engine core, we customize the scheduler to handle the specific batching
+constraints for Spyre cards.</p>
 <p>The changes are broader in the worker process. Most of the main
 classes have Spyre-specific implementations. From the vLLM code, we mainly
 reuse the sampling code (including logits processing) and the pooling
 code for non-generative use cases.</p>
-<p>We provide model runners for three cases: static batching, continuous batching and
-pooling. The pooling model runner is very similar to the static batching one,
-except that it does pooling instead of sampling and
-uses the <code>transformers</code> modeling code instead of the <code>foundation-model-stack</code>
-code.</p>
+<p>We provide model runners for two cases: generative models with chunked prefill, and pooling
+models with static batching. The pooling model runner uses the <code>transformers</code> modeling code
+instead of the <code>foundation-model-stack</code> code.</p>
 
 
 
