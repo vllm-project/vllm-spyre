@@ -2437,6 +2437,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             pooling_params=None,
             eos_token_id=None,
             block_hasher=self.request_block_hasher,
+            mm_features=mm_features,
         )
         chunk_plan = self._plan_chunking(scheduler_request)
         num_cached_tokens = chunk_plan.usable_cache_blocks * self.block_size

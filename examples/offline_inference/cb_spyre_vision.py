@@ -15,7 +15,7 @@ import torch
 from fms.models import get_model
 from fms.utils import serialization
 from fms.utils.generation import generate as fms_generate
-from transformers import AutoModelForVision2Seq, AutoProcessor
+from transformers import AutoConfig, AutoModelForVision2Seq, AutoProcessor
 from vllm import LLM, SamplingParams
 from vllm.assets.image import ImageAsset
 
@@ -45,9 +45,18 @@ parser.add_argument(
 )
 
 
-def get_vllm_prompts(num_prompts):
+def get_vllm_prompts(num_prompts, model_path):
     """Get the vLLM prompts to be processed."""
-    template = "<|system|>\nA chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions.\n<|user|>\n<image>\n{}\n<|assistant|>\n"  # noqa: E501
+    # NOTE:
+    # mistral-small-3.1 model has [IMG] as image token
+    # llava-next has <image> as image token
+
+    processor = AutoProcessor.from_pretrained(model_path, fix_mistral_regex=True)
+    assert hasattr(processor, "image_token")
+
+    image_token = processor.image_token
+
+    template = f"<|system|>\nA chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions.\n<|user|>\n{image_token}\n{{}}\n<|assistant|>\n"  # noqa: E501
 
     images = [
         ImageAsset("cherry_blossom").pil_image,
@@ -79,11 +88,16 @@ def get_vllm_prompts(num_prompts):
             )
 
     prompts = prompts * (num_prompts // len(prompts) + 1)
-    return prompts[:num_prompts]
+    return prompts[:num_prompts], image_token
 
 
 def compare_results(
-    prompts: list[str], outputs_a: list[str], outputs_b: list[str], name_a: str, name_b: str
+    prompts: list[str],
+    outputs_a: list[str],
+    outputs_b: list[str],
+    name_a: str,
+    name_b: str,
+    image_token: str,
 ):
     """Utils for comparing outputs from differing engines/implementations,
     e.g., transformers & vLLM.
@@ -94,7 +108,7 @@ def compare_results(
     any_differ = False
     for idx, (result_a, result_b) in enumerate(zip(outputs_a, outputs_b)):
         if result_a != result_b:
-            img_tok_idx = prompts[idx].index("<image>")
+            img_tok_idx = prompts[idx].index(image_token)
             gen_prompt_idx = prompts[idx].index("<|assistant|>")
             raw_prompt = prompts[idx][img_tok_idx:gen_prompt_idx].strip()
 
@@ -128,10 +142,21 @@ def process_prompt_transformers(model, max_tokens, inputs):
 
 def get_fms_results(model_path, vllm_prompts):
     """Process the results for FMS running on CPU."""
-    # head_dim expansion required for granite vision
-    serialization.extend_adapter("llava_next", "hf", ["weight_expansion_for_mismatched_head_dim"])
-    config_dict = {}
-    config_dict["head_dim"] = 128
+
+    model_config = AutoConfig.from_pretrained(model_path)
+
+    kwargs = {}
+
+    if model_config.model_type == "llava_next":
+        # head_dim expansion required for granite vision
+        serialization.extend_adapter(
+            "llava_next", "hf", ["weight_expansion_for_mismatched_head_dim"]
+        )
+
+        kwargs = {
+            "text_config": {"head_dim": 128},
+            "override_hf_pretrained_config": True,
+        }
 
     # Load, but don't compile (compare to CPU)
     model = get_model(
@@ -139,8 +164,7 @@ def get_fms_results(model_path, vllm_prompts):
         model_path,
         data_type=torch.bfloat16,  # Matches default in vLLM for this model
         fused_weights=False,
-        override_hf_pretrained_config=True,
-        text_config=config_dict,
+        **kwargs,
     )
 
     return process_prompts(
@@ -223,7 +247,7 @@ if __name__ == "__main__":
     os.environ["VLLM_SPYRE_USE_CB"] = "1"
     os.environ["VLLM_SPYRE_USE_CHUNKED_PREFILL"] = "1"
 
-    prompts = get_vllm_prompts(args.num_prompts)
+    prompts, image_token = get_vllm_prompts(args.num_prompts, args.model)
 
     # Set differing max_tokens so that the requests drop out of the batch at
     # different times
@@ -241,6 +265,7 @@ if __name__ == "__main__":
         max_model_len=args.max_model_len,
         max_num_seqs=max_num_seqs,
         tensor_parallel_size=args.tp,
+        limit_mm_per_prompt={"image": 1},  # Required for multimodal models
     )
 
     # Generate texts from the prompts. The output is a list of RequestOutput
@@ -270,4 +295,5 @@ if __name__ == "__main__":
         outputs_b=vllm_results,
         name_a=f"{args.compare_target} [cpu]",
         name_b="vllm [spyre]",
+        image_token=image_token,
     )
