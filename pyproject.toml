@@ -1,6 +1,6 @@
 [build-system]
 requires = [
-  "setuptools>=64",
+  "setuptools>=82",
   "setuptools_scm>=8"
 ]
 build-backend = "setuptools.build_meta"
@@ -63,6 +63,12 @@ override-dependencies = [
     # uv doesn't resolve numba->llvmlite constraint correctly...
     #   if numba is updated, this will likely need to be too
     "llvmlite==0.44.0; platform_machine not in 's390x, ppc64le'",
+
+    # setuptools is specified as a runtime dep by vllm, make sure it's patched for CVEs
+    "setuptools>=82",
+
+    # requests is used by many dependencies, make sure it's patched for CVEs
+    "requests>=2.32.4",
 ]
 # fms-mo doesn't support python 3.9, so don't have UV try to resolve it
 environments = [
