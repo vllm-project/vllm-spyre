@@ -430,6 +430,21 @@ class SpyrePoolingModelRunner(
             self.attn_groups.append(create_attn_groups(attn_backends[0], i))
 
     def load_model(self) -> None:
+        # Workaround issue with torch 2.7.1 https://github.com/pytorch/pytorch/issues/160886
+        # For now, we just disable the replacement of the linear layers
+        import vllm.model_executor.models.transformers.base as transformer_utils
+
+        def replace_linear_class(
+            linear: Any,
+            style: Any = "replicate",
+            quant_config: Any = None,
+            *,
+            prefix: str = "",
+        ) -> Any:
+            return linear
+
+        transformer_utils.replace_linear_class = replace_linear_class  # ty: ignore
+
         model_loader = get_model_loader(self.load_config)
         self.vllm_model: PoolingModel = model_loader.load_model(
             vllm_config=self.vllm_config, model_config=self.model_config
@@ -437,7 +452,6 @@ class SpyrePoolingModelRunner(
         self.vllm_model.eval()
         torch.set_grad_enabled(False)
 
-        # TODO: figure out how to make this work on spyre
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in BACKEND_LIST:
             # Lazy import to avoid load torch_sendnn runtime before it is really
             # necessary. This solve issues of running forked tests that share
@@ -456,6 +470,7 @@ class SpyrePoolingModelRunner(
                     mode="default",
                     dynamic=False,
                     backend=envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND,
+                    fullgraph=True,
                 )
 
         self.use_token_type_ids = False

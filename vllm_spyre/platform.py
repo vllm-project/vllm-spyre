@@ -436,6 +436,7 @@ class SpyrePlatform(Platform):
     def pre_register_and_update(cls, parser: FlexibleArgumentParser | None = None) -> None:
         if parser is not None:
             parser.set_defaults(max_num_batched_tokens=cls.DEFAULT_CHUNK_SIZE)
+            parser.set_defaults(model_impl="transformers")
 
     @classmethod
     def _check_threading_config(cls, worker_count: int):

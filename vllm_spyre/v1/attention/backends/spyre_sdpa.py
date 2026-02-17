@@ -189,10 +189,10 @@ class SpyreSDPABackendImpl(AttentionImpl[SpyreSDPAMetadata]):
 
         mask_list = []
 
+        idx = torch.arange(kvlen, device=key.device)
         for prompt_padding in attn_metadata.prompt_padding:
-            mask = torch.zeros((qlen, kvlen), dtype=torch.bool, device=query.device)
-            seq_len = qlen - prompt_padding
-            mask[:, -seq_len:] = True
+            mask = idx >= prompt_padding
+            mask = mask.unsqueeze(0).expand(qlen, kvlen)
             mask_list.append(mask)
 
         masks = torch.stack(mask_list)
