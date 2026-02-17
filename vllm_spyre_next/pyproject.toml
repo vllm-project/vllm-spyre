@@ -11,8 +11,8 @@ description = "Next iteration of vllm-spyre on the torch-spyre stack"
 readme = "README.md"
 license = {text = "Apache 2"}
 dependencies = [
-    # "torch-sypre"
-    "vllm>=0.11.0,<=0.14.1",
+    "torch-spyre",
+    "vllm==0.15.1+cpu",
 ]
 requires-python = ">=3.11"
 dynamic = ["version"]
@@ -45,25 +45,39 @@ root = ".."
 # So we set to 'never' to prevent installing it or eventually any other 
 # by accident
 override-dependencies = [
+    "torch; sys_platform == 'never'",
+    "torchaudio; sys_platform == 'never'",
+    "torchvision; sys_platform == 'never'",
+    "triton; sys_platform == 'never'",
     "intel-extension-for-pytorch; sys_platform == 'never'",
+
+    # Skip packages on s390x and ppc64le, expected to be pre-installed
+    "vllm ; platform_machine not in 's390x, ppc64le'",
+    "ray; platform_machine not in 's390x, ppc64le'",
+    "llvmlite; platform_machine not in 's390x, ppc64le'",
+    "pyarrow; platform_machine not in 's390x, ppc64le'",
+
+    # torch-spyre declares a dependency on numpy>2.3, conflicting with numba needed by vLLM
+    # The range here should match the numba dependency
+    "numpy>=1.24,<2.3",
 
     # opencv-python-headless==4.13.0.90 has a packaging bug that incorrectly depends on libxcb.so.1,
     # causing import failure on headless Linux systems.
     "opencv-python-headless==4.12.0.88",
 
-    # Skip packages on s390x and ppc64le, expected to be pre-installed
-    "vllm ; platform_machine not in 's390x, ppc64le'",
-    "torch ; platform_machine not in 's390x, ppc64le'",
-    "ray; platform_machine not in 's390x, ppc64le'",
-    "llvmlite; platform_machine not in 's390x, ppc64le'",
-    "pyarrow; platform_machine not in 's390x, ppc64le'",
+    # uv doesn't resolve numba->llvmlite constraint correctly...
+    #   if numba is updated, this will likely need to be too
+    "llvmlite==0.44.0; platform_machine not in 's390x, ppc64le'",
+
 ]
 environments = [
     "python_version > '3.9'"
 ]
+no-build-isolation-package = ["vllm"]
 
 [tool.uv.sources]
-vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.14.1" }
+vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.15.1" }
+torch-spyre = { git = "https://github.com/torch-spyre/torch-spyre", rev = "947b2603ad264bca0df6b97895e9f68d834f3f7b" }
 
 [tool.ty.rules]
 possibly-missing-attribute = "ignore"
