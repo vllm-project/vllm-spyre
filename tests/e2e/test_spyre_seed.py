@@ -10,7 +10,7 @@ import math
 
 import pytest
 from output_util import generate_spyre_vllm_output, kwargs_for_mode
-from spyre_util import DecodeWarmupShapes, ModelInfo, get_chicken_soup_prompts
+from spyre_util import ModelInfo, get_chicken_soup_prompts
 from vllm import SamplingParams
 
 
@@ -19,7 +19,7 @@ def _generate_two_outputs(
     **kwargs,
 ):
     """Helper to generate multiple separate requests with the same configuration."""
-    max_new_tokens = kwargs["warmup_shapes"][0][1]
+    max_new_tokens = 4
     prompts = get_chicken_soup_prompts(1) * kwargs["batch_size"]
 
     sampling_params = SamplingParams(
@@ -31,7 +31,7 @@ def _generate_two_outputs(
         seed=seed,
     )
 
-    mode_kwargs = kwargs_for_mode(kwargs["mode"], kwargs["max_num_seqs"], kwargs["warmup_shapes"])
+    mode_kwargs = kwargs_for_mode(kwargs["mode"])
 
     results = []
     for _ in range(2):
@@ -43,6 +43,7 @@ def _generate_two_outputs(
             tensor_parallel_size=1,
             backend=kwargs["backend"],
             monkeypatch=kwargs["monkeypatch"],
+            max_num_seqs=kwargs["max_num_seqs"],
             **mode_kwargs,
         )
         results.append(outputs)
@@ -54,17 +55,18 @@ def _generate_two_outputs(
 @pytest.mark.parametrize("seed", [42])
 @pytest.mark.parametrize("batch_size", [1, 3])
 def test_seed_deterministic(
+    # standard params (needed for llm_cache test ordering)
     model: ModelInfo,
+    backend: str,
+    mode: str,
+    max_num_seqs: int,
+    max_model_len: int,
+    monkeypatch: pytest.MonkeyPatch,
+    use_llm_cache,
+    # extra params for this test
     temperature: float,
     seed: int,
     batch_size: int,
-    max_model_len: int,
-    max_num_seqs: int,
-    warmup_shapes: DecodeWarmupShapes,
-    backend: str,
-    mode: str,
-    monkeypatch: pytest.MonkeyPatch,
-    use_llm_cache,
 ) -> None:
     """Test that seeded sampling produces identical results across requests.
 
@@ -100,16 +102,17 @@ def test_seed_deterministic(
 @pytest.mark.parametrize("temperature", [1.5])
 @pytest.mark.parametrize("batch_size", [1, 3])
 def test_seed_variability(
+    # standard params (needed for llm_cache test ordering)
     model: ModelInfo,
-    temperature: float,
-    batch_size: int,
-    max_model_len: int,
-    max_num_seqs: int,
-    warmup_shapes: DecodeWarmupShapes,
     backend: str,
     mode: str,
+    max_num_seqs: int,
+    max_model_len: int,
     monkeypatch: pytest.MonkeyPatch,
     use_llm_cache,
+    # extra params for this test
+    temperature: float,
+    batch_size: int,
 ) -> None:
     """Test that unseeded sampling produces different results across requests.
 

@@ -7,7 +7,7 @@ on:
   pull_request:
     # add labeled and unlabeled to the default types (runs when label is added)
     types: [opened, synchronize, reopened, labeled, unlabeled, auto_merge_enabled]
-    branches: [main]
+    branches: [main, 2.0-release-prep]
 
   push:
     branches: [main]
@@ -43,13 +43,9 @@ jobs:
             repo: "git+https://github.com/vllm-project/vllm --branch main"
         test_suite:
           - name: "chunked prefill"
-            markers: "cpu and chunked_prefill and not prefix_caching and not quantized and not multimodal"
+            markers: "cpu and decoder and not prefix_caching and not quantized and not multimodal"
           - name: "prefix caching"
-            markers: "cpu and prefix_caching and not quantized"
-          - name: "static batching"
-            markers: "cpu and decoder and not cb and not other_e2e and not chunked_prefill and not prefix_caching and not quantized"
-            flags: "--timeout=300"
-            hf_model: "JackFram/llama-160m"
+            markers: "cpu and decoder and prefix_caching and not quantized"
           - name: "fp8"
             markers: "cpu and quantized and multi"
             flags: "--timeout=600 -k 'basic and test_output' --durations=0"
@@ -65,14 +61,8 @@ jobs:
             flags: "--timeout=300"
             hf_model: "cross-encoder/stsb-roberta-large"
             hf_model_rev: "2b12c2c0088918e76151fd5937b7bba986ef1f98"
-          - name: "continuous batching"
-            markers: "cpu and cb and not quantized and not multimodal"
-            flags: "--timeout=300  --durations=0 -s"
           - name: "worker and utils"
             markers: "not e2e and not quantized and not spyre and not multimodal"
-            flags: "--timeout=300"
-          - name: "other e2e"
-            markers: "cpu and other_e2e and not quantized"
             flags: "--timeout=300"
           - name: "multimodal"
             markers: "cpu and multimodal"
@@ -84,93 +74,27 @@ jobs:
           # Lower bound support
           - vllm_version:
               name: "vLLM:lowest"
-              repo: "git+https://github.com/vllm-project/vllm --tag v0.11.0"
+              repo: "git+https://github.com/vllm-project/vllm --tag v0.15.1"
             test_suite:
               name: "backward compat"
-              markers: "compat or (cpu and basic and not quantized and not sb)"
+              markers: "compat or (cpu and basic and not quantized)"
               flags: "--timeout=300"
               hf_model_2: "sentence-transformers/all-roberta-large-v1"
               hf_model_2_rev: "cf74d8acd4f198de950bf004b262e6accfed5d2c"
             os: "ubuntu-latest"
             python_version: "3.12"
-          # Intermediate versions of vllm to check basic support for as well
-          - vllm_version:
-              name: "vLLM:0.11.1"
-              repo: "git+https://github.com/vllm-project/vllm --tag v0.11.1"
-            test_suite:
-              name: "backward compat"
-              markers: "cpu and basic and not quantized and not sb"
-              flags: "--timeout=300"
-              hf_model_2: "sentence-transformers/all-roberta-large-v1"
-              hf_model_2_rev: "cf74d8acd4f198de950bf004b262e6accfed5d2c"
-            os: "ubuntu-latest"
-            python_version: "3.12"
-          - vllm_version:
-              name: "vLLM:0.11.2"
-              repo: "git+https://github.com/vllm-project/vllm --tag v0.11.2"
-            test_suite:
-              name: "backward compat"
-              markers: "cpu and basic and not quantized and not sb"
-              flags: "--timeout=300"
-              hf_model_2: "sentence-transformers/all-roberta-large-v1"
-              hf_model_2_rev: "cf74d8acd4f198de950bf004b262e6accfed5d2c"
-            os: "ubuntu-latest"
-            python_version: "3.12"
-          - vllm_version:
-              name: "vLLM:0.12.0"
-              repo: "git+https://github.com/vllm-project/vllm --tag v0.12.0"
-            test_suite:
-              name: "backward compat"
-              markers: "cpu and basic and not quantized and not sb"
-              flags: "--timeout=300"
-              hf_model_2: "sentence-transformers/all-roberta-large-v1"
-              hf_model_2_rev: "cf74d8acd4f198de950bf004b262e6accfed5d2c"
-            os: "ubuntu-latest"
-            python_version: "3.12"
-          - vllm_version:
-              name: "vLLM:0.13.0"
-              repo: "git+https://github.com/vllm-project/vllm --tag v0.13.0"
-            test_suite:
-              name: "backward compat"
-              markers: "cpu and basic and not quantized and not sb"
-              flags: "--timeout=300"
-              hf_model_2: "sentence-transformers/all-roberta-large-v1"
-              hf_model_2_rev: "cf74d8acd4f198de950bf004b262e6accfed5d2c"
-            os: "ubuntu-latest"
-            python_version: "3.12"
-          - vllm_version:
-              name: "vLLM:0.14.0"
-              repo: "git+https://github.com/vllm-project/vllm --tag v0.14.0"
-            test_suite:
-              name: "backward compat"
-              markers: "cpu and basic and not quantized and not sb"
-              flags: "--timeout=300"
-              hf_model_2: "sentence-transformers/all-roberta-large-v1"
-              hf_model_2_rev: "cf74d8acd4f198de950bf004b262e6accfed5d2c"
-            os: "ubuntu-latest"
-            python_version: "3.12"
-          - vllm_version:
-              name: "vLLM:0.14.1"
-              repo: "git+https://github.com/vllm-project/vllm --tag v0.14.1"
-            test_suite:
-              name: "backward compat"
-              markers: "cpu and basic and not quantized and not sb"
-              flags: "--timeout=300"
-              hf_model_2: "sentence-transformers/all-roberta-large-v1"
-              hf_model_2_rev: "cf74d8acd4f198de950bf004b262e6accfed5d2c"
-            os: "ubuntu-latest"
-            python_version: "3.12"
-          - vllm_version:
-              name: "vLLM:0.15.0"
-              repo: "git+https://github.com/vllm-project/vllm --tag v0.15.0"
-            test_suite:
-              name: "backward compat"
-              markers: "cpu and basic and not quantized and not sb"
-              flags: "--timeout=300"
-              hf_model_2: "sentence-transformers/all-roberta-large-v1"
-              hf_model_2_rev: "cf74d8acd4f198de950bf004b262e6accfed5d2c"
-            os: "ubuntu-latest"
-            python_version: "3.12"
+        #   # Intermediate versions of vllm to check basic support for as well
+        #   - vllm_version:
+        #       name: "vLLM:0.14.0"
+        #       repo: "git+https://github.com/vllm-project/vllm --tag v0.14.0"
+        #     test_suite:
+        #       name: "backward compat"
+        #       markers: "cpu and basic and not quantized"
+        #       flags: "--timeout=300"
+        #       hf_model_2: "sentence-transformers/all-roberta-large-v1"
+        #       hf_model_2_rev: "cf74d8acd4f198de950bf004b262e6accfed5d2c"
+        #     os: "ubuntu-latest"
+        #     python_version: "3.12"
 
         # Only run vllm:main jobs on PRs with `vllm:main` label
         exclude: >-
@@ -334,7 +258,7 @@ jobs:
           MASTER_PORT: 12355
           MASTER_ADDR: localhost
           DISTRIBUTED_STRATEGY_IGNORE_MODULES: WordEmbedding
-          VLLM_SPYRE_TEST_MODEL_LIST: "${{ matrix.test_suite.name == 'static batching' && 'JackFram/llama-160m' || '' }}"
+          VLLM_SPYRE_TEST_MODEL_LIST: ""
           HF_HUB_OFFLINE: 1
         run: |
           # Delete the source code so we can ensure we're testing the installed

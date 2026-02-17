@@ -5,9 +5,9 @@ import random
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, NamedTuple
-from contextlib import contextmanager
 
 import openai
 import pytest
@@ -17,55 +17,34 @@ from transformers import AutoTokenizer
 from vllm import SamplingParams
 from vllm.assets.image import ImageAsset
 from vllm.entrypoints.openai.cli_args import make_arg_parser
+from vllm.utils.argparse_utils import FlexibleArgumentParser
+from vllm.utils.network_utils import get_open_port
 from vllm.v1.engine.core import EngineCore
-
-from vllm_spyre.platform import SpyrePlatform
-from vllm_spyre import envs
-
-try:
-    # old
-    from vllm.utils import FlexibleArgumentParser, get_open_port
-except ImportError:
-    # new
-    from vllm.utils.argparse_utils import FlexibleArgumentParser
-    from vllm.utils.network_utils import get_open_port
-
 from vllm.v1.request import Request
 
+from vllm_spyre import envs
+from vllm_spyre.platform import SpyrePlatform
+
 EmbeddingWarmupShapes = list[tuple[int, int]]
-DecodeWarmupShapes = list[tuple[int, int, int]]
 
 
 def patch_environment(
-    use_cb: bool,
-    warmup_shapes: DecodeWarmupShapes | None,
     backend: str,
     monkeypatch,
-    use_chunked_prefill: bool = False,
     max_num_batched_tokens: int | None = None,
+    warmup_shapes: EmbeddingWarmupShapes | None = None,
 ):
     # Setup the environment correctly for the LLM
 
-    # ---- For static batching ----
+    # ---- For pooling ----
     if warmup_shapes:
-        assert not use_cb, (
-            "Warmup shapes through environment variables have "
-            "been deprecated in continuous batching"
-        )
-
         patch_warmup_shapes(warmup_shapes, monkeypatch)
 
     # --------------
-    monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1" if use_cb else "0")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
-    monkeypatch.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", "1" if use_chunked_prefill else "0")
-    # NB: setting this env var explicitly is needed to set the desired value for
-    # the chunk size in the case that granite 8b TP4 is detected
-    if max_num_batched_tokens is not None:
-        monkeypatch.setenv("VLLM_DT_CHUNK_LEN", str(max_num_batched_tokens))
 
 
-def patch_warmup_shapes(warmup_shapes: DecodeWarmupShapes | EmbeddingWarmupShapes, monkeypatch):
+def patch_warmup_shapes(warmup_shapes: EmbeddingWarmupShapes, monkeypatch):
     warmup_prompt_length = [t[0] for t in warmup_shapes]
     warmup_batch_size = [t[-1] for t in warmup_shapes]
 
@@ -75,12 +54,6 @@ def patch_warmup_shapes(warmup_shapes: DecodeWarmupShapes | EmbeddingWarmupShape
     monkeypatch.setenv(
         "VLLM_SPYRE_WARMUP_BATCH_SIZES", ",".join(str(val) for val in warmup_batch_size)
     )
-
-    if all(len(s) == 3 for s in warmup_shapes):
-        warmup_new_tokens = [t[1] for t in warmup_shapes]
-        monkeypatch.setenv(
-            "VLLM_SPYRE_WARMUP_NEW_TOKENS", ",".join(str(val) for val in warmup_new_tokens)
-        )
 
 
 class ModelInfo(NamedTuple):

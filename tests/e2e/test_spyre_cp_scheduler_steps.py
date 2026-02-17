@@ -145,7 +145,6 @@ def test_prefill_tkv_too_big(
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=False,
         max_num_batched_tokens=max_num_batched_tokens,
     )
 
@@ -264,7 +263,6 @@ def test_requests_exceed_batch_tkv_limit(
         max_model_len=max_model_len,
         available_blocks=available_blocks,
         max_batch_tkv_limit=max_batch_tkv_limit,
-        use_cb=False,
         max_num_batched_tokens=max_num_batched_tokens,
     )
 
@@ -385,7 +383,6 @@ def test_single_cp_prefill(
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=False,
         random_prompts=True,
         max_num_batched_tokens=max_num_batched_tokens,
     )
@@ -574,7 +571,6 @@ def test_cp_prefill_interleave1(
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=False,
         random_prompts=True,
         max_num_batched_tokens=max_num_batched_tokens,
     )
@@ -759,7 +755,6 @@ def test_cp_prefill_no_interleave(
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=False,
         random_prompts=True,
         max_num_batched_tokens=max_num_batched_tokens,
     )
@@ -953,7 +948,6 @@ def test_cp_prefill_interleave2(
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=False,
         random_prompts=True,
         max_num_batched_tokens=max_num_batched_tokens,
     )
@@ -1134,6 +1128,5 @@ def test_prefill_tkv_too_big2(
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=False,
         max_num_batched_tokens=max_num_batched_tokens,
     )

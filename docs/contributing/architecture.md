@@ -25,16 +25,14 @@ and worker processes. The platform API includes request validation hooks
 that the API server invokes to ensure that the requests
 can be handled by the backend.
 
-In the engine core, we customize the scheduler to handle the constraints
-of static batching and continuous batching.
+In the engine core, we customize the scheduler to handle the specific batching
+constraints for Spyre cards.
 
 The changes are broader in the worker process. Most of the main
 classes have Spyre-specific implementations. From the vLLM code, we mainly
 reuse the sampling code (including logits processing) and the pooling
 code for non-generative use cases.
 
-We provide model runners for three cases: static batching, continuous batching and
-pooling. The pooling model runner is very similar to the static batching one,
-except that it does pooling instead of sampling and
-uses the `transformers` modeling code instead of the `foundation-model-stack`
-code.
+We provide model runners for two cases: generative models with chunked prefill, and pooling
+models with static batching. The pooling model runner uses the `transformers` modeling code
+instead of the `foundation-model-stack` code.
