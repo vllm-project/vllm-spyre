@@ -30,7 +30,7 @@ except ImportError:
     print("WARNING: Disabled: dynamo_tracer")
     pass
 
-BACKEND_LIST = ["sendnn", "inductor"]
+BACKEND_LIST = ["sendnn", "sendnn_compile_only", "inductor"]
 
 logger = init_logger(__name__)
 
@@ -63,7 +63,7 @@ class SpyreCausalLM(nn.Module):
         self.n_pads_right = 0
 
         self._mask_dtype = (
-            torch.float16 if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn" else torch.float32
+            torch.float16 if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in ("sendnn", "sendnn_compile_only") else torch.float32
         )
 
         self.config = self.resolve_hf_config(vllm_config)

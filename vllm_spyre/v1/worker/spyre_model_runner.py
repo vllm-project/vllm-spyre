@@ -865,7 +865,7 @@ class ChunkedPrefillModelRunner(
             )
 
         max_concurrency = num_blocks * block_size / max_model_len
-        backend = "Spyre" if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn" else "CPU"
+        backend = "Spyre" if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in ("sendnn", "sendnn_compile_only") else "CPU"
         logger.info("%s KV cache size: %s tokens", backend, num_blocks * block_size)
         logger.info(
             "Maximum concurrency for %s tokens per request: %.2fx",
