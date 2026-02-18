@@ -134,6 +134,10 @@ class SpyrePlatform(Platform):
             os.environ["FLEX_OVERWRITE_NMB_FRAME"] = "false"
             os.environ["COMPILATION_MODE"] = "offline"
 
+        logger.info("Using backend: %s", envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND)
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_compile_only":
+            os.environ["FLEX_DEVICE"] = "COMPILE"
+
         if is_decoder:
             scheduler_config.scheduler_cls = (
                 "vllm_spyre.v1.core.scheduler.ChunkedPrefillSpyreScheduler"
