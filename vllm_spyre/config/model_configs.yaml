@@ -48,6 +48,7 @@ _templates:
       torch_sendnn_lt_1_0_3: 2080
       default: 8192
 
+# --8<-- [start:supported-model-runtime-configuration]
 models:
   # Granite 3.3 8B Instruct
   ibm-granite/granite-3.3-8b-instruct:
@@ -209,5 +210,6 @@ models:
         warmup_shapes:
           - prompt_len: 128
             batch_size: 8
+# --8<-- [end:supported-model-runtime-configuration]
 
 # Made with Bob
