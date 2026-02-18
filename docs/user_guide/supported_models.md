@@ -15,6 +15,8 @@ configurations.
 | [Granite-3.3-8b][]        | 4    | 32768          | 32         |
 | [Granite-3.3-8b (FP8)][]  | 1    | 3072           | 16         |
 | [Granite-3.3-8b (FP8)][]  | 4    | 32768          | 32         |
+| [Llama-3.1-8B-Instruct][] | 1    | 3072           | 16         |
+| [Llama-3.1-8B-Instruct][] | 4    | 32768          | 32         |
 
 ### Encoder Models
 
@@ -30,6 +32,7 @@ configurations.
 | [Multilingual-E5-large][]                 | 1    | 512            | 64         |
 
 [Granite-3.3-8b]: https://huggingface.co/ibm-granite/granite-3.3-8b-instruct
+[Llama-3.1-8B-Instruct]: https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct
 [Granite-3.3-8b (FP8)]: https://huggingface.co/ibm-granite/granite-3.3-8b-instruct-FP8
 [Granite-Embedding-125m (English)]: https://huggingface.co/ibm-granite/granite-embedding-125m-english
 [Granite-Embedding-278m (Multilingual)]: https://huggingface.co/ibm-granite/granite-embedding-278m-multilingual
