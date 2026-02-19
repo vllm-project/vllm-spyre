@@ -3793,7 +3793,7 @@ dependencies = [
 [[package]]
 name = "torch-spyre"
 version = "0.0.1"
-source = { git = "https://github.com/torch-spyre/torch-spyre?rev=947b2603ad264bca0df6b97895e9f68d834f3f7b#947b2603ad264bca0df6b97895e9f68d834f3f7b" }
+source = { git = "https://github.com/torch-spyre/torch-spyre?rev=9787872ac43370235ca2a12406fa3a73cf4b8778#9787872ac43370235ca2a12406fa3a73cf4b8778" }
 dependencies = [
     { name = "numpy" },
     { name = "psutil" },
@@ -4051,7 +4051,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "torch-spyre", git = "https://github.com/torch-spyre/torch-spyre?rev=947b2603ad264bca0df6b97895e9f68d834f3f7b" },
+    { name = "torch-spyre", git = "https://github.com/torch-spyre/torch-spyre?rev=9787872ac43370235ca2a12406fa3a73cf4b8778" },
     { name = "vllm", git = "https://github.com/vllm-project/vllm?rev=v0.15.1" },
 ]
 

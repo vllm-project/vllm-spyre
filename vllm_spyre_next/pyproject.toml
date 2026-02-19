@@ -77,7 +77,7 @@ no-build-isolation-package = ["vllm"]
 
 [tool.uv.sources]
 vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.15.1" }
-torch-spyre = { git = "https://github.com/torch-spyre/torch-spyre", rev = "947b2603ad264bca0df6b97895e9f68d834f3f7b" }
+torch-spyre = { git = "https://github.com/torch-spyre/torch-spyre", rev = "9787872ac43370235ca2a12406fa3a73cf4b8778" }
 
 [tool.ty.rules]
 possibly-missing-attribute = "ignore"
