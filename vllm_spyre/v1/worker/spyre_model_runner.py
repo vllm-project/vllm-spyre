@@ -12,6 +12,7 @@ import numpy
 import torch
 from transformers import AutoTokenizer
 from vllm.config import DeviceConfig, VllmConfig, get_layers_from_vllm_config
+from vllm.compilation.wrapper import TorchCompileWithNoGuardsWrapper
 from vllm.forward_context import set_forward_context
 from vllm.logger import init_logger
 from vllm.sampling_params import SamplingType
@@ -44,6 +45,8 @@ from vllm.v1.worker.utils import AttentionGroup
 from vllm.model_executor.models.interfaces_base import VllmModelForPooling
 from vllm.model_executor.model_loader import get_model_loader
 from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
+from vllm.model_executor.models.transformers.legacy import LegacyMixin
+from vllm.model_executor.models.transformers.base import Base as TransformersBase
 
 import vllm_spyre.utils as utils_spyre
 import vllm_spyre.envs as envs_spyre
@@ -55,6 +58,11 @@ from vllm_spyre.model_executor.model_loader.spyre import (
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.utils import exact_div
 from vllm_spyre.v1.sample.spyre_logits_processor import build_logitsprocs_for_cb
+from vllm_spyre.compat_utils import (
+    maybe_patch_transformers_4_57,
+    is_transformers_lt_5,
+    maybe_patch_torch_2_7,
+)
 
 # yapf conflicts with ruff for this block
 # yapf: disable
@@ -172,9 +180,6 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
         self.device = torch.device(self.device_config.device)
         self.pin_memory = is_pin_memory_available()
 
-        # Lazy initialization: after load_model.
-        self._model: SpyreCausalLM | None = None
-
         # Flag to be turned off after warmup is complete
         self.warmup_mode = True
 
@@ -192,9 +197,8 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
         pass
 
     @property
-    def model(self) -> SpyreCausalLM:
-        assert self._model is not None, "model accessed before loading"
-        return self._model
+    def model(self) -> torch.nn.Module:
+        raise NotImplementedError
 
     @property
     def is_multimodal(self) -> bool:
@@ -430,20 +434,8 @@ class SpyrePoolingModelRunner(
             self.attn_groups.append(create_attn_groups(attn_backends[0], i))
 
     def load_model(self) -> None:
-        # Workaround issue with torch 2.7.1 https://github.com/pytorch/pytorch/issues/160886
-        # For now, we just disable the replacement of the linear layers
-        import vllm.model_executor.models.transformers.base as transformer_utils
-
-        def replace_linear_class(
-            linear: Any,
-            style: Any = "replicate",
-            quant_config: Any = None,
-            *,
-            prefix: str = "",
-        ) -> Any:
-            return linear
-
-        transformer_utils.replace_linear_class = replace_linear_class  # ty: ignore
+        maybe_patch_transformers_4_57(patch_backend=True)
+        maybe_patch_torch_2_7()
 
         model_loader = get_model_loader(self.load_config)
         self.vllm_model: PoolingModel = model_loader.load_model(
@@ -451,6 +443,22 @@ class SpyrePoolingModelRunner(
         )
         self.vllm_model.eval()
         torch.set_grad_enabled(False)
+
+        def _find_compilable(module: torch.nn.Module) -> torch.nn.Module | None:
+            if isinstance(module, TorchCompileWithNoGuardsWrapper):
+                return module
+            for child_module in module.children():
+                if (mod := _find_compilable(child_module)) is not None:
+                    return mod
+            return None
+
+        if is_transformers_lt_5():
+            assert isinstance(self.vllm_model, TransformersBase)
+            self._model = self.vllm_model.model
+            self._compilable = self._model
+        else:
+            self._model = self.vllm_model
+            self._compilable = _find_compilable(self.model)
 
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in BACKEND_LIST:
             # Lazy import to avoid load torch_sendnn runtime before it is really
@@ -464,9 +472,8 @@ class SpyrePoolingModelRunner(
             with utils_spyre.stagger_region(
                 envs_spyre.VLLM_SPYRE_MAX_LOAD_PROCESSES, self.parallel_config.world_size, self.rank
             ):
-                # Not clear how to make the type checking happy with the torch.compile return
-                self.vllm_model = torch.compile(  # ty: ignore[invalid-assignment]
-                    self.vllm_model,
+                assert self._compilable is not None
+                self._compilable.compile(
                     mode="default",
                     dynamic=False,
                     backend=envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND,
@@ -659,6 +666,14 @@ class SpyrePoolingModelRunner(
         if self.use_token_type_ids:
             token_type_ids = self._token_types(input_tokens)
 
+        if (
+            is_transformers_lt_5()
+            and isinstance(self.vllm_model, LegacyMixin)
+            and self.vllm_model.is_roberta
+        ):
+            position_ids += self.pad_token_id + 1
+            position_ids *= mask
+
         model_input = PoolingForwardInputs(
             input_tokens=input_tokens,
             input_embeds=None,
@@ -778,7 +793,16 @@ class SpyrePoolingModelRunner(
         if self.use_token_type_ids:
             model_kwargs["token_type_ids"] = model_input.token_type_ids
 
-        with set_forward_context(attn_metadata, self.vllm_config):
+        def call_model_transformers_4_57() -> torch.Tensor:
+            outputs = self.model(
+                input_ids=model_input.input_tokens,
+                position_ids=model_input.input_positions,
+                attention_mask=model_input.input_masks,
+                **model_kwargs,
+            )
+            return outputs["last_hidden_state"]
+
+        def call_model_transformers_5() -> torch.Tensor:
             assert model_input.input_tokens is not None
             assert model_input.input_positions is not None
             batch, seqlen = model_input.input_tokens.shape
@@ -788,12 +812,18 @@ class SpyrePoolingModelRunner(
             if (token_typed_ids := model_kwargs.get("token_typed_ids")) is not None:
                 model_kwargs["token_typed_ids"] = token_typed_ids.view(batch * seqlen)
 
-            hidden_states = self.vllm_model(
+            hidden_states = self.model(
                 input_ids=model_input.input_tokens.view(batch * seqlen),
                 positions=model_input.input_positions.view(batch * seqlen),
                 **model_kwargs,
             )
-            hidden_states = hidden_states.view(batch, seqlen, -1)
+            return hidden_states.view(batch, seqlen, -1)
+
+        with set_forward_context(attn_metadata, self.vllm_config):
+            if is_transformers_lt_5():
+                hidden_states = call_model_transformers_4_57()
+            else:
+                hidden_states = call_model_transformers_5()
 
         # Only perform sampling in the driver worker.
         if not self.is_driver_worker:
@@ -891,6 +921,11 @@ class ChunkedPrefillModelRunner(
             self.request_block_hasher = None
 
         self.prefix_cache_stats = None
+
+    @property
+    def model(self) -> SpyreCausalLM:
+        assert self._model is not None, "model accessed before loading"
+        return self._model
 
     def load_model(self) -> None:
         self._model = SpyreCausalLM(

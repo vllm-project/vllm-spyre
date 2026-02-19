@@ -570,7 +570,9 @@ class SpyreWorker(WorkerBase):
 
         sampling_params, pooling_params = None, None
 
-        pooling_params = PoolingParams(task="embed")  # for warmup any task will do
+        supported_tasks = self.model_runner.get_supported_tasks()
+
+        pooling_params = PoolingParams(task=supported_tasks[0])  # ty: ignore
 
         # Set up dummy requests for prefill steps
         dummy_requests = [

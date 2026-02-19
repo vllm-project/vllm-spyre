@@ -40,6 +40,7 @@ from vllm.v1.attention.backend import AttentionType
 from vllm.platforms import Platform, PlatformEnum
 import vllm_spyre.envs as envs_spyre
 from vllm_spyre.compilation_utils import handle_disable_compilation
+from vllm_spyre.compat_utils import maybe_patch_transformers_4_57
 
 logger = init_logger(__name__)
 
@@ -88,6 +89,7 @@ class SpyrePlatform(Platform):
 
     @classmethod
     def import_kernels(cls) -> None:
+        maybe_patch_transformers_4_57()
         pass  # suppress warning
 
     @classmethod
@@ -148,6 +150,12 @@ class SpyrePlatform(Platform):
         if is_pooling:
             os.environ["FLEX_OVERWRITE_NMB_FRAME"] = "false"
             os.environ["COMPILATION_MODE"] = "offline"
+            if vllm_config.model_config.model_impl == "auto":
+                vllm_config.model_config.model_impl = "transformers"
+
+            archs = vllm_config.model_config.hf_config.architectures
+            if archs is not None and archs[0] in ("XLMRobertaForMaskedLM", "RobertaForMaskedLM"):
+                archs[0] = "TransformersEmbeddingModel"
 
         if is_decoder:
             scheduler_config.scheduler_cls = (
