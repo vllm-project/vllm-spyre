@@ -41,6 +41,7 @@ theme:
 hooks:
   - docs/mkdocs/hooks/generate_examples.py
   - docs/mkdocs/hooks/url_schemes.py
+  - docs/mkdocs/hooks/generate_model_tables.py
 
 plugins:
   - meta
