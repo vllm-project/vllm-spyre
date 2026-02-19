@@ -3,37 +3,53 @@ import os
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from collections import defaultdict
 from logging import DEBUG
-from typing import TYPE_CHECKING, Any, Generic, TypeVar, Union
+from typing import TYPE_CHECKING, cast, Any, Generic, TypeVar, NamedTuple, TypeAlias, Protocol
+from copy import deepcopy, copy
 
+import numpy
 import torch
-from transformers import AutoModel, AutoModelForSequenceClassification, AutoTokenizer
-from vllm.config import DeviceConfig, VllmConfig, set_current_vllm_config
+from transformers import AutoTokenizer
+from vllm.config import DeviceConfig, VllmConfig, get_layers_from_vllm_config
+from vllm.compilation.wrapper import TorchCompileWithNoGuardsWrapper
 from vllm.forward_context import set_forward_context
 from vllm.logger import init_logger
-from vllm.model_executor.layers.pooler.activations import (
-    get_cross_encoder_act_fn,
-)
-from vllm.model_executor.layers.pooler.seqwise.poolers import (
-    pooler_for_classify,
-    pooler_for_embed,
-)
 from vllm.sampling_params import SamplingType
 from vllm.tasks import SupportedTask
 from vllm.utils.hashing import get_hash_fn_by_name
 from vllm.utils.platform_utils import is_pin_memory_available
+from vllm.attention.layer import Attention
 from vllm.v1.core.block_pool import BlockPool
 from vllm.v1.core.kv_cache_utils import KVCacheBlock, get_request_block_hasher, init_none_hash
 from vllm.v1.core.sched.output import CachedRequestData
 from vllm.v1.core.single_type_kv_cache_manager import FullAttentionManager
-from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
+from vllm.v1.kv_cache_interface import (
+    AttentionSpec,
+    EncoderOnlyAttentionSpec,
+    FullAttentionSpec,
+    KVCacheConfig,
+    KVCacheGroupSpec,
+    KVCacheSpec,
+)
+from vllm.v1.attention.backend import (
+    AttentionBackend,
+    AttentionMetadata,
+    AttentionType,
+    CommonAttentionMetadata,
+)
 from vllm.v1.metrics.stats import PrefixCacheStats
 from vllm.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, ModelRunnerOutput, SamplerOutput
-from vllm.v1.pool.metadata import PoolingMetadata
 from vllm.v1.request import Request
+from vllm.v1.worker.utils import AttentionGroup
+from vllm.model_executor.models.interfaces_base import VllmModelForPooling
+from vllm.model_executor.model_loader import get_model_loader
+from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
+from vllm.model_executor.models.transformers.legacy import LegacyMixin
+from vllm.model_executor.models.transformers.base import Base as TransformersBase
 
-import vllm_spyre.envs as envs_spyre
 import vllm_spyre.utils as utils_spyre
+import vllm_spyre.envs as envs_spyre
 from vllm_spyre.model_executor.model_loader.spyre import (
     BACKEND_LIST,
     SpyreAttentionMetadata,
@@ -42,6 +58,11 @@ from vllm_spyre.model_executor.model_loader.spyre import (
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.utils import exact_div
 from vllm_spyre.v1.sample.spyre_logits_processor import build_logitsprocs_for_cb
+from vllm_spyre.compat_utils import (
+    maybe_patch_transformers_4_57,
+    is_transformers_lt_5,
+    maybe_patch_torch_2_7,
+)
 
 # yapf conflicts with ruff for this block
 # yapf: disable
@@ -62,6 +83,10 @@ else:
     SchedulerOutput = None
     NewRequestData = None
     SamplingMetadata = None
+
+
+PerLayerAttnMetadata: TypeAlias = dict[str, AttentionMetadata]
+# list when ubatching is enabled
 
 logger = init_logger(__name__)
 
@@ -155,9 +180,6 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
         self.device = torch.device(self.device_config.device)
         self.pin_memory = is_pin_memory_available()
 
-        # Lazy initialization: after load_model.
-        self._model: SpyreCausalLM | None = None
-
         # Flag to be turned off after warmup is complete
         self.warmup_mode = True
 
@@ -171,10 +193,12 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
     def build_input_batch(self) -> InputBatchT:
         raise NotImplementedError
 
+    def initialize_kv_cache(self, kv_cache_config: KVCacheConfig) -> None:
+        pass
+
     @property
-    def model(self) -> SpyreCausalLM:
-        assert self._model is not None, "model accessed before loading"
-        return self._model
+    def model(self) -> torch.nn.Module:
+        raise NotImplementedError
 
     @property
     def is_multimodal(self) -> bool:
@@ -229,12 +253,6 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
         """Turn off warmup mode once the warmup is complete"""
         self.warmup_mode = False
 
-    def build_attn_metadata(self, model_input: ModelInputsT) -> SpyreAttentionMetadata:
-        # TODO: probably sooner we will need a more sophisticated way to switch
-        # build attention metadata based on model/attention. But for now, a
-        # simple method override is good enough.
-        return None  # ty: ignore
-
     @abstractmethod
     def update_states(self, scheduler_output: SchedulerOutput):
         raise NotImplementedError
@@ -248,28 +266,33 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
     ) -> ModelRunnerOutput:
         raise NotImplementedError
 
+    def _make_compatible_sampled_token_ids(
+        self, sampled_token_ids: torch.Tensor
+    ) -> list[list[int]] | list[numpy.ndarray]:
+        """Some versions of vllm required a list of numpy arrays as output.
+        This was ultimately rejected, see:
+        https://github.com/vllm-project/vllm/pull/29121
 
-class PoolerAdapter(torch.nn.Module):
-    def __init__(self, pooler: torch.nn.Module):
-        super().__init__()
-        self.pooler = pooler
+        This can be removed once the *lower bound* of the vllm dependency is
+        >= 0.12.0
+        """
+        # ty ignore comments here because the typing is all dependent on the specific version of
+        # vllm installed
+        if ModelRunnerOutput.__dataclass_fields__["sampled_token_ids"].type == list[numpy.ndarray]:
+            sampled_token_ids = [x for x in sampled_token_ids.numpy()]  # ty: ignore
+        else:
+            sampled_token_ids = sampled_token_ids.tolist()  # ty: ignore
+        return sampled_token_ids  # ty: ignore
 
-    def forward(
+
+class PoolingModel(VllmModelForPooling, Protocol):
+    def __call__(self, *args, **kwargs) -> torch.Tensor:
+        pass
+
+    def eval(
         self,
-        hidden_states: Union[torch.Tensor, tuple[torch.Tensor, ...]],
-        pooling_metadata: PoolingMetadata,
-    ) -> Union[torch.Tensor, list[torch.Tensor]]:
-        # Because we're using transformers to load the pooler
-        # and classifier layers and the assumption there is that
-        # we have a right padded batch, we need to split
-        # and at the batch dimension.
-        if isinstance(hidden_states, torch.Tensor):
-            hidden_states = torch.split(hidden_states, pooling_metadata.prompt_lens.tolist())
-        return [self.pooler(h.unsqueeze(dim=0)) for h in hidden_states]
-
-
-def _cls(input: torch.Tensor) -> torch.Tensor:
-    return input[:, 0]
+    ) -> None:
+        pass
 
 
 class SpyrePoolingModelRunner(
@@ -289,6 +312,12 @@ class SpyrePoolingModelRunner(
         self._position_ids: torch.Tensor = None
         self.use_token_type_ids = False
 
+        # Attention layers that are only in the KVCacheConfig of the runner
+        # (e.g., KV sharing, encoder-only attention), but not in the
+        # KVCacheConfig of the scheduler.
+        self.runner_only_attn_layers: set[str] = set()
+        self.attn_groups: list[list[AttentionGroup]] = []
+
     @property
     def model(self) -> torch.nn.Module:
         return self._model  # ty: ignore[invalid-return-type]
@@ -302,43 +331,135 @@ class SpyrePoolingModelRunner(
             vocab_size=self.model_config.get_vocab_size(),
         )
 
-    def load_model(self) -> None:
-        assert len(self.model_config.architectures) == 1
-        task = (
-            "classify"
-            if self.model_config.architectures[0].endswith("ForSequenceClassification")
-            else "embed"
-        )
+    def get_kv_cache_spec(self) -> dict[str, KVCacheSpec]:
+        # No KV cache for encoder-only attention
+        return {}
 
-        if task == "embed":
-            self._model = AutoModel.from_pretrained(self.model_config.model)
-        elif task == "classify":
-            class_model = AutoModelForSequenceClassification.from_pretrained(
-                self.model_config.model
+    # I've kept the organization of methods the same as in the
+    # GPU model runner, so that it's easier to recognize the
+    # pattern
+    def initialize_kv_cache(self, kv_cache_config: KVCacheConfig) -> None:
+        kv_cache_config = deepcopy(kv_cache_config)
+        self.kv_cache_config = kv_cache_config
+        self.may_add_encoder_only_layers_to_kv_cache_config()
+        self.initialize_attn_backend(kv_cache_config)
+        self.initialize_metadata_builders(kv_cache_config)
+
+    def may_add_encoder_only_layers_to_kv_cache_config(self) -> None:
+        """
+        Add encoder-only layers to the KV cache config.
+        """
+        block_size = self.vllm_config.cache_config.block_size
+        encoder_only_attn_specs: dict[AttentionSpec, list[str]] = defaultdict(list)
+        attn_layers = get_layers_from_vllm_config(self.vllm_config, Attention)
+        for layer_name, attn_module in attn_layers.items():
+            assert attn_module.attn_type == AttentionType.ENCODER_ONLY
+            attn_spec: AttentionSpec = EncoderOnlyAttentionSpec(
+                block_size=block_size,
+                num_kv_heads=attn_module.num_kv_heads,
+                head_size=attn_module.head_size,
+                dtype=torch.float16,
             )
-            if hasattr(class_model, "bert"):
-                self._model = class_model.bert
-                self._pooler = PoolerAdapter(self.model.pooler)  # ty:ignore[invalid-argument-type]
-            elif hasattr(class_model, "roberta"):
-                self._model = class_model.roberta
-                self._pooler = PoolerAdapter(_cls)  # ty:ignore[invalid-argument-type]
-            else:
-                raise ValueError(
-                    f"Unsupported model {self.model_config.model}: Expected "
-                    "Bert or Roberta for sequence classification"
+            encoder_only_attn_specs[attn_spec].append(layer_name)
+            self.runner_only_attn_layers.add(layer_name)
+        if len(encoder_only_attn_specs) > 0:
+            assert len(encoder_only_attn_specs) == 1, (
+                "Only support one encoder-only attention spec now"
+            )
+            spec, layer_names = encoder_only_attn_specs.popitem()
+            self.kv_cache_config.kv_cache_groups.append(
+                KVCacheGroupSpec(layer_names=layer_names, kv_cache_spec=spec)
+            )
+
+    def initialize_metadata_builders(self, kv_cache_config: KVCacheConfig) -> None:
+        for kv_cache_group_id in range(len(kv_cache_config.kv_cache_groups)):
+            for attn_group in self.attn_groups[kv_cache_group_id]:
+                attn_group.create_metadata_builders(
+                    self.vllm_config,
+                    self.device,
+                    None,
                 )
-            self.classifier = class_model.classifier
 
-        # Disable pooler because in transformers it's
-        # always run even tough we don't use the outputs
-        # directly.
-        self._model.pooler = None
+    def initialize_attn_backend(self, kv_cache_config: KVCacheConfig) -> None:
+        """
+        Initialize the attention backends and attention metadata builders.
+        """
+        assert len(self.attn_groups) == 0, "Attention backends are already initialized"
 
-        model_class_name = type(self.model).__name__
-        self.is_roberta = "roberta" in model_class_name.lower()
+        class AttentionGroupKey(NamedTuple):
+            attn_backend: type[AttentionBackend]
+            kv_cache_spec: KVCacheSpec
 
-        self.model.eval()
+        def get_attn_backends_for_group(
+            kv_cache_group_spec: KVCacheGroupSpec,
+        ) -> tuple[dict[AttentionGroupKey, list[str]], set[type[AttentionBackend]]]:
+            layer_type = cast(type[Any], AttentionLayerBase)
+            layers = get_layers_from_vllm_config(
+                self.vllm_config, layer_type, kv_cache_group_spec.layer_names
+            )
+            attn_backends = {}
+            attn_backend_layers = defaultdict(list)
+
+            for layer_name in kv_cache_group_spec.layer_names:
+                attn_backend = layers[layer_name].get_attn_backend()
+
+                full_cls_name = attn_backend.full_cls_name()
+                layer_kv_cache_spec = kv_cache_group_spec.kv_cache_spec
+                key = (full_cls_name, layer_kv_cache_spec)
+                attn_backends[key] = AttentionGroupKey(attn_backend, layer_kv_cache_spec)
+                attn_backend_layers[key].append(layer_name)
+            return (
+                {attn_backends[k]: v for k, v in attn_backend_layers.items()},
+                set(group_key.attn_backend for group_key in attn_backends.values()),
+            )
+
+        def create_attn_groups(
+            attn_backends_map: dict[AttentionGroupKey, list[str]],
+            kv_cache_group_id: int,
+        ) -> list[AttentionGroup]:
+            attn_groups: list[AttentionGroup] = []
+            for (attn_backend, kv_cache_spec), layer_names in attn_backends_map.items():
+                attn_group = AttentionGroup(
+                    attn_backend,
+                    layer_names,
+                    kv_cache_spec,
+                    kv_cache_group_id,
+                )
+
+                attn_groups.append(attn_group)
+            return attn_groups
+
+        for i, kv_cache_group_spec in enumerate(kv_cache_config.kv_cache_groups):
+            attn_backends = get_attn_backends_for_group(kv_cache_group_spec)
+            self.attn_groups.append(create_attn_groups(attn_backends[0], i))
+
+    def load_model(self) -> None:
+        maybe_patch_transformers_4_57(patch_backend=True)
+        maybe_patch_torch_2_7()
+
+        model_loader = get_model_loader(self.load_config)
+        self.vllm_model: PoolingModel = model_loader.load_model(
+            vllm_config=self.vllm_config, model_config=self.model_config
+        )
+        self.vllm_model.eval()
         torch.set_grad_enabled(False)
+
+        def _find_compilable(module: torch.nn.Module) -> torch.nn.Module | None:
+            if isinstance(module, TorchCompileWithNoGuardsWrapper):
+                return module
+            for child_module in module.children():
+                if (mod := _find_compilable(child_module)) is not None:
+                    return mod
+            return None
+
+        if is_transformers_lt_5():
+            assert isinstance(self.vllm_model, TransformersBase)
+            self._model = self.vllm_model.model
+            self._compilable = self._model
+        else:
+            self._model = self.vllm_model
+            self._compilable = _find_compilable(self.model)
+
         if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in BACKEND_LIST:
             # Lazy import to avoid load torch_sendnn runtime before it is really
             # necessary. This solve issues of running forked tests that share
@@ -351,40 +472,26 @@ class SpyrePoolingModelRunner(
             with utils_spyre.stagger_region(
                 envs_spyre.VLLM_SPYRE_MAX_LOAD_PROCESSES, self.parallel_config.world_size, self.rank
             ):
-                # Not clear how to make the type checking happy with the torch.compile return
-                self._model = torch.compile(  # ty: ignore[invalid-assignment]
-                    self.model,
+                assert self._compilable is not None
+                self._compilable.compile(
                     mode="default",
                     dynamic=False,
                     backend=envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND,
+                    fullgraph=True,
                 )
 
-        if task == "classify":
-            tokenizer = AutoTokenizer.from_pretrained(self.model_config.model)
+        self.use_token_type_ids = False
+        if "score" in self.vllm_model.pooler.get_supported_tasks() and (
+            tokenizer := AutoTokenizer.from_pretrained(self.model_config.model)
+        ):
             output = tokenizer(text="foo", text_pair="bar")
             self.use_token_type_ids = "token_type_ids" in output
             if self.use_token_type_ids:
                 self.sep_token_id = tokenizer.sep_token_id
 
-        pooler_config = self.model_config.pooler_config
-        assert pooler_config is not None, "Pooler config is require for pooling models"
-
-        if task == "embed":
-            with set_current_vllm_config(self.vllm_config):
-                self.pooler = pooler_for_embed(pooler_config=pooler_config)
-        elif task == "classify":
-            with set_current_vllm_config(self.vllm_config):
-                self.pooler = pooler_for_classify(
-                    pooler_config=pooler_config,
-                    pooling=self._pooler,
-                    classifier=self.classifier,
-                    act_fn=get_cross_encoder_act_fn(self.model_config.hf_config),
-                )
-
     @property
     def vocab_size(self) -> int:
-        # self.model here is probably a transformers model class
-        return self.model.config.vocab_size  # ty: ignore[invalid-return-type]
+        return self.model_config.get_vocab_size()
 
     def _prepare_pad_input_ids(
         self,
@@ -559,7 +666,11 @@ class SpyrePoolingModelRunner(
         if self.use_token_type_ids:
             token_type_ids = self._token_types(input_tokens)
 
-        if self.is_roberta:
+        if (
+            is_transformers_lt_5()
+            and isinstance(self.vllm_model, LegacyMixin)
+            and self.vllm_model.is_roberta
+        ):
             position_ids += self.pad_token_id + 1
             position_ids *= mask
 
@@ -608,7 +719,57 @@ class SpyrePoolingModelRunner(
             torch._dynamo.mark_static(model_input.token_type_ids, 1)
 
     def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
-        return tuple(self.pooler.get_supported_tasks())
+        return tuple(self.vllm_model.pooler.get_supported_tasks())
+
+    def build_attn_metadata(
+        self,
+        input: PoolingForwardInputs,
+    ) -> PerLayerAttnMetadata:
+        num_tokens_padded = input.input_tokens.numel()
+        num_reqs_padded = self.input_batch.padded_batch_size
+
+        prompt_tokens = torch.from_numpy(self.input_batch._get_num_prompt_tokens())
+        num_reqs = len(prompt_tokens)
+        max_seq_len = max(prompt_tokens)
+
+        padded_prompt_len = input.input_tokens.shape[1]
+        prompt_paddings = padded_prompt_len - prompt_tokens
+
+        query_start_locs = torch.zeros(num_reqs_padded, dtype=torch.int32)
+        query_start_locs[:num_reqs] = prompt_paddings
+
+        cm_base = CommonAttentionMetadata(
+            query_start_loc=query_start_locs,
+            query_start_loc_cpu=query_start_locs,
+            seq_lens=prompt_tokens,
+            num_reqs=self.input_batch.num_reqs,
+            num_actual_tokens=num_tokens_padded,
+            max_query_len=max_seq_len,
+            max_seq_len=max_seq_len,
+            block_table_tensor=torch.zeros(0),
+            slot_mapping=torch.zeros(0),
+            causal=False,
+        )
+
+        # Prepare the attention metadata for each KV cache group and make layers
+        # in the same group share the same metadata.
+        attn_metadata: PerLayerAttnMetadata = {}
+        for kv_cache_gid, _ in enumerate(self.kv_cache_config.kv_cache_groups):
+            cm = copy(cm_base)  # shallow copy
+
+            for attn_gid in range(len(self.attn_groups[kv_cache_gid])):
+                attn_group = self.attn_groups[kv_cache_gid][attn_gid]
+                builder = attn_group.get_metadata_builder()
+
+                attn_metadata_i = builder.build(
+                    common_prefix_len=0,
+                    common_attn_metadata=cm,
+                )
+
+                for layer_name in attn_group.layer_names:
+                    attn_metadata[layer_name] = attn_metadata_i
+
+        return attn_metadata
 
     @SpyrePlatform.inference_mode()
     def execute_model(
@@ -632,16 +793,37 @@ class SpyrePoolingModelRunner(
         if self.use_token_type_ids:
             model_kwargs["token_type_ids"] = model_input.token_type_ids
 
-        # Execute the model
-        with set_forward_context(attn_metadata, self.vllm_config):
+        def call_model_transformers_4_57() -> torch.Tensor:
             outputs = self.model(
                 input_ids=model_input.input_tokens,
                 position_ids=model_input.input_positions,
                 attention_mask=model_input.input_masks,
                 **model_kwargs,
             )
+            return outputs["last_hidden_state"]
 
-            hidden_states = outputs["last_hidden_state"]
+        def call_model_transformers_5() -> torch.Tensor:
+            assert model_input.input_tokens is not None
+            assert model_input.input_positions is not None
+            batch, seqlen = model_input.input_tokens.shape
+            # We need to flatten the batch dimension here to be
+            # compatible with the transformers backend. The vllm
+            # code doesn't care.
+            if (token_typed_ids := model_kwargs.get("token_typed_ids")) is not None:
+                model_kwargs["token_typed_ids"] = token_typed_ids.view(batch * seqlen)
+
+            hidden_states = self.model(
+                input_ids=model_input.input_tokens.view(batch * seqlen),
+                positions=model_input.input_positions.view(batch * seqlen),
+                **model_kwargs,
+            )
+            return hidden_states.view(batch, seqlen, -1)
+
+        with set_forward_context(attn_metadata, self.vllm_config):
+            if is_transformers_lt_5():
+                hidden_states = call_model_transformers_4_57()
+            else:
+                hidden_states = call_model_transformers_5()
 
         # Only perform sampling in the driver worker.
         if not self.is_driver_worker:
@@ -665,7 +847,7 @@ class SpyrePoolingModelRunner(
             # we're left padding
             hidden_state_list.append(hidden_state[-prompt_len:])
 
-        raw_pooler_output = self.pooler(
+        raw_pooler_output = self.vllm_model.pooler(
             hidden_states=torch.cat(hidden_state_list), pooling_metadata=pooling_metadata
         )
 
@@ -740,6 +922,11 @@ class ChunkedPrefillModelRunner(
 
         self.prefix_cache_stats = None
 
+    @property
+    def model(self) -> SpyreCausalLM:
+        assert self._model is not None, "model accessed before loading"
+        return self._model
+
     def load_model(self) -> None:
         self._model = SpyreCausalLM(
             vllm_config=self.vllm_config,
@@ -751,7 +938,7 @@ class ChunkedPrefillModelRunner(
         model_cfg = self.model.fms_model.config
         if self.model.is_multimodal:
             return self.model.mm_model_utils.resolve_multimodal_vocab_size()
-        return model_cfg.src_vocab_size  # ty: ignore[invalid-return-type]
+        return model_cfg.src_vocab_size
 
     @property
     def enable_prefix_caching(self):
@@ -784,7 +971,7 @@ class ChunkedPrefillModelRunner(
         self._set_blocks(num_blocks=n_blocks_warmup)
         # TODO: fixup the typing here. Things are getting tripped up by having all of our "model"
         # classes inherit from `nn.Module` when maybe they don't need to
-        self.model.set_past_key_value_states(num_blocks=n_blocks_warmup)  # ty: ignore[call-non-callable]
+        self.model.set_past_key_value_states(num_blocks=n_blocks_warmup)
 
         # Future code:
 
@@ -806,7 +993,7 @@ class ChunkedPrefillModelRunner(
         self._set_blocks(num_blocks=n_blocks_avail)
         # TODO: fixup the typing here. Things are getting tripped up by having all of our "model"
         # classes inherit from `nn.Module` when maybe they don't need to
-        self.model.set_past_key_value_states(num_blocks=n_blocks_avail)  # ty: ignore[call-non-callable]
+        self.model.set_past_key_value_states(num_blocks=n_blocks_avail)
 
     def get_total_spyre_blocks(self) -> int:
         """Returns the total number of KV cache blocks available for spyre.
