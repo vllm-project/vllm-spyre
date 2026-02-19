@@ -1,40 +1,40 @@
 [build-system]
 requires = [
-  "setuptools>=82",
+  "setuptools>=64",
   "setuptools_scm>=8"
 ]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "vllm-spyre"
-description = "vLLM plugin for Spyre hardware support"
+name = "vllm-spyre-next"
+description = "Next iteration of vllm-spyre on the torch-spyre stack"
 readme = "README.md"
 license = {text = "Apache 2"}
 dependencies = [
-    "fms-model-optimizer[fp8]>=0.8.0",
-    "ibm-fms>=1.7.0,<2.0",
-    "vllm>=0.15.1,<=0.15.1",
+    # "torch-sypre"
+    "vllm>=0.11.0,<=0.14.1",
 ]
 requires-python = ">=3.11"
 dynamic = ["version"]
 
 [project.entry-points."vllm.platform_plugins"]
-spyre = "vllm_spyre:register"
+spyre_next = "vllm_spyre_next:register"
 
 [tool.setuptools.packages.find]
 where = ["."]  # list of folders that contain the packages (["."] by default)
-include = ["vllm_spyre*"]  # package names should match these glob patterns (["*"] by default)
+include = ["vllm_spyre_next*"]  # package names should match these glob patterns (["*"] by default)
 exclude = []  # exclude packages matching these glob patterns (empty by default)
 namespaces = false  # to disable scanning PEP 420 namespaces (true by default)
 
 [tool.setuptools_scm]
 # Version files are optional, this just marginally speeds up version inspection
 # at runtime
-version_file = "vllm_spyre/_version.py"
+version_file = "vllm_spyre_next/_version.py"
 # Version strings are formatted as `{version}+{local}`, e.g. "0.1.dev1+gb1a7032"
 # Local versioning is incompatible with pypi, so we disable it by default.
 local_scheme = "no-local-version"
-# For more version configuration, see
+root = ".."
+# For more version configuration, see 
 # https://setuptools-scm.readthedocs.io/en/latest/config/
 
 
@@ -42,13 +42,9 @@ local_scheme = "no-local-version"
 # Never install torch, so that no dependencies can override it.
 # This requires that torch is installed separately in the target environment.
 # Triton is optional in most dependencies, however, xgrammar requires it.
-# So we set to 'never' to prevent installing it or eventually any other
+# So we set to 'never' to prevent installing it or eventually any other 
 # by accident
 override-dependencies = [
-    "torch; sys_platform == 'never'",
-    "torchaudio; sys_platform == 'never'",
-    "torchvision; sys_platform == 'never'",
-    "triton; sys_platform == 'never'",
     "intel-extension-for-pytorch; sys_platform == 'never'",
 
     # opencv-python-headless==4.13.0.90 has a packaging bug that incorrectly depends on libxcb.so.1,
@@ -57,43 +53,31 @@ override-dependencies = [
 
     # Skip packages on s390x and ppc64le, expected to be pre-installed
     "vllm ; platform_machine not in 's390x, ppc64le'",
+    "torch ; platform_machine not in 's390x, ppc64le'",
     "ray; platform_machine not in 's390x, ppc64le'",
+    "llvmlite; platform_machine not in 's390x, ppc64le'",
     "pyarrow; platform_machine not in 's390x, ppc64le'",
-
-    # uv doesn't resolve numba->llvmlite constraint correctly...
-    #   if numba is updated, this will likely need to be too
-    "llvmlite==0.44.0; platform_machine not in 's390x, ppc64le'",
-
-    # setuptools is specified as a runtime dep by vllm, make sure it's patched for CVEs
-    "setuptools>=82",
-
-    # requests is used by many dependencies, make sure it's patched for CVEs
-    "requests>=2.32.4",
 ]
-# fms-mo doesn't support python 3.9, so don't have UV try to resolve it
 environments = [
     "python_version > '3.9'"
 ]
 
 [tool.uv.sources]
-vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.15.1" }
+vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.14.1" }
 
 [tool.ty.rules]
 possibly-missing-attribute = "ignore"
 
 [tool.ty.src]
-exclude = ["vllm_spyre/__init__.py"]
+exclude = ["vllm_spyre_next/__init__.py"]
 
 [tool.ruff]
 # Use widescreen monitors 😎😎😎
 line-length = 100
-exclude = [
-    "vllm_spyre/model_executor/model_loader/spyre_setup.py"
-]
 
 [tool.ruff.lint.per-file-ignores]
-"vllm_spyre/version.py" = ["F401"]
-"vllm_spyre/_version.py" = ["ALL"]
+"vllm_spyre_next/version.py" = ["F401"]
+"vllm_spyre_next/_version.py" = ["ALL"]
 
 [tool.ruff.lint]
 select = [
@@ -151,34 +135,7 @@ asyncio_default_fixture_loop_scope = "function"
 
 # --8<-- [start:test-markers-definition]
 markers = [
-    "skip_global_cleanup",
-
-    # Test categories
-    "e2e: Tests using end-to-end engine spin-up",
-    "utils: Tests for utility functions",
-    "worker: Tests for worker logic",
-    "basic: Basic correctness tests",
-    "compat: Tests readiness to remove backwards compatibility code",
-    "precompilation: Tests related to precompiled model cache",
-
-    # Hardware backends
-    "cpu: Tests using CPU (i.e. eager) backend",
-    "spyre: Tests using Spyre hardware backend",
-
-    # Operational modes
-    "cb: Continuous batching tests",
-    "chunked_prefill: Tests with chunked prefill enabled",
-    "prefix_caching: Tests for prefix caching",
-    "multi: Tests that require >1 cards",
-
-    # Model types
-    "decoder: Tests for decoder models",
-    "embedding: Tests for embedding models",
-    "quantized: Tests for quantized models",
-    "full_model: Tests with a full-sized decoder model (instead of a micro model)",
-    "scoring: Tests for scoring models",
-    "multimodal: Tests for multimodal models",
-
+    # TODO add any
 ]
 # --8<-- [end:test-markers-definition]
 
@@ -210,6 +167,5 @@ dev = [
     "pytest-timeout==2.3.1",
     "requests==2.32.3",
     "sentence-transformers==3.4.1",
-    "aiu-fms-testing-utils>=0.5.0",
     "pytest-mock>=3.15.0",
 ]

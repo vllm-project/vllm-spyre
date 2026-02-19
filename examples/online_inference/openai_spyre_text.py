@@ -9,9 +9,8 @@ First, start the server with the following command:
         --tensor-parallel-size=4 \
         --max-num-seqs=4
 
-This sets up a server with max batch size 4. To actually exercise continuous 
-batching make sure to submit multiple prompts at once by running this script 
-with `--batch_size` > 1.
+This sets up a server with max batch size 4. This allows vllm to process up to four prompts at once,
+which you can do by running this script with `--batch_size` > 1.
 """
 
 import argparse

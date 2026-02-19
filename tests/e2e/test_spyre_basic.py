@@ -24,6 +24,7 @@ def test_output(
     max_model_len: int,
     monkeypatch: pytest.MonkeyPatch,
     use_llm_cache,
+    runtime_xfail,
 ) -> None:
     """
     The warmup is based on a single shape. After the warmup,

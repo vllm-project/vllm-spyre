@@ -7,7 +7,7 @@ on:
   pull_request:
     # add labeled and unlabeled to the default types (runs when label is added)
     types: [opened, synchronize, reopened, labeled, unlabeled, auto_merge_enabled]
-    branches: [main, 2.0-release-prep]
+    branches: [main]
 
   push:
     branches: [main]
@@ -74,7 +74,7 @@ jobs:
           # Lower bound support
           - vllm_version:
               name: "vLLM:lowest"
-              repo: "git+https://github.com/vllm-project/vllm --tag v0.14.1"
+              repo: "git+https://github.com/vllm-project/vllm --tag v0.15.1"
             test_suite:
               name: "backward compat"
               markers: "compat or (cpu and basic and not quantized)"

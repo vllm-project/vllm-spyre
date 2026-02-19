@@ -1387,8 +1387,9 @@ class ChunkedPrefillModelRunner(
             # adding new blocks if needed
             req_state = self.requests[req_id]
             if req_state.num_computed_tokens % self.block_size == 0:
+                num_tokens = req_state.num_computed_tokens + 1
                 blocks = self.kv_cache_manager.allocate_new_blocks(
-                    req_id, req_state.num_computed_tokens + 1
+                    request_id=req_id, num_tokens=num_tokens, num_tokens_main_model=num_tokens
                 )
                 assert len(blocks) == 1, f"Expected 1 block but got {len(blocks)}"
             max_n_blocks = max(max_n_blocks, len(self._get_blocks(req_id)))
@@ -1578,7 +1579,9 @@ class ChunkedPrefillModelRunner(
         )
 
         # allocate blocks
-        self.kv_cache_manager.allocate_new_blocks(req_id, prompt_len)
+        self.kv_cache_manager.allocate_new_blocks(
+            request_id=req_id, num_tokens=prompt_len, num_tokens_main_model=prompt_len
+        )
 
         # Add new request to the cached states.
         if sampling_params.sampling_type == SamplingType.RANDOM_SEED:

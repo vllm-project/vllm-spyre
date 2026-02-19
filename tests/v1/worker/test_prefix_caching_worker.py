@@ -49,8 +49,7 @@ def test_block_sharing_for_2_chunks(
     )
 
     kv_cache_manager = pc_model_runner.kv_cache_manager
-
-    kv_cache_manager.allocate_new_blocks(request1.request.request_id, 192)
+    kv_cache_manager.allocate_new_blocks(request1.request.request_id, 192, 192)
     kv_cache_manager.cache_blocks(request1.request, 192)
     kv_cache_manager.free(request1.request.request_id)
 

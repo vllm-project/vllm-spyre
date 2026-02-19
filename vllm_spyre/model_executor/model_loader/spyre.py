@@ -10,7 +10,7 @@ import torch._inductor.config
 import torch.distributed as dist
 import torch.nn as nn
 from fms.models import get_model
-from transformers import PretrainedConfig
+from transformers import PretrainedConfig, Mistral3Config
 from vllm.config import ModelConfig, VllmConfig
 from vllm.forward_context import get_forward_context
 from vllm.logger import init_logger
@@ -66,7 +66,7 @@ class SpyreCausalLM(nn.Module):
             torch.float16 if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn" else torch.float32
         )
 
-        self.config: PretrainedConfig = vllm_config.model_config.hf_config
+        self.config = self.resolve_hf_config(vllm_config)
 
         # Actual FMS model
         self.model_config = vllm_config.model_config
@@ -293,6 +293,52 @@ class SpyreCausalLM(nn.Module):
                 name,
             )
             param.data = param.data.to(dtype=torch.float32)
+
+    @staticmethod
+    def resolve_hf_config(vllm_config: VllmConfig):
+        """Ensure that we convert to the correctly typed subclass of PretrainedConfig;
+        this is largely done to handle external config formats consistently, such
+        as Mistral.
+
+        NOTE: We should be careful about considering the implications of the external
+        format with respect to the model arch used in upline vLLM (outside of Spyre),
+        because in some cases, i.e., Mistral3, we map to a different vLLM class;
+        this also may have implications for the preprocessing used by the input processor
+        that runs in the frontend process, so we need to be sure that things are handled
+        correctly on the mm utils side as well.
+        """
+        model_config: ModelConfig = vllm_config.model_config
+        hf_config: PretrainedConfig = model_config.hf_config
+        is_hf_format = model_config.config_format == "hf"
+        vllm_arch = model_config.architecture
+
+        # For multimodal mistral, passing auto / mistral format may result in passing a
+        # PretrainedConfig that should be cast to Mistral3; In this case, we expect to
+        # have arch PixtralForConditionalGeneration (mistral format for mistral3), as
+        # opposed to Mistral3ForConditionalGeneration (HF format).
+        # Ref: https://github.com/vllm-project/vllm/blob/v0.15.0/docs/models/supported_models.md
+        if vllm_arch == "PixtralForConditionalGeneration" and type(hf_config) is PretrainedConfig:
+            if is_hf_format:
+                raise AssertionError(
+                    "Mistral3 config format should not be hf with PixtralForConditionalGeneration"
+                )
+            if not hasattr(hf_config, "text_config") or not hasattr(hf_config, "vision_config"):
+                raise AttributeError(
+                    "Mistral3 config to be converted must have text/vision subconfigs"
+                )
+
+            logger.info("Converting from Mistral -> HF Config format for Mistral3")
+
+            # Clobber the text / language model_types with the mistral/pixtral key, which
+            # are currently the only models that we support in FMS with mistral3 at the moment,
+            # and the values we would expect if we passed the config in HF format.
+            config_dict = hf_config.to_dict()
+            config_dict["text_config"]["model_type"] = "mistral"
+            config_dict["vision_config"]["model_type"] = "pixtral"
+            config_dict["model_type"] = "mistral3"
+            return Mistral3Config(**config_dict)
+
+        return hf_config
 
     def set_past_key_value_states(self, num_blocks) -> None:
         # List[layers] of Tuple[k,v] of
