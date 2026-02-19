@@ -21,7 +21,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.2">
     
     
       
@@ -752,22 +752,22 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#configurations" class="md-nav__link">
+  <a href="#verified-deployment-configurations" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Configurations
+        Verified Deployment Configurations
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Configurations">
+    <nav class="md-nav" aria-label="Verified Deployment Configurations">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#decoder-models" class="md-nav__link">
+  <a href="#generative-models" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Decoder Models
+        Generative Models
       
     </span>
   </a>
@@ -775,10 +775,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#encoder-models" class="md-nav__link">
+  <a href="#pooling-models" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Encoder Models
+        Pooling Models
       
     </span>
   </a>
@@ -801,17 +801,6 @@
   
     <nav class="md-nav" aria-label="Model Configuration">
       <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#supported-configurations" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Supported Configurations
-      
-    </span>
-  </a>
-  
-</li>
         
           <li class="md-nav__item">
   <a href="#configuration-validation" class="md-nav__link">
@@ -925,22 +914,22 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#configurations" class="md-nav__link">
+  <a href="#verified-deployment-configurations" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Configurations
+        Verified Deployment Configurations
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Configurations">
+    <nav class="md-nav" aria-label="Verified Deployment Configurations">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#decoder-models" class="md-nav__link">
+  <a href="#generative-models" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Decoder Models
+        Generative Models
       
     </span>
   </a>
@@ -948,10 +937,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#encoder-models" class="md-nav__link">
+  <a href="#pooling-models" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Encoder Models
+        Pooling Models
       
     </span>
   </a>
@@ -974,17 +963,6 @@
   
     <nav class="md-nav" aria-label="Model Configuration">
       <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#supported-configurations" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Supported Configurations
-      
-    </span>
-  </a>
-  
-</li>
         
           <li class="md-nav__item">
   <a href="#configuration-validation" class="md-nav__link">
@@ -1024,107 +1002,241 @@
 
 <h1 id="supported-models">Supported Models<a class="headerlink" href="#supported-models" title="Permanent link">&para;</a></h1>
 <p>The vLLM Spyre plugin relies on model code implemented by the <a href="https://github.com/foundation-model-stack/foundation-model-stack/tree/main/fms/models">Foundation Model Stack</a>.</p>
-<h2 id="configurations">Configurations<a class="headerlink" href="#configurations" title="Permanent link">&para;</a></h2>
+<h2 id="verified-deployment-configurations">Verified Deployment Configurations<a class="headerlink" href="#verified-deployment-configurations" title="Permanent link">&para;</a></h2>
 <p>The following models have been verified to run on vLLM Spyre with the listed
-configurations.</p>
-<h3 id="decoder-models">Decoder Models<a class="headerlink" href="#decoder-models" title="Permanent link">&para;</a></h3>
+configurations. These tables are automatically generated from the model configuration file.</p>
+<h3 id="generative-models">Generative Models<a class="headerlink" href="#generative-models" title="Permanent link">&para;</a></h3>
+<p>Models with continuous batching support for text generation tasks.</p>
+<!-- GENERATED_GENERATIVE_MODELS_START -->
+
+<p><strong><a href="https://huggingface.co/ibm-granite/granite-3.3-8b-instruct">ibm-granite/granite-3.3-8b-instruct</a></strong></p>
 <table>
 <thead>
 <tr>
-<th>Model</th>
-<th>AIUs</th>
-<th>Context Length</th>
-<th>Batch Size</th>
+<th>Max Model Len</th>
+<th>Max Num Seqs</th>
+<th>Tensor Parallel Size</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><a href="https://huggingface.co/ibm-granite/granite-3.3-8b-instruct">Granite-3.3-8b</a></td>
-<td>1</td>
 <td>3072</td>
 <td>16</td>
-</tr>
-<tr>
-<td><a href="https://huggingface.co/ibm-granite/granite-3.3-8b-instruct">Granite-3.3-8b</a></td>
-<td>4</td>
-<td>32768</td>
-<td>32</td>
-</tr>
-<tr>
-<td><a href="https://huggingface.co/ibm-granite/granite-3.3-8b-instruct-FP8">Granite-3.3-8b (FP8)</a></td>
 <td>1</td>
-<td>3072</td>
-<td>16</td>
 </tr>
 <tr>
-<td><a href="https://huggingface.co/ibm-granite/granite-3.3-8b-instruct-FP8">Granite-3.3-8b (FP8)</a></td>
+<td>8192</td>
 <td>4</td>
+<td>1</td>
+</tr>
+<tr>
+<td>8192</td>
+<td>4</td>
+<td>2</td>
+</tr>
+<tr>
 <td>32768</td>
 <td>32</td>
+<td>4</td>
 </tr>
 </tbody>
 </table>
-<h3 id="encoder-models">Encoder Models<a class="headerlink" href="#encoder-models" title="Permanent link">&para;</a></h3>
+<p><strong><a href="https://huggingface.co/ibm-granite/granite-3.3-8b-instruct-FP8">ibm-granite/granite-3.3-8b-instruct-FP8</a></strong></p>
 <table>
 <thead>
 <tr>
-<th>Model</th>
-<th>AIUs</th>
-<th>Context Length</th>
-<th>Batch Size</th>
+<th>Max Model Len</th>
+<th>Max Num Seqs</th>
+<th>Tensor Parallel Size</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><a href="https://huggingface.co/ibm-granite/granite-embedding-125m-english">Granite-Embedding-125m (English)</a></td>
-<td>1</td>
-<td>512</td>
+<td>3072</td>
+<td>16</td>
 <td>1</td>
 </tr>
 <tr>
-<td><a href="https://huggingface.co/ibm-granite/granite-embedding-125m-english">Granite-Embedding-125m (English)</a></td>
+<td>16384</td>
+<td>4</td>
+<td>4</td>
+</tr>
+<tr>
+<td>32768</td>
+<td>32</td>
+<td>4</td>
+</tr>
+</tbody>
+</table>
+<p><strong><a href="https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct">meta-llama/Llama-3.1-8B-Instruct</a></strong></p>
+<table>
+<thead>
+<tr>
+<th>Max Model Len</th>
+<th>Max Num Seqs</th>
+<th>Tensor Parallel Size</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>3072</td>
+<td>16</td>
 <td>1</td>
-<td>512</td>
+</tr>
+<tr>
+<td>16384</td>
+<td>4</td>
+<td>4</td>
+</tr>
+<tr>
+<td>32768</td>
+<td>32</td>
+<td>4</td>
+</tr>
+</tbody>
+</table>
+<p><strong><a href="https://huggingface.co/ibm-granite/granite-4-8b-dense">ibm-granite/granite-4-8b-dense</a></strong></p>
+<table>
+<thead>
+<tr>
+<th>Max Model Len</th>
+<th>Max Num Seqs</th>
+<th>Tensor Parallel Size</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>3072</td>
+<td>16</td>
+<td>1</td>
+</tr>
+<tr>
+<td>8192</td>
+<td>4</td>
+<td>1</td>
+</tr>
+<tr>
+<td>8192</td>
+<td>4</td>
+<td>2</td>
+</tr>
+<tr>
+<td>32768</td>
+<td>32</td>
+<td>4</td>
+</tr>
+</tbody>
+</table>
+<!-- GENERATED_GENERATIVE_MODELS_END -->
+
+<h3 id="pooling-models">Pooling Models<a class="headerlink" href="#pooling-models" title="Permanent link">&para;</a></h3>
+<p>Models with static batching support for embedding and scoring tasks.</p>
+<!-- GENERATED_POOLING_MODELS_START -->
+
+<p><strong><a href="https://huggingface.co/ibm-granite/granite-embedding-125m-english">ibm-granite/granite-embedding-125m-english</a></strong></p>
+<table>
+<thead>
+<tr>
+<th>VLLM_SPYRE_WARMUP_BATCH_SIZES</th>
+<th>VLLM_SPYRE_WARMUP_PROMPT_LENS</th>
+<th>Tensor Parallel Size</th>
+</tr>
+</thead>
+<tbody>
+<tr>
 <td>64</td>
-</tr>
-<tr>
-<td><a href="https://huggingface.co/ibm-granite/granite-embedding-278m-multilingual">Granite-Embedding-278m (Multilingual)</a></td>
-<td>1</td>
 <td>512</td>
 <td>1</td>
 </tr>
+</tbody>
+</table>
+<p><strong><a href="https://huggingface.co/ibm-granite/granite-embedding-278m-multilingual">ibm-granite/granite-embedding-278m-multilingual</a></strong></p>
+<table>
+<thead>
 <tr>
-<td><a href="https://huggingface.co/ibm-granite/granite-embedding-278m-multilingual">Granite-Embedding-278m (Multilingual)</a></td>
-<td>1</td>
-<td>512</td>
+<th>VLLM_SPYRE_WARMUP_BATCH_SIZES</th>
+<th>VLLM_SPYRE_WARMUP_PROMPT_LENS</th>
+<th>Tensor Parallel Size</th>
+</tr>
+</thead>
+<tbody>
+<tr>
 <td>64</td>
+<td>512</td>
+<td>1</td>
 </tr>
+</tbody>
+</table>
+<p><strong><a href="https://huggingface.co/intfloat/multilingual-e5-large">intfloat/multilingual-e5-large</a></strong></p>
+<table>
+<thead>
 <tr>
-<td><a href="https://huggingface.co/BAAI/bge-reranker-v2-m3">BAAI/BGE-Reranker (v2-m3)</a></td>
+<th>VLLM_SPYRE_WARMUP_BATCH_SIZES</th>
+<th>VLLM_SPYRE_WARMUP_PROMPT_LENS</th>
+<th>Tensor Parallel Size</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>64</td>
+<td>512</td>
+<td>1</td>
+</tr>
+</tbody>
+</table>
+<p><strong><a href="https://huggingface.co/BAAI/bge-reranker-v2-m3">BAAI/bge-reranker-v2-m3</a></strong></p>
+<table>
+<thead>
+<tr>
+<th>VLLM_SPYRE_WARMUP_BATCH_SIZES</th>
+<th>VLLM_SPYRE_WARMUP_PROMPT_LENS</th>
+<th>Tensor Parallel Size</th>
+</tr>
+</thead>
+<tbody>
+<tr>
 <td>1</td>
 <td>8192</td>
 <td>1</td>
 </tr>
+</tbody>
+</table>
+<p><strong><a href="https://huggingface.co/BAAI/bge-reranker-large">BAAI/bge-reranker-large</a></strong></p>
+<table>
+<thead>
 <tr>
-<td><a href="https://huggingface.co/BAAI/bge-reranker-large">BAAI/BGE-Reranker (Large)</a></td>
-<td>1</td>
-<td>512</td>
-<td>1</td>
+<th>VLLM_SPYRE_WARMUP_BATCH_SIZES</th>
+<th>VLLM_SPYRE_WARMUP_PROMPT_LENS</th>
+<th>Tensor Parallel Size</th>
 </tr>
+</thead>
+<tbody>
 <tr>
-<td><a href="https://huggingface.co/BAAI/bge-reranker-large">BAAI/BGE-Reranker (Large)</a></td>
-<td>1</td>
-<td>512</td>
 <td>64</td>
-</tr>
-<tr>
-<td><a href="https://huggingface.co/intfloat/multilingual-e5-large">Multilingual-E5-large</a></td>
-<td>1</td>
 <td>512</td>
-<td>64</td>
+<td>1</td>
 </tr>
 </tbody>
 </table>
+<p><strong><a href="https://huggingface.co/sentence-transformers/all-roberta-large-v1">sentence-transformers/all-roberta-large-v1</a></strong></p>
+<table>
+<thead>
+<tr>
+<th>VLLM_SPYRE_WARMUP_BATCH_SIZES</th>
+<th>VLLM_SPYRE_WARMUP_PROMPT_LENS</th>
+<th>Tensor Parallel Size</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>8</td>
+<td>128</td>
+<td>1</td>
+</tr>
+</tbody>
+</table>
+<!-- GENERATED_POOLING_MODELS_END -->
+
 <h2 id="model-configuration">Model Configuration<a class="headerlink" href="#model-configuration" title="Permanent link">&para;</a></h2>
 <p>The Spyre engine uses a model registry to manage model-specific configurations. Model configurations
 are defined in <a href="https://github.com/vllm-project/vllm-spyre/blob/main/vllm_spyre/config/model_configs.yaml"><span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M8 0c4.42 0 8 3.58 8 8a8.01 8.01 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27s-1.36.09-2 .27c-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8"/></svg></span> vllm_spyre/config/model_configs.yaml</a> and include:</p>
@@ -1135,15 +1247,11 @@ are defined in <a href="https://github.com/vllm-project/vllm-spyre/blob/main/vll
 </ul>
 <p>When a model is loaded, the registry automatically matches it to the appropriate configuration and
 applies model-specific settings.</p>
-<h3 id="supported-configurations">Supported Configurations<a class="headerlink" href="#supported-configurations" title="Permanent link">&para;</a></h3>
-<p>The following configurations are supported for each model:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>
-</span></code></pre></div>
 <h3 id="configuration-validation">Configuration Validation<a class="headerlink" href="#configuration-validation" title="Permanent link">&para;</a></h3>
 <p>By default, the Spyre engine will log warnings if a requested model or configuration is not found
 in the registry. To enforce strict validation and fail if an unknown configuration is requested,
 set the environment variable:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">VLLM_SPYRE_REQUIRE_KNOWN_CONFIG</span><span class="o">=</span><span class="m">1</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">VLLM_SPYRE_REQUIRE_KNOWN_CONFIG</span><span class="o">=</span><span class="m">1</span>
 </span></code></pre></div>
 <p>When this flag is enabled, the engine will raise a <code>RuntimeError</code> if:</p>
 <ul>
