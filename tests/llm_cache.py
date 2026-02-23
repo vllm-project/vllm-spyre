@@ -205,12 +205,31 @@ class EngineCache:
             monkeypatch=monkeypatch,
         )
 
+        engine_available_blocks = available_blocks if available_blocks is None else available_blocks + 1
+
+        def _reset_scheduler(scheduler):
+            if engine_available_blocks:
+                scheduler.kv_cache_config.num_blocks = engine_available_blocks
+            scheduler.kv_cache_manager.__init__(
+                kv_cache_config=scheduler.kv_cache_config,
+                max_model_len=scheduler.max_model_len,
+                enable_caching=scheduler.cache_config.enable_prefix_caching,
+                use_eagle=scheduler.use_eagle,
+                log_stats=scheduler.log_stats,
+                enable_kv_cache_events=scheduler.enable_kv_cache_events,
+                dcp_world_size=scheduler.dcp_world_size,
+                pcp_world_size=scheduler.pcp_world_size,
+                hash_block_size=scheduler.block_size,
+                metrics_collector=scheduler.kv_metrics_collector,
+            )
+
         maybe_engine = self._cache.maybe_get(runtime_config)
         if maybe_engine:
             if use_pc:
                 # reset the blockpool across tests: this will erase any seen
                 # prefixes and makes sure that the used block ids in each test
                 # are independent of the test ordering.
+                _reset_scheduler(maybe_engine.scheduler)
                 model_runner = maybe_engine.model_executor.driver_worker.worker.model_runner
                 model_runner.block_pool = model_runner._make_block_pool()
                 model_runner.kv_cache_manager = model_runner._make_kv_cache_manager()
@@ -279,6 +298,7 @@ class EngineCache:
             # number of available blocks has changed
             worker.model_runner.block_pool = worker.model_runner._make_block_pool()
             worker.model_runner.kv_cache_manager = worker.model_runner._make_kv_cache_manager()
+            _reset_scheduler(engine_core.scheduler)
 
         # 🌶️🌶️🌶️
         # Set up a wrapper around the model that will store the forward context at each step.

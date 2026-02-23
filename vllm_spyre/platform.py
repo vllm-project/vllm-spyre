@@ -212,7 +212,7 @@ class SpyrePlatform(Platform):
         # - For generative models, set `max_num_batched_tokens` to the chunk
         #       chunk size used for chunked prefill.
         if cache_config is not None:
-            cache_config.block_size = model_config.max_model_len  # ty: ignore[invalid-assignment]
+            cache_config.block_size = cls._block_size
             if not is_decoder:
                 scheduler_config.max_num_batched_tokens = (
                     model_config.max_model_len * scheduler_config.max_num_seqs

@@ -143,11 +143,7 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
                     "Sliding window is not supported on Spyre. "
                     "The model will run without sliding window."
                 )
-            assert self.cache_config.block_size == self.model_config.max_model_len, (
-                "cache_config.block_size must be set to model_config."
-                "max_model_len to disable any paged attention ops in the base "
-                "scheduler."
-            )
+
         if vllm_config.device_config is None:
             self.device_config = DeviceConfig()
 
@@ -288,6 +284,11 @@ class SpyrePoolingModelRunner(
         # position_ids of all the sequences in current batch
         self._position_ids: torch.Tensor = None
         self.use_token_type_ids = False
+        assert self.cache_config.block_size == self.model_config.max_model_len, (
+            "cache_config.block_size must be set to model_config."
+            "max_model_len to disable any paged attention ops in the base "
+            "scheduler."
+        )
 
     @property
     def model(self) -> torch.nn.Module:
@@ -1048,10 +1049,12 @@ class ChunkedPrefillModelRunner(
         )
 
         mm_features = getattr(request, "mm_features", None)
-        prompt_token_ids = request.prompt_token_ids
-        num_computed_tokens = request.num_computed_tokens
-        # round up due to possible padding
-        chunk_i = math.ceil(num_computed_tokens / chunk_size)
+
+        # we need to figure out what chunk we're processing. vLLM will only
+        # schedule from the first chunk that contains a miss or must
+        # be recomputed onwards. 
+        chunk_i = math.floor((request.padding_blocks*self.block_size + request.num_computed_tokens)/self.chunk_size)
+        assert chunk_i < request.chunk_count
 
         # create block table tensor
         blocks = self._get_blocks(req_id)
@@ -1095,7 +1098,7 @@ class ChunkedPrefillModelRunner(
 
         prompt_token_ids = request.prompt_token_ids
         prompt_len = len(prompt_token_ids)
-        if num_computed_tokens == 0:
+        if chunk_i == 0:
             chunk_start = 0
             chunk_end = min(chunk_size - left_padding, prompt_len)
             chunk_left_offset = left_padding
@@ -1381,6 +1384,7 @@ class ChunkedPrefillModelRunner(
             block_hasher=self.request_block_hasher,
             mm_features=mm_features,
         )
+        scheduler_request.num_computed_tokens = request.num_computed_tokens
         chunk_plan = self._plan_chunking(scheduler_request)
         num_cached_tokens = chunk_plan.usable_cache_blocks * self.block_size
 
@@ -1451,7 +1455,7 @@ class ChunkedPrefillModelRunner(
         self.input_batch.refresh_metadata()
         self.prefill_batch.refresh_metadata()
 
-    def prepare_model_input(self, scheduler_output) -> SamplingForwardInputs:
+    def prepare_model_input(self, scheduler_output: SchedulerOutput) -> SamplingForwardInputs:
         is_prefill = False
         req_id: str = ""
         if len(scheduler_output.scheduled_new_reqs) == 1:
@@ -1512,7 +1516,8 @@ class ChunkedPrefillModelRunner(
 
         num_scheduled_tokens = scheduler_output.num_scheduled_tokens[req_id]
         if len(new_reqs) == 1:
-            return num_scheduled_tokens < self.prompt_len(new_reqs[0])
+            num_computed_tokens = new_reqs[0].num_computed_tokens
+            return (num_computed_tokens + num_scheduled_tokens) < self.prompt_len(new_reqs[0])
         else:
             req_state = self.requests[req_id]
             num_computed_tokens = cached_reqs.num_computed_tokens[0]
@@ -1622,16 +1627,6 @@ class ChunkedPrefillModelRunner(
 
         # Initialize internal request states if this is the first chunk of a very new prefill
         self.maybe_setup_new_prefill(scheduler_output)
-
-        incomplete_prefill = self.check_incomplete_prefill(scheduler_output)
-        if incomplete_prefill and self.is_cached_chunk(scheduler_output):
-            # "idle" step, the scheduled chunk is fully cached so we don't call the model. The
-            # scheduler will send us the next chunk that doesn't fully hit cache on the next
-            # iteration. This cannot apply to the last chunk, which must always run and generate the
-            # first token.
-            t1 = time.time() - t0
-            logger.debug("t_forward_pass: %.2fms [prefix cache hit][batch size 1]", (t1 * 1000))
-            return self.prefill_output()
 
         model_input = self.prepare_model_input(scheduler_output)
         is_prefill = model_input.is_prompt

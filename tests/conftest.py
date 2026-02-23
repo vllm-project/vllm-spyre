@@ -20,6 +20,10 @@ from vllm_spyre.platform import SpyrePlatform
 # forks a worker.
 os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 
+# set a constant seed for the block hashing so that we don't have
+# to worry about the initialization order
+os.environ["PYTHONHASHSEED"] = "32"
+
 
 def pytest_generate_tests(metafunc):
     """This hook is called during the collection phase,

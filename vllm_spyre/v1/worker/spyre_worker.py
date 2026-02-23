@@ -62,7 +62,7 @@ def new_request_data_builder(
         sampling_params=sampling_params,
         pooling_params=pooling_params,
         block_ids=[0],  # ty: ignore[invalid-argument-type] not actually used
-        num_computed_tokens=len(prompt_token_ids),
+        num_computed_tokens=0,
         lora_request=None,
         mm_features=mm_features or [],
         prompt_embeds=prompt_embeds,

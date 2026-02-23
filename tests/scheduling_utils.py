@@ -21,6 +21,11 @@ from vllm.v1.core.kv_cache_utils import BlockHash
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.request import Request
+from vllm.utils.hashing import get_hash_fn_by_name
+from vllm.v1.core.kv_cache_utils import (
+    get_request_block_hasher,
+    init_none_hash,
+)
 
 
 from vllm_spyre.v1.core.scheduler import (
@@ -114,6 +119,13 @@ def create_request_for_scheduler_test(
                 "label": f"#{request_id}",
             }
         }
+
+    if block_hasher is None:
+            caching_hash_fn = get_hash_fn_by_name("sha256")
+            init_none_hash(caching_hash_fn)
+            block_hasher = get_request_block_hasher(
+                64, caching_hash_fn
+            )
 
     request = Request(
         request_id=str(request_id),
