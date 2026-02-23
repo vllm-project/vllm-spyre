@@ -41,7 +41,7 @@ class SpyreRMSNorm(RMSNorm):
 
         # Compile the Spyre-specific forward implementation
         # This compilation is separate from the main model compilation
-        self._fwd_spyre = torch.compile(self._forward_static_spyre, dynamic=False)
+        self._fwd_spyre = torch.compile(self._forward_static_spyre)
 
         # Register this layer in the static forward context
         # This allows it to be accessed during the custom op execution
@@ -118,34 +118,14 @@ class SpyreRMSNorm(RMSNorm):
 
         This method is compiled separately via self._fwd_spyre.
         """
-        x = x.transpose(1, 0).contiguous()
-
         if residual is not None:
             # residual promoted f16->f32 automatically,
             # otherwise Inductor eliminates the casts to and from f16,
             # increasing memory usage (and complicating pattern matching)
             x = x + residual
-            residual = x.to(orig_dtype)
-
-        if variance_size_override is None:
-            x_var = x
-        else:
-            if hidden_size < variance_size_override:
-                raise ValueError(
-                    "Expected hidden_size to be at least "
-                    f"{variance_size_override}, but found: {hidden_size}"
-                )
-
-            x_var = x[:, :, :variance_size_override]
-
-        variance = x_var * x_var
-        variance = variance.mean(dim=0)
-        x = x * torch.rsqrt(variance + variance_epsilon)[None, :]
-
-        x = x.transpose(1, 0).contiguous()
-
-        if weight is not None:
-            x = x * weight
+            # residual = x.to(orig_dtype)
+        
+        x = torch.nn.functional.rms_norm(x, normalized_shape=[x.shape[-1]], weight=weight, eps=variance_epsilon)
 
         if residual is None:
             return x
@@ -167,6 +147,9 @@ class SpyreRMSNorm(RMSNorm):
         if residual is not None:
             raise NotImplementedError("TODO: Residual support not yet implemented")
 
+        if self.variance_size_override is not None:
+            raise NotImplementedError("TODO: variance_size_override not yet implemented")
+
         # Store original batch size for later trimming
         num_real_el = x.shape[0]
 
@@ -178,7 +161,8 @@ class SpyreRMSNorm(RMSNorm):
         # _prepare_inputs_on_spyre handles device transfer and dtype conversion
         out = self._fwd_spyre(
             _prepare_inputs_on_spyre([x])[0],
-            _prepare_inputs_on_spyre([torch.ones(x.shape[0]) * self.variance_epsilon])[0],
+            # _prepare_inputs_on_spyre([torch.ones(x.shape[0]) * self.variance_epsilon])[0],
+            self.variance_epsilon,
             self.hidden_size,
             torch.float16,
             _prepare_inputs_on_spyre([self.weight.data])[0] if self.has_weight else None,
