@@ -37,7 +37,7 @@ class SpyreRMSNorm(RMSNorm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        print("building custom rms norm")
+        logger.debug("Building custom RMS norm")
 
         # Compile the Spyre-specific forward implementation
         # This compilation is separate from the main model compilation
@@ -235,4 +235,4 @@ def register():
         mutates_args=["output"],
         fake_impl=spyre_rmsnorm_fake,
     )
-    print("\nregistered custom rms norm op\n")
+    logger.info("Registered custom op: SpyreRMSNorm")
