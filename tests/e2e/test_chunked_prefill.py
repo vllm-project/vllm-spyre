@@ -20,7 +20,7 @@ from spyre_util import (
 )
 from vllm import LLM, SamplingParams
 
-from tests.scheduling_utils import random_prompt
+from scheduling_utils import random_prompt
 from vllm_spyre.v1.worker.spyre_model_runner import SamplingForwardInputs
 
 
