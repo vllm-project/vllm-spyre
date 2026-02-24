@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Iterable, Union
 
 from vllm.logger import init_logger
 from vllm.v1.core.sched.scheduler import Scheduler
-from vllm.v1.metrics.stats import PrefixCacheStats, SchedulerStats
 from vllm.v1.request import Request, RequestStatus
 
 import vllm_spyre.envs as envs_spyre
@@ -189,12 +188,6 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         self.do_interleaving: bool = envs_spyre.VLLM_SPYRE_CP_INTERLEAVE_STEPS
         self.previous_step_was_prefill: bool = False
 
-        # KV cache metrics
-        # Prefix cache stats aggregated between each `make_stats` call
-        self.prefix_cache_stats = PrefixCacheStats()
-        # Gauge for kv cache usage, updated from every model runner output
-        self.kv_cache_usage_percent = 0.0
-
         self.tkv = 0
         self.block_size = SpyrePlatform.get_block_size()
         self.max_batch_tkv_limit = os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", default="-1")
@@ -228,17 +221,6 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         self.ongoing_prefills = [
             req for req in self.ongoing_prefills if req.num_computed_tokens < req.num_prompt_tokens
         ]
-
-        # Update KV Cache info
-        self.kv_cache_usage_percent = model_runner_output.kv_cache_usage
-        prefix_cache_stats = model_runner_output.prefix_cache_stats
-        if prefix_cache_stats is not None:
-            # We don't use PrefixCacheStats.record because:
-            # 1. It's not supported in vllm v0.11.0
-            # 2. It could eventually be the case that requests > 1
-            self.prefix_cache_stats.requests += prefix_cache_stats.requests
-            self.prefix_cache_stats.queries += prefix_cache_stats.queries
-            self.prefix_cache_stats.hits += prefix_cache_stats.hits
 
         self.tkv = model_runner_output.tkv
         return super(SpyreScheduler, self).update_from_output(scheduler_output, model_runner_output)
@@ -563,19 +545,3 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         self.ongoing_prefills = [
             r for r in self.ongoing_prefills if r.request_id not in request_ids
         ]
-
-    def make_stats(self, *args, **kwargs) -> SchedulerStats | None:
-        """Update the scheduler stats from the base scheduler.
-        These are used in the vllm StatLoggers, which are responsible for
-        reporting stats in logs and metrics.
-        """
-        base_stats = super().make_stats(*args, **kwargs)
-
-        if base_stats is not None:
-            base_stats.kv_cache_usage = self.kv_cache_usage_percent
-            base_stats.prefix_cache_stats = self.prefix_cache_stats
-            # Every time `make_stats` is called we reset the prefix cache stats.
-            # This mimics how the base scheduler handles the kv cache stats
-            self.prefix_cache_stats = PrefixCacheStats()
-
-        return base_stats

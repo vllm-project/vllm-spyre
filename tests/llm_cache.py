@@ -233,8 +233,6 @@ class EngineCache:
                 # are independent of the test ordering.
                 _reset_scheduler(maybe_engine.scheduler)
                 model_runner = maybe_engine.model_executor.driver_worker.worker.model_runner
-                model_runner.block_pool = model_runner._make_block_pool()
-                model_runner.kv_cache_manager = model_runner._make_kv_cache_manager()
                 model_runner._make_block_ref_count()
 
             return maybe_engine
@@ -292,15 +290,6 @@ class EngineCache:
 
         if available_blocks is not None:
             worker = engine_core.model_executor.driver_worker.worker
-            # NB: We cannot create extra blocks after compilation
-            assert worker.model_runner.n_blocks >= available_blocks, (
-                "Cannot set available_blocks > (context * batch size // 64)"
-            )
-            worker.model_runner.n_blocks = available_blocks
-            # need to overwrite the block pool and kv cache manager if the
-            # number of available blocks has changed
-            worker.model_runner.block_pool = worker.model_runner._make_block_pool()
-            worker.model_runner.kv_cache_manager = worker.model_runner._make_kv_cache_manager()
             worker.model_runner._make_block_ref_count()
             _reset_scheduler(engine_core.scheduler)
 

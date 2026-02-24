@@ -81,10 +81,10 @@ def test_prefix_hit_within_batch(
             "waiting": ["1"],
             "running": ["0"],
             "request_outputs": [],
-            "n_used_blocks": 3,
+            "n_used_blocks": 2,
             "n_prefix_hits": 0,
-            "block_tables": {"0": [1, 2, 3]},
-            "block_ref_count": {1: 1, 2: 1, 3: 1},
+            "block_tables": {"0": [1, 2]},
+            "block_ref_count": {1: 1, 2: 1},
         },
         {  # prefill chunk 2 seq 0
             "step": 2,
@@ -121,10 +121,10 @@ def test_prefix_hit_within_batch(
             "running": [],
             "request_outputs": ["1", "0"],
             "finished_requests": ["1", "0"],
-            "n_used_blocks": 5,
-            "n_cached_blocks": 1,
-            "block_tables": {"0": [1, 2, 3, 4], "1": [1, 2, 3, 5]},
-            "block_ref_count": {1: 2, 2: 2, 3: 2, 4: 1, 5: 1},
+            "n_used_blocks": 0,
+            "n_cached_blocks": 0,
+            "block_tables": {},
+            "block_ref_count": {},
         },
         {
             # Tkv should be cleared one step later
@@ -253,9 +253,9 @@ def test_block_deduplication_within_batch(
             "running": [],
             "request_outputs": ["1", "0"],
             "finished_requests": ["1", "0"],
-            "n_used_blocks": 3,
-            "block_tables": {"0": [1, 2], "1": [1, 3]},
-            "block_ref_count": {1: 2, 2: 1, 3: 1},
+            "n_used_blocks": 0,
+            "block_tables": {},
+            "block_ref_count": {},
         },
         {
             # Tkv should be cleared one step later
@@ -421,12 +421,9 @@ def test_prefix_hit_decoded_block_within_batch(
             "running": [],
             "request_outputs": ["1", "0"],
             "finished_requests": ["1", "0"],
-            "n_used_blocks": 6,
-            "n_cached_blocks": 2,
-            "block_tables": {
-                "0": [1, 2, 3, 6],
-                "1": [1, 2, 4, 5],
-            },
+            "n_used_blocks": 0,
+            "n_cached_blocks": 0,
+            "block_tables": {},
         },
         {
             # Tkv should be cleared one step later
@@ -521,7 +518,7 @@ def test_prefix_hit_not_in_batch(
             "waiting": [],
             "running": ["0"],
             "request_outputs": [],
-            "n_used_blocks": 3,
+            "n_used_blocks": 2,
             "n_prefix_hits": 0,
         },
         {  # prefill chunk 2 seq 0
@@ -545,7 +542,7 @@ def test_prefix_hit_not_in_batch(
             "running": [],
             "request_outputs": ["0"],
             "finished_requests": ["0"],
-            "n_used_blocks": 4,
+            "n_used_blocks": 0,
         },
         {  # prefill chunk 2 seq 1
             # cannot use prefix, as the last chunk has to always be recomputed
@@ -569,8 +566,8 @@ def test_prefix_hit_not_in_batch(
             "running": [],
             "request_outputs": ["1"],
             "finished_requests": ["1"],
-            "n_used_blocks": 4,
-            "n_cached_blocks": 1,
+            "n_used_blocks": 0,
+            "n_cached_blocks": 0,
         },
         {
             # Tkv should be cleared one step later
@@ -676,7 +673,7 @@ def test_limit_blocks_no_prefix_hit(
             "waiting": [],
             "running": ["0"],
             "request_outputs": [],
-            "n_used_blocks": 3,
+            "n_used_blocks": 2,
             "n_prefix_hits": 0,
         },
         {  # prefill chunk 2 seq 0
@@ -697,7 +694,7 @@ def test_limit_blocks_no_prefix_hit(
             "running": [],
             "request_outputs": ["0"],
             "finished_requests": ["0"],
-            "n_used_blocks": 4,
+            "n_used_blocks": 0,
         },
         {  # prefill chunk 1 seq 1
             "step": 4,
@@ -705,7 +702,7 @@ def test_limit_blocks_no_prefix_hit(
             "waiting": [],
             "running": ["1"],
             "request_outputs": [],
-            "n_used_blocks": 3,
+            "n_used_blocks": 2,
             "n_prefix_hits": 0,
         },
         {  # prefill chunk 2 seq 1
@@ -726,7 +723,7 @@ def test_limit_blocks_no_prefix_hit(
             "running": [],
             "request_outputs": ["1"],
             "finished_requests": ["1"],
-            "n_used_blocks": 4,
+            "n_used_blocks": 0,
         },
         {  # prefill chunk 1 seq 2
             # no prefix hit as KV cache is already overwritten!
@@ -735,7 +732,7 @@ def test_limit_blocks_no_prefix_hit(
             "waiting": [],
             "running": ["2"],
             "request_outputs": [],
-            "n_used_blocks": 3,
+            "n_used_blocks": 2,
             "n_prefix_hits": 0,
         },
         {  # prefill chunk 2 seq 2
@@ -755,7 +752,7 @@ def test_limit_blocks_no_prefix_hit(
             "running": [],
             "request_outputs": ["2"],
             "finished_requests": ["2"],
-            "n_used_blocks": 4,
+            "n_used_blocks": 0,
         },
         {
             # Tkv should be cleared one step later
@@ -870,10 +867,10 @@ def test_double_prefix_hit_within_batch(
             "waiting": ["1", "2", "3"],
             "running": ["0"],
             "request_outputs": [],
-            "n_used_blocks": 3,
+            "n_used_blocks": 2,
             "n_prefix_hits": 0,
-            "block_tables": {"0": [1, 2, 3]},
-            "block_ref_count": {1: 1, 2: 1, 3: 1},
+            "block_tables": {"0": [1, 2]},
+            "block_ref_count": {1: 1, 2: 1},
         },
         {  # prefill chunk 2 seq 0
             "step": 2,
@@ -906,10 +903,10 @@ def test_double_prefix_hit_within_batch(
             "waiting": ["3"],
             "running": ["2", "1", "0"],
             "request_outputs": [],
-            "n_used_blocks": 6,
+            "n_used_blocks": 5,
             "n_prefix_hits": 0,
-            "block_tables": {"0": [1, 2, 3], "1": [1, 2, 3], "2": [4, 5, 6]},
-            "block_ref_count": {1: 2, 2: 2, 3: 2, 4: 1, 5: 1, 6: 1},
+            "block_tables": {"0": [1, 2, 3], "1": [1, 2, 3], "2": [4, 5]},
+            "block_ref_count": {1: 2, 2: 2, 3: 2, 4: 1, 5: 1},
         },
         {  # prefill chunk 2 seq 2
             "step": 5,
@@ -943,14 +940,9 @@ def test_double_prefix_hit_within_batch(
             "running": [],
             "request_outputs": ["3", "2", "1", "0"],
             "finished_requests": ["3", "2", "1", "0"],
-            "n_used_blocks": 10,
-            "block_tables": {
-                "0": [1, 2, 3, 7],
-                "1": [1, 2, 3, 8],
-                "2": [4, 5, 6, 9],
-                "3": [1, 2, 3, 10],
-            },
-            "block_ref_count": {1: 3, 2: 3, 3: 3, 7: 1, 8: 1, 4: 1, 5: 1, 6: 1, 9: 1, 10: 1},
+            "n_used_blocks": 0,
+            "block_tables": {},
+            "block_ref_count": {},
         },
         {
             # Tkv should be cleared one step later
@@ -1056,7 +1048,7 @@ def test_limit_blocks_prefix_hit(
             "waiting": [],
             "running": ["0"],
             "request_outputs": [],
-            "n_used_blocks": 3,
+            "n_used_blocks": 2,
             "n_prefix_hits": 0,
         },
         {  # prefill chunk 2 seq 0
@@ -1077,7 +1069,7 @@ def test_limit_blocks_prefix_hit(
             "running": [],
             "request_outputs": ["0"],
             "finished_requests": ["0"],
-            "n_used_blocks": 4,
+            "n_used_blocks": 0,
         },
         {  # prefill chunk 1 seq 1
             "step": 4,
@@ -1085,7 +1077,7 @@ def test_limit_blocks_prefix_hit(
             "waiting": [],
             "running": ["1"],
             "request_outputs": [],
-            "n_used_blocks": 3,
+            "n_used_blocks": 2,
             "n_prefix_hits": 0,
         },
         {  # prefill chunk 2 seq 1
@@ -1106,7 +1098,7 @@ def test_limit_blocks_prefix_hit(
             "running": [],
             "request_outputs": ["1"],
             "finished_requests": ["1"],
-            "n_used_blocks": 4,
+            "n_used_blocks": 0,
         },
         {  # prefill chunk 2 seq 2
             # prefix hit as KV cache is still persistent
@@ -1127,8 +1119,8 @@ def test_limit_blocks_prefix_hit(
             "running": [],
             "request_outputs": ["2"],
             "finished_requests": ["2"],
-            "n_used_blocks": 4,
-            "n_cached_blocks": 1,
+            "n_used_blocks": 0,
+            "n_cached_blocks": 0,
         },
         {
             # Tkv should be cleared one step later
@@ -1220,7 +1212,7 @@ def test_multi_chunk_full_match(
             "waiting": ["1"],
             "running": ["0"],
             "request_outputs": [],
-            "n_used_blocks": 6,
+            "n_used_blocks": 2,
             "n_prefix_hits": 0,
         },
         {  # prefill chunk 2 seq 0
@@ -1229,7 +1221,7 @@ def test_multi_chunk_full_match(
             "waiting": ["1"],
             "running": ["0"],
             "request_outputs": [],
-            "n_used_blocks": 6,
+            "n_used_blocks": 4,
             "n_prefix_hits": 0,
         },
         {  # prefill chunk 3 seq 0
@@ -1271,11 +1263,10 @@ def test_multi_chunk_full_match(
             "running": [],
             "request_outputs": ["1", "0"],
             "finished_requests": ["1", "0"],
-            "n_used_blocks": 8,
-            "n_cached_blocks": 4,
-            # when decode starts, we see the tables diverge
-            "block_tables": {"0": [1, 2, 3, 4, 5, 6, 7], "1": [1, 2, 3, 4, 5, 6, 8]},
-            "block_ref_count": {1: 2, 2: 2, 3: 2, 4: 2, 5: 2, 6: 2, 7: 1, 8: 1},
+            "n_used_blocks": 0,
+            "n_cached_blocks": 0,
+            "block_tables": {},
+            "block_ref_count": {},
         },
         {
             # Tkv should be cleared one step later
@@ -1379,7 +1370,7 @@ def test_multi_chunk_partial_match_misaligned(
             "waiting": ["1"],
             "running": ["0"],
             "request_outputs": [],
-            "n_used_blocks": 6,
+            "n_used_blocks": 2,
             "n_prefix_hits": 0,
         },
         {  # prefill chunk 2 seq 0
@@ -1388,7 +1379,7 @@ def test_multi_chunk_partial_match_misaligned(
             "waiting": ["1"],
             "running": ["0"],
             "request_outputs": [],
-            "n_used_blocks": 6,
+            "n_used_blocks": 4,
             "n_prefix_hits": 0,
         },
         {  # prefill chunk 3 seq 0
@@ -1408,7 +1399,7 @@ def test_multi_chunk_partial_match_misaligned(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": [],
-            "n_used_blocks": 9,
+            "n_used_blocks": 8,
             "n_prefix_hits": 0,
             "n_cached_blocks": 2,
             "prefill_slot_mappings": {"1": [0, 4]},  # Block 3 (prefix hit) is masked out
@@ -1437,8 +1428,8 @@ def test_multi_chunk_partial_match_misaligned(
             "running": [],
             "request_outputs": ["1", "0"],
             "finished_requests": ["1", "0"],
-            "n_used_blocks": 11,
-            "n_cached_blocks": 2,
+            "n_used_blocks": 0,
+            "n_cached_blocks": 0,
         },
         {
             # Tkv should be cleared one step later
@@ -1535,7 +1526,7 @@ def test_multi_chunk_partial_match_aligned(
             "waiting": ["1"],
             "running": ["0"],
             "request_outputs": [],
-            "n_used_blocks": 6,
+            "n_used_blocks": 2,
             "n_prefix_hits": 0,
         },
         {  # prefill chunk 2 seq 0
@@ -1544,7 +1535,7 @@ def test_multi_chunk_partial_match_aligned(
             "waiting": ["1"],
             "running": ["0"],
             "request_outputs": [],
-            "n_used_blocks": 6,
+            "n_used_blocks": 4,
             "n_prefix_hits": 0,
         },
         {  # prefill chunk 3 seq 0
@@ -1580,8 +1571,8 @@ def test_multi_chunk_partial_match_aligned(
             "running": [],
             "request_outputs": ["1", "0"],
             "finished_requests": ["1", "0"],
-            "n_used_blocks": 10,
-            "n_cached_blocks": 4,
+            "n_used_blocks": 0,
+            "n_cached_blocks": 0,
         },
         {
             # Tkv should be cleared one step later
@@ -1688,9 +1679,9 @@ def test_first_chunk_partial_match(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": [],
-            "n_used_blocks": 5,
+            "n_used_blocks": 4,
             "n_prefix_hits": 0,
-            "block_tables": {"0": [1], "1": [1, 2, 3, 4, 5]},
+            "block_tables": {"0": [1], "1": [1, 2, 3, 4]},
             "prefill_slot_mappings": {
                 "1": [0, 0, 2]  # One mask for left padding, one mask for block `1` to not be
                 # overwritten since it hit cache
@@ -1714,9 +1705,9 @@ def test_first_chunk_partial_match(
             "running": [],
             "request_outputs": ["1", "0"],
             "finished_requests": ["1", "0"],
-            "n_used_blocks": 7,
+            "n_used_blocks": 0,
             "n_prefix_hits": 0,
-            "block_tables": {"0": [1, 6], "1": [1, 2, 3, 4, 5, 7]},
+            "block_tables": {},
         },
     ]
 

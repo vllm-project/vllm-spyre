@@ -386,11 +386,18 @@ def validate_scheduler_steps(
 
             # checking the scheduler handling of free and reserved blocks
             model_runner = engine_core.model_executor.driver_worker.worker.model_runner
-            n_blocks = model_runner.n_blocks
-            block_size = model_runner.block_size
-            n_reserved_blocks = n_blocks - model_runner.get_n_free_blocks()
 
-            kv_cache_manager = model_runner.kv_cache_manager
+            n_blocks = scheduler.cache_config.num_gpu_blocks
+            assert (
+                scheduler.cache_config.num_gpu_blocks
+                == scheduler.cache_config.num_gpu_blocks_override
+            )
+            block_size = model_runner.block_size
+            n_reserved_blocks = (
+                n_blocks - scheduler.kv_cache_manager.block_pool.get_num_free_blocks()
+            )
+
+            kv_cache_manager = scheduler.kv_cache_manager.coordinator.single_type_managers[0]
 
             req_ids2blocks = {
                 req_id: [block.block_id for block in blocks]
