@@ -630,7 +630,6 @@ def test_limit_blocks_no_prefix_hit(
             * 2: len = 192, max tokens = 2, step joining = 6
     """
     monkeypatch.setenv("VLLM_SPYRE_CP_INTERLEAVE_STEPS", "0")
-    
 
     prompt1 = random_prompt(model=model, seed=0, length=192)
     prompt2 = random_prompt(model=model, seed=1, length=192)
@@ -1110,7 +1109,7 @@ def test_limit_blocks_prefix_hit(
             "n_used_blocks": 4,
         },
         {  # prefill chunk 2 seq 2
-           # prefix hit as KV cache is still persistent
+            # prefix hit as KV cache is still persistent
             "step": 7,
             "tkv": 192,
             "waiting": [],
@@ -1558,7 +1557,7 @@ def test_multi_chunk_partial_match_aligned(
             "n_prefix_hits": 0,
         },
         {  # prefill chunk 3 seq 1
-           # prefix hit!
+            # prefix hit!
             "step": 4,
             "tkv": 384,
             "waiting": [],

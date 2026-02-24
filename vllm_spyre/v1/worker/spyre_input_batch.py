@@ -3,7 +3,7 @@
 
 # Based on vllm/vllm/v1/worker/gpu_input_batch.py
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Generic, Protocol, TypeVar, cast
 
 import numpy as np
@@ -195,6 +195,7 @@ class SamplingRequestState:
     padding_blocks: int = 0
     usable_blocks: int = 0
     total_hit_blocks: int = 0
+    block_ids: list[int] = field(default_factory=list)
 
     @property
     def req_id(self) -> str:

@@ -205,7 +205,9 @@ class EngineCache:
             monkeypatch=monkeypatch,
         )
 
-        engine_available_blocks = available_blocks if available_blocks is None else available_blocks + 1
+        engine_available_blocks = (
+            available_blocks if available_blocks is None else available_blocks + 1
+        )
 
         def _reset_scheduler(scheduler):
             if engine_available_blocks:
@@ -233,6 +235,7 @@ class EngineCache:
                 model_runner = maybe_engine.model_executor.driver_worker.worker.model_runner
                 model_runner.block_pool = model_runner._make_block_pool()
                 model_runner.kv_cache_manager = model_runner._make_kv_cache_manager()
+                model_runner._make_block_ref_count()
 
             return maybe_engine
         self.clear()
@@ -298,6 +301,7 @@ class EngineCache:
             # number of available blocks has changed
             worker.model_runner.block_pool = worker.model_runner._make_block_pool()
             worker.model_runner.kv_cache_manager = worker.model_runner._make_kv_cache_manager()
+            worker.model_runner._make_block_ref_count()
             _reset_scheduler(engine_core.scheduler)
 
         # 🌶️🌶️🌶️

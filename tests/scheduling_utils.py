@@ -121,11 +121,9 @@ def create_request_for_scheduler_test(
         }
 
     if block_hasher is None:
-            caching_hash_fn = get_hash_fn_by_name("sha256")
-            init_none_hash(caching_hash_fn)
-            block_hasher = get_request_block_hasher(
-                64, caching_hash_fn
-            )
+        caching_hash_fn = get_hash_fn_by_name("sha256")
+        init_none_hash(caching_hash_fn)
+        block_hasher = get_request_block_hasher(64, caching_hash_fn)
 
     request = Request(
         request_id=str(request_id),

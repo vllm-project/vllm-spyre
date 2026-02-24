@@ -13,7 +13,7 @@ if sys.platform.startswith("darwin"):
 import math
 import operator
 import os
-from typing import TYPE_CHECKING, Union, cast
+from typing import TYPE_CHECKING, Union, cast, Literal
 
 import torch
 from vllm.inputs import ProcessorInputs, PromptType, TokenInputs
@@ -65,7 +65,7 @@ class SpyrePlatform(Platform):
     # https://github.com/foundation-model-stack/fms-model-optimizer/blob/main/fms_mo/aiu_addons/__init__.py
     supported_quantization: list[str] = ["gptq", "compressed-tensors"]
     _warmup_shapes: tuple[dict[str, int], ...] | None = None
-    _block_size: int = 64  # hardcoded Spyre constraint for now
+    _block_size: Literal[64] = 64  # hardcoded Spyre constraint for now
     # TODO: this `None` is dangerous
     _config: VllmConfig = None  # ty: ignore[invalid-assignment]
     _torch_sendnn_version = None

@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from logging import DEBUG
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, Union
+from collections import defaultdict
 
 import torch
 from transformers import AutoModel, AutoModelForSequenceClassification, AutoTokenizer
@@ -23,7 +24,12 @@ from vllm.tasks import SupportedTask
 from vllm.utils.hashing import get_hash_fn_by_name
 from vllm.utils.platform_utils import is_pin_memory_available
 from vllm.v1.core.block_pool import BlockPool
-from vllm.v1.core.kv_cache_utils import KVCacheBlock, get_request_block_hasher, init_none_hash
+from vllm.v1.core.kv_cache_utils import (
+    BlockHash,
+    KVCacheBlock,
+    get_request_block_hasher,
+    init_none_hash,
+)
 from vllm.v1.core.sched.output import CachedRequestData
 from vllm.v1.core.single_type_kv_cache_manager import FullAttentionManager
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
@@ -53,6 +59,7 @@ from vllm_spyre.v1.worker.spyre_input_batch import (
     SamplingInputBatch,
     SamplingRequestState,
 )
+
 
 # yapf: enable
 if TYPE_CHECKING:
@@ -741,6 +748,8 @@ class ChunkedPrefillModelRunner(
 
         self.prefix_cache_stats = None
 
+        self._make_block_ref_count()
+
     def load_model(self) -> None:
         self._model = SpyreCausalLM(
             vllm_config=self.vllm_config,
@@ -752,7 +761,7 @@ class ChunkedPrefillModelRunner(
         model_cfg = self.model.fms_model.config
         if self.model.is_multimodal:
             return self.model.mm_model_utils.resolve_multimodal_vocab_size()
-        return model_cfg.src_vocab_size  # ty: ignore[invalid-return-type]
+        return model_cfg.src_vocab_size
 
     @property
     def enable_prefix_caching(self):
@@ -785,7 +794,7 @@ class ChunkedPrefillModelRunner(
         self._set_blocks(num_blocks=n_blocks_warmup)
         # TODO: fixup the typing here. Things are getting tripped up by having all of our "model"
         # classes inherit from `nn.Module` when maybe they don't need to
-        self.model.set_past_key_value_states(num_blocks=n_blocks_warmup)  # ty: ignore[call-non-callable]
+        self.model.set_past_key_value_states(num_blocks=n_blocks_warmup)
 
         # Future code:
 
@@ -807,7 +816,7 @@ class ChunkedPrefillModelRunner(
         self._set_blocks(num_blocks=n_blocks_avail)
         # TODO: fixup the typing here. Things are getting tripped up by having all of our "model"
         # classes inherit from `nn.Module` when maybe they don't need to
-        self.model.set_past_key_value_states(num_blocks=n_blocks_avail)  # ty: ignore[call-non-callable]
+        self.model.set_past_key_value_states(num_blocks=n_blocks_avail)
 
     def get_total_spyre_blocks(self) -> int:
         """Returns the total number of KV cache blocks available for spyre.
@@ -916,6 +925,11 @@ class ChunkedPrefillModelRunner(
         }
 
         return FullAttentionManager(**kwargs)  # ty: ignore[invalid-argument-type]
+
+    def _make_block_ref_count(self):
+        self.block_ref_count = defaultdict(int)
+        # track last seen hashes for blocks
+        self.block_hashes = dict[int, BlockHash]()
 
     def _get_blocks(self, request_id: str) -> list[KVCacheBlock]:
         return self.kv_cache_manager.req_to_blocks[request_id]
@@ -1052,8 +1066,11 @@ class ChunkedPrefillModelRunner(
 
         # we need to figure out what chunk we're processing. vLLM will only
         # schedule from the first chunk that contains a miss or must
-        # be recomputed onwards. 
-        chunk_i = math.floor((request.padding_blocks*self.block_size + request.num_computed_tokens)/self.chunk_size)
+        # be recomputed onwards.
+        chunk_i = math.floor(
+            (request.padding_blocks * self.block_size + request.num_computed_tokens)
+            / self.chunk_size
+        )
         assert chunk_i < request.chunk_count
 
         # create block table tensor
@@ -1289,8 +1306,9 @@ class ChunkedPrefillModelRunner(
 
         return model_inputs
 
-    def _plan_chunking(self, scheduler_request: Request) -> ChunkedPrefillPlan:
-        prompt_len = self.prompt_len(scheduler_request)
+    def _plan_chunking(self, vllm_request: Request, request: NewRequestData) -> ChunkedPrefillPlan:
+        assert request.prompt_token_ids is not None
+        prompt_len = len(request.prompt_token_ids)
 
         chunk_size = self.chunk_size
         padded_prompt_len = math.ceil(prompt_len / self.block_size) * self.block_size
@@ -1300,20 +1318,24 @@ class ChunkedPrefillModelRunner(
         left_blocks = exact_div(left_padding, self.block_size)
 
         if self.enable_prefix_caching:
-            computed_blocks: list[KVCacheBlock] = FullAttentionManager.find_longest_cache_hit(
-                block_hashes=scheduler_request.block_hashes,
-                max_length=prompt_len,
-                kv_cache_group_ids=[0],
-                block_pool=self.block_pool,
-                kv_cache_spec=self._attn_spec,
-                use_eagle=False,
-                dcp_world_size=1,
-                # For hybrid KV caches, the `alignment_tokens` arg needs to be set to
-                # the lowest common multiple of kv cache block sizes. Currently we only
-                # support homogeneous kv caches with a single block size though.
-                alignment_tokens=self.block_size,
-            )[0]
-            n_hit = len(computed_blocks)
+            n_hit = 0
+            for i in reversed(range(len(request.block_ids[0]))):
+                block_id = request.block_ids[0][i]
+
+                if i >= len(vllm_request.block_hashes):
+                    # this is a new block to be filled
+                    self.block_hashes.pop(block_id, None)
+                    continue
+                block_hash = vllm_request.block_hashes[i]
+                # we don't strictly need the ref count for this
+                # but it's a guardrail
+                if self.block_ref_count[block_id] > 1:
+                    assert block_hash == self.block_hashes[block_id]
+                    n_hit = i + 1
+                    break
+                if (existing := self.block_hashes.get(block_id)) and existing == block_hash:
+                    n_hit = i + 1
+                    break
 
             logger.debug("Prefix caching found: %d cached blocks", n_hit)
 
@@ -1335,17 +1357,6 @@ class ChunkedPrefillModelRunner(
                 blocks_to_compute,
             )
 
-            # Save all of the computed blocks and not only the usable
-            # ones because we will make a dummy recomputation of computed
-            # blocks in the last chunk to deduplicate the used blocks. So
-            # although we will recompute, we'll still point the block table
-            # to the cached blocks.
-            self.kv_cache_manager.allocate_new_computed_blocks(
-                request_id=scheduler_request.request_id,
-                new_computed_blocks=computed_blocks,
-                num_local_computed_tokens=len(computed_blocks) * self.block_size,
-                num_external_computed_tokens=0,
-            )
         else:
             usable_blocks = 0
             n_hit = 0
@@ -1385,7 +1396,14 @@ class ChunkedPrefillModelRunner(
             mm_features=mm_features,
         )
         scheduler_request.num_computed_tokens = request.num_computed_tokens
-        chunk_plan = self._plan_chunking(scheduler_request)
+
+        block_ids_per_kv_cache_group = request.block_ids
+        assert len(block_ids_per_kv_cache_group) == 1
+        for block_id in block_ids_per_kv_cache_group[0]:
+            self.block_ref_count[block_id] += 1
+
+        chunk_plan = self._plan_chunking(scheduler_request, request)
+
         num_cached_tokens = chunk_plan.usable_cache_blocks * self.block_size
 
         self.prefix_cache_stats = PrefixCacheStats(
@@ -1415,6 +1433,7 @@ class ChunkedPrefillModelRunner(
             padding_blocks=chunk_plan.padding_blocks,
             usable_blocks=chunk_plan.usable_cache_blocks,
             total_hit_blocks=chunk_plan.total_cache_blocks,
+            block_ids=request.block_ids[0],  # we only support on kv cache group for now
         )
 
         self.requests[req_id] = req_state
@@ -1523,6 +1542,21 @@ class ChunkedPrefillModelRunner(
             num_computed_tokens = cached_reqs.num_computed_tokens[0]
             return (num_computed_tokens + num_scheduled_tokens) < len(req_state.prompt_token_ids)
 
+    def _update_tracked_blocks(self):
+        if self.enable_prefix_caching:
+            for request_state in self.requests.values():
+                for i, block_id in enumerate(request_state.block_ids):
+                    if i < len(request_state.vllm_request.block_hashes):
+                        block_hash = request_state.vllm_request.block_hashes[i]
+                        ref_count = self.block_ref_count[block_id]
+                        if ref_count > 1:
+                            assert self.block_hashes[block_id] == block_hash
+                        else:
+                            self.block_hashes[block_id] = block_hash
+                    else:
+                        # block was given away.
+                        self.block_hashes.pop(block_id, None)
+
     def update_states(self, scheduler_output: SchedulerOutput):
         # clear the prefix cache stats so that we only record them on the first
         # chunk of any prefill
@@ -1542,6 +1576,13 @@ class ChunkedPrefillModelRunner(
         for i, req_id in enumerate(req_data.req_ids):
             req_state: SamplingRequestState = self.requests[req_id]
 
+            new_block_ids_per_kv_cache_group = req_data.new_block_ids[i]
+            if new_block_ids_per_kv_cache_group:
+                assert len(new_block_ids_per_kv_cache_group) == 1
+                for block_id in new_block_ids_per_kv_cache_group[0]:
+                    self.block_ref_count[block_id] += 1
+                req_state.block_ids.extend(new_block_ids_per_kv_cache_group[0])
+
             # Update the number of computed tokens for this request
             num_computed_tokens = req_data.num_computed_tokens[i]
             req_state.num_computed_tokens = num_computed_tokens
@@ -1557,7 +1598,10 @@ class ChunkedPrefillModelRunner(
         if scheduler_output.finished_req_ids:
             for req_id in scheduler_output.finished_req_ids:
                 self.input_batch.remove_request(req_id)
-                self.requests.pop(req_id, None)
+                req_state = self.requests.pop(req_id)
+                for block_id in req_state.block_ids:
+                    assert self.block_ref_count[block_id] > 0
+                    self.block_ref_count[block_id] -= 1
                 # TODO: Processing multiple removals at once can break alignment
                 # of logitprocs. Refactor so that we can batch removals to the
                 # `input_batch`
@@ -1627,6 +1671,7 @@ class ChunkedPrefillModelRunner(
 
         # Initialize internal request states if this is the first chunk of a very new prefill
         self.maybe_setup_new_prefill(scheduler_output)
+        self._update_tracked_blocks()
 
         model_input = self.prepare_model_input(scheduler_output)
         is_prefill = model_input.is_prompt
