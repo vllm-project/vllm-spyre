@@ -40,27 +40,28 @@ class TorchSpyrePlatform(CpuPlatform):
 
     @classmethod
     def log_server_boot(cls, vllm_config: VllmConfig) -> None:
-        
         # Only log in main process (not in TP workers)
         if multiprocessing.current_process().name != "MainProcess":
             return
 
+        # yapf: disable
         logo_template = Template(
-           template="\n       ${w}█     █     █▄   ▄█${r}       ${red}▄█▀▀█▄${r}  ${orange}█▀▀▀█▄${r}  ${yellow}█   █${r}  ${green}█▀▀▀█▄${r}  ${blue}█▀▀▀▀${r}\n"
-                            " ${o}▄▄${r} ${b}▄█${r} ${w}█     █     █ ▀▄▀ █${r}       ${red}▀▀▄▄▄${r}   ${orange}█▄▄▄█▀${r}  ${yellow}▀▄ ▄▀${r}  ${green}█▄▄▄█▀${r}  ${blue}█▄▄▄${r}   version ${w}%s${r}\n"
-                            "  ${o}█${r}${b}▄█▀${r} ${w}█     █     █     █${r}            ${red}█${r}  ${orange}█${r}        ${yellow}▀█▀${r}   ${green}█ ▀█▄${r}   ${blue}█${r}      model   ${w}%s${r}\n"
-                            "   ${b}▀▀${r}  ${w}▀▀▀▀▀ ▀▀▀▀▀ ▀     ▀${r}       ${red}▀▄▄▄█▀${r}  ${orange}█${r}         ${yellow}█${r}    ${green}█   ▀█${r}  ${blue}█▄▄▄▄${r}\n"
+            template="\n       ${w}█     █     █▄   ▄█${r}       ${red}▄█▀▀█▄${r}  ${orange}█▀▀▀█▄${r}  ${yellow}█   █${r}  ${green}█▀▀▀█▄${r}  ${blue}█▀▀▀▀${r}\n" # noqa: E501
+            " ${o}▄▄${r} ${b}▄█${r} ${w}█     █     █ ▀▄▀ █${r}       ${red}▀▀▄▄▄${r}   ${orange}█▄▄▄█▀${r}  ${yellow}▀▄ ▄▀${r}  ${green}█▄▄▄█▀${r}  ${blue}█▄▄▄${r}   version ${w}%s${r}\n" # noqa: E501
+            "  ${o}█${r}${b}▄█▀${r} ${w}█     █     █     █${r}            ${red}█${r}  ${orange}█${r}        ${yellow}▀█▀${r}   ${green}█ ▀█▄${r}   ${blue}█${r}      model   ${w}%s${r}\n" # noqa: E501
+            "   ${b}▀▀${r}  ${w}▀▀▀▀▀ ▀▀▀▀▀ ▀     ▀${r}       ${red}▀▄▄▄█▀${r}  ${orange}█${r}         ${yellow}█${r}    ${green}█   ▀█${r}  ${blue}█▄▄▄▄${r}\n" # noqa: E501
         )
+        # yapf: enable
         colors = {
-            "w": "\033[97;1m",    # white
-            "o": "\033[93m",      # orange
-            "b": "\033[94m",      # blue
-            "r": "\033[0m",       # reset
-            "red": "\033[91m",    # red (rainbow start)
+            "w": "\033[97;1m",  # white
+            "o": "\033[93m",  # orange
+            "b": "\033[94m",  # blue
+            "r": "\033[0m",  # reset
+            "red": "\033[91m",  # red (rainbow start)
             "orange": "\033[38;5;208m",  # orange
-            "yellow": "\033[93m", # yellow
+            "yellow": "\033[93m",  # yellow
             "green": "\033[92m",  # green
-            "blue": "\033[94m",   # blue (rainbow end)
+            "blue": "\033[94m",  # blue (rainbow end)
         }
 
         message = logo_template.substitute(colors)
@@ -71,10 +72,8 @@ class TorchSpyrePlatform(CpuPlatform):
 
         logger.info(message, _version.version, model_name)
 
-
     @classmethod
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:
-
         cls.log_server_boot(vllm_config)
 
         # ---- worker ----
