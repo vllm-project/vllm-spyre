@@ -35,6 +35,7 @@ from vllm.platforms import Platform, PlatformEnum
 
 import vllm_spyre.envs as envs_spyre
 from vllm_spyre.compilation_utils import handle_disable_compilation
+from vllm_spyre.compat_utils import patch_kv_cache_manager
 
 logger = init_logger(__name__)
 
@@ -83,7 +84,7 @@ class SpyrePlatform(Platform):
 
     @classmethod
     def import_kernels(cls) -> None:
-        pass  # suppress warning
+        patch_kv_cache_manager()
 
     @classmethod
     def is_async_output_supported(cls, enforce_eager: bool | None) -> bool:

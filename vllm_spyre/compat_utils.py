@@ -1,6 +1,6 @@
 import inspect
 from dataclasses import fields
-from functools import lru_cache
+from functools import lru_cache, wraps
 from typing import Callable
 
 
@@ -22,3 +22,30 @@ def has_argument(func: Callable, param_name: str) -> bool:
         ):
             return True
     return False
+
+
+def patch_kv_cache_manager():
+    print("Patching kv cache manager")
+
+    from vllm.v1.core.kv_cache_coordinator import UnitaryKVCacheCoordinator
+    from vllm.v1.core.kv_cache_utils import (
+        BlockHash,
+        KVCacheBlock,
+    )
+
+    wrapped = UnitaryKVCacheCoordinator.find_longest_cache_hit
+
+    @wraps(UnitaryKVCacheCoordinator.find_longest_cache_hit)
+    def find_longest_cache_hit(
+        self,
+        block_hashes: list[BlockHash],
+        max_cache_hit_length: int,
+    ) -> tuple[tuple[list[KVCacheBlock], ...], int]:
+        max_cache_hit_length += 1
+
+        hit_blocks, hit_tokens = wrapped(self, block_hashes, max_cache_hit_length)
+        if max_cache_hit_length == hit_tokens:
+            hit_tokens -= self.block_size
+        return hit_blocks, hit_tokens
+
+    UnitaryKVCacheCoordinator.find_longest_cache_hit = find_longest_cache_hit  # ty: ignore
