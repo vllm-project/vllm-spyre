@@ -13,6 +13,11 @@ license = {text = "Apache 2"}
 dependencies = [
     "torch-spyre",
     "vllm==0.15.1+cpu",
+
+    # Listing as direct deps to ensure they're picked up from the correct index.
+    # Versions intentionally left out because these are dependencies of dependencies.
+    "torch",
+    "torchvision",
 ]
 requires-python = ">=3.11"
 dynamic = ["version"]
@@ -45,7 +50,7 @@ override-dependencies = [
     "intel-extension-for-pytorch; sys_platform == 'never'",
     
     # This torch version must match the one below in `build-constraint-dependencies`
-    "torch==2.9.1",
+    "torch==2.10.0",
 
     # Skip packages on s390x and ppc64le, expected to be pre-installed
     "torch ; platform_machine not in 's390x, ppc64le'",
@@ -72,7 +77,7 @@ environments = [
 ]
 # This adds constraints to all dependent build environments, which will ensure everything is built
 # with the same version of torch. This CANNOT conflict with a package's existing build dependencies
-build-constraint-dependencies = ["torch==2.9.1"]
+build-constraint-dependencies = ["torch==2.10.0"]
 # This ensures that we build the cpu backend for vLLM
 extra-build-variables = { vllm = { VLLM_TARGET_DEVICE = "cpu" } }
 
@@ -80,8 +85,8 @@ extra-build-variables = { vllm = { VLLM_TARGET_DEVICE = "cpu" } }
 # vLLM and torch-spyre must be pulled from github to be built from source
 # NB: torch-spyre can only be compiled where `sendnn` is available
 [tool.uv.sources]
-vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.15.1" }
-torch-spyre = { git = "https://github.com/torch-spyre/torch-spyre", rev = "9787872ac43370235ca2a12406fa3a73cf4b8778" }
+vllm = { git = "https://github.com/vllm-project/vllm", rev = "2d5be1dd5ce2e44dfea53ea03ff61143da5137eb" }
+torch-spyre = { git = "https://github.com/torch-spyre/torch-spyre", rev = "c73942b71918e4ebea4673b315d96f9dfdc7243e" }
 torch = [
   { index = "pytorch-cpu" },
 ]
