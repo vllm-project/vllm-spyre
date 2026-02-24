@@ -38,20 +38,17 @@ root = ".."
 # https://setuptools-scm.readthedocs.io/en/latest/config/
 
 
-[tool.uv]
-# Never install torch, so that no dependencies can override it.
-# This requires that torch is installed separately in the target environment.
-# Triton is optional in most dependencies, however, xgrammar requires it.
-# So we set to 'never' to prevent installing it or eventually any other 
-# by accident
+[tool.uv] 
 override-dependencies = [
-    "torch; sys_platform == 'never'",
-    "torchaudio; sys_platform == 'never'",
-    "torchvision; sys_platform == 'never'",
+    # No triton support yet, don't allow any dependencies to pull it in
     "triton; sys_platform == 'never'",
     "intel-extension-for-pytorch; sys_platform == 'never'",
+    
+    # This torch version must match the one below in `build-constraint-dependencies`
+    "torch==2.9.1",
 
     # Skip packages on s390x and ppc64le, expected to be pre-installed
+    "torch ; platform_machine not in 's390x, ppc64le'",
     "vllm ; platform_machine not in 's390x, ppc64le'",
     "ray; platform_machine not in 's390x, ppc64le'",
     "llvmlite; platform_machine not in 's390x, ppc64le'",
@@ -73,11 +70,45 @@ override-dependencies = [
 environments = [
     "python_version > '3.9'"
 ]
-no-build-isolation-package = ["vllm"]
+# This adds constraints to all dependent build environments, which will ensure everything is built
+# with the same version of torch. This CANNOT conflict with a package's existing build dependencies
+build-constraint-dependencies = ["torch==2.9.1"]
+# This ensures that we build the cpu backend for vLLM
+extra-build-variables = { vllm = { VLLM_TARGET_DEVICE = "cpu" } }
 
+
+# vLLM and torch-spyre must be pulled from github to be built from source
+# NB: torch-spyre can only be compiled where `sendnn` is available
 [tool.uv.sources]
 vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.15.1" }
 torch-spyre = { git = "https://github.com/torch-spyre/torch-spyre", rev = "9787872ac43370235ca2a12406fa3a73cf4b8778" }
+torch = [
+  { index = "pytorch-cpu" },
+]
+torchvision = [
+  { index = "pytorch-cpu" },
+]
+
+# vllm specifies "common" build dependencies in pyproject.toml, while specific requirements for
+# cpu builds are specified here:
+# See https://github.com/vllm-project/vllm/blob/v0.15.1/requirements/cpu-build.txt
+# In the future, we may need to use this section to specify extra dependencies required to build
+# vllm from source for the cpu backend.
+# NB: This section CANNOT be used to override dependencies to a conflicting version. For example,
+# you cannot add torch==2.9.1 if vllm's build dependencies already specify torch>=2.10.0
+# [tool.uv.extra-build-dependencies]
+# vllm = [
+#     "ninja",
+# ]
+
+# The pytorch-cpu index here ensures we always pull the cpu version of torch everywhere
+# The `explicit=true` setting means this index will only be used for packages that we explicitly set
+# it for in `tool.uv.sources`. This is important to avoid requiring the use of 
+# `--index-strategy unsafe-best-match`
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.ty.rules]
 possibly-missing-attribute = "ignore"
