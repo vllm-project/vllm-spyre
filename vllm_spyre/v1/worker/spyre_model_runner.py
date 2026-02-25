@@ -1235,9 +1235,9 @@ class ChunkedPrefillModelRunner(
 
         return model_inputs
 
-    def _plan_chunking(self, vllm_request: Request, request: NewRequestData) -> ChunkedPrefillPlan:
-        assert request.prompt_token_ids is not None
-        prompt_len = len(request.prompt_token_ids)
+    def _plan_chunking(self, vllm_request: Request, block_ids: list[int]) -> ChunkedPrefillPlan:
+        assert vllm_request.prompt_token_ids is not None
+        prompt_len = len(vllm_request.prompt_token_ids)
 
         chunk_size = self.chunk_size
         padded_prompt_len = math.ceil(prompt_len / self.block_size) * self.block_size
@@ -1248,9 +1248,8 @@ class ChunkedPrefillModelRunner(
 
         if self.enable_prefix_caching:
             n_hit = 0
-            for i in reversed(range(len(request.block_ids[0]))):
-                block_id = request.block_ids[0][i]
-
+            for i in reversed(range(len(block_ids))):
+                block_id = block_ids[i]
                 if i >= len(vllm_request.block_hashes):
                     # this is a new block to be filled
                     self.block_hashes.pop(block_id, None)
@@ -1331,7 +1330,7 @@ class ChunkedPrefillModelRunner(
         for block_id in block_ids_per_kv_cache_group[0]:
             self.block_ref_count[block_id] += 1
 
-        chunk_plan = self._plan_chunking(scheduler_request, request)
+        chunk_plan = self._plan_chunking(scheduler_request, request.block_ids[0])
 
         # Add new request to the cached states.
         if sampling_params.sampling_type == SamplingType.RANDOM_SEED:

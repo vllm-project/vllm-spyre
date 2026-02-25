@@ -1,19 +1,23 @@
 from typing import Any
+import os
 
 import pytest
 import torch
 from vllm import EngineArgs
 from vllm.config import VllmConfig
 from vllm.forward_context import get_forward_context
-from vllm.v1.core.sched.output import CachedRequestData, NewRequestData, SchedulerOutput
+from vllm.v1.core.sched.output import SchedulerOutput
 from vllm.v1.outputs import ModelRunnerOutput, SamplerOutput
 from vllm.v1.request import Request
 from vllm.v1.sample.metadata import SamplingMetadata
 from vllm.v1.sample.sampler import Sampler
+from vllm.v1.kv_cache_interface import KVCacheGroupSpec, KVCacheConfig
+from vllm.v1.structured_output import StructuredOutputManager
 
 from vllm_spyre.model_executor.model_loader.spyre import SpyreAttentionMetadata
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.v1.worker.spyre_model_runner import ChunkedPrefillModelRunner, ChunkedPrefillPlan
+from vllm_spyre.v1.core.scheduler import ChunkedPrefillSpyreScheduler
 
 from spyre_util import REFERENCE_MODELS, patch_environment
 
@@ -96,9 +100,30 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
         is_driver_worker: bool,
         rank: int,
     ):
+        vllm_config.cache_config.num_gpu_blocks = vllm_config.cache_config.num_gpu_blocks_override
         super().__init__(vllm_config=vllm_config, is_driver_worker=is_driver_worker, rank=rank)
 
         self._model = MockSpyreCausalLM(vllm_config=vllm_config)
+
+        kv_cache_spec = next(iter(self.get_kv_cache_spec().items()))
+
+        group_spec = KVCacheGroupSpec(
+            layer_names=[kv_cache_spec[0]], kv_cache_spec=kv_cache_spec[1]
+        )
+        self.kv_cache_config = KVCacheConfig(
+            num_blocks=vllm_config.cache_config.num_gpu_blocks,
+            kv_cache_tensors=[],
+            kv_cache_groups=[group_spec],
+        )
+
+        self.scheduler = ChunkedPrefillSpyreScheduler(
+            vllm_config=vllm_config,
+            kv_cache_config=self.kv_cache_config,
+            structured_output_manager=StructuredOutputManager(vllm_config),
+            include_finished_set=False,
+            log_stats=False,
+            block_size=vllm_config.cache_config.block_size,
+        )
 
     @SpyrePlatform.inference_mode()
     def execute_model(
@@ -115,66 +140,28 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
 
         return super().execute_model(scheduler_output, **kwargs)
 
-    def execute_new_request(self, request: Request, tokens_to_schedule: int) -> ModelRunnerOutput:
-        scheduler_output = self._schedule_new_request(request, tokens_to_schedule)
-        return self.execute_model(scheduler_output)
+    def execute_new_request(self, request: Request) -> ModelRunnerOutput:
+        scheduler_output = self._schedule_new_request(request)
+        output = self.execute_model(scheduler_output)
+        self.scheduler.update_from_output(scheduler_output, output)
+        return output
 
     def execute_running_requests(
         self,
-        req_ids: list[int],
-        num_computed_tokens: list[int],
-        tokens_to_schedule: list[int],
     ) -> ModelRunnerOutput:
-        scheduler_output = self._schedule_running_requests(
-            req_ids,
-            num_computed_tokens,
-            tokens_to_schedule,
-        )
-        return self.execute_model(scheduler_output)
+        scheduler_output = self._schedule_running_requests()
+        output = self.execute_model(scheduler_output)
+        self.scheduler.update_from_output(scheduler_output, output)
+        return output
 
-    def _schedule_new_request(self, request: Request, tokens_to_schedule: int) -> SchedulerOutput:
-        new_reqs = [NewRequestData.from_request(request=request, block_ids=[])]
-        num_scheduled_tokens = {request.request_id: tokens_to_schedule}
-
-        return SchedulerOutput(
-            scheduled_new_reqs=new_reqs,
-            scheduled_cached_reqs=CachedRequestData.make_empty(),
-            num_scheduled_tokens=num_scheduled_tokens,
-            total_num_scheduled_tokens=tokens_to_schedule,
-            finished_req_ids=set(),
-            **self._extra_sched_output_kwargs(),
-        )
+    def _schedule_new_request(self, request: Request) -> SchedulerOutput:
+        self.scheduler.add_request(request)
+        return self.scheduler.schedule()
 
     def _schedule_running_requests(
         self,
-        req_ids: list[int],
-        num_computed_tokens: list[int],
-        tokens_to_schedule: list[int],
     ) -> SchedulerOutput:
-        cached_reqs = CachedRequestData(
-            req_ids=req_ids,
-            resumed_req_ids=set(),
-            new_token_ids=[],
-            all_token_ids={},
-            new_block_ids=[],
-            num_computed_tokens=num_computed_tokens,
-            num_output_tokens=[],
-        )
-
-        num_scheduled_tokens = {}
-        total_num_scheduled_tokens = 0
-        for req_id, tokens in zip(req_ids, tokens_to_schedule):
-            num_scheduled_tokens[req_id] = tokens
-            total_num_scheduled_tokens += tokens
-
-        return SchedulerOutput(
-            scheduled_new_reqs=[],
-            scheduled_cached_reqs=cached_reqs,
-            num_scheduled_tokens=num_scheduled_tokens,
-            total_num_scheduled_tokens=total_num_scheduled_tokens,
-            finished_req_ids=set(),
-            **self._extra_sched_output_kwargs(),
-        )
+        return self.scheduler.schedule()
 
     def _extra_sched_output_kwargs(self) -> dict[str, Any]:
         return {
@@ -230,7 +217,10 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
         assert model_runner_output.req_ids == req_ids
         assert len(model_runner_output.sampled_token_ids) == num_sampled_token_ids
         assert model_runner_output.tkv == tkv
-        assert self.get_n_free_blocks() == n_free_blocks
+        sched_free_blocks = self.scheduler.kv_cache_manager.block_pool.get_num_free_blocks()
+        assert sched_free_blocks == n_free_blocks, (
+            f"actual free blocks: {sched_free_blocks}, expected: {n_free_blocks}"
+        )
         assert model_runner_output.left_padding == left_padding, (
             f"Expected {left_padding}, got {model_runner_output.left_padding}"
         )
@@ -262,6 +252,8 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
         available_blocks: int | None = None,
     ) -> ChunkedPrefillModelRunner:
         """A fixture that returns a model runner configured for prefix caching."""
+
+        os.environ.pop("VLLM_DT_MAX_BATCH_TKV_LIMIT", None)
 
         patch_environment(
             warmup_shapes=None,
