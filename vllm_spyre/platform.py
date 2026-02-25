@@ -213,8 +213,6 @@ class SpyrePlatform(Platform):
                 and vllm_config.scheduler_config.max_num_seqs == 1
             ):
                 raise ValueError("Batch size 1 not supported for fp8 continuous batching.")
-            if cache_config.num_gpu_blocks_override is None:
-                cache_config.num_gpu_blocks_override = cls.get_total_spyre_blocks(vllm_config)
         else:
             # Static batching or embedding model.
             # Override --max-num-seqs to the biggest warmup batch size
@@ -301,6 +299,8 @@ class SpyrePlatform(Platform):
                     "set `--max-num-batched-tokens` to a number that satisfies "
                     "this constraint."
                 )
+                if cache_config.num_gpu_blocks_override is None:
+                    cache_config.num_gpu_blocks_override = cls.get_total_spyre_blocks(vllm_config)
 
         logger.info(
             "Configurations for Spyre. max_model_len=%d, max_num_seqs=%d, block_size=%d, "
