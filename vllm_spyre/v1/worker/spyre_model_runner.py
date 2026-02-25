@@ -1500,10 +1500,10 @@ class ChunkedPrefillModelRunner(
         if scheduler_output.finished_req_ids:
             for req_id in scheduler_output.finished_req_ids:
                 self.input_batch.remove_request(req_id)
-                req_state = self.requests.pop(req_id)
-                for block_id in req_state.block_ids:
-                    assert self.block_ref_count[block_id] > 0
-                    self.block_ref_count[block_id] -= 1
+                if (_req_state := self.requests.pop(req_id, None)) is not None:
+                    for block_id in _req_state.block_ids:
+                        assert self.block_ref_count[block_id] > 0
+                        self.block_ref_count[block_id] -= 1
                 # TODO: Processing multiple removals at once can break alignment
                 # of logitprocs. Refactor so that we can batch removals to the
                 # `input_batch`
