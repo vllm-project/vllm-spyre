@@ -1,0 +1,13 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 Documentation
+    url: https://blog.vllm.ai/vllm-spyre/
+    about: Read the vLLM Spyre documentation
+  - name: 💬 Discussions
+    url: https://inviter.co/vllm-slack
+    about: Ask questions and discuss in the `#sig-spyre` channel.
+  - name: 🤝 Contributing Guide
+    url: https://blog.vllm.ai/vllm-spyre/contributing/
+    about: Learn how to contribute to vLLM Spyre
+
+# Made with Bob

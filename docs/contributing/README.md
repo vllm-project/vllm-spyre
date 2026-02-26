@@ -8,7 +8,10 @@ Thank you for your interest in contributing to the Spyre plugin for vLLM! There 
 
 ## Issues
 
-If you encounter a bug or have a feature request, please search [existing issues](https://github.com/vllm-project/vllm-spyre/issues?q=is%3Aissue) first to see if it has already been reported. If not, please [create a new issue](https://github.com/vllm-project/vllm-spyre/issues/new/choose), providing as much relevant information as possible.
+If you encounter a bug or have a feature request, please search [existing issues](https://github.com/vllm-project/vllm-spyre/issues?q=is%3Aissue) first to see if it has already been reported. If not, please create a new issue, by using our [issue templates](https://github.com/vllm-project/vllm-spyre/issues/new/choose):
+
+- **🐛 Bug Report**: For reporting bugs and unexpected behavior
+- **🚀 Feature Request**: For suggesting new features or improvements
 
 You can also reach out for support in the `#sig-spyre` channel in the [vLLM Slack](https://inviter.co/vllm-slack) workspace.
 

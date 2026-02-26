@@ -1,0 +1,46 @@
+name: 🚀 Feature request
+description: Suggest a new feature for vLLM Spyre
+title: "[Feature]: "
+labels: ["enhancement"]
+
+body:
+- type: markdown
+  attributes:
+    value: |
+      Before submitting, please search [existing issues](https://github.com/vllm-project/vllm-spyre/issues) to avoid duplicates.
+
+- type: textarea
+  attributes:
+    label: Feature description
+    description: |
+      A clear and concise description of the feature you'd like to see.
+      
+  validations:
+    required: true
+
+- type: textarea
+  attributes:
+    label: Motivation and context
+    description: |
+      Why is this feature important? How would it benefit vLLM Spyre users?
+      
+      Is this related to a specific problem or limitation?
+  validations:
+    required: true
+
+- type: textarea
+  attributes:
+    label: Proposed solution
+    description: |
+      If you have ideas on how this could be implemented, share them here.
+      
+      Include any relevant examples, APIs, or resources.
+
+- type: checkboxes
+  attributes:
+    label: Checklist
+    options:
+      - label: I have searched for similar feature requests
+        required: true
+
+# Made with Bob
