@@ -232,8 +232,6 @@ class EngineCache:
                 # prefixes and makes sure that the used block ids in each test
                 # are independent of the test ordering.
                 _reset_scheduler(maybe_engine.scheduler)
-                model_runner = maybe_engine.model_executor.driver_worker.worker.model_runner
-                model_runner._make_block_ref_count()
 
             return maybe_engine
         self.clear()
@@ -289,8 +287,6 @@ class EngineCache:
         )
 
         if available_blocks is not None:
-            worker = engine_core.model_executor.driver_worker.worker
-            worker.model_runner._make_block_ref_count()
             _reset_scheduler(engine_core.scheduler)
 
         # 🌶️🌶️🌶️
