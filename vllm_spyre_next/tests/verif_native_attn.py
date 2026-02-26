@@ -31,7 +31,9 @@ class PyTorchNativeAttentionMetadata:
     num_heads: int = 0
 
 
-def _compute_attention_per_head_loop_core(qt_reshaped, k_reshaped, vt_reshaped, sm_scale, num_heads):
+def _compute_attention_per_head_loop_core(
+    qt_reshaped, k_reshaped, vt_reshaped, sm_scale, num_heads
+):
     """Core computation for per-head attention (to be compiled).
 
     This version processes one head at a time to avoid Spyre compilation issues.
@@ -64,7 +66,9 @@ def _compute_attention_per_head_loop_core(qt_reshaped, k_reshaped, vt_reshaped, 
     return attn_output_t
 
 
-def _compute_attention_per_head_loop(qt_reshaped, k_reshaped, vt_reshaped, sm_scale, num_heads, device=None):
+def _compute_attention_per_head_loop(
+    qt_reshaped, k_reshaped, vt_reshaped, sm_scale, num_heads, device=None
+):
     """Wrapper function that processes each head separately to avoid Spyre compilation issues.
 
     Args:
@@ -96,7 +100,7 @@ def _compute_attention_per_head_loop(qt_reshaped, k_reshaped, vt_reshaped, sm_sc
     for h in range(num_heads):
         # Extract tensors for this head
         qt_h = qt_reshaped[:, :, h].contiguous()  # [D, Q]
-        k_h = k_reshaped[:, h, :].contiguous()    # [L, D]
+        k_h = k_reshaped[:, h, :].contiguous()  # [L, D]
         vt_h = vt_reshaped[:, :, h].contiguous()  # [D, L]
 
         # Move tensors to target device if specified
@@ -111,7 +115,11 @@ def _compute_attention_per_head_loop(qt_reshaped, k_reshaped, vt_reshaped, sm_sc
         # Call the compiled core function for this head
         # Returns [D, Q] format to avoid transpose issues in compiled code
         attn_output_t = _compute_attention_per_head_loop_compiled(
-            qt_h, k_h, vt_h, sm_scale_device, 1  # num_heads=1 for single head
+            qt_h,
+            k_h,
+            vt_h,
+            sm_scale_device,
+            1,  # num_heads=1 for single head
         )
 
         # Move result back to original device first (result is [D, Q] and contiguous)
@@ -130,24 +138,31 @@ def _compute_attention_per_head_loop(qt_reshaped, k_reshaped, vt_reshaped, sm_sc
 # Apply torch.compile to the core computation function (without device transfers)
 # Use "eager" backend on Windows to avoid C++ compiler requirement
 import sys
+
 if sys.platform == "win32":
     # On Windows, use eager backend to avoid C++ compiler issues
     _compute_attention_per_head_loop_compiled = torch.compile(
-        _compute_attention_per_head_loop_core,
-        backend="eager"
+        _compute_attention_per_head_loop_core, backend="eager"
     )
 else:
     # On other platforms, use inductor for better performance
     _compute_attention_per_head_loop_compiled = torch.compile(
-        _compute_attention_per_head_loop_core,
-        backend="inductor"
+        _compute_attention_per_head_loop_core, backend="inductor"
     )
 
 
 class AttentionDebugger:
     """Debug class to test attention implementations."""
 
-    def __init__(self, num_heads: int, head_size: int, scale: float, num_kv_heads: int, working_precision=None, spyre_device=None):
+    def __init__(
+        self,
+        num_heads: int,
+        head_size: int,
+        scale: float,
+        num_kv_heads: int,
+        working_precision=None,
+        spyre_device=None,
+    ):
         self.num_heads = num_heads
         self.head_size = head_size
         self.scale = scale
@@ -166,7 +181,7 @@ class AttentionDebugger:
         key: torch.Tensor,
         value: torch.Tensor,
         attn_metadata: PyTorchNativeAttentionMetadata,
-        block_mask: torch.Tensor = None
+        block_mask: torch.Tensor = None,
     ) -> torch.Tensor:
         """Compute attention using PyTorch operations."""
 
@@ -189,13 +204,15 @@ class AttentionDebugger:
         value = value.transpose(1, 2)
 
         # Compute Q @ K^T
-        attn_scores = torch.matmul(query.to(self.working_precision), key.to(self.working_precision).transpose(-2, -1))
+        attn_scores = torch.matmul(
+            query.to(self.working_precision), key.to(self.working_precision).transpose(-2, -1)
+        )
 
         # Scale
         attn_scores = (attn_scores * self.scale).to(self.working_precision)
 
         if block_mask is not None:
-            attn_scores = attn_scores.masked_fill(block_mask, -float('inf'))
+            attn_scores = attn_scores.masked_fill(block_mask, -float("inf"))
 
         # Softmax
         attn_weights = torch._safe_softmax(attn_scores, dim=-1)
@@ -208,15 +225,13 @@ class AttentionDebugger:
 
         return attn_output
 
-
-
     def _compute_attention2(
         self,
         query: torch.Tensor,
         key: torch.Tensor,
         value: torch.Tensor,
         attn_metadata: PyTorchNativeAttentionMetadata,
-        block_mask: torch.Tensor = None
+        block_mask: torch.Tensor = None,
     ) -> torch.Tensor:
         """Compute attention using PyTorch operations with transposed computation.
 
@@ -301,7 +316,7 @@ def generate_test_inputs(
     total_tokens: int = 32,
     total_kv_tokens: int = 128,
     dtype: torch.dtype = torch.float16,
-    device: torch.device = torch.device('cpu')
+    device: torch.device = torch.device("cpu"),
 ):
     """Generate test inputs for attention functions.
 
@@ -354,10 +369,7 @@ def generate_test_inputs(
 
 
 def compare_attention_outputs(
-    output1: torch.Tensor,
-    output2: torch.Tensor,
-    rtol: float = 1e-3,
-    atol: float = 1e-3
+    output1: torch.Tensor, output2: torch.Tensor, rtol: float = 1e-3, atol: float = 1e-3
 ) -> dict:
     """Compare outputs from two attention implementations.
 
@@ -384,11 +396,11 @@ def compare_attention_outputs(
     mean_rel_error = rel_error.mean().item()
 
     return {
-        'are_close': are_close,
-        'max_abs_diff': max_abs_diff,
-        'mean_abs_diff': mean_abs_diff,
-        'max_rel_error': max_rel_error,
-        'mean_rel_error': mean_rel_error,
+        "are_close": are_close,
+        "max_abs_diff": max_abs_diff,
+        "mean_abs_diff": mean_abs_diff,
+        "max_rel_error": max_rel_error,
+        "mean_rel_error": mean_rel_error,
     }
 
 
@@ -402,12 +414,12 @@ if __name__ == "__main__":
     head_size = 64
     total_tokens = 32
     total_kv_tokens = 128
-    scale = 1.0 / (head_size ** 0.5)
+    scale = 1.0 / (head_size**0.5)
 
     print("=" * 80)
     print("Attention Implementation Comparison Test")
     print("=" * 80)
-    print(f"Configuration:")
+    print("Configuration:")
     print(f"  num_heads: {num_heads}")
     print(f"  num_kv_heads: {num_kv_heads}")
     print(f"  head_size: {head_size}")
@@ -420,7 +432,7 @@ if __name__ == "__main__":
     # To use Spyre device, set spyre_device='spyre' (or appropriate device string)
     # For now, using None (CPU) as default - change to 'spyre' when Spyre is available
     use_spyre = True  # Set to True to enable Spyre device
-    spyre_device = 'spyre' if use_spyre else None
+    spyre_device = "spyre" if use_spyre else None
 
     debugger = AttentionDebugger(
         num_heads=num_heads,
@@ -428,7 +440,7 @@ if __name__ == "__main__":
         scale=scale,
         num_kv_heads=num_kv_heads,
         working_precision=torch.float32,
-        spyre_device=spyre_device
+        spyre_device=spyre_device,
     )
 
     if use_spyre:
@@ -446,10 +458,10 @@ if __name__ == "__main__":
         total_tokens=total_tokens,
         total_kv_tokens=total_kv_tokens,
         dtype=torch.float16,
-        device=torch.device('cpu')
+        device=torch.device("cpu"),
     )
 
-    print(f"Input shapes:")
+    print("Input shapes:")
     print(f"  query: {query.shape}")
     print(f"  key: {key.shape}")
     print(f"  value: {value.shape}")
@@ -458,21 +470,13 @@ if __name__ == "__main__":
     # Compute attention using both methods
     print("Computing attention with method 1...")
     output1 = debugger._compute_attention1(
-        query.clone(),
-        key.clone(),
-        value.clone(),
-        attn_metadata,
-        block_mask
+        query.clone(), key.clone(), value.clone(), attn_metadata, block_mask
     )
     print(f"Output1 shape: {output1.shape}")
 
     print("\nComputing attention with method 2...")
     output2 = debugger._compute_attention2(
-        query.clone(),
-        key.clone(),
-        value.clone(),
-        attn_metadata,
-        block_mask
+        query.clone(), key.clone(), value.clone(), attn_metadata, block_mask
     )
     print(f"Output2 shape: {output2.shape}")
 
@@ -482,30 +486,34 @@ if __name__ == "__main__":
     print("=" * 80)
 
     # Check for NaN/Inf in outputs
-    print(f"\nOutput1 checks:")
+    print("\nOutput1 checks:")
     print(f"  Shape: {output1.shape}")
     print(f"  Has NaN: {torch.isnan(output1).any().item()}")
     print(f"  Has Inf: {torch.isinf(output1).any().item()}")
-    print(f"  Min: {output1.min().item():.6f}, Max: {output1.max().item():.6f}, Mean: {output1.mean().item():.6f}")
+    print(
+        f"  Min: {output1.min().item():.6f}, Max: {output1.max().item():.6f}, Mean: {output1.mean().item():.6f}"
+    )
     print(f"  Num zeros: {(output1 == 0).sum().item()}")
 
-    print(f"\nOutput2 checks:")
+    print("\nOutput2 checks:")
     print(f"  Shape: {output2.shape}")
     print(f"  Has NaN: {torch.isnan(output2).any().item()}")
     print(f"  Has Inf: {torch.isinf(output2).any().item()}")
-    print(f"  Min: {output2.min().item():.6f}, Max: {output2.max().item():.6f}, Mean: {output2.mean().item():.6f}")
+    print(
+        f"  Min: {output2.min().item():.6f}, Max: {output2.max().item():.6f}, Mean: {output2.mean().item():.6f}"
+    )
     print(f"  Num zeros: {(output2 == 0).sum().item()}")
 
     comparison = compare_attention_outputs(output1, output2, rtol=1e-2, atol=1e-2)
 
-    print(f"\nComparison metrics:")
+    print("\nComparison metrics:")
     print(f"  Outputs are close: {comparison['are_close']}")
     print(f"  Max absolute difference: {comparison['max_abs_diff']:.6e}")
     print(f"  Mean absolute difference: {comparison['mean_abs_diff']:.6e}")
     print(f"  Max relative error: {comparison['max_rel_error']:.6e}")
     print(f"  Mean relative error: {comparison['mean_rel_error']:.6e}")
 
-    if comparison['are_close']:
+    if comparison["are_close"]:
         print("\n[PASS] TEST PASSED: Both implementations produce similar results!")
     else:
         print("\n[FAIL] TEST FAILED: Implementations produce different results!")
