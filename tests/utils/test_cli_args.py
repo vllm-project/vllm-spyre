@@ -78,7 +78,7 @@ def test_prefix_caching_is_on_by_default(monkeypatch: pytest.MonkeyPatch) -> Non
                 *common_args,
             ]
         )
-        assert engine_args.enable_prefix_caching
+        assert engine_args.enable_prefix_caching is None
         vllm_config = engine_args.create_engine_config()
         assert engine_args.enable_prefix_caching
         assert vllm_config.cache_config.enable_prefix_caching

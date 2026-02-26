@@ -26,15 +26,21 @@ if TYPE_CHECKING:
     from vllm.config import ModelConfig, VllmConfig
     from vllm.pooling_params import PoolingParams
     from vllm.sampling_params import SamplingParams
+    from vllm.v1.attention.backends.registry import AttentionBackendEnum
+    from vllm.v1.attention.selector import AttentionSelectorConfig
 else:
     ModelConfig = None
     VllmConfig = None
     SamplingParams = None
     PoolingParams = None
-from vllm.platforms import Platform, PlatformEnum
+    AttentionBackendEnum = None
+    AttentionSelectorConfig = None
 
+from vllm.v1.attention.backend import AttentionType
+from vllm.platforms import Platform, PlatformEnum
 import vllm_spyre.envs as envs_spyre
 from vllm_spyre.compilation_utils import handle_disable_compilation
+from vllm_spyre.compat_utils import maybe_patch_transformers_4_57
 
 logger = init_logger(__name__)
 
@@ -83,7 +89,18 @@ class SpyrePlatform(Platform):
 
     @classmethod
     def import_kernels(cls) -> None:
+        maybe_patch_transformers_4_57()
         pass  # suppress warning
+
+    @classmethod
+    def get_attn_backend_cls(
+        cls,
+        selected_backend: "AttentionBackendEnum",
+        attn_selector_config: "AttentionSelectorConfig",
+    ) -> str:
+        assert attn_selector_config.attn_type == AttentionType.ENCODER_ONLY
+        logger.info("Using Torch SDPA backend.")
+        return "vllm_spyre.v1.attention.backends.spyre_sdpa.SpyreSDPABackend"
 
     @classmethod
     def is_async_output_supported(cls, enforce_eager: bool | None) -> bool:
@@ -133,6 +150,12 @@ class SpyrePlatform(Platform):
         if is_pooling:
             os.environ["FLEX_OVERWRITE_NMB_FRAME"] = "false"
             os.environ["COMPILATION_MODE"] = "offline"
+            if vllm_config.model_config.model_impl == "auto":
+                vllm_config.model_config.model_impl = "transformers"
+
+            archs = vllm_config.model_config.hf_config.architectures
+            if archs is not None and archs[0] in ("XLMRobertaForMaskedLM", "RobertaForMaskedLM"):
+                archs[0] = "TransformersEmbeddingModel"
 
         if is_decoder:
             scheduler_config.scheduler_cls = (
@@ -198,6 +221,18 @@ class SpyrePlatform(Platform):
                 "Registry validation is only performed for 'sendnn'.",
                 envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND,
             )
+
+        # avoid circular imports
+        from vllm.config.compilation import CompilationMode
+        from vllm_spyre.model_executor.model_loader.spyre import BACKEND_LIST
+
+        # verify compilation config
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "eager":
+            vllm_config.compilation_config.mode = CompilationMode.NONE
+        else:
+            assert envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in BACKEND_LIST
+            vllm_config.compilation_config.mode = CompilationMode.STOCK_TORCH_COMPILE
+            vllm_config.compilation_config.backend = envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND
 
         # TODO: try to support async scheduling
         scheduler_config.async_scheduling = False
@@ -408,8 +443,8 @@ class SpyrePlatform(Platform):
     @classmethod
     def pre_register_and_update(cls, parser: FlexibleArgumentParser | None = None) -> None:
         if parser is not None:
-            parser.set_defaults(enable_prefix_caching=True)
             parser.set_defaults(max_num_batched_tokens=cls.DEFAULT_CHUNK_SIZE)
+            parser.set_defaults(model_impl="transformers")
 
     @classmethod
     def _check_threading_config(cls, worker_count: int):
