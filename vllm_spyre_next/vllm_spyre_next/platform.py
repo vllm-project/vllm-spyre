@@ -74,6 +74,7 @@ class TorchSpyrePlatform(CpuPlatform):
 
     @classmethod
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:
+        print("hello world")
         cls.log_server_boot(vllm_config)
 
         # ---- worker ----
