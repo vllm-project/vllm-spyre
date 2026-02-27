@@ -39,7 +39,7 @@ class TorchSpyrePlatform(CpuPlatform):
     # Register the PyTorch Native Paged Attention implementation as the CUSTOM backend
     register_backend(
         AttentionBackendEnum.CUSTOM,
-        "vllm_spyre_next.v1.attention.backends.pytorch_native_paged_attn.SpyreAttentionPagedBackend",
+        "vllm_spyre_next.v1.attention.backends.spyre_paged_attn.SpyreAttentionPagedBackend",
     )
 
     @classmethod
