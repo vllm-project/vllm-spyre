@@ -18,12 +18,8 @@ from vllm.model_executor.layers.pooler.seqwise.poolers import (
 )
 from vllm.sampling_params import SamplingType
 from vllm.tasks import SupportedTask
-from vllm.utils.hashing import get_hash_fn_by_name
 from vllm.utils.platform_utils import is_pin_memory_available
-from vllm.v1.core.kv_cache_utils import (
-    get_request_block_hasher,
-    init_none_hash,
-)
+
 from vllm.v1.core.sched.output import CachedRequestData
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, ModelRunnerOutput, SamplerOutput
@@ -721,14 +717,6 @@ class ChunkedPrefillModelRunner(
         self.chunk_size = self.scheduler_config.max_num_batched_tokens
         self.chunk_blocks_count = self.chunk_size // self.block_size
 
-        if vllm_config.cache_config.enable_prefix_caching:
-            caching_hash_fn = get_hash_fn_by_name(vllm_config.cache_config.prefix_caching_hash_algo)
-            init_none_hash(caching_hash_fn)
-
-            self.request_block_hasher = get_request_block_hasher(self.block_size, caching_hash_fn)
-        else:
-            self.request_block_hasher = None
-
         self.prefix_cache_stats = None
 
     def load_model(self) -> None:
@@ -1229,7 +1217,6 @@ class ChunkedPrefillModelRunner(
             sampling_params=request.sampling_params,
             pooling_params=None,
             eos_token_id=None,
-            block_hasher=self.request_block_hasher,
             mm_features=mm_features,
         )
         scheduler_request.num_computed_tokens = request.num_computed_tokens
