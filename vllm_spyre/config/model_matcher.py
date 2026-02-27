@@ -47,6 +47,44 @@ class ModelMatcher:
 
         return True
 
+    def _validate_sub_config(
+        self, model_name: str, attr_name: str, config_value: Any, pattern_value: dict
+    ) -> bool:
+        """Validate a nested config sub-object (e.g. text_config) against a dict pattern.
+
+        Uses getattr to access attributes on the sub-config object, as opposed to
+        quantization_config which is stored as a plain dict.
+
+        Args:
+            model_name: Model name for logging purposes
+            attr_name: Name of the parent attribute (e.g. 'text_config')
+            config_value: Actual sub-config object from HF config
+            pattern_value: Expected sub-config pattern dict
+
+        Returns:
+            True if all pattern keys match, False otherwise
+        """
+        for key, value in pattern_value.items():
+            if not hasattr(config_value, key):
+                logger.debug(
+                    "Model '%s': %s missing attribute '%s' required by pattern",
+                    model_name,
+                    attr_name,
+                    key,
+                )
+                return False
+            if getattr(config_value, key) != value:
+                logger.debug(
+                    "Model '%s': %s.%s mismatch: config=%s, pattern=%s",
+                    model_name,
+                    attr_name,
+                    key,
+                    getattr(config_value, key),
+                    value,
+                )
+                return False
+        return True
+
     def _validate_attribute(
         self, hf_config: Any, model_name: str, attr_name: str, pattern_value: Any
     ) -> bool:
@@ -73,6 +111,9 @@ class ModelMatcher:
 
         if attr_name == "quantization_config" and isinstance(pattern_value, dict):
             return self._validate_quantization_config(model_name, config_value, pattern_value)
+
+        if isinstance(pattern_value, dict) and not isinstance(config_value, dict):
+            return self._validate_sub_config(model_name, attr_name, config_value, pattern_value)
 
         if config_value != pattern_value:
             logger.debug(
