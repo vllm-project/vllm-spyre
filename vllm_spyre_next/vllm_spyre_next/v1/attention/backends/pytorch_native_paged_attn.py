@@ -74,9 +74,7 @@ class PyTorchNativePagedAttentionMetadataBuilder(
         self.block_size = kv_cache_spec.block_size
 
         model_config = vllm_config.model_config
-        self.num_heads = model_config.get_num_attention_heads(
-            vllm_config.parallel_config
-        )
+        self.num_heads = model_config.get_num_attention_heads(vllm_config.parallel_config)
         self.num_kv_heads = model_config.get_num_kv_heads(vllm_config.parallel_config)
 
     def build(
@@ -101,9 +99,7 @@ class PyTorchNativePagedAttentionMetadataBuilder(
         # Create causal mask if needed
         causal_mask = None
         if common_attn_metadata.causal and max_query_len > 1:
-            causal_mask = self._create_causal_mask(
-                max_query_len, max_seq_len, self.device
-            )
+            causal_mask = self._create_causal_mask(max_query_len, max_seq_len, self.device)
 
         return PyTorchNativePagedAttentionMetadata(
             num_actual_tokens=num_actual_tokens,
@@ -206,7 +202,7 @@ class PyTorchNativePagedAttentionImpl(AttentionImpl[PyTorchNativePagedAttentionM
         logits_soft_cap: float | None = None,
         attn_type: str = AttentionType.DECODER,
         kv_sharing_target_layer_name: str | None = None,
-        working_precision = None
+        working_precision=None,
     ) -> None:
         self.num_heads = num_heads
         self.head_size = head_size
@@ -263,7 +259,7 @@ class PyTorchNativePagedAttentionImpl(AttentionImpl[PyTorchNativePagedAttentionM
         # Step 2: Gather keys and values from blocks
         key_cache = kv_cache[0]
         value_cache = kv_cache[1]
-        
+
         # Step 3: Compute block mask for KV cache
         block_mask = self._gather_block_mask(
             kv_cache,
@@ -290,9 +286,9 @@ class PyTorchNativePagedAttentionImpl(AttentionImpl[PyTorchNativePagedAttentionM
             key_cache.reshape(1, -1, key.shape[1], key.shape[2]),
             value_cache.reshape(1, -1, key.shape[1], key.shape[2]),
             attn_metadata,
-            block_mask=block_mask
+            block_mask=block_mask,
         )
-        
+
         # Step 5: Extract only relevant tokens
         attn_output = self._extract_relevant_output(
             attn_output,
@@ -330,7 +326,7 @@ class PyTorchNativePagedAttentionImpl(AttentionImpl[PyTorchNativePagedAttentionM
             offset = block_offsets[i].item()
             key_cache[block_idx, offset] = key[i]
             value_cache[block_idx, offset] = value[i]
-            
+
     def _gather_block_mask(
         self,
         kv_cache: torch.Tensor,
@@ -346,8 +342,10 @@ class PyTorchNativePagedAttentionImpl(AttentionImpl[PyTorchNativePagedAttentionM
 
         num_seqs = block_table.shape[0]
         num_blocks, block_size, num_kv_heads, head_size = kv_cache.shape[1:]
-        
-        num_tokens_per_sequence = [query_start_loc[i + 1] - query_start_loc[i] for i in range(len(query_start_loc) - 1)]
+
+        num_tokens_per_sequence = [
+            query_start_loc[i + 1] - query_start_loc[i] for i in range(len(query_start_loc) - 1)
+        ]
         max_num_tokens_per_sequence = torch.max(torch.stack(num_tokens_per_sequence))
 
         # Initialize output tensor
@@ -363,32 +361,45 @@ class PyTorchNativePagedAttentionImpl(AttentionImpl[PyTorchNativePagedAttentionM
             seq_remainder = seq_lens[seq_idx] % block_size
             for bl_ind, bl in enumerate(block_table[seq_idx]):
                 seq_len_curr_block = min(seq_lens[seq_idx] - bl_ind * block_size, block_size)
-                max_bl_ind = ((seq_lens[seq_idx] // block_size) + (1 if seq_lens[seq_idx] % block_size else 0))
+                max_bl_ind = (seq_lens[seq_idx] // block_size) + (
+                    1 if seq_lens[seq_idx] % block_size else 0
+                )
                 if bl_ind < max_bl_ind:
-                    block_mask[seq_idx * max_num_tokens_per_sequence : (seq_idx + 1) * max_num_tokens_per_sequence, bl * block_size : bl * block_size + seq_len_curr_block] = 0
-                    
+                    block_mask[
+                        seq_idx * max_num_tokens_per_sequence : (seq_idx + 1)
+                        * max_num_tokens_per_sequence,
+                        bl * block_size : bl * block_size + seq_len_curr_block,
+                    ] = 0
+
             if causal_mask is not None:
                 for token_nr in range(num_tokens_per_sequence[seq_idx] - 1):
-                    slot_for_write = slot_mapping[query_start_loc[seq_idx] + 1 + token_nr:]
+                    slot_for_write = slot_mapping[query_start_loc[seq_idx] + 1 + token_nr :]
                     block_mask[seq_idx * max_num_tokens_per_sequence + token_nr, slot_for_write] = 1
 
         block_mask = block_mask.unsqueeze(0).unsqueeze(0)
         block_mask = block_mask.expand(-1, num_heads, -1, -1)
 
         return block_mask
-    
+
     def _extract_relevant_output(
         self,
         attn_output: torch.Tensor,
         query_start_loc: torch.Tensor,
     ):
-        num_tokens_per_sequence = [query_start_loc[i + 1] - query_start_loc[i] for i in range(len(query_start_loc) - 1)]
+        num_tokens_per_sequence = [
+            query_start_loc[i + 1] - query_start_loc[i] for i in range(len(query_start_loc) - 1)
+        ]
         max_num_tokens_per_sequence = torch.max(torch.stack(num_tokens_per_sequence))
-        
+
         token_indices = []
         for seq_idx, seq_n_tokens in enumerate(num_tokens_per_sequence):
-            token_indices.extend(range(seq_idx * max_num_tokens_per_sequence, seq_idx * max_num_tokens_per_sequence + seq_n_tokens))
-        
+            token_indices.extend(
+                range(
+                    seq_idx * max_num_tokens_per_sequence,
+                    seq_idx * max_num_tokens_per_sequence + seq_n_tokens,
+                )
+            )
+
         return attn_output[token_indices]
 
     def _reshape_query_to_sequences(
@@ -430,7 +441,7 @@ class PyTorchNativePagedAttentionImpl(AttentionImpl[PyTorchNativePagedAttentionM
         key: torch.Tensor,
         value: torch.Tensor,
         attn_metadata: PyTorchNativePagedAttentionMetadata,
-        block_mask: torch.Tensor = None
+        block_mask: torch.Tensor = None,
     ) -> torch.Tensor:
         """Compute attention using PyTorch operations."""
 
@@ -453,13 +464,15 @@ class PyTorchNativePagedAttentionImpl(AttentionImpl[PyTorchNativePagedAttentionM
         value = value.transpose(1, 2)
 
         # Compute Q @ K^T
-        attn_scores = torch.matmul(query.to(self.working_precision), key.to(self.working_precision).transpose(-2, -1))
+        attn_scores = torch.matmul(
+            query.to(self.working_precision), key.to(self.working_precision).transpose(-2, -1)
+        )
 
         # Scale
         attn_scores = (attn_scores * self.scale).to(self.working_precision)
 
         if block_mask is not None:
-            attn_scores = attn_scores.masked_fill(block_mask, -float('inf'))
+            attn_scores = attn_scores.masked_fill(block_mask, -float("inf"))
 
         # Softmax
         attn_weights = torch._safe_softmax(attn_scores, dim=-1)
