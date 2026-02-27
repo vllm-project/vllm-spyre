@@ -26,7 +26,7 @@ from vllm.v1.kv_cache_interface import AttentionSpec
 
 
 @dataclass
-class PyTorchNativePagedAttentionMetadata:
+class SpyreAttentionPagedMetadata:
     """Metadata for PyTorch native attention computation."""
 
     # Batch information
@@ -54,9 +54,7 @@ class PyTorchNativePagedAttentionMetadata:
     num_heads: int = 0
 
 
-class PyTorchNativePagedAttentionMetadataBuilder(
-    AttentionMetadataBuilder[PyTorchNativePagedAttentionMetadata]
-):
+class SpyreAttentionPagedMetadataBuilder(AttentionMetadataBuilder[SpyreAttentionPagedMetadata]):
     """Builds attention metadata from batch information."""
 
     _cudagraph_support: ClassVar[AttentionCGSupport] = (
@@ -82,7 +80,7 @@ class PyTorchNativePagedAttentionMetadataBuilder(
         common_prefix_len: int,
         common_attn_metadata: CommonAttentionMetadata,
         fast_build: bool = False,
-    ) -> PyTorchNativePagedAttentionMetadata:
+    ) -> SpyreAttentionPagedMetadata:
         """Build attention metadata from common metadata."""
 
         # Extract information from common metadata
@@ -101,7 +99,7 @@ class PyTorchNativePagedAttentionMetadataBuilder(
         if common_attn_metadata.causal and max_query_len > 1:
             causal_mask = self._create_causal_mask(max_query_len, max_seq_len, self.device)
 
-        return PyTorchNativePagedAttentionMetadata(
+        return SpyreAttentionPagedMetadata(
             num_actual_tokens=num_actual_tokens,
             num_seqs=num_seqs,
             max_query_len=max_query_len,
@@ -133,7 +131,7 @@ class PyTorchNativePagedAttentionMetadataBuilder(
         return mask
 
 
-class PyTorchNativePagedAttentionBackend(AttentionBackend):
+class SpyreAttentionPagedBackend(AttentionBackend):
     """Pure PyTorch implementation of PagedAttention."""
 
     accept_output_buffer: bool = True
@@ -157,12 +155,12 @@ class PyTorchNativePagedAttentionBackend(AttentionBackend):
         return "CUSTOM"
 
     @staticmethod
-    def get_impl_cls() -> type["PyTorchNativePagedAttentionImpl"]:
-        return PyTorchNativePagedAttentionImpl
+    def get_impl_cls() -> type["SpyreAttentionPagedImpl"]:
+        return SpyreAttentionPagedImpl
 
     @staticmethod
-    def get_builder_cls() -> type["PyTorchNativePagedAttentionMetadataBuilder"]:
-        return PyTorchNativePagedAttentionMetadataBuilder
+    def get_builder_cls() -> type["SpyreAttentionPagedMetadataBuilder"]:
+        return SpyreAttentionPagedMetadataBuilder
 
     @staticmethod
     def get_kv_cache_shape(
@@ -187,7 +185,7 @@ class PyTorchNativePagedAttentionBackend(AttentionBackend):
         return kv_cache_dtype in cls.supported_kv_cache_dtypes
 
 
-class PyTorchNativePagedAttentionImpl(AttentionImpl[PyTorchNativePagedAttentionMetadata]):
+class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
     """PyTorch native implementation of attention with paged KV cache."""
 
     def __init__(
@@ -232,7 +230,7 @@ class PyTorchNativePagedAttentionImpl(AttentionImpl[PyTorchNativePagedAttentionM
         key: torch.Tensor,  # [num_tokens, num_kv_heads, head_size]
         value: torch.Tensor,  # [num_tokens, num_kv_heads, head_size]
         kv_cache: torch.Tensor,  # [2, num_blocks, block_size, num_kv_heads, head_size]
-        attn_metadata: PyTorchNativePagedAttentionMetadata,
+        attn_metadata: SpyreAttentionPagedMetadata,
         output: torch.Tensor | None = None,
         output_scale: torch.Tensor | None = None,
         output_block_scale: torch.Tensor | None = None,
@@ -440,7 +438,7 @@ class PyTorchNativePagedAttentionImpl(AttentionImpl[PyTorchNativePagedAttentionM
         query: torch.Tensor,
         key: torch.Tensor,
         value: torch.Tensor,
-        attn_metadata: PyTorchNativePagedAttentionMetadata,
+        attn_metadata: SpyreAttentionPagedMetadata,
         block_mask: torch.Tensor = None,
     ) -> torch.Tensor:
         """Compute attention using PyTorch operations."""
