@@ -1,5 +1,8 @@
 import torch
 from dataclasses import dataclass
+import sys
+
+DEFAULT_DEVICE = torch.device("cpu")
 
 
 @dataclass
@@ -137,8 +140,6 @@ def _compute_attention_per_head_loop(
 
 # Apply torch.compile to the core computation function (without device transfers)
 # Use "eager" backend on Windows to avoid C++ compiler requirement
-import sys
-
 if sys.platform == "win32":
     # On Windows, use eager backend to avoid C++ compiler issues
     _compute_attention_per_head_loop_compiled = torch.compile(
@@ -316,7 +317,7 @@ def generate_test_inputs(
     total_tokens: int = 32,
     total_kv_tokens: int = 128,
     dtype: torch.dtype = torch.float16,
-    device: torch.device = torch.device("cpu"),
+    device: torch.device = DEFAULT_DEVICE,
 ):
     """Generate test inputs for attention functions.
 
@@ -458,7 +459,7 @@ if __name__ == "__main__":
         total_tokens=total_tokens,
         total_kv_tokens=total_kv_tokens,
         dtype=torch.float16,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     print("Input shapes:")
@@ -491,7 +492,11 @@ if __name__ == "__main__":
     print(f"  Has NaN: {torch.isnan(output1).any().item()}")
     print(f"  Has Inf: {torch.isinf(output1).any().item()}")
     print(
-        f"  Min: {output1.min().item():.6f}, Max: {output1.max().item():.6f}, Mean: {output1.mean().item():.6f}"
+        "  Min: {:.6f}, Max: {:.6f}, Mean: {:.6f}".format(
+            output1.min().item(),
+            output1.max().item(),
+            output1.mean().item(),
+        )
     )
     print(f"  Num zeros: {(output1 == 0).sum().item()}")
 
@@ -500,7 +505,11 @@ if __name__ == "__main__":
     print(f"  Has NaN: {torch.isnan(output2).any().item()}")
     print(f"  Has Inf: {torch.isinf(output2).any().item()}")
     print(
-        f"  Min: {output2.min().item():.6f}, Max: {output2.max().item():.6f}, Mean: {output2.mean().item():.6f}"
+        "  Min: {:.6f}, Max: {:.6f}, Mean: {:.6f}".format(
+            output2.min().item(),
+            output2.max().item(),
+            output2.mean().item(),
+        )
     )
     print(f"  Num zeros: {(output2 == 0).sum().item()}")
 
