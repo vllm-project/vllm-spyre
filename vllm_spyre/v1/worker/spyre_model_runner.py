@@ -1147,10 +1147,9 @@ class ChunkedPrefillModelRunner(
         return model_inputs
 
     def _plan_chunking(
-        self, vllm_request: Request, block_ids: list[int], num_computed_tokens: int
+        self, prompt_token_ids: list[int], num_computed_tokens: int
     ) -> ChunkedPrefillPlan:
-        assert vllm_request.prompt_token_ids is not None
-        prompt_len = len(vllm_request.prompt_token_ids)
+        prompt_len = len(prompt_token_ids)
 
         chunk_size = self.chunk_size
         padded_prompt_len = math.ceil(prompt_len / self.block_size) * self.block_size
@@ -1211,22 +1210,10 @@ class ChunkedPrefillModelRunner(
         if is_new_batch:
             self.tkv = prompt_len
 
-        scheduler_request = Request(
-            request_id=req_id,
-            prompt_token_ids=prompt_token_ids,
-            sampling_params=request.sampling_params,
-            pooling_params=None,
-            eos_token_id=None,
-            mm_features=mm_features,
-        )
-        scheduler_request.num_computed_tokens = request.num_computed_tokens
-
         block_ids_per_kv_cache_group = request.block_ids
         assert len(block_ids_per_kv_cache_group) == 1
 
-        chunk_plan = self._plan_chunking(
-            scheduler_request, request.block_ids[0], request.num_computed_tokens
-        )
+        chunk_plan = self._plan_chunking(prompt_token_ids, request.num_computed_tokens)
 
         # Add new request to the cached states.
         if sampling_params.sampling_type == SamplingType.RANDOM_SEED:
@@ -1238,7 +1225,11 @@ class ChunkedPrefillModelRunner(
 
         req_state = SamplingRequestState(
             generator=generator,
-            vllm_request=scheduler_request,
+            req_id=req_id,
+            prompt_token_ids=prompt_token_ids,
+            sampling_params=sampling_params,
+            mm_features=mm_features,
+            num_computed_tokens=request.num_computed_tokens,
             chunk_count=chunk_plan.chunk_count,
             padding_blocks=chunk_plan.padding_blocks,
             usable_blocks=chunk_plan.usable_cache_blocks,
