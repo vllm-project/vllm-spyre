@@ -275,9 +275,9 @@ class TestModelMatcherEdgeCases:
         assert not matcher.matches(hf_config, pattern)
 
     def test_match_text_config_ignores_extra_attributes(self, matcher):
-        """Test that extra attributes in text_config sub-object are ignored."""
+        """Test matching model with text_config sub-object and that extra attributes are ignored."""
         pattern = ArchitecturePattern(
-            model_name="test-model",
+            model_name="mistralai/Mistral-Small-3.2-24B-Instruct-2506",
             model_type="pixtral",
             attributes={"text_config": {"num_heads": 2}},
         )

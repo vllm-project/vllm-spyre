@@ -12,60 +12,33 @@ logger = init_logger(__name__)
 class ModelMatcher:
     """Pattern-based model matching for identifying models from HF configs."""
 
-    def _validate_quantization_config(
-        self, model_name: str, config_value: Any, pattern_value: dict
-    ) -> bool:
-        """Validate quantization_config dictionary match.
-
-        Args:
-            model_name: Model name for logging purposes
-            config_value: Actual quantization config from HF config
-            pattern_value: Expected quantization config pattern
-
-        Returns:
-            True if quantization config matches, False otherwise
-        """
-        if not isinstance(config_value, dict):
-            logger.debug(
-                "Model '%s': quantization_config type mismatch: config=%s, pattern=%s",
-                model_name,
-                type(config_value),
-                type(pattern_value),
-            )
-            return False
-
-        for key, value in pattern_value.items():
-            if config_value.get(key) != value:
-                logger.debug(
-                    "Model '%s': quantization_config['%s'] mismatch: config=%s, pattern=%s",
-                    model_name,
-                    key,
-                    config_value.get(key),
-                    value,
-                )
-                return False
-
-        return True
-
     def _validate_sub_config(
         self, model_name: str, attr_name: str, config_value: Any, pattern_value: dict
     ) -> bool:
-        """Validate a nested config sub-object (e.g. text_config) against a dict pattern.
+        """Validate a nested config attribute against a dict pattern.
 
-        Uses getattr to access attributes on the sub-config object, as opposed to
-        quantization_config which is stored as a plain dict.
+        Handles both plain dict config values (e.g. quantization_config) and
+        sub-config objects (e.g. text_config, vision_config). For dicts, uses
+        dict key lookup; for objects, uses getattr.
 
         Args:
             model_name: Model name for logging purposes
-            attr_name: Name of the parent attribute (e.g. 'text_config')
-            config_value: Actual sub-config object from HF config
-            pattern_value: Expected sub-config pattern dict
+            attr_name: Name of the parent attribute (e.g. 'quantization_config', 'text_config')
+            config_value: Actual config value from HF config (dict or sub-config object)
+            pattern_value: Expected pattern dict
 
         Returns:
             True if all pattern keys match, False otherwise
         """
         for key, value in pattern_value.items():
-            if not hasattr(config_value, key):
+            if isinstance(config_value, dict):
+                present = key in config_value
+                actual = config_value.get(key)
+            else:
+                present = hasattr(config_value, key)
+                actual = getattr(config_value, key) if present else None
+
+            if not present:
                 logger.debug(
                     "Model '%s': %s missing attribute '%s' required by pattern",
                     model_name,
@@ -73,13 +46,13 @@ class ModelMatcher:
                     key,
                 )
                 return False
-            if getattr(config_value, key) != value:
+            if actual != value:
                 logger.debug(
                     "Model '%s': %s.%s mismatch: config=%s, pattern=%s",
                     model_name,
                     attr_name,
                     key,
-                    getattr(config_value, key),
+                    actual,
                     value,
                 )
                 return False
@@ -109,10 +82,7 @@ class ModelMatcher:
 
         config_value = getattr(hf_config, attr_name)
 
-        if attr_name == "quantization_config" and isinstance(pattern_value, dict):
-            return self._validate_quantization_config(model_name, config_value, pattern_value)
-
-        if isinstance(pattern_value, dict) and not isinstance(config_value, dict):
+        if isinstance(pattern_value, dict):
             return self._validate_sub_config(model_name, attr_name, config_value, pattern_value)
 
         if config_value != pattern_value:
