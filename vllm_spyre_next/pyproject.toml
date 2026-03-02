@@ -39,8 +39,8 @@ version_file = "vllm_spyre_next/_version.py"
 # Local versioning is incompatible with pypi, so we disable it by default.
 local_scheme = "no-local-version"
 root = ".."
-# Only match spyre-next-vX.Y.Z tags, ignoring v* tags used by vllm-spyre.
-tag_regex = "^spyre-next-v(?P<version>[0-9.]+)$"
+# Only match spyre-next-vX.Y.Z tags (with optional pre-release suffix), ignoring v* tags used by vllm-spyre.
+tag_regex = "^spyre-next-v(?P<version>[0-9.]+(?:-(?:rc|alpha|beta)[0-9]+)?)$"
 git_describe_command = "git describe --dirty --tags --long --match 'spyre-next-v*'"
 
 

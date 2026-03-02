@@ -24,4 +24,3 @@ When ready to make a new vllm-spyre-next release:
 4. The `build-and-publish-next.yaml` workflow will trigger when the release is published, and push a new wheel to pypi.
 
 See [`vllm_spyre_next/RELEASING.md`](vllm_spyre_next/RELEASING.md) for more details on the vllm-spyre-next release process, including how to do a test release.
-
