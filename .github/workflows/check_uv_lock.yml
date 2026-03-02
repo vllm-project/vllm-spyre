@@ -45,6 +45,11 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
+          enable-cache: true
+          ignore-nothing-to-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            vllm_spyre_next/pyproject.toml
 
       - name: "Check root uv.lock is up to date"
         if: steps.changed-files.outputs.root_any_changed == 'true'
