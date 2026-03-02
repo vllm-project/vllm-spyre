@@ -94,8 +94,8 @@ def test_spyre_stop_sequence(
     stop_str = "7"
     prompt = "1 2 3 4 5 "
 
-    params1 = SamplingParams(stop=[stop_str], max_tokens=10, seed=8780, temperature=0)
-    params2 = SamplingParams(max_tokens=10, seed=8780, temperature=0)
+    params1 = SamplingParams(stop=[stop_str], max_tokens=10, temperature=0)
+    params2 = SamplingParams(max_tokens=10, temperature=0)
 
     outputs = spyre_model.generate([prompt, prompt], [params1, params2])
     output1, output2 = outputs[0], outputs[1]
