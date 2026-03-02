@@ -1,0 +1,56 @@
+name: Check uv.lock
+
+on:
+  pull_request:
+    paths:
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'vllm_spyre_next/pyproject.toml'
+      - 'vllm_spyre_next/uv.lock'
+  push:
+    branches: [main]
+    paths:
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'vllm_spyre_next/pyproject.toml'
+      - 'vllm_spyre_next/uv.lock'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  check-lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: "Get changed files"
+        id: changed-files
+        uses: tj-actions/changed-files@v46
+        with:
+          files_yaml: |
+            root:
+              - pyproject.toml
+              - uv.lock
+            next:
+              - vllm_spyre_next/pyproject.toml
+              - vllm_spyre_next/uv.lock
+
+      - name: "Set up Python 3.12"
+        if: steps.changed-files.outputs.root_any_changed == 'true' || steps.changed-files.outputs.next_any_changed == 'true'
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: "Check root uv.lock is up to date"
+        if: steps.changed-files.outputs.root_any_changed == 'true'
+        run: uv lock --check
+
+      - name: "Check vllm_spyre_next/uv.lock is up to date"
+        if: steps.changed-files.outputs.next_any_changed == 'true'
+        run: uv lock --check
+        working-directory: vllm_spyre_next
