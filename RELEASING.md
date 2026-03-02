@@ -26,6 +26,7 @@ Both packages follow [Semantic Versioning](https://semver.org/): use **patch** f
 **vllm-spyre**: Automatically published to [test.pypi.org](https://test.pypi.org/project/vllm-spyre/) on every push to main.
 
 **vllm-spyre-next**: Create a pre-release tag (e.g., `spyre-next-v0.1.0-rc.1`) to trigger automatic publication to [test.pypi.org](https://test.pypi.org/p/vllm-spyre-next). Install with:
+
 ```bash
 pip install -i https://test.pypi.org/simple/ vllm-spyre-next==0.1.0rc1
 ```
