@@ -265,10 +265,20 @@ class SpyreWorker(WorkerBase):
         # Torch profiler. Enabled and configured through ProfilerConfig. Set via:
         #   --profiler-config.profiler=torch
         #   --profiler-config.torch_profiler_dir=/path/to/save/trace)
+        # OR
+        #   --profiler-config '{"profiler": "torch", "torch_profiler_dir": "/path/to/save/trace"}'
         profiler_config = vllm_config.profiler_config
         if profiler_config.profiler == "torch":
+            worker_name = f"{vllm_config.instance_id}-rank-{self.rank}"
+            self.profiler: TorchProfilerWrapper | None = TorchProfilerWrapper(
+                profiler_config,
+                worker_name=worker_name,
+                local_rank=self.local_rank,
+                activities=["CPU"],
+            )
+
             if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
-                logger.info(
+                logger.info_once(
                     "Traces will contain AIU events if PyTorch with"
                     " AIU profiling support is installed."
                 )
@@ -279,19 +289,12 @@ class SpyreWorker(WorkerBase):
                 options = dict(opt.split("=") for opt in dt_opt.split(",") if "=" in opt)
                 autopilot_opt = options.get("autopilot", "1")  # autopilot defaults to 1 if not set
                 if autopilot_opt == "1":
-                    logger.warning(
+                    logger.warning_once(
                         "autopilot on detected with profiling enabled. Add "
-                        "autpilot=0 to DT_OPT to see individual AIU-kernel "
+                        "autopilot=0 to DT_OPT to see individual AIU-kernel "
                         "execution in the trace."
                     )
 
-            worker_name = f"{vllm_config.instance_id}-rank-{self.rank}"
-            self.profiler: TorchProfilerWrapper | None = TorchProfilerWrapper(
-                profiler_config,
-                worker_name=worker_name,
-                local_rank=self.local_rank,
-                activities=["CPU"],
-            )
         else:
             self.profiler = None
 
@@ -721,6 +724,9 @@ class SpyreWorker(WorkerBase):
         if is_start:
             self.profiler.start()
         else:
+            if self.profiler is None:
+                logger.warning("Profiler was not started, nothing to stop.")
+                return
             self.profiler.stop()
 
     @property
