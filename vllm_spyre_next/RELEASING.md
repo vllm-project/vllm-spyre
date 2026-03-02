@@ -4,7 +4,7 @@
 
 All vllm-spyre-next releases use tags with the prefix `spyre-next-v`:
 
-```
+```text
 spyre-next-v0.1.0
 spyre-next-v0.2.0
 spyre-next-v1.0.0
