@@ -3,7 +3,7 @@ from collections import defaultdict
 import pytest
 from llm_cache import get_cached_llm
 from spyre_util import ModelInfo
-from vllm import SamplingParams, LLM
+from vllm import LLM, SamplingParams
 
 pytestmark = [pytest.mark.chunked_prefill]
 
@@ -319,13 +319,12 @@ def test_spyre_logit_bias(
     params1 = SamplingParams(
         temperature=0,
         max_tokens=5,
-        seed=8780,
         logit_bias={
             banned_word_id: -100,
             forced_word_id: 100,
         },
     )
-    params2 = SamplingParams(temperature=0, seed=8780, max_tokens=5)
+    params2 = SamplingParams(temperature=0, max_tokens=5)
 
     output = spyre_model.generate([prompt, prompt], [params1, params2])
 
@@ -452,9 +451,9 @@ def test_spyre_bad_words(
     )
     prompt = "The capital of France is"
     params1 = SamplingParams(
-        max_tokens=5, temperature=0, seed=8780, bad_words=[" Paris", " Parisi", " France"]
+        max_tokens=5, temperature=0, bad_words=[" Paris", " Parisi", " France"]
     )
-    params2 = SamplingParams(max_tokens=5, seed=8780, temperature=0)
+    params2 = SamplingParams(max_tokens=5, temperature=0)
 
     outputs = spyre_model.generate([prompt, prompt], [params1, params2])
     output1, output2 = outputs[0], outputs[1]
@@ -483,7 +482,7 @@ def test_spyre_detokenize(
         use_pc=True,
     )
     prompt = "Hello, world!"
-    params = SamplingParams(max_tokens=5, seed=8780, temperature=0, detokenize=False)
+    params = SamplingParams(max_tokens=5, temperature=0, detokenize=False)
     output = spyre_model.generate(prompt, params)[0]
 
     assert output.outputs[0].text == ""
@@ -510,7 +509,7 @@ def test_spyre_logprobs(
     )
     num_logprobs = 5
     prompt = "The sky is"
-    params = SamplingParams(max_tokens=5, seed=8780, temperature=0, logprobs=num_logprobs)
+    params = SamplingParams(max_tokens=5, temperature=0, logprobs=num_logprobs)
     output = spyre_model.generate(prompt, params)[0]
 
     completion_output = output.outputs[0]
