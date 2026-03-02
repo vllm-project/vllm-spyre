@@ -26,9 +26,6 @@ jobs:
             version: "latest"
             python-version: "3.12"
       - name: Build package
-        run: uv build
-        working-directory: vllm_spyre_next
+        run: uv build --package vllm-spyre-next
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: vllm_spyre_next/dist/
