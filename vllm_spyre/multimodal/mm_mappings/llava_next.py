@@ -156,9 +156,7 @@ class LlavaNextMMUtils(MMUtilsBase):
         }
         mm_fields = MultiModalKwargsItem(
             {
-                mm_key: MultiModalFieldElem(
-                    modality="image", key=mm_key, data=mm_data, field=MultiModalBatchedField()
-                )
+                mm_key: MultiModalFieldElem(data=mm_data, field=MultiModalBatchedField())
                 for mm_key, mm_data in mm_data.items()
             }
         )
