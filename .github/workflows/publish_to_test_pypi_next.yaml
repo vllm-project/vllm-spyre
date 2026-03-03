@@ -28,8 +28,10 @@ jobs:
             version: "latest"
             python-version: "3.12"
       - name: Build package
-        run: uv build --package vllm-spyre-next
+        run: uv build
+        working-directory: vllm_spyre_next
       - name: Publish package distributions to test PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
             repository-url: https://test.pypi.org/legacy/
+            packages-dir: vllm_spyre_next/dist/
