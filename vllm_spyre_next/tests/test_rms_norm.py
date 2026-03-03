@@ -55,6 +55,47 @@ def test_spyre_rmsnorm_on_device(default_vllm_config, batch_size, hidden_size):
     expected = reference_rms_norm(x, layer.weight.data, eps)
     actual = layer.forward_native(x.to(device="spyre"))
 
-    print(actual)
 
     torch.testing.assert_close(actual.float(), expected.float(), atol=1e-2, rtol=1e-2)
+
+@pytest.fixture
+def dummy_tensor():
+    return torch.randn(4, 128, dtype=torch.float32)
+
+
+def mock_forward_native_no_residual(x, residual=None):
+    """Mock: return x + 1 (no residual path)."""
+    return x + 1
+
+
+def mock_forward_native_with_residual(x, residual=None):
+    """Mock: return (2 * x, 2 * residual) (residual path)."""
+    return 2 * x, 2 * residual
+
+
+@pytest.mark.parametrize("residual", [None, torch.randn(4, 128, dtype=torch.float32)])
+def test_rmsnorm_oot_dispatch(default_vllm_config, monkeypatch, dummy_tensor, residual):
+    """Verify RMSNorm OOT registration: class swap and forward_oot routing."""
+    from vllm.model_executor.layers.layernorm import RMSNorm
+    from vllm_spyre_next.custom_ops.rms_norm import SpyreRMSNorm
+
+    layer = RMSNorm(128, eps=1e-6)
+
+    # OOT class swap: RMSNorm.__new__ should produce SpyreRMSNorm
+    assert isinstance(layer, SpyreRMSNorm)
+
+    # dispatch_forward should have selected forward_oot
+    assert layer._forward_method == layer.forward_oot
+
+    # Mock forward_native (called by forward_oot) with a known transform
+    if residual is not None:
+        monkeypatch.setattr(layer, "forward_native", mock_forward_native_with_residual)
+        out_x, out_residual = layer.forward_oot(dummy_tensor, residual)
+
+        assert torch.allclose(out_x, 2 * dummy_tensor)
+        assert torch.allclose(out_residual, 2 * residual)
+    else:
+        monkeypatch.setattr(layer, "forward_native", mock_forward_native_no_residual)
+        out_x = layer.forward_oot(dummy_tensor, residual)
+
+        assert torch.allclose(out_x, dummy_tensor + 1)
