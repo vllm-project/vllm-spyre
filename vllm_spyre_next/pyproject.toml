@@ -78,9 +78,6 @@ override-dependencies = [
     "requests>=2.32.4",
 
 ]
-environments = [
-    "python_version > '3.9'"
-]
 # This adds constraints to all dependent build environments, which will ensure everything is built
 # with the same version of torch. This CANNOT conflict with a package's existing build dependencies
 build-constraint-dependencies = ["torch==2.10.0"]
