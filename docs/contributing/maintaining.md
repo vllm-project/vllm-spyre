@@ -17,8 +17,8 @@ To update the version of vLLM used by the plugin, the pyproject.toml needs to be
 2. [project.dependencies](https://github.com/vllm-project/vllm-spyre/blob/v2.0.0-rc.1/pyproject.toml#L16)
 
 !!! note
-We specify the source tag for vLLM here because we generally need to install vLLM from source to avoid
-pulling in the precompiled cuda kernels and cuda dependencies.
+    We specify the source tag for vLLM here because we generally need to install vLLM from source to avoid
+    pulling in the precompiled cuda kernels and cuda dependencies.
 
 Once the pyproject.toml is updated, the lockfile needs to be updated as well. The simplest way to do
 that is `uv sync`. More information about uv locking can be found [in the uv docs](https://docs.astral.sh/uv/concepts/projects/sync/).
@@ -80,9 +80,11 @@ Once the model is ready to run on spyre hardware, it can be added to vllm-spyre 
 1. Updating the [model loader code](https://github.com/vllm-project/vllm-spyre/blob/v2.0.0-rc.1/vllm_spyre/model_executor/model_loader/spyre.py#L109-L130) to allow the model architecture, making any necessary adjustments
 2. Adding working configuration overrides to the [model configs yaml](https://github.com/vllm-project/vllm-spyre/blob/v2.0.0-rc.1/vllm_spyre/config/model_configs.yaml)
 
+For multimodal models, see the docs on [adding multimodal models](./multimodal/adding_new_models.md)
+
 !!! note
-If model configurations are not applied properly, a common failure mode is that the device will run out of memory with `DtException: Need to find a valid memory space`.
-This is because we typically need to limit the KV cache size to be smaller than `max_num_seqs * max_model_len`, and accordingly we limit the maximum dynamic batch area with `VLLM_DT_MAX_BATCH_TKV_LIMIT` to avoid either running out of kv cache space or attempting to run a batch shape that the compiler did not compile for.
+    If model configurations are not applied properly, a common failure mode is that the device will run out of memory with `DtException: Need to find a valid memory space`.
+    This is because we typically need to limit the KV cache size to be smaller than `max_num_seqs * max_model_len`, and accordingly we limit the maximum dynamic batch area with `VLLM_DT_MAX_BATCH_TKV_LIMIT` to avoid either running out of kv cache space or attempting to run a batch shape that the compiler did not compile for.
 
 ### Pooling Models
 
