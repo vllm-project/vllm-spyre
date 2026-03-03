@@ -2,8 +2,8 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Pure PyTorch implementation of PagedAttention.
 
-This backend aims to implement PagedAttention using only PyTorch native operations, such as matmul, softmax, etc.
-It supports vLLM's KV cache.
+This backend aims to implement PagedAttention using only PyTorch native operations,
+such as matmul, softmax, etc. It supports vLLM's KV cache.
 """
 
 from dataclasses import dataclass
@@ -518,22 +518,23 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
         # Apply causal masking if needed
         if causal_mask is not None:
             # For causal masking, we need to mask based on token positions
-            # In compact representation, position i can only attend to positions <= i within the same sequence
+            # In compact representation, position i can only attend
+            # to positions <= i within the same sequence
 
-            # Create causal mask for each sequence
-            # [max_query_len, max_seq_len]
-            causal_pattern = (
-                query_positions[0:1, :, None]
-                + (seq_lens[0:1, None, None] - query_lens[0:1, None, None])
-                < kv_positions[0:1, None, :]
-            )
+            # # Create causal mask for each sequence
+            # # [max_query_len, max_seq_len]
+            # causal_pattern = (
+            #     query_positions[0:1, :, None]
+            #     + (seq_lens[0:1, None, None] - query_lens[0:1, None, None])
+            #     < kv_positions[0:1, None, :]
+            # )
 
             # Apply to all sequences
             for seq_idx in range(num_seqs):
                 q_start = seq_idx * max_query_len
-                q_end = q_start + query_lens[seq_idx]
+                # q_end = q_start + query_lens[seq_idx]
                 kv_start = seq_idx * max_seq_len
-                kv_end = kv_start + seq_lens[seq_idx]
+                # kv_end = kv_start + seq_lens[seq_idx]
 
                 # Create causal mask for this sequence
                 seq_query_len = query_lens[seq_idx]
@@ -544,7 +545,8 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
                 q_pos = torch.arange(seq_query_len, device=device)
                 kv_pos = torch.arange(seq_seq_len, device=device)
 
-                # Causal mask: query at position i can attend to kv at position j if j <= context_len + i
+                # Causal mask: query at position i can attend to kv
+                # at position j if j <= context_len + i
                 causal_seq_mask = kv_pos[None, :] > (context_len + q_pos[:, None])
 
                 # Apply to global mask
