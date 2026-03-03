@@ -342,19 +342,19 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Gather only the relevant KV cache entries into compact tensors.
-        
+
         This method creates contiguous tensors containing only the KV entries
         that are actually used by the sequences in the batch, significantly
         reducing memory footprint and computation compared to using the full cache.
-        
+
         Vectorized implementation without .item() calls for torch.compile compatibility.
-        
+
         Args:
             kv_cache: [2, num_blocks, block_size, num_kv_heads, head_size]
             block_table: [num_seqs, max_num_blocks_per_seq]
             seq_lens: [num_seqs]
             block_size: int
-            
+
         Returns:
             compact_k: [num_seqs, max_seq_len, num_kv_heads, head_size]
             compact_v: [num_seqs, max_seq_len, num_kv_heads, head_size]
@@ -365,120 +365,74 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
         head_size = kv_cache.shape[4]
         device = kv_cache.device
         dtype = kv_cache.dtype
-        
+
         key_cache = kv_cache[0]  # [num_blocks, block_size, num_kv_heads, head_size]
         value_cache = kv_cache[1]
-        
+
         # Allocate compact tensors
         compact_k = torch.zeros(
-            num_seqs, max_seq_len, num_kv_heads, head_size,
-            dtype=dtype, device=device
+            num_seqs, max_seq_len, num_kv_heads, head_size, dtype=dtype, device=device
         )
         compact_v = torch.zeros(
-            num_seqs, max_seq_len, num_kv_heads, head_size,
-            dtype=dtype, device=device
+            num_seqs, max_seq_len, num_kv_heads, head_size, dtype=dtype, device=device
         )
-        
+
         # Vectorized gathering using advanced indexing
         # Create position indices for all sequences
         # [num_seqs, max_seq_len]
-        position_indices = torch.arange(max_seq_len, device=device).unsqueeze(0).expand(num_seqs, -1)
-        
+        position_indices = (
+            torch.arange(max_seq_len, device=device).unsqueeze(0).expand(num_seqs, -1)
+        )
+
         # Calculate which block each position belongs to
         # [num_seqs, max_seq_len]
         block_indices = position_indices // block_size
         offset_in_block = position_indices % block_size
-        
+
         # Get physical block numbers from block table
         # [num_seqs, max_seq_len]
         max_blocks_per_seq = block_table.shape[1]
         block_indices_clamped = torch.clamp(block_indices, 0, max_blocks_per_seq - 1)
         physical_blocks = block_table.gather(1, block_indices_clamped)
-        
+
         # Create mask for valid positions (within sequence length)
         # [num_seqs, max_seq_len]
         valid_mask = position_indices < seq_lens.unsqueeze(1)
-        
+
         # Gather from cache using advanced indexing
         # We need to handle this carefully to avoid out-of-bounds access
         # For invalid positions, we'll use block 0 (which should be zeros or unused)
-        physical_blocks_safe = torch.where(valid_mask, physical_blocks, torch.zeros_like(physical_blocks))
-        offset_in_block_safe = torch.where(valid_mask, offset_in_block, torch.zeros_like(offset_in_block))
-        
+        physical_blocks_safe = torch.where(
+            valid_mask, physical_blocks, torch.zeros_like(physical_blocks)
+        )
+        offset_in_block_safe = torch.where(
+            valid_mask, offset_in_block, torch.zeros_like(offset_in_block)
+        )
+
         # Reshape for gathering: [num_seqs * max_seq_len]
         flat_physical_blocks = physical_blocks_safe.reshape(-1)
         flat_offsets = offset_in_block_safe.reshape(-1)
-        
+
         # Gather keys and values
         # key_cache shape: [num_blocks, block_size, num_kv_heads, head_size]
-        gathered_k = key_cache[flat_physical_blocks, flat_offsets]  # [num_seqs * max_seq_len, num_kv_heads, head_size]
+        gathered_k = key_cache[
+            flat_physical_blocks, flat_offsets
+        ]  # [num_seqs * max_seq_len, num_kv_heads, head_size]
         gathered_v = value_cache[flat_physical_blocks, flat_offsets]
-        
+
         # Reshape back to [num_seqs, max_seq_len, num_kv_heads, head_size]
         compact_k = gathered_k.reshape(num_seqs, max_seq_len, num_kv_heads, head_size)
         compact_v = gathered_v.reshape(num_seqs, max_seq_len, num_kv_heads, head_size)
-        
+
         # Zero out invalid positions (optional, but cleaner)
-        valid_mask_expanded = valid_mask.unsqueeze(-1).unsqueeze(-1)  # [num_seqs, max_seq_len, 1, 1]
+        valid_mask_expanded = valid_mask.unsqueeze(-1).unsqueeze(
+            -1
+        )  # [num_seqs, max_seq_len, 1, 1]
         compact_k = compact_k * valid_mask_expanded
         compact_v = compact_v * valid_mask_expanded
-        
+
         return compact_k, compact_v
 
-    def _gather_block_mask(
-        self,
-        kv_cache: torch.Tensor,
-        block_table: torch.Tensor,
-        seq_lens: torch.Tensor,
-        causal_mask: torch.Tensor,
-        slot_mapping: torch.Tensor,
-        query_start_loc: torch.Tensor,
-        block_size: int,
-        num_heads: int,
-    ) -> torch.Tensor:
-        """Gather keys or values from paged KV cache."""
-
-        num_seqs = block_table.shape[0]
-        num_blocks, block_size, num_kv_heads, head_size = kv_cache.shape[1:]
-
-        num_tokens_per_sequence = [
-            query_start_loc[i + 1] - query_start_loc[i] for i in range(len(query_start_loc) - 1)
-        ]
-        max_num_tokens_per_sequence = torch.max(torch.stack(num_tokens_per_sequence))
-
-        # Initialize output tensor
-        block_mask = torch.ones(
-            num_seqs * max_num_tokens_per_sequence,
-            num_blocks * block_size,
-            dtype=torch.bool,
-            device=kv_cache.device,
-        )
-
-        # Gather tokens for each sequence
-        for seq_idx in range(num_seqs):
-            seq_remainder = seq_lens[seq_idx] % block_size
-            for bl_ind, bl in enumerate(block_table[seq_idx]):
-                seq_len_curr_block = min(seq_lens[seq_idx] - bl_ind * block_size, block_size)
-                max_bl_ind = (seq_lens[seq_idx] // block_size) + (
-                    1 if seq_lens[seq_idx] % block_size else 0
-                )
-                if bl_ind < max_bl_ind:
-                    block_mask[
-                        seq_idx * max_num_tokens_per_sequence : (seq_idx + 1)
-                        * max_num_tokens_per_sequence,
-                        bl * block_size : bl * block_size + seq_len_curr_block,
-                    ] = 0
-
-            if causal_mask is not None:
-                for token_nr in range(num_tokens_per_sequence[seq_idx] - 1):
-                    slot_for_write = slot_mapping[query_start_loc[seq_idx] + 1 + token_nr :]
-                    block_mask[seq_idx * max_num_tokens_per_sequence + token_nr, slot_for_write] = 1
-
-        block_mask = block_mask.unsqueeze(0).unsqueeze(0)
-        block_mask = block_mask.expand(-1, num_heads, -1, -1)
-
-        return block_mask
-    
     def _create_compact_mask(
         self,
         seq_lens: torch.Tensor,
@@ -493,9 +447,9 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
     ) -> torch.Tensor:
         """
         Create attention mask for compact KV cache.
-        
+
         Vectorized implementation without .item() calls for torch.compile compatibility.
-        
+
         Args:
             seq_lens: [num_seqs] - actual sequence lengths
             query_start_loc: [num_seqs + 1] - cumulative query positions
@@ -506,18 +460,18 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
             num_heads: int
             max_seq_len: tensor - maximum sequence length in batch
             device: torch device
-            
+
         Returns:
             mask: [1, num_heads, num_seqs * max_query_len, num_seqs * max_seq_len]
                   True = masked out, False = attend
         """
         num_seqs = seq_lens.shape[0]
-        
+
         # Calculate query lengths for each sequence
         # [num_seqs]
         query_lens = query_start_loc[1:] - query_start_loc[:-1]
         max_query_len = query_lens.max()
-        
+
         # Initialize mask (True = masked out)
         # [num_seqs * max_query_len, num_seqs * max_seq_len]
         compact_mask = torch.ones(
@@ -526,70 +480,82 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
             dtype=torch.bool,
             device=device,
         )
-        
+
         # Create position indices
         # [num_seqs, max_query_len]
-        query_positions = torch.arange(max_query_len, device=device).unsqueeze(0).expand(num_seqs, -1)
+        query_positions = (
+            torch.arange(max_query_len, device=device).unsqueeze(0).expand(num_seqs, -1)
+        )
         # [num_seqs, max_seq_len]
         kv_positions = torch.arange(max_seq_len, device=device).unsqueeze(0).expand(num_seqs, -1)
-        
+
         # Create validity masks
         # [num_seqs, max_query_len]
         query_valid = query_positions < query_lens.unsqueeze(1)
         # [num_seqs, max_seq_len]
         kv_valid = kv_positions < seq_lens.unsqueeze(1)
-        
+
         # Create global indices for mask
         # [num_seqs, max_query_len]
-        query_global_idx = torch.arange(num_seqs, device=device).unsqueeze(1) * max_query_len + query_positions
+        query_global_idx = (
+            torch.arange(num_seqs, device=device).unsqueeze(1) * max_query_len + query_positions
+        )
         # [num_seqs, max_seq_len]
-        kv_global_idx = torch.arange(num_seqs, device=device).unsqueeze(1) * max_seq_len + kv_positions
-        
+        kv_global_idx = (
+            torch.arange(num_seqs, device=device).unsqueeze(1) * max_seq_len + kv_positions
+        )
+
         # Unmask valid positions
         # [num_seqs, max_query_len, max_seq_len]
         valid_mask_3d = query_valid.unsqueeze(2) & kv_valid.unsqueeze(1)
-        
+
         # Flatten to 2D indices
         query_flat = query_global_idx.unsqueeze(2).expand(-1, -1, max_seq_len)[valid_mask_3d]
         kv_flat = kv_global_idx.unsqueeze(1).expand(-1, max_query_len, -1)[valid_mask_3d]
-        
+
         compact_mask[query_flat, kv_flat] = False
-        
+
         # Apply causal masking if needed
         if causal_mask is not None:
             # For causal masking, we need to mask based on token positions
             # In compact representation, position i can only attend to positions <= i within the same sequence
-            
+
             # Create causal mask for each sequence
             # [max_query_len, max_seq_len]
-            causal_pattern = query_positions[0:1, :, None] + (seq_lens[0:1, None, None] - query_lens[0:1, None, None]) < kv_positions[0:1, None, :]
-            
+            causal_pattern = (
+                query_positions[0:1, :, None]
+                + (seq_lens[0:1, None, None] - query_lens[0:1, None, None])
+                < kv_positions[0:1, None, :]
+            )
+
             # Apply to all sequences
             for seq_idx in range(num_seqs):
                 q_start = seq_idx * max_query_len
                 q_end = q_start + query_lens[seq_idx]
                 kv_start = seq_idx * max_seq_len
                 kv_end = kv_start + seq_lens[seq_idx]
-                
+
                 # Create causal mask for this sequence
                 seq_query_len = query_lens[seq_idx]
                 seq_seq_len = seq_lens[seq_idx]
                 context_len = seq_seq_len - seq_query_len
-                
+
                 # Query position i (relative) can attend to KV positions 0 to context_len + i
                 q_pos = torch.arange(seq_query_len, device=device)
                 kv_pos = torch.arange(seq_seq_len, device=device)
-                
+
                 # Causal mask: query at position i can attend to kv at position j if j <= context_len + i
                 causal_seq_mask = kv_pos[None, :] > (context_len + q_pos[:, None])
-                
+
                 # Apply to global mask
-                compact_mask[q_start:q_start + seq_query_len, kv_start:kv_start + seq_seq_len] |= causal_seq_mask
-        
+                compact_mask[
+                    q_start : q_start + seq_query_len, kv_start : kv_start + seq_seq_len
+                ] |= causal_seq_mask
+
         # Expand for batch and heads
         compact_mask = compact_mask.unsqueeze(0).unsqueeze(0)
         compact_mask = compact_mask.expand(-1, num_heads, -1, -1)
-        
+
         return compact_mask
 
     def _extract_relevant_output(
@@ -622,7 +588,7 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
     ) -> torch.Tensor:
         """
         Reshape query from flat tokens to per-sequence format.
-        
+
         Vectorized implementation without .item() calls for torch.compile compatibility.
         """
 
@@ -643,28 +609,32 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
         # Calculate query lengths for each sequence
         # [num_seqs]
         query_lens = query_start_loc[1:] - query_start_loc[:-1]
-        
+
         # Create indices for gathering
         # [num_seqs, max_query_len]
-        position_indices = torch.arange(max_query_len, device=device).unsqueeze(0).expand(num_seqs, -1)
-        
+        position_indices = (
+            torch.arange(max_query_len, device=device).unsqueeze(0).expand(num_seqs, -1)
+        )
+
         # Calculate global indices in the flat query tensor
         # [num_seqs, max_query_len]
         global_indices = query_start_loc[:-1].unsqueeze(1) + position_indices
-        
+
         # Create mask for valid positions
         # [num_seqs, max_query_len]
         valid_mask = position_indices < query_lens.unsqueeze(1)
-        
+
         # Clamp indices to avoid out-of-bounds (invalid positions will be masked anyway)
         global_indices_clamped = torch.clamp(global_indices, 0, query.shape[0] - 1)
-        
+
         # Gather queries
         # [num_seqs, max_query_len, num_heads, head_size]
         query_per_seq = query[global_indices_clamped]
-        
+
         # Zero out invalid positions
-        valid_mask_expanded = valid_mask.unsqueeze(-1).unsqueeze(-1)  # [num_seqs, max_query_len, 1, 1]
+        valid_mask_expanded = valid_mask.unsqueeze(-1).unsqueeze(
+            -1
+        )  # [num_seqs, max_query_len, 1, 1]
         query_per_seq = query_per_seq * valid_mask_expanded
 
         return query_per_seq
