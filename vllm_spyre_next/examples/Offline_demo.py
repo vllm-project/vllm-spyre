@@ -8,7 +8,6 @@ from vllm.config import AttentionConfig
 def print_outputs(outputs, engine):
     print("-" * 50)
     for output in outputs:
-        prompt = output.prompt
         generated_text = output.outputs[0].text
         print(f"Generated text: {generated_text!r}")
         print("-" * 50)
@@ -38,13 +37,20 @@ def main():
 
     engine = LLM(
         model=MODEL,  # Model to use for inference.
-        gpu_memory_utilization=0.9,  # By increasing utilization, you can provide more KV cache space.
-        enable_prefix_caching=True,  # Flag determining whether prefix caching is enabled or disabled.
-        # enforce_eager=True,              # Flag determining whether eager mode or torch.compile should be used.
-        # mamba_ssm_cache_dtype="float32", # Datatype of the mamba cache (if any).
-        # dtype="float32",                 # Datatype of the model.
-        # max_num_batched_tokens=8192,    # Maximum number of tokens for a prefill before being chunked
-        # disable_cascade_attn=True,  ## compliates logic with mamba
+        # By increasing utilization, you can provide more KV cache space.
+        gpu_memory_utilization=0.9,
+        # Flag determining whether prefix caching is enabled or disabled.
+        enable_prefix_caching=True,
+        # # Flag determining whether eager mode or torch.compile should be used.
+        # enforce_eager=True,
+        # # Datatype of the mamba cache (if any).
+        # mamba_ssm_cache_dtype="float32",
+        # # Datatype of the model.
+        # dtype="float32",
+        # # Maximum number of tokens for a prefill before being chunked
+        # max_num_batched_tokens=8192,
+        # # compliates logic with mamba
+        # disable_cascade_attn=True,
         disable_log_stats=False,  ## stats
         attention_config=AttentionConfig(backend=AttentionBackendEnum.CUSTOM),
     )
