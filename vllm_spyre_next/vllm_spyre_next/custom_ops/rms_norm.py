@@ -124,8 +124,10 @@ class SpyreRMSNorm(RMSNorm):
             # increasing memory usage (and complicating pattern matching)
             x = x + residual
             # residual = x.to(orig_dtype)
-        
-        x = torch.nn.functional.rms_norm(x, normalized_shape=[x.shape[-1]], weight=weight, eps=variance_epsilon)
+
+        x = torch.nn.functional.rms_norm(
+            x, normalized_shape=[x.shape[-1]], weight=weight, eps=variance_epsilon
+        )
 
         if residual is None:
             return x
