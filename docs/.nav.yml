@@ -18,6 +18,7 @@ nav:
       - Supported Models: user_guide/supported_models.md
     - Developer Guide:
       - Contributing: contributing/README.md
+      - Maintaining: contributing/maintaining.md
       - Architecture: contributing/architecture.md
       - MultiModal:
         - Adding New Models: contributing/multimodal/adding_new_models.md
