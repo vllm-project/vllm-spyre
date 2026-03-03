@@ -9,6 +9,8 @@ The torch.compile backend can be configured with the `VLLM_SPYRE_DYNAMO_BACKEND`
 All models can be tested on CPU by setting this to `eager`.
 To run inference on IBM Spyre Accelerators, this should be set to `sendnn`.
 
+For systems with no IBM Spyre Accelerators, this can be set to `sendnn_compile_only` to use the same stack as the `sendnn` backend on CPU in order to create compilation artifacts usable by IBM Spyre Accelerators with the `sendnn` backend.
+
 Support for the vLLM v0 backend has been removed, only the vLLM v1 backend is supported.
 
 ## Generative Models
