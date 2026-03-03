@@ -50,6 +50,8 @@ _templates:
 
   mistral3_24b_architecture: &mistral3_24b_architecture
     model_type: pixtral
+    # NB: vLLM remaps multimodal mistral configs while loading and updates the model_type from "mistral3" to "pixtral"
+    # see: https://github.com/vllm-project/vllm/blob/v0.16.0/vllm/transformers_utils/configs/mistral.py#L100
     text_config:
       num_hidden_layers: 40
       max_position_embeddings: 131072
