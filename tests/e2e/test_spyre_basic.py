@@ -200,3 +200,46 @@ def test_max_model_len_override(model: ModelInfo, backend, warmup_shapes, mode: 
         )
     else:
         assert model_config.max_model_len == max_model_len
+
+
+# Use a single model/backend combination to minimize test time
+@pytest.mark.parametrize(
+    "model",
+    [
+        pytest.param(
+            ModelInfo(
+                name="ibm-ai-platform/micro-g3.3-8b-instruct-1b",
+                revision="6e9c6465a9d7e5e9fa35004a29f0c90befa7d23f",
+            ),
+            id="micro-g3.3-8b",
+        )
+    ],
+)
+@pytest.mark.parametrize("backend", [pytest.param("eager", id="eager")])
+def test_trust_remote_code(model: ModelInfo, backend: str, monkeypatch: pytest.MonkeyPatch):
+    """Test that trust_remote_code=True works correctly.
+
+    This test ensures backwards compatibility with Hugging Face's
+    trust_remote_code setting across different vLLM versions.
+    """
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+
+    # Create engine with trust_remote_code=True
+    vllm_config = EngineArgs(
+        model=model.name,
+        revision=model.revision,
+        trust_remote_code=True,
+    ).create_engine_config()
+
+    # Verify the config was set correctly
+    assert vllm_config.model_config.trust_remote_code is True
+
+    # Initialize executor to trigger worker initialization
+    # This will exercise the trust_remote_code handling code in spyre_worker.py
+    executor_class = Executor.get_class(vllm_config)
+    engine_core = EngineCore(
+        vllm_config=vllm_config, executor_class=executor_class, log_stats=False
+    )
+
+    # If we got here without errors, the trust_remote_code path worked
+    assert engine_core is not None

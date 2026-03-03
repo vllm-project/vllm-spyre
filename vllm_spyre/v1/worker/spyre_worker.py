@@ -288,10 +288,18 @@ class SpyreWorker(WorkerBase):
             try:
                 # pre 0.11.1 compatibility
                 from vllm.utils import init_cached_hf_modules  # ty: ignore[unresolved-import]
-            except ImportError:
-                from vllm.utils.import_utils import init_cached_hf_modules  # ty: ignore[unresolved-import]
 
-            init_cached_hf_modules()
+                init_cached_hf_modules()
+            except ImportError:
+                # 0.11.1 to 0.13.0 compatibility
+                try:
+                    from vllm.utils.import_utils import init_cached_hf_modules  # ty: ignore[unresolved-import]
+
+                    init_cached_hf_modules()
+                except ImportError:
+                    # >=0.14.0, init_cached_hf_modules is no longer needed
+                    pass
+
         self.model_runner: Union[
             StaticBatchingSpyreModelRunner,
             ContinuousBatchingSpyreModelRunner,
