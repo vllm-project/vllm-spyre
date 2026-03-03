@@ -516,16 +516,13 @@ class SpyreModelRunner(
 
             # Compute prompt logprobs.
             logprobs = self.model.sampler.compute_logprobs(logits)
-            token_ids, logprobs, ranks = self.model.sampler.gather_logprobs(
-                logprobs, num_prompt_logprobs, tgt_token_ids
-            )
-
             # To support chunked prefill, we will need to copy the chunks into
             # saved state at each iteration.
             # For now, we can just return the full tensors.
-            logprobs_tensors = LogprobsTensors(
-                logprob_token_ids=token_ids, logprobs=logprobs, selected_token_ranks=ranks
+            logprobs_tensors = self.model.sampler.gather_logprobs(
+                logprobs, num_prompt_logprobs, tgt_token_ids
             )
+
             prompt_logprobs_dict[req_id] = logprobs_tensors
 
         return prompt_logprobs_dict

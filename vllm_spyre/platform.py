@@ -31,11 +31,20 @@ if TYPE_CHECKING:
     from vllm.config import ModelConfig, VllmConfig
     from vllm.pooling_params import PoolingParams
     from vllm.sampling_params import SamplingParams
+
+    # Try to import new types (0.16.0+)
+    try:
+        from vllm.renderers.inputs import DictPrompt, TokPrompt
+    except ImportError:
+        DictPrompt = None  # type: ignore
+        TokPrompt = None  # type: ignore
 else:
     ModelConfig = None
     VllmConfig = None
     SamplingParams = None
     PoolingParams = None
+    DictPrompt = None
+    TokPrompt = None
 from vllm.platforms import Platform, PlatformEnum
 
 import vllm_spyre.envs as envs_spyre
@@ -424,7 +433,7 @@ class SpyrePlatform(Platform):
     @classmethod
     def validate_request(
         cls,
-        prompt: PromptType,
+        prompt: "PromptType | DictPrompt | TokPrompt",
         params: Union[SamplingParams, PoolingParams],
         processed_inputs: ProcessorInputs | None = None,
     ) -> None:
