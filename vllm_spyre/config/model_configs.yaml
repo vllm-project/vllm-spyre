@@ -48,6 +48,31 @@ _templates:
       torch_sendnn_lt_1_0_3: 2080
       default: 8192
 
+  mistral3_24b_architecture: &mistral3_24b_architecture
+    model_type: pixtral
+    # NB: vLLM remaps multimodal mistral configs while loading and updates the model_type from "mistral3" to "pixtral"
+    # see: https://github.com/vllm-project/vllm/blob/v0.16.0/vllm/transformers_utils/configs/mistral.py#L100
+    text_config:
+      num_hidden_layers: 40
+      max_position_embeddings: 131072
+      hidden_size: 5120
+      vocab_size: 131072
+      num_key_value_heads: 8
+      num_attention_heads: 32
+    vision_config:
+      num_hidden_layers: 24
+      hidden_size: 1024
+      num_attention_heads: 16
+
+  # device config for TP=4 mistral3 24b models
+  mistral3_24b_tp4_device_config: &mistral3_24b_tp4_device_config
+    env_vars:
+      VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072  # 128k
+      FLEX_HDMA_P2PSIZE: 268435456  # 256MB
+      FLEX_HDMA_COLLSIZE: 33554432  # 32MB
+    num_gpu_blocks_override:
+      default: 8192
+
 models:
   # Granite 3.3 8B Instruct
   ibm-granite/granite-3.3-8b-instruct:
@@ -133,6 +158,18 @@ models:
         max_model_len: 32768
         max_num_seqs: 32
         device_config: *granite_8b_tp4_device_config
+
+  # Mistral Small 3.2 24B Instruct
+  mistralai/Mistral-Small-3.2-24B-Instruct-2506:
+    architecture: *mistral3_24b_architecture
+    continuous_batching_configs:
+      - tp_size: 2
+        max_model_len: 8192
+        max_num_seqs: 32
+      - tp_size: 4
+        max_model_len: 32768
+        max_num_seqs: 32
+        device_config: *mistral3_24b_tp4_device_config
 
   # Embedding models (static batching only, no device configs needed)
   ibm-granite/granite-embedding-125m-english:
