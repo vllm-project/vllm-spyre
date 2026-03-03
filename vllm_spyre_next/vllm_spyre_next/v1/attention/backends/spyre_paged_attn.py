@@ -254,20 +254,26 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
             attn_metadata.block_size,
         )
 
-        # Step 2: Gather keys and values from blocks
-        key_cache = kv_cache[0]
-        value_cache = kv_cache[1]
-
-        # Step 3: Compute block mask for KV cache
-        block_mask = self._gather_block_mask(
+        # Step 2: Gather compact KV cache (only relevant entries)
+        compact_k, compact_v = self._gather_compact_kv_cache(
             kv_cache,
             attn_metadata.block_table,
             attn_metadata.seq_lens,
-            attn_metadata.causal_mask,
-            attn_metadata.slot_mapping,
+            attn_metadata.block_size,
+        )
+
+        # Step 3: Create attention mask for compact KV cache
+        max_seq_len = attn_metadata.seq_lens.max().item()
+        compact_mask = self._create_compact_mask(
+            attn_metadata.seq_lens,
             attn_metadata.query_start_loc,
+            attn_metadata.slot_mapping,
+            attn_metadata.causal_mask,
+            attn_metadata.block_table,
             attn_metadata.block_size,
             query.shape[1],
+            max_seq_len,
+            kv_cache.device,
         )
 
         # Step 4: Prepare query tensor
@@ -278,16 +284,16 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
             attn_metadata.max_query_len,
         )
 
-        # Step 4: Compute attention
+        # Step 5: Compute attention with compact KV cache
         attn_output = self._compute_attention(
             query_per_seq.reshape(1, -1, query.shape[1], query.shape[2]),
-            key_cache.reshape(1, -1, key.shape[1], key.shape[2]),
-            value_cache.reshape(1, -1, key.shape[1], key.shape[2]),
+            compact_k.reshape(1, -1, compact_k.shape[2], compact_k.shape[3]),
+            compact_v.reshape(1, -1, compact_v.shape[2], compact_v.shape[3]),
             attn_metadata,
-            block_mask=block_mask,
+            block_mask=compact_mask,
         )
 
-        # Step 5: Extract only relevant tokens
+        # Step 6: Extract only relevant tokens
         attn_output = self._extract_relevant_output(
             attn_output,
             attn_metadata.query_start_loc,
@@ -320,10 +326,80 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
 
         # Write keys and values using advanced indexing
         for i in range(num_tokens):
-            block_idx = block_indices[i].item()
-            offset = block_offsets[i].item()
+            # block_idx = block_indices[i].item()
+            block_idx = block_indices[i]
+            # offset = block_offsets[i].item()
+            offset = block_offsets[i]
             key_cache[block_idx, offset] = key[i]
             value_cache[block_idx, offset] = value[i]
+
+    def _gather_compact_kv_cache(
+        self,
+        kv_cache: torch.Tensor,
+        block_table: torch.Tensor,
+        seq_lens: torch.Tensor,
+        block_size: int,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Gather only the relevant KV cache entries into compact tensors.
+        
+        This method creates contiguous tensors containing only the KV entries
+        that are actually used by the sequences in the batch, significantly
+        reducing memory footprint and computation compared to using the full cache.
+        
+        Args:
+            kv_cache: [2, num_blocks, block_size, num_kv_heads, head_size]
+            block_table: [num_seqs, max_num_blocks_per_seq]
+            seq_lens: [num_seqs]
+            block_size: int
+            
+        Returns:
+            compact_k: [num_seqs, max_seq_len, num_kv_heads, head_size]
+            compact_v: [num_seqs, max_seq_len, num_kv_heads, head_size]
+        """
+        num_seqs = block_table.shape[0]
+        max_seq_len = seq_lens.max().item()
+        num_kv_heads = kv_cache.shape[3]
+        head_size = kv_cache.shape[4]
+        device = kv_cache.device
+        dtype = kv_cache.dtype
+        
+        key_cache = kv_cache[0]  # [num_blocks, block_size, num_kv_heads, head_size]
+        value_cache = kv_cache[1]
+        
+        # Allocate compact tensors
+        compact_k = torch.zeros(
+            num_seqs, max_seq_len, num_kv_heads, head_size,
+            dtype=dtype, device=device
+        )
+        compact_v = torch.zeros(
+            num_seqs, max_seq_len, num_kv_heads, head_size,
+            dtype=dtype, device=device
+        )
+        
+        # Gather KV entries for each sequence
+        for seq_idx in range(num_seqs):
+            seq_len = seq_lens[seq_idx].item()
+            num_blocks_needed = (seq_len + block_size - 1) // block_size
+            
+            for block_idx in range(num_blocks_needed):
+                # Get physical block index from block table
+                physical_block = block_table[seq_idx, block_idx].item()
+                
+                # Calculate how many tokens to copy from this block
+                start_pos = block_idx * block_size
+                end_pos = min(start_pos + block_size, seq_len)
+                tokens_in_block = end_pos - start_pos
+                
+                # Copy tokens from physical block to compact tensor
+                compact_k[seq_idx, start_pos:end_pos] = key_cache[
+                    physical_block, :tokens_in_block
+                ]
+                compact_v[seq_idx, start_pos:end_pos] = value_cache[
+                    physical_block, :tokens_in_block
+                ]
+        
+        return compact_k, compact_v
 
     def _gather_block_mask(
         self,
@@ -378,6 +454,105 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
         block_mask = block_mask.expand(-1, num_heads, -1, -1)
 
         return block_mask
+    
+    def _create_compact_mask(
+        self,
+        seq_lens: torch.Tensor,
+        query_start_loc: torch.Tensor,
+        slot_mapping: torch.Tensor,
+        causal_mask: torch.Tensor,
+        block_table: torch.Tensor,
+        block_size: int,
+        num_heads: int,
+        max_seq_len: int,
+        device: torch.device,
+    ) -> torch.Tensor:
+        """
+        Create attention mask for compact KV cache.
+        
+        This mask works with the compact KV representation where tokens are
+        arranged sequentially per sequence, rather than scattered across blocks.
+        
+        Args:
+            seq_lens: [num_seqs] - actual sequence lengths
+            query_start_loc: [num_seqs + 1] - cumulative query positions
+            slot_mapping: [num_actual_tokens] - maps tokens to cache slots
+            causal_mask: bool tensor or None
+            block_table: [num_seqs, max_num_blocks_per_seq]
+            block_size: int
+            num_heads: int
+            max_seq_len: int - maximum sequence length in batch
+            device: torch device
+            
+        Returns:
+            mask: [1, num_heads, num_seqs * max_query_len, num_seqs * max_seq_len]
+                  True = masked out, False = attend
+        """
+        num_seqs = seq_lens.shape[0]
+        
+        num_tokens_per_sequence = [
+            query_start_loc[i + 1] - query_start_loc[i] for i in range(len(query_start_loc) - 1)
+        ]
+        max_num_tokens_per_sequence = torch.max(torch.stack(num_tokens_per_sequence))
+        
+        # Initialize mask (True = masked out)
+        compact_mask = torch.ones(
+            num_seqs * max_num_tokens_per_sequence,
+            num_seqs * max_seq_len,
+            dtype=torch.bool,
+            device=device,
+        )
+        
+        # Mark valid KV positions for each sequence
+        for seq_idx in range(num_seqs):
+            seq_len = seq_lens[seq_idx].item()
+            query_len = num_tokens_per_sequence[seq_idx].item()
+            
+            # Unmask valid KV positions (all positions up to seq_len)
+            compact_mask[
+                seq_idx * max_num_tokens_per_sequence : seq_idx * max_num_tokens_per_sequence + query_len,
+                seq_idx * max_seq_len : seq_idx * max_seq_len + seq_len,
+            ] = 0
+            
+            # Apply causal masking if needed
+            if causal_mask is not None:
+                # For each query token, mask out future KV tokens
+                # We need to map from compact KV positions back to slot indices
+                # to determine which tokens are "future" relative to each query
+                
+                # Build mapping from compact position to slot index for this sequence
+                compact_to_slot = torch.zeros(seq_len, dtype=torch.long, device=device)
+                for block_idx in range((seq_len + block_size - 1) // block_size):
+                    physical_block = block_table[seq_idx, block_idx].item()
+                    start_pos = block_idx * block_size
+                    end_pos = min(start_pos + block_size, seq_len)
+                    tokens_in_block = end_pos - start_pos
+                    
+                    # Map compact positions to slot indices
+                    for i in range(tokens_in_block):
+                        compact_pos = start_pos + i
+                        slot_idx = physical_block * block_size + i
+                        compact_to_slot[compact_pos] = slot_idx
+                
+                # For each query token, mask future tokens based on slot_mapping
+                for token_nr in range(query_len - 1):
+                    query_global_idx = query_start_loc[seq_idx].item() + 1 + token_nr
+                    # Get slots that will be written by future tokens
+                    future_slots = slot_mapping[query_global_idx:]
+                    
+                    # Find which compact positions correspond to these future slots
+                    for kv_pos in range(seq_len):
+                        if compact_to_slot[kv_pos] in future_slots:
+                            compact_mask[
+                                seq_idx * max_num_tokens_per_sequence + token_nr,
+                                seq_idx * max_seq_len + kv_pos
+                            ] = 1
+        
+        # Expand for batch and heads
+        compact_mask = compact_mask.unsqueeze(0).unsqueeze(0)
+        compact_mask = compact_mask.expand(-1, num_heads, -1, -1)
+        
+        return compact_mask
 
     def _extract_relevant_output(
         self,
