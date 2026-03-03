@@ -11,7 +11,7 @@ When a new version of vLLM is released, the plugin usually needs to be updated t
 
 ### Updating vLLM version
 
-To update the version of vLLM used by the plugin, the pyproject.toml needs to be udpated in two places:
+To update the version of vLLM used by the plugin, the pyproject.toml needs to be updated in two places:
 
 1. [tool.uv.sources.vllm](https://github.com/vllm-project/vllm-spyre/blob/v2.0.0-rc.1/pyproject.toml#L79)
 2. [project.dependencies](https://github.com/vllm-project/vllm-spyre/blob/v2.0.0-rc.1/pyproject.toml#L16)
