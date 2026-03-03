@@ -39,8 +39,10 @@ version_file = "vllm_spyre_next/_version.py"
 # Local versioning is incompatible with pypi, so we disable it by default.
 local_scheme = "no-local-version"
 root = ".."
-# For more version configuration, see 
-# https://setuptools-scm.readthedocs.io/en/latest/config/
+# Only match spyre-next-vX.Y.Z tags (with optional SemVer pre-release suffix), ignoring v* tags used by vllm-spyre.
+# SemVer pre-release format: hyphen followed by dot-separated identifiers (alphanumeric + hyphens)
+tag_regex = "^spyre-next-v(?P<version>[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?)$"
+git_describe_command = "git describe --dirty --tags --long --match 'spyre-next-v*'"
 
 
 [tool.uv]
