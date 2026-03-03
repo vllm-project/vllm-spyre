@@ -50,10 +50,8 @@ override-dependencies = [
     "intel-extension-for-pytorch; sys_platform == 'never'",
     
     # This torch version must match the one below in `build-constraint-dependencies`
-    "torch==2.10.0",
-
     # Skip packages on s390x and ppc64le, expected to be pre-installed
-    "torch ; platform_machine not in 's390x, ppc64le'",
+    "torch==2.10.0 ; platform_machine not in 's390x, ppc64le'",
     "vllm ; platform_machine not in 's390x, ppc64le'",
     "ray; platform_machine not in 's390x, ppc64le'",
     "llvmlite; platform_machine not in 's390x, ppc64le'",
