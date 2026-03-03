@@ -350,7 +350,7 @@ class SpyreWorker(WorkerBase):
         if importlib.util.find_spec("vllm.profiler.wrapper") is None:
             return self._setup_legacy_profiler()
 
-        if envs.VLLM_TORCH_PROFILER_DIR is not None:
+        if getattr(envs, "VLLM_TORCH_PROFILER_DIR", None) is not None:
             logger.warning_once(
                 "VLLM_TORCH_PROFILER_* env vars are deprecated. "
                 "Switch to --profiler-config based configuration"
