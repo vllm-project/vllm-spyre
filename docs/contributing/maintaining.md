@@ -89,7 +89,7 @@ For multimodal models, see the docs on [adding multimodal models](./multimodal/a
 ### Pooling Models
 
 Pooling models all use hf transformers code, and compile for static batch shapes.
-Simply try one out, and if it works, record the working configuration in the model configs ymal.
+Simply try one out, and if it works, record the working configuration in the model configs yaml.
 
 We don't have any guidance available for enabling pooling models if they do not compile successfully.
 
