@@ -13,10 +13,9 @@ if sys.platform.startswith("darwin"):
 import math
 import operator
 import os
-from typing import TYPE_CHECKING, Union, cast
+from typing import TYPE_CHECKING, cast
 
 import torch
-from vllm.inputs import ProcessorInputs, PromptType, TokenInputs
 from vllm.logger import init_logger
 
 try:
@@ -31,6 +30,7 @@ if TYPE_CHECKING:
     from vllm.config import ModelConfig, VllmConfig
     from vllm.pooling_params import PoolingParams
     from vllm.sampling_params import SamplingParams
+    from vllm.inputs import ProcessorInputs, PromptType, TokenInputs
 
     # Try to import new types (0.16.0+)
     try:
@@ -43,6 +43,9 @@ else:
     VllmConfig = None
     SamplingParams = None
     PoolingParams = None
+    ProcessorInputs = None
+    PromptType = None
+    TokenInputs = None
     DictPrompt = None
     TokPrompt = None
 from vllm.platforms import Platform, PlatformEnum
@@ -434,8 +437,8 @@ class SpyrePlatform(Platform):
     def validate_request(
         cls,
         prompt: "PromptType | DictPrompt | TokPrompt",
-        params: Union[SamplingParams, PoolingParams],
-        processed_inputs: ProcessorInputs | None = None,
+        params: "SamplingParams | PoolingParams",
+        processed_inputs: "ProcessorInputs | None" = None,
     ) -> None:
         """Raises if this request is unsupported on this platform"""
 
