@@ -41,7 +41,7 @@ class SpyreRMSNorm(RMSNorm):
 
         # Compile the Spyre-specific forward implementation
         # This compilation is separate from the main model compilation
-        self._fwd_spyre = torch.compile(self._forward_static_spyre)
+        self._fwd_spyre = torch.compile(self._forward_static_spyre, dynamic=False)
 
         # Register this layer in the static forward context
         # This allows it to be accessed during the custom op execution
@@ -154,14 +154,13 @@ class SpyreRMSNorm(RMSNorm):
         num_real_el = x.shape[0]
 
         # Pad to minimum batch size of 64 if needed
-        if x.shape[0] != 1 and x.shape[0] < 64:
+        if x.shape[0] < 64:
             x = torch.nn.functional.pad(x, (0, 0, 64 - num_real_el, 0))
 
         # Execute the Spyre-compiled kernel
         # _prepare_inputs_on_spyre handles device transfer and dtype conversion
         out = self._fwd_spyre(
             _prepare_inputs_on_spyre([x])[0],
-            # _prepare_inputs_on_spyre([torch.ones(x.shape[0]) * self.variance_epsilon])[0],
             self.variance_epsilon,
             self.hidden_size,
             torch.float16,
