@@ -7,14 +7,19 @@
   {
     "version": "2.0.0-rc.2",
     "title": "2.0.0-rc.2",
-    "aliases": [
-      "latest"
-    ]
+    "aliases": []
   },
   {
     "version": "2.0.0-rc.1",
     "title": "2.0.0-rc.1",
     "aliases": []
+  },
+  {
+    "version": "1.9.0",
+    "title": "1.9.0",
+    "aliases": [
+      "latest"
+    ]
   },
   {
     "version": "1.8.0",
