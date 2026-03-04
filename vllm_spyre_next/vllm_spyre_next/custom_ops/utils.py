@@ -1,9 +1,8 @@
 """This module contains all custom ops for spyre"""
 
-from . import rms_norm
-from vllm.logger import init_logger
 import torch
 import torch.utils._pytree as pytree
+from vllm.logger import init_logger
 
 logger = init_logger(__name__)
 
@@ -16,7 +15,3 @@ def prepare_inputs_on_spyre(*args):
         )
 
     return pytree.tree_map(_convert_to_spyre, args)[0]
-
-def register_all():
-    logger.info("Registering custom ops for spyre_next")
-    rms_norm.register()
