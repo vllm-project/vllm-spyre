@@ -36,4 +36,5 @@ nav:
     - Supported Models: user_guide/supported_models.md
   - Developer Guide:
     - Contributing: contributing/README.md
+    - Maintaining: contributing/maintaining.md
     - Architecture: contributing/architecture.md
