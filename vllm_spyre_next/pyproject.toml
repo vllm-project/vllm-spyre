@@ -56,12 +56,9 @@ default-groups = ["dev", "upstream-tests"]
 override-dependencies = [
     # No triton support yet, don't allow any dependencies to pull it in
     "triton; sys_platform == 'never'",
-    "arctic-inference; sys_platform == 'never'",
-    "perf-analyzer; sys_platform == 'never'",
 
-    # Skip packages on s390x and ppc64le, expected to be pre-installed
-    "torch ; platform_machine not in 's390x, ppc64le'",
-    # "vllm ; platform_machine not in 's390x, ppc64le'",
+    # Skip packages on s390x and ppc64le that are expected to be pre-installed
+    "vllm ; platform_machine not in 's390x, ppc64le'",
     "ray; platform_machine not in 's390x, ppc64le'",
     # uv doesn't resolve numba->llvmlite constraint correctly...
     #   if numba is updated, this version will likely need to be too
