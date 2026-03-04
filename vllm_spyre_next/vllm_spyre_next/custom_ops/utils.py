@@ -6,6 +6,7 @@ from vllm.logger import init_logger
 
 logger = init_logger(__name__)
 
+
 def prepare_inputs_on_spyre(*args):
     def _convert_to_spyre(arg):
         return (

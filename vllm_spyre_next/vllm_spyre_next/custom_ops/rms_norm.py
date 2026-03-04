@@ -12,6 +12,7 @@ from .utils import prepare_inputs_on_spyre
 
 logger = init_logger(__name__)
 
+
 @RMSNorm.register_oot(name="RMSNorm")
 class SpyreRMSNorm(RMSNorm):
     """OOT version of RMSNorm for IBM's Spyre device
@@ -108,8 +109,10 @@ class SpyreRMSNorm(RMSNorm):
         """
         if residual is not None:
             x = x + residual
-        
-        x = torch.nn.functional.rms_norm(x, normalized_shape=[x.shape[-1]], weight=weight, eps=variance_epsilon)
+
+        x = torch.nn.functional.rms_norm(
+            x, normalized_shape=[x.shape[-1]], weight=weight, eps=variance_epsilon
+        )
 
         if residual is None:
             return x
