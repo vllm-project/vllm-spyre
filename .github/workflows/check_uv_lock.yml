@@ -53,9 +53,9 @@ jobs:
 
       - name: "Check root uv.lock is up to date"
         if: steps.changed-files.outputs.root_any_changed == 'true'
-        run: uv lock && uv lock --check
+        run: uv lock --check
 
       - name: "Check vllm_spyre_next/uv.lock is up to date"
         if: steps.changed-files.outputs.next_any_changed == 'true'
-        run: uv lock && uv lock --check
+        run: uv lock --check
         working-directory: vllm_spyre_next
