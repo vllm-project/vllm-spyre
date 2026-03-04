@@ -24,10 +24,23 @@ Spyre Device Constraints:
     - Output dtype: bfloat16 (converted on CPU)
     - Algorithm: Transpose-based computation with torch.ops.spyre.full()
 
+Configuration (via environment variables):
+    VLLM_SPYRE_NEXT_RMSNORM_KERNEL: Select kernel implementation
+        - "native" (default): Transpose-based vLLM implementation
+        - "functional": torch.nn.functional.rms_norm
+
+    VLLM_SPYRE_NEXT_RMSNORM_DTYPE_UP_PROMOTION: Enable dtype promotion
+        - "0" (default): Disabled (recommended)
+        - "1": Enabled (may cause errors with torch-spyre)
+
+Example:
+    export VLLM_SPYRE_NEXT_RMSNORM_KERNEL=functional
+    export VLLM_SPYRE_NEXT_RMSNORM_DTYPE_UP_PROMOTION=0
+    python -m vllm.entrypoints.openai.api_server --model meta-llama/Llama-2-7b-hf
+
 References:
     - Upstream RMSNorm: vllm/model_executor/layers/layernorm.py
-    - CustomOp base: vllm/model_executor/custom_op.py
-    - Forward context: vllm/forward_context.py
+    - Configuration: vllm_spyre_next/envs.py
 """
 
 import torch
@@ -38,6 +51,7 @@ from vllm.config import get_current_vllm_config
 from vllm.forward_context import get_forward_context
 from vllm.model_executor.layers.layernorm import RMSNorm
 
+from vllm_spyre_next import envs as envs_spyre_next
 from .utils import prepare_inputs_on_spyre
 
 logger = init_logger(__name__)
@@ -54,20 +68,37 @@ class SpyreRMSNorm(RMSNorm):
     def __init__(self, *args, **kwargs):
         """Initialize SpyreRMSNorm layer.
 
-        Compiles the Spyre kernel and registers this instance in static_forward_context
-        for access via the custom op during forward pass (bypassing torch.compile).
+        Compiles the Spyre kernel based on VLLM_SPYRE_NEXT_RMSNORM_KERNEL
+        environment variable and registers this instance in static_forward_context.
         """
         super().__init__(*args, **kwargs)
 
         logger.debug("Building custom RMS norm")
 
-        # Compile Spyre-specific kernel (separate from main model compilation)
-        # Two implementation options available:
-        # 1. torch.nn.functional.rms_norm (commented out)
-        self._fwd_spyre = torch.compile(self._forward_functional, dynamic=False)
+        # Select kernel based on environment variable
+        kernel_type = envs_spyre_next.VLLM_SPYRE_NEXT_RMSNORM_KERNEL
+        if kernel_type == "functional":
+            self._fwd_spyre = torch.compile(self._forward_functional, dynamic=False)
+            logger.info("SpyreRMSNorm: Using functional kernel (torch.nn.functional.rms_norm)")
+        elif kernel_type == "native":
+            self._fwd_spyre = torch.compile(self._forward_vLLM_native, dynamic=False)
+            logger.info("SpyreRMSNorm: Using native kernel (transpose-based vLLM implementation)")
+        else:
+            logger.warning(
+                f"Unknown VLLM_SPYRE_NEXT_RMSNORM_KERNEL value: {kernel_type}. "
+                "Defaulting to 'native'"
+            )
+            self._fwd_spyre = torch.compile(self._forward_vLLM_native, dynamic=False)
 
-        # 2. Native vLLM implementation with transpose-based computation (active)
-        # self._fwd_spyre = torch.compile(self._forward_vLLM_native, dynamic=False)
+        # Store dtype promotion setting from environment
+        self._dtype_up_promotion = envs_spyre_next.VLLM_SPYRE_NEXT_RMSNORM_DTYPE_UP_PROMOTION
+        if self._dtype_up_promotion:
+            logger.warning(
+                "SpyreRMSNorm: dtype_up_promotion enabled but may not be fully "
+                "supported by torch-spyre. This may cause compilation or runtime errors."
+            )
+        else:
+            logger.debug("SpyreRMSNorm: dtype_up_promotion disabled (recommended)")
 
         # Register in static_forward_context for custom op access
         # Pattern: Each instance gets unique name via counter to avoid collisions
@@ -259,10 +290,13 @@ class SpyreRMSNorm(RMSNorm):
             3. Kernel execution: Calls compiled _fwd_spyre
             4. Result transfer: Spyre -> CPU, trim padding, convert to bfloat16
 
+        Uses configuration from environment variables:
+            - VLLM_SPYRE_NEXT_RMSNORM_KERNEL: Kernel implementation
+            - VLLM_SPYRE_NEXT_RMSNORM_DTYPE_UP_PROMOTION: Dtype promotion setting
+
         Limitations:
             - residual fusion not implemented (raises NotImplementedError)
             - variance_size_override not implemented (raises NotImplementedError)
-            - dtype_up_promotion disabled (torch-spyre limitation)
 
         Args:
             x: Input tensor [batch_size, hidden_size] on CPU
@@ -293,7 +327,7 @@ class SpyreRMSNorm(RMSNorm):
             prepare_inputs_on_spyre([self.weight.data])[0] if self.has_weight else None,
             residual,
             self.variance_size_override,
-            dtype_up_promotion=False,  # Not supported by torch-spyre
+            dtype_up_promotion=self._dtype_up_promotion,  # Use config from environment
         )
 
         # Transfer back to CPU and restore original shape
