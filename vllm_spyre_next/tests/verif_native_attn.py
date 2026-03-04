@@ -35,7 +35,7 @@ class PyTorchNativeAttentionMetadata:
 
 
 def _compute_attention_per_head_loop_core(
-    qt_reshaped, k_reshaped, vt_reshaped, sm_scale, num_heads, mask=None
+    qt_reshaped, k_reshaped, vt_reshaped, sm_scale, num_heads, kq_mask=None
 ):
     """Core computation for per-head attention (to be compiled).
 
@@ -48,7 +48,7 @@ def _compute_attention_per_head_loop_core(
         vt_reshaped: [D, L] - already on target device (single head)
         sm_scale: scalar tensor
         num_heads: int (should be 1 for single-head processing)
-        mask: [Q, L] - attention mask (optional)
+        kq_mask: [L, Q] - pre-transposed attention mask with -inf values (optional)
 
     Returns:
         attn_output_t: [D, Q] for single head (will be transposed outside)
@@ -60,11 +60,10 @@ def _compute_attention_per_head_loop_core(
     # Scale: [L, Q]
     kq = kq * sm_scale
 
-    # Apply mask if provided: mask is [Q, L], kq is [L, Q]
-    if mask is not None:
-        # Transpose mask to match kq shape: [L, Q]
-        mask_t = mask.transpose(0, 1)
-        kq = kq.masked_fill(mask_t, -float('inf'))
+    # Apply pre-computed mask if provided (mask already has -inf values)
+    if kq_mask is not None:
+        # Simply add the mask (which has 0 for keep, -inf for mask out)
+        kq = kq + kq_mask
 
     # Softmax along L dimension (dim=0): [L, Q]
     p = kq.softmax(dim=0)
@@ -88,7 +87,7 @@ def _compute_attention_per_head_loop(
         sm_scale: scalar (float or tensor)
         num_heads: int
         device: target device for computation (e.g., 'spyre')
-        block_mask: [1, H, Q, L] - attention mask (optional)
+        block_mask: [1, H, Q, L] - attention mask (optional, True=mask out)
 
     Returns:
         attn_output: [Q, H, D]
@@ -115,11 +114,19 @@ def _compute_attention_per_head_loop(
         k_h = k_reshaped[:, h, :].contiguous()  # [L, D]
         vt_h = vt_reshaped[:, :, h].contiguous()  # [D, L]
 
-        # Extract mask for this head if provided
-        mask_h = None
+        # Pre-process mask for this head if provided (OUTSIDE compiled function)
+        kq_mask_h = None
         if block_mask is not None:
-            # block_mask shape: [1, H, Q, L]
+            # block_mask shape: [1, H, Q, L], extract for this head: [Q, L]
             mask_h = block_mask[0, h, :, :].contiguous()  # [Q, L]
+            # Transpose to [L, Q] to match kq shape
+            mask_h_t = mask_h.transpose(0, 1).contiguous()  # [L, Q]
+            # Convert boolean mask to float mask: True -> -inf, False -> 0
+            kq_mask_h = torch.where(
+                mask_h_t,
+                torch.tensor(-float('inf'), dtype=qt_reshaped.dtype, device=original_device),
+                torch.tensor(0.0, dtype=qt_reshaped.dtype, device=original_device)
+            )
 
         # Move tensors to target device if specified
         if device is not None:
@@ -127,8 +134,8 @@ def _compute_attention_per_head_loop(
             k_h = k_h.to(device)
             vt_h = vt_h.to(device)
             sm_scale_device = sm_scale.to(device)
-            if mask_h is not None:
-                mask_h = mask_h.to(device)
+            if kq_mask_h is not None:
+                kq_mask_h = kq_mask_h.to(device)
         else:
             sm_scale_device = sm_scale
 
@@ -140,7 +147,7 @@ def _compute_attention_per_head_loop(
             vt_h,
             sm_scale_device,
             1,  # num_heads=1 for single head
-            mask_h,
+            kq_mask_h,  # Pre-processed mask with -inf values
         )
 
         # Move result back to original device first (result is [D, Q] and contiguous)
@@ -382,8 +389,19 @@ def generate_test_inputs(
         num_heads=num_heads,
     )
 
-    # Optional block mask (None for now)
-    block_mask = None
+    # Create a causal block mask for testing
+    # Shape: [1, num_heads, total_tokens, total_kv_tokens]
+    # True means mask out (set to -inf), False means keep
+    block_mask = torch.zeros(1, num_heads, total_tokens, total_kv_tokens, dtype=torch.bool, device=device)
+    
+    # Apply causal masking: mask out future tokens
+    # For each query position i, mask out key positions > i
+    for i in range(total_tokens):
+        # Mask out positions beyond current query position in the KV cache
+        # This simulates causal attention where query token i can only attend to tokens 0..i
+        mask_start = min(i + 1, total_kv_tokens)
+        if mask_start < total_kv_tokens:
+            block_mask[0, :, i, mask_start:] = True
 
     return query, key, value, attn_metadata, block_mask
 
@@ -485,6 +503,11 @@ if __name__ == "__main__":
     print(f"  query: {query.shape}")
     print(f"  key: {key.shape}")
     print(f"  value: {value.shape}")
+    if block_mask is not None:
+        print(f"  block_mask: {block_mask.shape}")
+        print(f"  block_mask True count: {block_mask.sum().item()} / {block_mask.numel()}")
+    else:
+        print(f"  block_mask: None")
     print()
 
     # Compute attention using both methods
