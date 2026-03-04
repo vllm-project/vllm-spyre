@@ -77,7 +77,11 @@ def test_api_cb_rejects_oversized_request(
     overflow_prompt = " ".join(["hi"] * max_model_len)
     max_tokens = 10
 
-    with pytest.raises(BadRequestError, match="maximum context length is"):
+    with pytest.raises(
+        BadRequestError,
+        # Error message changed in v0.16.0
+        match="maximum context length is|the model's context length is only",
+    ):
         client.completions.create(
             model=model.name,
             prompt=overflow_prompt,
