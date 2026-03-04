@@ -2,27 +2,15 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import torch
 
-import torch.utils._pytree as pytree
-
 from vllm.logger import init_logger
 from vllm.utils.torch_utils import direct_register_custom_op
 from vllm.config import get_current_vllm_config
 from vllm.forward_context import get_forward_context
 from vllm.model_executor.layers.layernorm import RMSNorm
 
+from .utils import prepare_inputs_on_spyre
+
 logger = init_logger(__name__)
-
-
-def _prepare_inputs_on_spyre(*args):
-    def _convert_to_spyre(arg):
-        return (
-            arg.to(dtype=torch.float16).to(device=torch.device("spyre"))
-            if isinstance(arg, torch.Tensor)
-            else arg
-        )
-
-    return pytree.tree_map(_convert_to_spyre, args)[0]
-
 
 @RMSNorm.register_oot(name="RMSNorm")
 class SpyreRMSNorm(RMSNorm):
@@ -41,7 +29,7 @@ class SpyreRMSNorm(RMSNorm):
 
         # Compile the Spyre-specific forward implementation
         # This compilation is separate from the main model compilation
-        self._fwd_spyre = torch.compile(self._forward_static_spyre)
+        self._fwd_spyre = torch.compile(self._forward_static_spyre, dynamic=False)
 
         # Register this layer in the static forward context
         # This allows it to be accessed during the custom op execution
@@ -119,15 +107,9 @@ class SpyreRMSNorm(RMSNorm):
         This method is compiled separately via self._fwd_spyre.
         """
         if residual is not None:
-            # residual promoted f16->f32 automatically,
-            # otherwise Inductor eliminates the casts to and from f16,
-            # increasing memory usage (and complicating pattern matching)
             x = x + residual
-            # residual = x.to(orig_dtype)
-
-        x = torch.nn.functional.rms_norm(
-            x, normalized_shape=[x.shape[-1]], weight=weight, eps=variance_epsilon
-        )
+        
+        x = torch.nn.functional.rms_norm(x, normalized_shape=[x.shape[-1]], weight=weight, eps=variance_epsilon)
 
         if residual is None:
             return x
@@ -156,18 +138,17 @@ class SpyreRMSNorm(RMSNorm):
         num_real_el = x.shape[0]
 
         # Pad to minimum batch size of 64 if needed
-        if x.shape[0] != 1 and x.shape[0] < 64:
+        if x.shape[0] < 64:
             x = torch.nn.functional.pad(x, (0, 0, 64 - num_real_el, 0))
 
         # Execute the Spyre-compiled kernel
-        # _prepare_inputs_on_spyre handles device transfer and dtype conversion
+        # prepare_inputs_on_spyre handles device transfer and dtype conversion
         out = self._fwd_spyre(
-            _prepare_inputs_on_spyre([x])[0],
-            # _prepare_inputs_on_spyre([torch.ones(x.shape[0]) * self.variance_epsilon])[0],
+            prepare_inputs_on_spyre([x])[0],
             self.variance_epsilon,
             self.hidden_size,
             torch.float16,
-            _prepare_inputs_on_spyre([self.weight.data])[0] if self.has_weight else None,
+            prepare_inputs_on_spyre([self.weight.data])[0] if self.has_weight else None,
             residual,
             self.variance_size_override,
         )
