@@ -74,10 +74,8 @@ override-dependencies = [
     # requests is used by many dependencies, make sure it's patched for CVEs
     "requests>=2.32.4",
 ]
-# fms-mo doesn't support python 3.9, so don't have UV try to resolve it
-environments = [
-    "python_version > '3.9'"
-]
+# This ensures that we build with the empty backend for vLLM
+extra-build-variables = { vllm = { VLLM_TARGET_DEVICE = "empty" } }
 
 [tool.uv.sources]
 vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.16.0" }

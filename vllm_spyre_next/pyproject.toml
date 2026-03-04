@@ -49,17 +49,16 @@ git_describe_command = "git describe --dirty --tags --long --match 'spyre-next-v
 override-dependencies = [
     # No triton support yet, don't allow any dependencies to pull it in
     "triton; sys_platform == 'never'",
-    "intel-extension-for-pytorch; sys_platform == 'never'",
-    
-    # This torch version must match the one below in `build-constraint-dependencies`
-    "torch==2.10.0",
 
-    # Skip packages on s390x and ppc64le, expected to be pre-installed
-    "torch ; platform_machine not in 's390x, ppc64le'",
+    # Skip packages on s390x and ppc64le that are expected to be pre-installed
     "vllm ; platform_machine not in 's390x, ppc64le'",
     "ray; platform_machine not in 's390x, ppc64le'",
-    "llvmlite; platform_machine not in 's390x, ppc64le'",
+    # uv doesn't resolve numba->llvmlite constraint correctly...
+    #   if numba is updated, this version will likely need to be too
+    "llvmlite==0.44.0; platform_machine not in 's390x, ppc64le'",
     "pyarrow; platform_machine not in 's390x, ppc64le'",
+    # This torch version must match the one below in `build-constraint-dependencies`
+    "torch==2.10.0 ; platform_machine not in 's390x, ppc64le'",
 
     # torch-spyre declares a dependency on numpy>2.3, conflicting with numba needed by vLLM
     # The range here should match the numba dependency
@@ -69,19 +68,12 @@ override-dependencies = [
     # causing import failure on headless Linux systems.
     "opencv-python-headless==4.12.0.88",
 
-    # uv doesn't resolve numba->llvmlite constraint correctly...
-    #   if numba is updated, this will likely need to be too
-    "llvmlite==0.44.0; platform_machine not in 's390x, ppc64le'",
-
     # setuptools is specified as a runtime dep by vllm, make sure it's patched for CVEs
     "setuptools>=82",
 
     # requests is used by many dependencies, make sure it's patched for CVEs
     "requests>=2.32.4",
 
-]
-environments = [
-    "python_version > '3.9'"
 ]
 # This adds constraints to all dependent build environments, which will ensure everything is built
 # with the same version of torch. This CANNOT conflict with a package's existing build dependencies
