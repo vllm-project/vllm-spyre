@@ -35,7 +35,7 @@ class PyTorchNativeAttentionMetadata:
 
 
 def _compute_attention_per_head_loop_core(
-    qt_reshaped, k_reshaped, vt_reshaped, sm_scale, num_heads
+    qt_reshaped, k_reshaped, vt_reshaped, sm_scale, num_heads, mask=None
 ):
     """Core computation for per-head attention (to be compiled).
 
@@ -48,6 +48,7 @@ def _compute_attention_per_head_loop_core(
         vt_reshaped: [D, L] - already on target device (single head)
         sm_scale: scalar tensor
         num_heads: int (should be 1 for single-head processing)
+        mask: [Q, L] - attention mask (optional)
 
     Returns:
         attn_output_t: [D, Q] for single head (will be transposed outside)
@@ -58,6 +59,12 @@ def _compute_attention_per_head_loop_core(
 
     # Scale: [L, Q]
     kq = kq * sm_scale
+
+    # Apply mask if provided: mask is [Q, L], kq is [L, Q]
+    if mask is not None:
+        # Transpose mask to match kq shape: [L, Q]
+        mask_t = mask.transpose(0, 1)
+        kq = kq.masked_fill(mask_t, -float('inf'))
 
     # Softmax along L dimension (dim=0): [L, Q]
     p = kq.softmax(dim=0)
@@ -70,7 +77,7 @@ def _compute_attention_per_head_loop_core(
 
 
 def _compute_attention_per_head_loop(
-    qt_reshaped, k_reshaped, vt_reshaped, sm_scale, num_heads, device=None
+    qt_reshaped, k_reshaped, vt_reshaped, sm_scale, num_heads, device=None, block_mask=None
 ):
     """Wrapper function that processes each head separately to avoid Spyre compilation issues.
 
@@ -81,6 +88,7 @@ def _compute_attention_per_head_loop(
         sm_scale: scalar (float or tensor)
         num_heads: int
         device: target device for computation (e.g., 'spyre')
+        block_mask: [1, H, Q, L] - attention mask (optional)
 
     Returns:
         attn_output: [Q, H, D]
@@ -95,6 +103,7 @@ def _compute_attention_per_head_loop(
     # Get dimensions
     D = qt_reshaped.shape[0]  # head_size
     Q = qt_reshaped.shape[1]  # total_tokens
+    L = k_reshaped.shape[0]   # total_kv_tokens
 
     # Pre-allocate output tensor on original device
     attn_output = torch.empty(Q, num_heads, D, dtype=qt_reshaped.dtype, device=original_device)
@@ -106,12 +115,20 @@ def _compute_attention_per_head_loop(
         k_h = k_reshaped[:, h, :].contiguous()  # [L, D]
         vt_h = vt_reshaped[:, :, h].contiguous()  # [D, L]
 
+        # Extract mask for this head if provided
+        mask_h = None
+        if block_mask is not None:
+            # block_mask shape: [1, H, Q, L]
+            mask_h = block_mask[0, h, :, :].contiguous()  # [Q, L]
+
         # Move tensors to target device if specified
         if device is not None:
             qt_h = qt_h.to(device)
             k_h = k_h.to(device)
             vt_h = vt_h.to(device)
             sm_scale_device = sm_scale.to(device)
+            if mask_h is not None:
+                mask_h = mask_h.to(device)
         else:
             sm_scale_device = sm_scale
 
@@ -123,6 +140,7 @@ def _compute_attention_per_head_loop(
             vt_h,
             sm_scale_device,
             1,  # num_heads=1 for single head
+            mask_h,
         )
 
         # Move result back to original device first (result is [D, Q] and contiguous)
@@ -301,7 +319,8 @@ class AttentionDebugger:
         # Use wrapper function for per-head attention computation on Spyre device
         # The wrapper handles device transfers and calls the compiled core function
         attn_output = _compute_attention_per_head_loop(
-            qt_reshaped, k_reshaped, vt_reshaped, sm_scale, num_heads, device=self.spyre_device
+            qt_reshaped, k_reshaped, vt_reshaped, sm_scale, num_heads,
+            device=self.spyre_device, block_mask=block_mask
         )
 
         # Reshape to [total_tokens, num_heads, head_size]
