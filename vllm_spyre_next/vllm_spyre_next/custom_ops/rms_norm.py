@@ -30,7 +30,13 @@ class SpyreRMSNorm(RMSNorm):
 
         # Compile the Spyre-specific forward implementation
         # This compilation is separate from the main model compilation
-        self._fwd_spyre = torch.compile(self._forward_static_spyre, dynamic=False)
+        
+        # Implementation using torch.nn.functional.rms_norm
+        # self._fwd_spyre = torch.compile(self._forward_functional, dynamic=False)
+        
+        # Implementation using the native implementation from upstream vLLM
+        # vllm/model_executor/layers/layernorm.py
+        self._fwd_spyre = torch.compile(self._forward_vLLM_native, dynamic=False)
 
         # Register this layer in the static forward context
         # This allows it to be accessed during the custom op execution
@@ -94,7 +100,7 @@ class SpyreRMSNorm(RMSNorm):
             output.copy_(result)
 
     @staticmethod
-    def _forward_static_spyre(
+    def _forward_functional(
         x: torch.Tensor,
         variance_epsilon: float,
         hidden_size: int,
@@ -102,18 +108,98 @@ class SpyreRMSNorm(RMSNorm):
         weight: torch.Tensor | None = None,
         residual: torch.Tensor | None = None,
         variance_size_override: int | None = None,
+        dtype_up_promotion: bool = False
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """PyTorch-native implementation for Spyre device.
 
         This method is compiled separately via self._fwd_spyre.
         """
+        if dtype_up_promotion:
+            x = x.to(torch.float32)
+            
         if residual is not None:
+            # residual promoted f16->f32 automatically,
+            # otherwise Inductor eliminates the casts to and from f16,
+            # increasing memory usage (and complicating pattern matching)
             x = x + residual
+            if dtype_up_promotion:
+                residual = x.to(orig_dtype)
+            else:
+                residual = x
 
         x = torch.nn.functional.rms_norm(
             x, normalized_shape=[x.shape[-1]], weight=weight, eps=variance_epsilon
         )
+        
+        if dtype_up_promotion:
+            x = x.to(orig_dtype)
 
+        if residual is None:
+            return x
+        else:
+            return x, residual
+        
+    @staticmethod
+    def _forward_vLLM_native(
+        x: torch.Tensor,
+        variance_epsilon: float,
+        hidden_size: int,
+        orig_dtype: torch.dtype,
+        weight: torch.Tensor | None = None,
+        residual: torch.Tensor | None = None,
+        variance_size_override: int | None = None,
+        dtype_up_promotion: bool = False
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        """PyTorch-native implementation for Spyre device.
+
+        This method is compiled separately via self._fwd_spyre.
+        Implementation from vllm/model_executor/layers/layernorm.py
+        """
+        if dtype_up_promotion:
+            x = x.to(torch.float32)
+            
+        if residual is not None:
+            # residual promoted f16->f32 automatically,
+            # otherwise Inductor eliminates the casts to and from f16,
+            # increasing memory usage (and complicating pattern matching)
+            x = x + residual
+            if dtype_up_promotion:
+                residual = x.to(orig_dtype)
+            else:
+                residual = x
+
+        if x.shape[-1] != hidden_size:
+            raise ValueError(
+                f"Expected hidden_size to be {hidden_size}, but found: {x.shape[-1]}"
+            )
+            
+        x = x.transpose(-1, -2).contiguous()
+        
+        variance_epsilon = torch.ops.spyre.full(
+            x.shape, variance_epsilon, dtype=torch.float16, device="spyre"
+        )
+
+        if variance_size_override is None:
+            x_var = x
+        else:
+            if hidden_size < variance_size_override:
+                raise ValueError(
+                    "Expected hidden_size to be at least "
+                    f"{variance_size_override}, but found: {hidden_size}"
+                )
+
+            x_var = x[:, :, :variance_size_override]
+
+        variance = x_var.pow(2).mean(dim=-1, keepdim=True)
+
+        x = x * torch.rsqrt(variance + variance_epsilon)
+        x = x.transpose(-1, -2).contiguous()
+        
+        if dtype_up_promotion:
+            x = x.to(orig_dtype)
+        
+        if weight is not None:
+            x = x * weight
         if residual is None:
             return x
         else:
@@ -154,6 +240,11 @@ class SpyreRMSNorm(RMSNorm):
             prepare_inputs_on_spyre([self.weight.data])[0] if self.has_weight else None,
             residual,
             self.variance_size_override,
+            
+            # Note: Upstream vLLM uses a type promotion for the input and the residual 
+            # before carrying out the computation. This is currently not supported with torch-spyre.
+            # dtype_up_promotion=True
+            dtype_up_promotion=False
         )
 
         # Transfer result back to CPU
