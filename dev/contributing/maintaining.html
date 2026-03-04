@@ -8,11 +8,13 @@
       
       
       
-        <link rel="canonical" href="https://vllm-project.github.io/vllm-spyre/dev/contributing/architecture.html">
+        <link rel="canonical" href="https://vllm-project.github.io/vllm-spyre/dev/contributing/maintaining.html">
       
       
-        <link rel="prev" href="maintaining.html">
+        <link rel="prev" href="index.html">
       
+      
+        <link rel="next" href="architecture.html">
       
       
         
@@ -23,7 +25,7 @@
     
     
       
-        <title>Architecture - vLLM Spyre Plugin</title>
+        <title>Maintaining - vLLM Spyre Plugin</title>
       
     
     
@@ -76,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#plugin-architecture" class="md-skip">
+        <a href="#maintaining-vllm-spyre" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +116,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Architecture
+              Maintaining
             
           </span>
         </div>
@@ -684,10 +686,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="maintaining.html" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Maintaining
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="maintaining.html" class="md-nav__link md-nav__link--active">
         
   
   
@@ -703,6 +732,137 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#vllm-compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        vLLM Compatibility
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="vLLM Compatibility">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#updating-vllm-version" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Updating vLLM version
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adding-forward-compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding forward compatibility
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#testing-all-supported-vllm-versions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Testing all supported vLLM versions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#removing-support-for-a-vllm-version" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Removing support for a vLLM version
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#new-model-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Model Support
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="New Model Support">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#generative-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Generative Models
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pooling-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pooling Models
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cutting-releases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cutting Releases
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -712,19 +872,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-      <a href="architecture.html" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="architecture.html" class="md-nav__link">
         
   
   
@@ -740,7 +891,6 @@
   
 
       </a>
-      
     </li>
   
 
@@ -773,6 +923,125 @@
     
   
   
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#vllm-compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        vLLM Compatibility
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="vLLM Compatibility">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#updating-vllm-version" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Updating vLLM version
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adding-forward-compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding forward compatibility
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#testing-all-supported-vllm-versions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Testing all supported vLLM versions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#removing-support-for-a-vllm-version" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Removing support for a vLLM version
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#new-model-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Model Support
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="New Model Support">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#generative-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Generative Models
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pooling-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pooling Models
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cutting-releases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cutting Releases
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
 </nav>
                   </div>
                 </div>
@@ -791,35 +1060,82 @@
   
 
 
-<h1 id="plugin-architecture">Plugin Architecture<a class="headerlink" href="#plugin-architecture" title="Permanent link">&para;</a></h1>
-<p>The Spyre plugin extends or replaces three main components in vLLM:</p>
+<h1 id="maintaining-vllm-spyre">Maintaining vLLM Spyre<a class="headerlink" href="#maintaining-vllm-spyre" title="Permanent link">&para;</a></h1>
+<p>This page describes a few key maintenance tasks and how to accomplish them.</p>
+<h2 id="vllm-compatibility">vLLM Compatibility<a class="headerlink" href="#vllm-compatibility" title="Permanent link">&para;</a></h2>
+<p>When a new version of vLLM is released, the plugin usually needs to be updated to both:</p>
+<ul>
+<li>Work with any newly released vLLM changes</li>
+<li>Continue working with the previous versions of vLLM</li>
+</ul>
+<h3 id="updating-vllm-version">Updating vLLM version<a class="headerlink" href="#updating-vllm-version" title="Permanent link">&para;</a></h3>
+<p>To update the version of vLLM used by the plugin, the pyproject.toml needs to be updated in two places:</p>
 <ol>
-<li>Scheduler</li>
-<li>Model worker and model runner</li>
-<li>Modeling code</li>
+<li><a href="https://github.com/vllm-project/vllm-spyre/blob/v2.0.0-rc.1/pyproject.toml#L79">tool.uv.sources.vllm</a></li>
+<li><a href="https://github.com/vllm-project/vllm-spyre/blob/v2.0.0-rc.1/pyproject.toml#L16">project.dependencies</a></li>
 </ol>
-<p>To better understand these modifications, it's helpful to
-consider the state of the native vllm for GPU architecture.</p>
-<p><img alt="vLLM architecture" src="images/vllm_v1.svg" /></p>
-<p>The API server, the engine core, and the workers live in
-different processes. All three refer to the platform API for backend
-specific concerns.</p>
-<p>In vLLM-Spyre, we implement a platform API that is
-loaded at the vLLM startup time and bootstraps all other components.</p>
-<p><img alt="vLLM Spyre architecture" src="images/vllm_v1_spyre.svg" /></p>
-<p>As we can see in the diagram, the plugin mainly modifies the engine core
-and worker processes. The platform API includes request validation hooks
-that the API server invokes to ensure that the requests
-can be handled by the backend.</p>
-<p>In the engine core, we customize the scheduler to handle the specific batching
-constraints for Spyre cards.</p>
-<p>The changes are broader in the worker process. Most of the main
-classes have Spyre-specific implementations. From the vLLM code, we mainly
-reuse the sampling code (including logits processing) and the pooling
-code for non-generative use cases.</p>
-<p>We provide model runners for two cases: generative models with chunked prefill, and pooling
-models with static batching. The pooling model runner uses the <code>transformers</code> modeling code
-instead of the <code>foundation-model-stack</code> code.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>We specify the source tag for vLLM here because we generally need to install vLLM from source to avoid
+pulling in the precompiled cuda kernels and cuda dependencies.</p>
+</div>
+<p>Once the pyproject.toml is updated, the lockfile needs to be updated as well. The simplest way to do
+that is to run <code>uv sync</code>. More information about uv locking can be found <a href="https://docs.astral.sh/uv/concepts/projects/sync/">in the uv docs</a>.</p>
+<p>Now that the pyproject.toml and uv.lock files are upgraded, the default set of test suites will run
+with the new version of vLLM, and you can move on to fixing the failures.</p>
+<h3 id="adding-forward-compatibility">Adding forward compatibility<a class="headerlink" href="#adding-forward-compatibility" title="Permanent link">&para;</a></h3>
+<p>When updating vllm-spyre code for a new version of vLLM, it's important to ensure that the code remains
+backwards compatible with older releases. This usually means conditionally adding new method arguments or
+new dataclass fields. We provide two utilities in <a href="https://github.com/vllm-project/vllm-spyre/blob/v2.0.0-rc.1/vllm_spyre/compat_utils.py">compat_utils</a>
+to make this easy to do.</p>
+<p>For example:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Only pass the `c` argument if the `foo` function accepts it</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="n">kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;c&quot;</span><span class="p">:</span> <span class="n">some_value</span><span class="p">}</span> <span class="k">if</span> <span class="n">has_argument</span><span class="p">(</span><span class="n">foo</span><span class="p">,</span> <span class="s2">&quot;c&quot;</span><span class="p">)</span> <span class="k">else</span> <span class="p">{}</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">foo</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+</span></code></pre></div>
+<p>Whenever code like this is added, we always make sure to add a test that will begin failing once the
+lowest supported vLLM version no longer requires the backwards compatibility. This allows us to clean
+up the code on the go as we drop older vLLM support. See <a href="https://github.com/vllm-project/vllm-spyre/blob/v1.8.0/tests/utils/test_upstream_compatibility.py">examples of compatibility tests here</a>.</p>
+<h3 id="testing-all-supported-vllm-versions">Testing all supported vLLM versions<a class="headerlink" href="#testing-all-supported-vllm-versions" title="Permanent link">&para;</a></h3>
+<p>We maintain a matrix of test jobs that runs a small set of tests on every supported version of vLLM.
+This helps to ensure that our backwards compatibility is implemented correctly.</p>
+<p>When adding a new version of vLLM, we need to add an entry to this test matrix to add a test job for
+the version of vLLM that we just upgraded from. See examples of <a href="https://github.com/vllm-project/vllm-spyre/blob/v1.8.0/.github/workflows/test.yml#L83-L173">the test matrix here</a>.</p>
+<h3 id="removing-support-for-a-vllm-version">Removing support for a vLLM version<a class="headerlink" href="#removing-support-for-a-vllm-version" title="Permanent link">&para;</a></h3>
+<p>We periodically raise the vLLM lower bound once all key stakeholders agree it is no longer needed.</p>
+<p>To do this:</p>
+<ol>
+<li>Update the lower bound in <a href="https://github.com/vllm-project/vllm-spyre/blob/v2.0.0-rc.1/pyproject.toml#L16">project.dependencies</a></li>
+<li>Update the <a href="https://github.com/vllm-project/vllm-spyre/blob/v1.8.0/.github/workflows/test.yml#L83-L173">test matrix</a> to remove the tests for any versions of vllm that we removed support for<ol>
+<li>Ensure that the new lowest vLLM version is run with <code>vllm_version.name: "vLLM:lowest"</code> and runs the <code>compat</code> marker</li>
+</ol>
+</li>
+<li>For any failing <code>compat</code> tests, remove the backwards compatibility code that is no longer required</li>
+</ol>
+<h2 id="new-model-support">New Model Support<a class="headerlink" href="#new-model-support" title="Permanent link">&para;</a></h2>
+<h3 id="generative-models">Generative Models<a class="headerlink" href="#generative-models" title="Permanent link">&para;</a></h3>
+<p>All decoder models used for text generation must be implemented in <a href="https://github.com/foundation-model-stack/foundation-model-stack">FMS</a> first.
+FMS takes care of ensuring that the model code is compatible with the spyre hardware and the torch_sendnn
+compilation pathway.</p>
+<p>In order to be ready to run on vllm-spyre, the models must pass tests with <a href="https://github.com/foundation-model-stack/aiu-fms-testing-utils">AFTU</a> with paged attention and chunked prefill enabled.</p>
+<p>Once the model is ready to run on spyre hardware, it can be added to vllm-spyre by:</p>
+<ol>
+<li>Updating the <a href="https://github.com/vllm-project/vllm-spyre/blob/v2.0.0-rc.1/vllm_spyre/model_executor/model_loader/spyre.py#L109-L130">model_loader</a> to allow the model architecture, making any necessary adjustments</li>
+<li>Adding working configuration overrides to <a href="https://github.com/vllm-project/vllm-spyre/blob/v2.0.0-rc.1/vllm_spyre/config/model_configs.yaml">model_configs.yaml</a></li>
+</ol>
+<p>For multimodal models, see the docs on <a href="multimodal/adding_new_models.html">adding multimodal models</a></p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>If model configurations are not applied properly, a common failure mode is that the device will run out of memory with <code>DtException: Need to find a valid memory space</code>.
+This is because we typically need to limit the KV cache size to be smaller than <code>max_num_seqs * max_model_len</code>, and accordingly we limit the maximum dynamic batch area with <code>VLLM_DT_MAX_BATCH_TKV_LIMIT</code> to avoid either running out of KV cache space or attempting to run a batch shape that the compiler did not compile for.</p>
+</div>
+<h3 id="pooling-models">Pooling Models<a class="headerlink" href="#pooling-models" title="Permanent link">&para;</a></h3>
+<p>Pooling models all use hf transformers code, and compile for static batch shapes.
+Simply try running one, and if it works, record the working configuration in the model configs YAML file.</p>
+<p>We don't have any guidance available for enabling pooling models if they do not compile successfully.</p>
+<h2 id="cutting-releases">Cutting Releases<a class="headerlink" href="#cutting-releases" title="Permanent link">&para;</a></h2>
+<p>See <a href="https://github.com/vllm-project/vllm-spyre/blob/main/RELEASING.md">https://github.com/vllm-project/vllm-spyre/blob/main/RELEASING.md</a></p>
 
 
 
