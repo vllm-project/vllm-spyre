@@ -187,7 +187,8 @@ asyncio_default_fixture_loop_scope = "function"
 
 # --8<-- [start:test-markers-definition]
 markers = [
-    # TODO add any
+    "upstream: Tests coming from upstream vLLM",
+    "upstream_passing: Tests known to pass from upstream vLLM",
 ]
 # --8<-- [end:test-markers-definition]
 
