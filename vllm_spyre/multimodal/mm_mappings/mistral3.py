@@ -9,6 +9,7 @@ from vllm.multimodal.inputs import (
     PlaceholderRange,
 )
 
+from vllm_spyre.compat_utils import has_argument
 from vllm_spyre.multimodal.mm_mappings import MMUtilsBase, MMWarmupInputs
 
 
@@ -136,10 +137,22 @@ class Mistral3MMUtils(MMUtilsBase):
             "pixel_values": dummy_pixel_values,
             "image_sizes": dummy_image_sizes,
         }
+
+        # Check if MultiModalFieldElem requires modality/key (prior to 0.16.0)
+        include_modality_key = has_argument(MultiModalFieldElem.__init__, "modality")
         mm_fields = MultiModalKwargsItem(
             {
                 mm_key: MultiModalFieldElem(
-                    modality="image", key=mm_key, data=mm_data, field=MultiModalBatchedField()
+                    **(
+                        {
+                            "modality": "image",
+                            "key": mm_key,
+                        }
+                        if include_modality_key
+                        else {}
+                    ),
+                    data=mm_data,
+                    field=MultiModalBatchedField(),
                 )
                 for mm_key, mm_data in mm_data.items()
             }

@@ -10,6 +10,7 @@ from vllm.multimodal.inputs import (
     PlaceholderRange,
 )
 
+from vllm_spyre.compat_utils import has_argument
 from vllm_spyre.multimodal.mm_mappings import MMUtilsBase, MMWarmupInputs
 
 # Extend the adapter as part of the head dim fix; this is needed to
@@ -154,10 +155,23 @@ class LlavaNextMMUtils(MMUtilsBase):
             "pixel_values": proc_res.pixel_values.squeeze(axis=0),
             "image_sizes": proc_res.image_sizes.squeeze(axis=0),
         }
+
+        # Check if MultiModalFieldElem requires modality/key (prior to 0.16.0)
+        include_modality_key = has_argument(MultiModalFieldElem.__init__, "modality")
+
         mm_fields = MultiModalKwargsItem(
             {
                 mm_key: MultiModalFieldElem(
-                    modality="image", key=mm_key, data=mm_data, field=MultiModalBatchedField()
+                    **(
+                        {
+                            "modality": "image",
+                            "key": mm_key,
+                        }
+                        if include_modality_key
+                        else {}
+                    ),
+                    data=mm_data,
+                    field=MultiModalBatchedField(),
                 )
                 for mm_key, mm_data in mm_data.items()
             }

@@ -2,6 +2,7 @@
 
 import contextlib
 import functools
+import importlib.util
 import json
 import os
 import platform
@@ -36,6 +37,11 @@ from vllm.v1.worker.worker_base import WorkerBase
 
 if TYPE_CHECKING:
     from vllm.v1.core.sched.output import GrammarOutput
+
+    try:
+        from vllm.profiler.wrapper import TorchProfilerWrapper
+    except ImportError:
+        TorchProfilerWrapper = None  # type: ignore
 
 import vllm_spyre.envs as envs_spyre
 import vllm_spyre.perf_metrics as perf_metrics
@@ -322,52 +328,113 @@ class SpyreWorker(WorkerBase):
                     self.vllm_config.scheduler_config
                 )
         self._env_initialized = False
-        # Torch profiler. Enabled and configured through env vars:
-        # VLLM_TORCH_PROFILER_DIR=/path/to/save/trace
-        if envs.VLLM_TORCH_PROFILER_DIR:
-            torch_profiler_trace_dir = envs.VLLM_TORCH_PROFILER_DIR
-            logger.info("Profiling enabled. Traces will be saved to: %s", torch_profiler_trace_dir)
 
-            if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
-                logger.info(
-                    "Traces will contain AIU events if PyTorch with"
-                    " AIU profiling support is installed."
-                )
-                os.environ["ProfilerActivity"] = "PrivateUse1"  # noqa: SIM112
+        # Torch profiler setup with backwards compatibility
+        self.profiler = self._setup_profiler(vllm_config)
 
-                # Get the current value of DT_OPT and autopilot
-                dt_opt = os.environ.get("DT_OPT", "")
-                options = dict(opt.split("=") for opt in dt_opt.split(",") if "=" in opt)
-                autopilot_opt = options.get("autopilot", "1")  # autopilot defaults to 1 if not set
-                if autopilot_opt == "1":
-                    logger.warning(
-                        "autopilot on detected with profiling enabled. Add "
-                        "autpilot=0 to DT_OPT to see individual AIU-kernel "
-                        "execution in the trace."
-                    )
+    def _setup_profiler(
+        self, vllm_config: VllmConfig
+    ) -> Union[None, "TorchProfilerWrapper", torch.profiler.profile]:
+        """
+        Configure torch profiler with backwards compatibility.
 
-            logger.debug(
-                "Profiler config: record_shapes=%s,profile_memory=%s,with_stack=%s,with_flops=%s",
-                envs.VLLM_TORCH_PROFILER_RECORD_SHAPES,
-                envs.VLLM_TORCH_PROFILER_WITH_PROFILE_MEMORY,
-                envs.VLLM_TORCH_PROFILER_WITH_STACK,
-                envs.VLLM_TORCH_PROFILER_WITH_FLOPS,
+        Tries ProfilerConfig approach (vLLM 0.16.0+), falls back to env vars (vLLM <=0.15.1).
+
+        Args:
+            vllm_config: vLLM configuration object
+
+        Returns:
+            Configured profiler instance or None if profiling is disabled
+        """
+        # Check if new profiler wrapper is available or not
+        if importlib.util.find_spec("vllm.profiler.wrapper") is None:
+            return self._setup_legacy_profiler()
+
+        if getattr(envs, "VLLM_TORCH_PROFILER_DIR", None) is not None:
+            logger.warning_once(
+                "VLLM_TORCH_PROFILER_* env vars are deprecated. "
+                "Switch to --profiler-config based configuration"
             )
+            return self._setup_legacy_profiler()
 
-            # TODO: These flags should be set as bools, but are passed through as strings.
-            # This is probably a bug.
-            self.profiler = torch.profiler.profile(
-                activities=[torch.profiler.ProfilerActivity.CPU],
-                record_shapes=envs.VLLM_TORCH_PROFILER_RECORD_SHAPES,  # ty: ignore
-                profile_memory=envs.VLLM_TORCH_PROFILER_WITH_PROFILE_MEMORY,  # ty: ignore
-                with_stack=envs.VLLM_TORCH_PROFILER_WITH_STACK,  # ty: ignore
-                with_flops=envs.VLLM_TORCH_PROFILER_WITH_FLOPS,  # ty: ignore
-                on_trace_ready=torch.profiler.tensorboard_trace_handler(
-                    torch_profiler_trace_dir, use_gzip=True
-                ),
+        return self._setup_profiler_wrapper(vllm_config)
+
+    def _setup_profiler_wrapper(
+        self,
+        vllm_config: VllmConfig,
+    ) -> Union[None, "TorchProfilerWrapper"]:
+        """Setup profiler using ProfilerConfig (vLLM 0.16.0+)."""
+        from vllm.profiler.wrapper import TorchProfilerWrapper
+
+        profiler_config = vllm_config.profiler_config
+
+        if profiler_config.profiler != "torch":
+            return None
+
+        worker_name = f"{vllm_config.instance_id}-rank-{self.rank}"
+        wrapper = TorchProfilerWrapper(
+            profiler_config,
+            worker_name=worker_name,
+            local_rank=self.local_rank,
+            activities=["CPU"],
+        )
+        self._configure_aiu_profiling()
+        return wrapper
+
+    def _setup_legacy_profiler(self) -> Union[None, torch.profiler.profile]:
+        """Setup profiler using environment variables (vLLM >=0.15.1)."""
+        torch_profiler_trace_dir = envs.VLLM_TORCH_PROFILER_DIR
+
+        if not torch_profiler_trace_dir:
+            return None
+
+        logger.info_once("Profiling enabled. Traces will be saved to: %s", torch_profiler_trace_dir)
+
+        self._configure_aiu_profiling()
+
+        logger.debug_once(
+            "Profiler config: record_shapes=%s, profile_memory=%s, with_stack=%s, with_flops=%s",
+            envs.VLLM_TORCH_PROFILER_RECORD_SHAPES,
+            envs.VLLM_TORCH_PROFILER_WITH_PROFILE_MEMORY,
+            envs.VLLM_TORCH_PROFILER_WITH_STACK,
+            envs.VLLM_TORCH_PROFILER_WITH_FLOPS,
+        )
+
+        # Note: These flags are passed as strings due to upstream behavior
+        return torch.profiler.profile(
+            activities=[torch.profiler.ProfilerActivity.CPU],
+            record_shapes=envs.VLLM_TORCH_PROFILER_RECORD_SHAPES,  # type: ignore
+            profile_memory=envs.VLLM_TORCH_PROFILER_WITH_PROFILE_MEMORY,  # type: ignore
+            with_stack=envs.VLLM_TORCH_PROFILER_WITH_STACK,  # type: ignore
+            with_flops=envs.VLLM_TORCH_PROFILER_WITH_FLOPS,  # type: ignore
+            on_trace_ready=torch.profiler.tensorboard_trace_handler(
+                torch_profiler_trace_dir, use_gzip=True
+            ),
+        )
+
+    def _configure_aiu_profiling(self) -> None:
+        """Configure AIU-specific profiling settings for sendnn backend."""
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND != "sendnn":
+            return
+
+        logger.info_once(
+            "Traces will contain AIU events if PyTorch with AIU profiling support is installed."
+        )
+        os.environ["ProfilerActivity"] = "PrivateUse1"  # noqa: SIM112
+
+        # warn if autopilot is enabled with profiling, which may hide AIU kernel details
+        dt_opt = os.environ.get("DT_OPT", "")
+        if not dt_opt:
+            return
+
+        options = dict(opt.split("=") for opt in dt_opt.split(",") if "=" in opt)
+        autopilot_opt = options.get("autopilot", "1")
+
+        if autopilot_opt == "1":
+            logger.warning_once(
+                "autopilot on detected with profiling enabled. "
+                "Add autopilot=0 to DT_OPT to see individual AIU-kernel execution in the trace."
             )
-        else:
-            self.profiler = None
 
     def init_distributed_environment(self) -> None:
         """Initialize the distributed environment."""
@@ -843,9 +910,22 @@ class SpyreWorker(WorkerBase):
         for _ in range(num_decode_tokens - 1):
             self.execute_model(scheduler_output)
 
-    def profile(self, is_start=True):
+    def profile(self, is_start: bool = True):
         if self.profiler is None:
-            raise RuntimeError("Profiler is not enabled.")
+            # Check which profiling approach is available for the error message
+            if importlib.util.find_spec("vllm.profiler.wrapper") is None:
+                error_msg = (
+                    "Profiler is not enabled. Set VLLM_TORCH_PROFILER_DIR to enable profiling."
+                )
+            else:
+                error_msg = (
+                    "Profiling is not enabled. Please set --profiler-config to enable "
+                    "profiling. Example: "
+                    "'--profiler-config.profiler=torch --profiler-config.torch_profiler_dir"
+                    "=YOUR_DIR_PATH_TO_DUMP_TRACE'"
+                )
+            raise RuntimeError(error_msg)
+
         if is_start:
             self.profiler.start()
         else:
@@ -872,6 +952,10 @@ class SpyreWorker(WorkerBase):
         self,
         scheduler_output: "SchedulerOutput",
     ) -> ModelRunnerOutput | None:
+        # Call profiler.step() if using new TorchProfilerWrapper (0.16.0+)
+        if self.profiler is not None and hasattr(self.profiler, "step"):
+            self.profiler.step()
+
         output = self.model_runner.execute_model(scheduler_output)
         return output if self.is_driver_worker else None
 

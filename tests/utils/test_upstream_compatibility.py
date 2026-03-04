@@ -137,3 +137,28 @@ def test_allocate_new_blocks_new_arg():
             "num_tokens_main_model argument to allocate_new_blocks "
             "in FullAttentionManager no longer required"
         )
+
+
+def test_profiler_config():
+    if VLLM_VERSION == "vLLM:lowest":
+        # When ProfilerConfig exists in lowest version, remove env var fallback
+        with pytest.raises(ImportError):
+            from vllm.profiler.wrapper import TorchProfilerWrapper  # noqa
+
+
+def test_multimodal_field_elem_signature():
+    if VLLM_VERSION == "vLLM:lowest":
+        from vllm.multimodal.inputs import MultiModalFieldElem
+
+        # When modality parameter is removed in lowest version, remove compat code
+        assert has_argument(MultiModalFieldElem.__init__, "modality"), (
+            "Backwards compatibility code for MultiModalFieldElem modality/key "
+            "parameters no longer required"
+        )
+
+
+def test_dict_prompt_tok_prompt():
+    if VLLM_VERSION == "vLLM:lowest":
+        # When these types exist in lowest version, remove try/except imports
+        with pytest.raises(ImportError):
+            from vllm.renderers.inputs import DictPrompt, TokPrompt  # noqa

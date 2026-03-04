@@ -21,7 +21,7 @@ overrides = [
     { name = "torchaudio", marker = "sys_platform == 'never'" },
     { name = "torchvision", marker = "sys_platform == 'never'" },
     { name = "triton", marker = "sys_platform == 'never'" },
-    { name = "vllm", marker = "platform_machine not in 's390x, ppc64le'", git = "https://github.com/vllm-project/vllm?rev=v0.15.1" },
+    { name = "vllm", marker = "platform_machine not in 's390x, ppc64le'", git = "https://github.com/vllm-project/vllm?rev=v0.16.0" },
 ]
 
 [[package]]
@@ -1753,7 +1753,7 @@ wheels = [
 
 [[package]]
 name = "mistral-common"
-version = "1.8.8"
+version = "1.9.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jsonschema" },
@@ -1765,9 +1765,9 @@ dependencies = [
     { name = "tiktoken" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0a/bb/6fc2e46d9920c80f0d053d58be5b0546c18010ff3a5f9b9d91299226e989/mistral_common-1.8.8.tar.gz", hash = "sha256:8ae28b3f88bce1b9396f5d1107e5ea87e4130486b9f6d811df6d5ac07bff2186", size = 6337014, upload-time = "2025-12-22T10:51:47.245Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/db/ce/685b8127a326478e05501cb4c9ca23d1cd9f37e16c465a1e832c75aea709/mistral_common-1.9.1.tar.gz", hash = "sha256:550583d70a395c3586cfb748ffab53bd1d7c3409507f0efc0118bff30ffb26e9", size = 6338922, upload-time = "2026-02-12T10:53:41.639Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/73/02/c1866598c8e94a4d0593b73e6dec0afea722227b9b3223bf6bb8ab269fa7/mistral_common-1.8.8-py3-none-any.whl", hash = "sha256:f63ce79b1867b3fc7c8b66fcaedab3b07966185567558038dc02321c17e4f39f", size = 6518005, upload-time = "2025-12-22T10:51:44.88Z" },
+    { url = "https://files.pythonhosted.org/packages/ac/72/a38bb1fd9fd4d4ef990341c9dd1a7c8061f1951e10efa6d50c0a3f04eced/mistral_common-1.9.1-py3-none-any.whl", hash = "sha256:9e2b2520b6f67bac2e2bb06fcf985b7a1277b01938da2b7cda8cf0fdbfa92e91", size = 6518623, upload-time = "2026-02-12T10:53:39.457Z" },
 ]
 
 [package.optional-dependencies]
@@ -4273,8 +4273,8 @@ wheels = [
 
 [[package]]
 name = "vllm"
-version = "0.15.1"
-source = { git = "https://github.com/vllm-project/vllm?rev=v0.15.1#1892993bc18e243e2c05841314c5e9c06a80c70d" }
+version = "0.16.0"
+source = { git = "https://github.com/vllm-project/vllm?rev=v0.16.0#89a77b10846fd96273cce78d86d2556ea582d26e" }
 dependencies = [
     { name = "aiohttp" },
     { name = "anthropic" },
@@ -4362,7 +4362,7 @@ dev = [
 requires-dist = [
     { name = "fms-model-optimizer", extras = ["fp8"], specifier = ">=0.8.0" },
     { name = "ibm-fms", specifier = ">=1.7.0,<2.0" },
-    { name = "vllm", git = "https://github.com/vllm-project/vllm?rev=v0.15.1" },
+    { name = "vllm", git = "https://github.com/vllm-project/vllm?rev=v0.16.0" },
 ]
 
 [package.metadata.requires-dev]
