@@ -18,8 +18,6 @@ resolution-markers = [
 
 [manifest]
 overrides = [
-    { name = "intel-extension-for-pytorch", marker = "sys_platform == 'never'" },
-    { name = "llvmlite", marker = "platform_machine not in 's390x, ppc64le'" },
     { name = "llvmlite", marker = "platform_machine not in 's390x, ppc64le'", specifier = "==0.44.0" },
     { name = "numpy", specifier = ">=1.24,<2.3" },
     { name = "opencv-python-headless", specifier = "==4.12.0.88" },
@@ -4152,7 +4150,7 @@ wheels = [
 
 [[package]]
 name = "vllm"
-version = "0.16.0rc4.dev1+g2d5be1dd5"
+version = "0.16.0rc4.dev1+g2d5be1dd5.cpu"
 source = { git = "https://github.com/vllm-project/vllm?rev=2d5be1dd5ce2e44dfea53ea03ff61143da5137eb#2d5be1dd5ce2e44dfea53ea03ff61143da5137eb" }
 dependencies = [
     { name = "aiohttp" },

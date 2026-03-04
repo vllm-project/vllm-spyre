@@ -47,15 +47,16 @@ root = ".."
 override-dependencies = [
     # No triton support yet, don't allow any dependencies to pull it in
     "triton; sys_platform == 'never'",
-    "intel-extension-for-pytorch; sys_platform == 'never'",
-    
-    # This torch version must match the one below in `build-constraint-dependencies`
-    # Skip packages on s390x and ppc64le, expected to be pre-installed
-    "torch==2.10.0 ; platform_machine not in 's390x, ppc64le'",
+
+    # Skip packages on s390x and ppc64le that are expected to be pre-installed
     "vllm ; platform_machine not in 's390x, ppc64le'",
     "ray; platform_machine not in 's390x, ppc64le'",
-    "llvmlite; platform_machine not in 's390x, ppc64le'",
+    # uv doesn't resolve numba->llvmlite constraint correctly...
+    #   if numba is updated, this version will likely need to be too
+    "llvmlite==0.44.0; platform_machine not in 's390x, ppc64le'",
     "pyarrow; platform_machine not in 's390x, ppc64le'",
+    # This torch version must match the one below in `build-constraint-dependencies`
+    "torch==2.10.0 ; platform_machine not in 's390x, ppc64le'",
 
     # torch-spyre declares a dependency on numpy>2.3, conflicting with numba needed by vLLM
     # The range here should match the numba dependency
@@ -64,10 +65,6 @@ override-dependencies = [
     # opencv-python-headless==4.13.0.90 has a packaging bug that incorrectly depends on libxcb.so.1,
     # causing import failure on headless Linux systems.
     "opencv-python-headless==4.12.0.88",
-
-    # uv doesn't resolve numba->llvmlite constraint correctly...
-    #   if numba is updated, this will likely need to be too
-    "llvmlite==0.44.0; platform_machine not in 's390x, ppc64le'",
 
     # setuptools is specified as a runtime dep by vllm, make sure it's patched for CVEs
     "setuptools>=82",
