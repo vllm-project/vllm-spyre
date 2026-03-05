@@ -13,7 +13,7 @@ license = {text = "Apache 2"}
 dependencies = [
     "fms-model-optimizer[fp8]>=0.8.0",
     "ibm-fms>=1.7.0,<2.0",
-    "vllm>=0.15.1,<=0.15.1",
+    "vllm>=0.16.0,<=0.16.0",
 ]
 requires-python = ">=3.11"
 dynamic = ["version"]
@@ -34,6 +34,10 @@ version_file = "vllm_spyre/_version.py"
 # Version strings are formatted as `{version}+{local}`, e.g. "0.1.dev1+gb1a7032"
 # Local versioning is incompatible with pypi, so we disable it by default.
 local_scheme = "no-local-version"
+# Only match vX.Y.Z tags (with optional SemVer pre-release suffix), explicitly excluding spyre-next-v* tags.
+# SemVer pre-release format: hyphen followed by dot-separated identifiers (alphanumeric + hyphens)
+tag_regex = "^v(?P<version>[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?)$"
+git_describe_command = "git describe --dirty --tags --long --match 'v*' --exclude 'spyre-next-v*'"
 # For more version configuration, see
 # https://setuptools-scm.readthedocs.io/en/latest/config/
 
@@ -70,13 +74,11 @@ override-dependencies = [
     # requests is used by many dependencies, make sure it's patched for CVEs
     "requests>=2.32.4",
 ]
-# fms-mo doesn't support python 3.9, so don't have UV try to resolve it
-environments = [
-    "python_version > '3.9'"
-]
+# This ensures that we build with the empty backend for vLLM
+extra-build-variables = { vllm = { VLLM_TARGET_DEVICE = "empty" } }
 
 [tool.uv.sources]
-vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.15.1" }
+vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.16.0" }
 
 [tool.ty.rules]
 possibly-missing-attribute = "ignore"
