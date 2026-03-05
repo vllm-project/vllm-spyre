@@ -69,7 +69,8 @@ class SpyreRMSNorm(RMSNorm):
         self._fwd_spyre = torch.compile(self.forward_static, dynamic=False)
 
         logger.warning(
-            "SpyreRMSNorm: no dtype promotion is performed, expect numerical differences to upstream vLLM."
+            "SpyreRMSNorm: no dtype promotion is performed, \
+            expect numerical differences to upstream vLLM."
         )
 
         # Register in static_forward_context for custom op access
