@@ -245,6 +245,19 @@ def pytest_collection_modifyitems(config, items):
                 item.add_marker(passing_marker)
                 passing_count += 1
 
+            # Update node ID to include vLLM path prefix
+            rel_path = test_path.relative_to(upstream_tests_base)
+            # Prefix with "vllm/" and the relative path within upstream tests
+            vllm_prefix = f"VLLM_UPSTREAM/tests/{rel_path}"
+            # Replace the file path portion of nodeid with the prefixed version
+            original_nodeid = item.nodeid
+            # Extract the test name part (after ::)
+            if "::" in original_nodeid:
+                _, test_part = original_nodeid.split("::", 1)
+                item._nodeid = f"{vllm_prefix}::{test_part}"
+            else:
+                item._nodeid = vllm_prefix
+
     # Register all collected upstream marks to suppress warnings
     for mark_name in upstream_marks:
         if mark_name not in ("upstream", "upstream_passing"):
