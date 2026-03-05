@@ -39,8 +39,10 @@ version_file = "vllm_spyre_next/_version.py"
 # Local versioning is incompatible with pypi, so we disable it by default.
 local_scheme = "no-local-version"
 root = ".."
-# For more version configuration, see 
-# https://setuptools-scm.readthedocs.io/en/latest/config/
+# Only match spyre-next-vX.Y.Z tags (with optional SemVer pre-release suffix), ignoring v* tags used by vllm-spyre.
+# SemVer pre-release format: hyphen followed by dot-separated identifiers (alphanumeric + hyphens)
+tag_regex = "^spyre-next-v(?P<version>[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?)$"
+git_describe_command = "git describe --dirty --tags --long --match 'spyre-next-v*'"
 
 
 [tool.uv]
@@ -94,7 +96,7 @@ extra-build-variables = { vllm = { VLLM_TARGET_DEVICE = "cpu" } }
 # This is the unreleased v0.16.0 tag with 2.10 support
 vllm = { git = "https://github.com/vllm-project/vllm", rev = "2d5be1dd5ce2e44dfea53ea03ff61143da5137eb" }
 # see https://github.com/torch-spyre/torch-spyre/pull/746
-torch-spyre = { git = "https://github.com/joerunde/torch-spyre", rev = "4d3811a5d49623bdfd19966fc95a0449127f8389" }
+torch-spyre = { git = "https://github.com/joerunde/torch-spyre", rev = "f36c0517eb4ff4fa1c05a3e806c79ac8ffe1132e" }
 torch = [
   { index = "pytorch-cpu" },
 ]
