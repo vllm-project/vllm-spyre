@@ -48,7 +48,6 @@ from vllm_spyre.v1.worker.spyre_input_batch import (
     SamplingRequestState,
 )
 
-
 # yapf: enable
 if TYPE_CHECKING:
     from vllm.v1.core.sched.output import NewRequestData, SchedulerOutput

@@ -1,18 +1,34 @@
 # Release process
 
-Currently, we only have a single release process for pushing releases off `main`.
-In the future we may need to maintain multiple release streams to handle
-compatibility with multiple released versions of vllm.
+This repository contains two packages with independent versioning:
 
-When ready to make a new release:
+- **vllm-spyre** (tags: `vX.Y.Z`) — the main Spyre hardware plugin
+- **vllm-spyre-next** (tags: `spyre-next-vX.Y.Z`) — next iteration on the torch-spyre stack
 
-1. Create and push a tag on main for the next version, following the convention `vX.Y.Z`.
-2. Create a new release on GitHub for this tag. Use the "Generate Release Notes" button to draft release notes based on the changes since the last release.
-3. Once the release is ready, publish it by clicking the "Publish release" button.
-4. The `build-and-publish.yaml` workflow will trigger when the release is published, and push a new wheel to pypi
+Both packages follow [Semantic Versioning](https://semver.org/): use **patch** for bug fixes, **minor** for new features, **major** for breaking changes.
 
-<!-- markdownlint-disable no-bare-urls -->
+## Release steps
 
-We could automate the process of creating the release on GitHub as well, however,
-there is a slight snag that GitHub Actions cannot trigger from events that were
-performed by GitHub Actions. See: https://github.com/semantic-release/semantic-release/discussions/1906
+1. Go to the [Releases page](https://github.com/vllm-project/vllm-spyre/releases) and click "Draft a new release"
+2. Click "Choose a tag" and type the new version:
+   - For vllm-spyre: `vX.Y.Z` (e.g., `v1.2.0`)
+   - For vllm-spyre-next: `spyre-next-vX.Y.Z` (e.g., `spyre-next-v0.2.0`)
+3. Click "Generate release notes" and select the previous tag **of the same package** as the base:
+   - For vllm-spyre: select a `v*` tag (not `spyre-next-v*`)
+   - For vllm-spyre-next: select a `spyre-next-v*` tag (not `v*`)
+4. Review the changes to decide on the version bump, edit release notes, then publish
+5. The appropriate workflow will automatically trigger and publish to PyPI
+
+**Alternative**: Create the tag locally first, then create the release on GitHub.
+
+## Test releases
+
+**vllm-spyre**: Automatically published to [test.pypi.org](https://test.pypi.org/project/vllm-spyre/) on every push to main.
+
+**vllm-spyre-next**: Create a pre-release tag (e.g., `spyre-next-v0.1.0-rc.1`) to trigger automatic publication to [test.pypi.org](https://test.pypi.org/p/vllm-spyre-next). Install with:
+
+```bash
+pip install -i https://test.pypi.org/simple/ vllm-spyre-next==0.1.0rc1
+```
+
+**Note**: setuptools_scm automatically converts SemVer pre-release tags to [PEP 440](https://peps.python.org/pep-0440/) format (e.g., `v1.0.0-rc.1` → `1.0.0rc1`).
