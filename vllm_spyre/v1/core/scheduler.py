@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Iterable, Union
 
 from vllm.logger import init_logger
 from vllm.v1.core.sched.scheduler import Scheduler
+from vllm.v1.metrics.stats import SchedulerStats
 from vllm.v1.request import Request, RequestStatus
 
 import vllm_spyre.envs as envs_spyre
@@ -545,3 +546,17 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         self.ongoing_prefills = [
             r for r in self.ongoing_prefills if r.request_id not in request_ids
         ]
+
+    def make_stats(self, *args, **kwargs) -> SchedulerStats | None:
+        """Update the scheduler stats from the base scheduler.
+        In vllm-spyre the last chunk is always recomputed, even though
+        the space is not duplicated.
+        """
+        base_stats = super().make_stats(*args, **kwargs)
+
+        if base_stats is not None and base_stats.prefix_cache_stats is not None:
+            base_stats.prefix_cache_stats.hits = (
+                base_stats.prefix_cache_stats.hits // self.chunk_size
+            ) * self.chunk_size
+
+        return base_stats
