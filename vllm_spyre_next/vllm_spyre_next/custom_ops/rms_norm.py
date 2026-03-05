@@ -57,32 +57,32 @@ class SpyreRMSNorm(RMSNorm):
             raise ValueError(f"Duplicate layer name: {self.prefix}")
         compilation_config.static_forward_context[self.prefix] = self
 
-    def forward(
-        self,
-        x: torch.Tensor,
-        residual: torch.Tensor | None = None,
-    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
-        """
-        Forward method that uses a custom op to avoid torch.compile.
+    # def forward(
+    #     self,
+    #     x: torch.Tensor,
+    #     residual: torch.Tensor | None = None,
+    # ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+    #     """
+    #     Forward method that uses a custom op to avoid torch.compile.
 
-        This delegates to the custom op which will call forward_impl
-        outside of the compilation graph.
-        """
-        # Create output tensor
-        output = torch.empty_like(x)
+    #     This delegates to the custom op which will call forward_impl
+    #     outside of the compilation graph.
+    #     """
+    #     # Create output tensor
+    #     output = torch.empty_like(x)
 
-        # Call the custom op - this will NOT be compiled
-        torch.ops.vllm.spyre_rmsnorm(
-            x,
-            output,
-            self.prefix,
-            residual,
-        )
+    #     # Call the custom op - this will NOT be compiled
+    #     torch.ops.vllm.spyre_rmsnorm(
+    #         x,
+    #         output,
+    #         self.prefix,
+    #         residual,
+    #     )
 
-        if residual is not None:
-            # The custom op will have updated residual in-place if needed
-            return output, residual
-        return output
+    #     if residual is not None:
+    #         # The custom op will have updated residual in-place if needed
+    #         return output, residual
+    #     return output
 
     def forward_impl(
         self,
@@ -164,6 +164,7 @@ class SpyreRMSNorm(RMSNorm):
         - Data transfer to/from Spyre device
         - Calling the compiled Spyre kernel
         """
+        orig_dtype = x.dtype
         if residual is not None:
             raise NotImplementedError("TODO: Residual support not yet implemented")
 
@@ -193,7 +194,7 @@ class SpyreRMSNorm(RMSNorm):
         spyre_out = spyre_out[:num_real_el, :]
 
         # Convert to expected output dtype
-        return spyre_out.to(torch.bfloat16)
+        return spyre_out.to(orig_dtype)
 
     def forward_oot(
         self,

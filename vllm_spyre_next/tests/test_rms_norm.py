@@ -41,7 +41,7 @@ def test_spyre_rmsnorm_matches_reference(batch_size, hidden_size):
 
 @pytest.mark.spyre
 @pytest.mark.parametrize("batch_size", [1])
-@pytest.mark.parametrize("hidden_size", [128, 512])
+@pytest.mark.parametrize("hidden_size", [63, 64, 65, 127, 128, 129, 256, 512])
 def test_spyre_rmsnorm_on_device(default_vllm_config, batch_size, hidden_size):
     """SpyreRMSNorm full forward pass on Spyre hardware."""
     from vllm_spyre_next.custom_ops.rms_norm import SpyreRMSNorm
