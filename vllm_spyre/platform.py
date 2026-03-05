@@ -16,7 +16,6 @@ import os
 from typing import TYPE_CHECKING, cast, Literal
 
 import torch
-from vllm.inputs import ProcessorInputs, PromptType, TokenInputs
 from vllm.logger import init_logger
 from vllm.utils.argparse_utils import FlexibleArgumentParser
 
