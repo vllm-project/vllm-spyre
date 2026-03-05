@@ -24,26 +24,18 @@ Spyre Device Constraints:
     - Output dtype: bfloat16 (converted on CPU)
     - Algorithm: Transpose-based computation with torch.ops.spyre.full()
 
-Configuration (via environment variables):
-    VLLM_SPYRE_NEXT_RMSNORM_KERNEL: Select kernel implementation
-        - "native" (default): Transpose-based vLLM implementation
-        - "functional": torch.nn.functional.rms_norm
-
-    VLLM_SPYRE_NEXT_RMSNORM_DTYPE_UP_PROMOTION: Enable dtype promotion
-        - "0" (default): Disabled (recommended)
-        - "1": Enabled (may cause errors with torch-spyre)
-
-Example:
-    export VLLM_SPYRE_NEXT_RMSNORM_KERNEL=functional
-    export VLLM_SPYRE_NEXT_RMSNORM_DTYPE_UP_PROMOTION=0
-    python -m vllm.entrypoints.openai.api_server --model meta-llama/Llama-2-7b-hf
+Limitations:
+    Currently the implementation in `_forward_vLLM_native` is similar to the
+    upstream implementation in `forward_static` from llm/model_executor/layers/layernorm.py,
+    but it DOES NOT use the promotion of the data types, as this is not
+    yet supported in torch-spyre.
 
 References:
     - Upstream RMSNorm: vllm/model_executor/layers/layernorm.py
-    - Configuration: vllm_spyre_next/envs.py
 """
 
 import torch
+import torch.utils._pytree as pytree
 
 from vllm.logger import init_logger
 from vllm.utils.torch_utils import direct_register_custom_op
@@ -51,8 +43,7 @@ from vllm.config import get_current_vllm_config
 from vllm.forward_context import get_forward_context
 from vllm.model_executor.layers.layernorm import RMSNorm
 
-from vllm_spyre_next import envs as envs_spyre_next
-from .utils import prepare_inputs_on_spyre
+from .utils import convert_for_spyre, convert_from_spyre
 
 logger = init_logger(__name__)
 
@@ -75,30 +66,11 @@ class SpyreRMSNorm(RMSNorm):
 
         logger.debug("Building custom RMS norm")
 
-        # Select kernel based on environment variable
-        kernel_type = envs_spyre_next.VLLM_SPYRE_NEXT_RMSNORM_KERNEL
-        if kernel_type == "functional":
-            self._fwd_spyre = torch.compile(self._forward_functional, dynamic=False)
-            logger.info("SpyreRMSNorm: Using functional kernel (torch.nn.functional.rms_norm)")
-        elif kernel_type == "native":
-            self._fwd_spyre = torch.compile(self._forward_vLLM_native, dynamic=False)
-            logger.info("SpyreRMSNorm: Using native kernel (transpose-based vLLM implementation)")
-        else:
-            logger.warning(
-                f"Unknown VLLM_SPYRE_NEXT_RMSNORM_KERNEL value: {kernel_type}. "
-                "Defaulting to 'native'"
-            )
-            self._fwd_spyre = torch.compile(self._forward_vLLM_native, dynamic=False)
+        self._fwd_spyre = torch.compile(self._forward_vLLM_native, dynamic=False)
 
-        # Store dtype promotion setting from environment
-        self._dtype_up_promotion = envs_spyre_next.VLLM_SPYRE_NEXT_RMSNORM_DTYPE_UP_PROMOTION
-        if self._dtype_up_promotion:
-            logger.warning(
-                "SpyreRMSNorm: dtype_up_promotion enabled but may not be fully "
-                "supported by torch-spyre. This may cause compilation or runtime errors."
-            )
-        else:
-            logger.debug("SpyreRMSNorm: dtype_up_promotion disabled (recommended)")
+        logger.warning(
+            "SpyreRMSNorm: no dtype promotion is performed, expect numerical differences to upstream vLLM."
+        )
 
         # Register in static_forward_context for custom op access
         # Pattern: Each instance gets unique name via counter to avoid collisions
@@ -126,7 +98,7 @@ class SpyreRMSNorm(RMSNorm):
 
         Args:
             x: Input tensor [batch_size, hidden_size]
-            residual: Optional residual tensor (not yet supported)
+            residual: Optional residual tensor
 
         Returns:
             Normalized output, or (output, residual) tuple if residual provided
@@ -167,56 +139,13 @@ class SpyreRMSNorm(RMSNorm):
             output.copy_(result)
 
     @staticmethod
-    def _forward_functional(
-        x: torch.Tensor,
-        variance_epsilon: float,
-        hidden_size: int,
-        orig_dtype: torch.dtype,
-        weight: torch.Tensor | None = None,
-        residual: torch.Tensor | None = None,
-        variance_size_override: int | None = None,
-        dtype_up_promotion: bool = False,
-    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
-        """Alternative implementation using torch.nn.functional.rms_norm (currently unused).
-
-        This simpler implementation is available but not currently used. The active
-        implementation is _forward_vLLM_native which uses transpose-based computation.
-        """
-        if dtype_up_promotion:
-            x = x.to(torch.float32)
-
-        if residual is not None:
-            # residual promoted f16->f32 automatically,
-            # otherwise Inductor eliminates the casts to and from f16,
-            # increasing memory usage (and complicating pattern matching)
-            x = x + residual
-            if dtype_up_promotion:
-                residual = x.to(orig_dtype)
-            else:
-                residual = x
-
-        x = torch.nn.functional.rms_norm(
-            x, normalized_shape=[x.shape[-1]], weight=weight, eps=variance_epsilon
-        )
-
-        if dtype_up_promotion:
-            x = x.to(orig_dtype)
-
-        if residual is None:
-            return x
-        else:
-            return x, residual
-
-    @staticmethod
     def _forward_vLLM_native(
         x: torch.Tensor,
         variance_epsilon: float,
         hidden_size: int,
-        orig_dtype: torch.dtype,
         weight: torch.Tensor | None = None,
         residual: torch.Tensor | None = None,
         variance_size_override: int | None = None,
-        dtype_up_promotion: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """Spyre-optimized RMS norm using transpose-based computation (active implementation).
 
@@ -227,20 +156,11 @@ class SpyreRMSNorm(RMSNorm):
         Key differences from upstream:
             - Uses transpose(-1, -2) for computation efficiency on Spyre
             - Creates epsilon tensor via torch.ops.spyre.full() instead of scalar
-            - No dtype_up_promotion support (torch-spyre limitation)
+            - No dtype promotion support (torch-spyre limitation)
         """
-        if dtype_up_promotion:
-            x = x.to(torch.float32)
-
         if residual is not None:
-            # residual promoted f16->f32 automatically,
-            # otherwise Inductor eliminates the casts to and from f16,
-            # increasing memory usage (and complicating pattern matching)
             x = x + residual
-            if dtype_up_promotion:
-                residual = x.to(orig_dtype)
-            else:
-                residual = x
+            residual = x
 
         if x.shape[-1] != hidden_size:
             raise ValueError(f"Expected hidden_size to be {hidden_size}, but found: {x.shape[-1]}")
@@ -267,9 +187,6 @@ class SpyreRMSNorm(RMSNorm):
         x = x * torch.rsqrt(variance + variance_epsilon)
         x = x.transpose(-1, -2).contiguous()
 
-        if dtype_up_promotion:
-            x = x.to(orig_dtype)
-
         if weight is not None:
             x = x * weight
         if residual is None:
@@ -290,50 +207,48 @@ class SpyreRMSNorm(RMSNorm):
             3. Kernel execution: Calls compiled _fwd_spyre
             4. Result transfer: Spyre -> CPU, trim padding, convert to bfloat16
 
-        Uses configuration from environment variables:
-            - VLLM_SPYRE_NEXT_RMSNORM_KERNEL: Kernel implementation
-            - VLLM_SPYRE_NEXT_RMSNORM_DTYPE_UP_PROMOTION: Dtype promotion setting
-
         Limitations:
-            - residual fusion not implemented (raises NotImplementedError)
             - variance_size_override not implemented (raises NotImplementedError)
 
         Args:
             x: Input tensor [batch_size, hidden_size] on CPU
-            residual: Optional residual (not supported)
+            residual: Optional residual
 
         Returns:
             Normalized output [batch_size, hidden_size] in bfloat16
         """
-        if residual is not None:
-            raise NotImplementedError("TODO: Residual support not yet implemented")
+        x_dtype = x.dtype
+        x_device = x.device
 
         if self.variance_size_override is not None:
             raise NotImplementedError("TODO: variance_size_override not yet implemented")
 
         num_real_el = x.shape[0]
+        slicing_needed = x.shape[0]
 
         # Pad to minimum batch size of 64 (Spyre constraint)
         if x.shape[0] < 64:
+            slicing_needed = 64 - num_real_el
             x = torch.nn.functional.pad(x, (0, 0, 64 - num_real_el, 0))
+            if residual is not None:
+                residual = torch.nn.functional.pad(residual, (0, 0, 64 - num_real_el, 0))
 
         # Execute compiled kernel on Spyre device
-        # prepare_inputs_on_spyre: CPU tensor -> Spyre device (float16)
-        out = self._fwd_spyre(
-            prepare_inputs_on_spyre([x])[0],
+        # convert_for_spyre: CPU tensor -> Spyre device (float16)
+        outs = self._fwd_spyre(
+            convert_for_spyre(x, dtype=torch.float16),
             self.variance_epsilon,
             self.hidden_size,
-            torch.float16,
-            prepare_inputs_on_spyre([self.weight.data])[0] if self.has_weight else None,
-            residual,
+            convert_for_spyre(self.weight.data, dtype=torch.float16) if self.has_weight else None,
+            convert_for_spyre(residual, dtype=torch.float16),
             self.variance_size_override,
-            dtype_up_promotion=self._dtype_up_promotion,  # Use config from environment
         )
 
         # Transfer back to CPU and restore original shape
-        spyre_out = out.cpu()[:num_real_el, :]
-
-        return spyre_out.to(torch.bfloat16)
+        return pytree.tree_map(
+            lambda el: el[:slicing_needed, :],
+            convert_from_spyre(outs, dtype=x_dtype, device=x_device),
+        )[0]
 
     def forward_oot(
         self,
@@ -364,7 +279,7 @@ def spyre_rmsnorm(
         x: Input tensor
         output: Pre-allocated output tensor (modified in-place)
         layer_name: Unique layer identifier in static_forward_context
-        residual: Optional residual tensor (not yet supported)
+        residual: Optional residual tensor
     """
     forward_context = get_forward_context()
     layer = forward_context.no_compile_layers[layer_name]
