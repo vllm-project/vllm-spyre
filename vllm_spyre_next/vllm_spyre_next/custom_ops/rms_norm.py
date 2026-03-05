@@ -66,7 +66,7 @@ class SpyreRMSNorm(RMSNorm):
 
         logger.debug("Building custom RMS norm")
 
-        self._fwd_spyre = torch.compile(self._forward_vLLM_native, dynamic=False)
+        self._fwd_spyre = torch.compile(self.forward_static, dynamic=False)
 
         logger.warning(
             "SpyreRMSNorm: no dtype promotion is performed, expect numerical differences to upstream vLLM."
@@ -139,7 +139,7 @@ class SpyreRMSNorm(RMSNorm):
             output.copy_(result)
 
     @staticmethod
-    def _forward_vLLM_native(
+    def forward_static(
         x: torch.Tensor,
         variance_epsilon: float,
         hidden_size: int,
@@ -223,15 +223,14 @@ class SpyreRMSNorm(RMSNorm):
         if self.variance_size_override is not None:
             raise NotImplementedError("TODO: variance_size_override not yet implemented")
 
-        num_real_el = x.shape[0]
-        slicing_needed = x.shape[0]
+        batch_padding = x.shape[0]
 
         # Pad to minimum batch size of 64 (Spyre constraint)
         if x.shape[0] < 64:
-            slicing_needed = 64 - num_real_el
-            x = torch.nn.functional.pad(x, (0, 0, 64 - num_real_el, 0))
+            batch_padding = 64 - x.shape[0]
+            x = torch.nn.functional.pad(x, (0, 0, batch_padding, 0))
             if residual is not None:
-                residual = torch.nn.functional.pad(residual, (0, 0, 64 - num_real_el, 0))
+                residual = torch.nn.functional.pad(residual, (0, 0, batch_padding, 0))
 
         # Execute compiled kernel on Spyre device
         # convert_for_spyre: CPU tensor -> Spyre device (float16)
@@ -246,7 +245,7 @@ class SpyreRMSNorm(RMSNorm):
 
         # Transfer back to CPU and restore original shape
         return pytree.tree_map(
-            lambda el: el[:slicing_needed, :],
+            lambda el: el[:batch_padding, :],
             convert_from_spyre(outs, dtype=x_dtype, device=x_device),
         )[0]
 
