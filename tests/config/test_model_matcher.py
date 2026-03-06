@@ -274,5 +274,41 @@ class TestModelMatcherEdgeCases:
 
         assert not matcher.matches(hf_config, pattern)
 
+    def test_match_text_config_ignores_extra_attributes(self, matcher):
+        """Test matching model with text_config sub-object and that extra attributes are ignored."""
+        pattern = ArchitecturePattern(
+            model_name="mistralai/Mistral-Small-3.2-24B-Instruct-2506",
+            model_type="pixtral",
+            attributes={"text_config": {"num_heads": 2}},
+        )
+        text_config = Mock(num_heads=2, num_layers=40, hidden_size=4096)  # extra attrs OK
+        hf_config = Mock(model_type="pixtral", text_config=text_config)
+
+        assert matcher.matches(hf_config, pattern)
+
+    def test_no_match_when_text_config_attribute_value_differs(self, matcher):
+        """Test that mismatched text_config attribute value causes no match."""
+        pattern = ArchitecturePattern(
+            model_name="test-model",
+            model_type="pixtral",
+            attributes={"text_config": {"num_heads": 2}},
+        )
+        text_config = Mock(num_heads=8)  # wrong value
+        hf_config = Mock(model_type="pixtral", text_config=text_config)
+
+        assert not matcher.matches(hf_config, pattern)
+
+    def test_no_match_when_text_config_attribute_missing(self, matcher):
+        """Test that missing attribute in text_config sub-object causes no match."""
+        pattern = ArchitecturePattern(
+            model_name="test-model",
+            model_type="pixtral",
+            attributes={"text_config": {"num_heads": 2}},
+        )
+        text_config = Mock(spec=["num_layers"])  # num_heads not present
+        hf_config = Mock(model_type="pixtral", text_config=text_config)
+
+        assert not matcher.matches(hf_config, pattern)
+
 
 # Made with Bob

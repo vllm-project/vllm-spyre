@@ -24,7 +24,7 @@ class TestStructuredOutputValidation:
 
         assert params.structured_outputs is not None
 
-        SpyrePlatform.validate_request("Test prompt", params)
+        SpyrePlatform.validate_request("Test prompt", params, processed_inputs=None)
 
         assert params.structured_outputs is None
 
@@ -34,7 +34,7 @@ class TestStructuredOutputValidation:
             max_tokens=20, structured_outputs=StructuredOutputsParams(json_object=True)
         )
 
-        SpyrePlatform.validate_request("Test prompt", params)
+        SpyrePlatform.validate_request("Test prompt", params, processed_inputs=None)
 
         assert len(caplog_vllm_spyre.records) > 0
         warning_record = caplog_vllm_spyre.records[0]
@@ -55,7 +55,7 @@ class TestStructuredOutputValidation:
 
         assert params.structured_outputs is not None
 
-        SpyrePlatform.validate_request("Test prompt", params)
+        SpyrePlatform.validate_request("Test prompt", params, processed_inputs=None)
 
         assert params.structured_outputs is None
 
@@ -77,7 +77,7 @@ class TestStructuredOutputValidation:
             "top_k": params.top_k,
         }
 
-        SpyrePlatform.validate_request("Test prompt", params)
+        SpyrePlatform.validate_request("Test prompt", params, processed_inputs=None)
 
         # Verify other params are unchanged
         assert params.max_tokens == original_values["max_tokens"]
@@ -92,7 +92,7 @@ class TestStructuredOutputValidation:
         pooling_params = PoolingParams()
 
         # Should not raise any errors and should return early
-        SpyrePlatform.validate_request("Test prompt", pooling_params)
+        SpyrePlatform.validate_request("Test prompt", pooling_params, processed_inputs=None)
 
         # PoolingParams don't have structured_outputs, so just verify no exception
         assert True  # If we got here, the early return worked
