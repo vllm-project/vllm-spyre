@@ -187,6 +187,9 @@ skip_gitignore = true
 [tool.pytest.ini_options]
 pythonpath = ["."]
 asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+    "ignore::_pytest.warning_types.PytestUnknownMarkWarning"
+]
 addopts = "-m 'spyre or upstream_passing'"
 
 # --8<-- [start:test-markers-definition]

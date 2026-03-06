@@ -30,8 +30,6 @@ but that can be overridden.
 ## Pytest Markers
 - **upstream**: Applied to all tests from upstream vLLM
 - **upstream_passing**: Applied to tests matching UPSTREAM_PASSING_PATTERNS
-- Additional markers are auto-discovered and registered from upstream test files
-  to avoid warnings from pytest
 
 ## Cache Behavior
 - Tests are cached in XDG_CACHE_HOME or ~/.cache/vllm-upstream-tests
@@ -216,34 +214,6 @@ def _prepare_upstream_tests_dir() -> Path:
     return tests_dir
 
 
-def _extract_marks_from_upstream_tests(
-    upstream_tests_base: Path, upstream_paths: list[str]
-) -> set[str]:
-    """
-    Scan upstream test files to extract all pytest marks used.
-    This allows us to register them early to avoid warnings.
-    """
-    marks = set()
-
-    for rel_path in upstream_paths:
-        test_dir = upstream_tests_base / rel_path
-        if not test_dir.exists():
-            continue
-
-        for test_file in test_dir.rglob("*.py"):
-            try:
-                content = test_file.read_text()
-                # Match pytest.mark.mark_name patterns
-                # Handles: @pytest.mark.slow, pytest.mark.skip_v1, etc.
-                for match in re.finditer(r"pytest\.mark\.(\w+)", content):
-                    marks.add(match.group(1))
-            except Exception:
-                # Skip files that can't be read
-                continue
-
-    return marks
-
-
 # -------------------------------
 # Pytest hooks
 # -------------------------------
@@ -287,17 +257,6 @@ def pytest_configure(config):
 
         upstream_tests_base = _prepare_upstream_tests_dir()
 
-        # Extract and register all marks from upstream tests early
-        _log("[vllm-upstream] Scanning upstream tests for marks...")
-        upstream_marks = _extract_marks_from_upstream_tests(upstream_tests_base, upstream_paths)
-
-        # Register all discovered marks to prevent warnings
-        for mark_name in sorted(upstream_marks):
-            config.addinivalue_line("markers", f"{mark_name}: mark from upstream vLLM tests")
-
-        if upstream_marks:
-            _log(f"[vllm-upstream] Pre-registered {len(upstream_marks)} upstream markers")
-
         # Add each configured path to test collection
         for rel_path in upstream_paths:
             upstream_tests_dir = upstream_tests_base / rel_path
@@ -320,7 +279,6 @@ def pytest_collection_modifyitems(config, items):
     """
     Mark all upstream tests with 'upstream' marker.
     Mark subset of tests matching regex patterns with 'upstream_passing' marker.
-    Collect and register all marks from upstream tests to suppress warnings.
 
     Can configure passing patterns via UPSTREAM_PASSING_PATTERNS env var with
     comma-separated regex patterns
