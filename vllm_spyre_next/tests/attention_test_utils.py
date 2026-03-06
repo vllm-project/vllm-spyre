@@ -52,13 +52,11 @@ def create_common_attn_metadata(
     block_size: int,
     device: torch.device,
     max_block_idx: int = 1000,
-    arange_block_indices: bool = False,
+    arrange_block_indices: bool = False,
 ) -> CommonAttentionMetadata:
     """Create CommonAttentionMetadata from a BatchSpec and ModelParams."""
     # Create query start locations
-    query_start_loc = torch.zeros(
-        batch_spec.batch_size + 1, dtype=torch.int32, device=device
-    )
+    query_start_loc = torch.zeros(batch_spec.batch_size + 1, dtype=torch.int32, device=device)
     query_start_loc[1:] = torch.tensor(
         batch_spec.query_lens, dtype=torch.int32, device=device
     ).cumsum(0)
@@ -72,21 +70,18 @@ def create_common_attn_metadata(
 
     # Create computed tokens (context length for each sequence)
     context_lens = [
-        batch_spec.seq_lens[i] - batch_spec.query_lens[i]
-        for i in range(batch_spec.batch_size)
+        batch_spec.seq_lens[i] - batch_spec.query_lens[i] for i in range(batch_spec.batch_size)
     ]
     num_computed_tokens_cpu = torch.tensor(context_lens, dtype=torch.int32)
 
     # Create block table and slot mapping
     max_blocks = (max(batch_spec.seq_lens) + block_size - 1) // block_size
-    if arange_block_indices:
+    if arrange_block_indices:
         num_blocks = batch_spec.batch_size * max_blocks
-        block_table_tensor = torch.arange(
-            num_blocks, dtype=torch.int32, device=device
-        ).view(batch_spec.batch_size, max_blocks)
-        slot_mapping = torch.arange(num_tokens, dtype=torch.int64, device=device).view(
-            num_tokens
+        block_table_tensor = torch.arange(num_blocks, dtype=torch.int32, device=device).view(
+            batch_spec.batch_size, max_blocks
         )
+        slot_mapping = torch.arange(num_tokens, dtype=torch.int64, device=device).view(num_tokens)
     else:
         block_table_tensor = torch.randint(
             0,
@@ -146,9 +141,7 @@ def create_standard_kv_cache_spec(vllm_config: VllmConfig) -> FullAttentionSpec:
     """Create a FullAttentionSpec from ModelParams only."""
     return FullAttentionSpec(
         block_size=vllm_config.cache_config.block_size,
-        num_kv_heads=vllm_config.model_config.get_num_kv_heads(
-            vllm_config.parallel_config
-        ),
+        num_kv_heads=vllm_config.model_config.get_num_kv_heads(vllm_config.parallel_config),
         head_size=vllm_config.model_config.get_head_size(),
         dtype=vllm_config.model_config.dtype,
         sliding_window=vllm_config.model_config.get_sliding_window(),
