@@ -88,7 +88,7 @@ extra-build-variables = { vllm = { VLLM_TARGET_DEVICE = "cpu" } }
 # This is the unreleased v0.16.0 tag with 2.10 support
 vllm = { git = "https://github.com/vllm-project/vllm", rev = "2d5be1dd5ce2e44dfea53ea03ff61143da5137eb" }
 # see https://github.com/torch-spyre/torch-spyre/pull/746
-torch-spyre = { git = "https://github.com/joerunde/torch-spyre", rev = "f36c0517eb4ff4fa1c05a3e806c79ac8ffe1132e" }
+torch-spyre = { git = "https://github.com/torch-spyre/torch-spyre", rev = "bd7502baa9123d292e56dbd4928147969ecdf63c" }
 torch = [
   { index = "pytorch-cpu" },
 ]
