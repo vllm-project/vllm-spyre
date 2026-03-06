@@ -85,32 +85,33 @@ class SpyreRMSNorm(RMSNorm):
             raise ValueError(f"Duplicate layer name: {self.prefix}")
         compilation_config.static_forward_context[self.prefix] = self
 
-    # def forward(
-    #     self,
-    #     x: torch.Tensor,
-    #     residual: torch.Tensor | None = None,
-    # ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
-    #     """
-    #     Forward method that uses a custom op to avoid torch.compile.
+    def forward(
+        self,
+        x: torch.Tensor,
+        residual: torch.Tensor | None = None,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        """Forward pass using custom op to bypass torch.compile.
 
-    #     This delegates to the custom op which will call forward_impl
-    #     outside of the compilation graph.
-    #     """
-    #     # Create output tensor
-    #     output = torch.empty_like(x)
+        Delegates to torch.ops.vllm.spyre_rmsnorm which retrieves this layer
+        from forward_context.no_compile_layers and calls forward_impl outside
+        the compilation graph. This prevents torch.compile from inlining the
+        Spyre-specific operations.
 
-    #     # Call the custom op - this will NOT be compiled
-    #     torch.ops.vllm.spyre_rmsnorm(
-    #         x,
-    #         output,
-    #         self.prefix,
-    #         residual,
-    #     )
+        Args:
+            x: Input tensor [batch_size, hidden_size]
+            residual: Optional residual tensor
 
-    #     if residual is not None:
-    #         # The custom op will have updated residual in-place if needed
-    #         return output, residual
-    #     return output
+        Returns:
+            Normalized output, or (output, residual) tuple if residual provided
+        """
+        output = torch.empty_like(x)
+
+        # Custom op call - executes outside torch.compile graph
+        torch.ops.vllm.spyre_rmsnorm(x, output, self.prefix, residual)
+
+        if residual is not None:
+            return output, residual
+        return output
 
     def forward_impl(
         self,
@@ -217,9 +218,8 @@ class SpyreRMSNorm(RMSNorm):
         Returns:
             Normalized output [batch_size, hidden_size] in bfloat16
         """
-        orig_dtype = x.dtype
-        if residual is not None:
-            raise NotImplementedError("TODO: Residual support not yet implemented")
+        x_dtype = x.dtype
+        x_device = x.device
 
         if self.variance_size_override is not None:
             raise NotImplementedError("TODO: variance_size_override not yet implemented")
@@ -244,14 +244,11 @@ class SpyreRMSNorm(RMSNorm):
             self.variance_size_override,
         )
 
-        # Transfer result back to CPU
-        spyre_out = out.cpu()
-
-        # Remove padding to restore original batch size
-        spyre_out = spyre_out[:num_real_el, :]
-
-        # Convert to expected output dtype
-        return spyre_out.to(orig_dtype)
+        # Transfer back to CPU and restore original shape
+        return pytree.tree_map(
+            lambda el: el[:batch_padding, :],
+            convert_from_spyre(outs, dtype=x_dtype, device=x_device),
+        )[0]
 
     def forward_oot(
         self,
