@@ -66,6 +66,8 @@ def _resolve_vllm_commit() -> str:
     # Allow env var override for testing/CI
     env_commit = os.environ.get("VLLM_COMMIT", "").strip()
     if env_commit:
+        if not re.match(r"^[0-9a-f]{7,40}$", env_commit):
+            raise ValueError(f"Invalid VLLM_COMMIT format: {env_commit}")
         return env_commit
 
     # Extract from pyproject.toml
@@ -292,13 +294,7 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         # Check if test is from upstream directory
         test_path = Path(item.fspath)
-        try:
-            test_path.relative_to(upstream_tests_base)
-            is_upstream = True
-        except ValueError:
-            is_upstream = False
-
-        if is_upstream:
+        if test_path.is_relative_to(upstream_tests_base):
             # Mark as upstream
             item.add_marker(upstream_marker)
             marked_count += 1
@@ -313,7 +309,6 @@ def pytest_collection_modifyitems(config, items):
 
             # Update node ID to include vLLM path prefix
             rel_path = test_path.relative_to(upstream_tests_base)
-            # Prefix with "vllm/" and the relative path within upstream tests
             vllm_prefix = f"VLLM_UPSTREAM/tests/{rel_path}"
             # Replace the file path portion of nodeid with the prefixed version
             original_nodeid = item.nodeid
