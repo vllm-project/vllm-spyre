@@ -5,6 +5,13 @@ This conftest.py provides automatic integration of upstream vLLM tests into the
 vllm-spyre-next test suite. It clones the vLLM repository at a specific commit
 and dynamically injects those tests into the pytest collection.
 
+pyproject.toml configures the default markers to run the vllm_spyre_next tests
+and the upstream tests configured as passing with:
+```
+-m 'spyre or upstream_passing'
+```
+but that can be overridden.
+
 ## Supported Configuration
 
 - **SKIP_UPSTREAM_TESTS**: Set to "1", "true", or "yes" to skip upstream tests entirely
