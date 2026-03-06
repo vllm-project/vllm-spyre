@@ -187,6 +187,7 @@ asyncio_default_fixture_loop_scope = "function"
 
 # --8<-- [start:test-markers-definition]
 markers = [
+    "spyre: Tests that require a Spyre device",
     "upstream: Tests coming from upstream vLLM",
     "upstream_passing: Tests known to pass from upstream vLLM",
 ]
