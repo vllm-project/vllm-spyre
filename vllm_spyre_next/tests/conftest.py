@@ -1,20 +1,33 @@
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
 
 import pytest
 
-# -------------------------------
-# Configuration knobs (env can override)
-# -------------------------------
-VLLM_REPO_URL = os.environ.get("VLLM_REPO_URL", "https://github.com/vllm-project/vllm")
+
+# Global logger for pytest terminal output
+_terminal_reporter = None
 
 
-# Cache directory for cloned tests (sticky between runs)
+def _log(msg: str):
+    """Log message to pytest terminal reporter if available.
+    This allows logs to be printed from this file even when pytest is capturing output.
+    """
+    if _terminal_reporter:
+        _terminal_reporter.write_line(msg)
+    else:
+        # Fallback to stderr when terminal reporter not available
+        print(msg, file=sys.stderr)
+
+
 def _cache_root() -> Path:
+    """
+    Cache directory for cloned tests (sticky between runs)
+    """
     # Respect XDG if present, fallback to ~/.cache
     xdg = os.environ.get("XDG_CACHE_HOME")
     base = Path(xdg) if xdg else Path.home() / ".cache"
@@ -75,6 +88,8 @@ def _run(cmd: list[str], cwd: Path | None = None, max_retries: int = 3) -> None:
             subprocess.run(cmd, cwd=str(cwd) if cwd else None, check=True)
             return
         except subprocess.CalledProcessError:
+            _log(f"Command failed: {' '.join(cmd)}")
+            _log(f"Retrying. Attempt {attempt + 1}/{max_retries}")
             if attempt < max_retries - 1:
                 time.sleep(2**attempt)  # Exponential backoff: 1s, 2s, 4s
             else:
@@ -98,13 +113,14 @@ def _ensure_repo_at_commit(repo_dir: Path, url: str, commit: str, sparse_paths: 
     wt_dir = base_dir / f"worktree-{commit[:12]}"
     if wt_dir.exists():
         # Already prepared; assume valid
+        _log(f"[vllm-upstream] Using cached worktree at {wt_dir}")
         return wt_dir
 
     # Create temp dir to set up the sparse worktree then move into place atomically
     with tempfile.TemporaryDirectory(dir=str(base_dir)) as td:
         td_path = Path(td)
         _run(["git", "--git-dir", str(git_dir), "remote", "add", "origin", url])
-        # Fetch only the required commit
+        _log(f"[vllm-upstream] Fetching commit {commit[:12]} from {url}")
         _run(["git", "--git-dir", str(git_dir), "fetch", "--depth=1", "origin", commit])
 
         # Create a new worktree at temp
@@ -130,7 +146,7 @@ def _prepare_upstream_tests_dir() -> Path:
     cache_root = _cache_root()
     wt_dir = _ensure_repo_at_commit(
         repo_dir=cache_root,
-        url=VLLM_REPO_URL,
+        url=os.environ.get("VLLM_REPO_URL", "https://github.com/vllm-project/vllm"),
         commit=commit,
         sparse_paths=["tests"],
     )
@@ -145,32 +161,40 @@ def _prepare_upstream_tests_dir() -> Path:
 # -------------------------------
 
 
-@pytest.fixture(autouse=True, scope="session")
-def ensure_spyre_next_plugin():
-    """
-    Ensure VLLM_PLUGINS is set to spyre-next for all tests.
-    This must run before any vLLM imports to properly load the plugin.
-    """
-    os.environ["VLLM_PLUGINS"] = "spyre-next"
-
-
+@pytest.hookimpl(trylast=True)
 def pytest_configure(config):
     """
     Clone vLLM and inject upstream tests into the test session.
     This runs early in pytest initialization.
 
-    Configure via UPSTREAM_TESTS_PATHS env var (comma-separated paths).
-    Default: "models/language/generation"
+    Configure via environment variables:
+    - SKIP_UPSTREAM_TESTS: Set to "1" or "true" to skip cloning and running upstream tests
+    - UPSTREAM_TESTS_PATHS: Comma-separated paths (default: "models/language/generation")
     """
-    # Comma separated list of upstream paths
-    DEFAULT_UPSTREAM_TESTS_PATHS = "models/language/generation"
+    global _terminal_reporter
+    _terminal_reporter = config.pluginmanager.get_plugin("terminalreporter")
+
+    # Check if upstream tests should be skipped entirely
+    skip_upstream = os.environ.get("SKIP_UPSTREAM_TESTS", "").lower() in ("1", "true", "yes")
+    if skip_upstream:
+        _log("[vllm-upstream] SKIP_UPSTREAM_TESTS is set, skipping upstream test collection")
+        config._upstream_tests_base = None
+        return
+
     try:
+        # Comma separated list of upstream paths
+        DEFAULT_UPSTREAM_TESTS_PATHS = "models/language/generation"
+
+        # Ensure VLLM_PLUGINS is set to spyre-next for all tests
+        os.environ["VLLM_PLUGINS"] = "spyre-next"
+
         # Get list of paths to include from upstream tests
         paths_env = os.environ.get("UPSTREAM_TESTS_PATHS", DEFAULT_UPSTREAM_TESTS_PATHS).strip()
         upstream_paths = [p.strip() for p in paths_env.split(",") if p.strip()]
 
         if not upstream_paths:
-            print("[vllm-upstream] No upstream test paths specified, skipping")
+            _log("[vllm-upstream] No upstream test paths specified, skipping")
+            config._upstream_tests_base = None
             return
 
         upstream_tests_base = _prepare_upstream_tests_dir()
@@ -179,18 +203,18 @@ def pytest_configure(config):
         for rel_path in upstream_paths:
             upstream_tests_dir = upstream_tests_base / rel_path
             if not upstream_tests_dir.exists():
-                print(f"[vllm-upstream] Warning: Path not found: {upstream_tests_dir}")
+                _log(f"[vllm-upstream] Warning: Path not found: {upstream_tests_dir}")
                 continue
 
-            print(f"[vllm-upstream] Including tests from: {rel_path}")
+            _log(f"[vllm-upstream] Including tests from: {rel_path}")
             config.args.append(str(upstream_tests_dir))
+
+        # Store upstream test base path for use in pytest_collection_modifyitems
+        config._upstream_tests_base = upstream_tests_base
 
     except Exception as e:
         # Fail early with a readable message
         raise SystemExit(f"[vllm-upstream] Failed to prepare upstream tests: {e}") from e
-
-    # Store upstream test base path for use in pytest_collection_modifyitems
-    config._upstream_tests_base = upstream_tests_base if upstream_paths else None
 
 
 def pytest_collection_modifyitems(config, items):
@@ -220,7 +244,7 @@ def pytest_collection_modifyitems(config, items):
                 try:
                     passing_patterns.append(re.compile(pattern_str))
                 except re.error as e:
-                    print(f"[vllm-upstream] Warning: Invalid regex pattern '{pattern_str}': {e}")
+                    _log(f"[vllm-upstream] Warning: Invalid regex pattern '{pattern_str}': {e}")
 
     upstream_marker = pytest.mark.upstream
     passing_marker = pytest.mark.upstream_passing
@@ -268,17 +292,10 @@ def pytest_collection_modifyitems(config, items):
             else:
                 item._nodeid = vllm_prefix
 
-    # Register all collected upstream marks to suppress warnings
-    for mark_name in upstream_marks:
-        if mark_name not in ("upstream", "upstream_passing"):
-            config.addinivalue_line("markers", f"{mark_name}: mark from upstream vLLM tests")
-
     if marked_count > 0:
-        print(f"[vllm-upstream] Marked {marked_count} tests as 'upstream'")
+        _log(f"[vllm-upstream] Marked {marked_count} tests as 'upstream'")
         if passing_count > 0:
-            print(f"[vllm-upstream] Marked {passing_count} tests as 'upstream_passing'")
-        if upstream_marks:
-            print(f"[vllm-upstream] Registered {len(upstream_marks)} upstream markers")
+            _log(f"[vllm-upstream] Marked {passing_count} tests as 'upstream_passing'")
 
 
 # Made with Bob
