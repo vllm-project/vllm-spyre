@@ -2,6 +2,7 @@ import os
 import re
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 import pytest
@@ -67,8 +68,17 @@ def _resolve_vllm_commit() -> str:
     )
 
 
-def _run(cmd: list[str], cwd: Path | None = None) -> None:
-    subprocess.run(cmd, cwd=str(cwd) if cwd else None, check=True)
+def _run(cmd: list[str], cwd: Path | None = None, max_retries: int = 3) -> None:
+    """Run command with optional retries for network operations."""
+    for attempt in range(max_retries):
+        try:
+            subprocess.run(cmd, cwd=str(cwd) if cwd else None, check=True)
+            return
+        except subprocess.CalledProcessError:
+            if attempt < max_retries - 1:
+                time.sleep(2**attempt)  # Exponential backoff: 1s, 2s, 4s
+            else:
+                raise
 
 
 def _ensure_repo_at_commit(repo_dir: Path, url: str, commit: str, sparse_paths: list[str]) -> Path:
