@@ -46,9 +46,12 @@ git_describe_command = "git describe --dirty --tags --long --match 'spyre-next-v
 
 
 [tool.uv]
+default-groups = ["dev", "upstream-tests"]
 override-dependencies = [
     # No triton support yet, don't allow any dependencies to pull it in
     "triton; sys_platform == 'never'",
+    "arctic-inference; sys_platform == 'never'",
+    "perf-analyzer; sys_platform == 'never'",
 
     # Skip packages on s390x and ppc64le that are expected to be pre-installed
     "vllm ; platform_machine not in 's390x, ppc64le'",
@@ -184,10 +187,16 @@ skip_gitignore = true
 [tool.pytest.ini_options]
 pythonpath = ["."]
 asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+    "ignore::_pytest.warning_types.PytestUnknownMarkWarning"
+]
+addopts = "-m 'spyre or upstream_passing'"
 
 # --8<-- [start:test-markers-definition]
 markers = [
-    # TODO add any
+    "spyre: Tests that require a Spyre device",
+    "upstream: Tests coming from upstream vLLM",
+    "upstream_passing: Tests known to pass from upstream vLLM",
 ]
 # --8<-- [end:test-markers-definition]
 
@@ -213,11 +222,61 @@ plugins.md007.indent = 4
 
 [dependency-groups]
 dev = [
-    "pytest==8.3.4",
-    "pytest-asyncio>=1.0.0",
+    "pytest"
+]
+upstream-tests = [
+    "albumentations>=1.4.6",
+    "arctic-inference==0.1.1",
+    "backoff>=2.2.1",
+    "bitsandbytes==0.46.1",
+    "blobfile>=3.2.0",
+    "buildkite-test-collector==0.1.9",
+    "datamodel-code-generator>=0.54.1",
+    "decord==0.6.0",
+    "einops>=0.8.2",
+    "fastsafetensors>=0.2.2",
+    "genai-perf>=0.0.8",
+    "gpt-oss>=0.0.7 ; python_full_version >= '3.12'",
+    "grpcio-tools==1.78.0",
+    "httpx>=0.28.1",
+    "jiwer>=4.0.0",
+    "librosa>=0.11.0",
+    "lm-eval[api]>=0.4.9.2",
+    "matplotlib>=3.10.8",
+    "mistral-common[audio,image]>=1.9.0",
+    "mteb[bm25s]>=2,<3",
+    "num2words>=0.5.14",
+    "numba==0.61.2",
+    "numpy>=2.2.6",
+    "open-clip-torch==2.32.0",
+    "opencv-python-headless>=4.13.0",
+    "peft>=0.15.0",
+    "perceptron>=0.2.1",
+    "pqdm>=0.2.0",
+    "pydantic>=2.12",
+    "pytest>=8.3.4",
+    "pytest-asyncio>=1.3.0",
+    "pytest-cov>=7.0.0",
     "pytest-forked>=1.6.0",
-    "pytest-timeout==2.3.1",
-    "requests>=2.32.4",
-    "sentence-transformers==3.4.1",
-    "pytest-mock>=3.15.0",
+    "pytest-rerunfailures>=16.1",
+    "pytest-shard>=0.1.2",
+    "pytest-timeout>=2.3.1",
+    "ray[cgraph,default]>=2.48.0",
+    "runai-model-streamer[gcs,s3]==0.15.3",
+    "schemathesis>=3.39.15",
+    "sentence-transformers>=5.2.0",
+    "soundfile>=0.13.1",
+    "tblib>=3.2.2",
+    "tensorizer==2.10.1",
+    "terratorch",
+    "timm>=1.0.17",
+    "tokenizers==0.22.0",
+    "torch==2.10.0",
+    "torchaudio==2.10.0",
+    "torchvision==0.25.0",
+    "transformers==4.57.5",
+    "transformers-stream-generator>=0.0.5",
+    "tritonclient>=2.51.0",
+    "vector-quantize-pytorch>=1.27.21",
+    "vocos>=0.1.0",
 ]
