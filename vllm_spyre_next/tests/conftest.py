@@ -88,8 +88,6 @@ def _run(cmd: list[str], cwd: Path | None = None, max_retries: int = 3) -> None:
             subprocess.run(cmd, cwd=str(cwd) if cwd else None, check=True)
             return
         except subprocess.CalledProcessError:
-            _log(f"Command failed: {' '.join(cmd)}")
-            _log(f"Retrying. Attempt {attempt + 1}/{max_retries}")
             if attempt < max_retries - 1:
                 time.sleep(2**attempt)  # Exponential backoff: 1s, 2s, 4s
             else:
@@ -156,6 +154,34 @@ def _prepare_upstream_tests_dir() -> Path:
     return tests_dir
 
 
+def _extract_marks_from_upstream_tests(
+    upstream_tests_base: Path, upstream_paths: list[str]
+) -> set[str]:
+    """
+    Scan upstream test files to extract all pytest marks used.
+    This allows us to register them early to avoid warnings.
+    """
+    marks = set()
+
+    for rel_path in upstream_paths:
+        test_dir = upstream_tests_base / rel_path
+        if not test_dir.exists():
+            continue
+
+        for test_file in test_dir.rglob("*.py"):
+            try:
+                content = test_file.read_text()
+                # Match pytest.mark.mark_name patterns
+                # Handles: @pytest.mark.slow, pytest.mark.skip_v1, etc.
+                for match in re.finditer(r"pytest\.mark\.(\w+)", content):
+                    marks.add(match.group(1))
+            except Exception:
+                # Skip files that can't be read
+                continue
+
+    return marks
+
+
 # -------------------------------
 # Pytest hooks
 # -------------------------------
@@ -198,6 +224,17 @@ def pytest_configure(config):
             return
 
         upstream_tests_base = _prepare_upstream_tests_dir()
+
+        # Extract and register all marks from upstream tests early
+        _log("[vllm-upstream] Scanning upstream tests for marks...")
+        upstream_marks = _extract_marks_from_upstream_tests(upstream_tests_base, upstream_paths)
+
+        # Register all discovered marks to prevent warnings
+        for mark_name in sorted(upstream_marks):
+            config.addinivalue_line("markers", f"{mark_name}: mark from upstream vLLM tests")
+
+        if upstream_marks:
+            _log(f"[vllm-upstream] Pre-registered {len(upstream_marks)} upstream markers")
 
         # Add each configured path to test collection
         for rel_path in upstream_paths:
@@ -251,7 +288,6 @@ def pytest_collection_modifyitems(config, items):
 
     marked_count = 0
     passing_count = 0
-    upstream_marks = set()
 
     for item in items:
         # Check if test is from upstream directory
@@ -263,10 +299,6 @@ def pytest_collection_modifyitems(config, items):
             is_upstream = False
 
         if is_upstream:
-            # Collect all marks from upstream tests
-            for mark in item.iter_markers():
-                upstream_marks.add(mark.name)
-
             # Mark as upstream
             item.add_marker(upstream_marker)
             marked_count += 1
