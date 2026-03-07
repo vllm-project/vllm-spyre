@@ -8,6 +8,7 @@ import platform
 import signal
 import sys
 import time
+import math
 from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Union, cast
@@ -51,6 +52,7 @@ _inside_warmup_mode = False
 
 def new_request_data_builder(
     req_id: str,
+    block_ids: tuple[list[int]],
     prompt_token_ids: list[int],
     sampling_params: SamplingParams | None,
     pooling_params: PoolingParams | None,
@@ -62,8 +64,8 @@ def new_request_data_builder(
         prompt_token_ids=prompt_token_ids,
         sampling_params=sampling_params,
         pooling_params=pooling_params,
-        block_ids=[0],  # ty: ignore[invalid-argument-type] not actually used
-        num_computed_tokens=len(prompt_token_ids),
+        block_ids=block_ids,
+        num_computed_tokens=0,
         lora_request=None,
         mm_features=mm_features or [],
         prompt_embeds=prompt_embeds,
@@ -249,6 +251,7 @@ class SpyreWorker(WorkerBase):
             ChunkedPrefillModelRunner,
             SpyrePoolingModelRunner,
         ]
+        self.warmup_block_ids = 1
         if self.is_pooling:
             self.model_runner = SpyrePoolingModelRunner(
                 self.vllm_config, self.is_driver_worker, self.rank
@@ -409,6 +412,13 @@ class SpyreWorker(WorkerBase):
         self.perf_metrics.log("load model time", load_model_total_t, model=self.model_config.model)
         logger.info("load model took %.3fs", load_model_total_t)
 
+    def _gen_warmup_block_ids(self, num_tokens: int) -> tuple[list[int]]:
+        num_blocks = math.ceil(num_tokens / 64)
+        start = self.warmup_block_ids
+        end = start + num_blocks
+        self.warmup_block_ids = end
+        return ([i for i in range(start, end)],)
+
     def _warmup_spyre_dynamic_size(self, special_token_ids):
         warmup_start_t = time.time()
 
@@ -453,6 +463,7 @@ class SpyreWorker(WorkerBase):
             new_request_data_builder(
                 req_id="warmup-%d" % (i),
                 prompt_token_ids=warmup_tokens[i],
+                block_ids=self._gen_warmup_block_ids(len(warmup_tokens[i])),
                 sampling_params=SamplingParams(max_tokens=num_decode_tokens),
                 pooling_params=None,
                 prompt_embeds=warmup_embeds_tensor[i],
@@ -567,6 +578,7 @@ class SpyreWorker(WorkerBase):
             new_request_data_builder(
                 req_id=f"warmup_{i}",
                 prompt_token_ids=warmup_tokens_tensor[i].tolist(),
+                block_ids=self._gen_warmup_block_ids(len(warmup_tokens_tensor[i])),
                 sampling_params=sampling_params,
                 pooling_params=pooling_params,
                 prompt_embeds=None,
@@ -673,14 +685,14 @@ class SpyreWorker(WorkerBase):
 
         random_token_id = lambda: torch.randint(0, len(valid_token_ids_tensor), (1,)).item()
 
-        # Reduce to accumulate all blocks
-        block_ids: list[int] = functools.reduce(
-            lambda blocks, req: blocks + req.block_ids, requests, []
-        )
-
         cached_request_data = CachedRequestData.make_empty()
         cached_request_data.req_ids = [req.req_id for req in requests]
-        cached_request_data.new_block_ids = block_ids
+        cached_request_data.new_block_ids = []
+        for req in requests:
+            if len(req.prompt_token_ids) % 64 == 0:
+                cached_request_data.new_block_ids.append(self._gen_warmup_block_ids(1))
+            else:
+                cached_request_data.new_block_ids.append(([],))
         cached_request_data.new_token_ids = [
             [valid_token_ids_tensor[random_token_id()]] for _ in requests
         ]

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Iterable, Union
 
 from vllm.logger import init_logger
 from vllm.v1.core.sched.scheduler import Scheduler
-from vllm.v1.metrics.stats import PrefixCacheStats, SchedulerStats
+from vllm.v1.metrics.stats import SchedulerStats
 from vllm.v1.request import Request, RequestStatus
 
 import vllm_spyre.envs as envs_spyre
@@ -189,12 +189,6 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         self.do_interleaving: bool = envs_spyre.VLLM_SPYRE_CP_INTERLEAVE_STEPS
         self.previous_step_was_prefill: bool = False
 
-        # KV cache metrics
-        # Prefix cache stats aggregated between each `make_stats` call
-        self.prefix_cache_stats = PrefixCacheStats()
-        # Gauge for kv cache usage, updated from every model runner output
-        self.kv_cache_usage_percent = 0.0
-
         self.tkv = 0
         self.block_size = SpyrePlatform.get_block_size()
         self.max_batch_tkv_limit = os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", default="-1")
@@ -228,17 +222,6 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         self.ongoing_prefills = [
             req for req in self.ongoing_prefills if req.num_computed_tokens < req.num_prompt_tokens
         ]
-
-        # Update KV Cache info
-        self.kv_cache_usage_percent = model_runner_output.kv_cache_usage
-        prefix_cache_stats = model_runner_output.prefix_cache_stats
-        if prefix_cache_stats is not None:
-            # We don't use PrefixCacheStats.record because:
-            # 1. It's not supported in vllm v0.11.0
-            # 2. It could eventually be the case that requests > 1
-            self.prefix_cache_stats.requests += prefix_cache_stats.requests
-            self.prefix_cache_stats.queries += prefix_cache_stats.queries
-            self.prefix_cache_stats.hits += prefix_cache_stats.hits
 
         self.tkv = model_runner_output.tkv
         return super(SpyreScheduler, self).update_from_output(scheduler_output, model_runner_output)
@@ -564,18 +547,38 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
             r for r in self.ongoing_prefills if r.request_id not in request_ids
         ]
 
+    def calc_cached_tokens(self, prompt_len: int) -> tuple[int, int]:
+        blocks_per_chunk = self.chunk_size // self.block_size
+        n_chunks = math.ceil(prompt_len / self.chunk_size)
+        n_blocks = math.ceil(prompt_len / self.block_size)
+
+        total_blocks = n_chunks * blocks_per_chunk
+        n_padding_tokens = (total_blocks - n_blocks) * self.block_size
+        total_cached_toks = (prompt_len // self.chunk_size) * self.chunk_size
+        return max(0, total_cached_toks - n_padding_tokens), n_padding_tokens
+
+    def adjust_hit(self, prompt_len: int, hit: int):
+        assert hit % self.block_size == 0
+
+        max_possible, padding = self.calc_cached_tokens(prompt_len)
+
+        if hit >= max_possible:
+            return max_possible
+
+        # if the hit is in the middle of a chunk, we also need to discard that chunk
+        actual_hit = max(0, (((padding + hit) // self.chunk_size) * self.chunk_size) - padding)
+        return actual_hit
+
     def make_stats(self, *args, **kwargs) -> SchedulerStats | None:
         """Update the scheduler stats from the base scheduler.
-        These are used in the vllm StatLoggers, which are responsible for
-        reporting stats in logs and metrics.
+        In vllm-spyre the last chunk is always recomputed, even though
+        the space is not duplicated.
         """
         base_stats = super().make_stats(*args, **kwargs)
 
-        if base_stats is not None:
-            base_stats.kv_cache_usage = self.kv_cache_usage_percent
-            base_stats.prefix_cache_stats = self.prefix_cache_stats
-            # Every time `make_stats` is called we reset the prefix cache stats.
-            # This mimics how the base scheduler handles the kv cache stats
-            self.prefix_cache_stats = PrefixCacheStats()
+        if base_stats is not None and base_stats.prefix_cache_stats is not None:
+            base_stats.prefix_cache_stats.hits = self.adjust_hit(
+                base_stats.prefix_cache_stats.queries, base_stats.prefix_cache_stats.hits
+            )
 
         return base_stats
