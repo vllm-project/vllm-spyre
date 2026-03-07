@@ -547,6 +547,28 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
             r for r in self.ongoing_prefills if r.request_id not in request_ids
         ]
 
+    def calc_cached_tokens(self, prompt_len: int) -> tuple[int, int]:
+        blocks_per_chunk = self.chunk_size // self.block_size
+        n_chunks = math.ceil(prompt_len / self.chunk_size)
+        n_blocks = math.ceil(prompt_len / self.block_size)
+
+        total_blocks = n_chunks * blocks_per_chunk
+        n_padding_tokens = (total_blocks - n_blocks) * self.block_size
+        total_cached_toks = (prompt_len // self.chunk_size) * self.chunk_size
+        return max(0, total_cached_toks - n_padding_tokens), n_padding_tokens
+
+    def adjust_hit(self, prompt_len: int, hit: int):
+        assert hit % self.block_size == 0
+
+        max_possible, padding = self.calc_cached_tokens(prompt_len)
+
+        if hit >= max_possible:
+            return max_possible
+
+        # if the hit is in the middle of a chunk, we also need to discard that chunk
+        actual_hit = max(0, (((padding + hit) // self.chunk_size) * self.chunk_size) - padding)
+        return actual_hit
+
     def make_stats(self, *args, **kwargs) -> SchedulerStats | None:
         """Update the scheduler stats from the base scheduler.
         In vllm-spyre the last chunk is always recomputed, even though
@@ -555,8 +577,8 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         base_stats = super().make_stats(*args, **kwargs)
 
         if base_stats is not None and base_stats.prefix_cache_stats is not None:
-            base_stats.prefix_cache_stats.hits = (
-                base_stats.prefix_cache_stats.hits // self.chunk_size
-            ) * self.chunk_size
+            base_stats.prefix_cache_stats.hits = self.adjust_hit(
+                base_stats.prefix_cache_stats.queries, base_stats.prefix_cache_stats.hits
+            )
 
         return base_stats
