@@ -6,9 +6,12 @@ Run `python -m pytest tests/e2e/test_spyre_basic.py`.
 import asyncio
 from typing import cast
 from unittest.mock import patch
+import math
+import time
 
 import pytest
-import requests
+import openai
+import httpx
 from llm_cache import get_cached_llm
 from output_util import compare_results, extract_output, generate_hf_output, setup_golden_token
 from pytest_mock.plugin import MockerFixture
@@ -144,6 +147,7 @@ async def test_chunked_prefill_kv_cache_stats(
     max_model_len,
     max_num_batched_tokens,
 ):
+    assert max_num_batched_tokens == 128
     # Test that vllm metrics include prefix caching data
     client = remote_openai_server.get_async_client()
 
@@ -174,7 +178,7 @@ async def test_chunked_prefill_kv_cache_stats(
     # Now that requests are processing, check metrics for KV cache usage.
     # This must be done while requests are in-flight, once they finish this
     # gauge will be 0.
-    metrics = get_metrics(remote_openai_server)
+    metrics = await get_metrics(client)
     kv_cache_usage = get_metric_value(metrics, "vllm:kv_cache_usage_perc")
     assert kv_cache_usage > 0
 
@@ -190,7 +194,7 @@ async def test_chunked_prefill_kv_cache_stats(
 
     # Check the prefix cache counters
     # vLLM should be reporting these counters based on the last 1000 requests
-    metrics = get_metrics(remote_openai_server)
+    metrics = await get_metrics(client)
     total_tokens = get_metric_value(metrics, "vllm:prefix_cache_queries_total")
     hit_tokens = get_metric_value(metrics, "vllm:prefix_cache_hits_total")
 
@@ -199,13 +203,109 @@ async def test_chunked_prefill_kv_cache_stats(
     assert hit_tokens / total_tokens > 0.1
 
 
-def get_metrics(remote_openai_server: RemoteOpenAIServer) -> list[str]:
-    metrics_response = requests.get(f"http://localhost:{remote_openai_server.port}/metrics")
-    assert metrics_response.status_code == 200
-    metrics = metrics_response.text
+async def get_metrics(client: openai.AsyncOpenAI) -> list[str]:
+    response = await client.get("../metrics", cast_to=httpx.Response)
+    assert response.status_code == 200
+    metrics = response.text
     return metrics.splitlines()
 
 
 def get_metric_value(metrics: list[str], metric_name: str) -> float:
     metric_line = [line for line in metrics if line.startswith(metric_name)][0]
     return float(metric_line.split(" ")[-1])
+
+
+async def reset_kv_cache(client: openai.AsyncOpenAI) -> list[str]:
+    response = await client.post("../reset_prefix_cache", cast_to=httpx.Response)
+    assert response.status_code == 200
+
+
+# returns the number of cached tokens if two identical requests are sent
+def calculate_cached_tokens(prompt_len: int, chunk_size: int):
+    block_size = 64
+    blocks_per_chunk = chunk_size // block_size
+    n_chunks = math.ceil(prompt_len / chunk_size)
+    n_blocks = math.ceil(prompt_len / block_size)
+
+    total_blocks = n_chunks * blocks_per_chunk
+    n_padding_tokens = (total_blocks - n_blocks) * block_size
+    total_cached_toks = (prompt_len // chunk_size) * chunk_size
+    return max(0, total_cached_toks - n_padding_tokens)
+
+
+@pytest.mark.parametrize("mode", [pytest.param("pc", marks=pytest.mark.prefix_caching, id="pc")])
+@pytest.mark.parametrize("tp_size", [1])
+@pytest.mark.parametrize("prompt_len", [53, 127, 144, 250, 299, 350, 420])
+@pytest.mark.asyncio
+async def test_max_prefix_hits(
+    remote_openai_server: RemoteOpenAIServer,
+    model,
+    backend,
+    tp_size,
+    mode,
+    prompt_len,
+    max_num_seqs,
+    max_model_len,
+    max_num_batched_tokens,
+):
+    assert max_num_batched_tokens == 128
+    # Test that vllm metrics include prefix caching data
+    client = remote_openai_server.get_async_client()
+
+    await reset_kv_cache(client)
+
+    metrics = await get_metrics(client)
+    initial_hits = get_metric_value(metrics, "vllm:prefix_cache_hits_total")
+
+    prompt = random_prompt(model=model, seed=time.time_ns(), length=prompt_len)
+
+    expected_hit_tokens = calculate_cached_tokens(prompt_len, max_num_batched_tokens)
+
+    await client.completions.create(model=model.name, prompt=prompt, max_tokens=1)
+    await client.completions.create(model=model.name, prompt=prompt, max_tokens=1)
+
+    metrics = await get_metrics(client)
+    final_hits = get_metric_value(metrics, "vllm:prefix_cache_hits_total")
+    hit_tokens = final_hits - initial_hits
+    assert hit_tokens == expected_hit_tokens
+
+
+@pytest.mark.parametrize("mode", [pytest.param("pc", marks=pytest.mark.prefix_caching, id="pc")])
+@pytest.mark.parametrize("tp_size", [1])
+@pytest.mark.parametrize("prompt_len", [144, 250, 299, 350, 420])
+@pytest.mark.asyncio
+async def test_partial_prefix_hits(
+    remote_openai_server: RemoteOpenAIServer,
+    model,
+    backend,
+    tp_size,
+    mode,
+    prompt_len,
+    max_num_seqs,
+    max_model_len,
+    max_num_batched_tokens,
+):
+    assert max_num_batched_tokens == 128
+    # Test that vllm metrics include prefix caching data
+    client = remote_openai_server.get_async_client()
+
+    await reset_kv_cache(client)
+
+    metrics = await get_metrics(client)
+    initial_hits = get_metric_value(metrics, "vllm:prefix_cache_hits_total")
+
+    prompt = random_prompt(model=model, seed=time.time_ns(), length=prompt_len)
+
+    expected_hit_tokens = calculate_cached_tokens(
+        prompt_len - max_num_batched_tokens, max_num_batched_tokens
+    )
+
+    await client.completions.create(model=model.name, prompt=prompt, max_tokens=1)
+    await client.completions.create(
+        model=model.name, prompt=prompt[:-max_num_batched_tokens], max_tokens=1
+    )
+
+    metrics = await get_metrics(client)
+    final_hits = get_metric_value(metrics, "vllm:prefix_cache_hits_total")
+    hit_tokens = final_hits - initial_hits
+    assert hit_tokens == expected_hit_tokens
