@@ -3,7 +3,6 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, Union
-from collections import defaultdict
 
 import torch
 from transformers import AutoModel, AutoModelForSequenceClassification, AutoTokenizer
@@ -19,13 +18,8 @@ from vllm.model_executor.layers.pooler.seqwise.poolers import (
 )
 from vllm.sampling_params import SamplingType
 from vllm.tasks import SupportedTask
-from vllm.utils.hashing import get_hash_fn_by_name
 from vllm.utils.platform_utils import is_pin_memory_available
-from vllm.v1.core.kv_cache_utils import (
-    BlockHash,
-    get_request_block_hasher,
-    init_none_hash,
-)
+
 from vllm.v1.core.sched.output import CachedRequestData
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, ModelRunnerOutput, SamplerOutput
@@ -722,17 +716,7 @@ class ChunkedPrefillModelRunner(
         self.chunk_size = self.scheduler_config.max_num_batched_tokens
         self.chunk_blocks_count = self.chunk_size // self.block_size
 
-        if vllm_config.cache_config.enable_prefix_caching:
-            caching_hash_fn = get_hash_fn_by_name(vllm_config.cache_config.prefix_caching_hash_algo)
-            init_none_hash(caching_hash_fn)
-
-            self.request_block_hasher = get_request_block_hasher(self.block_size, caching_hash_fn)
-        else:
-            self.request_block_hasher = None
-
         self.prefix_cache_stats = None
-
-        self._make_block_ref_count()
 
     def load_model(self) -> None:
         self._model = SpyreCausalLM(
@@ -798,11 +782,6 @@ class ChunkedPrefillModelRunner(
         # TODO: fixup the typing here. Things are getting tripped up by having all of our "model"
         # classes inherit from `nn.Module` when maybe they don't need to
         self.model.set_past_key_value_states(num_blocks=n_blocks_avail)
-
-    def _make_block_ref_count(self):
-        self.block_ref_count = defaultdict(int)
-        # track last seen hashes for blocks
-        self.block_hashes = dict[int, BlockHash]()
 
     def _get_blocks(self, request_id: str) -> list[int]:
         return self.requests[request_id].block_ids
@@ -1166,9 +1145,10 @@ class ChunkedPrefillModelRunner(
 
         return model_inputs
 
-    def _plan_chunking(self, vllm_request: Request, block_ids: list[int]) -> ChunkedPrefillPlan:
-        assert vllm_request.prompt_token_ids is not None
-        prompt_len = len(vllm_request.prompt_token_ids)
+    def _plan_chunking(
+        self, prompt_token_ids: list[int], num_computed_tokens: int
+    ) -> ChunkedPrefillPlan:
+        prompt_len = len(prompt_token_ids)
 
         chunk_size = self.chunk_size
         padded_prompt_len = math.ceil(prompt_len / self.block_size) * self.block_size
@@ -1178,23 +1158,7 @@ class ChunkedPrefillModelRunner(
         left_blocks = exact_div(left_padding, self.block_size)
 
         if self.enable_prefix_caching:
-            n_hit = 0
-            for i in reversed(range(len(block_ids))):
-                block_id = block_ids[i]
-                if i >= len(vllm_request.block_hashes):
-                    # this is a new block to be filled
-                    self.block_hashes.pop(block_id, None)
-                    continue
-                block_hash = vllm_request.block_hashes[i]
-                # we don't strictly need the ref count for this
-                # but it's a guardrail
-                if self.block_ref_count[block_id] > 1:
-                    assert block_hash == self.block_hashes[block_id]
-                    n_hit = i + 1
-                    break
-                if (existing := self.block_hashes.get(block_id)) and existing == block_hash:
-                    n_hit = i + 1
-                    break
+            n_hit = exact_div(num_computed_tokens, self.block_size)
 
             logger.debug("Prefix caching found: %d cached blocks", n_hit)
 
@@ -1245,23 +1209,10 @@ class ChunkedPrefillModelRunner(
         if is_new_batch:
             self.tkv = prompt_len
 
-        scheduler_request = Request(
-            request_id=req_id,
-            prompt_token_ids=prompt_token_ids,
-            sampling_params=request.sampling_params,
-            pooling_params=None,
-            eos_token_id=None,
-            block_hasher=self.request_block_hasher,
-            mm_features=mm_features,
-        )
-        scheduler_request.num_computed_tokens = request.num_computed_tokens
-
         block_ids_per_kv_cache_group = request.block_ids
         assert len(block_ids_per_kv_cache_group) == 1
-        for block_id in block_ids_per_kv_cache_group[0]:
-            self.block_ref_count[block_id] += 1
 
-        chunk_plan = self._plan_chunking(scheduler_request, request.block_ids[0])
+        chunk_plan = self._plan_chunking(prompt_token_ids, request.num_computed_tokens)
 
         # Add new request to the cached states.
         if sampling_params.sampling_type == SamplingType.RANDOM_SEED:
@@ -1273,7 +1224,11 @@ class ChunkedPrefillModelRunner(
 
         req_state = SamplingRequestState(
             generator=generator,
-            vllm_request=scheduler_request,
+            req_id=req_id,
+            prompt_token_ids=prompt_token_ids,
+            sampling_params=sampling_params,
+            mm_features=mm_features,
+            num_computed_tokens=request.num_computed_tokens,
             chunk_count=chunk_plan.chunk_count,
             padding_blocks=chunk_plan.padding_blocks,
             usable_blocks=chunk_plan.usable_cache_blocks,
@@ -1385,21 +1340,6 @@ class ChunkedPrefillModelRunner(
             num_computed_tokens = cached_reqs.num_computed_tokens[0]
             return (num_computed_tokens + num_scheduled_tokens) < len(req_state.prompt_token_ids)
 
-    def _update_tracked_blocks(self):
-        if self.enable_prefix_caching:
-            for request_state in self.requests.values():
-                for i, block_id in enumerate(request_state.block_ids):
-                    if i < len(request_state.vllm_request.block_hashes):
-                        block_hash = request_state.vllm_request.block_hashes[i]
-                        ref_count = self.block_ref_count[block_id]
-                        if ref_count > 1:
-                            assert self.block_hashes[block_id] == block_hash
-                        else:
-                            self.block_hashes[block_id] = block_hash
-                    else:
-                        # block was given away.
-                        self.block_hashes.pop(block_id, None)
-
     def update_states(self, scheduler_output: SchedulerOutput):
         # clear the prefix cache stats so that we only record them on the first
         # chunk of any prefill
@@ -1420,8 +1360,6 @@ class ChunkedPrefillModelRunner(
             new_block_ids_per_kv_cache_group = req_data.new_block_ids[i]
             if new_block_ids_per_kv_cache_group:
                 assert len(new_block_ids_per_kv_cache_group) == 1
-                for block_id in new_block_ids_per_kv_cache_group[0]:
-                    self.block_ref_count[block_id] += 1
                 req_state.block_ids.extend(new_block_ids_per_kv_cache_group[0])
 
             # Update the number of computed tokens for this request
@@ -1431,10 +1369,6 @@ class ChunkedPrefillModelRunner(
         if scheduler_output.finished_req_ids:
             for req_id in scheduler_output.finished_req_ids:
                 self.input_batch.remove_request(req_id)
-                if (_req_state := self.requests.pop(req_id, None)) is not None:
-                    for block_id in _req_state.block_ids:
-                        assert self.block_ref_count[block_id] > 0
-                        self.block_ref_count[block_id] -= 1
                 # TODO: Processing multiple removals at once can break alignment
                 # of logitprocs. Refactor so that we can batch removals to the
                 # `input_batch`
@@ -1494,7 +1428,6 @@ class ChunkedPrefillModelRunner(
 
         # Initialize internal request states if this is the first chunk of a very new prefill
         self.maybe_setup_new_prefill(scheduler_output)
-        self._update_tracked_blocks()
 
         model_input = self.prepare_model_input(scheduler_output)
         is_prefill = model_input.is_prompt

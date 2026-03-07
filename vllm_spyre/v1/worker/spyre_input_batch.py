@@ -12,7 +12,6 @@ from vllm.multimodal.inputs import MultiModalFeatureSpec
 from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import SamplingParams, SamplingType
 from vllm.v1.pool.metadata import PoolingMetadata
-from vllm.v1.request import Request
 from vllm.v1.sample.logits_processor import BatchUpdateBuilder, LogitsProcessors, MoveDirectionality
 from vllm.v1.sample.metadata import SamplingMetadata
 
@@ -182,30 +181,18 @@ class BaseInputBatch(Generic[RequestStateT]):
 
 @dataclass
 class SamplingRequestState:
-    # num_computed_tokens: int = 0
-    # mm_features: list[MultiModalFeatureSpec] | None = None
-
-    # sampling_params: SamplingParams = SamplingParams()
-    generator: torch.Generator | None = None
-
-    # output_token_ids: list[int] = field(default_factory=list)
-
-    vllm_request: Request = None  # ty: ignore[invalid-assignment]
+    sampling_params: SamplingParams
+    req_id: str
+    prompt_token_ids: list[int]
+    output_token_ids: list[int] = field(default_factory=list)
+    mm_features: list[MultiModalFeatureSpec] | None = None
+    num_computed_tokens: int = 0
     chunk_count: int = 0
     padding_blocks: int = 0
     usable_blocks: int = 0
     total_hit_blocks: int = 0
     block_ids: list[int] = field(default_factory=list)
-
-    @property
-    def req_id(self) -> str:
-        return self.vllm_request.request_id
-
-    @property
-    def prompt_token_ids(self) -> list[int]:
-        prompt_token_ids = self.vllm_request.prompt_token_ids
-        assert prompt_token_ids is not None, "Sampling requests require prompt token ids"
-        return prompt_token_ids
+    generator: torch.Generator | None = None
 
     @property
     def num_tokens(self) -> int:
@@ -214,36 +201,13 @@ class SamplingRequestState:
         # i.e., "<image>" -> "<image>" * num_image_features
         #
         # This is done by vLLM, *not* in the spyre plugin.
-        return self.vllm_request.num_tokens
-
-    @property
-    def num_computed_tokens(self) -> int:
-        return self.vllm_request.num_computed_tokens
-
-    @num_computed_tokens.setter
-    def num_computed_tokens(self, value: int):
-        self.vllm_request.num_computed_tokens = value
-
-    @property
-    def output_token_ids(self) -> list[int]:
-        return self.vllm_request.output_token_ids
-
-    @property
-    def sampling_params(self) -> SamplingParams:
-        params = self.vllm_request.sampling_params
-        assert params is not None, "Sampling requests require sampling params"
-        return params
-
-    @property
-    def mm_features(self) -> list[MultiModalFeatureSpec] | None:
-        return self.vllm_request.mm_features
+        return len(self.prompt_token_ids) + len(self.output_token_ids)
 
     def append_output_token_ids(self, token_ids: int | list[int]) -> None:
-        # Passthrough to let vllm handle the tokens
-        self.vllm_request.append_output_token_ids(token_ids)
-
-    def __post_init__(self):
-        assert self.vllm_request is not None
+        if isinstance(token_ids, list):
+            self.output_token_ids.extend(token_ids)
+        else:
+            self.output_token_ids.append(token_ids)
 
 
 class SamplingInputBatch(BaseInputBatch[SamplingRequestState]):

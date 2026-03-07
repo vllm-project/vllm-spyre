@@ -27,7 +27,6 @@ def test_block_sharing_for_2_chunks(
         prompt=prompt,
         use_golden_token_injection=False,
         generate_hf_results=False,
-        block_hasher=pc_model_runner.request_block_hasher,
     )
 
     request2 = create_request_for_scheduler_test(
@@ -38,31 +37,27 @@ def test_block_sharing_for_2_chunks(
         prompt=prompt,
         use_golden_token_injection=False,
         generate_hf_results=False,
-        block_hasher=pc_model_runner.request_block_hasher,
     )
 
-    block_ids = [1, 2, 3]
-    chunk_plan = pc_model_runner._plan_chunking(request1.request, block_ids)
+    chunk_plan = pc_model_runner._plan_chunking(
+        request1.request.prompt_token_ids, num_computed_tokens=0
+    )
     pc_model_runner.verify_chunk_plan(
         chunk_plan=chunk_plan,
         chunk_count=2,
         padding_blocks=1,
     )
 
-    for block, block_hash in zip(block_ids, request1.request.block_hashes):
-        pc_model_runner.block_ref_count[block] = 2
-        pc_model_runner.block_hashes[block] = block_hash
-
-    chunk_plan = pc_model_runner._plan_chunking(request2.request, block_ids)
+    chunk_plan = pc_model_runner._plan_chunking(
+        request2.request.prompt_token_ids, num_computed_tokens=128
+    )
     pc_model_runner.verify_chunk_plan(
         chunk_plan=chunk_plan,
         chunk_count=2,
         padding_blocks=1,
         usable_cache_blocks=1,
-        total_cache_blocks=3,
+        total_cache_blocks=2,
     )
-    pc_model_runner.block_ref_count.clear()
-    pc_model_runner.block_hashes.clear()
 
 
 @pytest.mark.cpu
@@ -112,7 +107,6 @@ def test_multi_chunk_partial_match_misaligned(
         prompt=prompt1,
         use_golden_token_injection=False,
         generate_hf_results=False,
-        block_hasher=pc_model_runner.request_block_hasher,
     )
 
     request2 = create_request_for_scheduler_test(
@@ -123,7 +117,6 @@ def test_multi_chunk_partial_match_misaligned(
         prompt=prompt2,
         use_golden_token_injection=False,
         generate_hf_results=False,
-        block_hasher=pc_model_runner.request_block_hasher,
     )
 
     # Schedule chunk 0 of request 0
@@ -267,7 +260,6 @@ def test_first_chunk_recomputation(
         prompt=prompt1,
         use_golden_token_injection=False,
         generate_hf_results=False,
-        block_hasher=pc_model_runner.request_block_hasher,
     )
 
     request2 = create_request_for_scheduler_test(
@@ -278,7 +270,6 @@ def test_first_chunk_recomputation(
         prompt=prompt2,
         use_golden_token_injection=False,
         generate_hf_results=False,
-        block_hasher=pc_model_runner.request_block_hasher,
     )
 
     # Schedule chunk 0 of request 0
@@ -388,7 +379,6 @@ def test_middle_chunk_recomputation_with_padding(
         prompt=prompt1,
         use_golden_token_injection=False,
         generate_hf_results=False,
-        block_hasher=pc_model_runner.request_block_hasher,
     )
 
     request2 = create_request_for_scheduler_test(
@@ -399,7 +389,6 @@ def test_middle_chunk_recomputation_with_padding(
         prompt=prompt2,
         use_golden_token_injection=False,
         generate_hf_results=False,
-        block_hasher=pc_model_runner.request_block_hasher,
     )
 
     # Schedule chunk 0 of request 0
