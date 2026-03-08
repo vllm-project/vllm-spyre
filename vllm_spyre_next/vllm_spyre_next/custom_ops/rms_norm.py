@@ -25,10 +25,9 @@ Spyre Device Constraints:
     - Algorithm: Transpose-based computation with torch.ops.spyre.full()
 
 Limitations:
-    Currently the implementation in `_forward_vLLM_native` is similar to the
-    upstream implementation in `forward_static` from llm/model_executor/layers/layernorm.py,
-    but it DOES NOT use the promotion of the data types, as this is not
-    yet supported in torch-spyre.
+    Currently the implementation in `_forward_functional` uses torch.nn.functional.rms_norm,
+    which in its decomposition DOES NOT use the promotion of the data types,
+    and performs all operations with the datatype of the original input.
 
 References:
     - Upstream RMSNorm: vllm/model_executor/layers/layernorm.py
@@ -146,17 +145,14 @@ class SpyreRMSNorm(RMSNorm):
         hidden_size: int,
         weight: torch.Tensor | None = None,
         residual: torch.Tensor | None = None,
-        variance_size_override: int | None = None,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
-        """Spyre-optimized RMS norm using transpose-based computation (active implementation).
+        """Alternative implementation using torch.nn.functional.rms_norm
 
-        Based on upstream vLLM's forward_static (vllm/model_executor/layers/layernorm.py)
-        but adapted for Spyre device with transpose operations and torch.ops.spyre.full().
-        Compiled separately via torch.compile in __init__.
+        This simpler implementation reduces code complexity
+        and provides more optimization potential.
 
-        Key differences from upstream:
-            - Uses transpose(-1, -2) for computation efficiency on Spyre
-            - Creates epsilon tensor via torch.ops.spyre.full() instead of scalar
+        Key differences from vLLM's forward_static (vllm/model_executor/layers/layernorm.py):
+            - Uses torch.nn.functional.rms_norm
             - No dtype promotion support (torch-spyre limitation)
         """
         if residual is not None:
@@ -166,30 +162,10 @@ class SpyreRMSNorm(RMSNorm):
         if x.shape[-1] != hidden_size:
             raise ValueError(f"Expected hidden_size to be {hidden_size}, but found: {x.shape[-1]}")
 
-        x = x.transpose(-1, -2).contiguous()
-
-        variance_epsilon = torch.ops.spyre.full(
-            x.shape, variance_epsilon, dtype=torch.float16, device="spyre"
+        x = torch.nn.functional.rms_norm(
+            x, normalized_shape=[x.shape[-1]], weight=weight, eps=variance_epsilon
         )
 
-        if variance_size_override is None:
-            x_var = x
-        else:
-            if hidden_size < variance_size_override:
-                raise ValueError(
-                    "Expected hidden_size to be at least "
-                    f"{variance_size_override}, but found: {hidden_size}"
-                )
-
-            x_var = x[:, :, :variance_size_override]
-
-        variance = x_var.pow(2).mean(dim=-1, keepdim=True)
-
-        x = x * torch.rsqrt(variance + variance_epsilon)
-        x = x.transpose(-1, -2).contiguous()
-
-        if weight is not None:
-            x = x * weight
         if residual is None:
             return x
         else:
@@ -241,7 +217,6 @@ class SpyreRMSNorm(RMSNorm):
             self.hidden_size,
             convert_for_spyre(self.weight.data, dtype=torch.float16) if self.has_weight else None,
             convert_for_spyre(residual, dtype=torch.float16),
-            self.variance_size_override,
         )
 
         # Transfer back to CPU and restore original shape
