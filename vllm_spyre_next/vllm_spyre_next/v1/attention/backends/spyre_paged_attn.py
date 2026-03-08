@@ -217,7 +217,7 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
             self.working_precision = torch.bfloat16
 
         # When True, use torch.nn.functional.scaled_dot_product_attention
-        # Otherwise, use implementation with native PyTorch ops 
+        # Otherwise, use implementation with native PyTorch ops
         self.use_sdpa = use_sdpa
 
         # Simplified implementation: don't support these features initially
@@ -232,7 +232,7 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
         self,
         layer: torch.nn.Module,
         query: torch.Tensor,  # [num_tokens, num_heads, head_size]
-        key: torch.Tensor,    # [num_tokens, num_kv_heads, head_size]
+        key: torch.Tensor,  # [num_tokens, num_kv_heads, head_size]
         value: torch.Tensor,  # [num_tokens, num_kv_heads, head_size]
         kv_cache: torch.Tensor,  # [2, num_blocks, block_size, num_kv_heads, head_size]
         attn_metadata: SpyreAttentionPagedMetadata,
@@ -298,7 +298,7 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
 
     def _write_to_kv_cache(
         self,
-        key: torch.Tensor,    # [num_tokens, num_kv_heads, head_size]
+        key: torch.Tensor,  # [num_tokens, num_kv_heads, head_size]
         value: torch.Tensor,  # [num_tokens, num_kv_heads, head_size]
         kv_cache: torch.Tensor,
         slot_mapping: torch.Tensor,  # [num_tokens]
@@ -340,7 +340,9 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
         value_cache = kv_cache[1]
 
         # [num_seqs, max_seq_len]
-        position_indices = torch.arange(max_seq_len, device=device).unsqueeze(0).expand(num_seqs, -1)
+        position_indices = (
+            torch.arange(max_seq_len, device=device).unsqueeze(0).expand(num_seqs, -1)
+        )
 
         block_indices = position_indices // block_size
         offset_in_block = position_indices % block_size
@@ -371,8 +373,8 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
 
     def _build_attention_mask(
         self,
-        seq_lens: torch.Tensor,       # [num_seqs]
-        query_start_loc: torch.Tensor, # [num_seqs + 1]
+        seq_lens: torch.Tensor,  # [num_seqs]
+        query_start_loc: torch.Tensor,  # [num_seqs + 1]
         causal_mask: torch.Tensor | None,
         device: torch.device,
     ) -> torch.Tensor:
@@ -389,8 +391,8 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
         max_seq_len = seq_lens.max()
 
         # Positions along query and KV dimensions
-        q_pos = torch.arange(max_query_len, device=device)   # [max_query_len]
-        kv_pos = torch.arange(max_seq_len, device=device)    # [max_seq_len]
+        q_pos = torch.arange(max_query_len, device=device)  # [max_query_len]
+        kv_pos = torch.arange(max_seq_len, device=device)  # [max_seq_len]
 
         # Validity: which (seq, q, kv) positions are real (not padding)?
         # [num_seqs, max_query_len]
@@ -417,8 +419,8 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
 
     def _reshape_query_to_sequences(
         self,
-        query: torch.Tensor,           # [num_actual_tokens, num_heads, head_size]
-        query_start_loc: torch.Tensor, # [num_seqs + 1]
+        query: torch.Tensor,  # [num_actual_tokens, num_heads, head_size]
+        query_start_loc: torch.Tensor,  # [num_seqs + 1]
         num_seqs: int,
         max_query_len: int,
     ) -> torch.Tensor:
@@ -453,9 +455,9 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
     def _compute_attention(
         self,
         query: torch.Tensor,  # [num_seqs, max_query_len, num_heads, head_size]
-        key: torch.Tensor,    # [num_seqs, max_seq_len, num_kv_heads, head_size]
+        key: torch.Tensor,  # [num_seqs, max_seq_len, num_kv_heads, head_size]
         value: torch.Tensor,  # [num_seqs, max_seq_len, num_kv_heads, head_size]
-        mask: torch.Tensor,   # [num_seqs, 1, max_query_len, max_seq_len]  True=masked
+        mask: torch.Tensor,  # [num_seqs, 1, max_query_len, max_seq_len]  True=masked
     ) -> torch.Tensor:
         """
         Compute batched per-sequence attention with GQA via reshape+broadcast.
@@ -484,12 +486,12 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
         Returns:
             [num_seqs, max_query_len, num_heads, head_size]
         """
-        B      = query.shape[0]
-        q_len  = query.shape[1]
+        B = query.shape[0]
+        q_len = query.shape[1]
         kv_len = key.shape[1]
-        Hkv    = self.num_kv_heads
-        Gq     = self.num_queries_per_kv  # Q heads per KV head
-        D      = self.head_size
+        Hkv = self.num_kv_heads
+        Gq = self.num_queries_per_kv  # Q heads per KV head
+        D = self.head_size
 
         if self.use_sdpa:
             # torch.nn.functional.scaled_dot_product_attention path.
@@ -498,10 +500,10 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
             # K/V: [B, kv_len, Hkv, D] → [B, Hkv, kv_len, D]
             # attn_mask: [B, 1, q_len, kv_len]  True=attend (invert our mask)
             out = torch.nn.functional.scaled_dot_product_attention(
-                query.transpose(1, 2),    # [B, H,   q_len,  D]
-                key.transpose(1, 2),      # [B, Hkv, kv_len, D]
-                value.transpose(1, 2),    # [B, Hkv, kv_len, D]
-                attn_mask=~mask,          # bool: True = attend
+                query.transpose(1, 2),  # [B, H,   q_len,  D]
+                key.transpose(1, 2),  # [B, Hkv, kv_len, D]
+                value.transpose(1, 2),  # [B, Hkv, kv_len, D]
+                attn_mask=~mask,  # bool: True = attend
                 scale=self.scale,
                 enable_gqa=True,
             )
@@ -515,14 +517,17 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
 
         # K/V: [B, Hkv, kv_len, D] → unsqueeze Gq dim for broadcast
         # Shape: [B, Hkv, 1, kv_len, D]  (never materialised as Gq copies)
-        k = key.transpose(1, 2).unsqueeze(2)    # [B, Hkv, 1, kv_len, D]
+        k = key.transpose(1, 2).unsqueeze(2)  # [B, Hkv, 1, kv_len, D]
         v = value.transpose(1, 2).unsqueeze(2)  # [B, Hkv, 1, kv_len, D]
 
         # Scores: [B, Hkv, Gq, q_len, kv_len]
-        scores = torch.matmul(
-            q.to(self.working_precision),
-            k.to(self.working_precision).transpose(-2, -1),
-        ) * self.scale
+        scores = (
+            torch.matmul(
+                q.to(self.working_precision),
+                k.to(self.working_precision).transpose(-2, -1),
+            )
+            * self.scale
+        )
 
         # mask [B, 1, q_len, kv_len] → unsqueeze to [B, 1, 1, q_len, kv_len]
         # for broadcast over Hkv and Gq
@@ -545,8 +550,8 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
 
     def _extract_relevant_output(
         self,
-        attn_output: torch.Tensor,     # [num_seqs, max_query_len, num_heads, head_size]
-        query_start_loc: torch.Tensor, # [num_seqs + 1]
+        attn_output: torch.Tensor,  # [num_seqs, max_query_len, num_heads, head_size]
+        query_start_loc: torch.Tensor,  # [num_seqs + 1]
     ) -> torch.Tensor:
         """
         Extract actual query tokens from padded per-sequence output.
