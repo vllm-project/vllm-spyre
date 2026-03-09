@@ -238,7 +238,7 @@ async def reset_kv_cache(client: openai.AsyncOpenAI) -> list[str]:
             299,
             192,
         ),  # 4 full blocks plus one partial. This means that there will be one cached block
-        # in the first block due to padding. The second block can be loaded 100%
+        # in the first chunk due to padding. The second chunk can be loaded 100%
         (350, 256),  # 5 full blocks plus 1 partial. Since no padding is required, the first to
         # chunks are loaded for cache.
         (420, 320),  # 6 full chunks plus 1 partial. Since there is padding, we can only load one
@@ -299,7 +299,7 @@ async def test_max_prefix_hits(
             420,
             192,
         ),  # 4 full blocks plus one partial. This means that there will be one cached block
-        # in the first block due to padding. The second block can be loaded 100%
+        # in the first chunk due to padding. The second chunk can be loaded 100%
     ],
 )
 @pytest.mark.asyncio
