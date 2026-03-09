@@ -58,37 +58,20 @@ Upstream tests are cloned from the vLLM repository at the commit pinned in `pypr
     rm -rf ~/.cache/vllm-upstream-tests
     ```
 
-#### Environment Variables
+### Configuration
 
-**SKIP_UPSTREAM_TESTS**: Skip upstream tests entirely.
+**SKIP_UPSTREAM_TESTS**: Skip upstream tests entirely. Accepts `1`, `true`, or `yes`.
 
-```bash
-SKIP_UPSTREAM_TESTS=1 pytest
-```
+**VLLM_COMMIT**: Override the vLLM commit SHA from `pyproject.toml`.
 
-**VLLM_COMMIT**: Override the vLLM commit from `pyproject.toml`.
-
-```bash
-VLLM_COMMIT=abc123def456 pytest
-```
-
-**VLLM_REPO_URL**: Use a different vLLM repository, e.g. a fork.
-
-```bash
-VLLM_REPO_URL=https://github.com/your-fork/vllm pytest
-```
+**VLLM_REPO_URL**: Override the vLLM repository URL. Defaults to `https://github.com/vllm-project/vllm`.
 
 **UPSTREAM_TESTS_PATHS**: Comma-separated paths to include, relative to `tests/`. Defaults to `models/language/generation`.
 
-```bash
-UPSTREAM_TESTS_PATHS="models/language/generation,models/vision" pytest
-```
+**UPSTREAM_PASSING_PATTERNS**: Comma-separated regex patterns used to identify tests marked `upstream_passing`. Defaults to `facebook` (matches Meta/Facebook model tests).
 
-**UPSTREAM_PASSING_PATTERNS**: Comma-separated regex patterns used to identify tests marked `upstream_passing`. Defaults to `facebook`.
-
-```bash
-UPSTREAM_PASSING_PATTERNS="test_basic.*,test_simple_generation" pytest
-```
+!!! tip
+    Environment variables can be passed directly to the `pytest` command, e.g. `VLLM_COMMIT=abc123def456 pytest`.
 
 ## Pull Requests
 
