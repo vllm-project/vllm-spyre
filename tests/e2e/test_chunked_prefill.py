@@ -6,7 +6,6 @@ Run `python -m pytest tests/e2e/test_spyre_basic.py`.
 import asyncio
 from typing import cast
 from unittest.mock import patch
-import math
 import time
 
 import pytest
@@ -220,22 +219,32 @@ async def reset_kv_cache(client: openai.AsyncOpenAI) -> list[str]:
     assert response.status_code == 200
 
 
-# returns the number of cached tokens if two identical requests are sent
-def calculate_cached_tokens(prompt_len: int, chunk_size: int):
-    block_size = 64
-    blocks_per_chunk = chunk_size // block_size
-    n_chunks = math.ceil(prompt_len / chunk_size)
-    n_blocks = math.ceil(prompt_len / block_size)
-
-    total_blocks = n_chunks * blocks_per_chunk
-    n_padding_tokens = (total_blocks - n_blocks) * block_size
-    total_cached_toks = (prompt_len // chunk_size) * chunk_size
-    return max(0, total_cached_toks - n_padding_tokens)
-
-
 @pytest.mark.parametrize("mode", [pytest.param("pc", marks=pytest.mark.prefix_caching, id="pc")])
 @pytest.mark.parametrize("tp_size", [1])
-@pytest.mark.parametrize("prompt_len", [53, 127, 144, 250, 299, 350, 420])
+@pytest.mark.parametrize(
+    "prompt_len, hit_len",
+    [
+        (53, 0),  # Less than one block, no cache hit
+        (127, 0),  # Less than one chunk, no cache hit
+        (144, 64),  # Two full blocks plus one partial. With one padding block, only one block can
+        # be loaded from cache since the second chunk is already the last one and must
+        # be recomputed.
+        (
+            250,
+            128,
+        ),  # 3 full blocks plus one partial. Since no padding is required, the entire first
+        # chunk can be loaded from cache. The last chunk must be recomputed.
+        (
+            299,
+            192,
+        ),  # 4 full blocks plus one partial. This means that there will be one cached block
+        # in the first block due to padding. The second block can be loaded 100%
+        (350, 256),  # 5 full blocks plus 1 partial. Since no padding is required, the first to
+        # chunks are loaded for cache.
+        (420, 320),  # 6 full chunks plus 1 partial. Since there is padding, we can only load one
+        # block from the first chunk. The second and third chunks are loaded completely
+    ],
+)
 @pytest.mark.asyncio
 async def test_max_prefix_hits(
     remote_openai_server: RemoteOpenAIServer,
@@ -244,6 +253,7 @@ async def test_max_prefix_hits(
     tp_size,
     mode,
     prompt_len,
+    hit_len,
     max_num_seqs,
     max_model_len,
     max_num_batched_tokens,
@@ -259,20 +269,39 @@ async def test_max_prefix_hits(
 
     prompt = random_prompt(model=model, seed=time.time_ns(), length=prompt_len)
 
-    expected_hit_tokens = calculate_cached_tokens(prompt_len, max_num_batched_tokens)
-
     await client.completions.create(model=model.name, prompt=prompt, max_tokens=1)
     await client.completions.create(model=model.name, prompt=prompt, max_tokens=1)
 
     metrics = await get_metrics(client)
     final_hits = get_metric_value(metrics, "vllm:prefix_cache_hits_total")
     hit_tokens = final_hits - initial_hits
-    assert hit_tokens == expected_hit_tokens
+    assert hit_tokens == hit_len
 
 
 @pytest.mark.parametrize("mode", [pytest.param("pc", marks=pytest.mark.prefix_caching, id="pc")])
 @pytest.mark.parametrize("tp_size", [1])
-@pytest.mark.parametrize("prompt_len", [144, 250, 299, 350, 420])
+@pytest.mark.parametrize(
+    "prompt_len, hit_len",
+    [
+        # In this test, the first request is a prefix of the second, with 128 less tokens.
+        # So for all prompt lengths below, subtract 128 tokens.
+        (144, 0),  # Less than one block, no cache hit
+        (250, 0),  # Less than one chunk, no cache hit
+        (299, 64),  # Two full blocks plus one partial. With one padding block, only one block can
+        # be loaded from cache since the second chunk is already the last one and must
+        # be recomputed.
+        (
+            350,
+            128,
+        ),  # 3 full blocks plus one partial. Since no padding is required, the entire first
+        # chunk can be loaded from cache. The last chunk must be recomputed.
+        (
+            420,
+            192,
+        ),  # 4 full blocks plus one partial. This means that there will be one cached block
+        # in the first block due to padding. The second block can be loaded 100%
+    ],
+)
 @pytest.mark.asyncio
 async def test_partial_prefix_hits(
     remote_openai_server: RemoteOpenAIServer,
@@ -281,6 +310,7 @@ async def test_partial_prefix_hits(
     tp_size,
     mode,
     prompt_len,
+    hit_len,
     max_num_seqs,
     max_model_len,
     max_num_batched_tokens,
@@ -295,10 +325,6 @@ async def test_partial_prefix_hits(
     initial_hits = get_metric_value(metrics, "vllm:prefix_cache_hits_total")
 
     prompt = random_prompt(model=model, seed=time.time_ns(), length=prompt_len)
-
-    expected_hit_tokens = calculate_cached_tokens(
-        prompt_len - max_num_batched_tokens, max_num_batched_tokens
-    )
 
     await client.completions.create(model=model.name, prompt=prompt, max_tokens=1)
     await client.completions.create(
@@ -308,4 +334,4 @@ async def test_partial_prefix_hits(
     metrics = await get_metrics(client)
     final_hits = get_metric_value(metrics, "vllm:prefix_cache_hits_total")
     hit_tokens = final_hits - initial_hits
-    assert hit_tokens == expected_hit_tokens
+    assert hit_tokens == hit_len
