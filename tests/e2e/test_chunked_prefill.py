@@ -6,9 +6,11 @@ Run `python -m pytest tests/e2e/test_spyre_basic.py`.
 import asyncio
 from typing import cast
 from unittest.mock import patch
+import time
 
 import pytest
-import requests
+import openai
+import httpx
 from llm_cache import get_cached_llm
 from output_util import compare_results, extract_output, generate_hf_output, setup_golden_token
 from pytest_mock.plugin import MockerFixture
@@ -20,7 +22,7 @@ from spyre_util import (
 )
 from vllm import LLM, SamplingParams
 
-from tests.scheduling_utils import random_prompt
+from scheduling_utils import random_prompt
 from vllm_spyre.v1.worker.spyre_model_runner import SamplingForwardInputs
 
 
@@ -144,6 +146,7 @@ async def test_chunked_prefill_kv_cache_stats(
     max_model_len,
     max_num_batched_tokens,
 ):
+    assert max_num_batched_tokens == 128
     # Test that vllm metrics include prefix caching data
     client = remote_openai_server.get_async_client()
 
@@ -174,7 +177,7 @@ async def test_chunked_prefill_kv_cache_stats(
     # Now that requests are processing, check metrics for KV cache usage.
     # This must be done while requests are in-flight, once they finish this
     # gauge will be 0.
-    metrics = get_metrics(remote_openai_server)
+    metrics = await get_metrics(client)
     kv_cache_usage = get_metric_value(metrics, "vllm:kv_cache_usage_perc")
     assert kv_cache_usage > 0
 
@@ -190,7 +193,7 @@ async def test_chunked_prefill_kv_cache_stats(
 
     # Check the prefix cache counters
     # vLLM should be reporting these counters based on the last 1000 requests
-    metrics = get_metrics(remote_openai_server)
+    metrics = await get_metrics(client)
     total_tokens = get_metric_value(metrics, "vllm:prefix_cache_queries_total")
     hit_tokens = get_metric_value(metrics, "vllm:prefix_cache_hits_total")
 
@@ -199,13 +202,136 @@ async def test_chunked_prefill_kv_cache_stats(
     assert hit_tokens / total_tokens > 0.1
 
 
-def get_metrics(remote_openai_server: RemoteOpenAIServer) -> list[str]:
-    metrics_response = requests.get(f"http://localhost:{remote_openai_server.port}/metrics")
-    assert metrics_response.status_code == 200
-    metrics = metrics_response.text
+async def get_metrics(client: openai.AsyncOpenAI) -> list[str]:
+    response = await client.get("../metrics", cast_to=httpx.Response)
+    assert response.status_code == 200
+    metrics = response.text
     return metrics.splitlines()
 
 
 def get_metric_value(metrics: list[str], metric_name: str) -> float:
     metric_line = [line for line in metrics if line.startswith(metric_name)][0]
     return float(metric_line.split(" ")[-1])
+
+
+async def reset_kv_cache(client: openai.AsyncOpenAI) -> list[str]:
+    response = await client.post("../reset_prefix_cache", cast_to=httpx.Response)
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("mode", [pytest.param("pc", marks=pytest.mark.prefix_caching, id="pc")])
+@pytest.mark.parametrize("tp_size", [1])
+@pytest.mark.parametrize(
+    "prompt_len, hit_len",
+    [
+        (53, 0),  # Less than one block, no cache hit
+        (127, 0),  # Less than one chunk, no cache hit
+        (144, 64),  # Two full blocks plus one partial. With one padding block, only one block can
+        # be loaded from cache since the second chunk is already the last one and must
+        # be recomputed.
+        (
+            250,
+            128,
+        ),  # 3 full blocks plus one partial. Since no padding is required, the entire first
+        # chunk can be loaded from cache. The last chunk must be recomputed.
+        (
+            299,
+            192,
+        ),  # 4 full blocks plus one partial. This means that there will be one cached block
+        # in the first chunk due to padding. The second chunk can be loaded 100%
+        (350, 256),  # 5 full blocks plus 1 partial. Since no padding is required, the first to
+        # chunks are loaded for cache.
+        (420, 320),  # 6 full chunks plus 1 partial. Since there is padding, we can only load one
+        # block from the first chunk. The second and third chunks are loaded completely
+    ],
+)
+@pytest.mark.asyncio
+async def test_max_prefix_hits(
+    remote_openai_server: RemoteOpenAIServer,
+    model,
+    backend,
+    tp_size,
+    mode,
+    prompt_len,
+    hit_len,
+    max_num_seqs,
+    max_model_len,
+    max_num_batched_tokens,
+):
+    assert max_num_batched_tokens == 128
+    # Test that vllm metrics include prefix caching data
+    client = remote_openai_server.get_async_client()
+
+    await reset_kv_cache(client)
+
+    metrics = await get_metrics(client)
+    initial_hits = get_metric_value(metrics, "vllm:prefix_cache_hits_total")
+
+    prompt = random_prompt(model=model, seed=time.time_ns(), length=prompt_len)
+
+    await client.completions.create(model=model.name, prompt=prompt, max_tokens=1)
+    await client.completions.create(model=model.name, prompt=prompt, max_tokens=1)
+
+    metrics = await get_metrics(client)
+    final_hits = get_metric_value(metrics, "vllm:prefix_cache_hits_total")
+    hit_tokens = final_hits - initial_hits
+    assert hit_tokens == hit_len
+
+
+@pytest.mark.parametrize("mode", [pytest.param("pc", marks=pytest.mark.prefix_caching, id="pc")])
+@pytest.mark.parametrize("tp_size", [1])
+@pytest.mark.parametrize(
+    "prompt_len, hit_len",
+    [
+        # In this test, the first request is a prefix of the second, with 128 less tokens.
+        # So for all prompt lengths below, subtract 128 tokens.
+        (144, 0),  # Less than one block, no cache hit
+        (250, 0),  # Less than one chunk, no cache hit
+        (299, 64),  # Two full blocks plus one partial. With one padding block, only one block can
+        # be loaded from cache since the second chunk is already the last one and must
+        # be recomputed.
+        (
+            350,
+            128,
+        ),  # 3 full blocks plus one partial. Since no padding is required, the entire first
+        # chunk can be loaded from cache. The last chunk must be recomputed.
+        (
+            420,
+            192,
+        ),  # 4 full blocks plus one partial. This means that there will be one cached block
+        # in the first chunk due to padding. The second chunk can be loaded 100%
+    ],
+)
+@pytest.mark.asyncio
+async def test_partial_prefix_hits(
+    remote_openai_server: RemoteOpenAIServer,
+    model,
+    backend,
+    tp_size,
+    mode,
+    prompt_len,
+    hit_len,
+    max_num_seqs,
+    max_model_len,
+    max_num_batched_tokens,
+):
+    assert max_num_batched_tokens == 128
+    # Test that vllm metrics include prefix caching data
+    client = remote_openai_server.get_async_client()
+
+    await reset_kv_cache(client)
+
+    metrics = await get_metrics(client)
+    initial_hits = get_metric_value(metrics, "vllm:prefix_cache_hits_total")
+
+    prompt = random_prompt(model=model, seed=time.time_ns(), length=prompt_len)
+
+    await client.completions.create(model=model.name, prompt=prompt, max_tokens=1)
+    await client.completions.create(
+        model=model.name, prompt=prompt[:-max_num_batched_tokens], max_tokens=1
+    )
+
+    metrics = await get_metrics(client)
+    final_hits = get_metric_value(metrics, "vllm:prefix_cache_hits_total")
+    hit_tokens = final_hits - initial_hits
+    assert hit_tokens == hit_len
