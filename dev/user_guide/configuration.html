@@ -688,6 +688,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#vllm-spyre-1x-migration-guide" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        vLLM-Spyre 1.x Migration Guide
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#backend-selection" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1009,6 +1020,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#vllm-spyre-1x-migration-guide" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        vLLM-Spyre 1.x Migration Guide
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#backend-selection" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1119,6 +1141,24 @@
 
 <h1 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h1>
 <p>For a complete list of configuration options, see <a href="env_vars.html">Environment Variables</a>.</p>
+<h2 id="vllm-spyre-1x-migration-guide">vLLM-Spyre 1.x Migration Guide<a class="headerlink" href="#vllm-spyre-1x-migration-guide" title="Permanent link">&para;</a></h2>
+<p>For users migrating from vLLM-Spyre 1.x releases, the default configuration for generative models has changed.
+All models now run with chunked prefill, and prefix caching is enabled by default.</p>
+<p>The following environment variables can be removed from all configurations:</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>VLLM_SPYRE_USE_CB
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>VLLM_SPYRE_USE_CHUNKED_PREFILL
+</span></code></pre></div>
+<p>Configuring the static chunk size for chunked prefill is now only done via <code>--max-num-batched-tokens</code>.
+If your deployment had an override set with <code>VLLM_DT_CHUNK_LEN</code>, use the CLI argument instead.
+The default value for the chunk size is 1024.</p>
+<p>Because prefix caching is enabled by default, the <code>--enable-prefix-caching</code> CLI arg can be removed from all deployments.
+To disable prefix caching, use <code>--no-enable-prefix-caching</code>.</p>
+<p>Support for static batching with generative models has been removed.
+Any deployments for <em>generative</em> (not pooling) models with static batch shapes will now run in chunked prefill mode instead.
+If you have the following environment variable set, you likely need to re-evaluate your deployment:</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>VLLM_SPYRE_WARMUP_NEW_TOKENS
+</span></code></pre></div>
+<p>There are no breaking changes to deployments for pooling models with vLLM-Spyre 2.x.</p>
 <h2 id="backend-selection">Backend Selection<a class="headerlink" href="#backend-selection" title="Permanent link">&para;</a></h2>
 <p>The torch.compile backend can be configured with the <code>VLLM_SPYRE_DYNAMO_BACKEND</code> environment variable.</p>
 <p>All models can be tested on CPU by setting this to <code>eager</code>.
@@ -1136,7 +1176,7 @@ vLLM-Spyre interleaves decode passes with these fixed-chunk-size prefill passes 
 <p>This parameter should be tuned according to your infrastructure, it is recommended to set it from <code>1024</code> to <code>4096</code> tokens and it <strong>must</strong> be multiple of the block size (currently fixed to <code>64</code>). For convenience, when using the model <code>ibm-granite/granite-3.3-8b-instruct</code> with <code>tp=4</code>, vLLM-Spyre automatically sets <code>max_num_batched_tokens</code> to <code>1024</code>, a value known to produce good hardware utilization in this setup.</p>
 <p>In chunked prefill mode, the <code>vllm:kv_cache_usage_perc</code> metric will report the correct KV cache usage on the Spyre cards for all active requests.</p>
 <h3 id="prefix-caching">Prefix Caching<a class="headerlink" href="#prefix-caching" title="Permanent link">&para;</a></h3>
-<p>When running generative models, prefix caching is disabled by default, and can be enabled with the  <code>--enable-prefix-caching</code> CLI flag. An overview of prefix caching can be found in the <a href="https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/#limits">vLLM official documentation on Automatic Prefix Caching</a>.</p>
+<p>When running generative models, prefix caching is enabled by default, and can be disabled with the  <code>--no-enable-prefix-caching</code> CLI flag. An overview of prefix caching can be found in the <a href="https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/#limits">vLLM official documentation on Automatic Prefix Caching</a>.</p>
 <p>Prefix caching mirrors upstream vLLM, though the requirement for fixed-size prefill chunks means the number of chunks in a prefill is only reduced if an entire chunk is available in cache. Therefore, workloads may show lower hit rates when compared to other accelerators.</p>
 <p>When prefix caching is enabled, the <code>vllm:prefix_cache_queries</code> and <code>vllm:prefix_cache_hits</code> metrics correctly report prefix cache stats in tokens.</p>
 <h2 id="pooling-models">Pooling Models<a class="headerlink" href="#pooling-models" title="Permanent link">&para;</a></h2>
@@ -1147,8 +1187,8 @@ vLLM-Spyre interleaves decode passes with these fixed-chunk-size prefill passes 
 <p>There are no up-front checks that the compiled graphs will fit into the available memory on the Spyre cards. If the graphs are too large for the available memory, vllm will crash during model warmup.</p>
 </div>
 <p>These batch shapes must be configured with the <code>VLLM_SPYRE_WARMUP_*</code> environment variables. For example, to warm up two graph shapes for one single large request and four smaller requests you could use:</p>
-<div class="language-shell highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">VLLM_SPYRE_WARMUP_BATCH_SIZES</span><span class="o">=</span><span class="m">1</span>,4
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">VLLM_SPYRE_WARMUP_PROMPT_LENS</span><span class="o">=</span><span class="m">4096</span>,1024
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">VLLM_SPYRE_WARMUP_BATCH_SIZES</span><span class="o">=</span><span class="m">1</span>,4
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">VLLM_SPYRE_WARMUP_PROMPT_LENS</span><span class="o">=</span><span class="m">4096</span>,1024
 </span></code></pre></div>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
@@ -1160,10 +1200,10 @@ vLLM-Spyre interleaves decode passes with these fixed-chunk-size prefill passes 
 <h3 id="require-precompiled-decoders">Require Precompiled Decoders<a class="headerlink" href="#require-precompiled-decoders" title="Permanent link">&para;</a></h3>
 <p>Model compilation can be resource intensive and disruptive in production environments. To mitigate this, artifacts stored in <code>TORCH_SENDNN_CACHE_DIR</code> can be persisted to a shared volume during pre-deployment. Requiring the server to load from the cache avoids unexpected recompilation on the inference server.</p>
 <p>To enforce the use of precompiled models, set:</p>
-<div class="language-sh highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nv">VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS</span><span class="o">=</span><span class="m">1</span>
+<div class="language-sh highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nv">VLLM_SPYRE_REQUIRE_PRECOMPILED_DECODERS</span><span class="o">=</span><span class="m">1</span>
 </span></code></pre></div>
 <p>and create an empty catalog file:</p>
-<div class="language-sh highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nb">echo</span><span class="w"> </span><span class="s1">&#39;{}&#39;</span><span class="w"> </span>&gt;<span class="w"> </span><span class="si">${</span><span class="nv">TORCH_SENDNN_CACHE_DIR</span><span class="si">}</span>/pre_compiled_cache_catalog.json
+<div class="language-sh highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nb">echo</span><span class="w"> </span><span class="s1">&#39;{}&#39;</span><span class="w"> </span>&gt;<span class="w"> </span><span class="si">${</span><span class="nv">TORCH_SENDNN_CACHE_DIR</span><span class="si">}</span>/pre_compiled_cache_catalog.json
 </span></code></pre></div>
 <p>This configuration ensures that if a precompiled model is not found, an error will be raised. The catalog file is mandatory and serves as metadata for precompiled models in the cache. It enables the server to surface useful information and warnings in logs tagged with <code>[PRECOMPILED_WARN]</code>.</p>
 <p>Catalog checks inspect metadata of the launch configuration that affect the cached artifacts including:</p>
@@ -1173,7 +1213,7 @@ vLLM-Spyre interleaves decode passes with these fixed-chunk-size prefill passes 
 <li>Model name</li>
 </ul>
 <p>If a matching entry is not found in the catalog, the server will still attempt to load from the cache. This allows precompiled models without catalog metadata to be used. However, if no precompiled model exists in the cache, the system will raise:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>RuntimeError: Compilation disabled
+<div class="language-text highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>RuntimeError: Compilation disabled
 </span></code></pre></div>
 <p>Scripts to generate and update pre_compiled_cache_catalog.json will be provided in future releases.</p>
 <div class="admonition note">
