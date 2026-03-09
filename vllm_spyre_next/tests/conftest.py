@@ -196,8 +196,8 @@ def pytest_configure(config):
         # Comma separated list of upstream paths
         DEFAULT_UPSTREAM_TESTS_PATHS = "models/language/generation"
 
-        # Ensure VLLM_PLUGINS is set to spyre-next for all tests
-        os.environ["VLLM_PLUGINS"] = "spyre-next"
+        # Ensure VLLM_PLUGINS is set to spyre_next for all tests
+        os.environ["VLLM_PLUGINS"] = "spyre_next"
 
         # Get list of paths to include from upstream tests
         paths_env = os.environ.get("UPSTREAM_TESTS_PATHS", DEFAULT_UPSTREAM_TESTS_PATHS).strip()
