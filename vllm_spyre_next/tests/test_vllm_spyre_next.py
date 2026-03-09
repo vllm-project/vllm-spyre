@@ -1,7 +1,5 @@
 from vllm import LLM, RequestOutput, SamplingParams
 
-import pytest
-
 
 @pytest.mark.spyre
 @pytest.mark.uses_subprocess
