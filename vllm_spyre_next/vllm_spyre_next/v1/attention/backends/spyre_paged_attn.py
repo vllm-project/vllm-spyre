@@ -385,7 +385,7 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
             mask: [num_seqs, 1, max_query_len, max_seq_len]
                   True = masked out (don't attend), False = attend
         """
-        num_seqs = seq_lens.shape[0]
+        # num_seqs = seq_lens.shape[0]
         query_lens = query_start_loc[1:] - query_start_loc[:-1]  # [num_seqs]
         max_query_len = query_lens.max()
         max_seq_len = seq_lens.max()
@@ -430,8 +430,8 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
         Returns:
             [num_seqs, max_query_len, num_heads, head_size]
         """
-        num_heads = query.shape[1]
-        head_size = query.shape[2]
+        # num_heads = query.shape[1]
+        # head_size = query.shape[2]
         device = query.device
 
         query_lens = query_start_loc[1:] - query_start_loc[:-1]  # [num_seqs]
@@ -488,7 +488,7 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
         """
         B = query.shape[0]
         q_len = query.shape[1]
-        kv_len = key.shape[1]
+        # kv_len = key.shape[1]
         Hkv = self.num_kv_heads
         Gq = self.num_queries_per_kv  # Q heads per KV head
         D = self.head_size

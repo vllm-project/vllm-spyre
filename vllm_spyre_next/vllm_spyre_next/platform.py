@@ -3,6 +3,8 @@ from typing import TYPE_CHECKING
 from string import Template
 import multiprocessing
 
+from vllm_spyre_next.compat_utils import has_argument
+
 # When running this plugin on a Mac, we assume it's for local development
 # purposes. However, due to a compatibility issue with vLLM, which overrides
 # the Triton module with a placeholder, vLLM may fail to load on macOS. To
@@ -89,7 +91,13 @@ class TorchSpyrePlatform(CpuPlatform):
         if selected_backend == AttentionBackendEnum.CUSTOM:
             return AttentionBackendEnum.CUSTOM.get_path()
         else:
-            return super().get_attn_backend_cls(selected_backend, attn_selector_config, num_heads)
+            # num_heads is in vllm:main but not in 0.16.0 or the release prep for 0.17.0
+            kwargs = (
+                {"num_heads": num_heads}
+                if has_argument(super().get_attn_backend_cls, "num_heads")
+                else {}
+            )
+            return super().get_attn_backend_cls(selected_backend, attn_selector_config, **kwargs)
 
     @classmethod
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:
