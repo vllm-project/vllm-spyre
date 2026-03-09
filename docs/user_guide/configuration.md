@@ -2,6 +2,35 @@
 
 For a complete list of configuration options, see [Environment Variables](env_vars.md).
 
+## vLLM-Spyre 1.x Migration Guide
+
+For users migrating from vLLM-Spyre 1.x releases, the default configuration for generative models has changed.
+All models now run with chunked prefill, and prefix caching is enabled by default.
+
+The following environment variables can be removed from all configurations:
+
+```shell
+VLLM_SPYRE_USE_CB
+VLLM_SPYRE_USE_CHUNKED_PREFILL
+```
+
+Configuring the static chunk size for chunked prefill is now only done via `--max-num-batched-tokens`.
+If your deployment had an override set with `VLLM_DT_CHUNK_LEN`, use the CLI argument instead.
+The default value for the chunk size is 1024.
+
+Because prefix caching is enabled by default, the `--enable-prefix-caching` CLI arg can be removed from all deployments.
+To disable prefix caching, use `--no-enable-prefix-caching`.
+
+Support for static batching with generative models has been removed.
+Any deployments for *generative* (not pooling) models with static batch shapes will now run in chunked prefill mode instead.
+If you have the following environment variable set, you likely need to re-evaluate your deployment:
+
+```shell
+VLLM_SPYRE_WARMUP_NEW_TOKENS
+```
+
+There are no breaking changes to deployments for pooling models with vLLM-Spyre 2.x.
+
 ## Backend Selection
 
 The torch.compile backend can be configured with the `VLLM_SPYRE_DYNAMO_BACKEND` environment variable.
@@ -33,7 +62,7 @@ In chunked prefill mode, the `vllm:kv_cache_usage_perc` metric will report the c
 
 ### Prefix Caching
 
-When running generative models, prefix caching is disabled by default, and can be enabled with the  `--enable-prefix-caching` CLI flag. An overview of prefix caching can be found in the [vLLM official documentation on Automatic Prefix Caching](https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/#limits).
+When running generative models, prefix caching is enabled by default, and can be disabled with the  `--no-enable-prefix-caching` CLI flag. An overview of prefix caching can be found in the [vLLM official documentation on Automatic Prefix Caching](https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/#limits).
 
 Prefix caching mirrors upstream vLLM, though the requirement for fixed-size prefill chunks means the number of chunks in a prefill is only reduced if an entire chunk is available in cache. Therefore, workloads may show lower hit rates when compared to other accelerators.
 
