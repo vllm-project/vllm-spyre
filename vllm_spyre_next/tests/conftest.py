@@ -5,55 +5,8 @@ This conftest.py provides automatic integration of upstream vLLM tests into the
 vllm-spyre-next test suite. It clones the vLLM repository at a specific commit
 and dynamically injects those tests into the pytest collection.
 
-pyproject.toml configures the default markers to run the vllm_spyre_next tests
-and the upstream tests configured as passing with:
-```
--m 'spyre or upstream_passing'
-```
-but that can be overridden.
-
-## Supported Configuration
-
-- **SKIP_UPSTREAM_TESTS**: Set to "1", "true", or "yes" to skip upstream tests entirely
-- **VLLM_COMMIT** environment variable - Override with specific commit SHA from vLLM
-  - Default: extract the revision from pyproject.toml
-- **VLLM_REPO_URL**: Override vLLM repository URL
-  - Default: "https://github.com/vllm-project/vllm"
-- **UPSTREAM_TESTS_PATHS**: Comma-separated paths relative to vLLM's tests/ directory
-  - Default: "models/language/generation"
-  - Example: "models/language/generation,models/vision"
-- **UPSTREAM_PASSING_PATTERNS**: Comma-separated regex patterns to mark passing tests
-  - Default: "facebook"
-  - Tests matching patterns get 'upstream_passing' marker
-  - Example: "test_basic.*,test_simple_generation"
-
-## Pytest Markers
-- **upstream**: Applied to all tests from upstream vLLM
-- **upstream_passing**: Applied to tests matching UPSTREAM_PASSING_PATTERNS
-
-## Cache Behavior
-- Tests are cached in XDG_CACHE_HOME or ~/.cache/vllm-upstream-tests
-- Separate worktrees per commit allow multiple versions to coexist
-- Cache persists across test runs for performance
-
-## Usage Examples
-
-```bash
-# Run all spyre and upstream tests
-pytest
-
-# Run only passing upstream tests
-pytest -m upstream_passing
-
-# Skip upstream tests entirely
-SKIP_UPSTREAM_TESTS=1 pytest
-
-# Test specific upstream paths
-UPSTREAM_TESTS_PATHS="models/language/generation,v1/sample/test_logprobs.py" pytest
-
-# Use specific vLLM commit
-VLLM_COMMIT=abc123def456 pytest
-```
+For usage instructions and configuration options, see:
+docs/vllm_spyre_next/contributing/README.md#testing
 """
 
 import os
@@ -243,8 +196,8 @@ def pytest_configure(config):
         # Comma separated list of upstream paths
         DEFAULT_UPSTREAM_TESTS_PATHS = "models/language/generation"
 
-        # Ensure VLLM_PLUGINS is set to spyre-next for all tests
-        os.environ["VLLM_PLUGINS"] = "spyre-next"
+        # Ensure VLLM_PLUGINS is set to spyre_next for all tests
+        os.environ["VLLM_PLUGINS"] = "spyre_next"
 
         # Get list of paths to include from upstream tests
         paths_env = os.environ.get("UPSTREAM_TESTS_PATHS", DEFAULT_UPSTREAM_TESTS_PATHS).strip()
