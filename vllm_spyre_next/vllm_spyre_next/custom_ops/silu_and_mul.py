@@ -163,7 +163,8 @@ class SpyreSiluAndMul(SiluAndMul):
         # out = self._fwd_spyre(
         #     convert_for_spyre(x, dtype=torch.float16),
         # )
-        
+
+        # Workaround with tensor slicing on CPU
         d = x.shape[-1] // 2
         x1 = x[..., :d]
         x2 = x[..., d:]
