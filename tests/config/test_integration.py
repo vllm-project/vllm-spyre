@@ -50,8 +50,26 @@ class TestModelMatching:
         assert configurator.device_config is not None
         assert "VLLM_DT_MAX_BATCH_TKV_LIMIT" in configurator.device_config.env_vars
 
-    def test_match_granite_4_cb_config(self, registry, granite_4_hf_config):
-        """Test matching granite-4-8b-dense with CB config."""
+    def test_match_granite_4_dense_hybrid_config(self, registry, granite_4_hf_dense_hybrid_config):
+        """Test matching granite-4-8b-dense configs that have type granitemoehybrid."""
+        vllm_config = create_vllm_config(
+            hf_config=granite_4_hf_dense_hybrid_config,
+            world_size=4,
+            max_model_len=32768,
+            max_num_seqs=32,
+        )
+
+        configurator = registry.get_configurator_for_runtime(vllm_config)
+
+        assert configurator is not None
+        assert isinstance(configurator, ModelConfigurator)
+        # This is really a dense model, but it has model type "granitemoehybrid"
+        # It has the same overrides as the regular dense variant
+        assert configurator.model_config.name == "ibm-granite/granite-4-8b-dense-hybrid"
+        assert configurator.device_config is not None
+
+    def test_match_granite_4_dense_config(self, registry, granite_4_hf_config):
+        """Test matching granite-4-8b-dense configs that aren't spoofed moe hybrid models."""
         vllm_config = create_vllm_config(
             hf_config=granite_4_hf_config, world_size=4, max_model_len=32768, max_num_seqs=32
         )

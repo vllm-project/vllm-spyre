@@ -37,6 +37,14 @@ def granite_3_3_hf_config():
 
 
 @pytest.fixture
+def granite_4_hf_dense_hybrid_config():
+    """Fixture providing a version of a real granite-4-8b-dense HF config that's a spoofed version
+    of a granitemoehybrid model. Granite 4 dense configs used to look like this."""
+    fixture_path = FIXTURES_PATH / "ibm-granite" / "granite-4-8b-dense-hybrid" / "config.json"
+    return _load_hf_config(fixture_path)
+
+
+@pytest.fixture
 def granite_4_hf_config():
     """Fixture providing real granite-4-8b-dense HF config."""
     fixture_path = FIXTURES_PATH / "ibm-granite" / "granite-4-8b-dense" / "config.json"
