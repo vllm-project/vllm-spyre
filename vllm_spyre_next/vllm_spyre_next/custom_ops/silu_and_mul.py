@@ -117,7 +117,8 @@ class SpyreSiluAndMul(SiluAndMul):
         output.copy_(result)
 
     @staticmethod
-    def forward_static(x: torch.Tensor) -> torch.Tensor:
+    # def forward_static(x: torch.Tensor) -> torch.Tensor:
+    def forward_static(x1: torch.Tensor, x2: torch.Tensor) -> torch.Tensor:
         """Spyre-optimized SiluAndMul using the registered aten::silu.out kernel.
 
         Decomposes the SwiGLU activation into silu + multiply, relying on
@@ -133,8 +134,9 @@ class SpyreSiluAndMul(SiluAndMul):
         Returns:
             Output tensor [..., d] on Spyre device
         """
-        d = x.shape[-1] // 2
-        return F.silu(x[..., :d]) * x[..., d:]
+        # d = x.shape[-1] // 2
+        # return F.silu(x[..., :d]) * x[..., d:]
+        return F.silu(x1) * x2
 
     def forward_native(self, x: torch.Tensor) -> torch.Tensor:
         """Spyre device execution with padding, device transfer, and dtype conversion.
@@ -154,10 +156,20 @@ class SpyreSiluAndMul(SiluAndMul):
         x_dtype = x.dtype
         x_device = x.device
 
-        # Execute compiled kernel on Spyre device
-        # convert_for_spyre: CPU tensor -> Spyre device (float16)
+        # This would be the standard procedure, but since there is currently
+        # no support for tensor slicing, we need to do the slicing on CPU
+        # # Execute compiled kernel on Spyre device
+        # # convert_for_spyre: CPU tensor -> Spyre device (float16)
+        # out = self._fwd_spyre(
+        #     convert_for_spyre(x, dtype=torch.float16),
+        # )
+        
+        d = x.shape[-1] // 2
+        x1 = x[..., :d]
+        x2 = x[..., d:]
         out = self._fwd_spyre(
-            convert_for_spyre(x, dtype=torch.float16),
+            convert_for_spyre(x1, dtype=torch.float16),
+            convert_for_spyre(x2, dtype=torch.float16),
         )
 
         # Transfer back to CPU and restore original shape
