@@ -21,6 +21,9 @@ from vllm.utils.argparse_utils import FlexibleArgumentParser
 from vllm.utils.network_utils import get_open_port
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.request import Request
+from vllm_spyre.v1.core.scheduler import (
+    ChunkedPrefillSpyreScheduler,
+)
 
 from vllm_spyre import envs
 from vllm_spyre.platform import SpyrePlatform
@@ -559,8 +562,9 @@ def write_sample_model_config(tmp_path, data, filename="model_compile.log.json")
 
 
 def get_block_tables(engine_core: EngineCore) -> tuple[dict[str, list[int]], dict[int, int]]:
-    model_runner = engine_core.model_executor.driver_worker.worker.model_runner
-    req_to_blocks = model_runner.kv_cache_manager.req_to_blocks
+    scheduler: ChunkedPrefillSpyreScheduler = engine_core.scheduler
+    kv_cache_manager = scheduler.kv_cache_manager.coordinator.single_type_managers[0]
+    req_to_blocks = kv_cache_manager.req_to_blocks
 
     block_tables = {
         req_id: [block.block_id for block in blocks] for req_id, blocks in req_to_blocks.items()
