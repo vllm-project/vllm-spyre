@@ -545,12 +545,11 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         )
 
         # request_ids None means all requests are finished
-        if request_ids is None:
-            self.ongoing_prefills = []
-        else:
-            self.ongoing_prefills = [
-                r for r in self.ongoing_prefills if r.request_id not in request_ids
-            ]
+        self.ongoing_prefills = (
+            []
+            if request_ids is None
+            else [r for r in self.ongoing_prefills if r.request_id not in request_ids]
+        )
 
         return aborted_requests
 
