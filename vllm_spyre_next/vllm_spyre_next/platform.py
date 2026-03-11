@@ -68,9 +68,11 @@ class TorchSpyrePlatform(CpuPlatform):
 
         from vllm_spyre_next import _version
 
-        model_name = vllm_config.model_config.model
-
-        logger.info(message, _version.version, model_name)
+        try:
+            model_name = vllm_config.model_config.model
+            logger.info(message, _version.version, model_name)
+        except AttributeError:
+            logger.warning("model_config is None or not initialized")
 
     @classmethod
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:
