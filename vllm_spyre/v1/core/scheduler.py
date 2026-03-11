@@ -531,21 +531,27 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
 
     def finish_requests(
         self,
-        request_ids: Union[str, Iterable[str]],
-        finished_status,
-    ) -> None:
+        request_ids: Union[str, Iterable[str], None],
+        finished_status: RequestStatus,
+    ) -> list[tuple[str, int]]:
         """Handles removing finished requests from ongoing_prefills"""
         if isinstance(request_ids, str):
             request_ids = (request_ids,)
 
-        # first defer to vLLM scheduler where validation is handled
-        super(SpyreScheduler, self).finish_requests(
+        # first defer to vLLM scheduler
+        # validates the input requests and generates the output
+        aborted_requests = super(SpyreScheduler, self).finish_requests(
             request_ids=request_ids, finished_status=finished_status
         )
 
-        self.ongoing_prefills = [
-            r for r in self.ongoing_prefills if r.request_id not in request_ids
-        ]
+        # request_ids None means all requests are finished
+        self.ongoing_prefills = (
+            []
+            if request_ids is None
+            else [r for r in self.ongoing_prefills if r.request_id not in request_ids]
+        )
+
+        return aborted_requests
 
     def calc_cached_tokens(self, prompt_len: int) -> tuple[int, int]:
         blocks_per_chunk = self.chunk_size // self.block_size
