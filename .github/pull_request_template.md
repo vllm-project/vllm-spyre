@@ -14,7 +14,7 @@
 
 ## Checklist
 
-- [ ] I have read the [contributing guidelines](https://blog.vllm.ai/vllm-spyre/contributing/)
+- [ ] I have read the [contributing guidelines](https://docs.vllm.ai/projects/spyre/en/latest/contributing)
 - [ ] My code follows the project's code style (run `bash format.sh`)
 - [ ] I have added tests for my changes (if applicable)
 - [ ] I have updated the documentation (if applicable)
