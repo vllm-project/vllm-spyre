@@ -53,7 +53,7 @@ overrides = [
     { name = "setuptools", specifier = ">=82" },
     { name = "torch", marker = "platform_machine not in 's390x, ppc64le'", specifier = "==2.10.0", index = "https://download.pytorch.org/whl/cpu" },
     { name = "triton", marker = "sys_platform == 'never'" },
-    { name = "vllm", marker = "platform_machine not in 's390x, ppc64le'", git = "https://github.com/vllm-project/vllm?rev=v0.17.0" },
+    { name = "vllm", marker = "platform_machine not in 's390x, ppc64le'", git = "https://github.com/vllm-project/vllm?rev=v0.17.1" },
 ]
 build-constraints = [{ name = "torch", specifier = "==2.10.0", index = "https://download.pytorch.org/whl/cpu" }]
 
@@ -9296,8 +9296,8 @@ wheels = [
 
 [[package]]
 name = "vllm"
-version = "0.17.0+cpu"
-source = { git = "https://github.com/vllm-project/vllm?rev=v0.17.0#b31e9326a7d9394aab8c767f8ebe225c65594b60" }
+version = "0.17.1+cpu"
+source = { git = "https://github.com/vllm-project/vllm?rev=v0.17.1#95c0f928cdeeaa21c4906e73cee6a156e1b3b995" }
 dependencies = [
     { name = "aiohttp" },
     { name = "anthropic" },
@@ -9447,7 +9447,7 @@ requires-dist = [
     { name = "torch", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torch-spyre", git = "https://github.com/torch-spyre/torch-spyre?rev=c1f67bb4701630179d53dbfc060dde62fc2d7d18" },
     { name = "torchvision", index = "https://download.pytorch.org/whl/cpu" },
-    { name = "vllm", git = "https://github.com/vllm-project/vllm?rev=v0.17.0" },
+    { name = "vllm", git = "https://github.com/vllm-project/vllm?rev=v0.17.1" },
 ]
 
 [package.metadata.requires-dev]

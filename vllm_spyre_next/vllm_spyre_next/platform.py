@@ -82,7 +82,6 @@ class TorchSpyrePlatform(CpuPlatform):
         aot_compile_val = os.environ.setdefault("VLLM_USE_AOT_COMPILE", "0")
         logger.info("VLLM_USE_AOT_COMPILE set to '%s'", aot_compile_val)
 
-
         # ---- worker ----
         parallel_config = vllm_config.parallel_config
         if parallel_config.worker_cls == "auto":
