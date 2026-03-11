@@ -16,8 +16,27 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
+
+
+@pytest.fixture()
+def default_vllm_config():
+    """Set a default VllmConfig for tests that directly test CustomOps or pathways
+    that use get_current_vllm_config() outside of a full engine context.
+    """
+    from vllm.config import VllmConfig, set_current_vllm_config
+    with set_current_vllm_config(VllmConfig()):
+        yield
+        
+    # config = Mock()
+    # config.parallel_config = Mock(world_size=4)
+    # config.cache_config = Mock(num_gpu_blocks_override=None)
+    # config.scheduler_config = Mock(max_num_batched_tokens=2048)
+    # config.model_config = Mock(max_model_len=8192)
+    # return config
+
 
 
 # Global logger for pytest terminal output
