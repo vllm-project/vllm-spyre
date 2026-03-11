@@ -16,7 +16,7 @@ from vllm import SamplingParams
 @pytest.mark.full_model
 @pytest.mark.basic
 # `mode` here is parametrized directly so that we can use the `cp` mode that disables prefix caching
-# This mode is turned off by default in coftest.py, this is the one test that will ensure vllm boots
+# This mode is turned off by default in conftest.py, this is the one test that will ensure vllm boots
 # with prefix caching disabled.
 @pytest.mark.parametrize(
     "mode",
