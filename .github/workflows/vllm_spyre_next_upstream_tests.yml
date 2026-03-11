@@ -1,0 +1,80 @@
+name: vLLM Spyre Next Upstream Tests
+
+on:
+  pull_request:
+    paths:
+      - 'vllm_spyre_next/**'
+      - '.github/workflows/vllm_spyre_next_upstream_tests.yml'
+    branches: [main]
+  
+  push:
+    branches: [main]
+    paths:
+      - 'vllm_spyre_next/**'
+      - '.github/workflows/vllm_spyre_next_upstream_tests.yml'
+  
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  trigger-jenkins:
+    name: "Jenkins: ${{ matrix.test_config.name }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        test_config:
+          - id: "language-generation-facebook"
+            name: "Language Generation (facebook models)"
+            upstream_tests_paths: "models/language/generation"
+            upstream_passing_patterns: "facebook"
+            markers: ""
+            job_name: "JENKINS_JOB_LANG_GEN_FACEBOOK"
+          
+          - id: "vision-llava-next"
+            name: "Vision (llava_next)"
+            upstream_tests_paths: "models/vision"
+            upstream_passing_patterns: "llava_next"
+            markers: "vision and upstream_passing"
+            job_name: "JENKINS_JOB_VISION_LLAVA_NEXT"
+    
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      
+      - name: "Trigger Jenkins Job"
+        uses: appleboy/jenkins-action@0e0a4e1a7bc6123ed3ec28ba235d77c22f13aa39
+        with:
+          url: ${{ secrets.JENKINS_URL }}
+          user: ${{ secrets.JENKINS_USER }}
+          token: ${{ secrets.JENKINS_TOKEN }}
+          job: ${{ secrets[matrix.test_config.job_name] }}
+          parameters: |
+            GIT_BRANCH=${{ github.ref_name }}
+            GIT_COMMIT=${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+            PR_NUMBER=${{ github.event_name == 'pull_request' && github.event.pull_request.number || '' }}
+            UPSTREAM_TESTS_PATHS=${{ matrix.test_config.upstream_tests_paths }}
+            UPSTREAM_PASSING_PATTERNS=${{ matrix.test_config.upstream_passing_patterns }}
+            PYTEST_MARKERS=${{ matrix.test_config.markers }}
+      
+      - name: "Report Status"
+        if: always()
+        run: |
+          echo "### Jenkins Test Status: ${{ matrix.test_config.name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Test Config**: ${{ matrix.test_config.id }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Upstream Tests Path**: ${{ matrix.test_config.upstream_tests_paths }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Passing Patterns**: ${{ matrix.test_config.upstream_passing_patterns }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Markers**: ${{ matrix.test_config.markers }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Git Ref**: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "Check Jenkins for detailed test results." >> $GITHUB_STEP_SUMMARY
+
+# Made with Bob
