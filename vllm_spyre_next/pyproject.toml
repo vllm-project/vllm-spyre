@@ -45,25 +45,30 @@ version_file = "vllm_spyre_next/_version.py"
 # Local versioning is incompatible with pypi, so we disable it by default.
 local_scheme = "no-local-version"
 root = ".."
-# For more version configuration, see 
-# https://setuptools-scm.readthedocs.io/en/latest/config/
+# Only match spyre-next-vX.Y.Z tags (with optional SemVer pre-release suffix), ignoring v* tags used by vllm-spyre.
+# SemVer pre-release format: hyphen followed by dot-separated identifiers (alphanumeric + hyphens)
+tag_regex = "^spyre-next-v(?P<version>[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?)$"
+git_describe_command = "git describe --dirty --tags --long --match 'spyre-next-v*'"
 
 
 [tool.uv]
+default-groups = ["dev", "upstream-tests"]
 override-dependencies = [
     # No triton support yet, don't allow any dependencies to pull it in
     "triton; sys_platform == 'never'",
-    "intel-extension-for-pytorch; sys_platform == 'never'",
-    
-    # This torch version must match the one below in `build-constraint-dependencies`
-    "torch==2.10.0",
+    "arctic-inference; sys_platform == 'never'",
+    "perf-analyzer; sys_platform == 'never'",
 
     # Skip packages on s390x and ppc64le, expected to be pre-installed
     "torch ; platform_machine not in 's390x, ppc64le'",
     # "vllm ; platform_machine not in 's390x, ppc64le'",
     "ray; platform_machine not in 's390x, ppc64le'",
-    "llvmlite; platform_machine not in 's390x, ppc64le'",
+    # uv doesn't resolve numba->llvmlite constraint correctly...
+    #   if numba is updated, this version will likely need to be too
+    "llvmlite==0.44.0; platform_machine not in 's390x, ppc64le'",
     "pyarrow; platform_machine not in 's390x, ppc64le'",
+    # This torch version must match the one below in `build-constraint-dependencies`
+    "torch==2.10.0 ; platform_machine not in 's390x, ppc64le'",
 
     # torch-spyre declares a dependency on numpy>2.3, conflicting with numba needed by vLLM
     # The range here should match the numba dependency
@@ -73,19 +78,12 @@ override-dependencies = [
     # causing import failure on headless Linux systems.
     "opencv-python-headless==4.12.0.88",
 
-    # uv doesn't resolve numba->llvmlite constraint correctly...
-    #   if numba is updated, this will likely need to be too
-    "llvmlite==0.44.0; platform_machine not in 's390x, ppc64le'",
-
     # setuptools is specified as a runtime dep by vllm, make sure it's patched for CVEs
     "setuptools>=82",
 
     # requests is used by many dependencies, make sure it's patched for CVEs
     "requests>=2.32.4",
 
-]
-environments = [
-    "python_version > '3.9'"
 ]
 # This adds constraints to all dependent build environments, which will ensure everything is built
 # with the same version of torch. This CANNOT conflict with a package's existing build dependencies
@@ -100,7 +98,7 @@ extra-build-variables = { vllm = { VLLM_TARGET_DEVICE = "cpu" } }
 # This is the unreleased v0.16.0 tag with 2.10 support
 # vllm = { git = "https://github.com/vllm-project/vllm", rev = "2d5be1dd5ce2e44dfea53ea03ff61143da5137eb" }
 # see https://github.com/torch-spyre/torch-spyre/pull/746
-torch-spyre = { git = "https://github.com/joerunde/torch-spyre", rev = "f36c0517eb4ff4fa1c05a3e806c79ac8ffe1132e" }
+torch-spyre = { git = "https://github.com/torch-spyre/torch-spyre", rev = "bd7502baa9123d292e56dbd4928147969ecdf63c" }
 torch = [
   { index = "pytorch-cpu" },
 ]
@@ -196,10 +194,16 @@ skip_gitignore = true
 [tool.pytest.ini_options]
 pythonpath = ["."]
 asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+    "ignore::_pytest.warning_types.PytestUnknownMarkWarning"
+]
+addopts = "-m 'spyre or upstream_passing'"
 
 # --8<-- [start:test-markers-definition]
 markers = [
-    # TODO add any
+    "spyre: Tests that require a Spyre device",
+    "upstream: Tests coming from upstream vLLM",
+    "upstream_passing: Tests known to pass from upstream vLLM",
 ]
 # --8<-- [end:test-markers-definition]
 
@@ -225,11 +229,61 @@ plugins.md007.indent = 4
 
 [dependency-groups]
 dev = [
-    "pytest==8.3.4",
-    "pytest-asyncio>=1.0.0",
+    "pytest"
+]
+upstream-tests = [
+    "albumentations>=1.4.6",
+    "arctic-inference==0.1.1",
+    "backoff>=2.2.1",
+    "bitsandbytes==0.46.1",
+    "blobfile>=3.2.0",
+    "buildkite-test-collector==0.1.9",
+    "datamodel-code-generator>=0.54.1",
+    "decord==0.6.0",
+    "einops>=0.8.2",
+    "fastsafetensors>=0.2.2",
+    "genai-perf>=0.0.8",
+    "gpt-oss>=0.0.7 ; python_full_version >= '3.12'",
+    "grpcio-tools==1.78.0",
+    "httpx>=0.28.1",
+    "jiwer>=4.0.0",
+    "librosa>=0.11.0",
+    "lm-eval[api]>=0.4.9.2",
+    "matplotlib>=3.10.8",
+    "mistral-common[audio,image]>=1.9.0",
+    "mteb[bm25s]>=2,<3",
+    "num2words>=0.5.14",
+    "numba==0.61.2",
+    "numpy>=2.2.6",
+    "open-clip-torch==2.32.0",
+    "opencv-python-headless>=4.13.0",
+    "peft>=0.15.0",
+    "perceptron>=0.2.1",
+    "pqdm>=0.2.0",
+    "pydantic>=2.12",
+    "pytest>=8.3.4",
+    "pytest-asyncio>=1.3.0",
+    "pytest-cov>=7.0.0",
     "pytest-forked>=1.6.0",
-    "pytest-timeout==2.3.1",
-    "requests>=2.32.4",
-    "sentence-transformers==3.4.1",
-    "pytest-mock>=3.15.0",
+    "pytest-rerunfailures>=16.1",
+    "pytest-shard>=0.1.2",
+    "pytest-timeout>=2.3.1",
+    "ray[cgraph,default]>=2.48.0",
+    "runai-model-streamer[gcs,s3]==0.15.3",
+    "schemathesis>=3.39.15",
+    "sentence-transformers>=5.2.0",
+    "soundfile>=0.13.1",
+    "tblib>=3.2.2",
+    "tensorizer==2.10.1",
+    "terratorch",
+    "timm>=1.0.17",
+    "tokenizers==0.22.0",
+    "torch==2.10.0",
+    "torchaudio==2.10.0",
+    "torchvision==0.25.0",
+    "transformers==4.57.5",
+    "transformers-stream-generator>=0.0.5",
+    "tritonclient>=2.51.0",
+    "vector-quantize-pytorch>=1.27.21",
+    "vocos>=0.1.0",
 ]
