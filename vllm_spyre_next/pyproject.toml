@@ -228,7 +228,8 @@ plugins.md007.indent = 4
 
 [dependency-groups]
 dev = [
-    "pytest"
+    "pytest",
+    "pyyaml",
 ]
 upstream-tests = [
     "albumentations>=1.4.6",
