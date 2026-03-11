@@ -25,17 +25,13 @@ if TYPE_CHECKING:
     from vllm.config import ModelConfig, VllmConfig
     from vllm.pooling_params import PoolingParams
     from vllm.sampling_params import SamplingParams
-    from vllm.renderers.inputs import DictPrompt, TokPrompt
-    from vllm.inputs import ProcessorInputs, PromptType, TokenInputs
+    from vllm.inputs import ProcessorInputs, TokenInputs
 else:
     ModelConfig = None
     VllmConfig = None
     SamplingParams = None
     PoolingParams = None
-    DictPrompt = None
-    TokPrompt = None
     ProcessorInputs = None
-    PromptType = None
     TokenInputs = None
 from vllm.platforms import Platform, PlatformEnum
 
@@ -418,9 +414,8 @@ class SpyrePlatform(Platform):
     @classmethod
     def validate_request(
         cls,
-        prompt: "PromptType | DictPrompt | TokPrompt",
-        params: "SamplingParams | PoolingParams",
         processed_inputs: "ProcessorInputs",
+        params: "SamplingParams | PoolingParams",
     ) -> None:
         """Raises if this request is unsupported on this platform"""
 
@@ -444,18 +439,12 @@ class SpyrePlatform(Platform):
             )
             params.structured_outputs = None
 
-        if isinstance(prompt, dict) and "prompt_token_ids" in prompt:
-            prompt_len = len(prompt["prompt_token_ids"])  # ty: ignore
-        elif processed_inputs is not None:
-            if "encoder" in processed_inputs:
-                raise ValueError("Encoder-decoder models not supported ")
-            if "prompt_token_ids" not in processed_inputs:
-                # Can't do any extra validation on embedding-only inputs
-                return
-            prompt_len = len(cast(TokenInputs, processed_inputs)["prompt_token_ids"])
-        else:
-            # We need a prompt length to do any validation here
+        if "encoder_prompt" in processed_inputs:
+            raise ValueError("Encoder-decoder models not supported ")
+        if "prompt_token_ids" not in processed_inputs:
+            # Can't do any extra validation on embedding-only inputs
             return
+        prompt_len = len(cast(TokenInputs, processed_inputs)["prompt_token_ids"])
 
         max_tokens = 0
         if params is not None and params.max_tokens is not None:
