@@ -59,7 +59,8 @@ def _extract_vllm_commit_from_pyproject() -> str | None:
         # Look for vllm source with git and rev
         # Pattern: vllm = { git = "...", rev = "commit_sha_or_semver_tag" }
         match = re.search(
-            r'vllm\s*=\s*\{\s*git\s*=\s*"[^"]+"\s*,\s*rev\s*=\s*"([0-9a-f]{7,40}|v\d+\.\d+\.\d+(?:-[a-zA-Z0-9.]+)?)"\s*\}', content
+            r'vllm\s*=\s*\{\s*git\s*=\s*"[^"]+"\s*,\s*rev\s*=\s*"([0-9a-f]{7,40}|v\d+\.\d+\.\d+(?:-[a-zA-Z0-9.]+)?)"\s*\}',
+            content,
         )
         if match:
             return match.group(1)
@@ -134,19 +135,29 @@ def _ensure_repo_at_commit(repo_dir: Path, url: str, commit: str, sparse_paths: 
         result = subprocess.run(
             ["git", "--git-dir", str(git_dir), "remote", "get-url", "origin"],
             capture_output=True,
-            text=True
+            text=True,
         )
         if result.returncode != 0:
             # Remote doesn't exist, add it
             _run(["git", "--git-dir", str(git_dir), "remote", "add", "origin", url])
-        
+
         # Determine if commit is a tag (starts with 'v' and matches semver pattern) or a SHA
         is_tag = re.match(r"^v\d+\.\d+\.\d+(?:-[a-zA-Z0-9.]+)?$", commit)
-        
+
         if is_tag:
             _log(f"[vllm-upstream] Fetching tag {commit} from {url}")
             # For tags, fetch the tag reference
-            _run(["git", "--git-dir", str(git_dir), "fetch", "--depth=1", "origin", f"refs/tags/{commit}:refs/tags/{commit}"])
+            _run(
+                [
+                    "git",
+                    "--git-dir",
+                    str(git_dir),
+                    "fetch",
+                    "--depth=1",
+                    "origin",
+                    f"refs/tags/{commit}:refs/tags/{commit}",
+                ]
+            )
         else:
             _log(f"[vllm-upstream] Fetching commit {commit[:12]} from {url}")
             # For commit SHAs, fetch the commit directly
@@ -156,7 +167,16 @@ def _ensure_repo_at_commit(repo_dir: Path, url: str, commit: str, sparse_paths: 
         # For tags, use the full tag reference; for commits, use the commit SHA directly
         worktree_ref = f"refs/tags/{commit}" if is_tag else commit
         _run(
-            ["git", "--git-dir", str(git_dir), "worktree", "add", "--detach", str(td_path), worktree_ref]
+            [
+                "git",
+                "--git-dir",
+                str(git_dir),
+                "worktree",
+                "add",
+                "--detach",
+                str(td_path),
+                worktree_ref,
+            ]
         )
 
         # Enable sparse checkout at the worktree
