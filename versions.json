@@ -5,6 +5,13 @@
     "aliases": []
   },
   {
+    "version": "2.0.0-rc.3",
+    "title": "2.0.0-rc.3",
+    "aliases": [
+      "latest"
+    ]
+  },
+  {
     "version": "2.0.0-rc.2",
     "title": "2.0.0-rc.2",
     "aliases": []
@@ -17,9 +24,7 @@
   {
     "version": "1.9.1",
     "title": "1.9.1",
-    "aliases": [
-      "latest"
-    ]
+    "aliases": []
   },
   {
     "version": "1.9.0",
