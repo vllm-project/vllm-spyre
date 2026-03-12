@@ -54,9 +54,11 @@ jobs:
         id: test_config
         run: |
           # Convert env_vars to JSON string
-          echo 'json<<EOF' >> $GITHUB_OUTPUT
-          echo '${{ toJSON(matrix.test_config.env_vars) }}' >> $GITHUB_OUTPUT
-          echo 'EOF' >> $GITHUB_OUTPUT
+          {
+            echo 'json<<EOF'
+            echo '${{ toJSON(matrix.test_config.env_vars) }}'
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
       
       - name: "Trigger Jenkins Job"
         uses: appleboy/jenkins-action@0e0a4e1a7bc6123ed3ec28ba235d77c22f13aa39
@@ -72,16 +74,18 @@ jobs:
       - name: "Report Status"
         if: always()
         run: |
-          echo "### Jenkins Test Status: ${{ matrix.test_config.name }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Test Config ID**: ${{ matrix.test_config.id }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit SHA**: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Test Configuration:**" >> $GITHUB_STEP_SUMMARY
-          echo '```json' >> $GITHUB_STEP_SUMMARY
-          echo '${{ toJSON(matrix.test_config.env_vars) }}' >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Check Jenkins for detailed test results." >> $GITHUB_STEP_SUMMARY
+          {
+            echo "### Jenkins Test Status: ${{ matrix.test_config.name }}"
+            echo ""
+            echo "- **Test Config ID**: ${{ matrix.test_config.id }}"
+            echo "- **Commit SHA**: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}"
+            echo ""
+            echo "**Test Configuration:**"
+            echo '```json'
+            echo '${{ toJSON(matrix.test_config.env_vars) }}'
+            echo '```'
+            echo ""
+            echo "Check Jenkins for detailed test results."
+          } >> "$GITHUB_STEP_SUMMARY"
 
 # Made with Bob
