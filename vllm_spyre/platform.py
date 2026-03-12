@@ -186,9 +186,7 @@ class SpyrePlatform(Platform):
 
         is_pooling = model_config.runner_type == "pooling"
 
-        if not bool(int(os.getenv("VLLM_USE_V1", "1"))):
-            raise ValueError("vllm-spyre is only supported with vLLM v1. Please set VLLM_USE_V1=1")
-        elif not is_decoder and not is_pooling:
+        if not is_decoder and not is_pooling:
             raise ValueError("Only the 'generate' and 'pooling' runners are supported")
 
         if parallel_config.worker_cls == "auto":
