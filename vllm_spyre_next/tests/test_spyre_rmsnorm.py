@@ -48,7 +48,7 @@ def test_spyre_rms_norm(
 
     This test validates that SpyreRMSNorm produces results consistent with
     the reference vllm RMSNorm implementation running on cpu.
-    
+
     Args:
         num_tokens: Number of tokens in the batch
         hidden_size: Hidden dimension size
@@ -58,7 +58,7 @@ def test_spyre_rms_norm(
     """
     torch.set_default_device("cpu")
     set_random_seed(seed)
-    
+
     # Initialize SpyreRMSNorm layer
     layer = SpyreRMSNorm(hidden_size)
 

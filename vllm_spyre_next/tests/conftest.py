@@ -16,7 +16,6 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from unittest.mock import Mock
 
 import pytest
 
@@ -27,9 +26,10 @@ def default_vllm_config():
     that use get_current_vllm_config() outside of a full engine context.
     """
     from vllm.config import VllmConfig, set_current_vllm_config
+
     with set_current_vllm_config(VllmConfig()):
         yield
-        
+
 
 # Global logger for pytest terminal output
 _terminal_reporter = None
