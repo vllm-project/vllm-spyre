@@ -70,7 +70,6 @@ class SpyrePlatform(Platform):
     _block_size: Literal[64] = 64  # hardcoded Spyre constraint for now
     # TODO: this `None` is dangerous
     _config: VllmConfig = None  # ty: ignore[invalid-assignment]
-    _torch_sendnn_version = None
 
     # Backend for dynamic compilation ops
     # See vllm batched_count_greater_than method
@@ -640,17 +639,9 @@ class SpyrePlatform(Platform):
     def sendnn_configured(cls) -> bool:
         if cls.is_backend_sendnn_enabled():
             try:
-                from torch_sendnn._version import __version__ as version_str  # ty: ignore[unresolved-import]
+                import torch_sendnn  # ty: ignore[unresolved-import] # noqa: F401
 
-                sem_ver = version_str.split("+")[0]
-                cls._torch_sendnn_version = tuple(map(int, sem_ver.split(".")))
                 return True
             except ImportError as err:
                 raise RuntimeError("sendnn backend requires torch_sendnn") from err
         return False
-
-    @classmethod
-    def sendnn_version(cls):
-        if cls.sendnn_configured():
-            return cls._torch_sendnn_version
-        return (0, 0, 0)

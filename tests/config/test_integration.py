@@ -162,49 +162,35 @@ class TestUnregisteredModels:
         )
 
 
-class TestGraniteVersionAwareOverrides:
-    """Tests for version-aware GPU blocks overrides for Granite models."""
+class TestGraniteGPUBlocksOverrides:
+    """Tests for GPU blocks overrides for Granite models."""
 
     @pytest.mark.cpu
     @pytest.mark.parametrize(
-        "hf_config_fixture, sendnn_configured, sendnn_version, expected_blocks",
+        "hf_config_fixture, expected_blocks",
         [
-            ("granite_3_3_hf_config", True, (0, 0, 0), 8192),
-            ("granite_3_3_hf_config", True, (1, 0, 2), 2080),
-            ("granite_3_3_hf_config", True, (1, 1, 0), 8192),
-            ("granite_3_3_hf_config", False, (1, 0, 2), 8192),
-            ("granite_4_hf_config", True, (1, 1, 0), 8192),
+            ("granite_3_3_hf_config", 8192),
+            ("granite_4_hf_config", 8192),
         ],
         ids=[
-            "g3.3_zeros_sendnn",
-            "g3.3_sendnn_1.0.2",
-            "g3.3_sendnn_1.1.0",
-            "g3.3_no_sendnn",
-            "g4_sendnn_1.1.0",
+            "g3.3_default",
+            "g4_default",
         ],
     )
-    def test_granite_version_aware_overrides(
+    def test_granite_gpu_blocks_overrides(
         self,
         request,
         registry,
         hf_config_fixture,
-        sendnn_configured,
-        sendnn_version,
         expected_blocks,
     ):
-        """Test version-aware GPU blocks and env var overrides for granite models."""
+        """Test GPU blocks and env var overrides for granite models."""
 
         # Get the HF config from the fixture
         hf_config = request.getfixturevalue(hf_config_fixture)
 
         # Must ensure no env vars have been overridden before testing
-        with (
-            patch.dict(os.environ, clear=True),
-            patch(
-                "vllm_spyre.platform.SpyrePlatform.sendnn_configured", new=lambda: sendnn_configured
-            ),
-            patch("vllm_spyre.platform.SpyrePlatform.sendnn_version", new=lambda: sendnn_version),
-        ):
+        with patch.dict(os.environ, clear=True):
             # Create vllm_config for CB with TP=4 using helper
             granite_config = create_vllm_config(
                 hf_config=hf_config,
