@@ -61,7 +61,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
       
       - name: "Trigger Jenkins Job"
-        uses: appleboy/jenkins-action@0e0a4e1a7bc6123ed3ec28ba235d77c22f13aa39
+        uses: appleboy/jenkins-action@v1
         with:
           url: ${{ secrets.JENKINS_URL }}
           user: ${{ secrets.JENKINS_USER }}
