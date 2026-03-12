@@ -150,7 +150,7 @@ class SpyreVocabParallelEmbedding(VocabParallelEmbedding):
         # Pad to minimum batch size of 64 if needed
         if masked_input.shape[0] != 1 and masked_input.shape[0] < 64:
             masked_input = torch.nn.functional.pad(
-                masked_input, (0, 0, 64 - num_real_el, 0)
+                masked_input, (64 - num_real_el, 0)
             )
 
         # Transfer to Spyre device
