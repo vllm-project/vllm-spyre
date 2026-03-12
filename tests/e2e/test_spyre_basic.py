@@ -155,8 +155,6 @@ def test_tkv_limits_checked_correctly_on_prefix_hits(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Test that we don't overflow tkv limits when we have a prefix hit"""
-
-    # VLLM_DT_MAX_BATCH_TKV_LIMIT=2048 vllm serve ibm-ai-platform/micro-g3.3-8b-instruct-1b --max-model-len 1024 --max-num-seqs 8 --max-num-batched-tokens 256
     monkeypatch.setenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", "2048")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", "eager")
 

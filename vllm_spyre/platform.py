@@ -76,6 +76,8 @@ class SpyrePlatform(Platform):
     _config: VllmConfig = None  # ty: ignore[invalid-assignment]
     _torch_sendnn_version = None
 
+    _max_batch_tkv_limit: int = 0
+
     # Backend for dynamic compilation ops
     # See vllm batched_count_greater_than method
     simple_compile_backend: str = envs_spyre.VLLM_SPYRE_SIMPLE_COMPILE_BACKEND
@@ -97,6 +99,10 @@ class SpyrePlatform(Platform):
         Check if the current platform supports async output.
         """
         return False
+
+    @classmethod
+    def get_max_batch_tkv_limit(cls) -> int:
+        return cls._max_batch_tkv_limit
 
     @classmethod
     def get_total_spyre_blocks(cls, vllm_config: VllmConfig) -> int:
@@ -348,6 +354,12 @@ class SpyrePlatform(Platform):
                 "found. Using the default value (max_model_len * max_batch_size): %d",
                 default_max_batch_tkv_limit,
             )
+            cls._max_batch_tkv_limit = default_max_batch_tkv_limit
+        else:
+            try:
+                cls._max_batch_tkv_limit = int(os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"))  #  ty: ignore
+            except ValueError as e:
+                raise ValueError("VLLM_DT_MAX_BATCH_TKV_LIMIT must be an integer") from e
 
         handle_disable_compilation(vllm_config, is_decoder)
 

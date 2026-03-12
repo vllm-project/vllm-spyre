@@ -1440,7 +1440,16 @@ class ChunkedPrefillModelRunner(
             if model_input.input_embeds is not None
             else model_input.input_tokens
         )
+
         with set_forward_context(attn_metadata, self.vllm_config):
+            assert (
+                self.tkv * len(scheduler_output.num_scheduled_tokens)
+                <= SpyrePlatform.get_max_batch_tkv_limit()
+            ), (
+                f"Exceeded max batch tkv limit! tkv: {self.tkv}, "
+                f"batch_size: {len(scheduler_output.num_scheduled_tokens)}"
+            )
+
             logits = self.model(
                 input_ids_or_embeds=input_ids_or_embeds,
                 positions=model_input.input_positions,
@@ -1521,16 +1530,6 @@ class ChunkedPrefillModelRunner(
             req_id: self.requests[req_id].padding_blocks * self.block_size
             for req_id in req_id_to_index
         }
-
-        print(
-            f"Decode pass return - tkv: {self.tkv}, batch_size: {len(req_id_to_index)}, batch tkv: {self.tkv * len(req_id_to_index)}"
-        )
-
-        import os
-
-        assert self.tkv * len(req_id_to_index) < int(os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT")), (
-            f"Exceeded max batch tkv limit: {self.tkv * len(req_id_to_index)}"
-        )
 
         return SpyreModelRunnerOutput(
             req_ids=list(req_id_to_index.keys()),
