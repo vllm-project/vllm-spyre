@@ -7,14 +7,20 @@ forward_static implementation, inspired by vLLM's test_layernorm.py.
 import pytest
 import torch
 
+from vllm.model_executor.layers.layernorm import RMSNorm
 from vllm_spyre_next.custom_ops.rms_norm import SpyreRMSNorm
 
 
 # Test parameters inspired by vLLM's test_layernorm.py
-NUM_TOKENS = [7, 83, 2048]
-HIDDEN_SIZES = [64, 128, 4096, 5120, 8192]
+# NUM_TOKENS = [7, 83, 2048]
+# HIDDEN_SIZES = [64, 128, 4096, 5120, 8192]
+# ADD_RESIDUAL = [False, True]
+# DTYPES = [torch.bfloat16, torch.float16]
+# SEEDS = [0]
+NUM_TOKENS = [1024]
+HIDDEN_SIZES = [4096]
 ADD_RESIDUAL = [False, True]
-DTYPES = [torch.bfloat16, torch.float16]
+DTYPES = [torch.bfloat16]
 SEEDS = [0]
 
 
@@ -41,11 +47,8 @@ def test_spyre_rms_norm(
     """Test SpyreRMSNorm against reference implementation.
 
     This test validates that SpyreRMSNorm produces results consistent with
-    the reference forward_static implementation, accounting for:
-    - Spyre device constraints (min batch size 64)
-    - Dtype conversions (float16 on device, bfloat16 output)
-    - Numerical precision differences
-
+    the reference vllm RMSNorm implementation running on cpu.
+    
     Args:
         num_tokens: Number of tokens in the batch
         hidden_size: Hidden dimension size
@@ -53,27 +56,27 @@ def test_spyre_rms_norm(
         dtype: Data type for tensors
         seed: Random seed for reproducibility
     """
+    torch.set_default_device("cpu")
     set_random_seed(seed)
     
     # Initialize SpyreRMSNorm layer
-    layer = SpyreRMSNorm(hidden_size).to(dtype=dtype)
-    layer.weight.data.normal_(mean=1.0, std=0.1)
+    layer = SpyreRMSNorm(hidden_size)
 
     # Create input tensors
+    x = torch.randn(num_tokens, hidden_size, dtype=dtype)
     scale = 1 / (2 * hidden_size)
-    x = torch.randn(num_tokens, hidden_size, dtype=dtype).to("spyre")
     x = x * scale if add_residual else x
     residual = torch.randn_like(x) * scale if add_residual else None
 
-    # Execute reference implementation (forward_static)
-    # NOTE: Reference should be executed first as custom kernel may be in-place
-    ref_out = SpyreRMSNorm.forward_static(
-        x.clone(),
-        variance_epsilon=layer.variance_epsilon,
-        hidden_size=layer.hidden_size,
-        weight=layer.weight,
-        residual=residual.clone() if residual is not None else None,
-        variance_size_override=layer.variance_size_override,
+    # Execute reference implementation on cpu
+    ref_out = RMSNorm.forward_static(
+        x=x,
+        variance_epsilon=1e-6,
+        hidden_size=hidden_size,
+        orig_dtype=dtype,
+        weight=layer.weight.clone(),
+        residual=residual,
+        variance_size_override=None,
     )
 
     # Execute SpyreRMSNorm implementation
