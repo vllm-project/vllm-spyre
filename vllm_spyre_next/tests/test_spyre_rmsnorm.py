@@ -91,3 +91,10 @@ def test_spyre_rms_norm(
         torch.testing.assert_close(out[1], ref_out[1], atol=1e-1, rtol=1e-1)
     else:
         torch.testing.assert_close(out, ref_out, atol=1e-1, rtol=1e-1)
+
+
+@pytest.mark.spyre
+def test_spyre_rms_norm_custom_op_registration(default_vllm_config):
+    """Test that the custom op is properly registered."""
+    rms_layer = RMSNorm(1024)
+    assert isinstance(rms_layer, SpyreRMSNorm)
