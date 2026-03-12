@@ -3,7 +3,9 @@
 """Standalone unit tests for SpyreVocabParallelEmbedding.
 
 Tests custom op registration, OOT class substitution, forward logic,
-and Spyre device usage — all with mocked tensors (no hardware needed).
+and Spyre device usage. Uses mocked tensors to verify that the embedding
+lookup is correctly dispatched to the Spyre device while TP masking,
+padding, and all-reduce remain on CPU.
 """
 import pytest
 import torch
@@ -293,21 +295,27 @@ class TestPrepareInputsOnSpyre:
         input_ids = MagicMock(spec=torch.Tensor)
         weight = MagicMock(spec=torch.Tensor)
 
-        # Chain .to() calls
-        input_ids.to.return_value = input_ids
-        weight.to.return_value = weight
+        # Chain .to() calls — weight.to(dtype=float16) returns weight_f16,
+        # then weight_f16.to(device=spyre) returns final tensor
+        weight_on_spyre = MagicMock(spec=torch.Tensor)
+        weight_f16 = MagicMock(spec=torch.Tensor)
+        weight_f16.to.return_value = weight_on_spyre
+        weight.to.return_value = weight_f16
 
-        _prepare_embedding_inputs_on_spyre(input_ids, weight)
+        input_ids_on_spyre = MagicMock(spec=torch.Tensor)
+        input_ids.to.return_value = input_ids_on_spyre
+
+        result_ids, result_weight = _prepare_embedding_inputs_on_spyre(input_ids, weight)
 
         # input_ids should be moved to spyre device
         input_ids.to.assert_called_once_with(device=torch.device("spyre"))
+        assert result_ids is input_ids_on_spyre
 
-        # weight should be converted to float16, then moved to spyre
-        assert weight.to.call_count == 2
-        weight.to.assert_any_call(dtype=torch.float16)
-        weight.to.return_value.to.assert_called_with(
-            device=torch.device("spyre")
-        )
+        # weight should be converted to float16 first
+        weight.to.assert_called_once_with(dtype=torch.float16)
+        # then the float16 weight should be moved to spyre device
+        weight_f16.to.assert_called_once_with(device=torch.device("spyre"))
+        assert result_weight is weight_on_spyre
 
 
 # ---------------------------------------------------------------------------
