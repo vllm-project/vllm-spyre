@@ -1522,7 +1522,15 @@ class ChunkedPrefillModelRunner(
             for req_id in req_id_to_index
         }
 
-        print(f"Decode pass return - tkv: {self.tkv}, batch_size: {len(req_id_to_index)}, batch tkv: {self.tkv * len(req_id_to_index)}")
+        print(
+            f"Decode pass return - tkv: {self.tkv}, batch_size: {len(req_id_to_index)}, batch tkv: {self.tkv * len(req_id_to_index)}"
+        )
+
+        import os
+
+        assert self.tkv * len(req_id_to_index) < int(os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT")), (
+            f"Exceeded max batch tkv limit: {self.tkv * len(req_id_to_index)}"
+        )
 
         return SpyreModelRunnerOutput(
             req_ids=list(req_id_to_index.keys()),

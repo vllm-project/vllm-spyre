@@ -359,8 +359,19 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         return self._satisfies_constraints(request)
 
     def _satisfies_constraints(self, request: Request) -> bool:
+        print(f"_satisfies_constraints for {request.request_id}")
+
         is_first_chunk = request.num_computed_tokens == 0
         is_last_chunk = (request.num_prompt_tokens - request.num_computed_tokens) <= self.chunk_size
+
+        print(
+            "num_prompt_tokens: ",
+            request.num_prompt_tokens,
+            "num_compted_tokens: ",
+            request.num_computed_tokens,
+        )
+
+        print(f"is_first_chunk: {is_first_chunk}, is_last_chunk: {is_last_chunk}")
 
         if not self.do_interleaving:
             # All the prefills are consecutive, so the first chunk has to
@@ -495,17 +506,24 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         # Compute the effective token length of the new request
         new_req_max_tkv = new_req_tkv + request.max_tokens - 1
 
-        print(f"new_req_max_tkv: {new_req_max_tkv}")
+        print(f"\n\n\tNUM BLOCKS!: {n_blocks}, new_req_max_tkv: {new_req_max_tkv}\n")
 
         # Compute token lengths for all running requests (decode batch)
-        decode_req_max_tkvs = [new_req_max_tkv]
+        decode_req_max_tkvs = []
         for req in running:
             # current tkv of the (left aligned) decode sequence
-            dec_req_tkv = n_blocks * self.block_size + req.num_computed_tokens % self.block_size
+            dec_req_tkv = (
+                n_blocks + 1
+            ) * self.block_size + req.num_computed_tokens % self.block_size
             n_generated_output_tokens = req.num_computed_tokens - req.num_prompt_tokens
             dec_req_max_tkv = dec_req_tkv + (req.max_tokens - n_generated_output_tokens) - 1
             decode_req_max_tkvs.append(dec_req_max_tkv)
+
             print(f"req_id: {req.request_id}, dec_req_max_tkv: {dec_req_max_tkv}")
+            print(f"req.num_computed_tokens: {req.num_computed_tokens}")
+            print(f"req.num_prompt_tokens: {req.num_prompt_tokens}")
+            print(f"req.max_tokens: {req.max_tokens}")
+            print()
 
         # Sort decode requests token lengths in ascending order
         decode_req_max_tkvs.sort()
@@ -525,15 +543,19 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
             if new_req_max_tkv <= decode_req_max_tkv:
                 # If the new request is shorter, it limits the batch volume
 
-                print(f"Max batch TKV currently: {max_batch_tkv}, batch size: {batch_size}, batch x new = {batch_size * new_req_max_tkv}")
+                print(
+                    f"Max batch TKV currently: {max_batch_tkv}, batch size: {batch_size}, batch x new = {batch_size * new_req_max_tkv}"
+                )
 
                 max_batch_tkv = max(max_batch_tkv, batch_size * new_req_max_tkv)
                 break
             else:
                 # Otherwise, use the current (longer) request's volume
-                
-                print(f"Max batch TKV currently: {max_batch_tkv}, batch size: {batch_size}, batch x current = {batch_size * decode_req_max_tkv}")
-                
+
+                print(
+                    f"Max batch TKV currently: {max_batch_tkv}, batch size: {batch_size}, batch x current = {batch_size * decode_req_max_tkv}"
+                )
+
                 max_batch_tkv = max(max_batch_tkv, batch_size * decode_req_max_tkv)
                 # decrease batch_size by 1 as the current request finished
                 batch_size -= 1
