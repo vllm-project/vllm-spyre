@@ -109,7 +109,3 @@ extra_javascript:
 # https://www.mkdocs.org/user-guide/configuration/#use_directory_urls
 use_directory_urls: false
 
-extra:
-  version:
-    provider: mike
-    default: latest
