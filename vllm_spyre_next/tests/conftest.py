@@ -30,14 +30,6 @@ def default_vllm_config():
     with set_current_vllm_config(VllmConfig()):
         yield
         
-    # config = Mock()
-    # config.parallel_config = Mock(world_size=4)
-    # config.cache_config = Mock(num_gpu_blocks_override=None)
-    # config.scheduler_config = Mock(max_num_batched_tokens=2048)
-    # config.model_config = Mock(max_model_len=8192)
-    # return config
-
-
 
 # Global logger for pytest terminal output
 _terminal_reporter = None
