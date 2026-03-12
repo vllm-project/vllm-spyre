@@ -30,17 +30,19 @@ jobs:
         test_config:
           - id: "language-generation-facebook"
             name: "Language Generation (facebook models)"
-            upstream_tests_paths: "models/language/generation"
-            upstream_passing_patterns: "facebook"
-            markers: ""
-            job_name: "JENKINS_JOB_LANG_GEN_FACEBOOK"
+            job_name: "vllm-upstream-test-next"
+            env_vars:
+              UPSTREAM_TESTS_PATHS: "models/language/generation"
+              UPSTREAM_PASSING_PATTERNS: "facebook"
+              MARKERS: ""
           
           - id: "vision-llava-next"
             name: "Vision (llava_next)"
-            upstream_tests_paths: "models/vision"
-            upstream_passing_patterns: "llava_next"
-            markers: "vision and upstream_passing"
-            job_name: "JENKINS_JOB_VISION_LLAVA_NEXT"
+            job_name: "vllm-upstream-test-next"
+            env_vars:
+              UPSTREAM_TESTS_PATHS: "models/vision"
+              UPSTREAM_PASSING_PATTERNS: "llava_next"
+              MARKERS: "vision and upstream_passing"
     
     steps:
       - name: "Checkout"
@@ -48,33 +50,38 @@ jobs:
         with:
           fetch-depth: 1
       
+      - name: "Prepare Test Config JSON"
+        id: test_config
+        run: |
+          # Convert env_vars to JSON string
+          echo 'json<<EOF' >> $GITHUB_OUTPUT
+          echo '${{ toJSON(matrix.test_config.env_vars) }}' >> $GITHUB_OUTPUT
+          echo 'EOF' >> $GITHUB_OUTPUT
+      
       - name: "Trigger Jenkins Job"
         uses: appleboy/jenkins-action@0e0a4e1a7bc6123ed3ec28ba235d77c22f13aa39
         with:
           url: ${{ secrets.JENKINS_URL }}
           user: ${{ secrets.JENKINS_USER }}
           token: ${{ secrets.JENKINS_TOKEN }}
-          job: ${{ secrets[matrix.test_config.job_name] }}
+          job: ${{ matrix.test_config.job_name }}
           parameters: |
-            GIT_BRANCH=${{ github.ref_name }}
             GIT_COMMIT=${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-            PR_NUMBER=${{ github.event_name == 'pull_request' && github.event.pull_request.number || '' }}
-            UPSTREAM_TESTS_PATHS=${{ matrix.test_config.upstream_tests_paths }}
-            UPSTREAM_PASSING_PATTERNS=${{ matrix.test_config.upstream_passing_patterns }}
-            PYTEST_MARKERS=${{ matrix.test_config.markers }}
+            TEST_CONFIG_JSON=${{ steps.test_config.outputs.json }}
       
       - name: "Report Status"
         if: always()
         run: |
           echo "### Jenkins Test Status: ${{ matrix.test_config.name }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Test Config**: ${{ matrix.test_config.id }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Upstream Tests Path**: ${{ matrix.test_config.upstream_tests_paths }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Passing Patterns**: ${{ matrix.test_config.upstream_passing_patterns }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Markers**: ${{ matrix.test_config.markers }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Git Ref**: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Test Config ID**: ${{ matrix.test_config.id }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit SHA**: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-
+          echo "**Test Configuration:**" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          echo '${{ toJSON(matrix.test_config.env_vars) }}' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           echo "Check Jenkins for detailed test results." >> $GITHUB_STEP_SUMMARY
 
 # Made with Bob
