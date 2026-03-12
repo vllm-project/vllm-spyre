@@ -495,14 +495,17 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         # Compute the effective token length of the new request
         new_req_max_tkv = new_req_tkv + request.max_tokens - 1
 
+        print(f"new_req_max_tkv: {new_req_max_tkv}")
+
         # Compute token lengths for all running requests (decode batch)
-        decode_req_max_tkvs = []
+        decode_req_max_tkvs = [new_req_max_tkv]
         for req in running:
             # current tkv of the (left aligned) decode sequence
             dec_req_tkv = n_blocks * self.block_size + req.num_computed_tokens % self.block_size
             n_generated_output_tokens = req.num_computed_tokens - req.num_prompt_tokens
             dec_req_max_tkv = dec_req_tkv + (req.max_tokens - n_generated_output_tokens) - 1
             decode_req_max_tkvs.append(dec_req_max_tkv)
+            print(f"req_id: {req.request_id}, dec_req_max_tkv: {dec_req_max_tkv}")
 
         # Sort decode requests token lengths in ascending order
         decode_req_max_tkvs.sort()
@@ -515,14 +518,22 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
             batch_size += 1
         max_batch_tkv = 0
 
+        print(f"decode_req_max_tkvs: {decode_req_max_tkvs}")
+        print(f"Initial max_batch_tkv: {max_batch_tkv}, batch_size: {batch_size}")
         # Try adding the new request to the batch and check the max volume
         for decode_req_max_tkv in decode_req_max_tkvs:
             if new_req_max_tkv <= decode_req_max_tkv:
                 # If the new request is shorter, it limits the batch volume
+
+                print(f"Max batch TKV currently: {max_batch_tkv}, batch size: {batch_size}, batch x new = {batch_size * new_req_max_tkv}")
+
                 max_batch_tkv = max(max_batch_tkv, batch_size * new_req_max_tkv)
                 break
             else:
                 # Otherwise, use the current (longer) request's volume
+                
+                print(f"Max batch TKV currently: {max_batch_tkv}, batch size: {batch_size}, batch x current = {batch_size * decode_req_max_tkv}")
+                
                 max_batch_tkv = max(max_batch_tkv, batch_size * decode_req_max_tkv)
                 # decrease batch_size by 1 as the current request finished
                 batch_size -= 1
