@@ -158,7 +158,13 @@ def test_tkv_limits_checked_correctly_on_prefix_hits(
     monkeypatch.setenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", "2048")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", "eager")
 
-    llm = LLM(model=model.name, max_model_len=1024, max_num_seqs=8, max_num_batched_tokens=256)
+    llm = LLM(
+        model=model.name,
+        max_model_len=1024,
+        max_num_seqs=8,
+        max_num_batched_tokens=256,
+        revision=model.revision,
+    )
 
     base_prompt = "0 1 2 3 4 5 6 7 8 9 " * 24
     prompts = [base_prompt] * 5
