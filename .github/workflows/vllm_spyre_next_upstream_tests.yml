@@ -24,13 +24,14 @@ jobs:
     name: "Jenkins: ${{ matrix.test_config.name }}"
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    env:
+      JENKINS_JOB_NAME: "vllm-upstream-test-next"
     strategy:
       fail-fast: false
       matrix:
         test_config:
           - id: "language-generation-facebook"
             name: "Language Generation (facebook models)"
-            job_name: "vllm-upstream-test-next"
             env_vars:
               UPSTREAM_TESTS_PATHS: "models/language/generation"
               UPSTREAM_PASSING_PATTERNS: "facebook"
@@ -38,7 +39,6 @@ jobs:
           
           - id: "vision-llava-next"
             name: "Vision (llava_next)"
-            job_name: "vllm-upstream-test-next"
             env_vars:
               UPSTREAM_TESTS_PATHS: "models/vision"
               UPSTREAM_PASSING_PATTERNS: "llava_next"
@@ -64,7 +64,7 @@ jobs:
           url: ${{ secrets.JENKINS_URL }}
           user: ${{ secrets.JENKINS_USER }}
           token: ${{ secrets.JENKINS_TOKEN }}
-          job: ${{ matrix.test_config.job_name }}
+          job: ${{ env.JENKINS_JOB_NAME }}
           parameters: |
             GIT_COMMIT=${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
             TEST_CONFIG_JSON=${{ steps.test_config.outputs.json }}
