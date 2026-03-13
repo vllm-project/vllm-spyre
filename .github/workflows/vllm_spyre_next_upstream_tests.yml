@@ -76,25 +76,36 @@ jobs:
           ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 1
       
-      - name: "Prepare Test Config JSON"
-        id: test_config
+      - name: "Trigger Jenkins Job via Generic Webhook"
         run: |
-          {
-            echo 'json<<EOF'
-            echo '${{ toJSON(matrix.test_config.env_vars) }}'
-            echo 'EOF'
-          } >> "$GITHUB_OUTPUT"
-      
-      - name: "Trigger Jenkins Job"
-        uses: appleboy/jenkins-action@v1
-        with:
-          url: ${{ secrets.JENKINS_URL }}
-          user: ${{ secrets.JENKINS_USER }}
-          token: ${{ secrets.JENKINS_TOKEN }}
-          job: ${{ env.JENKINS_JOB_NAME }}
-          parameters: |
-            GIT_COMMIT=${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
-            TEST_CONFIG_JSON=${{ steps.test_config.outputs.json }}
+          # Prepare variables
+          COMMIT_SHA="${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}"
+          
+          # Build JSON payload using jq to ensure proper formatting
+          PAYLOAD=$(jq -n \
+            --arg commit "$COMMIT_SHA" \
+            --arg config_id "${{ matrix.test_config.id }}" \
+            --arg config_name "${{ matrix.test_config.name }}" \
+            --argjson test_config '${{ toJSON(matrix.test_config.env_vars) }}' \
+            '{
+              GIT_COMMIT: $commit,
+              TEST_CONFIG_JSON: $test_config,
+              TEST_CONFIG_ID: $config_id,
+              TEST_CONFIG_NAME: $config_name
+            }')
+          
+          echo "Triggering Jenkins with payload:"
+          echo "$PAYLOAD" | jq .
+          
+          # Trigger Jenkins via Generic Webhook Trigger plugin
+          curl -X POST \
+            "${{ secrets.JENKINS_URL }}/generic-webhook-trigger/invoke?token=${{ secrets.JENKINS_WEBHOOK_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" \
+            --fail-with-body \
+            --max-time 30
+          
+          echo "✅ Jenkins job triggered successfully"
       
       - name: "Report Status"
         if: always()
