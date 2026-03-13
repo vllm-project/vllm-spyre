@@ -20,6 +20,11 @@ from vllm_spyre.platform import SpyrePlatform
 # forks a worker.
 os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 
+# CPU-only test runs rely on env:// distributed init even for world_size=1.
+# Provide local defaults so ad hoc runs do not depend on sourcing helper scripts.
+os.environ.setdefault("MASTER_ADDR", "localhost")
+os.environ.setdefault("MASTER_PORT", "12345")
+
 # set a constant seed for the block hashing so that we don't have
 # to worry about the initialization order
 os.environ["PYTHONHASHSEED"] = "32"
