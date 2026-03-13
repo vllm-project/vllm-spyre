@@ -13,10 +13,13 @@ def register():
     """Register the Spyre platform."""
     return "vllm_spyre_next.platform.TorchSpyrePlatform"
 
+
 def register_ops():
     """Register OOT custom ops for Spyre."""
     from vllm_spyre_next.custom_ops import register_all
+
     register_all()
+
 
 def _init_logging():
     """Setup logging, extending from the vLLM logging config"""

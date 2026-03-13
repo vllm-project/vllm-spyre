@@ -1,4 +1,5 @@
 """Data models for the vllm-spyre-next test infrastructure."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
