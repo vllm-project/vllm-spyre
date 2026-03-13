@@ -72,6 +72,8 @@ class SpyrePlatform(Platform):
     _config: VllmConfig = None  # ty: ignore[invalid-assignment]
     _torch_sendnn_version = None
 
+    _max_batch_tkv_limit: int = 0
+
     # Backend for dynamic compilation ops
     # See vllm batched_count_greater_than method
     simple_compile_backend: str = envs_spyre.VLLM_SPYRE_SIMPLE_COMPILE_BACKEND
@@ -93,6 +95,13 @@ class SpyrePlatform(Platform):
         Check if the current platform supports async output.
         """
         return False
+
+    @classmethod
+    def get_max_batch_tkv_limit(cls) -> int:
+        if cls._max_batch_tkv_limit == 0:
+            # For spawned subprocesses, we need to grab the TKV limit from the environment
+            cls._set_batch_tkv_limit_from_env()
+        return cls._max_batch_tkv_limit
 
     @classmethod
     def get_total_spyre_blocks(cls, vllm_config: VllmConfig) -> int:
@@ -136,10 +145,7 @@ class SpyrePlatform(Platform):
         # As we drop the block reservation for chunked prefill the number of available blocks
         # needs to be at least as big as the smaller of the batch tkv limit
         # (VLLM_DT_MAX_BATCH_TKV_LIMIT) and a full batch (max_num_seqs * max_model_len)
-        batch_tkv_limit = int(
-            os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", num_blocks_full_batch * block_size)
-        )
-        num_blocks_batch_tkv_limit = batch_tkv_limit // block_size
+        num_blocks_batch_tkv_limit = cls.get_max_batch_tkv_limit() // block_size
         # Note on "+1": We need to add one additional block used exclusively for padding (idx 0)
         min_req_num_blocks = min(num_blocks_full_batch, num_blocks_batch_tkv_limit) + 1
 
@@ -344,6 +350,9 @@ class SpyrePlatform(Platform):
                 "found. Using the default value (max_model_len * max_batch_size): %d",
                 default_max_batch_tkv_limit,
             )
+            cls._max_batch_tkv_limit = default_max_batch_tkv_limit
+        else:
+            cls._set_batch_tkv_limit_from_env()
 
         handle_disable_compilation(vllm_config, is_decoder)
 
@@ -654,3 +663,10 @@ class SpyrePlatform(Platform):
         if cls.sendnn_configured():
             return cls._torch_sendnn_version
         return (0, 0, 0)
+
+    @classmethod
+    def _set_batch_tkv_limit_from_env(cls) -> None:
+        try:
+            cls._max_batch_tkv_limit = int(os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", "-1"))  #  ty: ignore
+        except ValueError as e:
+            raise ValueError("VLLM_DT_MAX_BATCH_TKV_LIMIT must be an integer") from e
