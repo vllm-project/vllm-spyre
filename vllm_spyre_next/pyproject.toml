@@ -11,7 +11,7 @@ description = "Next iteration of vllm-spyre on the torch-spyre stack"
 readme = "README.md"
 license = {text = "Apache 2"}
 dependencies = [
-    "torch-spyre",
+    "torch-spyre ; sys_platform != 'darwin'",
     "vllm==0.15.1+cpu",
 
     # Listing as direct deps to ensure they're picked up from the correct index.
@@ -228,11 +228,11 @@ upstream-tests = [
     "albumentations>=1.4.6",
     "arctic-inference==0.1.1",
     "backoff>=2.2.1",
-    "bitsandbytes==0.46.1",
+    "bitsandbytes==0.46.1 ; sys_platform != 'darwin'",
     "blobfile>=3.2.0",
     "buildkite-test-collector==0.1.9",
     "datamodel-code-generator>=0.54.1",
-    "decord==0.6.0",
+    "decord==0.6.0 ; sys_platform != 'darwin'",
     "einops>=0.8.2",
     "fastsafetensors>=0.2.2",
     "genai-perf>=0.0.8",
@@ -262,7 +262,7 @@ upstream-tests = [
     "pytest-shard>=0.1.2",
     "pytest-timeout>=2.3.1",
     "ray[cgraph,default]>=2.48.0",
-    "runai-model-streamer[gcs,s3]==0.15.3",
+    "runai-model-streamer[gcs,s3]==0.15.3 ; sys_platform != 'darwin'",
     "schemathesis>=3.39.15",
     "sentence-transformers>=5.2.0",
     "soundfile>=0.13.1",
