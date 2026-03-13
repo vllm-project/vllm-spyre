@@ -654,40 +654,60 @@ class SpyrePlatform(Platform):
         if not cls._torch_sendnn_configured and cls.is_backend_sendnn_enabled():
             try:
                 import torch_sendnn  # ty: ignore[unresolved-import] # noqa: F401
-
-                # TODO: This is a hack to make sure that the sendnn backend is
-                # configured correctly. Environment variables are captured at
-                # import time, so we assert that values were captured with the
-                # values we set
-                # NB: must use getattr due to Python name mangling
-                sendnn_backend_state = getattr(torch_sendnn.backends.sendnn_backend, "__state")
-                actual_config = sendnn_backend_state.spyre_graph_cache.deeptools_config.get(
-                    "config", {}
-                )
-
-                # Validate environment variables and config values match
-                env_to_config = {
-                    "VLLM_DT_CHUNK_LEN": "vllm_chunk_length",
-                    "VLLM_DT_MAX_CONTEXT_LEN": "vllm_max_context_length",
-                    "VLLM_DT_MAX_BATCH_SIZE": "vllm_max_batch_size",
-                    "VLLM_DT_MAX_BATCH_TKV_LIMIT": "vllm_max_batch_tkv_limit",
-                }
-
-                for env_var, config_key in env_to_config.items():
-                    expected = os.getenv(env_var)
-                    assert expected is not None, (
-                        f"{env_var} must be set before importing torch_sendnn"
-                    )
-                    actual = actual_config.get(config_key)
-                    assert actual == expected, (
-                        f"torch_sendnn is misconfigured! "
-                        f"{config_key}: expected '{expected}', got '{actual}'"
-                    )
-
-                cls._torch_sendnn_configured = True
-
             except ImportError as err:
                 raise RuntimeError("sendnn backend requires torch_sendnn") from err
+
+            # TODO: This is a hack to make sure that the sendnn backend is
+            # configured correctly. Environment variables are captured at
+            # import time, so we assert that values were captured with the
+            # values we set
+            # NB: must use getattr due to Python name mangling
+            try:
+                sendnn_backend_state = getattr(torch_sendnn.backends.sendnn_backend, "__state")
+                actual_config = sendnn_backend_state.spyre_graph_cache.deeptools_config["config"]
+            except (AttributeError, KeyError):
+                logger.warning("Error reading torch_sendnn backend state for validation.")
+                # Let this fall through and log many warnings to be noisy
+                actual_config = {}
+
+            # Validate environment variables and config values match
+            env_to_config = {
+                "VLLM_DT_CHUNK_LEN": "vllm_chunk_length",
+                "VLLM_DT_MAX_CONTEXT_LEN": "vllm_max_context_length",
+                "VLLM_DT_MAX_BATCH_SIZE": "vllm_max_batch_size",
+                "VLLM_DT_MAX_BATCH_TKV_LIMIT": "vllm_max_batch_tkv_limit",
+            }
+
+            # Intentionally noisy logging for increased visibility
+            backend_state_looks_valid = True
+            for env_var, config_key in env_to_config.items():
+                actual = actual_config.get(config_key)
+                expected = os.getenv(env_var)
+                if actual is None:
+                    logger.warning(
+                        "torch_sendnn may be misconfigured! %s does not exist as expected",
+                        config_key,
+                    )
+                    backend_state_looks_valid = False
+
+                if expected is None:
+                    logger.warning("%s must be set before importing torch_sendnn", env_var)
+                    backend_state_looks_valid = False
+
+                if actual != expected:
+                    logger.warning(
+                        "torch_sendnn is misconfigured! %s: expected '%s', got '%s'",
+                        config_key,
+                        expected,
+                        actual,
+                    )
+                    backend_state_looks_valid = False
+
+            assert backend_state_looks_valid, (
+                "torch_sendnn backend state could not be validated! Please "
+                "report this issue to maintainers."
+            )
+            cls._torch_sendnn_configured = True
 
     @classmethod
     def _set_batch_tkv_limit_from_env(cls) -> None:
