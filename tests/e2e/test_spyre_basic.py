@@ -148,6 +148,7 @@ def test_max_tokens(
         )
 
 
+@pytest.mark.prefix_caching
 @pytest.mark.parametrize("backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
 def test_tkv_limits_checked_correctly_on_prefix_hits(
     model: ModelInfo,
