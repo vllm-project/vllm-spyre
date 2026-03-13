@@ -414,8 +414,9 @@ class SpyrePlatform(Platform):
     @classmethod
     def validate_request(
         cls,
-        processed_inputs: "ProcessorInputs",
+        prompt: "TokenInputs",
         params: "SamplingParams | PoolingParams",
+        processed_inputs: "ProcessorInputs",
     ) -> None:
         """Raises if this request is unsupported on this platform"""
 
