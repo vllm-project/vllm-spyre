@@ -70,6 +70,7 @@ class SpyrePlatform(Platform):
     _block_size: Literal[64] = 64  # hardcoded Spyre constraint for now
     # TODO: this `None` is dangerous
     _config: VllmConfig = None  # ty: ignore[invalid-assignment]
+    _torch_sendnn_configured: bool = False
 
     # Backend for dynamic compilation ops
     # See vllm batched_count_greater_than method
@@ -636,12 +637,47 @@ class SpyrePlatform(Platform):
         return envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in ("sendnn", "sendnn_compile_only")
 
     @classmethod
-    def sendnn_configured(cls) -> bool:
-        if cls.is_backend_sendnn_enabled():
+    def maybe_ensure_sendnn_configured(cls) -> None:
+        """If using sendnn, import torch_sendnn and check configuration.
+
+        If torch_sendnn is imported too early, it may have the wrong
+        configuration. An assertion error will be raised in this case. This
+        function must be called before triggering any torch compilation.
+        """
+        if not cls._torch_sendnn_configured and cls.is_backend_sendnn_enabled():
             try:
                 import torch_sendnn  # ty: ignore[unresolved-import] # noqa: F401
 
-                return True
+                # TODO: This is a hack to make sure that the sendnn backend is
+                # configured correctly. Environment variables are captured at
+                # import time, so we assert that values were captured with the
+                # values we set
+                # NB: must use getattr due to Python name mangling
+                sendnn_backend_state = getattr(torch_sendnn.backends.sendnn_backend, "__state")
+                actual_config = sendnn_backend_state.spyre_graph_cache.deeptools_config.get(
+                    "config", {}
+                )
+
+                # Validate environment variables and config values match
+                env_to_config = {
+                    "VLLM_DT_CHUNK_LEN": "vllm_chunk_length",
+                    "VLLM_DT_MAX_CONTEXT_LEN": "vllm_max_context_length",
+                    "VLLM_DT_MAX_BATCH_SIZE": "vllm_max_batch_size",
+                    "VLLM_DT_MAX_BATCH_TKV_LIMIT": "vllm_max_batch_tkv_limit",
+                }
+
+                for env_var, config_key in env_to_config.items():
+                    expected = os.getenv(env_var)
+                    assert expected is not None, (
+                        f"{env_var} must be set before importing torch_sendnn"
+                    )
+                    actual = actual_config.get(config_key)
+                    assert actual == expected, (
+                        f"torch_sendnn is misconfigured! "
+                        f"{config_key}: expected '{expected}', got '{actual}'"
+                    )
+
+                cls._torch_sendnn_configured = True
+
             except ImportError as err:
                 raise RuntimeError("sendnn backend requires torch_sendnn") from err
-        return False
