@@ -219,8 +219,6 @@ class SpyreRMSNorm(RMSNorm):
         Returns:
             Normalized output [batch_size, hidden_size] in bfloat16
         """
-        print("inside spyre")
-
         x_dtype = x.dtype
         x_device = x.device
 
