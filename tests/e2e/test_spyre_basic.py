@@ -157,7 +157,7 @@ def test_tkv_limits_checked_correctly_on_prefix_hits(
 ):
     """Test that we don't overflow tkv limits when we have a prefix hit"""
     monkeypatch.setenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", "2048")
-    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", "eager")
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
 
     llm = LLM(
         model=model.name,

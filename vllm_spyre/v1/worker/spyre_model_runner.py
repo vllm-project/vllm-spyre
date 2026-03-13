@@ -1446,8 +1446,8 @@ class ChunkedPrefillModelRunner(
                 self.tkv * len(scheduler_output.num_scheduled_tokens)
                 <= SpyrePlatform.get_max_batch_tkv_limit()
             ), (
-                f"Exceeded max batch tkv limit! tkv: {self.tkv}, "
-                f"batch_size: {len(scheduler_output.num_scheduled_tokens)}"
+                f"Exceeded max batch tkv limit {SpyrePlatform.get_max_batch_tkv_limit()}!"
+                f" tkv: {self.tkv}, batch_size: {len(scheduler_output.num_scheduled_tokens)}"
             )
 
             logits = self.model(
