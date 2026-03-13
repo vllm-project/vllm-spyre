@@ -50,7 +50,7 @@ INFO    -  [22:02:02] Serving on http://127.0.0.1:8000/
 
 #### View in Your Browser
 
-Open up [http://127.0.0.1:8000/](http://127.0.0.1:8000/) in your browser to see a live preview:.
+Open up [http://127.0.0.1:8000/](http://127.0.0.1:8000/) in your browser to see a live preview.
 
 #### Learn More
 
