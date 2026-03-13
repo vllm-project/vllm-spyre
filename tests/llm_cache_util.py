@@ -64,6 +64,7 @@ class SortKey(NamedTuple):
     grouping.
     """
 
+    cache_priority: int
     cache_type: str  # None (empty str), online, llm, engine
     backend: str = ""
     model: str = ""
@@ -82,12 +83,12 @@ class SortKey(NamedTuple):
         if not cache_type:
             # Don't add any extra re-ordering logic for tests that won't utilize
             # the cache
-            return SortKey(cache_type=cache_type)
+            return SortKey(cache_priority=0, cache_type=cache_type)
 
         if not hasattr(item, "callspec"):
             # This isn't great- we probably want to cache but can't because the
             # test has no parameters at all
-            return SortKey(cache_type="")
+            return SortKey(cache_priority=0, cache_type="")
 
         use_pc = SortKey._uses_pc(item)
         warmup_shapes = SortKey._get_warmup_shapes(item)
@@ -103,6 +104,7 @@ class SortKey(NamedTuple):
             }
 
         return SortKey(
+            cache_priority=SortKey._get_cache_priority(cache_type),
             cache_type=cache_type,
             model=SortKey._get_model(item),
             backend=SortKey._get_backend(item),
@@ -134,6 +136,18 @@ class SortKey(NamedTuple):
 
         # Else shouldn't be using any cache
         return ""
+
+    @staticmethod
+    def _get_cache_priority(cache_type: str) -> int:
+        # Sort online tests before cached LLM tests so the server-backed path
+        # does not have to follow a same-process SendNN engine teardown.
+        cache_order = {
+            "": 0,
+            "online": 1,
+            "llm": 2,
+            "engine": 3,
+        }
+        return cache_order[cache_type]
 
     @staticmethod
     def _uses_pc(item) -> bool:
