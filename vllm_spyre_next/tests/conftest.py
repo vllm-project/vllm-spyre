@@ -57,9 +57,10 @@ def _extract_vllm_commit_from_pyproject() -> str | None:
     try:
         content = pyproject_path.read_text()
         # Look for vllm source with git and rev
-        # Pattern: vllm = { git = "...", rev = "commit_sha" }
+        # Pattern: vllm = { git = "...", rev = "commit_sha_or_semver_tag" }
         match = re.search(
-            r'vllm\s*=\s*\{\s*git\s*=\s*"[^"]+"\s*,\s*rev\s*=\s*"([0-9a-f]{7,40})"\s*\}', content
+            r'vllm\s*=\s*\{\s*git\s*=\s*"[^"]+"\s*,\s*rev\s*=\s*"([0-9a-f]{7,40}|v\d+\.\d+\.\d+(?:-[a-zA-Z0-9.]+)?)"\s*\}',
+            content,
         )
         if match:
             return match.group(1)
@@ -77,7 +78,7 @@ def _resolve_vllm_commit() -> str:
     # Allow env var override for testing/CI
     env_commit = os.environ.get("VLLM_COMMIT", "").strip()
     if env_commit:
-        if not re.match(r"^[0-9a-f]{7,40}$", env_commit):
+        if not re.match(r"^(?:[0-9a-f]{7,40}|v\d+\.\d+\.\d+(?:-[a-zA-Z0-9.]+)?)$", env_commit):
             raise ValueError(f"Invalid VLLM_COMMIT format: {env_commit}")
         return env_commit
 
@@ -130,13 +131,52 @@ def _ensure_repo_at_commit(repo_dir: Path, url: str, commit: str, sparse_paths: 
     # Create temp dir to set up the sparse worktree then move into place atomically
     with tempfile.TemporaryDirectory(dir=str(base_dir)) as td:
         td_path = Path(td)
-        _run(["git", "--git-dir", str(git_dir), "remote", "add", "origin", url])
-        _log(f"[vllm-upstream] Fetching commit {commit[:12]} from {url}")
-        _run(["git", "--git-dir", str(git_dir), "fetch", "--depth=1", "origin", commit])
+        # Check if remote 'origin' exists before adding it
+        result = subprocess.run(
+            ["git", "--git-dir", str(git_dir), "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            # Remote doesn't exist, add it
+            _run(["git", "--git-dir", str(git_dir), "remote", "add", "origin", url])
+
+        # Determine if commit is a tag (starts with 'v' and matches semver pattern) or a SHA
+        is_tag = re.match(r"^v\d+\.\d+\.\d+(?:-[a-zA-Z0-9.]+)?$", commit)
+
+        if is_tag:
+            _log(f"[vllm-upstream] Fetching tag {commit} from {url}")
+            # For tags, fetch the tag reference
+            _run(
+                [
+                    "git",
+                    "--git-dir",
+                    str(git_dir),
+                    "fetch",
+                    "--depth=1",
+                    "origin",
+                    f"refs/tags/{commit}:refs/tags/{commit}",
+                ]
+            )
+        else:
+            _log(f"[vllm-upstream] Fetching commit {commit[:12]} from {url}")
+            # For commit SHAs, fetch the commit directly
+            _run(["git", "--git-dir", str(git_dir), "fetch", "--depth=1", "origin", commit])
 
         # Create a new worktree at temp
+        # For tags, use the full tag reference; for commits, use the commit SHA directly
+        worktree_ref = f"refs/tags/{commit}" if is_tag else commit
         _run(
-            ["git", "--git-dir", str(git_dir), "worktree", "add", "--detach", str(td_path), commit]
+            [
+                "git",
+                "--git-dir",
+                str(git_dir),
+                "worktree",
+                "add",
+                "--detach",
+                str(td_path),
+                worktree_ref,
+            ]
         )
 
         # Enable sparse checkout at the worktree

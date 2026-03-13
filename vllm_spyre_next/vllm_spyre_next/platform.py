@@ -1,3 +1,4 @@
+import os
 import sys
 from typing import TYPE_CHECKING
 from string import Template
@@ -75,6 +76,11 @@ class TorchSpyrePlatform(CpuPlatform):
     @classmethod
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:
         cls.log_server_boot(vllm_config)
+
+        # ---- vllm env vars ----
+        # AOT compilation caching currently fails for some models
+        aot_compile_val = os.environ.setdefault("VLLM_USE_AOT_COMPILE", "0")
+        logger.info("VLLM_USE_AOT_COMPILE set to '%s'", aot_compile_val)
 
         # ---- worker ----
         parallel_config = vllm_config.parallel_config
