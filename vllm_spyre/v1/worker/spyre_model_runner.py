@@ -1438,7 +1438,16 @@ class ChunkedPrefillModelRunner(
             if model_input.input_embeds is not None
             else model_input.input_tokens
         )
+
         with set_forward_context(attn_metadata, self.vllm_config):
+            assert (
+                self.tkv * len(scheduler_output.num_scheduled_tokens)
+                <= SpyrePlatform.get_max_batch_tkv_limit()
+            ), (
+                f"Exceeded max batch tkv limit {SpyrePlatform.get_max_batch_tkv_limit()}!"
+                f" tkv: {self.tkv}, batch_size: {len(scheduler_output.num_scheduled_tokens)}"
+            )
+
             logits = self.model(
                 input_ids_or_embeds=input_ids_or_embeds,
                 positions=model_input.input_positions,
