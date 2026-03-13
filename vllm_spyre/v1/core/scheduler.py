@@ -363,9 +363,9 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         # request.num_computed_tokens
         num_computed_tokens = request.num_computed_tokens
         if num_computed_tokens == 0:
-            # NB: self.kv_cache_manager comes from the parent class, and we are being super nosy
+            # NB: self.kv_cache_manager comes from the parent class, and we are being super nosy.
             # This update ensures that we know when we're scheduling the last prefix chunk, in the
-            # case where most of the
+            # case where most of the prompt hits prefix cache and we only run a single chunk.
             _, num_computed_tokens = self.kv_cache_manager.get_computed_blocks(request)
 
         is_first_chunk = request.num_computed_tokens == 0
