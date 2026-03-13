@@ -411,12 +411,9 @@ def create_random_request(
     model: ModelInfo | None = None,
     seed: int = None,
 ) -> Request:
+    assert model is not None, "create_random_request requires a model to build tokenizer inputs."
     tokenizer = AutoTokenizer.from_pretrained(model.name, revision=model.revision)
     if from_model_vocab:
-        assert model is not None, (
-            "Prompt requested to be generated from model's vocabulary: need to provide model."
-        )
-
         valid_token_ids = sorted(
             [v for v in tokenizer.vocab.values() if v not in tokenizer.all_special_ids]
         )
@@ -439,9 +436,10 @@ def create_random_request(
         request_id=str(request_id),
         prompt_token_ids=prompt_token_ids,
         sampling_params=sampling_params,
-        arrival_time=0,
         lora_request=None,
         pooling_params=None,
+        eos_token_id=tokenizer.eos_token_id,
+        arrival_time=0,
         cache_salt=None,
     )
 
