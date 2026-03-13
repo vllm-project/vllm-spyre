@@ -2,6 +2,7 @@ import json
 import math
 import os
 import random
+import signal
 import subprocess
 import sys
 import time
@@ -115,14 +116,21 @@ class RemoteOpenAIServer:
         env = os.environ.copy()
         if env_dict is not None:
             env.update(env_dict)
+        self.backend = env.get("VLLM_SPYRE_DYNAMO_BACKEND", "")
         self.proc = subprocess.Popen(
             ["vllm", "serve", model_name, *vllm_serve_args],
             env=env,
             stdout=sys.stdout,
             stderr=sys.stderr,
+            start_new_session=True,
         )
+        self._pgid = self.proc.pid
         max_wait_seconds = max_wait_seconds or 600
-        self._wait_for_server(url=self.url_for("health"), timeout=max_wait_seconds)
+        try:
+            self._wait_for_server(url=self.url_for("health"), timeout=max_wait_seconds)
+        except Exception:
+            self.shutdown()
+            raise
 
     def __enter__(self):
         return self
@@ -131,12 +139,23 @@ class RemoteOpenAIServer:
         self.shutdown()
 
     def shutdown(self):
-        self.proc.terminate()
         try:
-            self.proc.wait(8)
+            os.killpg(self._pgid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+
+        try:
+            self.proc.wait(20)
         except subprocess.TimeoutExpired:
-            # force kill if needed
-            self.proc.kill()
+            try:
+                os.killpg(self._pgid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            self.proc.wait()
+
+        if self.backend == "sendnn":
+            # Give the runtime a moment to release the AIU/VFIO device.
+            time.sleep(2)
 
     def _wait_for_server(self, *, url: str, timeout: float):
         # run health check
