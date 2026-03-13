@@ -224,7 +224,7 @@ def use_llm_cache(request):
         test_name == "test_chunked_prefill_correctness"
         and params.get("backend") == "sendnn"
     ):
-        clear_llm_caches()
+        clear_llm_caches(forget_llm_runtime_config=True)
 
 
 @pytest.fixture(autouse=True)

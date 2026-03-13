@@ -63,8 +63,14 @@ class ModelCache(Generic[T]):
 
         return self._model
 
-    def clear(self):
+    def clear(self, forget_runtime_config: bool = False):
         if self._model:
+            if forget_runtime_config and self._runtime_config is not None:
+                self._past_runtime_configs = [
+                    config
+                    for config in self._past_runtime_configs
+                    if config != self._runtime_config
+                ]
             self._teardown(self._model)
             self._model = None
             self._runtime_config = None
@@ -166,8 +172,8 @@ class LLMCache:
             ),
         )
 
-    def clear(self) -> None:
-        self._cache.clear()
+    def clear(self, forget_runtime_config: bool = False) -> None:
+        self._cache.clear(forget_runtime_config=forget_runtime_config)
 
 
 class EngineCache:
@@ -394,8 +400,8 @@ def get_cached_api_server(
     )
 
 
-def clear_llm_caches():
-    LLM_CACHE.clear()
+def clear_llm_caches(*, forget_llm_runtime_config: bool = False):
+    LLM_CACHE.clear(forget_runtime_config=forget_llm_runtime_config)
     API_SERVER_CACHE.clear()
     ENGINE_CACHE.clear()
 
