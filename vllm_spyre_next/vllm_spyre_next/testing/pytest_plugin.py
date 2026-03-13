@@ -79,12 +79,14 @@ _UPSTREAM_CONFIG: UpstreamTestConfig = _load_upstream_config()
 def pytest_configure(config):
     """Register Spyre plugins and detect vllm repo."""
     # Set env vars BEFORE any vllm imports
-    os.environ["VLLM_PLUGINS"] = "spyre_next"
-    
+    # Include both platform plugin (spyre_next) and general plugin (spyre_next_ops)
+    # The general plugin registers custom ops (RMSNorm, etc.)
+    os.environ["VLLM_PLUGINS"] = "spyre_next,spyre_next_ops"
+
     # Load plugins early to register custom ops before test modules import RMSNorm
     from vllm.plugins import load_general_plugins
     load_general_plugins()
-    
+
     # Detect vllm repo
     rootdir = Path(config.rootdir)
     tests_dir = rootdir / "tests"
@@ -195,15 +197,23 @@ def _spyre_default_vllm_config(monkeypatch):
     from vllm.config import DeviceConfig, VllmConfig, set_current_vllm_config
     from vllm.config.compilation import CompilationConfig
     from vllm.platforms import PlatformEnum, current_platform
+    from vllm.forward_context import set_forward_context
 
     monkeypatch.setattr(type(current_platform), "_enum", PlatformEnum.OOT)
+
+    # Explicitly register custom ops
+    from vllm_spyre_next.custom_ops import register_all
+    register_all()
 
     config = VllmConfig(
         device_config=DeviceConfig(device="cpu"),
         compilation_config=CompilationConfig(custom_ops=["all"]),
     )
     with set_current_vllm_config(config):
-        yield
+        # Set forward context so custom ops can access no_compile_layers
+        # (populated from static_forward_context where SpyreRMSNorm registers)
+        with set_forward_context(None, config):
+            yield
 
 
 @pytest.fixture()
@@ -211,10 +221,23 @@ def default_vllm_config(monkeypatch):
     yield from _spyre_default_vllm_config(monkeypatch)
 
 
+@pytest.fixture()
+def should_do_global_cleanup_after_test():
+    """Skip global cleanup for Spyre - torch.accelerator.empty_cache() doesn't work for Spyre yet."""
+    return False
+
+
 @pytest.hookimpl(tryfirst=True)
 def pytest_fixture_setup(fixturedef, request):
-    # Only replace fixture when running upstream vLLM tests, not local plugin tests
+    # Only replace fixtures when running upstream vLLM tests, not local plugin tests
     upstream_tests_base = getattr(request.config, "_upstream_tests_base", None)
-    if upstream_tests_base and fixturedef.argname == "default_vllm_config":
+    if not upstream_tests_base:
+        return
+
+    if fixturedef.argname == "default_vllm_config":
         fixturedef.func = _spyre_default_vllm_config
         fixturedef.argnames = ("monkeypatch",)
+    elif fixturedef.argname == "should_do_global_cleanup_after_test":
+        # Skip cleanup - Spyre allocator doesn't support torch.accelerator.empty_cache()
+        fixturedef.func = lambda: False
+        fixturedef.argnames = ()
