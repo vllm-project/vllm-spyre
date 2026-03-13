@@ -183,7 +183,8 @@ class SpyreRMSNorm(RMSNorm):
 
             x_var = x[:, :, :variance_size_override]
 
-        variance = x_var.pow(2).mean(dim=-1, keepdim=True)
+        # After transpose, hidden dim is now dim=0
+        variance = x_var.pow(2).mean(dim=0, keepdim=True)
 
         x = x * torch.rsqrt(variance + variance_epsilon)
         x = x.transpose(-1, -2).contiguous()
@@ -226,14 +227,15 @@ class SpyreRMSNorm(RMSNorm):
         if self.variance_size_override is not None:
             raise NotImplementedError("TODO: variance_size_override not yet implemented")
 
-        batch_padding = x.shape[0]
+        orig_batch_size = x.shape[0]
 
         # Pad to minimum batch size of 64 (Spyre constraint)
+        # Pad at END so original data stays at indices [0:orig_batch_size]
         if x.shape[0] < 64:
-            batch_padding = 64 - x.shape[0]
-            x = torch.nn.functional.pad(x, (0, 0, batch_padding, 0))
+            pad_amount = 64 - x.shape[0]
+            x = torch.nn.functional.pad(x, (0, 0, 0, pad_amount))
             if residual is not None:
-                residual = torch.nn.functional.pad(residual, (0, 0, batch_padding, 0))
+                residual = torch.nn.functional.pad(residual, (0, 0, 0, pad_amount))
 
         # Execute compiled kernel on Spyre device
         # convert_for_spyre: CPU tensor -> Spyre device (float16)
@@ -248,9 +250,9 @@ class SpyreRMSNorm(RMSNorm):
 
         # Transfer back to CPU and restore original shape
         return pytree.tree_map(
-            lambda el: el[:batch_padding, :],
+            lambda el: el[:orig_batch_size, :],
             convert_from_spyre(outs, dtype=x_dtype, device=x_device),
-        )[0]
+        )
 
     def forward_oot(
         self,
@@ -301,6 +303,9 @@ def spyre_rmsnorm_fake(
     return
 
 
+_REGISTERED = False
+
+
 def register():
     """Register the spyre_rmsnorm custom op with vLLM.
 
@@ -309,6 +314,11 @@ def register():
         - fake_impl: Shape inference implementation (spyre_rmsnorm_fake)
         - mutates_args: Indicates 'output' is modified in-place
     """
+    global _REGISTERED
+    if _REGISTERED:
+        return
+    _REGISTERED = True
+
     direct_register_custom_op(
         op_name="spyre_rmsnorm",
         op_func=spyre_rmsnorm,

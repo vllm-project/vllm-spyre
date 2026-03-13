@@ -213,6 +213,8 @@ def default_vllm_config(monkeypatch):
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_fixture_setup(fixturedef, request):
-    if fixturedef.argname == "default_vllm_config":
+    # Only replace fixture when running upstream vLLM tests, not local plugin tests
+    upstream_tests_base = getattr(request.config, "_upstream_tests_base", None)
+    if upstream_tests_base and fixturedef.argname == "default_vllm_config":
         fixturedef.func = _spyre_default_vllm_config
         fixturedef.argnames = ("monkeypatch",)
