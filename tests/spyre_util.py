@@ -6,7 +6,7 @@ import signal
 import subprocess
 import sys
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -139,18 +139,14 @@ class RemoteOpenAIServer:
         self.shutdown()
 
     def shutdown(self):
-        try:
+        with suppress(ProcessLookupError):
             os.killpg(self._pgid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
 
         try:
             self.proc.wait(20)
         except subprocess.TimeoutExpired:
-            try:
+            with suppress(ProcessLookupError):
                 os.killpg(self._pgid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
             self.proc.wait()
 
         if self.backend == "sendnn":
