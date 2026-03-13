@@ -206,9 +206,25 @@ def _skip_unsupported_quantized_backends(items):
 
 
 @pytest.fixture()
-def use_llm_cache():
+def use_llm_cache(request):
     """Fixture for test sorting to denote that this should use a cached LLM
-    instance"""
+    instance.
+
+    SendNN chunked-prefill correctness cases cannot safely reuse the same LLM
+    instance across different prompt shapes. Clear the cache after each such
+    test so later cases start from a fresh engine.
+    """
+    yield
+
+    callspec = getattr(request.node, "callspec", None)
+    params = getattr(callspec, "params", {})
+    test_name = getattr(request.node, "originalname", request.node.name)
+
+    if (
+        test_name == "test_chunked_prefill_correctness"
+        and params.get("backend") == "sendnn"
+    ):
+        clear_llm_caches()
 
 
 @pytest.fixture(autouse=True)
