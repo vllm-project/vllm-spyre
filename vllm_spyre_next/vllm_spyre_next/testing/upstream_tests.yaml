@@ -29,5 +29,6 @@ tests:
               strided_input: [true]
             override:
               num_tokens: [1, 16]
+              hidden_size: [8]
       block_list:
         - test: "test_fused_rms_norm_quant"

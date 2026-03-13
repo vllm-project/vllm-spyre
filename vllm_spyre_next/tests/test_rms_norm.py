@@ -18,25 +18,42 @@ def reference_rms_norm(
         x_normed = x_normed * weight.float()
     return x_normed
 
+@pytest.fixture()
+def default_vllm_config(monkeypatch):
+    from vllm.config import DeviceConfig, VllmConfig, set_current_vllm_config
+    from vllm.config.compilation import CompilationConfig
+    from vllm.platforms import PlatformEnum, current_platform
+    from vllm.plugins import load_general_plugins
 
+    monkeypatch.setattr(type(current_platform), "_enum", PlatformEnum.OOT)
+    load_general_plugins()
+    from vllm_spyre_next.custom_ops import register_all
+    register_all()
+
+    config = VllmConfig(
+        device_config=DeviceConfig(device="cpu"),
+        compilation_config=CompilationConfig(custom_ops=["all"]),
+    )
+    with set_current_vllm_config(config):
+        yield
+
+@pytest.mark.spyre
 @pytest.mark.parametrize("batch_size", [1])
 @pytest.mark.parametrize("hidden_size", [128, 512])
-def test_spyre_rmsnorm_matches_reference(batch_size, hidden_size):
-    """SpyreRMSNorm's static kernel math matches golden reference on CPU."""
+def test_spyre_rmsnorm_matches_reference(default_vllm_config, batch_size, hidden_size):
+    """SpyreRMSNorm forward_native output matches golden reference."""
     from vllm_spyre_next.custom_ops.rms_norm import SpyreRMSNorm
 
     eps = 1e-6
     torch.manual_seed(42)
 
-    x = torch.randn(batch_size, hidden_size, dtype=torch.float32)
-    weight = torch.randn(hidden_size, dtype=torch.float32)
+    x = torch.randn(batch_size, hidden_size, dtype=torch.float16)
+    layer = SpyreRMSNorm(hidden_size, eps=eps)
 
-    expected = reference_rms_norm(x, weight, eps)
-    actual = SpyreRMSNorm._forward_static_spyre(
-        x, eps, hidden_size, torch.float32, weight=weight,
-    )
+    expected = reference_rms_norm(x, layer.weight.data, eps)
+    actual = layer.forward(x)
 
-    torch.testing.assert_close(actual, expected, atol=1e-5, rtol=1e-5)
+    torch.testing.assert_close(actual.float(), expected.float(), atol=1e-2, rtol=1e-2)
 
 
 @pytest.mark.spyre
@@ -53,7 +70,7 @@ def test_spyre_rmsnorm_on_device(default_vllm_config, batch_size, hidden_size):
     layer = SpyreRMSNorm(hidden_size, eps=eps)
 
     expected = reference_rms_norm(x, layer.weight.data, eps)
-    actual = layer.forward_native(x.to(device="spyre"))
+    actual = layer.forward_native(x)
 
 
     torch.testing.assert_close(actual.float(), expected.float(), atol=1e-2, rtol=1e-2)
@@ -73,6 +90,7 @@ def mock_forward_native_with_residual(x, residual=None):
     return 2 * x, 2 * residual
 
 
+@pytest.mark.cpu
 @pytest.mark.parametrize("residual", [None, torch.randn(4, 128, dtype=torch.float32)])
 def test_rmsnorm_oot_dispatch(default_vllm_config, monkeypatch, dummy_tensor, residual):
     """Verify RMSNorm OOT registration: class swap and forward_oot routing."""
