@@ -10,6 +10,7 @@ from llm_cache_util import SortKey, sort_tests_for_llm_caching
 from spyre_util import get_spyre_backend_list, get_spyre_model_list, skip_unsupported_tp_size
 from vllm.connections import global_http_connection
 from vllm.distributed import cleanup_dist_env_and_memory
+from vllm.utils.network_utils import get_open_port
 
 from vllm_spyre import envs
 from vllm_spyre.platform import SpyrePlatform
@@ -23,7 +24,7 @@ os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 # CPU-only test runs rely on env:// distributed init even for world_size=1.
 # Provide local defaults so ad hoc runs do not depend on sourcing helper scripts.
 os.environ.setdefault("MASTER_ADDR", "localhost")
-os.environ.setdefault("MASTER_PORT", "12345")
+os.environ.setdefault("MASTER_PORT", str(get_open_port()))
 
 # set a constant seed for the block hashing so that we don't have
 # to worry about the initialization order
