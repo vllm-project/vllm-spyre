@@ -3,7 +3,7 @@
 import logging
 import os
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from vllm_spyre import envs as envs_spyre
 from vllm_spyre.config.model_config import DeviceConfig, ModelConfig
@@ -155,45 +155,6 @@ class TestGPUBlocksOverride:
         assert summary.num_blocks.applied == 1000
         assert summary.num_blocks.was_overridden() is False
 
-    @pytest.mark.parametrize(
-        "sendnn_configured,sendnn_version,expected_blocks",
-        [
-            (True, (1, 0, 2), 800),  # Old version uses torch_sendnn_lt_1_0_3
-            (True, (1, 0, 3), 1000),  # New version uses default
-            (True, (1, 1, 0), 1000),  # Newer version uses default
-            (False, None, 1000),  # Not configured uses default
-        ],
-        ids=["old_sendnn", "sendnn_1.0.3", "newer_sendnn", "not_configured"],
-    )
-    @patch("vllm_spyre.platform.SpyrePlatform")
-    def test_version_aware_gpu_blocks_override(
-        self,
-        mock_platform,
-        model_config,
-        vllm_config,
-        sendnn_configured,
-        sendnn_version,
-        expected_blocks,
-    ):
-        """Test version-aware GPU blocks override selection."""
-        mock_platform.sendnn_configured.return_value = sendnn_configured
-        mock_platform.sendnn_version.return_value = sendnn_version
-
-        device_config = DeviceConfig(
-            tp_size=4,
-            num_gpu_blocks_override={
-                "torch_sendnn_lt_1_0_3": 800,
-                "default": 1000,
-            },
-        )
-        configurator = ModelConfigurator(model_config, device_config)
-
-        summary = configurator.configure(vllm_config)
-
-        assert vllm_config.cache_config.num_gpu_blocks_override == expected_blocks
-        assert summary.num_blocks.applied == expected_blocks
-        assert summary.num_blocks.was_overridden() is False
-
     def test_log_warning_when_user_set_different_value(
         self, monkeypatch, model_config, vllm_config, caplog_vllm_spyre
     ):
@@ -238,22 +199,6 @@ class TestGPUBlocksOverride:
 
         assert vllm_config.cache_config.num_gpu_blocks_override is None
         assert summary.num_blocks is None
-
-    @patch("vllm_spyre.platform.SpyrePlatform")
-    def test_gpu_blocks_dict_with_no_matching_key(self, mock_platform, model_config, vllm_config):
-        """Test that None is returned when dict has no matching key."""
-        mock_platform.sendnn_configured.return_value = False
-
-        device_config = DeviceConfig(
-            tp_size=4,
-            num_gpu_blocks_override={"some_other_key": 1000},  # No 'default' key
-        )
-        configurator = ModelConfigurator(model_config, device_config)
-
-        summary = configurator.configure(vllm_config)
-
-        assert summary.num_blocks is None
-        assert vllm_config.cache_config.num_gpu_blocks_override is None
 
     def test_gpu_blocks_when_user_value_matches(self, model_config, vllm_config):
         """Test that override value is returned when user already set to same value."""

@@ -70,7 +70,7 @@ class SpyrePlatform(Platform):
     _block_size: Literal[64] = 64  # hardcoded Spyre constraint for now
     # TODO: this `None` is dangerous
     _config: VllmConfig = None  # ty: ignore[invalid-assignment]
-    _torch_sendnn_version = None
+    _torch_sendnn_configured: bool = False
 
     _max_batch_tkv_limit: int = 0
 
@@ -644,23 +644,70 @@ class SpyrePlatform(Platform):
         return envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in ("sendnn", "sendnn_compile_only")
 
     @classmethod
-    def sendnn_configured(cls) -> bool:
-        if cls.is_backend_sendnn_enabled():
-            try:
-                from torch_sendnn._version import __version__ as version_str  # ty: ignore[unresolved-import]
+    def maybe_ensure_sendnn_configured(cls) -> None:
+        """If using sendnn, import torch_sendnn and check configuration.
 
-                sem_ver = version_str.split("+")[0]
-                cls._torch_sendnn_version = tuple(map(int, sem_ver.split(".")))
-                return True
+        If torch_sendnn is imported too early, it may have the wrong
+        configuration. An assertion error will be raised in this case. This
+        function must be called before triggering any torch compilation.
+        """
+        if not cls._torch_sendnn_configured and cls.is_backend_sendnn_enabled():
+            try:
+                import torch_sendnn  # ty: ignore[unresolved-import] # noqa: F401
             except ImportError as err:
                 raise RuntimeError("sendnn backend requires torch_sendnn") from err
-        return False
 
-    @classmethod
-    def sendnn_version(cls):
-        if cls.sendnn_configured():
-            return cls._torch_sendnn_version
-        return (0, 0, 0)
+            # TODO: This is a hack to make sure that the sendnn backend is
+            # configured correctly. Environment variables are captured at
+            # import time, so we assert that values were captured with the
+            # values we set
+            # NB: must use getattr due to Python name mangling
+            try:
+                sendnn_backend_state = getattr(torch_sendnn.backends.sendnn_backend, "__state")
+                actual_config = sendnn_backend_state.spyre_graph_cache.deeptools_config["config"]
+            except (AttributeError, KeyError):
+                logger.warning("Error reading torch_sendnn backend state for validation.")
+                # Let this fall through and log many warnings to be noisy
+                actual_config = {}
+
+            # Validate environment variables and config values match
+            env_to_config = {
+                "VLLM_DT_CHUNK_LEN": "vllm_chunk_length",
+                "VLLM_DT_MAX_CONTEXT_LEN": "vllm_max_context_length",
+                "VLLM_DT_MAX_BATCH_SIZE": "vllm_max_batch_size",
+                "VLLM_DT_MAX_BATCH_TKV_LIMIT": "vllm_max_batch_tkv_limit",
+            }
+
+            # Intentionally noisy logging for increased visibility
+            backend_state_looks_valid = True
+            for env_var, config_key in env_to_config.items():
+                actual = actual_config.get(config_key)
+                expected = os.getenv(env_var)
+                if actual is None:
+                    logger.warning(
+                        "torch_sendnn may be misconfigured! %s does not exist as expected",
+                        config_key,
+                    )
+                    backend_state_looks_valid = False
+
+                if expected is None:
+                    logger.warning("%s must be set before importing torch_sendnn", env_var)
+                    backend_state_looks_valid = False
+
+                if actual != expected:
+                    logger.warning(
+                        "torch_sendnn is misconfigured! %s: expected '%s', got '%s'",
+                        config_key,
+                        expected,
+                        actual,
+                    )
+                    backend_state_looks_valid = False
+
+            assert backend_state_looks_valid, (
+                "torch_sendnn backend state could not be validated! Please "
+                "report this issue to maintainers."
+            )
+            cls._torch_sendnn_configured = True
 
     @classmethod
     def _set_batch_tkv_limit_from_env(cls) -> None:
