@@ -185,8 +185,7 @@ def _skip_unsupported_quantized_backends(items):
 
     skip_marker = pytest.mark.skip(
         reason=(
-            "FP8 quantized models are currently unsupported on eager/inductor; "
-            "use sendnn for quantized coverage."
+            "FP8 quantized models are currently unsupported on inductor."
         )
     )
 
@@ -201,7 +200,7 @@ def _skip_unsupported_quantized_backends(items):
         if model is None or backend is None:
             continue
 
-        if getattr(model, "is_quantized", False) and backend in {"eager", "inductor"}:
+        if getattr(model, "is_quantized", False) and backend in {"inductor"}:
             item.add_marker(skip_marker)
 
 
