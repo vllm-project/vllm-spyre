@@ -74,7 +74,7 @@ def test_spyre_rms_norm(
         variance_epsilon=1e-6,
         hidden_size=hidden_size,
         orig_dtype=dtype,
-        weight=layer.weight.clone(),
+        weight=layer.weight.clone().to(dtype),
         residual=residual,
         variance_size_override=None,
     )
