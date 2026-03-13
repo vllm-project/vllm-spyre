@@ -1,9 +1,12 @@
 """Contains utilities for LLM caching"""
 
+import os
+import time
 from typing import NamedTuple
 
 from spyre_util import EmbeddingWarmupShapes, ModelInfo
 from vllm import LLM
+from vllm.distributed import cleanup_dist_env_and_memory
 
 
 def force_engine_shutdown(llm: LLM):
@@ -24,7 +27,18 @@ def force_engine_core_shutdown(engine_core):
     new engine will fail with an EADDRINUSE error.
     🌶️🌶️🌶️
     """
-    engine_core.shutdown()
+    try:
+        engine_core.shutdown()
+    finally:
+        # Cached-engine transitions happen outside the per-test cleanup fixture.
+        # Tear down distributed state immediately so the next engine/server
+        # setup does not inherit stale resources from the previous run.
+        cleanup_dist_env_and_memory()
+
+        # SendNN device teardown is not always instantaneous. Give the runtime
+        # a short grace period before the next cached config starts.
+        if os.environ.get("VLLM_SPYRE_DYNAMO_BACKEND") == "sendnn":
+            time.sleep(2)
 
 
 def sort_tests_for_llm_caching(items: list) -> None:
