@@ -6,6 +6,7 @@ When running pytest from the vllm repo, this plugin:
   2. Filters tests via declarative YAML config (upstream_tests.yaml)
   3. Provides the default_vllm_config fixture with Spyre-specific config
 """
+
 from __future__ import annotations
 
 import fnmatch
@@ -85,6 +86,7 @@ def pytest_configure(config):
 
     # Load plugins early to register custom ops before test modules import RMSNorm
     from vllm.plugins import load_general_plugins
+
     load_general_plugins()
 
     # Detect vllm repo
@@ -131,7 +133,9 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
     upstream_tests_base = Path(upstream_tests_base).resolve()
     upstream_repo_root = upstream_tests_base.parent
-    file_configs = {(upstream_repo_root / fc.rel_path).resolve(): fc for fc in _UPSTREAM_CONFIG.files}
+    file_configs = {
+        (upstream_repo_root / fc.rel_path).resolve(): fc for fc in _UPSTREAM_CONFIG.files
+    }
 
     for item in items:
         test_path = Path(item.fspath).resolve()
@@ -150,11 +154,11 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
         allow_entry = _find_allow_entry(test_name, fc.allow_list)
         if allow_entry is None:
-            item.add_marker(pytest.mark.skip(reason=f"not in allow_list"))
+            item.add_marker(pytest.mark.skip(reason="not in allow_list"))
             continue
 
         if _should_skip_params(item, allow_entry):
-            item.add_marker(pytest.mark.skip(reason=f"param skipped"))
+            item.add_marker(pytest.mark.skip(reason="param skipped"))
             continue
 
         if allow_entry.mode == "xfail":
@@ -171,8 +175,10 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
 
     upstream_repo_root = Path(upstream_tests_base).resolve().parent
     test_path = Path(metafunc.definition.fspath).resolve()
-    file_configs = {(upstream_repo_root / fc.rel_path).resolve(): fc for fc in _UPSTREAM_CONFIG.files}
-    
+    file_configs = {
+        (upstream_repo_root / fc.rel_path).resolve(): fc for fc in _UPSTREAM_CONFIG.files
+    }
+
     fc = _find_file_config(test_path, file_configs)
     if not fc:
         return
@@ -203,6 +209,7 @@ def _spyre_default_vllm_config(monkeypatch):
 
     # Explicitly register custom ops
     from vllm_spyre_next.custom_ops import register_all
+
     register_all()
 
     config = VllmConfig(

@@ -5,6 +5,7 @@ Test SpyreRMSNorm custom op correctness against a reference implementation.
 import pytest
 import torch
 
+
 def reference_rms_norm(
     x: torch.Tensor,
     weight: torch.Tensor | None,
@@ -54,8 +55,8 @@ def test_spyre_rmsnorm_on_device(default_vllm_config, batch_size, hidden_size):
     expected = reference_rms_norm(x, layer.weight.data, eps)
     actual = layer.forward_native(x)
 
-
     torch.testing.assert_close(actual.float(), expected.float(), atol=1e-2, rtol=1e-2)
+
 
 @pytest.fixture
 def dummy_tensor():
