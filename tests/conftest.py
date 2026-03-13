@@ -141,6 +141,7 @@ def pytest_collection_modifyitems(config, items):
     _mark_all_e2e(items)
 
     _skip_unsupported_compiler_tests(config, items)
+    _skip_unsupported_quantized_backends(items)
 
     sort_tests_for_llm_caching(items)
 
@@ -170,6 +171,31 @@ def _skip_unsupported_compiler_tests(config, items):
     skip_marker = pytest.mark.skip(reason="Needs compiler changes")
     for item in items:
         if "spyre" in item.keywords and "compiler_support_32k" in item.keywords:
+            item.add_marker(skip_marker)
+
+
+def _skip_unsupported_quantized_backends(items):
+    """Skip quantized backend combinations that are not currently supported."""
+
+    skip_marker = pytest.mark.skip(
+        reason=(
+            "FP8 quantized models are currently unsupported on eager/inductor; "
+            "use sendnn for quantized coverage."
+        )
+    )
+
+    for item in items:
+        callspec = getattr(item, "callspec", None)
+        if callspec is None:
+            continue
+
+        model = callspec.params.get("model")
+        backend = callspec.params.get("backend")
+
+        if model is None or backend is None:
+            continue
+
+        if getattr(model, "is_quantized", False) and backend in {"eager", "inductor"}:
             item.add_marker(skip_marker)
 
 
