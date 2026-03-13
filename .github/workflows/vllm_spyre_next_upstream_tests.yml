@@ -1,11 +1,12 @@
 name: vLLM Spyre Next Upstream Tests
 
 on:
-  pull_request:
+  pull_request_target:
     paths:
       - 'vllm_spyre_next/**'
       - '.github/workflows/vllm_spyre_next_upstream_tests.yml'
     branches: [main]
+    types: [opened, synchronize, reopened, labeled]
   
   push:
     branches: [main]
@@ -20,10 +21,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  check-pr-approval:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request_target'
+    outputs:
+      approved: ${{ steps.check.outputs.approved }}
+    steps:
+      - name: "Check if PR is approved for testing"
+        id: check
+        run: |
+          if [[ "${{ contains(github.event.pull_request.labels.*.name, 'safe-to-test') }}" == "true" ]] || \
+             [[ "${{ github.event.pull_request.head.repo.full_name }}" == "${{ github.repository }}" ]]; then
+            echo "approved=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "approved=false" >> "$GITHUB_OUTPUT"
+            echo "⚠️ PR needs 'safe-to-test' label to trigger CI"
+          fi
+
   trigger-jenkins:
     name: "Jenkins: ${{ matrix.test_config.name }}"
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    needs: [check-pr-approval]
+    if: |
+      always() && (
+        github.event_name == 'push' ||
+        github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'pull_request_target' && needs.check-pr-approval.outputs.approved == 'true')
+      )
     env:
       JENKINS_JOB_NAME: "vllm-upstream-test-next"
     strategy:
@@ -48,12 +73,12 @@ jobs:
       - name: "Checkout"
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 1
       
       - name: "Prepare Test Config JSON"
         id: test_config
         run: |
-          # Convert env_vars to JSON string
           {
             echo 'json<<EOF'
             echo '${{ toJSON(matrix.test_config.env_vars) }}'
@@ -68,7 +93,7 @@ jobs:
           token: ${{ secrets.JENKINS_TOKEN }}
           job: ${{ env.JENKINS_JOB_NAME }}
           parameters: |
-            GIT_COMMIT=${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+            GIT_COMMIT=${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
             TEST_CONFIG_JSON=${{ steps.test_config.outputs.json }}
       
       - name: "Report Status"
@@ -78,7 +103,7 @@ jobs:
             echo "### Jenkins Test Status: ${{ matrix.test_config.name }}"
             echo ""
             echo "- **Test Config ID**: ${{ matrix.test_config.id }}"
-            echo "- **Commit SHA**: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}"
+            echo "- **Commit SHA**: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}"
             echo ""
             echo "**Test Configuration:**"
             echo '```json'
