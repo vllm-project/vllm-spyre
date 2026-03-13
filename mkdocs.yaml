@@ -6,6 +6,7 @@ exclude_docs: |
   *.template.md
 theme:
   name: material
+  custom_dir: docs/mkdocs/overrides
   palette:
     # Palette toggle for automatic mode
     - media: "(prefers-color-scheme)"
