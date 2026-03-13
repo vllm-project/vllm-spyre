@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import math
-import os
 from collections import deque
 from typing import TYPE_CHECKING, Iterable, Union
 
@@ -191,8 +190,9 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
 
         self.tkv = 0
         self.block_size = SpyrePlatform.get_block_size()
-        self.max_batch_tkv_limit = os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", default="-1")
-        assert self.max_batch_tkv_limit != "-1", (
+        self.max_batch_tkv_limit = SpyrePlatform.get_max_batch_tkv_limit()
+
+        assert self.max_batch_tkv_limit != -1, (
             "Expecting the env var VLLM_DT_MAX_BATCH_TKV_LIMIT to be set in platform.py"
         )
 
@@ -452,7 +452,6 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
             new_req_tkv=new_req_tkv,
             n_blocks=n_blocks,
             running=decoding_requests,
-            max_batch_tkv_limit=self.max_batch_tkv_limit,
         )
 
         return cond1 and cond2 and cond3()
@@ -476,7 +475,7 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         return num_prefills < max_concurrent_prefills
 
     def check_batch_tkv_limit_cp(
-        self, request: Request, new_req_tkv: int, n_blocks: int, running, max_batch_tkv_limit
+        self, request: Request, new_req_tkv: int, n_blocks: int, running
     ) -> bool:
         """
         Check whether adding a new sequence to the decode batch would violate
@@ -538,7 +537,7 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
                 # decrease batch_size by 1 as the current request finished
                 batch_size -= 1
 
-        return max_batch_tkv <= int(max_batch_tkv_limit)
+        return max_batch_tkv <= self.max_batch_tkv_limit
 
     def finish_requests(
         self,

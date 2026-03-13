@@ -149,10 +149,7 @@ class SpyrePlatform(Platform):
         # As we drop the block reservation for chunked prefill the number of available blocks
         # needs to be at least as big as the smaller of the batch tkv limit
         # (VLLM_DT_MAX_BATCH_TKV_LIMIT) and a full batch (max_num_seqs * max_model_len)
-        batch_tkv_limit = int(
-            os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", num_blocks_full_batch * block_size)
-        )
-        num_blocks_batch_tkv_limit = batch_tkv_limit // block_size
+        num_blocks_batch_tkv_limit = cls.get_max_batch_tkv_limit() // block_size
         # Note on "+1": We need to add one additional block used exclusively for padding (idx 0)
         min_req_num_blocks = min(num_blocks_full_batch, num_blocks_batch_tkv_limit) + 1
 
@@ -681,6 +678,6 @@ class SpyrePlatform(Platform):
     @classmethod
     def _set_batch_tkv_limit_from_env(cls) -> None:
         try:
-            cls._max_batch_tkv_limit = int(os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT"))  #  ty: ignore
+            cls._max_batch_tkv_limit = int(os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", "-1"))  #  ty: ignore
         except ValueError as e:
             raise ValueError("VLLM_DT_MAX_BATCH_TKV_LIMIT must be an integer") from e
