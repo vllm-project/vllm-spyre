@@ -147,7 +147,6 @@ def pytest_collection_modifyitems(config, items):
     _mark_all_e2e(items)
 
     _skip_unsupported_compiler_tests(config, items)
-    _skip_unsupported_quantized_backends(items)
 
     sort_tests_for_llm_caching(items)
 
@@ -180,47 +179,11 @@ def _skip_unsupported_compiler_tests(config, items):
             item.add_marker(skip_marker)
 
 
-def _skip_unsupported_quantized_backends(items):
-    """Skip quantized backend combinations that are not currently supported."""
-
-    skip_marker = pytest.mark.skip(
-        reason=(
-            "FP8 quantized models are currently unsupported on inductor."
-        )
-    )
-
-    for item in items:
-        callspec = getattr(item, "callspec", None)
-        if callspec is None:
-            continue
-
-        model = callspec.params.get("model")
-        backend = callspec.params.get("backend")
-
-        if model is None or backend is None:
-            continue
-
-        if getattr(model, "is_quantized", False) and backend in {"inductor"}:
-            item.add_marker(skip_marker)
-
-
 @pytest.fixture()
-def use_llm_cache(request):
+def use_llm_cache():
     """Fixture for test sorting to denote that this should use a cached LLM
-    instance.
-
-    SendNN chunked-prefill correctness cases cannot safely reuse the same LLM
-    instance across different prompt shapes. Clear the cache after each such
-    test so later cases start from a fresh engine.
-    """
+    instance."""
     yield
-
-    callspec = getattr(request.node, "callspec", None)
-    params = getattr(callspec, "params", {})
-    test_name = getattr(request.node, "originalname", request.node.name)
-
-    if test_name == "test_chunked_prefill_correctness" and params.get("backend") == "sendnn":
-        clear_llm_caches(forget_llm_runtime_config=True)
 
 
 @pytest.fixture(autouse=True)

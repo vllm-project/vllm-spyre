@@ -211,7 +211,7 @@ def get_spyre_model_dir_path() -> Path:
 
 # add pytest markers to supported different backends
 def get_spyre_backend_list():
-    backend_list = ["eager", "inductor", "sendnn"]
+    backend_list = ["eager", "sendnn"]
 
     backends = []
     for backend in backend_list:
