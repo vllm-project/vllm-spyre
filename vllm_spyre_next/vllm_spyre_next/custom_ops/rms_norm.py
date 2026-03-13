@@ -66,7 +66,7 @@ class SpyreRMSNorm(RMSNorm):
 
         logger.debug("Building custom RMS norm")
 
-        self._fwd_spyre = torch.compile(self.forward_static, dynamic=False)
+        self._fwd_spyre = torch.compile(self.forward_spyre, dynamic=False)
 
         logger.warning(
             "SpyreRMSNorm: no dtype promotion is performed, \
@@ -140,7 +140,7 @@ class SpyreRMSNorm(RMSNorm):
             output.copy_(result)
 
     @staticmethod
-    def forward_static(
+    def forward_spyre(
         x: torch.Tensor,
         variance_epsilon: float,
         hidden_size: int,
@@ -218,6 +218,8 @@ class SpyreRMSNorm(RMSNorm):
         Returns:
             Normalized output [batch_size, hidden_size] in bfloat16
         """
+        print("inside spyre")
+
         x_dtype = x.dtype
         x_device = x.device
 

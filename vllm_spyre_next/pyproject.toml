@@ -196,14 +196,14 @@ asyncio_default_fixture_loop_scope = "function"
 filterwarnings = [
     "ignore::_pytest.warning_types.PytestUnknownMarkWarning"
 ]
-addopts = "-m 'spyre or upstream_passing'"
+# addopts = "-m 'spyre or upstream_passing'"
 
 # --8<-- [start:test-markers-definition]
-markers = [
-    "spyre: Tests that require a Spyre device",
-    "upstream: Tests coming from upstream vLLM",
-    "upstream_passing: Tests known to pass from upstream vLLM",
-]
+# markers = [
+#     "spyre: Tests that require a Spyre device",
+#     "upstream: Tests coming from upstream vLLM",
+#     "upstream_passing: Tests known to pass from upstream vLLM",
+# ]
 # --8<-- [end:test-markers-definition]
 
 [tool.markdownlint]
