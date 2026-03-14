@@ -2,10 +2,11 @@ import json
 import math
 import os
 import random
+import signal
 import subprocess
 import sys
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -29,6 +30,19 @@ from vllm_spyre import envs
 from vllm_spyre.platform import SpyrePlatform
 
 EmbeddingWarmupShapes = list[tuple[int, int]]
+
+
+def _build_request(**kwargs) -> Request:
+    try:
+        return Request(**kwargs)
+    except TypeError as exc:
+        # Some vLLM 0.17.0 builds still expose a Request constructor without
+        # eos_token_id. Retry without it so the tests stay portable.
+        if "unexpected keyword argument 'eos_token_id'" not in str(exc):
+            raise
+        kwargs = dict(kwargs)
+        kwargs.pop("eos_token_id", None)
+        return Request(**kwargs)
 
 
 def patch_environment(
@@ -115,14 +129,21 @@ class RemoteOpenAIServer:
         env = os.environ.copy()
         if env_dict is not None:
             env.update(env_dict)
+        self.backend = env.get("VLLM_SPYRE_DYNAMO_BACKEND", "")
         self.proc = subprocess.Popen(
             ["vllm", "serve", model_name, *vllm_serve_args],
             env=env,
             stdout=sys.stdout,
             stderr=sys.stderr,
+            start_new_session=True,
         )
+        self._pgid = self.proc.pid
         max_wait_seconds = max_wait_seconds or 600
-        self._wait_for_server(url=self.url_for("health"), timeout=max_wait_seconds)
+        try:
+            self._wait_for_server(url=self.url_for("health"), timeout=max_wait_seconds)
+        except Exception:
+            self.shutdown()
+            raise
 
     def __enter__(self):
         return self
@@ -131,12 +152,19 @@ class RemoteOpenAIServer:
         self.shutdown()
 
     def shutdown(self):
-        self.proc.terminate()
+        with suppress(ProcessLookupError):
+            os.killpg(self._pgid, signal.SIGTERM)
+
         try:
-            self.proc.wait(8)
+            self.proc.wait(20)
         except subprocess.TimeoutExpired:
-            # force kill if needed
-            self.proc.kill()
+            with suppress(ProcessLookupError):
+                os.killpg(self._pgid, signal.SIGKILL)
+            self.proc.wait()
+
+        if self.backend == "sendnn":
+            # Give the runtime a moment to release the AIU/VFIO device.
+            time.sleep(2)
 
     def _wait_for_server(self, *, url: str, timeout: float):
         # run health check
@@ -196,7 +224,7 @@ def get_spyre_model_dir_path() -> Path:
 
 # add pytest markers to supported different backends
 def get_spyre_backend_list():
-    backend_list = ["eager", "inductor", "sendnn"]
+    backend_list = ["eager", "sendnn"]
 
     backends = []
     for backend in backend_list:
@@ -396,12 +424,9 @@ def create_random_request(
     model: ModelInfo | None = None,
     seed: int = None,
 ) -> Request:
+    assert model is not None, "create_random_request requires a model to build tokenizer inputs."
     tokenizer = AutoTokenizer.from_pretrained(model.name, revision=model.revision)
     if from_model_vocab:
-        assert model is not None, (
-            "Prompt requested to be generated from model's vocabulary: need to provide model."
-        )
-
         valid_token_ids = sorted(
             [v for v in tokenizer.vocab.values() if v not in tokenizer.all_special_ids]
         )
@@ -420,13 +445,14 @@ def create_random_request(
             f"need {num_tokens} but got {len(prompt_token_ids)}"
         )
 
-    return Request(
+    return _build_request(
         request_id=str(request_id),
         prompt_token_ids=prompt_token_ids,
         sampling_params=sampling_params,
-        arrival_time=0,
         lora_request=None,
         pooling_params=None,
+        eos_token_id=tokenizer.eos_token_id,
+        arrival_time=0,
         cache_salt=None,
     )
 

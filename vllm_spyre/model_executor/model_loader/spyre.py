@@ -94,7 +94,7 @@ class SpyreCausalLM(nn.Module):
             max_prompt_length=max_prompt_length,
             max_decode_length=max_decode_length,
             distributed_strategy="tp" if self.parallel_config.world_size > 1 else None,
-            sendnn_dynamic=True,
+            sendnn_dynamic=SpyrePlatform.is_backend_sendnn_enabled(),
             rank=rank,
             world_size=self.parallel_config.world_size,
         )
