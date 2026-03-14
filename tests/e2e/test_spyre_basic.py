@@ -10,11 +10,21 @@ from spyre_util import (
     get_chicken_soup_prompts,
     skip_unsupported_tp_size,
 )
-from vllm import SamplingParams
+from vllm import SamplingParams, LLM
 
 
 @pytest.mark.full_model
 @pytest.mark.basic
+# `mode` here is parametrized directly so that we can use the `cp` mode that disables prefix caching
+# This mode is turned off by default in conftest.py, this is the one test that will ensure vllm
+# boots with prefix caching disabled.
+@pytest.mark.parametrize(
+    "mode",
+    [
+        pytest.param("pc", marks=pytest.mark.prefix_caching, id="pc"),
+        pytest.param("cp", marks=pytest.mark.chunked_prefill, id="cp"),
+    ],
+)
 def test_output(
     model: ModelInfo,
     tp_size: int,
@@ -146,3 +156,32 @@ def test_max_tokens(
             monkeypatch=monkeypatch,
             **kwargs_for_mode(mode),
         )
+
+
+@pytest.mark.prefix_caching
+@pytest.mark.parametrize("backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
+def test_tkv_limits_checked_correctly_on_prefix_hits(
+    model: ModelInfo,
+    backend: str,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Test that we don't overflow tkv limits when we have a prefix hit"""
+    monkeypatch.setenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", "2048")
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
+
+    llm = LLM(
+        model=model.name,
+        max_model_len=1024,
+        max_num_seqs=8,
+        max_num_batched_tokens=256,
+        revision=model.revision,
+    )
+
+    base_prompt = "0 1 2 3 4 5 6 7 8 9 " * 24
+    prompts = [base_prompt] * 5
+    prompts.append(base_prompt * 2)
+
+    llm.generate(
+        prompts=prompts,
+        sampling_params=SamplingParams(max_tokens=32),
+    )

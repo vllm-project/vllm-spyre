@@ -20,6 +20,11 @@ from vllm_spyre.platform import SpyrePlatform
 # forks a worker.
 os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 
+# set a constant seed for the block hashing so that we don't have
+# to worry about the initialization order
+os.environ["PYTHONHASHSEED"] = "32"
+os.environ["VLLM_SERVER_DEV_MODE"] = "1"
+
 
 def pytest_generate_tests(metafunc):
     """This hook is called during the collection phase,
@@ -101,7 +106,10 @@ def pytest_generate_tests(metafunc):
         metafunc.parametrize(
             "mode",
             [
-                pytest.param("cp", marks=pytest.mark.chunked_prefill, id="cp"),
+                # Uncommenting this will run many tests with prefix caching disabled.
+                # This increases test runtime ~50%, we leave it disabled as prefix caching is
+                # enabled by default.
+                # pytest.param("cp", marks=pytest.mark.chunked_prefill, id="cp"),
                 pytest.param("pc", marks=pytest.mark.prefix_caching, id="pc"),
             ],
         )

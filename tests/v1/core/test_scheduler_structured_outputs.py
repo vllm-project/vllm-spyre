@@ -73,7 +73,6 @@ class TestSchedulerStructuredOutputHandling:
             request_id="test_req",
             sampling_params=sampling_params,
             prompt_token_ids=list(range(50)),
-            eos_token_id=None,
             arrival_time=0,
             lora_request=None,
             pooling_params=None,
@@ -110,7 +109,6 @@ class TestSchedulerStructuredOutputHandling:
             request_id="test_req",
             sampling_params=sampling_params,
             prompt_token_ids=list(range(50)),
-            eos_token_id=None,
             arrival_time=0,
             lora_request=None,
             pooling_params=None,
@@ -146,7 +144,6 @@ class TestSchedulerStructuredOutputHandling:
                 request_id=f"test_req_{i}",
                 sampling_params=sampling_params,
                 prompt_token_ids=list(range(50)),
-                eos_token_id=None,
                 arrival_time=i,
                 lora_request=None,
                 pooling_params=None,
@@ -189,7 +186,6 @@ class TestSchedulerStructuredOutputHandling:
             request_id="test_req",
             sampling_params=sampling_params,
             prompt_token_ids=list(range(50)),
-            eos_token_id=None,
             arrival_time=0,
             lora_request=None,
             pooling_params=None,
@@ -224,7 +220,6 @@ class TestSchedulerStructuredOutputHandling:
             request_id="test_req",
             sampling_params=sampling_params,
             prompt_token_ids=list(range(50)),
-            eos_token_id=100,
             arrival_time=1.5,
             lora_request=None,
             pooling_params=None,
@@ -233,7 +228,6 @@ class TestSchedulerStructuredOutputHandling:
         # Store original values
         original_request_id = request.request_id
         original_prompt_tokens = list(request.prompt_token_ids) if request.prompt_token_ids else []
-        original_eos_token = request.eos_token_id
         original_arrival_time = request.arrival_time
         original_sampling_params = request.sampling_params
 
@@ -245,7 +239,6 @@ class TestSchedulerStructuredOutputHandling:
         # Verify other attributes are unchanged
         assert request.request_id == original_request_id
         assert request.prompt_token_ids == original_prompt_tokens
-        assert request.eos_token_id == original_eos_token
         assert request.arrival_time == original_arrival_time
         assert request.sampling_params is original_sampling_params
         # But structured_output_request should be None
