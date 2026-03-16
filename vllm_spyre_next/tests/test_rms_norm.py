@@ -26,6 +26,7 @@ def reference_rms_norm(
 
 
 @pytest.mark.spyre
+@pytest.mark.rmsnorm
 @pytest.mark.parametrize("batch_size", [1])
 @pytest.mark.parametrize("hidden_size", [63, 64, 65, 127, 128, 129, 256, 512])
 @pytest.mark.parametrize("use_residual", [False, True])
@@ -86,6 +87,7 @@ def mock_forward_native_with_residual(x, residual=None):
 
 
 @pytest.mark.spyre
+@pytest.mark.rmsnorm
 @pytest.mark.parametrize("use_residual", [False, True])
 def test_rmsnorm_oot_dispatch(default_vllm_config, monkeypatch, dummy_tensor, use_residual):
     """Verify RMSNorm OOT registration: class swap and forward_oot routing."""

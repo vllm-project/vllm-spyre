@@ -25,7 +25,6 @@ tests:
           tags: [rmsnorm, upstream]
           params:
             skip:
-              add_residual: [true]
               strided_input: [true]
             override:
               num_tokens: [1, 16]

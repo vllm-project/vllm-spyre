@@ -1,16 +1,45 @@
 """
 pytest11 plugin for vllm-spyre-next.
 
-When running pytest from the vllm repo, this plugin:
-  1. Registers Spyre custom ops (RMSNorm etc.) early via load_general_plugins
-  2. Filters tests via declarative YAML config (upstream_tests.yaml)
-  3. Provides the default_vllm_config fixture with Spyre-specific config
+This plugin integrates upstream vLLM tests with vLLM-spyre-next
+and filtering via a declarative YAML config (upstream_tests.yaml).
+
+Hook Execution Order
+---------------------
+1. pytest_configure (tryfirst)
+    - Loads Spyre plugins (custom ops, platform)
+    - Detects local vLLM repo OR clones to ~/.cache/vllm-upstream-tests/
+    - Injects test paths into pytest collection
+
+2. pytest_generate_tests (tryfirst)
+    - Overrides test parameters from YAML (e.g., num_tokens: [1, 16])
+    - Must run during collection before parametrization finalizes
+
+3. pytest_collection_modifyitems
+    - Applies skip/xfail markers based on YAML allow_list/block_list
+    - Applies tag markers for filtering (e.g., pytest -m rmsnorm)
+
+4. pytest_fixture_setup (tryfirst)
+    - Overrides default_vllm_config fixture with Spyre-specific config
+
+Environment Variables
+---------------------
+SKIP_UPSTREAM_TESTS     Set to 1/true/yes to skip upstream test cloning
+UPSTREAM_TESTS_PATHS    Comma-separated paths (default: auto from YAML)
+VLLM_COMMIT             Override vLLM commit (default: from pyproject.toml)
+VLLM_REPO_URL           Override vLLM repo URL
+XDG_CACHE_HOME          Base cache directory (default: ~/.cache)
 """
 
 from __future__ import annotations
 
 import fnmatch
 import os
+import re
+import subprocess
+import sys
+import tempfile
+import time
 from pathlib import Path
 
 import pytest
@@ -27,6 +56,30 @@ from vllm_spyre_next.testing.models import (
 
 _YAML_FILENAME = "upstream_tests.yaml"
 _YAML_PATH = Path(__file__).parent / _YAML_FILENAME
+
+# Global terminal reporter for pytest-aware logging
+_terminal_reporter = None
+
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+
+
+def _log(msg: str):
+    """Log message to pytest terminal reporter if available.
+    This allows logs to be printed from this file even when pytest is capturing output.
+    """
+    if _terminal_reporter:
+        _terminal_reporter.write_line(msg)
+    else:
+        # Fallback to stderr when terminal reporter not available
+        print(msg, file=sys.stderr)
+
+
+# ---------------------------------------------------------------------------
+# YAML Config Loading
+# ---------------------------------------------------------------------------
 
 
 def _load_upstream_config() -> UpstreamTestConfig:
@@ -76,12 +129,188 @@ def _parse_config(raw_tests: dict) -> UpstreamTestConfig:
 _UPSTREAM_CONFIG: UpstreamTestConfig = _load_upstream_config()
 
 
+def _get_paths_from_yaml() -> str:
+    """Extract unique test directory paths from upstream_tests.yaml.
+
+    Derives paths from rel_path entries, e.g.:
+      "tests/kernels/core/test_layernorm.py" -> "kernels/core"
+    """
+    paths = set()
+    for fc in _UPSTREAM_CONFIG.files:
+        p = Path(fc.rel_path)
+        # rel_path is like "tests/kernels/core/test_layernorm.py"
+        # We want "kernels/core" (relative to tests/)
+        try:
+            if p.parts[0] == "tests":
+                # Remove "tests/" prefix and get parent dir
+                rel = Path(*p.parts[1:])
+                if rel.name.startswith("test_"):
+                    paths.add(str(rel.parent))
+                else:
+                    paths.add(str(rel))
+            else:
+                # No "tests/" prefix - use parent
+                if p.name.startswith("test_"):
+                    paths.add(str(p.parent))
+                else:
+                    paths.add(str(p))
+        except (IndexError, ValueError):
+            continue
+    return ",".join(sorted(paths)) if paths else ""
+
+
+# ---------------------------------------------------------------------------
+# vLLM Cloning (from conftest.py)
+# ---------------------------------------------------------------------------
+
+
+def _cache_root() -> Path:
+    """
+    Cache directory for cloned tests (sticky between runs)
+    """
+    # Respect XDG if present, fallback to ~/.cache
+    xdg = os.environ.get("XDG_CACHE_HOME")
+    base = Path(xdg) if xdg else Path.home() / ".cache"
+    return base / "vllm-upstream-tests"
+
+
+def _extract_vllm_commit_from_pyproject() -> str:
+    """
+    Extract the vLLM git commit SHA from pyproject.toml [tool.uv.sources] section.
+    Returns None if not found or parseable.
+    """
+    pyproject_path = Path(__file__).parent.parent.parent / "pyproject.toml"
+    if not pyproject_path.exists():
+        raise FileNotFoundError(f"pyproject.toml not found in {Path(__file__).parent.parent.parent}")
+
+    content = pyproject_path.read_text()
+    # Look for vllm source with git and rev
+    # Pattern: vllm = { git = "...", rev = "commit_sha" }
+    match = re.search(
+        r'vllm\s*=\s*\{\s*git\s*=\s*"[^"]+"\s*,\s*rev\s*=\s*"([0-9a-f]{7,40})"\s*\}', content
+    )
+    if match:
+        return match.group(1)
+
+    raise KeyError(
+        "Ensure vllm is specified with 'rev' in pyproject.toml [tool.uv.sources]"
+    )
+
+def _resolve_vllm_commit() -> str:
+    """
+    Resolve the vLLM commit SHA to use for cloning upstream tests.
+    Priority: VLLM_COMMIT env var > pyproject.toml > error
+    """
+    # Allow env var override for testing/CI
+    env_commit = os.environ.get("VLLM_COMMIT", "").strip()
+    if env_commit:
+        if not re.match(r"^[0-9a-f]{7,40}$", env_commit):
+            raise ValueError(f"Invalid VLLM_COMMIT format: {env_commit}")
+        return env_commit
+
+    # Extract from pyproject.toml
+    return _extract_vllm_commit_from_pyproject()
+
+
+def _run(cmd: list[str], cwd: Path | None = None, max_retries: int = 3) -> None:
+    """Run command with optional retries for network operations."""
+    for attempt in range(max_retries):
+        try:
+            subprocess.run(cmd, cwd=str(cwd) if cwd else None, check=True)
+            return
+        except subprocess.CalledProcessError:
+            if attempt < max_retries - 1:
+                time.sleep(2**attempt)  # Exponential backoff: 1s, 2s, 4s
+            else:
+                raise
+
+
+def _ensure_repo_at_commit(repo_dir: Path, url: str, commit: str, sparse_paths: list[str]) -> Path:
+    """
+    Ensure repo cloned at 'repo_dir/commit' with sparse checkout of 'sparse_paths'.
+    Returns the path to the working tree at that commit.
+    """
+    # We create a separate worktree per commit to allow co-existence of different commits
+    base_dir = repo_dir
+    base_dir.mkdir(parents=True, exist_ok=True)
+    git_dir = base_dir / "repo.git"
+
+    if not git_dir.exists():
+        _run(["git", "init", "--bare", str(git_dir)])
+
+    # Prepare a worktree dir per commit
+    wt_dir = base_dir / f"worktree-{commit[:12]}"
+    if wt_dir.exists():
+        _log(f"[vllm-upstream] Using cached worktree at {wt_dir}")
+        return wt_dir
+
+    # Create temp dir to set up the sparse worktree then move into place atomically
+    with tempfile.TemporaryDirectory(dir=str(base_dir)) as td:
+        td_path = Path(td)
+
+        # Ensure origin remote exists and points to the correct URL
+        result = subprocess.run(
+            ["git", "--git-dir", str(git_dir), "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            # Origin doesn't exist - add it
+            _run(["git", "--git-dir", str(git_dir), "remote", "add", "origin", url])
+        elif result.stdout.strip() != url:
+            # Origin exists but points to different URL - update it
+            _log(f"[vllm-upstream] Updating origin URL: {result.stdout.strip()} -> {url}")
+            _run(["git", "--git-dir", str(git_dir), "remote", "set-url", "origin", url])
+
+        _log(f"[vllm-upstream] Fetching commit {commit[:12]} from {url}")
+        _run(["git", "--git-dir", str(git_dir), "fetch", "--depth=1", "origin", commit])
+
+        # Create a new worktree at temp
+        _run(
+            ["git", "--git-dir", str(git_dir), "worktree", "add", "--detach", str(td_path), commit]
+        )
+
+        # Enable sparse checkout at the worktree
+        _run(["git", "sparse-checkout", "init", "--cone"], cwd=td_path)
+        _run(["git", "sparse-checkout", "set", *sparse_paths], cwd=td_path)
+
+        # Ensure we're exactly at the commit (detached HEAD)
+        _run(["git", "checkout", "--detach", commit], cwd=td_path)
+
+        # Atomically move into place
+        td_path.rename(wt_dir)
+
+    return wt_dir
+
+
+def _prepare_upstream_tests_dir() -> Path:
+    """Clone vLLM to cache and return path to tests directory."""
+    commit = _resolve_vllm_commit()
+    cache_root = _cache_root()
+    wt_dir = _ensure_repo_at_commit(
+        repo_dir=cache_root,
+        url=os.environ.get("VLLM_REPO_URL", "https://github.com/vllm-project/vllm"),
+        commit=commit,
+        sparse_paths=["tests"],
+    )
+    tests_dir = wt_dir / "tests"
+    if not tests_dir.is_dir():
+        raise RuntimeError(f"Upstream tests directory not found at {tests_dir}")
+    return tests_dir
+
+
+# ---------------------------------------------------------------------------
+# Pytest Hooks
+# ---------------------------------------------------------------------------
+
+
 @pytest.hookimpl(tryfirst=True)
 def pytest_configure(config):
-    """Register Spyre plugins and detect vllm repo."""
+    """Register Spyre plugins and detect/clone vLLM repo."""
+    global _terminal_reporter
+    _terminal_reporter = config.pluginmanager.get_plugin("terminalreporter")
+
     # Set env vars BEFORE any vllm imports
-    # Include both platform plugin (spyre_next) and general plugin (spyre_next_ops)
-    # The general plugin registers custom ops (RMSNorm, etc.)
     os.environ["VLLM_PLUGINS"] = "spyre_next,spyre_next_ops"
 
     # Load plugins early to register custom ops before test modules import RMSNorm
@@ -89,11 +318,56 @@ def pytest_configure(config):
 
     load_general_plugins()
 
-    # Detect vllm repo
+    # Detect local vLLM repo or clone it
     rootdir = Path(config.rootdir)
     tests_dir = rootdir / "tests"
     vllm_pkg = rootdir / "vllm"
-    config._upstream_tests_base = tests_dir if (tests_dir.is_dir() and vllm_pkg.is_dir()) else None
+
+    if tests_dir.is_dir() and vllm_pkg.is_dir():
+        # Running from vLLM repo itself
+        config._upstream_tests_base = tests_dir
+        _log("[vllm-upstream] Using local vLLM tests")
+    else:
+        # Not in vLLM repo - check if we should clone
+        skip_upstream = os.environ.get("SKIP_UPSTREAM_TESTS", "").lower() in ("1", "true", "yes")
+        if skip_upstream:
+            _log("[vllm-upstream] SKIP_UPSTREAM_TESTS is set, skipping upstream test collection")
+            config._upstream_tests_base = None
+            return
+
+        try:
+            # Clone vLLM to cache
+            upstream_tests_base = _prepare_upstream_tests_dir()
+            config._upstream_tests_base = upstream_tests_base
+
+            # Determine which test paths to inject
+            paths_env = _get_paths_from_yaml()
+            _log(f"[vllm-upstream] Auto-derived test paths from YAML: {paths_env}")
+
+            if not paths_env:
+                _log("[vllm-upstream] No test paths configured, skipping upstream tests")
+                config._upstream_tests_base = None
+                return
+
+            # Inject test paths into pytest collection
+            for rel_path in paths_env.split(","):
+                rel_path = rel_path.strip()
+                if not rel_path:
+                    continue
+                test_dir = upstream_tests_base / rel_path
+                if test_dir.exists():
+                    _log(f"[vllm-upstream] Including tests from: {rel_path}")
+                    config.args.append(str(test_dir))
+                else:
+                    _log(f"[vllm-upstream] Warning: Path not found: {test_dir}")
+
+        except Exception as e:
+            raise SystemExit(f"[vllm-upstream] Failed to prepare upstream tests: {e}") from e
+
+
+# ---------------------------------------------------------------------------
+# YAML Filtering Helpers
+# ---------------------------------------------------------------------------
 
 
 def _find_file_config(test_path: Path, file_configs: dict[Path, FileConfig]) -> FileConfig | None:
@@ -126,7 +400,13 @@ def _should_skip_params(item: pytest.Item, allow_entry: AllowEntry) -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# Collection Modification
+# ---------------------------------------------------------------------------
+
+
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Apply YAML-based filtering to upstream tests."""
     upstream_tests_base = getattr(config, "_upstream_tests_base", None)
     if not upstream_tests_base:
         return
@@ -137,10 +417,14 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
         (upstream_repo_root / fc.rel_path).resolve(): fc for fc in _UPSTREAM_CONFIG.files
     }
 
+    upstream_marker = pytest.mark.upstream
+
     for item in items:
         test_path = Path(item.fspath).resolve()
         if not test_path.is_relative_to(upstream_tests_base):
             continue
+
+        item.add_marker(upstream_marker)
 
         fc = _find_file_config(test_path, file_configs)
         if fc is None:
@@ -174,6 +458,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
+    """Apply parameter overrides from YAML config."""
     upstream_tests_base = getattr(metafunc.config, "_upstream_tests_base", None)
     if not upstream_tests_base:
         return
@@ -204,6 +489,11 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
                 break
 
 
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
 def _spyre_default_vllm_config(monkeypatch):
     from vllm.config import DeviceConfig, VllmConfig, set_current_vllm_config
     from vllm.config.compilation import CompilationConfig
@@ -223,7 +513,6 @@ def _spyre_default_vllm_config(monkeypatch):
     )
     with set_current_vllm_config(config):
         # Set forward context so custom ops can access no_compile_layers
-        # (populated from static_forward_context where SpyreRMSNorm registers)
         with set_forward_context(None, config):
             yield
 
@@ -235,13 +524,13 @@ def default_vllm_config(monkeypatch):
 
 @pytest.fixture()
 def should_do_global_cleanup_after_test():
-    """Skip global cleanup for Spyre - torch.accelerator.empty_cache() doesn't work for Spyre yet."""
+    """Skip global cleanup for Spyre - torch.accelerator.empty_cache() doesn't work yet."""
     return False
 
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_fixture_setup(fixturedef, request):
-    # Only replace fixtures when running upstream vLLM tests, not local plugin tests
+    """Override fixtures when running upstream vLLM tests."""
     upstream_tests_base = getattr(request.config, "_upstream_tests_base", None)
     if not upstream_tests_base:
         return
@@ -250,6 +539,5 @@ def pytest_fixture_setup(fixturedef, request):
         fixturedef.func = _spyre_default_vllm_config
         fixturedef.argnames = ("monkeypatch",)
     elif fixturedef.argname == "should_do_global_cleanup_after_test":
-        # Skip cleanup - Spyre allocator doesn't support torch.accelerator.empty_cache()
         fixturedef.func = lambda: False
         fixturedef.argnames = ()
