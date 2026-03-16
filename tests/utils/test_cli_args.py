@@ -13,12 +13,10 @@ from spyre_util import REFERENCE_MODELS, environ_checkpoint
 # Test that the default chunk size is 1024 when chunked prefill is enabled,
 # and that --max-num-batched-tokens overrides this default.
 def test_chunk_size_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Use the sendnn backend to activate the model configurator
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", "sendnn")
-
-    def sendnn_configured() -> bool:
-        return False
-
-    monkeypatch.setattr(SpyrePlatform, "sendnn_configured", sendnn_configured)
+    # Mock the torch_sendnn configuration check
+    monkeypatch.setattr(SpyrePlatform, "maybe_ensure_sendnn_configured", lambda: None)
 
     model = REFERENCE_MODELS["ibm-ai-platform/micro-g3.3-8b-instruct-1b"]
     common_args = [

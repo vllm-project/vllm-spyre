@@ -211,26 +211,8 @@ class ModelConfigurator:
         log_func("Set %s = %s", key, str_value)
         return ConfigValue(default=str_value, applied=str_value)
 
-    def _parse_device_config_gpu_blocks(self, blocks_config: Any) -> int:
-        # Determine which override to use
-        if isinstance(blocks_config, int):
-            return blocks_config
-        else:
-            # Version-aware selection for torch_sendnn
-            from vllm_spyre.platform import SpyrePlatform
-
-            sendnn_version = SpyrePlatform.sendnn_version()
-            if (
-                SpyrePlatform.sendnn_configured()
-                and sendnn_version is not None
-                and (0, 0, 0) < sendnn_version < (1, 0, 3)
-            ):
-                return blocks_config.get("torch_sendnn_lt_1_0_3")
-            else:
-                return blocks_config.get("default")
-
     def _configure_gpu_blocks(self, device_config, vllm_config: "VllmConfig") -> ConfigValue | None:
-        """Configure GPU blocks with optional version-aware logic.
+        """Configure GPU blocks override.
 
         Args:
             device_config: Device configuration containing block override settings
@@ -242,12 +224,7 @@ class ModelConfigurator:
         Raises:
             RuntimeError: If VLLM_SPYRE_REQUIRE_KNOWN_CONFIG is set and user override conflicts
         """
-        blocks_config = device_config.num_gpu_blocks_override
-        if blocks_config is None:
-            return None
-
-        num_blocks_override = self._parse_device_config_gpu_blocks(blocks_config)
-
+        num_blocks_override = device_config.num_gpu_blocks_override
         if num_blocks_override is None:
             return None
 
