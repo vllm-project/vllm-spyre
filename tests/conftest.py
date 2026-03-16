@@ -44,13 +44,10 @@ def pytest_generate_tests(metafunc):
     default_max_model_len = [512]
     default_max_num_batched_tokens = [128]
 
-    existing_markers = []
-    for marker in metafunc.definition.own_markers:
-        if marker.name != "parametrize":
-            existing_markers.append(marker.name)
-            continue
-
-        existing_markers.extend(name.strip() for name in marker.args[0].split(","))
+    existing_markers = [
+        marker.name if marker.name != "parametrize" else marker.args[0]
+        for marker in metafunc.definition.own_markers
+    ]
 
     marker = metafunc.config.option.markexpr  # From CLI
     # TODO: make this condition better

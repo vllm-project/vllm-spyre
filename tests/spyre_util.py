@@ -451,7 +451,6 @@ def create_random_request(
         sampling_params=sampling_params,
         lora_request=None,
         pooling_params=None,
-        eos_token_id=tokenizer.eos_token_id,
         arrival_time=0,
         cache_salt=None,
     )

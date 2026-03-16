@@ -20,8 +20,6 @@ from spyre_util import (
     RemoteOpenAIServer,
     get_chicken_soup_prompts,
     get_longer_chicken_soup_prompts,
-    get_spyre_backend_list,
-    get_spyre_model_list,
 )
 from vllm import LLM, SamplingParams
 
@@ -58,39 +56,7 @@ USE_CASES = {
     "case_III": (prompt_251, 128, 2, 0),
 }
 
-
-def _chunked_prefill_model_backend_params():
-    params = []
-    for model_param in get_spyre_model_list():
-        model = model_param.values[0]
-        model_marks = list(model_param.marks)
-        model_id = model_param.id or str(model)
-        for backend_param in get_spyre_backend_list():
-            backend = backend_param.values[0]
-            backend_marks = list(backend_param.marks)
-            marks = [*model_marks, *backend_marks]
-            if model.is_quantized and backend == "eager":
-                marks.append(
-                    pytest.mark.skip(
-                        reason=(
-                            "FP8 quantized chunked-prefill coverage on eager "
-                            "currently hits CPU _scaled_mm limitations."
-                        )
-                    )
-                )
-            params.append(
-                pytest.param(
-                    model,
-                    backend,
-                    marks=marks,
-                    id=f"{model_id}-{backend}",
-                )
-            )
-    return params
-
-
 @pytest.mark.chunked_prefill
-@pytest.mark.parametrize("model,backend", _chunked_prefill_model_backend_params())
 @pytest.mark.parametrize("use_case", list(USE_CASES.keys()))
 def test_chunked_prefill_correctness(
     model: ModelInfo,
@@ -177,7 +143,6 @@ def test_chunked_prefill_correctness(
 
 
 @pytest.mark.parametrize("mode", [pytest.param("pc", marks=pytest.mark.prefix_caching, id="pc")])
-@pytest.mark.parametrize("model,backend", _chunked_prefill_model_backend_params())
 @pytest.mark.asyncio
 async def test_chunked_prefill_kv_cache_stats(
     remote_openai_server: RemoteOpenAIServer,
@@ -264,7 +229,6 @@ async def reset_kv_cache(client: openai.AsyncOpenAI) -> list[str]:
 
 @pytest.mark.parametrize("mode", [pytest.param("pc", marks=pytest.mark.prefix_caching, id="pc")])
 @pytest.mark.parametrize("tp_size", [1])
-@pytest.mark.parametrize("model,backend", _chunked_prefill_model_backend_params())
 @pytest.mark.parametrize(
     "prompt_len, hit_len",
     [
@@ -324,7 +288,6 @@ async def test_max_prefix_hits(
 
 @pytest.mark.parametrize("mode", [pytest.param("pc", marks=pytest.mark.prefix_caching, id="pc")])
 @pytest.mark.parametrize("tp_size", [1])
-@pytest.mark.parametrize("model,backend", _chunked_prefill_model_backend_params())
 @pytest.mark.parametrize(
     "prompt_len, hit_len",
     [
