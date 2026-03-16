@@ -13,7 +13,7 @@ if sys.platform.startswith("darwin"):
 import math
 import operator
 import os
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, cast, Literal
 
 import torch
 from vllm.logger import init_logger
@@ -25,17 +25,13 @@ if TYPE_CHECKING:
     from vllm.config import ModelConfig, VllmConfig
     from vllm.pooling_params import PoolingParams
     from vllm.sampling_params import SamplingParams
-    from vllm.renderers.inputs import DictPrompt, TokPrompt
-    from vllm.inputs import ProcessorInputs, PromptType, TokenInputs
+    from vllm.inputs import ProcessorInputs, TokenInputs
 else:
     ModelConfig = None
     VllmConfig = None
     SamplingParams = None
     PoolingParams = None
-    DictPrompt = None
-    TokPrompt = None
     ProcessorInputs = None
-    PromptType = None
     TokenInputs = None
 from vllm.platforms import Platform, PlatformEnum
 
@@ -71,10 +67,12 @@ class SpyrePlatform(Platform):
     # https://github.com/foundation-model-stack/fms-model-optimizer/blob/main/fms_mo/aiu_addons/__init__.py
     supported_quantization: list[str] = ["gptq", "compressed-tensors"]
     _warmup_shapes: tuple[dict[str, int], ...] | None = None
-    _block_size: int = 64  # hardcoded Spyre constraint for now
+    _block_size: Literal[64] = 64  # hardcoded Spyre constraint for now
     # TODO: this `None` is dangerous
     _config: VllmConfig = None  # ty: ignore[invalid-assignment]
     _torch_sendnn_version = None
+
+    _max_batch_tkv_limit: int = 0
 
     # Backend for dynamic compilation ops
     # See vllm batched_count_greater_than method
@@ -89,7 +87,7 @@ class SpyrePlatform(Platform):
 
     @classmethod
     def import_kernels(cls) -> None:
-        pass  # suppress warning
+        pass
 
     @classmethod
     def is_async_output_supported(cls, enforce_eager: bool | None) -> bool:
@@ -97,6 +95,78 @@ class SpyrePlatform(Platform):
         Check if the current platform supports async output.
         """
         return False
+
+    @classmethod
+    def get_max_batch_tkv_limit(cls) -> int:
+        if cls._max_batch_tkv_limit == 0:
+            # For spawned subprocesses, we need to grab the TKV limit from the environment
+            cls._set_batch_tkv_limit_from_env()
+        return cls._max_batch_tkv_limit
+
+    @classmethod
+    def get_total_spyre_blocks(cls, vllm_config: VllmConfig) -> int:
+        """Returns the total number of KV cache blocks available for spyre.
+        This currently returns the number of blocks required for a full-sized
+        batch, which may be greater than the available memory.
+
+        Until a correct available memory api is available, the number of blocks
+        must be overridden with a known good value via
+        cache_config.num_gpu_blocks_override
+        """
+        max_batch_size = vllm_config.scheduler_config.max_num_seqs
+        max_model_len = vllm_config.model_config.max_model_len
+        block_size = SpyrePlatform.get_block_size()
+        max_blocks_per_seq = max_model_len // block_size
+        num_blocks_full_batch = max_batch_size * max_blocks_per_seq
+
+        blocks_override = vllm_config.cache_config.num_gpu_blocks_override
+        if blocks_override is not None and blocks_override > 0:
+            num_blocks = blocks_override
+            # Total number of blocks needs to be a multiple of the batch size on Spyre
+            # -> round down to not exceed the Spyre cards hard-coded limits of detected models
+            old_num_blocks = num_blocks
+            num_blocks = math.floor(num_blocks / max_batch_size) * max_batch_size
+        else:
+            # Note on "+1": We need to add one additional block used exclusively for padding (idx 0)
+            num_blocks = num_blocks_full_batch + 1
+            # Total number of blocks needs to be a multiple of the batch size on Spyre
+            # -> round up as not among detected models (rounding down might cut the padding block)
+            old_num_blocks = num_blocks
+            num_blocks = math.ceil(num_blocks / max_batch_size) * max_batch_size
+
+        if num_blocks != old_num_blocks:
+            logger.info(
+                "Spyre constraint: num blocks rounded from %d to %d (multiple of batch size=%d)",
+                old_num_blocks,
+                num_blocks,
+                max_batch_size,
+            )
+
+        # As we drop the block reservation for chunked prefill the number of available blocks
+        # needs to be at least as big as the smaller of the batch tkv limit
+        # (VLLM_DT_MAX_BATCH_TKV_LIMIT) and a full batch (max_num_seqs * max_model_len)
+        num_blocks_batch_tkv_limit = cls.get_max_batch_tkv_limit() // block_size
+        # Note on "+1": We need to add one additional block used exclusively for padding (idx 0)
+        min_req_num_blocks = min(num_blocks_full_batch, num_blocks_batch_tkv_limit) + 1
+
+        # min_req_num_blocks := minimum required number of blocks
+        if num_blocks < min_req_num_blocks:
+            raise ValueError(
+                f"Number of pages available on Spyre {num_blocks} is not "
+                f"enough to serve the current model (need at least "
+                f"{min_req_num_blocks} pages)."
+            )
+
+        max_concurrency = num_blocks * block_size / max_model_len
+        backend = "Spyre" if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn" else "CPU"
+        logger.info("%s KV cache size: %s tokens", backend, num_blocks * block_size)
+        logger.info(
+            "Maximum concurrency for %s tokens per request: %.2fx",
+            str(max_model_len),
+            max_concurrency,
+        )
+
+        return num_blocks
 
     @classmethod
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:
@@ -122,9 +192,7 @@ class SpyrePlatform(Platform):
 
         is_pooling = model_config.runner_type == "pooling"
 
-        if not bool(int(os.getenv("VLLM_USE_V1", "1"))):
-            raise ValueError("vllm-spyre is only supported with vLLM v1. Please set VLLM_USE_V1=1")
-        elif not is_decoder and not is_pooling:
+        if not is_decoder and not is_pooling:
             raise ValueError("Only the 'generate' and 'pooling' runners are supported")
 
         if parallel_config.worker_cls == "auto":
@@ -222,12 +290,13 @@ class SpyrePlatform(Platform):
         # - For generative models, set `max_num_batched_tokens` to the chunk
         #       chunk size used for chunked prefill.
         if cache_config is not None:
-            cache_config.block_size = model_config.max_model_len  # ty: ignore[invalid-assignment]
             if not is_decoder:
                 scheduler_config.max_num_batched_tokens = (
                     model_config.max_model_len * scheduler_config.max_num_seqs
                 )
+                cache_config.block_size = model_config.max_model_len  # ty: ignore[invalid-assignment]
             else:
+                cache_config.block_size = cls._block_size
                 # Set VLLM_DT_CHUNK_LEN based on scheduler_config.max_num_batched_tokens
                 os.environ["VLLM_DT_CHUNK_LEN"] = str(scheduler_config.max_num_batched_tokens)
 
@@ -239,6 +308,8 @@ class SpyrePlatform(Platform):
                     "set `--max-num-batched-tokens` to a number that satisfies "
                     "this constraint."
                 )
+                if cache_config.num_gpu_blocks_override is None:
+                    cache_config.num_gpu_blocks_override = cls.get_total_spyre_blocks(vllm_config)
 
         logger.info(
             "Configurations for Spyre. max_model_len=%d, max_num_seqs=%d, block_size=%d, "
@@ -277,6 +348,9 @@ class SpyrePlatform(Platform):
                 "found. Using the default value (max_model_len * max_batch_size): %d",
                 default_max_batch_tkv_limit,
             )
+            cls._max_batch_tkv_limit = default_max_batch_tkv_limit
+        else:
+            cls._set_batch_tkv_limit_from_env()
 
         handle_disable_compilation(vllm_config, is_decoder)
 
@@ -347,9 +421,8 @@ class SpyrePlatform(Platform):
     @classmethod
     def validate_request(
         cls,
-        prompt: "PromptType | DictPrompt | TokPrompt",
-        params: "SamplingParams | PoolingParams",
         processed_inputs: "ProcessorInputs",
+        params: "SamplingParams | PoolingParams",
     ) -> None:
         """Raises if this request is unsupported on this platform"""
 
@@ -373,18 +446,12 @@ class SpyrePlatform(Platform):
             )
             params.structured_outputs = None
 
-        if isinstance(prompt, dict) and "prompt_token_ids" in prompt:
-            prompt_len = len(prompt["prompt_token_ids"])  # ty: ignore
-        elif processed_inputs is not None:
-            if "encoder" in processed_inputs:
-                raise ValueError("Encoder-decoder models not supported ")
-            if "prompt_token_ids" not in processed_inputs:
-                # Can't do any extra validation on embedding-only inputs
-                return
-            prompt_len = len(cast(TokenInputs, processed_inputs)["prompt_token_ids"])
-        else:
-            # We need a prompt length to do any validation here
+        if "encoder_prompt" in processed_inputs:
+            raise ValueError("Encoder-decoder models not supported ")
+        if "prompt_token_ids" not in processed_inputs:
+            # Can't do any extra validation on embedding-only inputs
             return
+        prompt_len = len(cast(TokenInputs, processed_inputs)["prompt_token_ids"])
 
         max_tokens = 0
         if params is not None and params.max_tokens is not None:
@@ -594,3 +661,10 @@ class SpyrePlatform(Platform):
         if cls.sendnn_configured():
             return cls._torch_sendnn_version
         return (0, 0, 0)
+
+    @classmethod
+    def _set_batch_tkv_limit_from_env(cls) -> None:
+        try:
+            cls._max_batch_tkv_limit = int(os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", "-1"))  #  ty: ignore
+        except ValueError as e:
+            raise ValueError("VLLM_DT_MAX_BATCH_TKV_LIMIT must be an integer") from e

@@ -6,6 +6,7 @@ exclude_docs: |
   *.template.md
 theme:
   name: material
+  custom_dir: docs/mkdocs/overrides
   palette:
     # Palette toggle for automatic mode
     - media: "(prefers-color-scheme)"
@@ -109,7 +110,3 @@ extra_javascript:
 # https://www.mkdocs.org/user-guide/configuration/#use_directory_urls
 use_directory_urls: false
 
-extra:
-  version:
-    provider: mike
-    default: latest

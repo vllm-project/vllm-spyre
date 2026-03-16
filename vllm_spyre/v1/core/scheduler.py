@@ -1,13 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import math
-import os
 from collections import deque
 from typing import TYPE_CHECKING, Iterable, Union
 
 from vllm.logger import init_logger
 from vllm.v1.core.sched.scheduler import Scheduler
-from vllm.v1.metrics.stats import PrefixCacheStats, SchedulerStats
+from vllm.v1.metrics.stats import SchedulerStats
 from vllm.v1.request import Request, RequestStatus
 
 import vllm_spyre.envs as envs_spyre
@@ -189,16 +188,11 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         self.do_interleaving: bool = envs_spyre.VLLM_SPYRE_CP_INTERLEAVE_STEPS
         self.previous_step_was_prefill: bool = False
 
-        # KV cache metrics
-        # Prefix cache stats aggregated between each `make_stats` call
-        self.prefix_cache_stats = PrefixCacheStats()
-        # Gauge for kv cache usage, updated from every model runner output
-        self.kv_cache_usage_percent = 0.0
-
         self.tkv = 0
         self.block_size = SpyrePlatform.get_block_size()
-        self.max_batch_tkv_limit = os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", default="-1")
-        assert self.max_batch_tkv_limit != "-1", (
+        self.max_batch_tkv_limit = SpyrePlatform.get_max_batch_tkv_limit()
+
+        assert self.max_batch_tkv_limit != -1, (
             "Expecting the env var VLLM_DT_MAX_BATCH_TKV_LIMIT to be set in platform.py"
         )
 
@@ -228,17 +222,6 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         self.ongoing_prefills = [
             req for req in self.ongoing_prefills if req.num_computed_tokens < req.num_prompt_tokens
         ]
-
-        # Update KV Cache info
-        self.kv_cache_usage_percent = model_runner_output.kv_cache_usage
-        prefix_cache_stats = model_runner_output.prefix_cache_stats
-        if prefix_cache_stats is not None:
-            # We don't use PrefixCacheStats.record because:
-            # 1. It's not supported in vllm v0.11.0
-            # 2. It could eventually be the case that requests > 1
-            self.prefix_cache_stats.requests += prefix_cache_stats.requests
-            self.prefix_cache_stats.queries += prefix_cache_stats.queries
-            self.prefix_cache_stats.hits += prefix_cache_stats.hits
 
         self.tkv = model_runner_output.tkv
         return super(SpyreScheduler, self).update_from_output(scheduler_output, model_runner_output)
@@ -376,8 +359,17 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         return self._satisfies_constraints(request)
 
     def _satisfies_constraints(self, request: Request) -> bool:
+        # Use a local variable to check the prefix cache hit length ahead of time without mutating
+        # request.num_computed_tokens
+        num_computed_tokens = request.num_computed_tokens
+        if num_computed_tokens == 0:
+            # NB: self.kv_cache_manager comes from the parent class, and we are being super nosy.
+            # This update ensures that we know when we're scheduling the last prefix chunk, in the
+            # case where most of the prompt hits prefix cache and we only run a single chunk.
+            _, num_computed_tokens = self.kv_cache_manager.get_computed_blocks(request)
+
         is_first_chunk = request.num_computed_tokens == 0
-        is_last_chunk = (request.num_prompt_tokens - request.num_computed_tokens) <= self.chunk_size
+        is_last_chunk = (request.num_prompt_tokens - num_computed_tokens) <= self.chunk_size
 
         if not self.do_interleaving:
             # All the prefills are consecutive, so the first chunk has to
@@ -460,7 +452,6 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
             new_req_tkv=new_req_tkv,
             n_blocks=n_blocks,
             running=decoding_requests,
-            max_batch_tkv_limit=self.max_batch_tkv_limit,
         )
 
         return cond1 and cond2 and cond3()
@@ -484,7 +475,7 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         return num_prefills < max_concurrent_prefills
 
     def check_batch_tkv_limit_cp(
-        self, request: Request, new_req_tkv: int, n_blocks: int, running, max_batch_tkv_limit
+        self, request: Request, new_req_tkv: int, n_blocks: int, running
     ) -> bool:
         """
         Check whether adding a new sequence to the decode batch would violate
@@ -516,7 +507,9 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         decode_req_max_tkvs = []
         for req in running:
             # current tkv of the (left aligned) decode sequence
-            dec_req_tkv = n_blocks * self.block_size + req.num_computed_tokens % self.block_size
+            dec_req_tkv = (
+                n_blocks + 1
+            ) * self.block_size + req.num_computed_tokens % self.block_size
             n_generated_output_tokens = req.num_computed_tokens - req.num_prompt_tokens
             dec_req_max_tkv = dec_req_tkv + (req.max_tokens - n_generated_output_tokens) - 1
             decode_req_max_tkvs.append(dec_req_max_tkv)
@@ -544,38 +537,64 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
                 # decrease batch_size by 1 as the current request finished
                 batch_size -= 1
 
-        return max_batch_tkv <= int(max_batch_tkv_limit)
+        return max_batch_tkv <= self.max_batch_tkv_limit
 
     def finish_requests(
         self,
-        request_ids: Union[str, Iterable[str]],
-        finished_status,
-    ) -> None:
+        request_ids: Union[str, Iterable[str], None],
+        finished_status: RequestStatus,
+    ) -> list[tuple[str, int]]:
         """Handles removing finished requests from ongoing_prefills"""
         if isinstance(request_ids, str):
             request_ids = (request_ids,)
 
-        # first defer to vLLM scheduler where validation is handled
-        super(SpyreScheduler, self).finish_requests(
+        # first defer to vLLM scheduler
+        # validates the input requests and generates the output
+        aborted_requests = super(SpyreScheduler, self).finish_requests(
             request_ids=request_ids, finished_status=finished_status
         )
 
-        self.ongoing_prefills = [
-            r for r in self.ongoing_prefills if r.request_id not in request_ids
-        ]
+        # request_ids None means all requests are finished
+        self.ongoing_prefills = (
+            []
+            if request_ids is None
+            else [r for r in self.ongoing_prefills if r.request_id not in request_ids]
+        )
+
+        return aborted_requests
+
+    def calc_cached_tokens(self, prompt_len: int) -> tuple[int, int]:
+        blocks_per_chunk = self.chunk_size // self.block_size
+        n_chunks = math.ceil(prompt_len / self.chunk_size)
+        n_blocks = math.ceil(prompt_len / self.block_size)
+
+        total_blocks = n_chunks * blocks_per_chunk
+        n_padding_tokens = (total_blocks - n_blocks) * self.block_size
+        total_cached_toks = (prompt_len // self.chunk_size) * self.chunk_size
+        return max(0, total_cached_toks - n_padding_tokens), n_padding_tokens
+
+    def adjust_hit(self, prompt_len: int, hit: int):
+        assert hit % self.block_size == 0
+
+        max_possible, padding = self.calc_cached_tokens(prompt_len)
+
+        if hit >= max_possible:
+            return max_possible
+
+        # if the hit is in the middle of a chunk, we also need to discard that chunk
+        actual_hit = max(0, (((padding + hit) // self.chunk_size) * self.chunk_size) - padding)
+        return actual_hit
 
     def make_stats(self, *args, **kwargs) -> SchedulerStats | None:
         """Update the scheduler stats from the base scheduler.
-        These are used in the vllm StatLoggers, which are responsible for
-        reporting stats in logs and metrics.
+        In vllm-spyre the last chunk is always recomputed, even though
+        the space is not duplicated.
         """
         base_stats = super().make_stats(*args, **kwargs)
 
-        if base_stats is not None:
-            base_stats.kv_cache_usage = self.kv_cache_usage_percent
-            base_stats.prefix_cache_stats = self.prefix_cache_stats
-            # Every time `make_stats` is called we reset the prefix cache stats.
-            # This mimics how the base scheduler handles the kv cache stats
-            self.prefix_cache_stats = PrefixCacheStats()
+        if base_stats is not None and base_stats.prefix_cache_stats is not None:
+            base_stats.prefix_cache_stats.hits = self.adjust_hit(
+                base_stats.prefix_cache_stats.queries, base_stats.prefix_cache_stats.hits
+            )
 
         return base_stats

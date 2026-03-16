@@ -21,6 +21,11 @@ from vllm.v1.core.kv_cache_utils import BlockHash
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.request import Request
+from vllm.utils.hashing import get_hash_fn_by_name
+from vllm.v1.core.kv_cache_utils import (
+    get_request_block_hasher,
+    init_none_hash,
+)
 
 
 from vllm_spyre.v1.core.scheduler import (
@@ -115,11 +120,15 @@ def create_request_for_scheduler_test(
             }
         }
 
+    if block_hasher is None:
+        caching_hash_fn = get_hash_fn_by_name("sha256")
+        init_none_hash(caching_hash_fn)
+        block_hasher = get_request_block_hasher(64, caching_hash_fn)
+
     request = Request(
         request_id=str(request_id),
         sampling_params=sampling_params,
         prompt_token_ids=prompt,
-        eos_token_id=None,
         arrival_time=0,
         lora_request=None,
         pooling_params=None,
@@ -376,11 +385,18 @@ def validate_scheduler_steps(
 
             # checking the scheduler handling of free and reserved blocks
             model_runner = engine_core.model_executor.driver_worker.worker.model_runner
-            n_blocks = model_runner.n_blocks
-            block_size = model_runner.block_size
-            n_reserved_blocks = n_blocks - model_runner.get_n_free_blocks()
 
-            kv_cache_manager = model_runner.kv_cache_manager
+            n_blocks = scheduler.cache_config.num_gpu_blocks
+            assert (
+                scheduler.cache_config.num_gpu_blocks
+                == scheduler.cache_config.num_gpu_blocks_override
+            )
+            block_size = model_runner.block_size
+            n_reserved_blocks = (
+                n_blocks - scheduler.kv_cache_manager.block_pool.get_num_free_blocks()
+            )
+
+            kv_cache_manager = scheduler.kv_cache_manager.coordinator.single_type_managers[0]
 
             req_ids2blocks = {
                 req_id: [block.block_id for block in blocks]
