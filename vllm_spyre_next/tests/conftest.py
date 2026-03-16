@@ -289,6 +289,9 @@ def pytest_collection_modifyitems(config, items):
                 item._nodeid = f"{vllm_prefix}::{test_part}"
             else:
                 item._nodeid = vllm_prefix
+        else:
+            # Add spyre mark to our own tests
+            item.add_marker(pytest.mark.spyre)
 
     if marked_count > 0:
         _log(f"[vllm-upstream] Marked {marked_count} tests as 'upstream'")
