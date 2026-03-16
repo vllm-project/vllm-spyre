@@ -31,10 +31,7 @@ def reference_rms_norm(
 @pytest.mark.parametrize("hidden_size", [63, 64, 65, 127, 128, 129, 256, 512])
 @pytest.mark.parametrize("use_residual", [False, True])
 def test_spyre_rmsnorm_matches_reference(
-    default_vllm_config,
-    batch_size,
-    hidden_size,
-    use_residual
+    default_vllm_config, batch_size, hidden_size, use_residual
 ):
     """SpyreRMSNorm output matches golden reference.
 
@@ -58,15 +55,21 @@ def test_spyre_rmsnorm_matches_reference(
         expected_norm, expected_resid = expected
         actual_norm, actual_resid = actual
         torch.testing.assert_close(actual_norm.float(), expected_norm.float(), atol=1e-2, rtol=1e-2)
-        torch.testing.assert_close(actual_resid.float(), expected_resid.float(), atol=1e-2, rtol=1e-2)
+        torch.testing.assert_close(
+            actual_resid.float(), expected_resid.float(), atol=1e-2, rtol=1e-2
+        )
     else:
         torch.testing.assert_close(actual.float(), expected.float(), atol=1e-2, rtol=1e-2)
 
     actual_forward = layer.forward(x, residual)
     if use_residual:
         actual_fwd_norm, actual_fwd_resid = actual_forward
-        torch.testing.assert_close(actual_fwd_norm.float(), expected_norm.float(), atol=1e-2, rtol=1e-2)
-        torch.testing.assert_close(actual_fwd_resid.float(), expected_resid.float(), atol=1e-2, rtol=1e-2)
+        torch.testing.assert_close(
+            actual_fwd_norm.float(), expected_norm.float(), atol=1e-2, rtol=1e-2
+        )
+        torch.testing.assert_close(
+            actual_fwd_resid.float(), expected_resid.float(), atol=1e-2, rtol=1e-2
+        )
     else:
         torch.testing.assert_close(actual_forward.float(), expected.float(), atol=1e-2, rtol=1e-2)
 

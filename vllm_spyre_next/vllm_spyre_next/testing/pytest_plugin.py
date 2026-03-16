@@ -181,7 +181,9 @@ def _extract_vllm_commit_from_pyproject() -> str:
     """
     pyproject_path = Path(__file__).parent.parent.parent / "pyproject.toml"
     if not pyproject_path.exists():
-        raise FileNotFoundError(f"pyproject.toml not found in {Path(__file__).parent.parent.parent}")
+        raise FileNotFoundError(
+            f"pyproject.toml not found in {Path(__file__).parent.parent.parent}"
+        )
 
     content = pyproject_path.read_text()
     # Look for vllm source with git and rev
@@ -192,9 +194,8 @@ def _extract_vllm_commit_from_pyproject() -> str:
     if match:
         return match.group(1)
 
-    raise KeyError(
-        "Ensure vllm is specified with 'rev' in pyproject.toml [tool.uv.sources]"
-    )
+    raise KeyError("Ensure vllm is specified with 'rev' in pyproject.toml [tool.uv.sources]")
+
 
 def _resolve_vllm_commit() -> str:
     """

@@ -301,6 +301,7 @@ def spyre_rmsnorm_fake(
     """
     return
 
+
 @lru_cache(maxsize=1)
 def register():
     """Register the spyre_rmsnorm custom op with vLLM.

@@ -60,7 +60,6 @@ override-dependencies = [
     "perf-analyzer; sys_platform == 'never'",
 
     # Skip packages on s390x and ppc64le, expected to be pre-installed
-    "torch ; platform_machine not in 's390x, ppc64le'",
     "vllm ; platform_machine not in 's390x, ppc64le'",
     "ray; platform_machine not in 's390x, ppc64le'",
     # uv doesn't resolve numba->llvmlite constraint correctly...
