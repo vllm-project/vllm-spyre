@@ -153,6 +153,11 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             continue
 
         allow_entry = _find_allow_entry(test_name, fc.allow_list)
+
+        if allow_entry:
+            for tag in allow_entry.tags:
+                item.add_marker(getattr(pytest.mark, tag))
+
         if allow_entry is None:
             item.add_marker(pytest.mark.skip(reason="not in allow_list"))
             continue

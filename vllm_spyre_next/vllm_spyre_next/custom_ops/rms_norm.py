@@ -42,6 +42,7 @@ from vllm.utils.torch_utils import direct_register_custom_op
 from vllm.config import get_current_vllm_config
 from vllm.forward_context import get_forward_context
 from vllm.model_executor.layers.layernorm import RMSNorm
+from functools import lru_cache
 
 from .utils import convert_for_spyre, convert_from_spyre
 
@@ -300,10 +301,7 @@ def spyre_rmsnorm_fake(
     """
     return
 
-
-_REGISTERED = False
-
-
+@lru_cache(maxsize=1)
 def register():
     """Register the spyre_rmsnorm custom op with vLLM.
 
@@ -312,11 +310,6 @@ def register():
         - fake_impl: Shape inference implementation (spyre_rmsnorm_fake)
         - mutates_args: Indicates 'output' is modified in-place
     """
-    global _REGISTERED
-    if _REGISTERED:
-        return
-    _REGISTERED = True
-
     direct_register_custom_op(
         op_name="spyre_rmsnorm",
         op_func=spyre_rmsnorm,

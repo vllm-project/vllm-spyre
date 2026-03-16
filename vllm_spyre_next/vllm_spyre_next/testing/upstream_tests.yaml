@@ -9,7 +9,7 @@
 #   rel_path          Path relative to upstream vLLM repo root
 #   allow_list[].test fnmatch glob matched against test function name
 #   allow_list[].mode mandatory_pass (default) | xfail | xfail_strict
-#   allow_list[].tags Free-form labels for traceability (no runtime effect)
+#   allow_list[].tags Labels applied as pytest markers (filterable via -m)
 #   allow_list[].params.skip
 #                     Parameter name -> list of values to skip
 #   allow_list[].params.override
@@ -22,7 +22,7 @@ tests:
       allow_list:
         - test: "test_rms_norm"
           mode: mandatory_pass
-          tags: [rmsnorm, llama, granite]
+          tags: [rmsnorm, upstream]
           params:
             skip:
               add_residual: [true]
