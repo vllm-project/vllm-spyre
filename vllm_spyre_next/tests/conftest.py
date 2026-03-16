@@ -296,4 +296,18 @@ def pytest_collection_modifyitems(config, items):
             _log(f"[vllm-upstream] Marked {passing_count} tests as 'upstream_passing'")
 
 
+@pytest.fixture
+def default_vllm_config():
+    """Set a default VllmConfig for tests that directly test CustomOps.
+
+    Mirrors upstream vLLM's ``default_vllm_config`` fixture
+    (tests/conftest.py) so that ``get_current_vllm_config()`` works
+    outside of a full engine context.
+    """
+    from vllm.config import VllmConfig, set_current_vllm_config
+
+    with set_current_vllm_config(VllmConfig()):
+        yield
+
+
 # Made with Bob
