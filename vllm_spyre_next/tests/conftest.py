@@ -296,4 +296,38 @@ def pytest_collection_modifyitems(config, items):
             _log(f"[vllm-upstream] Marked {passing_count} tests as 'upstream_passing'")
 
 
+@pytest.fixture
+def default_vllm_config():
+    """Set a default VllmConfig for tests that directly test CustomOps.
+
+    Mirrors upstream vLLM's ``default_vllm_config`` fixture
+    (tests/conftest.py) so that ``get_current_vllm_config()`` works
+    outside of a full engine context.
+    """
+    import torch
+    from unittest.mock import patch
+    from vllm.config import VllmConfig, set_current_vllm_config
+    from vllm_spyre_next.custom_ops import register_all
+
+    if not hasattr(torch.ops.vllm, "spyre_vocab_parallel_embedding"):
+        register_all()
+
+    with (
+        patch("vllm.distributed.parallel_state.get_tensor_model_parallel_rank", return_value=0),
+        patch(
+            "vllm.distributed.parallel_state.get_tensor_model_parallel_world_size", return_value=1
+        ),
+        patch(
+            "vllm.model_executor.layers.vocab_parallel_embedding.get_tensor_model_parallel_rank",
+            return_value=0,
+        ),
+        patch(
+            "vllm.model_executor.layers.vocab_parallel_embedding.get_tensor_model_parallel_world_size",
+            return_value=1,
+        ),
+        set_current_vllm_config(VllmConfig()),
+    ):
+        yield
+
+
 # Made with Bob
