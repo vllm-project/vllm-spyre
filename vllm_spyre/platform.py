@@ -644,7 +644,7 @@ class SpyrePlatform(Platform):
         return envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in ("sendnn", "sendnn_compile_only")
 
     @classmethod
-    def maybe_ensure_sendnn_configured(cls) -> None:
+    def maybe_ensure_sendnn_configured(cls, model_config: ModelConfig) -> None:
         """If using sendnn, import torch_sendnn and check configuration.
 
         If torch_sendnn is imported too early, it may have the wrong
@@ -657,6 +657,18 @@ class SpyrePlatform(Platform):
             except ImportError as err:
                 raise RuntimeError("sendnn backend requires torch_sendnn") from err
 
+            # We only require checks for the `VLLM_DT_*` environment variables that need to be set
+            # at torch_sendnn import time for generative models.
+            if model_config.runner_type != "generate":
+                cls._torch_sendnn_configured = True
+                return
+
+            # If the compilation cache is disabled, then we cannot check any of the config from
+            # torch_sendnn directly
+            if not bool(int(os.getenv("TORCH_SENDNN_CACHE_ENABLE", "0"))):
+                cls._torch_sendnn_configured = True
+                return
+
             # TODO: This is a hack to make sure that the sendnn backend is
             # configured correctly. Environment variables are captured at
             # import time, so we assert that values were captured with the
@@ -665,8 +677,10 @@ class SpyrePlatform(Platform):
             try:
                 sendnn_backend_state = getattr(torch_sendnn.backends.sendnn_backend, "__state")
                 actual_config = sendnn_backend_state.spyre_graph_cache.deeptools_config["config"]
-            except (AttributeError, KeyError):
-                logger.warning("Error reading torch_sendnn backend state for validation.")
+            except (AttributeError, KeyError) as e:
+                logger.warning(
+                    "Error reading torch_sendnn backend state for validation: %s", str(e)
+                )
                 # Let this fall through and log many warnings to be noisy
                 actual_config = {}
 

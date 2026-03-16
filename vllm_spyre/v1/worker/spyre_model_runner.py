@@ -334,7 +334,7 @@ class SpyrePoolingModelRunner(
             # necessary. This solve issues of running forked tests that share
             # some resources from parent to children which can have problems
             # of caching even though the test run in isolated subprocesses.
-            SpyrePlatform.maybe_ensure_sendnn_configured()
+            SpyrePlatform.maybe_ensure_sendnn_configured(self.model_config)
 
             with utils_spyre.stagger_region(
                 envs_spyre.VLLM_SPYRE_MAX_LOAD_PROCESSES, self.parallel_config.world_size, self.rank
