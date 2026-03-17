@@ -178,7 +178,7 @@ class TestSendnnConfigurationValidation:
         SpyrePlatform._torch_sendnn_configured = False
 
         # Mock torch_sendnn with proper backend state
-        # Using a `MagicMock` here would be very hard to do because of the `.getarrt(__state)`
+        # Using a `MagicMock` here would be very hard to do because of the `.getattr(__state)`
         # call during validation. This uses `SimpleNamespaces` instead, which allows us to set an
         # arbitrarily nested config dict, but will fail if access is attempted on any other
         # attributes on `torch_sendnn`.
