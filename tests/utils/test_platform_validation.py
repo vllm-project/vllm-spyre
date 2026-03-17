@@ -4,14 +4,18 @@ Tests the fix in vllm_spyre/platform.py that strips structured_outputs
 from SamplingParams during request validation.
 """
 
+import sys
 from unittest.mock import MagicMock
 import pytest
+from types import SimpleNamespace
+
 
 from vllm import SamplingParams
 from vllm.inputs.data import token_inputs
 from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import StructuredOutputsParams
 from vllm_spyre.platform import SpyrePlatform
+
 
 pytestmark = pytest.mark.skip_global_cleanup
 
@@ -112,4 +116,121 @@ class TestStructuredOutputValidation:
         assert True  # If we got here, the early return worked
 
 
-# Made with Bob
+class TestSendnnConfigurationValidation:
+    """Test sendnn configuration validation with model_config parameter."""
+
+    @pytest.fixture
+    def mock_model_config(self):
+        """Create a mock ModelConfig for testing."""
+        mock_config = MagicMock()
+        mock_config.runner_type = "generate"
+        return mock_config
+
+    @pytest.fixture
+    def mock_embedding_model_config(self):
+        """Create a mock ModelConfig for embedding models."""
+        mock_config = MagicMock()
+        mock_config.runner_type = "pooling"
+        return mock_config
+
+    def test_skips_validation_for_non_generate_models(
+        self, mock_embedding_model_config, monkeypatch
+    ):
+        """Test that validation is skipped for non-generative models (e.g., embeddings)."""
+        # Set up sendnn backend enabled
+        monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", "sendnn")
+        SpyrePlatform._torch_sendnn_configured = False
+
+        # Mock torch_sendnn import
+        mock_torch_sendnn = MagicMock()
+        monkeypatch.setitem(sys.modules, "torch_sendnn", mock_torch_sendnn)
+
+        # Should not raise and should mark as configured
+        SpyrePlatform.maybe_ensure_sendnn_configured(mock_embedding_model_config)
+
+        assert SpyrePlatform._torch_sendnn_configured is True
+
+    def test_skips_validation_when_cache_disabled(self, mock_model_config, monkeypatch):
+        """Test that validation is skipped when TORCH_SENDNN_CACHE_ENABLE is 0."""
+        # Set up sendnn backend enabled
+        monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", "sendnn")
+        monkeypatch.setenv("TORCH_SENDNN_CACHE_ENABLE", "0")
+        SpyrePlatform._torch_sendnn_configured = False
+
+        # Mock torch_sendnn import
+        mock_torch_sendnn = MagicMock()
+        monkeypatch.setitem(sys.modules, "torch_sendnn", mock_torch_sendnn)
+
+        # Should not raise and should mark as configured
+        SpyrePlatform.maybe_ensure_sendnn_configured(mock_model_config)
+
+        assert SpyrePlatform._torch_sendnn_configured is True
+
+    def test_validates_generate_models_with_cache_enabled(self, mock_model_config, monkeypatch):
+        """Test that validation runs for generative models with cache enabled."""
+        # Set up sendnn backend enabled with cache
+        monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", "sendnn")
+        monkeypatch.setenv("TORCH_SENDNN_CACHE_ENABLE", "1")
+        monkeypatch.setenv("VLLM_DT_CHUNK_LEN", "512")
+        monkeypatch.setenv("VLLM_DT_MAX_CONTEXT_LEN", "4096")
+        monkeypatch.setenv("VLLM_DT_MAX_BATCH_SIZE", "32")
+        monkeypatch.setenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", "8192")
+        SpyrePlatform._torch_sendnn_configured = False
+
+        # Mock torch_sendnn with proper backend state
+        # Using a `MagicMock` here would be very hard to do because of the `.getarrt(__state)`
+        # call during validation. This uses `SimpleNamespaces` instead, which allows us to set an
+        # arbitrarily nested config dict, but will fail if access is attempted on any other
+        # attributes on `torch_sendnn`.
+        # 🌶️ This is super nosy and incredibly coupled to the implementation of `torch_sendnn`, but
+        # so is the validation code itself. 🌶️
+        mock_torch_sendnn = SimpleNamespace(
+            backends=SimpleNamespace(
+                sendnn_backend=SimpleNamespace(
+                    __state=SimpleNamespace(
+                        spyre_graph_cache=SimpleNamespace(
+                            deeptools_config={
+                                "config": {
+                                    "vllm_chunk_length": "512",
+                                    "vllm_max_context_length": "4096",
+                                    "vllm_max_batch_size": "32",
+                                    "vllm_max_batch_tkv_limit": "8192",
+                                }
+                            }
+                        )
+                    )
+                )
+            )
+        )
+        monkeypatch.setitem(sys.modules, "torch_sendnn", mock_torch_sendnn)
+
+        # Should validate successfully
+        SpyrePlatform.maybe_ensure_sendnn_configured(mock_model_config)
+
+        assert SpyrePlatform._torch_sendnn_configured is True
+
+    def test_logs_warning_on_backend_state_read_error(
+        self, mock_model_config, monkeypatch, caplog_vllm_spyre
+    ):
+        """Test that warning is logged when backend state cannot be read."""
+        # Set up sendnn backend enabled with cache
+        monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", "sendnn")
+        monkeypatch.setenv("TORCH_SENDNN_CACHE_ENABLE", "1")
+        monkeypatch.setenv("VLLM_DT_CHUNK_LEN", "512")
+        SpyrePlatform._torch_sendnn_configured = False
+
+        # Mock torch_sendnn with missing backend state (AttributeError)
+        mock_torch_sendnn = MagicMock()
+        mock_torch_sendnn.backends.sendnn_backend = MagicMock(spec=[])  # No __state attribute
+        monkeypatch.setitem(sys.modules, "torch_sendnn", mock_torch_sendnn)
+
+        # Should log warning and continue
+        with pytest.raises(AssertionError):  # Will fail validation but should log warning first
+            SpyrePlatform.maybe_ensure_sendnn_configured(mock_model_config)
+
+        # Check that warning was logged with exception details
+        warning_records = [r for r in caplog_vllm_spyre.records if r.levelname == "WARNING"]
+        assert any(
+            "Error reading torch_sendnn backend state for validation" in r.message
+            for r in warning_records
+        )
