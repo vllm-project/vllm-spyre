@@ -332,6 +332,7 @@ def pytest_configure(config):
 
     # Set env vars BEFORE any vllm imports
     os.environ["VLLM_PLUGINS"] = "spyre_next,spyre_next_ops"
+    os.environ["VLLM_USE_AOT_COMPILE"] = "0"
 
     # Load plugins early to register custom ops before test modules import RMSNorm
     from vllm.plugins import load_general_plugins
@@ -426,9 +427,11 @@ def _should_skip_params(item: pytest.Item, allow_entry: AllowEntry) -> bool:
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    """Apply YAML-based filtering to upstream tests."""
+    """Apply YAML-based filtering to upstream tests and reorder tests."""
     upstream_tests_base = getattr(config, "_upstream_tests_base", None)
     if not upstream_tests_base:
+        # Still reorder tests even if not running upstream tests
+        _reorder_tests_by_name(items)
         return
 
     upstream_tests_base = Path(upstream_tests_base).resolve()
@@ -474,6 +477,31 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             item.add_marker(pytest.mark.xfail(strict=False))
         elif allow_entry.mode == "xfail_strict":
             item.add_marker(pytest.mark.xfail(strict=True))
+
+    # Reorder tests so that tests with "model" in the name run first
+    _reorder_tests_by_name(items)
+
+
+def _reorder_tests_by_name(items: list[pytest.Item]) -> None:
+    """Reorder tests so that tests with 'model' in their name run first.
+    
+    This modifies the items list in-place using a stable sort, so tests with
+    'model' in their name will run first while preserving the relative order
+    within each group.
+    """
+    stable_map = {item: idx for idx, item in enumerate(items)}
+    def sort_key(item: pytest.Item) -> tuple[int, int]:
+        # Get the test name (nodeid includes full path and parameters)
+        nodeid = item.nodeid.lower()
+        name = item.name.lower()
+        
+        # Priority 0: tests with "model" in name run first
+        # Priority 1: all other tests
+        has_model = int("model" not in nodeid and "model" not in name)
+        
+        return (has_model, stable_map[item])
+    
+    items.sort(key=sort_key)
 
 
 @pytest.hookimpl(tryfirst=True)
