@@ -483,24 +483,26 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
 
 def _reorder_tests_by_name(items: list[pytest.Item]) -> None:
-    """Reorder tests so that tests with 'model' in their name run first.
-    
-    This modifies the items list in-place using a stable sort, so tests with
-    'model' in their name will run first while preserving the relative order
+    """Reorder tests so that tests with 'uses_subprocess' marker run first.
+
+    This modifies the items list in-place using a stable sort, so tests marked
+    with 'uses_subprocess' will run first while preserving the relative order
     within each group.
     """
     stable_map = {item: idx for idx, item in enumerate(items)}
+
     def sort_key(item: pytest.Item) -> tuple[int, int]:
-        # Get the test name (nodeid includes full path and parameters)
-        nodeid = item.nodeid.lower()
-        name = item.name.lower()
-        
-        # Priority 0: tests with "model" in name run first
+        # Check if the test has the 'uses_subprocess' marker
+        has_subprocess_marker = any(
+            marker.name == "uses_subprocess" for marker in item.iter_markers()
+        )
+
+        # Priority 0: tests with uses_subprocess marker run first
         # Priority 1: all other tests
-        has_model = int("model" not in nodeid and "model" not in name)
-        
-        return (has_model, stable_map[item])
-    
+        priority = 0 if has_subprocess_marker else 1
+
+        return (priority, stable_map[item])
+
     items.sort(key=sort_key)
 
 
@@ -559,10 +561,9 @@ def _spyre_default_vllm_config(monkeypatch):
         device_config=DeviceConfig(device="cpu"),
         compilation_config=CompilationConfig(custom_ops=["all"]),
     )
-    with set_current_vllm_config(config):
+    with set_current_vllm_config(config), set_forward_context(None, config):
         # Set forward context so custom ops can access no_compile_layers
-        with set_forward_context(None, config):
-            yield
+        yield
 
 
 @pytest.fixture()

@@ -29,7 +29,7 @@ def reference_rms_norm(
 @pytest.mark.rmsnorm
 @pytest.mark.parametrize("batch_size", [1])
 # Hidden sizes that aren't multiples of 64 currently fail on CI with size errors
-#@pytest.mark.parametrize("hidden_size", [63, 64, 65, 127, 128, 129, 256, 512])
+# @pytest.mark.parametrize("hidden_size", [63, 64, 65, 127, 128, 129, 256, 512])
 @pytest.mark.parametrize("hidden_size", [64, 128, 256, 512])
 @pytest.mark.parametrize("use_residual", [False, True])
 def test_spyre_rmsnorm_matches_reference(

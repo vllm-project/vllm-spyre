@@ -37,7 +37,8 @@ tests:
       allow_list:
         - test: "test_models"
           mode: mandatory_pass
-          tags: [facebook, upstream]
+          # uses_subprocess marker is added to make these tests run last
+          tags: [facebook, upstream, uses_subprocess]
           params:
             skip:  # skip every model except facebook/opt-125m
               model: 
