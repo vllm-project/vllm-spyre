@@ -130,33 +130,21 @@ _UPSTREAM_CONFIG: UpstreamTestConfig = _load_upstream_config()
 
 
 def _get_paths_from_yaml() -> str:
-    """Extract unique test directory paths from upstream_tests.yaml.
+    """Extract test paths from upstream_tests.yaml rel_path entries.
 
-    Derives paths from rel_path entries, e.g.:
-      "tests/kernels/core/test_layernorm.py" -> "kernels/core"
+    Uses exact rel_path (file or folder), e.g.:
+      "tests/kernels/core/test_layernorm.py" -> "kernels/core/test_layernorm.py"
+      "tests/models/" -> "models/"
     """
-    paths = set()
+    paths = []
     for fc in _UPSTREAM_CONFIG.files:
         p = Path(fc.rel_path)
-        # rel_path is like "tests/kernels/core/test_layernorm.py"
-        # We want "kernels/core" (relative to tests/)
-        try:
-            if p.parts[0] == "tests":
-                # Remove "tests/" prefix and get parent dir
-                rel = Path(*p.parts[1:])
-                if rel.name.startswith("test_"):
-                    paths.add(str(rel.parent))
-                else:
-                    paths.add(str(rel))
-            else:
-                # No "tests/" prefix - use parent
-                if p.name.startswith("test_"):
-                    paths.add(str(p.parent))
-                else:
-                    paths.add(str(p))
-        except (IndexError, ValueError):
-            continue
-    return ",".join(sorted(paths)) if paths else ""
+        # Strip "tests/" prefix if present
+        if p.parts and p.parts[0] == "tests":
+            paths.append(str(Path(*p.parts[1:])))
+        else:
+            paths.append(str(p))
+    return ",".join(paths)
 
 
 # ---------------------------------------------------------------------------
@@ -187,9 +175,10 @@ def _extract_vllm_commit_from_pyproject() -> str:
 
     content = pyproject_path.read_text()
     # Look for vllm source with git and rev
-    # Pattern: vllm = { git = "...", rev = "commit_sha" }
+    # Pattern: vllm = { git = "...", rev = "commit_sha_or_semver_tag" }
     match = re.search(
-        r'vllm\s*=\s*\{\s*git\s*=\s*"[^"]+"\s*,\s*rev\s*=\s*"([0-9a-f]{7,40})"\s*\}', content
+        r'vllm\s*=\s*\{\s*git\s*=\s*"[^"]+"\s*,\s*rev\s*=\s*"([0-9a-f]{7,40}|v\d+\.\d+\.\d+(?:-[a-zA-Z0-9.]+)?)"\s*\}',
+        content,
     )
     if match:
         return match.group(1)
@@ -205,7 +194,7 @@ def _resolve_vllm_commit() -> str:
     # Allow env var override for testing/CI
     env_commit = os.environ.get("VLLM_COMMIT", "").strip()
     if env_commit:
-        if not re.match(r"^[0-9a-f]{7,40}$", env_commit):
+        if not re.match(r"^(?:[0-9a-f]{7,40}|v\d+\.\d+\.\d+(?:-[a-zA-Z0-9.]+)?)$", env_commit):
             raise ValueError(f"Invalid VLLM_COMMIT format: {env_commit}")
         return env_commit
 
@@ -263,12 +252,42 @@ def _ensure_repo_at_commit(repo_dir: Path, url: str, commit: str, sparse_paths: 
             _log(f"[vllm-upstream] Updating origin URL: {result.stdout.strip()} -> {url}")
             _run(["git", "--git-dir", str(git_dir), "remote", "set-url", "origin", url])
 
-        _log(f"[vllm-upstream] Fetching commit {commit[:12]} from {url}")
-        _run(["git", "--git-dir", str(git_dir), "fetch", "--depth=1", "origin", commit])
+        # Determine if commit is a tag (starts with 'v' and matches semver pattern) or a SHA
+        is_tag = re.match(r"^v\d+\.\d+\.\d+(?:-[a-zA-Z0-9.]+)?$", commit)
+
+        if is_tag:
+            _log(f"[vllm-upstream] Fetching tag {commit} from {url}")
+            # For tags, fetch the tag reference
+            _run(
+                [
+                    "git",
+                    "--git-dir",
+                    str(git_dir),
+                    "fetch",
+                    "--depth=1",
+                    "origin",
+                    f"refs/tags/{commit}:refs/tags/{commit}",
+                ]
+            )
+        else:
+            _log(f"[vllm-upstream] Fetching commit {commit[:12]} from {url}")
+            # For commit SHAs, fetch the commit directly
+            _run(["git", "--git-dir", str(git_dir), "fetch", "--depth=1", "origin", commit])
 
         # Create a new worktree at temp
+        # For tags, use the full tag reference; for commits, use the commit SHA directly
+        worktree_ref = f"refs/tags/{commit}" if is_tag else commit
         _run(
-            ["git", "--git-dir", str(git_dir), "worktree", "add", "--detach", str(td_path), commit]
+            [
+                "git",
+                "--git-dir",
+                str(git_dir),
+                "worktree",
+                "add",
+                "--detach",
+                str(td_path),
+                worktree_ref,
+            ]
         )
 
         # Enable sparse checkout at the worktree
