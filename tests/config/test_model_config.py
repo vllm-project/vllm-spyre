@@ -164,12 +164,6 @@ class TestDeviceConfig:
         config = DeviceConfig(tp_size=1, num_gpu_blocks_override=1000)
         assert config.num_gpu_blocks_override == 1000
 
-    def test_create_with_gpu_blocks_dict(self):
-        """Test creating device config with dict GPU blocks override."""
-        blocks_config = {"default": 1000, "torch_sendnn_lt_1_0_3": 800}
-        config = DeviceConfig(tp_size=1, num_gpu_blocks_override=blocks_config)
-        assert config.num_gpu_blocks_override == blocks_config
-
     def test_from_dict_minimal(self):
         """Test creating device config from minimal dict."""
         config = DeviceConfig.from_dict(tp_size=1, data={})
@@ -180,7 +174,7 @@ class TestDeviceConfig:
         """Test creating device config from complete dict."""
         data = {
             "env_vars": {"SOME_ENV_VAR": "some_value"},
-            "num_gpu_blocks_override": {"default": 1000, "torch_sendnn_lt_1_0_3": 800},
+            "num_gpu_blocks_override": 1000,
         }
         config = DeviceConfig.from_dict(tp_size=2, data=data)
         assert config.tp_size == 2

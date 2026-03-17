@@ -34,9 +34,7 @@ _templates:
       VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072  # 128k
       FLEX_HDMA_P2PSIZE: 268435456  # 256MB
       FLEX_HDMA_COLLSIZE: 33554432  # 32MB
-    num_gpu_blocks_override:
-      torch_sendnn_lt_1_0_3: 2080
-      default: 8192
+    num_gpu_blocks_override: 8192
   
   llama3_8b_architecture: &llama3_8b_architecture
     model_type: llama
@@ -53,9 +51,7 @@ _templates:
       VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072  # 128k
       FLEX_HDMA_P2PSIZE: 268435456  # 256MB
       FLEX_HDMA_COLLSIZE: 33554432  # 32MB
-    num_gpu_blocks_override:
-      torch_sendnn_lt_1_0_3: 2080
-      default: 8192
+    num_gpu_blocks_override: 8192
 
   mistral3_24b_architecture: &mistral3_24b_architecture
     model_type: pixtral
@@ -79,8 +75,7 @@ _templates:
       VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072  # 128k
       FLEX_HDMA_P2PSIZE: 268435456  # 256MB
       FLEX_HDMA_COLLSIZE: 33554432  # 32MB
-    num_gpu_blocks_override:
-      default: 8192
+    num_gpu_blocks_override: 8192
 
 models:
   # Granite 3.3 8B Instruct

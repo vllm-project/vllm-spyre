@@ -96,12 +96,12 @@ class DeviceConfig:
     Attributes:
         tp_size: Tensor parallel size this config applies to
         env_vars: Environment variables to set
-        num_gpu_blocks_override: Override for GPU blocks (can be int or dict with version keys)
+        num_gpu_blocks_override: Override for GPU blocks
     """
 
     tp_size: int
     env_vars: dict[str, Any] = field(default_factory=dict)
-    num_gpu_blocks_override: dict[str, int] | int | None = None
+    num_gpu_blocks_override: int | None = None
 
     @classmethod
     def from_dict(cls, tp_size: int, data: dict[str, Any]) -> "DeviceConfig":
