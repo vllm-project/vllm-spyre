@@ -79,8 +79,7 @@ COPY docker/.senlib.json /home/senuser
 # Common vLLM-specific env setup
 ENV MASTER_ADDR=localhost \
     MASTER_PORT=12355 \
-    VLLM_PLUGINS=spyre \
-    VLLM_USE_V1=1
+    VLLM_PLUGINS=spyre
 
 RUN true \
     && mkdir -p /home/senuser/.cache \

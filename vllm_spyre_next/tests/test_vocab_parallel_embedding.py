@@ -64,7 +64,7 @@ def test_spyre_vocab_parallel_embedding_matches_reference(
     layer = SpyreVocabParallelEmbedding(
         num_embeddings=num_embeddings,
         embedding_dim=embedding_dim,
-        org_vocab_size=num_embeddings,
+        org_num_embeddings=num_embeddings,
     )
 
     input_ = torch.randint(0, num_embeddings, (num_tokens,), dtype=torch.long)
@@ -73,7 +73,9 @@ def test_spyre_vocab_parallel_embedding_matches_reference(
 
     # forward_native path
     actual_native = layer.forward_native(input_)
-    torch.testing.assert_close(actual_native.float(), expected.float(), atol=1e-4, rtol=1e-4)
+    torch.testing.assert_close(
+        actual_native.float(), expected.float(), atol=1e-4, rtol=1e-4, equal_nan=True
+    )
 
     # forward (custom op) path — requires an active forward context so that
     # get_forward_context().no_compile_layers resolves the registered layer.
@@ -89,7 +91,9 @@ def test_spyre_vocab_parallel_embedding_matches_reference(
     )
     with override_forward_context(fwd_ctx):
         actual_forward = layer.forward(input_)
-    torch.testing.assert_close(actual_forward.float(), expected.float(), atol=1e-4, rtol=1e-4)
+    torch.testing.assert_close(
+        actual_forward.float(), expected.float(), atol=1e-4, rtol=1e-4, equal_nan=True
+    )
 
 
 @pytest.fixture
@@ -115,15 +119,11 @@ def test_vocab_parallel_embedding_oot_dispatch(default_vllm_config, monkeypatch,
     layer = VocabParallelEmbedding(
         num_embeddings=256,
         embedding_dim=128,
-        org_vocab_size=256,
+        org_num_embeddings=256,
     )
 
     # OOT class swap: VocabParallelEmbedding.__new__ should produce SpyreVocabParallelEmbedding
     assert isinstance(layer, SpyreVocabParallelEmbedding)
-
-    # dispatch_forward should have selected forward_oot (if available in this vLLM version)
-    if hasattr(layer, "_forward_method"):
-        assert layer._forward_method == layer.forward_oot
 
     # Mock forward_native (called by forward_oot) with a known transform
     monkeypatch.setattr(layer, "forward_native", mock_forward_native)

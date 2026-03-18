@@ -334,9 +334,7 @@ class SpyrePoolingModelRunner(
             # necessary. This solve issues of running forked tests that share
             # some resources from parent to children which can have problems
             # of caching even though the test run in isolated subprocesses.
-
-            if SpyrePlatform.sendnn_configured():
-                pass
+            SpyrePlatform.maybe_ensure_sendnn_configured()
 
             with utils_spyre.stagger_region(
                 envs_spyre.VLLM_SPYRE_MAX_LOAD_PROCESSES, self.parallel_config.world_size, self.rank
@@ -1440,7 +1438,16 @@ class ChunkedPrefillModelRunner(
             if model_input.input_embeds is not None
             else model_input.input_tokens
         )
+
         with set_forward_context(attn_metadata, self.vllm_config):
+            assert (
+                self.tkv * len(scheduler_output.num_scheduled_tokens)
+                <= SpyrePlatform.get_max_batch_tkv_limit()
+            ), (
+                f"Exceeded max batch tkv limit {SpyrePlatform.get_max_batch_tkv_limit()}!"
+                f" tkv: {self.tkv}, batch_size: {len(scheduler_output.num_scheduled_tokens)}"
+            )
+
             logits = self.model(
                 input_ids_or_embeds=input_ids_or_embeds,
                 positions=model_input.input_positions,

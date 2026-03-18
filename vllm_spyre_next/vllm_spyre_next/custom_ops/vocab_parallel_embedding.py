@@ -23,15 +23,14 @@ Key Components:
     - register(): Registers the custom op with vLLM
 
 Spyre Device Constraints:
-    - Minimum sequence length: 64 tokens (automatically padded, trimmed after)
     - Algorithm: Standard F.embedding on CPU — torch-spyre has no native embedding
       kernel; aten.embedding.default is handled by a CPU fallback (spyre__embedding).
       Moving tensors to Spyre causes DtException (unsupported data format), so all
       embedding computation stays on CPU.
 
 Limitations:
-    - No Tensor Parallelism (TP) support: TP masking and all_reduce are skipped.
-      This is intentional for the current implementation scope.
+    - No Tensor Parallelism (TP) support: tp_size > 1 raises NotImplementedError.
+    - No quantization support: quant_config != None raises NotImplementedError.
 
 References:
     - Upstream VocabParallelEmbedding:
@@ -50,15 +49,6 @@ from vllm.utils.torch_utils import direct_register_custom_op
 
 logger = init_logger(__name__)
 
-# Minimum number of tokens required by Spyre device
-_SPYRE_MIN_SEQ_LEN = 64
-
-# Flip to True when torch-spyre adds a native embedding kernel.
-# Tracked by: torch_spyre/ops/fallbacks.py
-# When True: restores torch.compile + device transfer path in forward_native.
-# When False: F.embedding runs directly on CPU via spyre__embedding fallback.
-_SPYRE_NATIVE_EMBEDDING = False
-
 
 @VocabParallelEmbedding.register_oot(name="VocabParallelEmbedding")
 class SpyreVocabParallelEmbedding(VocabParallelEmbedding):
@@ -67,24 +57,41 @@ class SpyreVocabParallelEmbedding(VocabParallelEmbedding):
     This replaces the upstream vLLM VocabParallelEmbedding when instantiated,
     providing Spyre-specific device handling.
 
-    No Tensor Parallelism (TP) is supported: the TP masking and all_reduce steps
-    from forward_native are omitted. This is consistent with the current Spyre
-    deployment model (single device per embedding layer).
+    No Tensor Parallelism (TP) is supported: tp_size > 1 raises NotImplementedError.
+    No quantization is supported: quant_config != None raises NotImplementedError.
     """
 
     def __init__(self, *args, **kwargs):
         """Initialize SpyreVocabParallelEmbedding layer.
 
         Registers this instance in static_forward_context for retrieval during
-        the custom op forward pass. When _SPYRE_NATIVE_EMBEDDING is True,
-        also compiles the Spyre embedding kernel via torch.compile.
+        the custom op forward pass.
+
+        Raises:
+            NotImplementedError: If tp_size > 1 or quant_config is not None,
+                as these are not supported in the current Spyre implementation.
         """
+        # Check for unsupported configurations before calling super().__init__
+        # to fail fast with a clear error message.
+        quant_config = kwargs.get("quant_config", None)
+
+        if quant_config is not None:
+            raise NotImplementedError(
+                "SpyreVocabParallelEmbedding does not support quantization "
+                f"(quant_config={quant_config}). Only quant_config=None is supported."
+            )
+
         super().__init__(*args, **kwargs)
 
-        logger.debug("Building custom VocabParallelEmbedding for Spyre")
+        # Check TP size after super().__init__ sets up the parallel config.
+        if self.tp_size > 1:
+            raise NotImplementedError(
+                f"SpyreVocabParallelEmbedding does not support Tensor Parallelism "
+                f"(tp_size={self.tp_size}). TP masking and all_reduce are not implemented. "
+                "Only tp_size=1 is supported."
+            )
 
-        if _SPYRE_NATIVE_EMBEDDING:
-            self._fwd_spyre = torch.compile(self.forward_static, dynamic=False)
+        logger.debug("Building custom VocabParallelEmbedding for Spyre")
 
         # Register in static_forward_context for custom op access.
         # Each instance gets a unique name via counter to avoid collisions.
@@ -132,25 +139,15 @@ class SpyreVocabParallelEmbedding(VocabParallelEmbedding):
         result = self.forward_native(input_)
         output.copy_(result)
 
-    @staticmethod
-    def forward_static(input_: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
-        """Entry point for torch.compile when _SPYRE_NATIVE_EMBEDDING is True."""
-        return F.embedding(input_, weight)
-
     def forward_native(self, input_: torch.Tensor) -> torch.Tensor:
-        """Embedding execution with Spyre padding constraint.
+        """Embedding execution on CPU.
 
-        Two paths controlled by _SPYRE_NATIVE_EMBEDDING:
+        F.embedding runs on CPU via torch-spyre's spyre__embedding fallback.
+        torch-spyre has no native embedding kernel; aten.embedding.default falls
+        back to CPU (spyre__embedding). Moving tensors to Spyre would cause a
+        DtException (unsupported data format), so no device transfer is performed.
 
-        False (current): F.embedding runs on CPU via torch-spyre's spyre__embedding
-            fallback. Moving tensors to Spyre causes DtException (unsupported data
-            format) — confirmed on Spyre pod. No device transfer performed.
-
-        True (future): when torch-spyre adds a native gather/scatter kernel,
-            flip _SPYRE_NATIVE_EMBEDDING = True. Restores device transfer and
-            torch.compile path automatically.
-
-        No TP masking or all_reduce is performed (no TP support).
+        No TP masking or all_reduce is performed (tp_size > 1 is not supported).
 
         Args:
             input_: Token index tensor [num_tokens] on CPU (int64)
@@ -158,24 +155,7 @@ class SpyreVocabParallelEmbedding(VocabParallelEmbedding):
         Returns:
             Embedding output [num_tokens, embedding_dim] in weight dtype on CPU
         """
-        original_len = input_.shape[0]
-        padding = 0
-        if original_len < _SPYRE_MIN_SEQ_LEN:
-            padding = _SPYRE_MIN_SEQ_LEN - original_len
-            input_ = F.pad(input_, (0, padding))
-
-        if _SPYRE_NATIVE_EMBEDDING:
-            input_spyre = input_.to(dtype=torch.int32).to(device="spyre")
-            weight_spyre = self.weight.to(dtype=torch.float16).to(device="spyre")
-            result = self._fwd_spyre(input_spyre, weight_spyre)
-            result = result.to(device="cpu").to(dtype=self.weight.dtype)
-        else:
-            result = F.embedding(input_, self.weight)
-
-        if padding > 0:
-            result = result[:original_len]
-
-        return result
+        return F.embedding(input_, self.weight)
 
     def forward_oot(self, input_: torch.Tensor) -> torch.Tensor:
         """OOT forward method — delegates to forward_native."""

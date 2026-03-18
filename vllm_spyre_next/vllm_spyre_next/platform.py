@@ -68,7 +68,9 @@ class TorchSpyrePlatform(CpuPlatform):
 
         from vllm_spyre_next import _version
 
-        model_name = vllm_config.model_config.model
+        model_name = (
+            vllm_config.model_config.model if vllm_config.model_config is not None else "N/A"
+        )
 
         logger.info(message, _version.version, model_name)
 
