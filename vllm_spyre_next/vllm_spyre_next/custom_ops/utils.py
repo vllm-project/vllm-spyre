@@ -100,47 +100,27 @@ def register_in_static_context(instance: Any, prefix_base: str) -> str:
     return prefix
 
 
-def create_rmsnorm_op_pair():
-    """Create custom op pair for RMSNorm operation."""
+def dispatch_forward_impl(layer_name: str, *args, **kwargs):
+    """Look up a custom op layer by name and call its forward_impl.
 
-    def op_func(
-        x: torch.Tensor,
-        output: torch.Tensor,
-        layer_name: str,
-        residual: torch.Tensor | None = None,
-    ) -> None:
-        forward_context = get_forward_context()
-        layer = forward_context.no_compile_layers[layer_name]
-        layer.forward_impl(x, output, residual)
+    This is the shared dispatch logic for all Spyre custom ops. Each op
+    defines a typed op_func wrapper (required by torch's infer_schema)
+    that delegates here.
 
-    def fake_impl(
-        x: torch.Tensor,
-        output: torch.Tensor,
-        layer_name: str,
-        residual: torch.Tensor | None = None,
-    ) -> None:
-        return
-
-    return op_func, fake_impl
+    Args:
+        layer_name: Key into forward_context.no_compile_layers
+        *args, **kwargs: Forwarded to layer.forward_impl
+    """
+    forward_context = get_forward_context()
+    layer = forward_context.no_compile_layers[layer_name]
+    layer.forward_impl(*args, **kwargs)
 
 
-def create_siluandmul_op_pair():
-    """Create custom op pair for SiluAndMul operation."""
+def fake_impl(*args, **kwargs) -> None:
+    """Shared no-op fake implementation for all Spyre custom ops.
 
-    def op_func(
-        x: torch.Tensor,
-        output: torch.Tensor,
-        layer_name: str,
-    ) -> None:
-        forward_context = get_forward_context()
-        layer = forward_context.no_compile_layers[layer_name]
-        layer.forward_impl(x, output)
-
-    def fake_impl(
-        x: torch.Tensor,
-        output: torch.Tensor,
-        layer_name: str,
-    ) -> None:
-        return
-
-    return op_func, fake_impl
+    Used for shape inference during torch.compile tracing. The op schema
+    is already defined by the typed op_func, so this doesn't need typed
+    parameters.
+    """
+    return
