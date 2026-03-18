@@ -70,7 +70,9 @@ class SpyrePlatform(Platform):
     _block_size: Literal[64] = 64  # hardcoded Spyre constraint for now
     # TODO: this `None` is dangerous
     _config: VllmConfig = None  # ty: ignore[invalid-assignment]
-    _torch_sendnn_version = None
+    _torch_sendnn_configured: bool = False
+
+    _max_batch_tkv_limit: int = 0
 
     # Backend for dynamic compilation ops
     # See vllm batched_count_greater_than method
@@ -93,6 +95,13 @@ class SpyrePlatform(Platform):
         Check if the current platform supports async output.
         """
         return False
+
+    @classmethod
+    def get_max_batch_tkv_limit(cls) -> int:
+        if cls._max_batch_tkv_limit == 0:
+            # For spawned subprocesses, we need to grab the TKV limit from the environment
+            cls._set_batch_tkv_limit_from_env()
+        return cls._max_batch_tkv_limit
 
     @classmethod
     def get_total_spyre_blocks(cls, vllm_config: VllmConfig) -> int:
@@ -136,10 +145,7 @@ class SpyrePlatform(Platform):
         # As we drop the block reservation for chunked prefill the number of available blocks
         # needs to be at least as big as the smaller of the batch tkv limit
         # (VLLM_DT_MAX_BATCH_TKV_LIMIT) and a full batch (max_num_seqs * max_model_len)
-        batch_tkv_limit = int(
-            os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", num_blocks_full_batch * block_size)
-        )
-        num_blocks_batch_tkv_limit = batch_tkv_limit // block_size
+        num_blocks_batch_tkv_limit = cls.get_max_batch_tkv_limit() // block_size
         # Note on "+1": We need to add one additional block used exclusively for padding (idx 0)
         min_req_num_blocks = min(num_blocks_full_batch, num_blocks_batch_tkv_limit) + 1
 
@@ -186,9 +192,7 @@ class SpyrePlatform(Platform):
 
         is_pooling = model_config.runner_type == "pooling"
 
-        if not bool(int(os.getenv("VLLM_USE_V1", "1"))):
-            raise ValueError("vllm-spyre is only supported with vLLM v1. Please set VLLM_USE_V1=1")
-        elif not is_decoder and not is_pooling:
+        if not is_decoder and not is_pooling:
             raise ValueError("Only the 'generate' and 'pooling' runners are supported")
 
         if parallel_config.worker_cls == "auto":
@@ -344,6 +348,9 @@ class SpyrePlatform(Platform):
                 "found. Using the default value (max_model_len * max_batch_size): %d",
                 default_max_batch_tkv_limit,
             )
+            cls._max_batch_tkv_limit = default_max_batch_tkv_limit
+        else:
+            cls._set_batch_tkv_limit_from_env()
 
         handle_disable_compilation(vllm_config, is_decoder)
 
@@ -473,7 +480,7 @@ class SpyrePlatform(Platform):
         return [shape for shape in warmup_shapes if prompt_len <= shape["prompt_length"]]
 
     # Defined here for testing purposes
-    DEFAULT_CHUNK_SIZE = 1024
+    DEFAULT_CHUNK_SIZE = 512
 
     @classmethod
     def pre_register_and_update(cls, parser: FlexibleArgumentParser | None = None) -> None:
@@ -637,20 +644,88 @@ class SpyrePlatform(Platform):
         return envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in ("sendnn", "sendnn_compile_only")
 
     @classmethod
-    def sendnn_configured(cls) -> bool:
-        if cls.is_backend_sendnn_enabled():
-            try:
-                from torch_sendnn._version import __version__ as version_str  # ty: ignore[unresolved-import]
+    def maybe_ensure_sendnn_configured(cls, model_config: ModelConfig) -> None:
+        """If using sendnn, import torch_sendnn and check configuration.
 
-                sem_ver = version_str.split("+")[0]
-                cls._torch_sendnn_version = tuple(map(int, sem_ver.split(".")))
-                return True
+        If torch_sendnn is imported too early, it may have the wrong
+        configuration. An assertion error will be raised in this case. This
+        function must be called before triggering any torch compilation.
+        """
+        if not cls._torch_sendnn_configured and cls.is_backend_sendnn_enabled():
+            try:
+                import torch_sendnn  # ty: ignore[unresolved-import] # noqa: F401
             except ImportError as err:
                 raise RuntimeError("sendnn backend requires torch_sendnn") from err
-        return False
+
+            # We only require checks for the `VLLM_DT_*` environment variables that need to be set
+            # at torch_sendnn import time for generative models.
+            if model_config.runner_type != "generate":
+                cls._torch_sendnn_configured = True
+                return
+
+            # If the compilation cache is disabled, then we cannot check any of the config from
+            # torch_sendnn directly
+            if not bool(int(os.getenv("TORCH_SENDNN_CACHE_ENABLE", "0"))):
+                cls._torch_sendnn_configured = True
+                return
+
+            # TODO: This is a hack to make sure that the sendnn backend is
+            # configured correctly. Environment variables are captured at
+            # import time, so we assert that values were captured with the
+            # values we set
+            # NB: must use getattr due to Python name mangling
+            try:
+                sendnn_backend_state = getattr(torch_sendnn.backends.sendnn_backend, "__state")
+                actual_config = sendnn_backend_state.spyre_graph_cache.deeptools_config["config"]
+            except (AttributeError, KeyError) as e:
+                logger.warning(
+                    "Error reading torch_sendnn backend state for validation: %s", str(e)
+                )
+                # Let this fall through and log many warnings to be noisy
+                actual_config = {}
+
+            # Validate environment variables and config values match
+            env_to_config = {
+                "VLLM_DT_CHUNK_LEN": "vllm_chunk_length",
+                "VLLM_DT_MAX_CONTEXT_LEN": "vllm_max_context_length",
+                "VLLM_DT_MAX_BATCH_SIZE": "vllm_max_batch_size",
+                "VLLM_DT_MAX_BATCH_TKV_LIMIT": "vllm_max_batch_tkv_limit",
+            }
+
+            # Intentionally noisy logging for increased visibility
+            backend_state_looks_valid = True
+            for env_var, config_key in env_to_config.items():
+                actual = actual_config.get(config_key)
+                expected = os.getenv(env_var)
+                if actual is None:
+                    logger.warning(
+                        "torch_sendnn may be misconfigured! %s does not exist as expected",
+                        config_key,
+                    )
+                    backend_state_looks_valid = False
+
+                if expected is None:
+                    logger.warning("%s must be set before importing torch_sendnn", env_var)
+                    backend_state_looks_valid = False
+
+                if actual != expected:
+                    logger.warning(
+                        "torch_sendnn is misconfigured! %s: expected '%s', got '%s'",
+                        config_key,
+                        expected,
+                        actual,
+                    )
+                    backend_state_looks_valid = False
+
+            assert backend_state_looks_valid, (
+                "torch_sendnn backend state could not be validated! Please "
+                "report this issue to maintainers."
+            )
+            cls._torch_sendnn_configured = True
 
     @classmethod
-    def sendnn_version(cls):
-        if cls.sendnn_configured():
-            return cls._torch_sendnn_version
-        return (0, 0, 0)
+    def _set_batch_tkv_limit_from_env(cls) -> None:
+        try:
+            cls._max_batch_tkv_limit = int(os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", "-1"))  #  ty: ignore
+        except ValueError as e:
+            raise ValueError("VLLM_DT_MAX_BATCH_TKV_LIMIT must be an integer") from e

@@ -243,9 +243,7 @@ class SpyreCausalLM(nn.Module):
             # necessary. This solve issues of running forked tests that share
             # some resources from parent to children which can have problems
             # of caching even though the test run in isolated subprocesses.
-
-            if SpyrePlatform.sendnn_configured():
-                pass
+            SpyrePlatform.maybe_ensure_sendnn_configured(self.model_config)
 
             self.fms_model = torch.compile(
                 self.fms_model,

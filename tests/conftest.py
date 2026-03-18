@@ -112,7 +112,10 @@ def pytest_generate_tests(metafunc):
         metafunc.parametrize(
             "mode",
             [
-                pytest.param("cp", marks=pytest.mark.chunked_prefill, id="cp"),
+                # Uncommenting this will run many tests with prefix caching disabled.
+                # This increases test runtime ~50%, we leave it disabled as prefix caching is
+                # enabled by default.
+                # pytest.param("cp", marks=pytest.mark.chunked_prefill, id="cp"),
                 pytest.param("pc", marks=pytest.mark.prefix_caching, id="pc"),
             ],
         )

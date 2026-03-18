@@ -151,9 +151,7 @@ models:
         device_config:  # Optional: nested device configuration
           env_vars:
             VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072
-          num_gpu_blocks_override:
-            torch_sendnn_lt_1_0_3: 2080
-            default: 8192
+          num_gpu_blocks_override: 8192
 ```
 
 **That's it!** No code changes needed for most models.
@@ -214,9 +212,7 @@ continuous_batching_configs:
       env_vars:
         VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072
         FLEX_HDMA_P2PSIZE: 268435456
-      num_gpu_blocks_override:
-        torch_sendnn_lt_1_0_3: 2080
-        default: 8192
+      num_gpu_blocks_override: 8192
 ```
 
 ### Device Configuration Templates (YAML Anchors)
@@ -229,8 +225,7 @@ device_config_templates:
     env_vars:
       VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072
       FLEX_HDMA_P2PSIZE: 268435456
-    num_gpu_blocks_override:
-      default: 8192
+    num_gpu_blocks_override: 8192
 
 models:
   ibm-granite/granite-3.3-8b-instruct:
@@ -388,9 +383,7 @@ device_config_templates:
       VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072
       FLEX_HDMA_P2PSIZE: 268435456
       FLEX_HDMA_COLLSIZE: 33554432
-    num_gpu_blocks_override:
-      torch_sendnn_lt_1_0_3: 2080
-      default: 8192
+    num_gpu_blocks_override: 8192
 
 models:
   ibm-granite/granite-3.3-8b-instruct:
