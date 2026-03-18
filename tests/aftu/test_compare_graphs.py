@@ -73,8 +73,6 @@ def test_compare_graphs_chunked_prefill(
     monkeypatch.setenv("DEE_DUMP_GRAPHS", "vllm_cb_cp")
     # Disable cache to produce the graphs
     monkeypatch.setenv("TORCH_SENDNN_CACHE_ENABLE", "0")
-    # Set correct device for compile only backend
-    monkeypatch.setenv("FLEX_DEVICE", "COMPILE")
 
     # NB: On pytorch 2.10 currently the eager and sendnn_compile_only backends do not work for
     # quantized models.
