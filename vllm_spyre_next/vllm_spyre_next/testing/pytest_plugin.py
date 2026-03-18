@@ -49,6 +49,7 @@ from vllm_spyre_next.testing.models import (
     AllowEntry,
     BlockEntry,
     FileConfig,
+    ParamAllow,
     ParamOverride,
     ParamSkip,
     UpstreamTestConfig,
@@ -102,6 +103,10 @@ def _parse_config(raw_tests: dict) -> UpstreamTestConfig:
                 ParamSkip(param_name=k, values=frozenset(v))
                 for k, v in params_section.get("skip", {}).items()
             ]
+            param_allows = [
+                ParamAllow(param_name=k, values=frozenset(v))
+                for k, v in params_section.get("allow", {}).items()
+            ]
             param_overrides = [
                 ParamOverride(param_name=k, values=tuple(v))
                 for k, v in params_section.get("override", {}).items()
@@ -112,6 +117,7 @@ def _parse_config(raw_tests: dict) -> UpstreamTestConfig:
                     mode=allow.get("mode", "mandatory_pass"),
                     tags=tuple(allow.get("tags", [])),
                     param_skips=tuple(param_skips),
+                    param_allows=tuple(param_allows),
                     param_overrides=tuple(param_overrides),
                 )
             )
@@ -412,12 +418,27 @@ def _find_allow_entry(test_name: str, allow_list: tuple[AllowEntry, ...]) -> All
 
 
 def _should_skip_params(item: pytest.Item, allow_entry: AllowEntry) -> bool:
+    """Check if test should be skipped based on param_skips or param_allows.
+
+    If param_allows is specified for a parameter, only those values are allowed.
+    Otherwise, param_skips is used to exclude specific values.
+    """
     callspec = getattr(item, "callspec", None)
     if not callspec:
         return False
+
+    # Check param_allows first (whitelist takes precedence)
+    for pa in allow_entry.param_allows:
+        if pa.param_name in callspec.params:
+            # If allowlist exists for this param, skip if value is NOT in allowlist
+            if callspec.params[pa.param_name] not in pa.values:
+                return True
+
+    # Check param_skips (blacklist)
     for ps in allow_entry.param_skips:
         if ps.param_name in callspec.params and callspec.params[ps.param_name] in ps.values:
             return True
+
     return False
 
 

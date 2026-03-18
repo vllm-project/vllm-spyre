@@ -37,29 +37,13 @@ tests:
       allow_list:
         - test: "test_models"
           mode: mandatory_pass
-          # uses_subprocess marker is added to make these tests run last
+          # uses_subprocess marker is added to make these tests run first.
+          # This must be added for any sets of tests that use `vllm.LLM`
           tags: [facebook, upstream, uses_subprocess]
           params:
-            skip:  # skip every model except facebook/opt-125m
+            allow:  # skip every model except facebook/opt-125m
               model: 
-              - bigscience/bloom-560m
-              - openai-community/gpt2
-              - Milos/slovak-gpt-j-405M
-              - bigcode/tiny_starcoder_py
-              - EleutherAI/pythia-70m
-              - google/gemma-1.1-2b-it
-              - google/gemma-2-2b-it
-              - zai-org/chatglm3-6b
-              - meta-llama/Llama-3.2-1B-Instruct
-              - openbmb/MiniCPM4.1-8B
-              - microsoft/phi-2
-              - Qwen/Qwen-7B-Chat
-              - Qwen/Qwen2.5-0.5B-Instruct
-              - Qwen/Qwen3-8B
-              - stabilityai/stablelm-3b-4e1t
-              - bigcode/starcoder2-3b
-              - TitanML/tiny-mixtral
-              - swiss-ai/Apertus-8B-Instruct-2509
+              - facebook/opt-125m
       block_list:
         - test: "test_fused_rms_norm_quant"
 

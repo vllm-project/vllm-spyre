@@ -20,6 +20,18 @@ class ParamSkip:
 
 
 @dataclass(frozen=True)
+class ParamAllow:
+    """A parameter-level allow rule within an allow_list entry.
+
+    Only test cases with parameter values in this allowlist will run.
+    If specified, this takes precedence over param_skips for the same parameter.
+    """
+
+    param_name: str
+    values: frozenset[Any]
+
+
+@dataclass(frozen=True)
 class ParamOverride:
     """Replace upstream parametrize values with Spyre-compatible ranges."""
 
@@ -36,6 +48,8 @@ class AllowEntry:
         mode:            mandatory_pass | xfail | xfail_strict.
         tags:            Free-form labels for traceability (no runtime effect).
         param_skips:     Parameter combinations to skip within this test.
+        param_allows:    Parameter combinations to allow (whitelist). If specified,
+                         only these parameter values will run.
         param_overrides: Parameter values to replace upstream defaults with.
     """
 
@@ -43,6 +57,7 @@ class AllowEntry:
     mode: str = "mandatory_pass"
     tags: tuple[str, ...] = ()
     param_skips: tuple[ParamSkip, ...] = ()
+    param_allows: tuple[ParamAllow, ...] = ()
     param_overrides: tuple[ParamOverride, ...] = ()
 
 
