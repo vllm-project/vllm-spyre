@@ -480,7 +480,7 @@ class SpyrePlatform(Platform):
         return [shape for shape in warmup_shapes if prompt_len <= shape["prompt_length"]]
 
     # Defined here for testing purposes
-    DEFAULT_CHUNK_SIZE = 1024
+    DEFAULT_CHUNK_SIZE = 512
 
     @classmethod
     def pre_register_and_update(cls, parser: FlexibleArgumentParser | None = None) -> None:
