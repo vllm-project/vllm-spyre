@@ -14,7 +14,7 @@ from graph_compare_utils import (
     get_model_path,
     run_inference_py_and_get_graphs,
 )
-from spyre_util import ModelInfo, patch_environment
+from spyre_util import ModelInfo, environ_checkpoint, patch_environment
 from vllm import LLM
 
 
@@ -99,14 +99,15 @@ def test_compare_graphs_chunked_prefill(
             os.chdir(tmpdir)
 
             # We only need to load the model
-            LLM(
-                model=model.name,
-                revision=model.revision,
-                max_model_len=adjusted_max_model_len,
-                tensor_parallel_size=1,
-                max_num_batched_tokens=chunk_size,
-                max_num_seqs=max_num_seqs,
-            )
+            with environ_checkpoint():
+                LLM(
+                    model=model.name,
+                    revision=model.revision,
+                    max_model_len=adjusted_max_model_len,
+                    tensor_parallel_size=1,
+                    max_num_batched_tokens=chunk_size,
+                    max_num_seqs=max_num_seqs,
+                )
 
             vllm_graphs = collect_graph_files(tmpdir)
     finally:
