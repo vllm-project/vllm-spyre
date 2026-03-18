@@ -76,8 +76,11 @@ def test_compare_graphs_chunked_prefill(
     # Set correct device for compile only backend
     monkeypatch.setenv("FLEX_DEVICE", "COMPILE")
 
+    # NB: On pytorch 2.10 currently the eager and sendnn_compile_only backends do not work for
+    # quantized models.
+    backend = "sendnn" if model.is_quantized else "sendnn_compile_only"
     patch_environment(
-        backend="sendnn_compile_only",
+        backend=backend,
         monkeypatch=monkeypatch,
     )
 
