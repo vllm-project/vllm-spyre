@@ -14,7 +14,7 @@ from graph_compare_utils import (
     get_model_path,
     run_inference_py_and_get_graphs,
 )
-from spyre_util import ModelInfo, patch_environment
+from spyre_util import ModelInfo, environ_checkpoint, patch_environment
 from vllm import LLM
 
 
@@ -73,11 +73,12 @@ def test_compare_graphs_chunked_prefill(
     monkeypatch.setenv("DEE_DUMP_GRAPHS", "vllm_cb_cp")
     # Disable cache to produce the graphs
     monkeypatch.setenv("TORCH_SENDNN_CACHE_ENABLE", "0")
-    # Set correct device for compile only backend
-    monkeypatch.setenv("FLEX_DEVICE", "COMPILE")
 
+    # NB: On pytorch 2.10 currently the eager and sendnn_compile_only backends do not work for
+    # quantized models.
+    backend = "sendnn" if model.is_quantized else "sendnn_compile_only"
     patch_environment(
-        backend="sendnn_compile_only",
+        backend=backend,
         monkeypatch=monkeypatch,
     )
 
@@ -98,14 +99,15 @@ def test_compare_graphs_chunked_prefill(
             os.chdir(tmpdir)
 
             # We only need to load the model
-            LLM(
-                model=model.name,
-                revision=model.revision,
-                max_model_len=adjusted_max_model_len,
-                tensor_parallel_size=1,
-                max_num_batched_tokens=chunk_size,
-                max_num_seqs=max_num_seqs,
-            )
+            with environ_checkpoint():
+                LLM(
+                    model=model.name,
+                    revision=model.revision,
+                    max_model_len=adjusted_max_model_len,
+                    tensor_parallel_size=1,
+                    max_num_batched_tokens=chunk_size,
+                    max_num_seqs=max_num_seqs,
+                )
 
             vllm_graphs = collect_graph_files(tmpdir)
     finally:

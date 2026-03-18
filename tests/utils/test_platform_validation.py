@@ -5,6 +5,7 @@ from SamplingParams during request validation.
 """
 
 import sys
+import os
 from unittest.mock import MagicMock
 import pytest
 from types import SimpleNamespace
@@ -234,3 +235,28 @@ class TestSendnnConfigurationValidation:
             "Error reading torch_sendnn backend state for validation" in r.message
             for r in warning_records
         )
+
+    def test_flex_device_set_for_sendnn_compile_only(self, monkeypatch):
+        """Test that FLEX_DEVICE is set to COMPILE when backend is sendnn_compile_only."""
+        # Set up the backend
+        monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", "sendnn_compile_only")
+
+        # Remove FLEX_DEVICE if it exists to ensure clean test
+        monkeypatch.delenv("FLEX_DEVICE", raising=False)
+
+        # Create mock configs
+        mock_vllm_config = MagicMock()
+        mock_vllm_config.model_config.runner_type = "generate"
+        mock_vllm_config.model_config.is_multimodal_model = False
+        mock_vllm_config.parallel_config.world_size = 1
+        mock_vllm_config.scheduler_config.max_num_batched_tokens = 64
+        mock_vllm_config.model_config.max_model_len = 128
+        mock_vllm_config.scheduler_config.max_num_seqs = 2
+
+        # Call check_and_update_config which should set FLEX_DEVICE
+        SpyrePlatform.check_and_update_config(
+            vllm_config=mock_vllm_config,
+        )
+
+        # Verify FLEX_DEVICE was set to COMPILE
+        assert os.environ.get("FLEX_DEVICE") == "COMPILE"
