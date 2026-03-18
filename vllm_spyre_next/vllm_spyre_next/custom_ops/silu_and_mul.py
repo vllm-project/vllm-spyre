@@ -2,21 +2,15 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Spyre-specific SiluAndMul implementation using out-of-tree (OOT) registration.
 
-This module provides a custom SiluAndMul (SwiGLU) activation layer optimized for
+This module provides a custom SiluAndMul (SwiGLU) activation layer for
 IBM's Spyre device, replacing the upstream vLLM implementation from
 vllm/model_executor/layers/activation.py when instantiated.
 
-Architecture Overview:
-    1. OOT Registration: @SiluAndMul.register_oot() replaces upstream class at instantiation
-    2. Custom Op Pattern: Uses torch.ops.vllm.spyre_siluandmul to bypass torch.compile
-    3. Static Forward Context: Registers in compilation_config.static_forward_context
-    4. No-Compile Execution: Retrieved via forward_context.no_compile_layers during forward
-
-Key Components:
-    - SpyreSiluAndMul: Main layer class with Spyre-specific optimizations
-    - spyre_siluandmul: Custom op implementation (executes outside torch.compile)
-    - spyre_siluandmul_fake: Fake implementation for shape inference
-    - register(): Registers the custom op with vLLM
+Architecture:
+    - OOT Registration: @SiluAndMul.register_oot() replaces upstream at instantiation
+    - Custom Op Boundary: torch.ops.vllm.spyre_siluandmul is opaque to torch.compile,
+      so forward_native runs eagerly outside the compiled graph
+    - Separate Compilation: forward_static is compiled independently via maybe_compile
 
 Spyre Device Constraints:
     - Device dtype: float16 (via convert_for_spyre)
@@ -37,13 +31,7 @@ from vllm.logger import init_logger
 from vllm.utils.torch_utils import direct_register_custom_op
 from vllm.model_executor.layers.activation import SiluAndMul
 
-from .utils import (
-    convert_for_spyre,
-    convert_from_spyre,
-    register_in_static_context,
-    dispatch_forward_impl,
-    fake_impl,
-)
+from .utils import convert, register_layer, get_layer, _fake_impl
 
 logger = init_logger(__name__)
 
@@ -69,10 +57,11 @@ class SpyreSiluAndMul(SiluAndMul):
 
         logger.debug("Building custom SiluAndMul")
 
-        self._fwd_spyre = self.maybe_compile(self.forward_static)
+        self._target_device = torch.device("spyre")
+        self._target_dtype = torch.float16
+        self._fwd = self.maybe_compile(self.forward_static)
 
-        # Register in static_forward_context for custom op access
-        self.prefix = register_in_static_context(self, "spyre_siluandmul")
+        self._layer_name = register_layer(self, "spyre_siluandmul")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass using custom op to bypass torch.compile.
@@ -91,27 +80,9 @@ class SpyreSiluAndMul(SiluAndMul):
         output = torch.empty(x.shape[:-1] + (d,), dtype=x.dtype, device=x.device)
 
         # Custom op call - executes outside torch.compile graph
-        torch.ops.vllm.spyre_siluandmul(x, output, self.prefix)
+        torch.ops.vllm.spyre_siluandmul(x, output, self._layer_name)
 
         return output
-
-    def forward_impl(
-        self,
-        x: torch.Tensor,
-        output: torch.Tensor,
-    ) -> None:
-        """Implementation called by custom op, executes outside torch.compile.
-
-        Called by spyre_siluandmul custom op via forward_context.no_compile_layers.
-        Delegates to forward_native for actual computation, then copies result
-        to pre-allocated output tensor.
-
-        Args:
-            x: Input tensor [..., 2*d]
-            output: Pre-allocated output tensor [..., d] (modified in-place)
-        """
-        result = self.forward_native(x)
-        output.copy_(result)
 
     @staticmethod
     def forward_static(x1: torch.Tensor, x2: torch.Tensor) -> torch.Tensor:
@@ -163,17 +134,13 @@ class SpyreSiluAndMul(SiluAndMul):
         d = x.shape[-1] // 2
         x1 = x[..., :d]
         x2 = x[..., d:]
-        out = self._fwd_spyre(
-            convert_for_spyre(x1, dtype=torch.float16),
-            convert_for_spyre(x2, dtype=torch.float16),
+        out = self._fwd(
+            convert(x1, self._target_device, self._target_dtype),
+            convert(x2, self._target_device, self._target_dtype),
         )
 
-        # Transfer back to CPU and restore original shape
-        return convert_from_spyre(out, dtype=x_dtype, device=x_device)
-
-    def forward_oot(self, x: torch.Tensor) -> torch.Tensor:
-        """OOT forward method - delegates to forward_native."""
-        return self.forward_native(x)
+        # Transfer back to original device and restore original dtype
+        return convert(out, x_device, x_dtype)
 
 
 def _op_func(
@@ -181,21 +148,18 @@ def _op_func(
     output: torch.Tensor,
     layer_name: str,
 ) -> None:
-    dispatch_forward_impl(layer_name, x, output)
+    """Custom op implementation — runs outside torch.compile graph."""
+    layer = get_layer(layer_name)
+    result = layer.forward_native(x)
+    output.copy_(result)
 
 
 def register():
-    """Register the spyre_siluandmul custom op with vLLM.
-
-    Registers torch.ops.vllm.spyre_siluandmul with:
-        - op_func: Typed wrapper that delegates to dispatch_forward_impl
-        - fake_impl: Shared no-op from utils (schema set by op_func)
-        - mutates_args: Indicates 'output' is modified in-place
-    """
+    """Register the spyre_siluandmul custom op with vLLM."""
     direct_register_custom_op(
         op_name="spyre_siluandmul",
         op_func=_op_func,
         mutates_args=["output"],
-        fake_impl=fake_impl,
+        fake_impl=_fake_impl,
     )
     logger.info("Registered custom op: SpyreSiluAndMul")
