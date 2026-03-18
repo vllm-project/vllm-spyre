@@ -16,7 +16,7 @@ VLLM_SPYRE_USE_CHUNKED_PREFILL
 
 Configuring the static chunk size for chunked prefill is now only done via `--max-num-batched-tokens`.
 If your deployment had an override set with `VLLM_DT_CHUNK_LEN`, use the CLI argument instead.
-The default value for the chunk size is 1024.
+The default value for the chunk size is 512.
 
 Because prefix caching is enabled by default, the `--enable-prefix-caching` CLI arg can be removed from all deployments.
 To disable prefix caching, use `--no-enable-prefix-caching`.
@@ -56,7 +56,7 @@ For configuration and tuning guidance, see the [vLLM official documentation on c
 As in vLLM, the `max_num_batched_tokens` parameter controls how chunks are formed. While vLLM can dynamically schedule mixed batches of prefill and decode with arbitrary chunk sizes, the vLLM-Spyre implementation is limited to compiling prefill programs for a single fixed chunk size.
 vLLM-Spyre interleaves decode passes with these fixed-chunk-size prefill passes to emulate chunked prefill. The `max_num_batched_tokens` parameter controls this fixed chunk size for prefill passes in vLLM-Spyre.
 
-This parameter should be tuned according to your infrastructure, it is recommended to set it from `1024` to `4096` tokens and it **must** be multiple of the block size (currently fixed to `64`). For convenience, when using the model `ibm-granite/granite-3.3-8b-instruct` with `tp=4`, vLLM-Spyre automatically sets `max_num_batched_tokens` to `1024`, a value known to produce good hardware utilization in this setup.
+This parameter should be tuned according to your infrastructure, it is recommended to set it from `512` to `4096` tokens and it **must** be multiple of the block size (currently fixed to `64`). For convenience, when using the model `ibm-granite/granite-3.3-8b-instruct` with `tp=4`, vLLM-Spyre automatically sets `max_num_batched_tokens` to `512`, a value known to produce good hardware utilization in this setup.
 
 In chunked prefill mode, the `vllm:kv_cache_usage_perc` metric will report the correct KV cache usage on the Spyre cards for all active requests.
 

@@ -10,7 +10,7 @@ from vllm_spyre.platform import SpyrePlatform
 from spyre_util import REFERENCE_MODELS, environ_checkpoint
 
 
-# Test that the default chunk size is 1024 when chunked prefill is enabled,
+# Test that the default chunk size is 512 when chunked prefill is enabled,
 # and that --max-num-batched-tokens overrides this default.
 def test_chunk_size_default(monkeypatch: pytest.MonkeyPatch) -> None:
     # Use the sendnn backend to activate the model configurator
@@ -35,12 +35,12 @@ def test_chunk_size_default(monkeypatch: pytest.MonkeyPatch) -> None:
     ]
 
     with environ_checkpoint():
-        # Test default chunk size is 1024
+        # Test default chunk size is 512
         engine_args = _build_engine_args(common_args)
-        assert engine_args.max_num_batched_tokens == 1024
+        assert engine_args.max_num_batched_tokens == 512
         vllm_config = engine_args.create_engine_config()
-        assert vllm_config.scheduler_config.max_num_batched_tokens == 1024
-        assert os.environ.get("VLLM_DT_CHUNK_LEN") == "1024"
+        assert vllm_config.scheduler_config.max_num_batched_tokens == 512
+        assert os.environ.get("VLLM_DT_CHUNK_LEN") == "512"
 
     with environ_checkpoint():
         # Test that --max-num-batched-tokens overrides the default
