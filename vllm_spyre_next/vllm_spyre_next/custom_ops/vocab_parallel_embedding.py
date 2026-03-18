@@ -73,7 +73,7 @@ class SpyreVocabParallelEmbedding(VocabParallelEmbedding):
         """
         # Check for unsupported configurations before calling super().__init__
         # to fail fast with a clear error message.
-        quant_config = kwargs.get("quant_config", None)
+        quant_config = kwargs.get("quant_config")
 
         if quant_config is not None:
             raise NotImplementedError(
