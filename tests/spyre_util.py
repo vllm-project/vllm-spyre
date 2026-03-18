@@ -32,19 +32,6 @@ from vllm_spyre.platform import SpyrePlatform
 EmbeddingWarmupShapes = list[tuple[int, int]]
 
 
-def _build_request(**kwargs) -> Request:
-    try:
-        return Request(**kwargs)
-    except TypeError as exc:
-        # Some vLLM 0.17.0 builds still expose a Request constructor without
-        # eos_token_id. Retry without it so the tests stay portable.
-        if "unexpected keyword argument 'eos_token_id'" not in str(exc):
-            raise
-        kwargs = dict(kwargs)
-        kwargs.pop("eos_token_id", None)
-        return Request(**kwargs)
-
-
 def patch_environment(
     backend: str,
     monkeypatch,
@@ -445,7 +432,7 @@ def create_random_request(
             f"need {num_tokens} but got {len(prompt_token_ids)}"
         )
 
-    return _build_request(
+    return Request(
         request_id=str(request_id),
         prompt_token_ids=prompt_token_ids,
         sampling_params=sampling_params,
