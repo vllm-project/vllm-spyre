@@ -201,7 +201,7 @@ class SpyreRMSNorm(RMSNorm):
 
         Handles Spyre-specific constraints:
             1. Minimum batch size: Pads to 64 if needed
-            2. Device transfer: CPU -> Spyre (float16) via prepare_inputs_on_spyre
+            2. Device transfer: CPU -> Spyre convert to float16
             3. Kernel execution: Calls compiled _fwd_spyre
             4. Result transfer: Spyre -> CPU, trim padding, convert to bfloat16
 
