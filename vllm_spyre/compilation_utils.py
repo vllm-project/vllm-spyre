@@ -153,7 +153,8 @@ def handle_disable_compilation(vllm_config: VllmConfig, is_decoder: bool):
                 )
         except ImportError:
             logger.warning(
-                "[PRECOMPILED_WARN] Cannot validate vllm_spyre version against pre-compiled model config"
+                "[PRECOMPILED_WARN] Cannot validate vllm_spyre version against "
+                "pre-compiled model config"
             )
 
         # Check model name
