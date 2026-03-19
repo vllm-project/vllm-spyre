@@ -213,8 +213,8 @@ class SpyreRMSNorm(RMSNorm):
 
         # Transfer back to CPU and restore original shape
         return pytree.tree_map(
-            lambda el: el[:orig_batch_size, :],
-            convert(outs, dtype=x_dtype, device=x_device),
+            lambda el: convert(el, dtype=x_dtype, device=x_device)[:orig_batch_size, :],
+            outs,
         )
 
 
