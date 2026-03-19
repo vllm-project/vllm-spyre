@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING
+from importlib.metadata import version
 
 # Third Party
 from vllm.logger import init_logger
@@ -133,7 +134,7 @@ def handle_disable_compilation(vllm_config: VllmConfig, is_decoder: bool):
     if matching_config:
         # Check vllm_spyre version
         try:
-            from vllm_spyre._version import version as vllm_spyre_version
+            vllm_spyre_version = version("vllm_spyre")
 
             if matching_config["vllm_spyre_version"] != vllm_spyre_version:
                 # Can be converted to ValueError if we want to be strict
