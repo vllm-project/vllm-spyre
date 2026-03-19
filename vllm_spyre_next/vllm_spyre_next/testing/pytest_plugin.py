@@ -84,12 +84,12 @@ def _log(msg: str):
 
 
 def _load_upstream_config() -> UpstreamTestConfig:
-    if not _YAML_PATH.exists():
-        return UpstreamTestConfig()
     with open(_YAML_PATH) as f:
         raw = yaml.safe_load(f)
     if not raw or "tests" not in raw or "files" not in raw["tests"]:
-        return UpstreamTestConfig()
+        raise RuntimeError(
+            f'Invalid YAML in {_YAML_PATH}: missing "tests" or "tests.files" sections'
+        )
     return _parse_config(raw["tests"])
 
 
@@ -154,7 +154,7 @@ def _get_paths_from_yaml() -> str:
 
 
 # ---------------------------------------------------------------------------
-# vLLM Cloning (from conftest.py)
+# vLLM Repository Cloning
 # ---------------------------------------------------------------------------
 
 
@@ -170,7 +170,7 @@ def _cache_root() -> Path:
 
 def _extract_vllm_commit_from_pyproject() -> str:
     """
-    Extract the vLLM git commit SHA from pyproject.toml [tool.uv.sources] section.
+    Extract the vLLM git reference from pyproject.toml [tool.uv.sources] section.
     Returns None if not found or parseable.
     """
     pyproject_path = Path(__file__).parent.parent.parent / "pyproject.toml"
@@ -194,7 +194,7 @@ def _extract_vllm_commit_from_pyproject() -> str:
 
 def _resolve_vllm_commit() -> str:
     """
-    Resolve the vLLM commit SHA to use for cloning upstream tests.
+    Resolve the vLLM git reference to use for cloning upstream tests.
     Priority: VLLM_COMMIT env var > pyproject.toml > error
     """
     # Allow env var override for testing/CI
