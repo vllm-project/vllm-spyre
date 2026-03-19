@@ -429,10 +429,9 @@ def _should_skip_params(item: pytest.Item, allow_entry: AllowEntry) -> bool:
 
     # Check param_allows first (whitelist takes precedence)
     for pa in allow_entry.param_allows:
-        if pa.param_name in callspec.params:
+        if pa.param_name in callspec.params and callspec.params[pa.param_name] not in pa.values:
             # If allowlist exists for this param, skip if value is NOT in allowlist
-            if callspec.params[pa.param_name] not in pa.values:
-                return True
+            return True
 
     # Check param_skips (blacklist)
     for ps in allow_entry.param_skips:
