@@ -30,6 +30,7 @@ import torch.nn.functional as F
 from vllm.logger import init_logger
 from vllm.utils.torch_utils import direct_register_custom_op
 from vllm.model_executor.layers.activation import SiluAndMul
+from functools import lru_cache
 
 from .utils import convert, register_layer, get_layer, _fake_impl
 
@@ -154,6 +155,7 @@ def _op_func(
     output.copy_(result)
 
 
+@lru_cache(maxsize=1)
 def register():
     """Register the spyre_siluandmul custom op with vLLM."""
     direct_register_custom_op(

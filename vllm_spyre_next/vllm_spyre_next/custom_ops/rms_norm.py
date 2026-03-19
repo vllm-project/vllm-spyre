@@ -34,6 +34,7 @@ import torch.utils._pytree as pytree
 from vllm.logger import init_logger
 from vllm.utils.torch_utils import direct_register_custom_op
 from vllm.model_executor.layers.layernorm import RMSNorm
+from functools import lru_cache
 
 from .utils import convert, register_layer, get_layer, _fake_impl
 
@@ -65,7 +66,7 @@ class SpyreRMSNorm(RMSNorm):
 
         self._target_device = torch.device("spyre")
         self._target_dtype = torch.float16
-        self._fwd = self.maybe_compile(self.forward_static)
+        self._fwd = self.maybe_compile(self.forward_spyre)
 
         self._layer_name = register_layer(self, "spyre_rmsnorm")
 
@@ -103,7 +104,7 @@ class SpyreRMSNorm(RMSNorm):
         return output
 
     @staticmethod
-    def forward_static(
+    def forward_spyre(
         x: torch.Tensor,
         variance_epsilon: float,
         hidden_size: int,
@@ -146,7 +147,8 @@ class SpyreRMSNorm(RMSNorm):
 
             x_var = x[:, :, :variance_size_override]
 
-        variance = x_var.pow(2).mean(dim=-1, keepdim=True)
+        # After transpose, hidden dim is now dim=0
+        variance = x_var.pow(2).mean(dim=0, keepdim=True)
 
         x = x * torch.rsqrt(variance + variance_epsilon)
         x = x.transpose(-1, -2).contiguous()
@@ -187,14 +189,15 @@ class SpyreRMSNorm(RMSNorm):
         if self.variance_size_override is not None:
             raise NotImplementedError("TODO: variance_size_override not yet implemented")
 
-        batch_padding = x.shape[0]
+        orig_batch_size = x.shape[0]
 
         # Pad to minimum batch size of 64 (Spyre constraint)
+        # Pad at END so original data stays at indices [0:orig_batch_size]
         if x.shape[0] < _SPYRE_MIN_BATCH_SIZE:
-            batch_padding = _SPYRE_MIN_BATCH_SIZE - x.shape[0]
-            x = torch.nn.functional.pad(x, (0, 0, batch_padding, 0))
+            pad_amount = _SPYRE_MIN_BATCH_SIZE - x.shape[0]
+            x = torch.nn.functional.pad(x, (0, 0, 0, pad_amount))
             if residual is not None:
-                residual = torch.nn.functional.pad(residual, (0, 0, batch_padding, 0))
+                residual = torch.nn.functional.pad(residual, (0, 0, 0, pad_amount))
 
         # Execute compiled kernel on Spyre device
         outs = self._fwd(
@@ -210,9 +213,9 @@ class SpyreRMSNorm(RMSNorm):
 
         # Transfer back to CPU and restore original shape
         return pytree.tree_map(
-            lambda el: el[:batch_padding, :],
+            lambda el: el[:orig_batch_size, :],
             convert(outs, dtype=x_dtype, device=x_device),
-        )[0]
+        )
 
 
 def _op_func(
@@ -233,6 +236,7 @@ def _op_func(
         output.copy_(result)
 
 
+@lru_cache(maxsize=1)
 def register():
     """Register the spyre_rmsnorm custom op with vLLM."""
     direct_register_custom_op(

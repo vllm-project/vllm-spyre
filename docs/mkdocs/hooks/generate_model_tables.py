@@ -16,6 +16,13 @@ GENERATIVE_END_MARKER = "<!-- GENERATED_GENERATIVE_MODELS_END -->"
 POOLING_START_MARKER = "<!-- GENERATED_POOLING_MODELS_START -->"
 POOLING_END_MARKER = "<!-- GENERATED_POOLING_MODELS_END -->"
 
+# Models to exclude from documentation
+EXCLUDED_MODELS = {
+    "ibm-granite/granite-4-8b-dense-hybrid",
+    "ibm-granite/granite-4-8b-dense",
+    "ibm-granite/granite-4-8b-dense-FP8",
+}
+
 
 def generate_model_table(models_data, config_type):
     """Generate a markdown table for models with the specified config type.
@@ -33,6 +40,8 @@ def generate_model_table(models_data, config_type):
 
     # First pass: collect all unique keys and organize by model
     for model_name, model_config in models_data.items():
+        if model_name in EXCLUDED_MODELS:
+            continue
         if config_type not in model_config:
             continue
 

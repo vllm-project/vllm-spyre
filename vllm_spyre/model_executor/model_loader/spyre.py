@@ -94,7 +94,7 @@ class SpyreCausalLM(nn.Module):
             max_prompt_length=max_prompt_length,
             max_decode_length=max_decode_length,
             distributed_strategy="tp" if self.parallel_config.world_size > 1 else None,
-            sendnn_dynamic=True,
+            sendnn_dynamic=SpyrePlatform.is_backend_sendnn_enabled(),
             rank=rank,
             world_size=self.parallel_config.world_size,
         )
@@ -243,7 +243,7 @@ class SpyreCausalLM(nn.Module):
             # necessary. This solve issues of running forked tests that share
             # some resources from parent to children which can have problems
             # of caching even though the test run in isolated subprocesses.
-            SpyrePlatform.maybe_ensure_sendnn_configured()
+            SpyrePlatform.maybe_ensure_sendnn_configured(self.model_config)
 
             self.fms_model = torch.compile(
                 self.fms_model,
