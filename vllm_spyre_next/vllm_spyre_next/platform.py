@@ -2,6 +2,7 @@ import sys
 from typing import TYPE_CHECKING
 from string import Template
 import multiprocessing
+import importlib.metadata
 
 # When running this plugin on a Mac, we assume it's for local development
 # purposes. However, due to a compatibility issue with vLLM, which overrides
@@ -66,11 +67,11 @@ class TorchSpyrePlatform(CpuPlatform):
 
         message = logo_template.substitute(colors)
 
-        from vllm_spyre_next import _version
+        version = importlib.metadata.version("vllm_spyre_next")
 
-        model_name = vllm_config.model_config.model
+        model_name = vllm_config.model_config.model if vllm_config.model_config else "N/A"
 
-        logger.info(message, _version.version, model_name)
+        logger.info(message, version, model_name)
 
     @classmethod
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:

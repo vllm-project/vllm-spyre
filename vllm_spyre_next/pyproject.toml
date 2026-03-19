@@ -25,6 +25,12 @@ dynamic = ["version"]
 [project.entry-points."vllm.platform_plugins"]
 spyre_next = "vllm_spyre_next:register"
 
+[project.entry-points."vllm.general_plugins"]
+spyre_next_ops = "vllm_spyre_next:register_ops"
+
+[project.entry-points."pytest11"]
+spyre_next_test = "vllm_spyre_next.testing.pytest_plugin"
+
 [tool.setuptools.packages.find]
 where = ["."]  # list of folders that contain the packages (["."] by default)
 include = ["vllm_spyre_next*"]  # package names should match these glob patterns (["*"] by default)
@@ -88,10 +94,9 @@ extra-build-variables = { vllm = { VLLM_TARGET_DEVICE = "cpu" } }
 # vLLM and torch-spyre must be pulled from github to be built from source
 # NB: torch-spyre can only be compiled where `sendnn` is available
 [tool.uv.sources]
-# This is the unreleased v0.16.0 tag with 2.10 support
-vllm = { git = "https://github.com/vllm-project/vllm", rev = "2d5be1dd5ce2e44dfea53ea03ff61143da5137eb" }
+vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.17.1" }
 # see https://github.com/torch-spyre/torch-spyre/pull/746
-torch-spyre = { git = "https://github.com/torch-spyre/torch-spyre", rev = "bd7502baa9123d292e56dbd4928147969ecdf63c" }
+torch-spyre = { git = "https://github.com/torch-spyre/torch-spyre", rev = "c1f67bb4701630179d53dbfc060dde62fc2d7d18" }
 torch = [
   { index = "pytorch-cpu" },
 ]
@@ -190,7 +195,6 @@ asyncio_default_fixture_loop_scope = "function"
 filterwarnings = [
     "ignore::_pytest.warning_types.PytestUnknownMarkWarning"
 ]
-addopts = "-m 'spyre or upstream_passing'"
 
 # --8<-- [start:test-markers-definition]
 markers = [
@@ -222,7 +226,8 @@ plugins.md007.indent = 4
 
 [dependency-groups]
 dev = [
-    "pytest"
+    "pytest",
+    "pyyaml",
 ]
 upstream-tests = [
     "albumentations>=1.4.6",
