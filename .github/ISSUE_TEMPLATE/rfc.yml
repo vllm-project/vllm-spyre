@@ -23,6 +23,6 @@ body:
   attributes:
     label: Checklist
     options:
-      - label: I have searched for similar feature requests
+      - label: I have searched for similar feature requests or RFCs.
         required: true
 
