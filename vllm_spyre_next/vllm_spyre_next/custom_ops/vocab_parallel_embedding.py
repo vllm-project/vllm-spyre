@@ -6,21 +6,11 @@ This module provides a custom VocabParallelEmbedding layer for IBM's Spyre devic
 replacing the upstream vLLM implementation
 (vllm/model_executor/layers/vocab_parallel_embedding.py) when instantiated.
 
-Architecture Overview:
-    1. OOT Registration: @VocabParallelEmbedding.register_oot() replaces upstream
-       class at instantiation
-    2. Custom Op Pattern: Uses torch.ops.vllm.spyre_vocab_parallel_embedding to
-       bypass torch.compile
-    3. Static Forward Context: Registers in compilation_config.static_forward_context
-    4. No-Compile Execution: Retrieved via forward_context.no_compile_layers during
-       forward
-
-Key Components:
-    - SpyreVocabParallelEmbedding: Main layer class with Spyre-specific optimizations
-    - spyre_vocab_parallel_embedding: Custom op implementation (executes outside
-      torch.compile)
-    - spyre_vocab_parallel_embedding_fake: Fake implementation for shape inference
-    - register(): Registers the custom op with vLLM
+Architecture:
+    - OOT Registration: @VocabParallelEmbedding.register_oot() replaces upstream
+      at instantiation
+    - Custom Op Boundary: torch.ops.vllm.spyre_vocab_parallel_embedding is opaque
+      to torch.compile, so forward_native runs eagerly outside the compiled graph
 
 Spyre Device Constraints:
     - Algorithm: Standard F.embedding on CPU — torch-spyre has no native embedding
@@ -40,12 +30,12 @@ References:
 import torch
 import torch.nn.functional as F
 
-from vllm.config import get_current_vllm_config
-from vllm.forward_context import get_forward_context
 from vllm.logger import init_logger
-from vllm.model_executor.layers.vocab_parallel_embedding import VocabParallelEmbedding
 from vllm.utils.torch_utils import direct_register_custom_op
+from vllm.model_executor.layers.vocab_parallel_embedding import VocabParallelEmbedding
+from functools import lru_cache
 
+from .utils import register_layer, get_layer, _fake_impl
 
 logger = init_logger(__name__)
 
@@ -64,26 +54,21 @@ class SpyreVocabParallelEmbedding(VocabParallelEmbedding):
     def __init__(self, *args, **kwargs):
         """Initialize SpyreVocabParallelEmbedding layer.
 
-        Registers this instance in static_forward_context for retrieval during
-        the custom op forward pass.
-
         Raises:
             NotImplementedError: If tp_size > 1 or quant_config is not None,
                 as these are not supported in the current Spyre implementation.
         """
-        # Check for unsupported configurations before calling super().__init__
-        # to fail fast with a clear error message.
-        quant_config = kwargs.get("quant_config")
+        super().__init__(*args, **kwargs)
 
+        # Check for unsupported configurations after super().__init__
+        # sets up the parallel config.
+        quant_config = kwargs.get("quant_config")
         if quant_config is not None:
             raise NotImplementedError(
                 "SpyreVocabParallelEmbedding does not support quantization "
                 f"(quant_config={quant_config}). Only quant_config=None is supported."
             )
 
-        super().__init__(*args, **kwargs)
-
-        # Check TP size after super().__init__ sets up the parallel config.
         if self.tp_size > 1:
             raise NotImplementedError(
                 f"SpyreVocabParallelEmbedding does not support Tensor Parallelism "
@@ -93,26 +78,10 @@ class SpyreVocabParallelEmbedding(VocabParallelEmbedding):
 
         logger.debug("Building custom VocabParallelEmbedding for Spyre")
 
-        # Register in static_forward_context for custom op access.
-        # Each instance gets a unique name via counter to avoid collisions.
-        compilation_config = get_current_vllm_config().compilation_config
-        if not hasattr(SpyreVocabParallelEmbedding, "_instance_counter"):
-            SpyreVocabParallelEmbedding._instance_counter = 0
-        self.layer_name = (
-            f"spyre_vocab_parallel_embedding_{SpyreVocabParallelEmbedding._instance_counter}"
-        )
-        SpyreVocabParallelEmbedding._instance_counter += 1
-
-        if self.layer_name in compilation_config.static_forward_context:
-            raise ValueError(f"Duplicate layer name: {self.layer_name}")
-        compilation_config.static_forward_context[self.layer_name] = self
+        self._layer_name = register_layer(self, "spyre_vocab_parallel_embedding")
 
     def forward(self, input_: torch.Tensor) -> torch.Tensor:
         """Forward pass using custom op to bypass torch.compile.
-
-        Delegates to torch.ops.vllm.spyre_vocab_parallel_embedding which retrieves
-        this layer from forward_context.no_compile_layers and calls forward_impl
-        outside the compilation graph.
 
         Args:
             input_: Token index tensor [num_tokens] (int64)
@@ -126,18 +95,10 @@ class SpyreVocabParallelEmbedding(VocabParallelEmbedding):
             dtype=self.weight.dtype,
             device=input_.device,
         )
-        torch.ops.vllm.spyre_vocab_parallel_embedding(input_, output, self.layer_name)
+        torch.ops.vllm.spyre_vocab_parallel_embedding(
+            input_, output, self._layer_name
+        )
         return output
-
-    def forward_impl(self, input_: torch.Tensor, output: torch.Tensor) -> None:
-        """Implementation called by custom op, executes outside torch.compile.
-
-        Args:
-            input_: Token index tensor [num_tokens] (int64)
-            output: Pre-allocated output tensor (modified in-place)
-        """
-        result = self.forward_native(input_)
-        output.copy_(result)
 
     def forward_native(self, input_: torch.Tensor) -> torch.Tensor:
         """Embedding execution on CPU.
@@ -157,62 +118,25 @@ class SpyreVocabParallelEmbedding(VocabParallelEmbedding):
         """
         return F.embedding(input_, self.weight)
 
-    def forward_oot(self, input_: torch.Tensor) -> torch.Tensor:
-        """OOT forward method — delegates to forward_native."""
-        return self.forward_native(input_)
 
-
-# Custom op implementation (executed outside torch.compile)
-
-
-def spyre_vocab_parallel_embedding(
+def _op_func(
     input_: torch.Tensor,
     output: torch.Tensor,
     layer_name: str,
 ) -> None:
-    """Custom op implementation — retrieves layer and executes outside compilation.
-
-    Called by SpyreVocabParallelEmbedding.forward() via
-    torch.ops.vllm.spyre_vocab_parallel_embedding. Retrieves the layer instance
-    from forward_context.no_compile_layers using layer_name, then calls
-    forward_impl to execute the actual computation.
-
-    This pattern prevents torch.compile from inlining Spyre-specific operations.
-
-    Args:
-        input_: Token index tensor [num_tokens]
-        output: Pre-allocated output tensor (modified in-place)
-        layer_name: Unique layer identifier in static_forward_context
-    """
-    forward_context = get_forward_context()
-    layer = forward_context.no_compile_layers[layer_name]
-    layer.forward_impl(input_, output)
+    """Custom op implementation — runs outside torch.compile graph."""
+    layer = get_layer(layer_name)
+    result = layer.forward_native(input_)
+    output.copy_(result)
 
 
-def spyre_vocab_parallel_embedding_fake(
-    input_: torch.Tensor,
-    output: torch.Tensor,
-    layer_name: str,
-) -> None:
-    """Fake implementation for shape/dtype inference during torch.compile.
-
-    Provides metadata to torch.compile without executing actual computation.
-    """
-    return
-
-
+@lru_cache(maxsize=1)
 def register():
-    """Register the spyre_vocab_parallel_embedding custom op with vLLM.
-
-    Registers torch.ops.vllm.spyre_vocab_parallel_embedding with:
-        - op_func: Actual implementation (spyre_vocab_parallel_embedding)
-        - fake_impl: Shape inference implementation
-        - mutates_args: Indicates 'output' is modified in-place
-    """
+    """Register the spyre_vocab_parallel_embedding custom op with vLLM."""
     direct_register_custom_op(
         op_name="spyre_vocab_parallel_embedding",
-        op_func=spyre_vocab_parallel_embedding,
+        op_func=_op_func,
         mutates_args=["output"],
-        fake_impl=spyre_vocab_parallel_embedding_fake,
+        fake_impl=_fake_impl,
     )
     logger.info("Registered custom op: SpyreVocabParallelEmbedding")
