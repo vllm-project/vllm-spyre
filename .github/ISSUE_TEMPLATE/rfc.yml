@@ -1,0 +1,28 @@
+name: 💭 Request for comments
+description: Start a discussion for larger changes related to vLLM Spyre
+title: "[RFC]: "
+labels: []
+
+body:
+- type: markdown
+  attributes:
+    value: |
+      Before submitting, please search [existing issues](https://github.com/vllm-project/vllm-spyre/issues) to avoid duplicates.
+
+- type: textarea
+  attributes:
+    label: To discuss
+    description: |
+      What do you want to have a discussion about or feedback?
+      
+      Please make a clear and concise description with the necessary context.
+  validations:
+    required: true
+
+- type: checkboxes
+  attributes:
+    label: Checklist
+    options:
+      - label: I have searched for similar feature requests
+        required: true
+
