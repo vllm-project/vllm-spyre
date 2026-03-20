@@ -57,6 +57,10 @@ USE_CASES = {
 }
 
 
+# The changes here to not cache this LLM do make it possible to run this test without --forked
+# in some cases, but we still see crashes in CI. Marking it fork_required for our CI to fork it
+# anyway.
+@pytest.mark.fork_required
 @pytest.mark.chunked_prefill
 @pytest.mark.parametrize("use_case", list(USE_CASES.keys()))
 def test_chunked_prefill_correctness(
