@@ -143,31 +143,50 @@ class LLMCache:
             return maybe_llm
         self.clear()
 
-        if isinstance(model, ModelInfo):
-            revision = model.revision
-            model_name = model.name
-        else:
-            revision = None
-            model_name = model
-
         return self._cache.set(
             runtime_config,
-            LLM(
-                model=model_name,
-                tokenizer=model_name,
-                revision=revision,
-                tokenizer_revision=revision,
+            _create_llm(
+                model=model,
                 max_model_len=max_model_len,
                 max_num_seqs=max_num_seqs,
                 tensor_parallel_size=tensor_parallel_size,
                 max_num_batched_tokens=max_num_batched_tokens,
-                logits_processors=[GoldenTokenInjector],
                 enable_prefix_caching=use_pc,
             ),
         )
 
     def clear(self) -> None:
         self._cache.clear()
+
+
+def _create_llm(
+    *,
+    model: str | ModelInfo,
+    max_model_len: int,
+    tensor_parallel_size: int,
+    max_num_seqs: int | None,
+    max_num_batched_tokens: int | None,
+    enable_prefix_caching: bool,
+) -> LLM:
+    if isinstance(model, ModelInfo):
+        model_name = model.name
+        revision = model.revision
+    else:
+        model_name = model
+        revision = None
+
+    return LLM(
+        model=model_name,
+        tokenizer=model_name,
+        revision=revision,
+        tokenizer_revision=revision,
+        max_model_len=max_model_len,
+        max_num_seqs=max_num_seqs,
+        tensor_parallel_size=tensor_parallel_size,
+        max_num_batched_tokens=max_num_batched_tokens,
+        logits_processors=[GoldenTokenInjector],
+        enable_prefix_caching=enable_prefix_caching,
+    )
 
 
 class EngineCache:
@@ -363,20 +382,63 @@ def get_cached_llm(
     max_num_batched_tokens: int | None = None,
     use_pc: bool = False,
 ) -> LLM:
+    return get_llm(
+        model=model,
+        max_model_len=max_model_len,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        tensor_parallel_size=tensor_parallel_size,
+        warmup_shapes=warmup_shapes,
+        max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=max_num_batched_tokens,
+        use_pc=use_pc,
+        cached=True,
+    )
+
+
+def get_llm(
+    model: str | ModelInfo,
+    max_model_len: int,
+    backend: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tensor_parallel_size: int = 1,
+    warmup_shapes: EmbeddingWarmupShapes | None = None,
+    max_num_seqs: int | None = None,
+    max_num_batched_tokens: int | None = None,
+    use_pc: bool = False,
+    cached: bool = True,
+) -> LLM:
     # Clear other caches first
     API_SERVER_CACHE.clear()
     ENGINE_CACHE.clear()
 
-    return LLM_CACHE.get_cached_llm(
+    if cached:
+        return LLM_CACHE.get_cached_llm(
+            model=model,
+            max_model_len=max_model_len,
+            tensor_parallel_size=tensor_parallel_size,
+            backend=backend,
+            monkeypatch=monkeypatch,
+            warmup_shapes=warmup_shapes,
+            max_num_seqs=max_num_seqs,
+            use_pc=use_pc,
+            max_num_batched_tokens=max_num_batched_tokens,
+        )
+
+    patch_environment(
+        backend,
+        monkeypatch,
+        max_num_batched_tokens=max_num_batched_tokens,
+    )
+    LLM_CACHE.clear()
+
+    return _create_llm(
         model=model,
         max_model_len=max_model_len,
         tensor_parallel_size=tensor_parallel_size,
-        backend=backend,
-        monkeypatch=monkeypatch,
-        warmup_shapes=warmup_shapes,
         max_num_seqs=max_num_seqs,
-        use_pc=use_pc,
         max_num_batched_tokens=max_num_batched_tokens,
+        enable_prefix_caching=use_pc,
     )
 
 

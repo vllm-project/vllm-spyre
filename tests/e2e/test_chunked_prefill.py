@@ -11,7 +11,8 @@ import time
 import pytest
 import openai
 import httpx
-from llm_cache import get_cached_llm
+from llm_cache import get_llm
+from llm_cache_util import force_engine_shutdown
 from output_util import compare_results, extract_output, generate_hf_output, setup_golden_token
 from pytest_mock.plugin import MockerFixture
 from spyre_util import (
@@ -85,7 +86,10 @@ def test_chunked_prefill_correctness(
     ### NB: May not be guaranteed to be set
     monkeypatch.setenv("VLLM_ENABLE_V1_MULTIPROCESSING", "0")
 
-    cp_model = get_cached_llm(
+    # SendNN chunked-prefill correctness cases cannot safely reuse the same
+    # cached LLM across different use_case prompt shapes in one pytest process.
+    use_cached_llm = backend != "sendnn"
+    cp_model = get_llm(
         model=model,
         max_model_len=max_model_len,
         tensor_parallel_size=1,
@@ -93,45 +97,50 @@ def test_chunked_prefill_correctness(
         monkeypatch=monkeypatch,
         max_num_seqs=max_num_seqs,
         max_num_batched_tokens=chunk_size,
+        cached=use_cached_llm,
     )
-    model_runner = get_model_runner(cp_model)
+    try:
+        model_runner = get_model_runner(cp_model)
 
-    sampling_params = SamplingParams(
-        max_tokens=max_new_tokens, temperature=0, logprobs=0, ignore_eos=True
-    )
-    git_sampling_params = setup_golden_token(model, sampling_params, hf_outputs)
+        sampling_params = SamplingParams(
+            max_tokens=max_new_tokens, temperature=0, logprobs=0, ignore_eos=True
+        )
+        git_sampling_params = setup_golden_token(model, sampling_params, hf_outputs)
 
-    _prepare_chunked_prefill = model_runner._prepare_chunked_prefill
-    records = []
+        _prepare_chunked_prefill = model_runner._prepare_chunked_prefill
+        records = []
 
-    def wrapper(self, *args, **kwargs):
-        model_input = _prepare_chunked_prefill(self, *args, **kwargs)
-        records.append(model_input)
-        return model_input
+        def wrapper(self, *args, **kwargs):
+            model_input = _prepare_chunked_prefill(self, *args, **kwargs)
+            records.append(model_input)
+            return model_input
 
-    with patch.object(model_runner, "_prepare_chunked_prefill", wraps=wrapper) as spy:
-        results = cp_model.generate(prompt, git_sampling_params)
-        vllm_results = [extract_output(results[0])]
+        with patch.object(model_runner, "_prepare_chunked_prefill", wraps=wrapper) as spy:
+            results = cp_model.generate(prompt, git_sampling_params)
+            vllm_results = [extract_output(results[0])]
 
-        for r in records:
-            model_input = cast(SamplingForwardInputs, r)
-            # Must be a single value
-            left_padding = model_input.left_padded_prompt_mask[0].item()
-            assert left_padding == expected_left_padding
+            for r in records:
+                model_input = cast(SamplingForwardInputs, r)
+                # Must be a single value
+                left_padding = model_input.left_padded_prompt_mask[0].item()
+                assert left_padding == expected_left_padding
 
-    # Validate if the prefill was chunked
-    spy.assert_called()
-    assert spy.call_count == expected_chunk_count
+        # Validate if the prefill was chunked
+        spy.assert_called()
+        assert spy.call_count == expected_chunk_count
 
-    # Validate output
-    compare_results(
-        model=model,
-        tensor_parallel_size=1,
-        backend=backend,
-        vllm_results=vllm_results,
-        hf_results=hf_outputs,
-        prompts=[prompt],
-    )
+        # Validate output
+        compare_results(
+            model=model,
+            tensor_parallel_size=1,
+            backend=backend,
+            vllm_results=vllm_results,
+            hf_results=hf_outputs,
+            prompts=[prompt],
+        )
+    finally:
+        if not use_cached_llm:
+            force_engine_shutdown(cp_model)
 
 
 @pytest.mark.parametrize("mode", [pytest.param("pc", marks=pytest.mark.prefix_caching, id="pc")])
