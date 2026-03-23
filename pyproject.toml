@@ -15,7 +15,7 @@ dependencies = [
     "ibm-fms>=1.7.0,<2.0",
     # NB: use strict < with the next patch version to not exclude versions with
     # build metadata suffixes
-    "vllm>=0.17.1,<0.17.2",
+    "vllm>=0.18.0,<0.18.1",
 ]
 requires-python = ">=3.11"
 dynamic = ["version"]
@@ -80,7 +80,7 @@ override-dependencies = [
 extra-build-variables = { vllm = { VLLM_TARGET_DEVICE = "empty" } }
 
 [tool.uv.sources]
-vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.17.1" }
+vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.18.0" }
 
 [tool.ty.rules]
 possibly-missing-attribute = "ignore"
