@@ -13,9 +13,8 @@ body:
   attributes:
     label: To discuss
     description: |
-      What do you want to have a discussion about or feedback?
-      
-      Please make a clear and concise description with the necessary context.
+      Describe what you want to discuss or get feedback on. Consider covering
+      the motivation, your proposed approach, and any alternatives you considered.
   validations:
     required: true
 
