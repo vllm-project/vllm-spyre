@@ -70,10 +70,22 @@ class TorchSpyreWorker(CPUWorker):
             torch.device("spyre"),
         )
 
+    # Maximum KV cache size for Spyre device (in bytes).
+    # Spyre has limited device memory; exceeding this causes std::bad_alloc.
+    SPYRE_MAX_KV_CACHE_BYTES = 10 * (1 << 30)  # 10 GiB
+
     def determine_available_memory(self) -> int:
-        # Phase 1: Static configuration (same as CPUWorker)
-        # Phase 2 (future): Dynamic Spyre memory profiling
-        return self.cache_config.cpu_kvcache_space_bytes or 0
+        requested = self.cache_config.cpu_kvcache_space_bytes or 0
+        if requested > self.SPYRE_MAX_KV_CACHE_BYTES:
+            logger.warning(
+                "Requested KV cache size %.1f GiB exceeds Spyre limit. "
+                "Capping to %.1f GiB. Set VLLM_CPU_KVCACHE_SPACE to a "
+                "smaller value.",
+                requested / (1 << 30),
+                self.SPYRE_MAX_KV_CACHE_BYTES / (1 << 30),
+            )
+            return self.SPYRE_MAX_KV_CACHE_BYTES
+        return requested
 
     def compile_or_warm_up_model(self) -> float:
         set_random_seed(self.model_config.seed)
