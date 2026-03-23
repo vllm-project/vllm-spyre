@@ -113,7 +113,21 @@ class SpyreVocabParallelEmbedding(VocabParallelEmbedding):
 
         Returns:
             Embedding output [num_tokens, embedding_dim] in weight dtype on CPU
+
+        Raises:
+            NotImplementedError: If input tensor is not on CPU.
         """
+        if input_.device.type != "cpu":
+            raise NotImplementedError(
+                f"Expected input on CPU, got device={input_.device}. "
+                "Spyre has no native embedding kernel; input must stay on CPU."
+            )
+        if input_.dtype not in (torch.int32, torch.int64):
+            logger.warning(
+                "SpyreVocabParallelEmbedding: expected integer index tensor "
+                "(int32/int64), got dtype=%s. This may produce unexpected results.",
+                input_.dtype,
+            )
         return F.embedding(input_, self.weight)
 
 
