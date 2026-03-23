@@ -11,10 +11,6 @@ from typing import ClassVar
 
 import torch
 
-# Disable dynamic shapes to force static shape compilation for Spyre
-torch._dynamo.config.assume_static_by_default = True
-torch._dynamo.config.automatic_dynamic_shapes = False
-
 from vllm.config import VllmConfig
 from vllm.config.cache import CacheDType
 from vllm.v1.attention.backend import (
@@ -27,6 +23,11 @@ from vllm.v1.attention.backend import (
     MultipleOf,
 )
 from vllm.v1.kv_cache_interface import AttentionSpec
+
+
+# Disable dynamic shapes to force static shape compilation for Spyre
+torch._dynamo.config.assume_static_by_default = True
+torch._dynamo.config.automatic_dynamic_shapes = False
 
 
 @dataclass
@@ -721,7 +722,7 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
                     mask_all_heads = torch.cat([mask_all_heads, mask_padding], dim=0)
 
                 # Build block-diagonal boolean mask.
-                # ~block_diag(~per_head_block): diagonal = per_head_block, off-diagonal = True (masked).
+                # ~block_diag(~per_head_block): diagonal = per_head_block, off-diagonal = True.
                 # All heads share the same causal/padding mask, so the block is identical for each.
                 head_mask_t = mask_all_heads.T  # [kv_len, QUERY_CHUNK_SIZE], True = masked
                 mask_bool = ~torch.block_diag(*([~head_mask_t] * num_heads))

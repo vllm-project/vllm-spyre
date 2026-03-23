@@ -23,8 +23,7 @@ def is_spyre_available():
 SPYRE_AVAILABLE = is_spyre_available()
 
 pytestmark = pytest.mark.skipif(
-    not SPYRE_AVAILABLE,
-    reason="Spyre device not available - these tests require Spyre hardware"
+    not SPYRE_AVAILABLE, reason="Spyre device not available - these tests require Spyre hardware"
 )
 
 NUM_HEADS = [(4, 4), (8, 2)]  # (num_query_heads, num_kv_heads)
@@ -73,9 +72,7 @@ def ref_paged_attn(
         mask = torch.triu(empty_mask, diagonal=kv_len - query_len + 1).bool()
         if sliding_window is not None:
             sliding_window_mask = (
-                torch.triu(
-                    empty_mask, diagonal=kv_len - (query_len + sliding_window) + 1
-                )
+                torch.triu(empty_mask, diagonal=kv_len - (query_len + sliding_window) + 1)
                 .bool()
                 .logical_not()
             )
@@ -93,11 +90,12 @@ def ref_paged_attn(
 
 
 @pytest.mark.parametrize(
-    "seq_lens", [
+    "seq_lens",
+    [
         [(1, 256), (2, 128), (4, 512)],
         [(1, 256), (1, 128), (1, 512)],
         [(72, 512), (1, 256), (4, 128)],
-    ]
+    ],
 )
 @pytest.mark.parametrize("num_heads", NUM_HEADS)
 @pytest.mark.parametrize("head_size", HEAD_SIZES)
@@ -140,11 +138,15 @@ def test_spyre_paged_attn(
     key_cache = kv_cache[0]
     value_cache = kv_cache[1]
 
-    cu_query_lens = torch.tensor([0] + query_lens, dtype=torch.int32).cumsum(dim=0, dtype=torch.int32)
+    cu_query_lens = torch.tensor([0] + query_lens, dtype=torch.int32).cumsum(
+        dim=0, dtype=torch.int32
+    )
     kv_lens_tensor = torch.tensor(kv_lens, dtype=torch.int32)
 
     max_num_blocks_per_seq = (max_kv_len + block_size - 1) // block_size
-    block_tables = torch.randint(0, num_blocks, (num_seqs, max_num_blocks_per_seq), dtype=torch.int32)
+    block_tables = torch.randint(
+        0, num_blocks, (num_seqs, max_num_blocks_per_seq), dtype=torch.int32
+    )
 
     # Pre-populate KV cache with historical context
     for seq_idx in range(num_seqs):
@@ -258,9 +260,9 @@ def test_spyre_paged_attn_single_sequence(
     scale = head_size**-0.5
 
     test_cases = [
-        (1, 128),    # single token decode
-        (32, 256),   # exact chunk size
-        (64, 512),   # multi-chunk
+        (1, 128),  # single token decode
+        (32, 256),  # exact chunk size
+        (64, 512),  # multi-chunk
         (100, 512),  # non-aligned query length
     ]
 
@@ -277,7 +279,9 @@ def test_spyre_paged_attn_single_sequence(
         value_cache = kv_cache[1]
 
         max_num_blocks_per_seq = (kv_len + block_size - 1) // block_size
-        block_tables = torch.randint(0, num_blocks, (num_seqs, max_num_blocks_per_seq), dtype=torch.int32)
+        block_tables = torch.randint(
+            0, num_blocks, (num_seqs, max_num_blocks_per_seq), dtype=torch.int32
+        )
 
         historical_len = kv_len - query_len
         if historical_len > 0:
@@ -349,4 +353,3 @@ def test_spyre_paged_attn_single_sequence(
             atol, rtol = 0.1, 0.1
 
         torch.testing.assert_close(output, ref_output, atol=atol, rtol=rtol)
-
