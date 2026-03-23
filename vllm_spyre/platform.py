@@ -87,7 +87,9 @@ class SpyrePlatform(Platform):
 
     @classmethod
     def import_kernels(cls) -> None:
-        pass
+        # Workaround torch.accelerator.empty_cache for torch 2.7.1 and vllm v0.18.0 compatibility
+        if not hasattr(torch.accelerator, "empty_cache"):
+            setattr(torch.accelerator, "empty_cache", lambda: None)  # noqa
 
     @classmethod
     def is_async_output_supported(cls, enforce_eager: bool | None) -> bool:
