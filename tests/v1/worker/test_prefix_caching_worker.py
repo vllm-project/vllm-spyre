@@ -51,11 +51,9 @@ def test_block_sharing_for_2_chunks(
 
     kv_cache_manager = pc_model_runner.kv_cache_manager
 
-    # compat: vLLM 0.15.0 added an argument
-    if has_argument(kv_cache_manager.allocate_new_blocks, "num_tokens_main_model"):
-        kv_cache_manager.allocate_new_blocks(request1.request.request_id, 192, 192)
-    else:
-        kv_cache_manager.allocate_new_blocks(request1.request.request_id, 192)
+    kv_cache_manager.allocate_new_blocks(
+        request1.request.request_id, num_tokens=192, num_tokens_main_model=192
+    )
     kv_cache_manager.cache_blocks(request1.request, 192)
     kv_cache_manager.free(request1.request.request_id)
 

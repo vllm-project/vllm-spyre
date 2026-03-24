@@ -21,12 +21,7 @@ from vllm.config import VllmConfig
 from vllm.distributed import ensure_model_parallel_initialized, init_distributed_environment
 from vllm.logger import init_logger
 
-try:
-    # vllm >= v0.14.0
-    from vllm.utils.torch_utils import set_random_seed
-except ImportError:
-    # vllm < v0.14.0
-    from vllm.model_executor import set_random_seed  # ty: ignore[unresolved-import]
+from vllm.utils.torch_utils import set_random_seed
 
 from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import SamplingParams
@@ -266,24 +261,13 @@ class SpyreWorker(WorkerBase):
         distributed_init_method: str,
         is_driver_worker: bool = False,
     ) -> None:
-        try:
-            # pre 0.11.1 compatibility with old worker base class
-            from vllm.worker.worker_base import WorkerBase as LegacyWorkerBase  # ty: ignore
-
-            LegacyWorkerBase.__init__(self, vllm_config=vllm_config)
-            self.local_rank = local_rank
-            self.rank = rank
-            self.distributed_init_method = distributed_init_method
-            self.is_driver_worker = is_driver_worker
-        except ImportError:
-            # From 0.11.1 and on we should only have to call the super init
-            super().__init__(
-                vllm_config=vllm_config,
-                local_rank=local_rank,
-                rank=rank,
-                distributed_init_method=distributed_init_method,
-                is_driver_worker=is_driver_worker,
-            )
+        super().__init__(
+            vllm_config=vllm_config,
+            local_rank=local_rank,
+            rank=rank,
+            distributed_init_method=distributed_init_method,
+            is_driver_worker=is_driver_worker,
+        )
 
         # For power-user debugging of spyre logs for tensor parallel ops
         self.redirect_logs_to_files()
@@ -293,22 +277,6 @@ class SpyreWorker(WorkerBase):
             assert rank % self.parallel_config.tensor_parallel_size == 0, (
                 "Driver worker should be rank 0 of tensor parallel group."
             )
-        if self.model_config.trust_remote_code:
-            # note: lazy import to avoid importing torch before initializing
-            try:
-                # pre 0.11.1 compatibility
-                from vllm.utils import init_cached_hf_modules  # ty: ignore[unresolved-import]
-
-                init_cached_hf_modules()
-            except ImportError:
-                # 0.11.1 to 0.13.0 compatibility
-                try:
-                    from vllm.utils.import_utils import init_cached_hf_modules  # ty: ignore[unresolved-import]
-
-                    init_cached_hf_modules()
-                except ImportError:
-                    # >=0.14.0, init_cached_hf_modules is no longer needed
-                    pass
 
         self.model_runner: Union[
             StaticBatchingSpyreModelRunner,
@@ -1001,14 +969,9 @@ def maybe_override_signals_handler():
 
 
 def _get_extra_args() -> dict:
-    """Add any required backwards compatibility code for constructing
-    SchedulerOutputs here"""
+    """Add any required extra args for constructing SchedulerOutputs"""
     extra_args: dict = {}
     extra_args.update({"free_encoder_mm_hashes": []})
-
-    if "structured_output_request_ids" in dataclass_fields(SchedulerOutput):
-        extra_args["structured_output_request_ids"] = {}
-    if "grammar_bitmask" in dataclass_fields(SchedulerOutput):
-        extra_args["grammar_bitmask"] = None
-
+    extra_args["structured_output_request_ids"] = {}
+    extra_args["grammar_bitmask"] = None
     return extra_args

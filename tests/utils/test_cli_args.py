@@ -10,12 +10,7 @@ from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.config.model_registry import get_model_registry
 from spyre_util import environ_checkpoint, REFERENCE_MODELS
 
-try:
-    # old
-    from vllm.utils import FlexibleArgumentParser
-except ImportError:
-    # new
-    from vllm.utils.argparse_utils import FlexibleArgumentParser
+from vllm.utils.argparse_utils import FlexibleArgumentParser
 
 global_default = 192
 

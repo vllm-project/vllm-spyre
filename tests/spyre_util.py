@@ -22,13 +22,8 @@ from vllm.v1.engine.core import EngineCore
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre import envs
 
-try:
-    # old
-    from vllm.utils import FlexibleArgumentParser, get_open_port
-except ImportError:
-    # new
-    from vllm.utils.argparse_utils import FlexibleArgumentParser
-    from vllm.utils.network_utils import get_open_port
+from vllm.utils.argparse_utils import FlexibleArgumentParser
+from vllm.utils.network_utils import get_open_port
 
 from vllm.v1.request import Request
 
