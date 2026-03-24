@@ -1,4 +1,5 @@
 from vllm import LLM, RequestOutput, SamplingParams
+
 import pytest
 
 
