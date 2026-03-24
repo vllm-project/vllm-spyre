@@ -14,7 +14,6 @@ disabled flags, no-op stubs) and get ~96% code reuse from GPUModelRunner.
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any
 
 import torch
 import torch.nn as nn
@@ -26,36 +25,132 @@ from vllm.v1.utils import CpuGpuBuffer
 from vllm.v1.worker.cpu_model_runner import _torch_cuda_wrapper
 from vllm.v1.worker.gpu_model_runner import GPUModelRunner
 
-if TYPE_CHECKING:
-    from vllm.v1.core.sched.output import SchedulerOutput
-
 logger = init_logger(__name__)
 
-# Dtypes currently natively supported on Spyre device.
-_SPYRE_SUPPORTED_DTYPES = {torch.float16, torch.int64}
+
+def _parse_target_device(args, kwargs):
+    """Extract target device from .to() arguments."""
+    if args:
+        if isinstance(args[0], (str, torch.device)):
+            return torch.device(args[0])
+        if isinstance(args[0], torch.Tensor):
+            return args[0].device
+    if "device" in kwargs:
+        return torch.device(kwargs["device"])
+    return None
+
+
+class SpyreSafeView(torch.Tensor):
+    """Tensor subclass that handles Spyre's sliced-view copy bug.
+
+    torch-spyre crashes in copy_device_to_host when copying a sliced
+    view (tensor[:n]) from Spyre to CPU. This affects ALL dtypes.
+    Full (non-sliced) tensor copies work fine.
+
+    This subclass wraps Spyre tensors and:
+    - __getitem__: returns a SpyreSafeView of the real Spyre view
+      (writes via .copy_() go to actual Spyre memory)
+    - .to("cpu") / .cpu(): if this tensor is a view, goes through
+      the parent: parent.to("cpu")[slice_idx] (safe path)
+
+    Remove this class once torch-spyre fixes sliced view copies.
+    See dtype_repro.py in torch-spyre for the reproduction.
+    """
+
+    @staticmethod
+    def __new__(cls, data):
+        return torch.Tensor._make_subclass(cls, data)
+
+    def __getitem__(self, idx):
+        real_slice = torch.Tensor.__getitem__(self, idx)
+        if isinstance(real_slice, torch.Tensor) \
+                and real_slice.device.type == "spyre":
+            safe = torch.Tensor._make_subclass(SpyreSafeView, real_slice)
+            safe._parent_ref = self
+            safe._slice_idx = idx
+            return safe
+        return real_slice
+
+    def to(self, *args, **kwargs):
+        target = _parse_target_device(args, kwargs)
+        if target is not None and target.type == "cpu" \
+                and self.device.type == "spyre":
+            parent = getattr(self, "_parent_ref", None)
+            idx = getattr(self, "_slice_idx", None)
+            if parent is not None and idx is not None:
+                # View: move parent to CPU (recursively safe), then slice
+                return parent.to("cpu")[idx]
+            # Full tensor: direct .to("cpu") is safe
+        return torch.Tensor.to(self, *args, **kwargs)
+
+    def cpu(self):
+        return self.to("cpu")
+
+
+def spyre_safe_view(tensor: torch.Tensor) -> torch.Tensor:
+    """Wrap a Spyre tensor in SpyreSafeView for safe slicing.
+
+    Returns the tensor unchanged if not on Spyre.
+    Remove calls to this function once torch-spyre fixes sliced copies.
+    """
+    if tensor.device.type == "spyre":
+        return torch.Tensor._make_subclass(SpyreSafeView, tensor)
+    return tensor
 
 
 class SpyreCpuGpuBuffer(CpuGpuBuffer):
-    """CpuGpuBuffer with Spyre-safe copies.
+    """CpuGpuBuffer with Spyre-safe copies and split dtypes.
 
-    Overrides copy methods to:
-    - Use synchronous copies (Spyre doesn't support non_blocking)
-    - Handle dtype mismatch (e.g. int32 cpu → int64 Spyre)
+    Supports different dtypes on CPU vs Spyre (e.g. int32 CPU, int64 Spyre).
+    All copies are synchronous (Spyre doesn't support non_blocking).
+
+    .gpu is wrapped in SpyreSafeView to handle Spyre's sliced-view copy
+    bug. Slicing .gpu returns real Spyre views (writes work), but
+    .to("cpu") on a view goes through the parent tensor safely.
     """
+
+    def __init__(
+        self,
+        *size: int | torch.SymInt,
+        cpu_dtype: torch.dtype,
+        gpu_dtype: torch.dtype,
+        device: torch.device,
+        pin_memory: bool,
+        with_numpy: bool = True,
+    ) -> None:
+        self.cpu = torch.zeros(*size, dtype=cpu_dtype, device="cpu",
+                               pin_memory=pin_memory)
+        gpu_raw = torch.zeros(*size, dtype=gpu_dtype, device=device)
+        self.gpu = spyre_safe_view(gpu_raw)
+        self.np: "np.ndarray"
+        if with_numpy:
+            if cpu_dtype == torch.bfloat16:
+                raise ValueError(
+                    "Bfloat16 torch tensors cannot be directly cast to a "
+                    "numpy array, so call SpyreCpuGpuBuffer with "
+                    "with_numpy=False"
+                )
+            self.np = self.cpu.numpy()
 
     def copy_to_gpu(self, n: int | None = None) -> torch.Tensor:
         src = self.cpu if n is None else self.cpu[:n]
-        dst = self.gpu if n is None else self.gpu[:n]
+        # Write to Spyre slice (host-to-device writes are safe)
+        dst = self.gpu if n is None else torch.Tensor.__getitem__(self.gpu, slice(None, n))
         if src.dtype != dst.dtype:
-            return dst.copy_(src.to(dst.dtype))
-        return dst.copy_(src)
+            dst.copy_(src.to(dst.dtype))
+        else:
+            dst.copy_(src)
+        return dst
 
     def copy_to_cpu(self, n: int | None = None) -> torch.Tensor:
+        # Read from Spyre via safe view (device-to-host on views crashes)
         src = self.gpu if n is None else self.gpu[:n]
         dst = self.cpu if n is None else self.cpu[:n]
-        if src.dtype != dst.dtype:
-            return dst.copy_(src.to(dst.dtype))
-        return dst.copy_(src)
+        # src is a SpyreSafeView — .to("cpu") is safe
+        cpu_src = src.to("cpu") if src.device.type == "spyre" else src
+        if cpu_src.dtype != dst.dtype:
+            return dst.copy_(cpu_src.to(dst.dtype))
+        return dst.copy_(cpu_src)
 
 
 class TorchSpyreModelRunner(GPUModelRunner):
@@ -89,20 +184,42 @@ class TorchSpyreModelRunner(GPUModelRunner):
         if vllm_config.model_config.dtype != torch.float16:
             raise ValueError(f'The model dtype needs to be torch.float16 for spyre, but was specified to be {vllm_config.model_config.dtype}')
 
-        # Restore the real Spyre device for model loading and execution
-        self.device = device
+        # Keep self.device = CPU (set by super().__init__).
+        # For enforce_eager: all OOT layers have CPU weights (via _apply
+        # no-op in SpyreCpuFallbackMixin), so the model runs entirely on
+        # CPU. SiluAndMul uses Spyre briefly via convert_for_spyre().
+        # For compiled mode: _model_forward will move inputs to Spyre.
+        # self._spyre_device is available for explicit Spyre placement.
 
         # Disable GPU-specific features (same as CPUModelRunner)
         self.use_cuda_graph = False
         self.cascade_attn_enabled = False
 
+        # Replace Triton kernels with CPU-compatible implementations
+        # (same as CPUModelRunner._postprocess_triton)
+        self._postprocess_triton()
+
+    def _postprocess_triton(self) -> None:
+        """Replace Triton kernels with CPU-compatible implementations.
+
+        Triton is not available on Spyre, so we use the same CPU fallbacks
+        that CPUModelRunner uses.
+        """
+        import vllm.utils.cpu_triton_utils as cpu_tl
+        import vllm.v1.worker.block_table
+
+        vllm.v1.worker.block_table._compute_slot_mapping_kernel = (
+            cpu_tl.compute_slot_mapping_kernel
+        )
+
     def load_model(self, load_dummy_weights: bool = False) -> None:
-        """Load model, move to Spyre, and compile."""
+        """Load model and optionally compile for Spyre."""
         logger.info("Loading model %s...", self.model_config.model)
 
-        # Step 1: Load model on CPU (safe — all ops work on CPU).
-        # OOT-registered layers (VocabParallelEmbedding, RMSNorm, SiluAndMul)
-        # are automatically replaced at instantiation via register_oot().
+        # Load model on CPU. OOT-registered layers (VocabParallelEmbedding,
+        # RMSNorm, SiluAndMul, Linear, etc.) are automatically replaced at
+        # instantiation via register_oot(). Their _apply() no-op keeps
+        # weights on CPU regardless of .to() calls.
         self.model = get_model(vllm_config=self.vllm_config)
         self.model_memory_usage = 0  # No GPU memory profiling for Spyre
 
@@ -111,10 +228,7 @@ class TorchSpyreModelRunner(GPUModelRunner):
                 self.model, self.vllm_config, self.device
             )
 
-        # Step 2: Move model to Spyre device.
-        self.model = self.model.to(device=self.device)
-
-        # Step 3: Compile for Spyre
+        # Compile for Spyre (no-op if enforce_eager=True)
         self._compile_for_spyre()
 
         logger.info("Model loaded and compiled for Spyre.")
@@ -159,6 +273,9 @@ class TorchSpyreModelRunner(GPUModelRunner):
         )
         logger.info("Model compiled for Spyre (backend=inductor)")
 
+    # No _dummy_run override needed — self.device is CPU, so
+    # logit_indices and all tensors are created on CPU naturally.
+
     def warming_up_model(self) -> None:
         """Trigger Spyre compilation via dummy forward pass."""
         logger.info("Warming up model for Spyre compilation...")
@@ -171,44 +288,9 @@ class TorchSpyreModelRunner(GPUModelRunner):
             )
         logger.info("Spyre warmup done.")
 
-    def execute_model(
-        self,
-        scheduler_output: SchedulerOutput,
-        intermediate_tensors=None,
-    ) -> Any:
-        """Run upstream execute_model, then transfer logits to CPU for sampling.
-
-        Sampling operations (torch.multinomial, torch.topk) may not be
-        supported on Spyre, so logits must be on CPU before sample_tokens().
-        """
-        result = super().execute_model(scheduler_output, intermediate_tensors)
-
-        # Transfer logits and hidden states to CPU for sampling
-        if self.execute_model_state is not None:
-            state = self.execute_model_state
-            # logits
-            if state.logits is not None and state.logits.device.type == "spyre":
-                # Synchronous copy — non_blocking not yet supported on Spyre
-                new_logits = state.logits.to("cpu")
-                self.execute_model_state = state._replace(logits=new_logits)
-                state = self.execute_model_state
-            # hidden_states
-            if isinstance(state.hidden_states, torch.Tensor):
-                if state.hidden_states.device.type == "spyre":
-                    new_hs = state.hidden_states.to("cpu")
-                    self.execute_model_state = state._replace(
-                        hidden_states=new_hs
-                    )
-                    state = self.execute_model_state
-            # sample_hidden_states
-            if isinstance(state.sample_hidden_states, torch.Tensor):
-                if state.sample_hidden_states.device.type == "spyre":
-                    new_shs = state.sample_hidden_states.to("cpu")
-                    self.execute_model_state = state._replace(
-                        sample_hidden_states=new_shs
-                    )
-
-        return result
+    # No execute_model override needed — with self.device=CPU, all model
+    # outputs (logits, hidden_states) are already on CPU. No Spyre→CPU
+    # transfer required for sampling.
 
     # --- KV cache allocation ---
 
@@ -270,33 +352,34 @@ class TorchSpyreModelRunner(GPUModelRunner):
     def _make_buffer(
         self, *size: int | torch.SymInt, dtype: torch.dtype, numpy: bool = True
     ) -> SpyreCpuGpuBuffer:
-        """Create a SpyreCpuGpuBuffer with .gpu on Spyre.
+        """Create a SpyreCpuGpuBuffer with Spyre-aware placement.
 
-        The .cpu tensor stays on CPU with the original dtype.
-        The .gpu tensor is placed on Spyre with dtype promotion
-        (int32 → int64) since Spyre doesn't support int32.
-        Copies are synchronous (Spyre doesn't support non_blocking).
+        - .cpu stays on CPU with original dtype (for numpy/scheduler).
+        - float16 .gpu on Spyre, wrapped in SpyreSafeView (sliced-view
+          copy bug — see dtype_repro.py).
+        - int/bool .gpu stays on CPU. These are infrastructure tensors
+          (slot mapping, block table, query_start_loc) used by CPU-based
+          attention/KV cache. The C++ compute_slot_mapping_kernel expects
+          int32 on CPU — Spyre's int64 promotion would break it.
         """
-        
-        if dtype not in _SPYRE_SUPPORTED_DTYPES:
-            # Dtype currently not supported and alternative dtype needs to be used
-            if dtype in [torch.int32]:
-                dtype = torch.int64
-            elif dtype in [torch.bool, torch.int8, torch.int16, ]:
-                return SpyreCpuGpuBuffer(
-                    *size,
-                    dtype=dtype,
-                    device="cpu",
-                    pin_memory=False,
-                    with_numpy=numpy,
-                )
-            else:
-                raise ValueError(f'Unsupported dtype {dtype} found for spyre!')
-        
+        if dtype == torch.float16:
+            # float16 goes on Spyre, wrapped in SpyreSafeView.
+            return SpyreCpuGpuBuffer(
+                *size,
+                cpu_dtype=dtype,
+                gpu_dtype=dtype,
+                device=self._spyre_device,
+                pin_memory=False,
+                with_numpy=numpy,
+            )
+
+        # Integer and bool buffers stay on CPU (infrastructure tensors
+        # for slot mapping, block table, query_start_loc, etc.).
         return SpyreCpuGpuBuffer(
             *size,
-            dtype=dtype,
-            device=self._spyre_device,
+            cpu_dtype=dtype,
+            gpu_dtype=dtype,
+            device="cpu",
             pin_memory=False,
             with_numpy=numpy,
         )

@@ -224,10 +224,12 @@ def register():
         - fake_impl: Shape inference implementation (spyre_siluandmul_fake)
         - mutates_args: Indicates 'output' is modified in-place
     """
+    from . import register_dual_dispatch
     direct_register_custom_op(
         op_name="spyre_siluandmul",
         op_func=spyre_siluandmul,
         mutates_args=["output"],
         fake_impl=spyre_siluandmul_fake,
     )
+    register_dual_dispatch("spyre_siluandmul", spyre_siluandmul)
     logger.info("Registered custom op: SpyreSiluAndMul")

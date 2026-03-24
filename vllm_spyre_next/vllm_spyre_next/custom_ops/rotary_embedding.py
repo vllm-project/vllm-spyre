@@ -150,16 +150,20 @@ def spyre_rotary_embedding_q_only_fake(
 
 def register():
     """Register rotary embedding custom ops."""
+    from . import register_dual_dispatch
     direct_register_custom_op(
         op_name="spyre_rotary_embedding",
         op_func=spyre_rotary_embedding,
         mutates_args=["output_query", "output_key"],
         fake_impl=spyre_rotary_embedding_fake,
     )
+    register_dual_dispatch("spyre_rotary_embedding", spyre_rotary_embedding)
     direct_register_custom_op(
         op_name="spyre_rotary_embedding_q_only",
         op_func=spyre_rotary_embedding_q_only,
         mutates_args=["output_query"],
         fake_impl=spyre_rotary_embedding_q_only_fake,
     )
+    register_dual_dispatch("spyre_rotary_embedding_q_only",
+                           spyre_rotary_embedding_q_only)
     logger.info("Registered custom op: spyre_rotary_embedding")

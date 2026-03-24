@@ -307,10 +307,12 @@ def register():
         - fake_impl: Shape inference implementation (spyre_rmsnorm_fake)
         - mutates_args: Indicates 'output' is modified in-place
     """
+    from . import register_dual_dispatch
     direct_register_custom_op(
         op_name="spyre_rmsnorm",
         op_func=spyre_rmsnorm,
         mutates_args=["output"],
         fake_impl=spyre_rmsnorm_fake,
     )
+    register_dual_dispatch("spyre_rmsnorm", spyre_rmsnorm)
     logger.info("Registered custom op: SpyreRMSNorm")

@@ -83,7 +83,7 @@ def spyre_cpu_fallback(
     """
     forward_context = get_forward_context()
     layer = forward_context.no_compile_layers[layer_name]
-    cpu_input = input.to("cpu")
+    cpu_input = input.to("cpu") if input.device.type != "cpu" else input
     result = layer.cpu_forward(cpu_input)
     output.copy_(result)
 
@@ -103,10 +103,12 @@ def spyre_cpu_fallback_fake(
 
 def register():
     """Register the generic spyre_cpu_fallback custom op."""
+    from . import register_dual_dispatch
     direct_register_custom_op(
         op_name="spyre_cpu_fallback",
         op_func=spyre_cpu_fallback,
         mutates_args=["output"],
         fake_impl=spyre_cpu_fallback_fake,
     )
+    register_dual_dispatch("spyre_cpu_fallback", spyre_cpu_fallback)
     logger.info("Registered custom op: spyre_cpu_fallback")

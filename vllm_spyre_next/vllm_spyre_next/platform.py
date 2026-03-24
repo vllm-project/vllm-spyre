@@ -34,6 +34,15 @@ class TorchSpyrePlatform(CpuPlatform):
     device_name: str = "cpu"
     device_type: str = "cpu"
 
+    # Custom ops dispatch key. Currently CPU because:
+    # - Integer tensors (input_ids, positions) stay on CPU (Spyre int64
+    #   copy path is broken)
+    # - In eager mode, all data flows on CPU (fallback ops, RMSNorm,
+    #   SiluAndMul all execute on CPU)
+    # When Spyre compilation is enabled and tensors flow on device,
+    # this should change to "PrivateUse1".
+    dispatch_key: str = "CPU"
+
     @classmethod
     def get_device_name(cls, device_id: int = 0) -> str:
         return "torch-spyre"
