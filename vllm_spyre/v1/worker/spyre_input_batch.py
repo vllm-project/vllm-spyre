@@ -5,7 +5,7 @@
 
 from abc import abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Generic, TypeVar, cast
+from typing import Generic, TypeVar, cast
 
 import numpy as np
 import torch
@@ -20,7 +20,6 @@ from vllm.v1.sample.logits_processor import BatchUpdateBuilder, LogitsProcessors
 from vllm.v1.sample.metadata import SamplingMetadata
 
 from vllm_spyre.v1.sample.spyre_logits_processor import LogitProcessorWrapper
-from vllm_spyre.compat_utils import has_argument
 
 
 @dataclass

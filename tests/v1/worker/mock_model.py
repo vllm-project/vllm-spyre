@@ -1,4 +1,3 @@
-from dataclasses import fields
 from typing import Any
 
 import pytest
@@ -181,10 +180,8 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
             "num_common_prefix_blocks": [],
             "finished_req_ids": set(),
             "free_encoder_mm_hashes": [],
-            "structured_output_request_ids": {},
             "grammar_bitmask": None,
         }
-
 
     def assert_block_tables_and_slot_mappings(
         self,

@@ -31,7 +31,6 @@ from vllm.v1.sample.logits_processor import build_logitsprocs
 
 import vllm_spyre.envs as envs_spyre
 import vllm_spyre.utils as utils_spyre
-from vllm_spyre.compat_utils import has_argument
 from vllm_spyre.model_executor.model_loader.spyre import (
     BACKEND_LIST,
     SpyreAttentionMetadata,
