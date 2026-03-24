@@ -11,12 +11,13 @@ Architecture:
       at instantiation
     - Custom Op Boundary: torch.ops.vllm.spyre_vocab_parallel_embedding is opaque
       to torch.compile, so forward_native runs eagerly outside the compiled graph
+    - Separate Compilation: forward_embedding is compiled independently via maybe_compile
 
 Spyre Device Constraints:
-    - Algorithm: Standard F.embedding on CPU — torch-spyre has no native embedding
-      kernel; aten.embedding.default is handled by a CPU fallback (spyre__embedding).
-      Moving tensors to Spyre causes DtException (unsupported data format), so all
-      embedding computation stays on CPU.
+    - Algorithm: From vLLM's perspective, embedding runs on Spyre. Internally,
+      torch-spyre currently falls back to CPU for aten.embedding.default
+      (spyre__embedding) since Spyre does not yet support indirect indexing.
+      See: https://github.com/torch-spyre/torch-spyre/issues/420
 
 Limitations:
     - No Tensor Parallelism (TP) support: tp_size > 1 raises NotImplementedError.
@@ -29,13 +30,14 @@ References:
 
 import torch
 import torch.nn.functional as F
+import torch.utils._pytree as pytree
 
 from vllm.logger import init_logger
 from vllm.utils.torch_utils import direct_register_custom_op
 from vllm.model_executor.layers.vocab_parallel_embedding import VocabParallelEmbedding
 from functools import lru_cache
 
-from .utils import register_layer, get_layer, _fake_impl
+from .utils import convert, register_layer, get_layer, _fake_impl
 
 logger = init_logger(__name__)
 
@@ -51,8 +53,12 @@ class SpyreVocabParallelEmbedding(VocabParallelEmbedding):
     No quantization is supported: quant_config != None raises NotImplementedError.
     """
 
+    _dynamic_arg_dims = {"x": [], "weight": []}
+
     def __init__(self, *args, **kwargs):
         """Initialize SpyreVocabParallelEmbedding layer.
+
+        Compiles the Spyre kernel and registers this instance for custom op lookup.
 
         Raises:
             NotImplementedError: If tp_size > 1 or quant_config is not None,
@@ -78,67 +84,91 @@ class SpyreVocabParallelEmbedding(VocabParallelEmbedding):
 
         logger.debug("Building custom VocabParallelEmbedding for Spyre")
 
+        self._target_device = torch.device("spyre")
+        self._fwd = self.maybe_compile(self.forward_embedding)
+
         self._layer_name = register_layer(self, "spyre_vocab_parallel_embedding")
 
-    def forward(self, input_: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass using custom op to bypass torch.compile.
 
+        Delegates to torch.ops.vllm.spyre_vocab_parallel_embedding which
+        retrieves this layer and calls forward_native outside the compilation
+        graph.
+
         Args:
-            input_: Token index tensor [num_tokens] (int64)
+            x: Token index tensor [num_tokens] (int64)
 
         Returns:
             Embedding output [num_tokens, embedding_dim] in weight dtype
         """
         output = torch.empty(
-            *input_.shape,
+            *x.shape,
             self.embedding_dim,
             dtype=self.weight.dtype,
-            device=input_.device,
+            device=x.device,
         )
-        torch.ops.vllm.spyre_vocab_parallel_embedding(input_, output, self._layer_name)
+
+        # Custom op call - executes outside torch.compile graph
+        torch.ops.vllm.spyre_vocab_parallel_embedding(x, output, self._layer_name)
+
         return output
 
-    def forward_native(self, input_: torch.Tensor) -> torch.Tensor:
-        """Embedding execution on CPU.
+    @staticmethod
+    def forward_embedding(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
+        """Embedding kernel compiled via maybe_compile.
 
-        F.embedding runs on CPU via torch-spyre's spyre__embedding fallback.
-        torch-spyre has no native embedding kernel; aten.embedding.default falls
-        back to CPU (spyre__embedding). Moving tensors to Spyre would cause a
-        DtException (unsupported data format), so no device transfer is performed.
+        Args:
+            x: Token index tensor [num_tokens] (int64)
+            weight: Embedding weight tensor [vocab_size, embedding_dim]
+
+        Returns:
+            Embedding output [num_tokens, embedding_dim]
+        """
+        return F.embedding(x, weight)
+
+    def forward_native(self, x: torch.Tensor) -> torch.Tensor:
+        """Spyre device execution: device transfer, kernel call, result transfer.
+
+        From vLLM's perspective, this operation runs on the Spyre device.
+        Internally, torch-spyre currently falls back to CPU for embedding
+        (aten.embedding.default -> spyre__embedding) since Spyre does not
+        yet support indirect indexing (gather/scatter).
+
+        Note: Once torch-spyre gains native embedding support, this fallback
+        will be removed. See: https://github.com/torch-spyre/torch-spyre/issues/420
 
         No TP masking or all_reduce is performed (tp_size > 1 is not supported).
 
         Args:
-            input_: Token index tensor [num_tokens] on CPU (int64)
+            x: Token index tensor [num_tokens] (int64)
 
         Returns:
-            Embedding output [num_tokens, embedding_dim] in weight dtype on CPU
-
-        Raises:
-            NotImplementedError: If input tensor is not on CPU.
+            Embedding output [num_tokens, embedding_dim] in weight dtype
         """
-        if input_.device.type != "cpu":
-            raise NotImplementedError(
-                f"Expected input on CPU, got device={input_.device}. "
-                "Spyre has no native embedding kernel; input must stay on CPU."
-            )
-        if input_.dtype not in (torch.int32, torch.int64):
-            logger.warning(
-                "SpyreVocabParallelEmbedding: expected integer index tensor "
-                "(int32/int64), got dtype=%s. This may produce unexpected results.",
-                input_.dtype,
-            )
-        return F.embedding(input_, self.weight)
+        x_dtype = self.weight.dtype
+        x_device = x.device
+
+        out = self._fwd(
+            convert(x, device=self._target_device),
+            convert(self.weight.data, device=self._target_device),
+        )
+
+        # Transfer back to original device and restore original dtype
+        return pytree.tree_map(
+            lambda el: convert(el, dtype=x_dtype, device=x_device),
+            out,
+        )
 
 
 def _op_func(
-    input_: torch.Tensor,
+    x: torch.Tensor,
     output: torch.Tensor,
     layer_name: str,
 ) -> None:
     """Custom op implementation — runs outside torch.compile graph."""
     layer = get_layer(layer_name)
-    result = layer.forward_native(input_)
+    result = layer.forward_native(x)
     output.copy_(result)
 
 
