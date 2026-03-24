@@ -157,6 +157,7 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
     ) -> SchedulerOutput:
         cached_reqs = CachedRequestData.make_empty()
         cached_reqs.req_ids = req_ids
+        cached_reqs.num_computed_tokens = num_computed_tokens
 
         num_scheduled_tokens = {}
         total_num_scheduled_tokens = 0
@@ -180,7 +181,6 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
             "num_common_prefix_blocks": [],
             "finished_req_ids": set(),
             "free_encoder_mm_hashes": [],
-            "grammar_bitmask": None,
         }
 
     def assert_block_tables_and_slot_mappings(
