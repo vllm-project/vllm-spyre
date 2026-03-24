@@ -3,6 +3,7 @@
 from . import cpu_fallback
 from . import linear
 from . import rms_norm
+from . import rotary_embedding
 from . import silu_and_mul
 from . import vocab_parallel_embedding
 from vllm.logger import init_logger
@@ -15,5 +16,6 @@ def register_all():
     cpu_fallback.register()
     vocab_parallel_embedding.register()
     linear.register()
+    rotary_embedding.register()
     rms_norm.register()
     silu_and_mul.register()

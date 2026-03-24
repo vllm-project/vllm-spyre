@@ -16,11 +16,10 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
 import torch
 import torch.nn as nn
 
-from vllm.config import CompilationMode, VllmConfig
+from vllm.config import VllmConfig
 from vllm.logger import init_logger
 from vllm.model_executor.model_loader import get_model
 from vllm.v1.utils import CpuGpuBuffer
@@ -32,58 +31,19 @@ if TYPE_CHECKING:
 
 logger = init_logger(__name__)
 
-# Dtypes natively supported on Spyre device.
-# int32 is NOT supported — promoted to int64.
-_SPYRE_SUPPORTED_DTYPES = {torch.float16, torch.bfloat16, torch.float32,
-                           torch.int64, torch.bool}
+# Dtypes currently natively supported on Spyre device.
+_SPYRE_SUPPORTED_DTYPES = {torch.float16, torch.int64}
 
 
 class SpyreCpuGpuBuffer(CpuGpuBuffer):
-    """CpuGpuBuffer adapted for Spyre device constraints.
+    """CpuGpuBuffer with Spyre-safe copies.
 
-    - .cpu: always on CPU with original dtype (for numpy staging)
-    - .gpu: on Spyre with dtype promotion (int32 → int64)
-    - copy_to_gpu: handles dtype conversion and synchronous copies
-      (Spyre does not support non_blocking)
-
-    Unsupported dtypes keep .gpu on CPU as a fallback.
+    Overrides copy methods to:
+    - Use synchronous copies (Spyre doesn't support non_blocking)
+    - Handle dtype mismatch (e.g. int32 cpu → int64 Spyre)
     """
 
-    def __init__(
-        self,
-        *size: int | torch.SymInt,
-        dtype: torch.dtype,
-        device: torch.device,
-        pin_memory: bool,
-        with_numpy: bool = True,
-    ) -> None:
-        # CPU side: original dtype, always on CPU
-        self.cpu = torch.zeros(*size, dtype=dtype, device="cpu",
-                               pin_memory=False)
-
-        # GPU (Spyre) side: promote int32 → int64
-        spyre_dtype = dtype
-        if dtype == torch.int32:
-            spyre_dtype = torch.int64
-
-        if spyre_dtype in _SPYRE_SUPPORTED_DTYPES:
-            self.gpu = torch.zeros(*size, dtype=spyre_dtype, device=device)
-        else:
-            # Unsupported dtype (e.g. bool): keep .gpu on CPU
-            self.gpu = torch.zeros(*size, dtype=dtype, device="cpu")
-
-        self.np: np.ndarray
-        if with_numpy:
-            if dtype == torch.bfloat16:
-                raise ValueError(
-                    "Bfloat16 torch tensors cannot be directly cast to a "
-                    "numpy array, so call with with_numpy=False"
-                )
-            self.np = self.cpu.numpy()
-
     def copy_to_gpu(self, n: int | None = None) -> torch.Tensor:
-        # Synchronous copy with optional dtype promotion (int32 → int64).
-        # Spyre does not support non_blocking=True.
         src = self.cpu if n is None else self.cpu[:n]
         dst = self.gpu if n is None else self.gpu[:n]
         if src.dtype != dst.dtype:
@@ -110,13 +70,17 @@ class TorchSpyreModelRunner(GPUModelRunner):
     """
 
     def __init__(self, vllm_config: VllmConfig, device: torch.device):
+        # Store the real Spyre device before super().__init__ so that
+        # _make_buffer can place .gpu tensors on Spyre directly.
+        self._spyre_device = device
+
         # Run GPUModelRunner.__init__ with device="cpu" to avoid crashes
         # during initialization. Many components (logits processors, input
         # batch buffers) create tensors on `self.device`, and Spyre does not
         # support all dtypes (int32, int64, bool) or non_blocking copies.
         # By initializing with CPU, all buffers and logitsprocs tensors are
-        # safely created on CPU. We restore self.device to Spyre afterward
-        # for model loading and forward execution.
+        # safely created on CPU. _make_buffer overrides the .gpu placement
+        # to use the real Spyre device with dtype promotion.
         with _torch_cuda_wrapper():
             super().__init__(vllm_config, torch.device("cpu"))
 
@@ -131,15 +95,6 @@ class TorchSpyreModelRunner(GPUModelRunner):
         # Disable GPU-specific features (same as CPUModelRunner)
         self.use_cuda_graph = False
         self.cascade_attn_enabled = False
-
-        # NOTE: Because we initialized with device="cpu", persistent buffers
-        # (input_ids, positions, seq_lens, etc.) were created with .gpu on
-        # CPU. We now recreate them with SpyreCpuGpuBuffer so .gpu is on
-        # Spyre (with int32→int64 promotion). This is done lazily via the
-        # _make_buffer override — the buffers are recreated by calling
-        # the parent's buffer setup again, but that's not practical for
-        # all buffers. Instead, we patch existing buffers in-place.
-        self._promote_buffers_to_spyre()
 
     def load_model(self, load_dummy_weights: bool = False) -> None:
         """Load model, move to Spyre, and compile."""
@@ -165,31 +120,44 @@ class TorchSpyreModelRunner(GPUModelRunner):
         logger.info("Model loaded and compiled for Spyre.")
 
     def _compile_for_spyre(self) -> None:
-        """Apply torch.compile with appropriate backend."""
+        """Apply torch.compile for Spyre with static shapes.
+
+        Spyre compilation is handled here (not by vLLM's @support_torch_compile)
+        because Spyre requires static shapes — dynamic shapes (SymInt) are not
+        supported by the Spyre Inductor backend.
+
+        Supported modes:
+        - enforce_eager=True: no compilation (eager execution)
+        - CompilationMode.NONE: Spyre-managed compilation with torch.compile
+        Other vLLM compilation modes (VLLM_COMPILE, STOCK_TORCH_COMPILE) are
+        not supported — the platform forces CompilationMode.NONE in
+        apply_config_platform_defaults().
+        """
+        from vllm.config import CompilationMode
+
         mode = self.compilation_config.mode
-
-        if mode == CompilationMode.NONE:
-            logger.info("Compilation disabled (eager mode)")
-            return
-
-        if mode == CompilationMode.STOCK_TORCH_COMPILE:
-            backend = self.compilation_config.init_backend(self.vllm_config)
-            # Custom ops (spyre_rmsnorm, spyre_cpu_fallback, etc.) are opaque
-            # to dynamo but don't cause graph breaks — fullgraph=True is safe.
-            self.model = torch.compile(
-                self.model,
-                backend=backend,
-                fullgraph=True,
+        if mode != CompilationMode.NONE:
+            raise ValueError(
+                f"Unsupported compilation mode {mode} for Spyre. "
+                f"Only CompilationMode.NONE is supported. Spyre handles "
+                f"compilation internally via _compile_for_spyre(). "
+                f"Use enforce_eager=True to disable compilation entirely."
             )
+
+        if self.vllm_config.model_config.enforce_eager:
+            logger.info("Compilation disabled (enforce_eager=True)")
             return
 
-        if mode == CompilationMode.VLLM_COMPILE:
-            # vLLM's custom compilation uses the @support_torch_compile
-            # decorator on model classes. The decorator handles compilation
-            # during model instantiation. Nothing extra needed here.
-            return
-
-        logger.warning("Unsupported compilation mode %s for Spyre", mode)
+        # Custom ops (spyre_rmsnorm, spyre_cpu_fallback, etc.) are opaque
+        # to dynamo but don't cause graph breaks — fullgraph=True is safe.
+        # dynamic=False ensures static shapes (Spyre can't handle SymInt).
+        self.model = torch.compile(
+            self.model,
+            backend="inductor",
+            fullgraph=True,
+            dynamic=False,
+        )
+        logger.info("Model compiled for Spyre (backend=inductor)")
 
     def warming_up_model(self) -> None:
         """Trigger Spyre compilation via dummy forward pass."""
@@ -302,41 +270,36 @@ class TorchSpyreModelRunner(GPUModelRunner):
     def _make_buffer(
         self, *size: int | torch.SymInt, dtype: torch.dtype, numpy: bool = True
     ) -> SpyreCpuGpuBuffer:
-        """Create a SpyreCpuGpuBuffer with .gpu on Spyre."""
+        """Create a SpyreCpuGpuBuffer with .gpu on Spyre.
+
+        The .cpu tensor stays on CPU with the original dtype.
+        The .gpu tensor is placed on Spyre with dtype promotion
+        (int32 → int64) since Spyre doesn't support int32.
+        Copies are synchronous (Spyre doesn't support non_blocking).
+        """
+        
+        if dtype not in _SPYRE_SUPPORTED_DTYPES:
+            # Dtype currently not supported and alternative dtype needs to be used
+            if dtype in [torch.int32]:
+                dtype = torch.int64
+            elif dtype in [torch.bool, torch.int8, torch.int16, ]:
+                return SpyreCpuGpuBuffer(
+                    *size,
+                    dtype=dtype,
+                    device="cpu",
+                    pin_memory=False,
+                    with_numpy=numpy,
+                )
+            else:
+                raise ValueError(f'Unsupported dtype {dtype} found for spyre!')
+        
         return SpyreCpuGpuBuffer(
             *size,
             dtype=dtype,
-            device=self.device,
+            device=self._spyre_device,
             pin_memory=False,
             with_numpy=numpy,
         )
-
-    def _promote_buffers_to_spyre(self) -> None:
-        """Move CpuGpuBuffer .gpu tensors to Spyre device.
-
-        After super().__init__ with device="cpu", all buffers have .gpu on
-        CPU. This method moves them to Spyre with dtype promotion
-        (int32 → int64) where needed.
-        """
-        for attr_name in dir(self):
-            obj = getattr(self, attr_name, None)
-            if not isinstance(obj, CpuGpuBuffer):
-                continue
-            if obj.gpu.device == self.device:
-                continue
-            # Promote int32 → int64 (Spyre doesn't support int32)
-            spyre_dtype = obj.gpu.dtype
-            if spyre_dtype == torch.int32:
-                spyre_dtype = torch.int64
-            if spyre_dtype in _SPYRE_SUPPORTED_DTYPES:
-                obj.gpu = obj.gpu.to(dtype=spyre_dtype, device=self.device)
-            logger.debug(
-                "Promoted buffer %s to Spyre (%s → %s, device=%s)",
-                attr_name,
-                obj.cpu.dtype,
-                obj.gpu.dtype,
-                obj.gpu.device,
-            )
 
 
 @contextmanager

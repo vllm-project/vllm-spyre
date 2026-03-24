@@ -73,49 +73,49 @@ class TorchSpyrePlatform(CpuPlatform):
         logger.info(message, _version.version, model_name)
 
     @classmethod
+    def get_attn_backend_cls(
+        cls,
+        selected_backend,
+        attn_selector_config,
+        num_heads=None,
+    ) -> str:
+        """Use Spyre attention backend that wraps CPU attention with
+        Spyre<->CPU device transfers."""
+        return ("vllm_spyre_next.attention_backend"
+                ".SpyreCPUAttentionBackend")
+
+    @classmethod
+    def apply_config_platform_defaults(cls, vllm_config: VllmConfig) -> None:
+        """Set Spyre-specific config defaults before vLLM's defaulting logic.
+
+        Called early in VllmConfig.__post_init__, BEFORE compilation mode
+        and custom_ops defaults are applied. Setting CompilationMode.NONE here
+        ensures:
+        - vLLM's @support_torch_compile won't activate (avoids dynamic shapes
+          / SymInt which Spyre can't handle)
+        - custom_ops defaults to "all" (since mode == NONE), enabling
+          forward_oot dispatch for OOT-registered layers
+        Spyre compilation is handled separately in _compile_for_spyre().
+        """
+        from vllm.config import CompilationMode
+        vllm_config.compilation_config.mode = CompilationMode.NONE
+
+    @classmethod
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:
         cls.log_server_boot(vllm_config)
 
         # ---- worker ----
         parallel_config = vllm_config.parallel_config
         if parallel_config.worker_cls == "auto":
-            # "auto" defaults to the CPUWorker as we inherit from the CpuPlatform
-            # from vllm_spyre_next.v1.worker.spyre_worker import TorchSpyreWorker
             worker_class = "vllm_spyre_next.v1.worker.spyre_worker.TorchSpyreWorker"
-            # if a torch spyre specific worker class is needed it can be loaded with
-            # worker_class = "vllm_spyre_next.v1.worker.spyre_worker.TorchSpyreWorker"
             logger.info("Loading worker from: %s", worker_class)
             parallel_config.worker_cls = worker_class
 
-        # ---- model runner ----
-        # A custom model runner has to be added to a potential TorchSpyreWorker class:
-        # TorchSpyreWorker.model_runner = TorchSpyreModelRunner (see SpyreWorker for reference)
-        # The default vllm.v1.worker.cpu_worker.CPUWorker uses
-        # vllm.v1.worker.cpu_model_runner.CPUModelRunner
-
         # ---- scheduler ----
         scheduler_config = vllm_config.scheduler_config
-        # default scheduler
         scheduler_class = "vllm.v1.core.sched.scheduler.Scheduler"
-        # if a torch spyre specific scheduler class is needed it can be loaded with
-        # scheduler_class = "vllm_spyre_next.v1.core.scheduler.TorchSpyreScheduler"
         logger.info("Loading scheduler from: %s", scheduler_class)
         scheduler_config.scheduler_cls = scheduler_class
-
-        # ---- attention backend ----
-        # A custom attention backend can be registered with get_attn_backend_cls()
-        # see copied code from vllm/platforms/cpu.CpuPlatform illustrating the default
-        # TorchSDPABackend used for vLLM CPU execution
-
-        # @classmethod
-        # def get_attn_backend_cls(cls, selected_backend: _Backend, head_size: int,
-        #                      dtype: torch.dtype, kv_cache_dtype: Optional[str],
-        #                      block_size: int, use_v1: bool,
-        #                      use_mla: bool) -> str:
-        #     if selected_backend and selected_backend != _Backend.TORCH_SDPA:
-        #         logger.info("Cannot use %s backend on CPU.", selected_backend)
-        #     logger.info("Using Torch SDPA backend.")
-        #     return "vllm.attention.backends.torch_sdpa.TorchSDPABackend"
 
         # call CpuPlatform.check_and_update_config()
         super().check_and_update_config(vllm_config)
