@@ -291,12 +291,14 @@ class SpyrePlatform(Platform):
         #       always have token budget available to schedule a full batch
         # - For generative models, set `max_num_batched_tokens` to the chunk
         #       chunk size used for chunked prefill.
+        print(f"setting cache config")
         if cache_config is not None:
             if not is_decoder:
                 scheduler_config.max_num_batched_tokens = (
                     model_config.max_model_len * scheduler_config.max_num_seqs
                 )
                 cache_config.block_size = model_config.max_model_len  # ty: ignore[invalid-assignment]
+                
             else:
                 cache_config.block_size = cls._block_size
                 # Set VLLM_DT_CHUNK_LEN based on scheduler_config.max_num_batched_tokens
@@ -312,6 +314,11 @@ class SpyrePlatform(Platform):
                 )
                 if cache_config.num_gpu_blocks_override is None:
                     cache_config.num_gpu_blocks_override = cls.get_total_spyre_blocks(vllm_config)
+            if hasattr(cache_config, "user_specified_block_size"):
+                setattr(cache_config, "user_specified_block_size", cache_config.block_size)
+            print(f"{cache_config.block_size=}")
+
+        
 
         logger.info(
             "Configurations for Spyre. max_model_len=%d, max_num_seqs=%d, block_size=%d, "
