@@ -297,7 +297,7 @@ class SpyrePlatform(Platform):
                     model_config.max_model_len * scheduler_config.max_num_seqs
                 )
                 cache_config.block_size = model_config.max_model_len  # ty: ignore[invalid-assignment]
-                
+
             else:
                 cache_config.block_size = cls._block_size
                 # Set VLLM_DT_CHUNK_LEN based on scheduler_config.max_num_batched_tokens
@@ -314,9 +314,7 @@ class SpyrePlatform(Platform):
                 if cache_config.num_gpu_blocks_override is None:
                     cache_config.num_gpu_blocks_override = cls.get_total_spyre_blocks(vllm_config)
             if hasattr(cache_config, "user_specified_block_size"):
-                setattr(cache_config, "user_specified_block_size", cache_config.block_size)
-
-        
+                cache_config.user_specified_block_size = True
 
         logger.info(
             "Configurations for Spyre. max_model_len=%d, max_num_seqs=%d, block_size=%d, "
