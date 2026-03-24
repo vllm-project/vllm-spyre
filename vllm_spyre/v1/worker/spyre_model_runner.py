@@ -2432,7 +2432,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             prompt_token_ids=prompt_token_ids,
             sampling_params=request.sampling_params,
             pooling_params=None,
-            eos_token_id=None,
             block_hasher=self.request_block_hasher,
             mm_features=mm_features,
         )

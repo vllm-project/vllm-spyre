@@ -134,7 +134,6 @@ def make_new_request_data(req_id, prompt_len):
         prompt_token_ids=[42] * prompt_len,
         sampling_params=SamplingParams(),
         pooling_params=None,
-        eos_token_id=None,
     )
     return NewRequestData.from_request(req, block_ids=[])
 

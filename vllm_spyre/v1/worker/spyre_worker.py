@@ -154,12 +154,15 @@ class SpyreWorker(WorkerBase):
         """
         return self.model_runner.get_kv_cache_spec()
 
-    def compile_or_warm_up_model(self) -> None:
-        """Prepare model for execution through compilation/warmup."""
+    def compile_or_warm_up_model(self) -> float:
+        """Prepare model for execution through compilation/warmup.
+
+        Returns:
+            The accumulated compilation time in seconds.
+        """
 
         if envs_spyre.VLLM_SPYRE_USE_CB:
-            self._warmup_spyre_dynamic_size(self.restricted_tokens)
-            return
+            return self._warmup_spyre_dynamic_size(self.restricted_tokens)
         if self.model_runner.is_multimodal:
             raise NotImplementedError(
                 "[WARMUP] Static batching is not supported for multimodal models."
@@ -207,6 +210,7 @@ class SpyreWorker(WorkerBase):
             num_shape_combinations,
             all_warmup_total_t,
         )
+        return all_warmup_total_t
 
     def check_health(self) -> None:
         """Basic health check (override for device-specific checks)."""
@@ -576,7 +580,7 @@ class SpyreWorker(WorkerBase):
         self.perf_metrics.log("load model time", load_model_total_t, model=self.model_config.model)
         logger.info("load model took %.3fs", load_model_total_t)
 
-    def _warmup_spyre_dynamic_size(self, special_token_ids):
+    def _warmup_spyre_dynamic_size(self, special_token_ids) -> float:
         warmup_start_t = time.time()
 
         # satisfy mypy
@@ -692,6 +696,7 @@ class SpyreWorker(WorkerBase):
         )
 
         maybe_override_signals_handler()
+        return warmup_total_t
 
     def _cleanup_model_runner(self, request) -> None:
         # Needed to clean up the data of model runner

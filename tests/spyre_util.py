@@ -448,7 +448,6 @@ def create_random_request(
         request_id=str(request_id),
         prompt_token_ids=prompt_token_ids,
         sampling_params=sampling_params,
-        eos_token_id=None,
         arrival_time=0,
         lora_request=None,
         pooling_params=None,
