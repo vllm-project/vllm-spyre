@@ -12,7 +12,7 @@ readme = "README.md"
 license = {text = "Apache 2"}
 dependencies = [
     "torch-spyre",
-    "vllm==0.15.1+cpu",
+    "vllm",
 
     # Listing as direct deps to ensure they're picked up from the correct index.
     # Versions intentionally left out because these are dependencies of dependencies.
@@ -94,9 +94,8 @@ extra-build-variables = { vllm = { VLLM_TARGET_DEVICE = "cpu" } }
 # vLLM and torch-spyre must be pulled from github to be built from source
 # NB: torch-spyre can only be compiled where `sendnn` is available
 [tool.uv.sources]
-vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.17.1" }
-# see https://github.com/torch-spyre/torch-spyre/pull/746
-torch-spyre = { git = "https://github.com/torch-spyre/torch-spyre", rev = "c1f67bb4701630179d53dbfc060dde62fc2d7d18" }
+vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.18.0" }
+torch-spyre = { git = "https://github.com/torch-spyre/torch-spyre", rev = "db439f07a021068157a510a820a0249b0c69dc4b" }
 torch = [
   { index = "pytorch-cpu" },
 ]
