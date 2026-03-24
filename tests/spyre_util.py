@@ -296,6 +296,10 @@ register_model_info(
     name="ibm-granite/granite-3.3-8b-instruct-FP8",
     revision="4b5990b8d402a75febe0086abbf1e490af494e3d",
 )
+register_model_info(
+    name="BAAI/bge-reranker-v2-m3",
+    revision="953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e",
+)
 ### Multimodal
 register_model_info(
     name="ibm-granite/granite-vision-3.2-2b",
@@ -324,7 +328,9 @@ def _default_test_models(
 
     if isScoring:
         model = REFERENCE_MODELS["cross-encoder/stsb-roberta-large"]
-        return [pytest.param(model, marks=[pytest.mark.scoring], id=model.name)]
+        bge_reranker_v2_m3_model = REFERENCE_MODELS["BAAI/bge-reranker-v2-m3"]
+        return [pytest.param(model, marks=[pytest.mark.scoring], id=model.name),
+                pytest.param(bge_reranker_v2_m3_model, marks=[pytest.mark.scoring], id=bge_reranker_v2_m3_model.name)]
 
     if isMultimodal:
         # NOTE: use 3.2 instead of 3.3 here since it's minimal case currently

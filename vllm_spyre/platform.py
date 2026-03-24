@@ -490,6 +490,7 @@ class SpyrePlatform(Platform):
         if parser is not None:
             parser.set_defaults(enable_prefix_caching=True)
             parser.set_defaults(max_num_batched_tokens=cls.DEFAULT_CHUNK_SIZE)
+            parser.set_defaults(enable_chunked_prefill=True)
 
     @classmethod
     def _check_threading_config(cls, worker_count: int):
