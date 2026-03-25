@@ -34,7 +34,6 @@ else:
     SamplingParams = None
     PoolingParams = None
     ProcessorInputs = None
-    PromptType = None
     TokenInputs = None
 from vllm.platforms import Platform, PlatformEnum
 

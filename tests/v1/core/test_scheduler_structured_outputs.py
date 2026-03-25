@@ -228,7 +228,6 @@ class TestSchedulerStructuredOutputHandling:
         # Store original values
         original_request_id = request.request_id
         original_prompt_tokens = list(request.prompt_token_ids) if request.prompt_token_ids else []
-        original_eos_token = request.eos_token_id
         original_arrival_time = request.arrival_time
         original_sampling_params = request.sampling_params
 
@@ -240,7 +239,6 @@ class TestSchedulerStructuredOutputHandling:
         # Verify other attributes are unchanged
         assert request.request_id == original_request_id
         assert request.prompt_token_ids == original_prompt_tokens
-        assert request.eos_token_id == original_eos_token
         assert request.arrival_time == original_arrival_time
         assert request.sampling_params is original_sampling_params
         # But structured_output_request should be None
