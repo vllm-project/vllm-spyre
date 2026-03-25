@@ -526,6 +526,28 @@ def _reorder_tests_by_name(items: list[pytest.Item]) -> None:
     items.sort(key=sort_key)
 
 
+def _convert_yaml_value(value):
+    """Convert YAML string values to Python objects where appropriate.
+
+    Handles torch dtype strings like "torch.half" -> torch.half.
+    """
+    if isinstance(value, str):
+        import torch
+
+        dtype_map = {
+            "torch.half": torch.half,
+            "torch.float16": torch.float16,
+            "torch.bfloat16": torch.bfloat16,
+            "torch.float32": torch.float32,
+            "torch.float": torch.float,
+            "torch.float64": torch.float64,
+            "torch.double": torch.double,
+        }
+        if value in dtype_map:
+            return dtype_map[value]
+    return value
+
+
 @pytest.hookimpl(tryfirst=True)
 def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
     """Apply parameter overrides from YAML config."""
@@ -554,7 +576,7 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
         for i, marker in enumerate(metafunc.definition.own_markers):
             if marker.name == "parametrize" and marker.args[0] == po.param_name:
                 metafunc.definition.own_markers[i] = pytest.mark.parametrize(
-                    po.param_name, list(po.values)
+                    po.param_name, [_convert_yaml_value(v) for v in po.values]
                 ).mark
                 break
 
