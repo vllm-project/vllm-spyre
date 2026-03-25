@@ -50,11 +50,6 @@ THREADING_ENVS = [
 ]
 
 
-def safe_empty_cache():
-    if torch.accelerator.current_accelerator(check_available=True):
-        torch.accelerator.empty_cache()  # ty: ignore
-
-
 # Needed by vllm/model_executor/layers/pooler.py:562
 # Copied from vllm/utils/__init__.py
 class _StreamPlaceholder:
@@ -93,10 +88,7 @@ class SpyrePlatform(Platform):
     @classmethod
     def import_kernels(cls) -> None:
         # Workaround torch.accelerator.empty_cache for torch 2.7.1 and vllm v0.18.0 compatibility
-        if not hasattr(torch.accelerator, "empty_cache"):
-            setattr(torch.accelerator, "empty_cache", lambda: None)  # noqa
-        else:
-            setattr(torch.accelerator, "empty_cache", safe_empty_cache)  # noqa
+        setattr(torch.accelerator, "empty_cache", lambda: None)  # noqa
 
     @classmethod
     def is_async_output_supported(cls, enforce_eager: bool | None) -> bool:
