@@ -27,6 +27,7 @@ from vllm.model_executor.layers.rotary_embedding.base import (
 from vllm.utils.torch_utils import direct_register_custom_op
 
 from .cpu_fallback import SpyreCpuFallbackMixin
+from .utils import spyre_to_cpu
 
 logger = init_logger(__name__)
 
@@ -83,9 +84,9 @@ class SpyreRotaryEmbedding(SpyreCpuFallbackMixin, RotaryEmbedding):
         Moves inputs to CPU, calls upstream forward_native, copies results
         back to pre-allocated output tensors (on Spyre).
         """
-        cpu_positions = positions.to("cpu")
-        cpu_query = query.to("cpu")
-        cpu_key = key.to("cpu") if key is not None else None
+        cpu_positions = spyre_to_cpu(positions)
+        cpu_query = spyre_to_cpu(query)
+        cpu_key = spyre_to_cpu(key)
 
         result_query, result_key = RotaryEmbedding.forward_native(
             self, cpu_positions, cpu_query, cpu_key,

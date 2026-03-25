@@ -23,6 +23,8 @@ from vllm.forward_context import get_forward_context
 from vllm.logger import init_logger
 from vllm.utils.torch_utils import direct_register_custom_op
 
+from .utils import spyre_to_cpu
+
 logger = init_logger(__name__)
 
 
@@ -83,7 +85,7 @@ def spyre_cpu_fallback(
     """
     forward_context = get_forward_context()
     layer = forward_context.no_compile_layers[layer_name]
-    cpu_input = input.to("cpu") if input.device.type != "cpu" else input
+    cpu_input = spyre_to_cpu(input)
     result = layer.cpu_forward(cpu_input)
     output.copy_(result)
 

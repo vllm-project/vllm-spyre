@@ -13,10 +13,14 @@ transfer is needed for cached keys/values.
 Remove this file once Spyre supports attention natively.
 """
 
+from dataclasses import replace
+
 import torch
 
 from vllm.logger import init_logger
 from vllm.v1.attention.backend import AttentionLayer
+
+from vllm_spyre_next.custom_ops.utils import spyre_to_cpu
 from vllm.v1.attention.backends.cpu_attn import (
     CPUAttentionBackend,
     CPUAttentionBackendImpl,
@@ -69,19 +73,16 @@ class SpyreCPUAttentionBackendImpl(CPUAttentionBackendImpl):
         if attn_metadata is None:
             return output
 
+        # Move metadata tensors to CPU if on Spyre. The CPU attention
+        # kernel expects all metadata (query_start_loc, seq_lens,
+        # block_table, slot_mapping) on CPU.
+        attn_metadata = self._metadata_to_cpu(attn_metadata)
+
         # Move q/k/v from Spyre to CPU (synchronous — Spyre doesn't
         # support non_blocking). KV cache is already on CPU.
-        cpu_query = query.to("cpu") if query.device.type != "cpu" else query
-        cpu_key = (
-            key.to("cpu")
-            if key is not None and key.device.type != "cpu"
-            else key
-        )
-        cpu_value = (
-            value.to("cpu")
-            if value is not None and value.device.type != "cpu"
-            else value
-        )
+        cpu_query = self._to_cpu(query)
+        cpu_key = self._to_cpu(key)
+        cpu_value = self._to_cpu(value)
 
         # Create CPU output buffer for the CPU attention kernel
         spyre_output = output
@@ -110,3 +111,45 @@ class SpyreCPUAttentionBackendImpl(CPUAttentionBackendImpl):
             return spyre_output
 
         return result
+
+    @staticmethod
+    def _to_cpu(t: torch.Tensor | None) -> torch.Tensor | None:
+        """Safely move a Spyre tensor to CPU.
+
+        Delegates to spyre_to_cpu() which handles all edge cases:
+        - SpyreSafeView subclass tensors
+        - Views (including 2x int backing views)
+        - Root tensor D2H with view reconstruction on CPU
+        """
+        return spyre_to_cpu(t)
+
+    def _metadata_to_cpu(
+        self, meta: CPUAttentionMetadata
+    ) -> CPUAttentionMetadata:
+        """Move metadata tensor fields to CPU if on Spyre.
+
+        The CPU attention kernel expects all tensor metadata on CPU.
+        Uses dataclasses.replace to create a new metadata with CPU tensors,
+        preserving all non-tensor fields.
+        """
+        # Fast path: if query_start_loc is already on CPU, assume all are
+        if meta.query_start_loc.device.type == "cpu":
+            return meta
+
+        updates: dict = {
+            "query_start_loc": self._to_cpu(meta.query_start_loc),
+            "seq_lens": self._to_cpu(meta.seq_lens),
+            "block_table": self._to_cpu(meta.block_table),
+            "slot_mapping": self._to_cpu(meta.slot_mapping),
+            "scheduler_metadata": self._to_cpu(meta.scheduler_metadata),
+        }
+
+        # Handle optional SDPA fields
+        if meta.sdpa_start_loc is not None:
+            updates["sdpa_start_loc"] = self._to_cpu(meta.sdpa_start_loc)
+        if meta.sdpa_attn_masks is not None:
+            updates["sdpa_attn_masks"] = [
+                self._to_cpu(m) for m in meta.sdpa_attn_masks
+            ]
+
+        return replace(meta, **updates)

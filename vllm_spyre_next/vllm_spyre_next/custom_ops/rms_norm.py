@@ -54,6 +54,15 @@ class SpyreRMSNorm(RMSNorm):
 
     _dynamic_arg_dims = {"x": [], "residual": []}
 
+    def _apply(self, fn, recurse=True):
+        """Keep weights on CPU to avoid SpyreTensorImpl destructor bugs.
+
+        model.to(device="spyre") would move weights to Spyre, but the
+        SpyreTensorImpl destructor has a double-free bug. Weights are
+        transferred to Spyre at runtime via convert() in forward_native.
+        """
+        return self
+
     def __init__(self, *args, **kwargs):
         """Initialize SpyreRMSNorm layer.
 
@@ -171,20 +180,16 @@ class SpyreRMSNorm(RMSNorm):
             1. Minimum batch size: Pads to 64 if needed
             2. Device transfer: CPU -> Spyre convert to float16
             3. Kernel execution: Calls compiled _fwd
-            4. Result transfer: Spyre -> CPU, trim padding, convert to bfloat16
-
-        Limitations:
-            - variance_size_override not implemented (raises NotImplementedError)
+            4. Result transfer: Spyre -> CPU, trim padding, restore dtype
 
         Args:
             x: Input tensor [batch_size, hidden_size] on CPU
-            residual: Optional residual
+            residual: Optional residual tensor
 
         Returns:
-            Normalized output [batch_size, hidden_size] in bfloat16
+            Normalized output [batch_size, hidden_size] in original dtype
         """
         x_dtype = x.dtype
-        x_device = x.device
 
         if self.variance_size_override is not None:
             raise NotImplementedError("TODO: variance_size_override not yet implemented")
@@ -192,30 +197,36 @@ class SpyreRMSNorm(RMSNorm):
         orig_batch_size = x.shape[0]
 
         # Pad to minimum batch size of 64 (Spyre constraint)
-        # Pad at END so original data stays at indices [0:orig_batch_size]
         if x.shape[0] < _SPYRE_MIN_BATCH_SIZE:
             pad_amount = _SPYRE_MIN_BATCH_SIZE - x.shape[0]
             x = torch.nn.functional.pad(x, (0, 0, 0, pad_amount))
             if residual is not None:
                 residual = torch.nn.functional.pad(residual, (0, 0, 0, pad_amount))
 
-        # Execute compiled kernel on Spyre device
-        outs = self._fwd(
-            convert(x, self._target_device, self._target_dtype),
-            self.variance_epsilon,
-            self.hidden_size,
+        # Execute kernel on Spyre device
+        spyre_x = convert(x, self._target_device, self._target_dtype)
+        spyre_w = (
             convert(self.weight.data, self._target_device, self._target_dtype)
             if self.has_weight
-            else None,
+            else None
+        )
+        outs = self._fwd(
+            spyre_x,
+            self.variance_epsilon,
+            self.hidden_size,
+            spyre_w,
             convert(residual, self._target_device, self._target_dtype),
             self.variance_size_override,
         )
 
-        # Transfer back to CPU and restore original shape
-        return pytree.tree_map(
-            lambda el: convert(el, dtype=x_dtype, device=x_device)[:orig_batch_size, :],
+        # Transfer back to CPU and trim padding
+        result = pytree.tree_map(
+            lambda el: convert(el, dtype=x_dtype, device="cpu")[
+                :orig_batch_size, :
+            ],
             outs,
         )
+        return result
 
 
 def _op_func(
@@ -245,5 +256,4 @@ def register():
         mutates_args=["output"],
         fake_impl=_fake_impl,
     )
-    register_dual_dispatch("spyre_rmsnorm", spyre_rmsnorm)
     logger.info("Registered custom op: SpyreRMSNorm")
