@@ -189,6 +189,9 @@ class SpyrePlatform(Platform):
         model_config = vllm_config.model_config
         cache_config = vllm_config.cache_config
 
+        # unsetting this config as it was only set to pass vllm scheduler's max_model_len check
+        vllm_config.enable_chunked_prefill = False 
+
         is_decoder = model_config.runner_type == "generate"
 
         is_pooling = model_config.runner_type == "pooling"
@@ -490,7 +493,7 @@ class SpyrePlatform(Platform):
         if parser is not None:
             parser.set_defaults(enable_prefix_caching=True)
             parser.set_defaults(max_num_batched_tokens=cls.DEFAULT_CHUNK_SIZE)
-            parser.set_defaults(enable_chunked_prefill=True)
+            parser.set_defaults(enable_chunked_prefill=True)  # set to pass vllm scheduler's max_model_len check
 
     @classmethod
     def _check_threading_config(cls, worker_count: int):
