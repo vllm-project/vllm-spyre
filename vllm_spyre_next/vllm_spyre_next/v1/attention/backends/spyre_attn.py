@@ -255,9 +255,6 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
 
         assert output is not None, "Output tensor must be provided"
 
-        if attn_metadata is None:
-            return output.fill_(0)
-
         num_actual_tokens = attn_metadata.num_actual_tokens
 
         # Step 1: Update KV cache
