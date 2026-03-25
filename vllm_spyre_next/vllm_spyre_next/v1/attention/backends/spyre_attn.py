@@ -118,8 +118,7 @@ class SpyreAttentionPagedBackend(AttentionBackend):
         torch.float16,
     ]
     supported_kv_cache_dtypes: ClassVar[list[CacheDType]] = [
-        "auto",
-        "bfloat16",
+        "float16",
     ]
 
     @staticmethod
