@@ -91,7 +91,8 @@ class SpyrePlatform(Platform):
 
     @classmethod
     def import_kernels(cls) -> None:
-        pass  # suppress warning
+        # Workaround torch.accelerator.empty_cache for torch 2.7.1 and vllm v0.18.0 compatibility
+        setattr(torch.accelerator, "empty_cache", lambda: None)  # noqa
 
     @classmethod
     def is_async_output_supported(cls, enforce_eager: bool | None) -> bool:
@@ -307,6 +308,8 @@ class SpyrePlatform(Platform):
                     "set `--max-num-batched-tokens` to a number that satisfies "
                     "this constraint."
                 )
+            if hasattr(cache_config, "user_specified_block_size"):
+                cache_config.user_specified_block_size = True
 
         logger.info(
             "Configurations for Spyre. max_model_len=%d, max_num_seqs=%d, block_size=%d, "

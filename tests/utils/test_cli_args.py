@@ -64,8 +64,6 @@ def test_generic_model_chunk_size_default(
         "32",
         "-tp",
         "4",
-        "--swap-space",  # to prevent a validation error in the 16GB memory test env.
-        "1",
     ]
 
     if model_name == "ibm-granite/granite-3.3-8b-instruct":
