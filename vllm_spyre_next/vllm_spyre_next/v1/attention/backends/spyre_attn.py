@@ -9,6 +9,8 @@ such as matmul, softmax, etc. It supports vLLM's KV cache.
 from dataclasses import dataclass
 from typing import ClassVar
 
+from vllm_spyre_next.custom_ops.utils import convert
+
 import torch
 
 from vllm.config import VllmConfig
@@ -254,6 +256,9 @@ class SpyreAttentionImpl(AttentionImpl[SpyreAttentionMetadata]):
         """Compute attention output using PyTorch native operations."""
 
         assert output is not None, "Output tensor must be provided"
+
+        if attn_metadata is None:
+            return output.fill_(0)
 
         num_actual_tokens = attn_metadata.num_actual_tokens
 
@@ -736,20 +741,12 @@ class SpyreAttentionImpl(AttentionImpl[SpyreAttentionMetadata]):
             # Ensure mask values are contiguous before transfer to Spyre
             mask_values_stickified = mask_values_cpu.contiguous()
 
-            # Convert bfloat16 to float16 if needed (Spyre doesn't support bfloat16)
-            if qt_stickified.dtype == torch.bfloat16:
-                qt_stickified = qt_stickified.to(torch.float16)
-                k_stickified = k_stickified.to(torch.float16)
-                vt_stickified = vt_stickified.to(torch.float16)
-                sm_scale_1d = sm_scale_1d.to(torch.float16)
-                mask_values_stickified = mask_values_stickified.to(torch.float16)
-
             # Transfer to Spyre device
-            qt_spyre = qt_stickified.to(spyre_device)
-            k_spyre = k_stickified.to(spyre_device)
-            vt_spyre = vt_stickified.to(spyre_device)
-            sm_scale_spyre = sm_scale_1d.to(spyre_device)
-            mask_values_spyre = mask_values_stickified.to(spyre_device)
+            qt_spyre = convert(qt_stickified, spyre_device, torch.float16)
+            k_spyre = convert(k_stickified, spyre_device, torch.float16)
+            vt_spyre = convert(vt_stickified, spyre_device, torch.float16)
+            sm_scale_spyre = convert(sm_scale_1d, spyre_device, torch.float16)
+            mask_values_spyre = convert(mask_values_stickified, spyre_device, torch.float16)
 
             # Compute attention on Spyre (compiled)
             output_spyre_t = self.attn_transposed_compiled(
@@ -757,8 +754,8 @@ class SpyreAttentionImpl(AttentionImpl[SpyreAttentionMetadata]):
             )
 
             # Transfer back to CPU and convert back to original dtype if needed
-            output_flat = output_spyre_t.to(
-                "cpu"
+            output_flat = convert(
+                output_spyre_t, torch.device("cpu")
             ).contiguous()  # [head_size, num_heads * QUERY_CHUNK_SIZE]
 
             # Convert back to original dtype (bfloat16) if we converted from it
