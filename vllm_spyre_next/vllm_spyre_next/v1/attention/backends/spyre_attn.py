@@ -257,7 +257,7 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
 
         num_actual_tokens = attn_metadata.num_actual_tokens
 
-        # Step 1: Update KV cache
+        # Step 1: Update KV cache (CPU)
         self._write_to_kv_cache(
             key[:num_actual_tokens],
             value[:num_actual_tokens],
@@ -266,7 +266,7 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
             attn_metadata.block_size,
         )
 
-        # Step 2: Gather compact KV cache
+        # Step 2: Gather compact KV cache (CPU)
         # compact_k/v: [num_seqs, max_seq_len, num_kv_heads, head_size]
         compact_k, compact_v = self._gather_compact_kv_cache(
             kv_cache,
@@ -276,7 +276,7 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
             attn_metadata.max_seq_len,
         )
 
-        # Step 3: Reshape query to per-sequence format
+        # Step 3: Reshape query to per-sequence format (CPU)
         # query_per_seq: [num_seqs, max_query_len, num_heads, head_size]
         query_per_seq = self._reshape_query_to_sequences(
             query[:num_actual_tokens],
@@ -285,7 +285,7 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
             attn_metadata.max_query_len,
         )
 
-        # Step 4: Build per-sequence attention mask
+        # Step 4: Build per-sequence attention mask (CPU)
         # mask: [num_seqs, 1, max_query_len, max_seq_len]  (True = masked out)
         mask = self._build_attention_mask(
             attn_metadata.seq_lens,
@@ -296,11 +296,11 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
             attn_metadata.max_query_len,
         )
 
-        # Step 5: Compute batched per-sequence attention
+        # Step 5: Compute batched per-sequence attention (CPU, Spyre)
         # attn_output: [num_seqs, max_query_len, num_heads, head_size]
         attn_output = self._compute_attention(query_per_seq, compact_k, compact_v, mask)
 
-        # Step 6: Extract only the actual query tokens (strip padding)
+        # Step 6: Extract only the actual query tokens (strip padding) (CPU)
         # [num_actual_tokens, num_heads, head_size]
         attn_output_flat = self._extract_relevant_output(attn_output, attn_metadata.query_start_loc)
 
