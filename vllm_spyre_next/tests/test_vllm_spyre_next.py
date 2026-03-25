@@ -4,6 +4,7 @@ import pytest
 
 
 @pytest.mark.spyre
+@pytest.mark.uses_subprocess
 def test_basic_model_load():
     model = LLM("ibm-ai-platform/micro-g3.3-8b-instruct-1b", max_model_len=128, max_num_seqs=2)
 
