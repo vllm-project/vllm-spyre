@@ -37,10 +37,10 @@ class TorchSpyrePlatform(CpuPlatform):
     device_name: str = "cpu"
     device_type: str = "cpu"
 
-    # Register the PyTorch Native Paged Attention implementation as the CUSTOM backend
+    # Register the PyTorch Native Attention implementation as the CUSTOM backend
     register_backend(
         AttentionBackendEnum.CUSTOM,
-        "vllm_spyre_next.v1.attention.backends.spyre_attn.SpyreAttentionPagedBackend",
+        "vllm_spyre_next.v1.attention.backends.spyre_attn.SpyreAttentionBackend",
     )
 
     @classmethod
