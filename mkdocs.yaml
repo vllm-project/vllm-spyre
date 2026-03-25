@@ -6,6 +6,7 @@ exclude_docs: |
   *.template.md
 theme:
   name: material
+  custom_dir: docs/mkdocs/overrides
   palette:
     # Palette toggle for automatic mode
     - media: "(prefers-color-scheme)"
@@ -41,6 +42,7 @@ theme:
 hooks:
   - docs/mkdocs/hooks/generate_examples.py
   - docs/mkdocs/hooks/url_schemes.py
+  - docs/mkdocs/hooks/generate_model_tables.py
 
 plugins:
   - meta
@@ -68,7 +70,6 @@ plugins:
           - https://pillow.readthedocs.io/en/stable/objects.inv
           - https://numpy.org/doc/stable/objects.inv
           - https://pytorch.org/docs/stable/objects.inv
-          - https://psutil.readthedocs.io/en/stable/objects.inv
 
 markdown_extensions:
   - attr_list
@@ -108,7 +109,3 @@ extra_javascript:
 # https://www.mkdocs.org/user-guide/configuration/#use_directory_urls
 use_directory_urls: false
 
-extra:
-  version:
-    provider: mike
-    default: latest
