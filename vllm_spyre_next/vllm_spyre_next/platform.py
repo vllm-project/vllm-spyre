@@ -40,6 +40,25 @@ class TorchSpyrePlatform(CpuPlatform):
         return "torch-spyre"
 
     @classmethod
+    def import_kernels(cls) -> None:
+        super().import_kernels()
+        # torch.accelerator.empty_cache is used in vLLM 0.18.0 and errors in
+        # vLLM tests with torch-spyre currently. vLLM tests call empty_cache()
+        # after using HF Transformers (before using the spyre device) which
+        # causes this exception:
+        #
+        # RuntimeError: device_allocator INTERNAL ASSERT FAILED at
+        # "/pytorch/c10/core/CachingDeviceAllocator.h":116, please report a bug
+        # to PyTorch. Allocator for spyre is not a DeviceAllocator.
+        #
+        # The error seems wrong because it is a DeviceAllocator and using the
+        # device first works
+        # TODO: See about fixing this in torch-spyre instead of this hack
+        import torch
+
+        setattr(torch.accelerator, "empty_cache", lambda: None)  # noqa
+
+    @classmethod
     def log_server_boot(cls, vllm_config: VllmConfig) -> None:
         # Only log in main process (not in TP workers)
         if multiprocessing.current_process().name != "MainProcess":
