@@ -139,7 +139,7 @@ class SpyreRMSNorm(RMSNorm):
         if x.shape[-1] != hidden_size:
             raise ValueError(f"Expected hidden_size to be {hidden_size}, but found: {x.shape[-1]}")
 
-        x = x.transpose(-1, -2).contiguous()
+        x = x.contiguous().transpose(-1, -2).contiguous()
 
         variance_epsilon = torch.full(
             x.shape, variance_epsilon, dtype=torch.float16, device=x.device
@@ -203,27 +203,36 @@ class SpyreRMSNorm(RMSNorm):
             if residual is not None:
                 residual = torch.nn.functional.pad(residual, (0, 0, 0, pad_amount))
 
-        # Execute kernel on Spyre device
-        spyre_x = convert(x, self._target_device, self._target_dtype)
-        spyre_w = (
-            convert(self.weight.data, self._target_device, self._target_dtype)
+        # # If compiled, run on Spyre. Otherwise, run on CPU — Spyre's
+        # # eager kernels don't support torch.full, pow, mean etc.
+        # is_compiled = (self._fwd is not self.forward_spyre)
+        # if is_compiled:
+        #     target_device = self._target_device
+        # else:
+        #     target_device = torch.device("cpu")
+            
+        target_device = self._target_device
+
+        fwd_x = convert(x, target_device, self._target_dtype)
+        fwd_w = (
+            convert(self.weight.data, target_device, self._target_dtype)
             if self.has_weight
             else None
         )
         outs = self._fwd(
-            spyre_x,
+            fwd_x,
             self.variance_epsilon,
             self.hidden_size,
-            spyre_w,
-            convert(residual, self._target_device, self._target_dtype),
+            fwd_w,
+            convert(residual, target_device, self._target_dtype),
             self.variance_size_override,
         )
 
-        # Transfer back to CPU and trim padding
+        # # Transfer back to CPU and trim padding
         result = pytree.tree_map(
-            lambda el: convert(el, dtype=x_dtype, device="cpu")[
+            lambda el: convert(convert(el, dtype=x_dtype, device="cpu")[
                 :orig_batch_size, :
-            ],
+            ], target_device, self._target_dtype),
             outs,
         )
         return result

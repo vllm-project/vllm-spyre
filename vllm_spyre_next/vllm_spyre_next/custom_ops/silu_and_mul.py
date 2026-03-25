@@ -135,9 +135,18 @@ class SpyreSiluAndMul(SiluAndMul):
         d = x_cpu.shape[-1] // 2
         x1 = x_cpu[..., :d]
         x2 = x_cpu[..., d:]
+
+        # If compiled, run on Spyre. Otherwise, run on CPU — Spyre's
+        # eager kernels may not support all ops (silu, mul).
+        is_compiled = (self._fwd is not self.forward_static)
+        if is_compiled:
+            target_device = self._target_device
+        else:
+            target_device = torch.device("cpu")
+
         out = self._fwd(
-            convert(x1, self._target_device, self._target_dtype),
-            convert(x2, self._target_device, self._target_dtype),
+            convert(x1, target_device, self._target_dtype),
+            convert(x2, target_device, self._target_dtype),
         )
 
         # Transfer back to original device and restore original dtype

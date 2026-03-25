@@ -33,23 +33,19 @@ logger = init_logger(__name__)
 def _spyre_dtype(dtype: torch.dtype) -> torch.dtype | None:
     """Map a dtype to a Spyre-supported dtype, or None if not suitable.
 
-    Spyre supports float16 for floats and int64 for integers.
-    torch-spyre stores int64 as int32 internally (storage = N*4 not N*8),
-    which breaks tensor slicing for views >50% of storage. The 2x buffer
-    workaround in SpyreCpuGpuBuffer handles this by allocating double-size
-    backing tensors so any valid slice stays within bounds.
-
-    Bool tensors stay on CPU (only used in speculative decode / multimodal).
+    Only float types go to Spyre (as float16). Int and bool stay on CPU:
+    - torch-spyre's int64 is broken (storage=N*4 not N*8, D2H crashes,
+      H2D type conversion unsupported, can't index CPU tensors)
+    - GPUModelRunner._prepare_inputs uses int .gpu tensors for CPU-side
+      indexing which requires same-device tensors
+    - All int tensor consumers are CPU fallbacks anyway
 
     Returns:
-        torch.float16 for float dtypes, torch.int64 for int dtypes,
-        None for bool/unsupported dtypes.
+        torch.float16 for float dtypes, None for everything else.
     """
     if dtype.is_floating_point:
         return torch.float16
-    if dtype in (torch.int32, torch.int64):
-        return torch.int64
-    return None  # bool tensors stay on CPU
+    return None
 
 
 def _parse_target_device(args, kwargs):
@@ -151,56 +147,7 @@ class SpyreCpuGpuBuffer(CpuGpuBuffer):
     ) -> None:
         self.cpu = torch.zeros(*size, dtype=cpu_dtype, device="cpu",
                                pin_memory=pin_memory)
-
-        # Determine if this is a 1D int tensor on Spyre needing 2x backing.
-        # Normalize shape: *size may be individual ints or a single tuple.
-        shape = (size[0] if len(size) == 1 and isinstance(size[0], tuple)
-                 else size)
-        ndim = len(shape) if isinstance(shape, tuple) else 1
-        is_1d_int_on_spyre = (
-            device.type == "spyre"
-            and not gpu_dtype.is_floating_point
-            and ndim == 1
-        )
-
-        if is_1d_int_on_spyre:
-            # 2x backing: allocate double the size so any valid slice of
-            # the original size stays ≤50% of storage (within bounds).
-            # Storage math: backing 2N has storage=2N*4=8N bytes;
-            # view of N elements needs N*8=8N bytes — exactly fits.
-            #
-            # CRITICAL: Use set_() instead of slicing to create gpu_raw.
-            # Slicing (_int_backing[:n]) creates a VIEW, which causes two
-            # problems:
-            # 1. spyre_to_cpu follows the view chain to the root (2N
-            #    elements) and tries to D2H copy it — reads 16N bytes
-            #    from 8N bytes of storage → hangs/crashes.
-            # 2. Direct D2H of views crashes in torch-spyre DMA code.
-            #
-            # set_() creates a tensor that SHARES the backing storage but
-            # is NOT a view (_is_view()=False). spyre_to_cpu treats it as
-            # a full tensor: D2H copies N*8=8N bytes from 8N byte storage.
-            n = shape[0] if isinstance(shape, tuple) else shape
-            self._int_backing = torch.zeros(
-                2 * n, dtype=gpu_dtype, device=device)
-            gpu_raw = torch.empty(0, dtype=gpu_dtype, device=device)
-            gpu_raw.set_(
-                self._int_backing.untyped_storage(),
-                0,          # byte offset
-                (n,),       # size
-                (1,),       # stride
-            )
-        elif (device.type == "spyre" and not gpu_dtype.is_floating_point
-              and ndim > 1):
-            # 2D+ int tensors: 2x backing doesn't work due to stride math.
-            # Fall back to CPU placement.
-            logger.warning_once(
-                "2D int tensor (shape %s) cannot use 2x backing on Spyre, "
-                "keeping on CPU.", shape)
-            gpu_raw = torch.zeros(*size, dtype=gpu_dtype, device="cpu")
-        else:
-            gpu_raw = torch.zeros(*size, dtype=gpu_dtype, device=device)
-
+        gpu_raw = torch.zeros(*size, dtype=gpu_dtype, device=device)
         self.gpu = spyre_safe_view(gpu_raw)
         self.np: "np.ndarray"
         if with_numpy:
