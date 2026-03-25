@@ -20,8 +20,8 @@ def reference_silu_and_mul(x: torch.Tensor) -> torch.Tensor:
 
 @pytest.mark.spyre
 @pytest.mark.siluandmul
-@pytest.mark.parametrize("num_tokens", [1, 16, 63, 64, 65, 127, 128, 129, 256, 512])
-@pytest.mark.parametrize("d", [2, 16, 63, 64, 65, 127, 128, 129, 256, 512])
+@pytest.mark.parametrize("num_tokens", [1, 7, 63, 64, 65, 1024])
+@pytest.mark.parametrize("d", [2, 63, 64, 65, 1024, 13824])
 @pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float32])
 def test_spyre_siluandmul_matches_reference(default_vllm_config, num_tokens, d, dtype):
     """SpyreSiluAndMul output matches golden reference.
