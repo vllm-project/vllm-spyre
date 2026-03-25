@@ -312,8 +312,7 @@ class SpyrePlatform(Platform):
                 )
                 if cache_config.num_gpu_blocks_override is None:
                     cache_config.num_gpu_blocks_override = cls.get_total_spyre_blocks(vllm_config)
-            if hasattr(cache_config, "user_specified_block_size"):
-                cache_config.user_specified_block_size = True
+            cache_config.user_specified_block_size = True
 
         logger.info(
             "Configurations for Spyre. max_model_len=%d, max_num_seqs=%d, block_size=%d, "
