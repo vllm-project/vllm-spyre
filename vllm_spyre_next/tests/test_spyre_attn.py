@@ -5,7 +5,7 @@ import pytest
 import torch
 
 from vllm.utils.torch_utils import set_random_seed
-from vllm_spyre_next.v1.attention.backends.spyre_paged_attn import (
+from vllm_spyre_next.v1.attention.backends.spyre_attn import (
     SpyreAttentionPagedImpl,
     SpyreAttentionPagedMetadata,
 )
@@ -33,7 +33,7 @@ DTYPES = [torch.float16]
 NUM_BLOCKS = [2048, 32768]
 
 
-def ref_paged_attn(
+def ref_attn(
     query: torch.Tensor,
     key_cache: torch.Tensor,
     value_cache: torch.Tensor,
@@ -44,7 +44,7 @@ def ref_paged_attn(
     sliding_window: int | None = None,
     soft_cap: float | None = None,
 ) -> torch.Tensor:
-    """Reference implementation of paged attention for validation."""
+    """Reference implementation of attention for validation."""
     num_seqs = len(query_lens)
     block_tables = block_tables.cpu().numpy()
     _, block_size, num_kv_heads, head_size = key_cache.shape
@@ -106,7 +106,7 @@ def ref_paged_attn(
 @pytest.mark.parametrize("num_blocks", NUM_BLOCKS)
 @pytest.mark.parametrize("use_sdpa", [True, False])
 @torch.inference_mode()
-def test_spyre_paged_attn(
+def test_spyre_attn(
     seq_lens: list[tuple[int, int]],
     num_heads: tuple[int, int],
     head_size: int,
@@ -213,7 +213,7 @@ def test_spyre_paged_attn(
         output=output,
     )
 
-    ref_output = ref_paged_attn(
+    ref_output = ref_attn(
         query=query,
         key_cache=key_cache,
         value_cache=value_cache,
@@ -246,7 +246,7 @@ def test_spyre_paged_attn(
 @pytest.mark.parametrize("block_size", [16])
 @pytest.mark.parametrize("dtype", [torch.float16])
 @torch.inference_mode()
-def test_spyre_paged_attn_single_sequence(
+def test_spyre_attn_single_sequence(
     num_heads: tuple[int, int],
     head_size: int,
     block_size: int,
@@ -335,7 +335,7 @@ def test_spyre_paged_attn_single_sequence(
             output=output,
         )
 
-        ref_output = ref_paged_attn(
+        ref_output = ref_attn(
             query=query,
             key_cache=key_cache,
             value_cache=value_cache,
@@ -346,7 +346,7 @@ def test_spyre_paged_attn_single_sequence(
         )
 
         if query_len >= 32:
-            # See tolerance note in test_spyre_paged_attn: float16 accumulation
+            # See tolerance note in test_spyre_attn: float16 accumulation
             # errors grow with query_len * kv_len * head_size.
             atol, rtol = 0.3, 5.0
         else:
