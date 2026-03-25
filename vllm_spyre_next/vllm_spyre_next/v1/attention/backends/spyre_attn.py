@@ -25,11 +25,6 @@ from vllm.v1.attention.backend import (
 from vllm.v1.kv_cache_interface import AttentionSpec
 
 
-# Disable dynamic shapes to force static shape compilation for Spyre
-torch._dynamo.config.assume_static_by_default = True
-torch._dynamo.config.automatic_dynamic_shapes = False
-
-
 @dataclass
 class SpyreAttentionPagedMetadata:
     """Metadata for PyTorch native attention computation."""
@@ -233,7 +228,7 @@ class SpyreAttentionPagedImpl(AttentionImpl[SpyreAttentionPagedMetadata]):
             self.working_precision = torch.bfloat16
 
         # Compile the attention function once for reuse
-        self.attn_transposed_compiled = torch.compile(self._attn_transposed)
+        self.attn_transposed_compiled = torch.compile(self._attn_transposed, dynamic=False)
 
         # When True, use torch.nn.functional.scaled_dot_product_attention
         # Otherwise, use Spyre implementation with compiled kernel
