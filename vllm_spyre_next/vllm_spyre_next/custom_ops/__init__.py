@@ -11,3 +11,6 @@ def register_all():
     logger.info("Registering custom ops for spyre_next")
     rms_norm.register()
     silu_and_mul.register()
+
+    # IR provider registration (triggered by import)
+    from . import kernels as _kernels  # noqa: F401
