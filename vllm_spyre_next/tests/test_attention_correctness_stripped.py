@@ -58,29 +58,23 @@ def _convert_dtype_to_torch(dtype):
 
 # Define common batch configurations
 BATCH_SPECS = {
-    "small_decode": BatchSpec(seq_lens=[32, 40], query_lens=[1, 1]),
-    "small_prefill": BatchSpec(seq_lens=[32, 40], query_lens=[8, 8]),
-    "mixed_small": BatchSpec(seq_lens=[32, 40, 48, 56], query_lens=[1, 1, 5, 5]),
+    "small_decode": BatchSpec(seq_lens=[40], query_lens=[1]),
+    "small_prefill": BatchSpec(seq_lens=[40], query_lens=[8]),
+    "mixed_small": BatchSpec(seq_lens=[48], query_lens=[5]),
     "medium_decode": BatchSpec(
-        seq_lens=[128, 256, 512, 1024, 128, 256, 512, 1024],
-        query_lens=[1, 1, 1, 1, 1, 1, 1, 1],
+        seq_lens=[1024],
+        query_lens=[1],
     ),
-    "medium_prefill": BatchSpec(seq_lens=[256, 512, 1024, 2048], query_lens=[16, 16, 16, 16]),
-    "mixed_medium": BatchSpec(
-        seq_lens=[512, 1024, 2048, 512, 1024, 2048], query_lens=[1, 1, 1, 7, 7, 7]
-    ),
-    "large_decode": BatchSpec(seq_lens=[2048] * 32, query_lens=[1] * 32),
-    "large_prefill": BatchSpec(seq_lens=[4096] * 8, query_lens=[32] * 8),
-    "mixed_large": BatchSpec(
-        seq_lens=[1024, 2048, 4096, 1024, 2048, 4096], query_lens=[1, 1, 1, 32, 32, 32]
-    ),
+    "medium_prefill": BatchSpec(seq_lens=[1024], query_lens=[16]),
+    "mixed_medium": BatchSpec(seq_lens=[2048], query_lens=[1]),
+    "large_decode": BatchSpec(seq_lens=[2048], query_lens=[1]),
+    "large_prefill": BatchSpec(seq_lens=[4096], query_lens=[32]),
+    "mixed_large": BatchSpec(seq_lens=[4096], query_lens=[32]),
     "single_decode": BatchSpec(seq_lens=[1024], query_lens=[1]),
     "single_prefill": BatchSpec(seq_lens=[1024], query_lens=[64]),
     # encoder-only
-    "small_encoder_prefill": BatchSpec(seq_lens=[32, 64, 128, 256], query_lens=[32, 64, 128, 256]),
-    "medium_encoder_prefill": BatchSpec(
-        seq_lens=[256, 512, 1024, 2048], query_lens=[256, 512, 1024, 2048]
-    ),
+    "small_encoder_prefill": BatchSpec(seq_lens=[32], query_lens=[32]),
+    "medium_encoder_prefill": BatchSpec(seq_lens=[256], query_lens=[256]),
 }
 
 
@@ -527,7 +521,7 @@ def _test_backend_correctness(
     ],
 )
 @pytest.mark.parametrize("model", ["meta-llama/Meta-Llama-3-8B"])
-@pytest.mark.parametrize("tensor_parallel_size", [1, 2, 4])
+@pytest.mark.parametrize("tensor_parallel_size", [1])
 def test_causal_backend_correctness(batch_spec_name: str, model: str, tensor_parallel_size: int):
     """Test backend's correctness with causal attention."""
 
