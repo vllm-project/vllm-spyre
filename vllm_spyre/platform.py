@@ -298,6 +298,7 @@ class SpyrePlatform(Platform):
                     model_config.max_model_len * scheduler_config.max_num_seqs
                 )
                 cache_config.block_size = model_config.max_model_len  # ty: ignore[invalid-assignment]
+                vllm_config.cache_config.enable_prefix_caching = False
 
             else:
                 cache_config.block_size = cls._block_size
