@@ -16,9 +16,6 @@ _supports_spyre = lambda x, weight, epsilon, variance_size=None: (
 )
 
 
-@ir.ops.rms_norm.register_impl(
-    "spyre", supports_args=_supports_spyre, supported=True
-)
 def spyre_rms_norm(
     x: Tensor,
     weight: Tensor | None,
@@ -38,3 +35,9 @@ def spyre_rms_norm(
     if weight is not None:
         x = x * weight
     return x
+
+
+# Register with vLLM IR system (returns IrOpImpl, not the function)
+ir.ops.rms_norm.register_impl(
+    "spyre", supports_args=_supports_spyre, supported=True
+)(spyre_rms_norm)
