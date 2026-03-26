@@ -4,49 +4,6 @@ Test SpyreSiluAndMul custom op correctness against a reference implementation.
 
 import pytest
 import torch
-import torch.nn.functional as F
-
-
-def reference_silu_and_mul(x: torch.Tensor) -> torch.Tensor:
-    """Golden reference: standard SiluAndMul (SwiGLU) in PyTorch.
-
-    Computes: silu(x[..., :d]) * x[..., d:] where d = x.shape[-1] // 2
-    """
-    d = x.shape[-1] // 2
-    x1 = x[..., :d]
-    x2 = x[..., d:]
-    return F.silu(x1) * x2
-
-
-@pytest.mark.spyre
-@pytest.mark.siluandmul
-@pytest.mark.parametrize("num_tokens", [1, 7, 63, 64, 65, 1024])
-@pytest.mark.parametrize("d", [2, 63, 64, 65, 1024, 13824])
-@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float32])
-def test_spyre_siluandmul_matches_reference(default_vllm_config, num_tokens, d, dtype):
-    """SpyreSiluAndMul output matches golden reference.
-
-    Tests both paths:
-    - forward(): custom op dispatch (no-compile path via torch.ops.vllm.spyre_siluandmul)
-    - forward_native(): direct Spyre device execution
-    """
-    from vllm_spyre_next.custom_ops.silu_and_mul import SpyreSiluAndMul
-
-    torch.manual_seed(42)
-
-    # Input shape is [num_tokens, 2*d], output shape is [num_tokens, d]
-    x = torch.randn(num_tokens, 2 * d, dtype=dtype)
-    layer = SpyreSiluAndMul()
-
-    expected = reference_silu_and_mul(x)
-    actual = layer.forward_native(x)
-
-    torch.testing.assert_close(actual.float(), expected.float(), atol=1e-2, rtol=1e-2)
-
-    # Test forward() path (custom op dispatch)
-    actual_forward = layer.forward(x)
-    torch.testing.assert_close(actual_forward.float(), expected.float(), atol=1e-2, rtol=1e-2)
-
 
 @pytest.fixture
 def dummy_tensor():

@@ -33,20 +33,18 @@ tests:
     #           hidden_size: [64]
     #   block_list:
     #     - test: "test_fused_rms_norm_quant"
-    # This will not work unless torch.randn works on spyre device
-    # - rel_path: tests/kernels/core/test_activation.py
-    #   allow_list:
-    #     - test: "test_act_and_mul"
-    #       mode: mandatory_pass
-    #       tags: [siluandmul, upstream]
-    #       params:
-    #         allow:
-    #           activation: [silu_and_mul]
-    #         override:
-    #           num_tokens: [1, 16]
-    #           d: [64]
-    #           dtype: [torch.bfloat16]
-    #           device: [spyre]
+    - rel_path: tests/kernels/core/test_activation.py
+      allow_list:
+        - test: "test_act_and_mul"
+          mode: mandatory_pass
+          tags: [siluandmul, upstream]
+          params:
+            allow:
+              activation: [silu_and_mul]
+            override:
+              num_tokens: [7, 83, 1024]
+              d: [8, 64, 128, 1024]
+              device: [cpu]
     - rel_path: tests/models/language/generation/test_common.py
       allow_list:
         - test: "test_models"
