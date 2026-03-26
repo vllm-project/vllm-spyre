@@ -153,8 +153,9 @@ class SpyreAttentionBackend(AttentionBackend):
 
     @classmethod
     def supports_head_size(cls, head_size: int) -> bool:
-        # Support any head size
-        return True
+        # Spyre stick size is 128 bytes; tensors are transferred as float16 (2 bytes),
+        # so head_size must be a multiple of 64 (= 128 / 2) to satisfy stick alignment.
+        return head_size % 64 == 0
 
     @classmethod
     def supports_kv_cache_dtype(cls, kv_cache_dtype: CacheDType | None) -> bool:
