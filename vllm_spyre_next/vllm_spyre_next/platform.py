@@ -22,10 +22,8 @@ if TYPE_CHECKING:
     # NB: We can't eagerly import many things from vllm since vllm.config
     # will import this file. These would lead to circular imports
     from vllm.config import VllmConfig
-    from vllm.config.kernel import IrOpPriorityConfig
 else:
     VllmConfig = None
-    IrOpPriorityConfig = None
 
 logger = init_logger(__name__)
 
@@ -74,17 +72,6 @@ class TorchSpyrePlatform(CpuPlatform):
         model_name = vllm_config.model_config.model if vllm_config.model_config else "N/A"
 
         logger.info(message, version, model_name)
-
-    @classmethod
-    def get_default_ir_op_priority(
-        cls, vllm_config: "VllmConfig"
-    ) -> "IrOpPriorityConfig":
-        from vllm.config.kernel import IrOpPriorityConfig
-
-        return IrOpPriorityConfig.with_default(
-            ["native"],
-            rms_norm=["spyre", "native"],
-        )
 
     @classmethod
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:
