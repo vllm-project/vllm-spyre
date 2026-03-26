@@ -33,12 +33,12 @@ def test_chunk_size_default(monkeypatch: pytest.MonkeyPatch) -> None:
     ]
 
     with environ_checkpoint():
-        # Test default chunk size is 512
+        # Test default chunk size is 2048
         engine_args = _build_engine_args(common_args)
-        assert engine_args.max_num_batched_tokens == 512
+        assert engine_args.max_num_batched_tokens == 2048
         vllm_config = engine_args.create_engine_config()
-        assert vllm_config.scheduler_config.max_num_batched_tokens == 512
-        assert os.environ.get("VLLM_DT_CHUNK_LEN") == "512"
+        assert vllm_config.scheduler_config.max_num_batched_tokens == 2048
+        assert os.environ.get("VLLM_DT_CHUNK_LEN") == "2048"
 
     with environ_checkpoint():
         # Test that --max-num-batched-tokens overrides the default
