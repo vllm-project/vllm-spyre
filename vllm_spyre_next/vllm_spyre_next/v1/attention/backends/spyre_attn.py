@@ -9,9 +9,9 @@ such as matmul, softmax, etc. It supports vLLM's KV cache.
 from dataclasses import dataclass
 from typing import ClassVar
 
-from vllm_spyre_next.custom_ops.utils import convert
-
 import torch
+
+from vllm_spyre_next.custom_ops.utils import convert
 
 from vllm.config import VllmConfig
 from vllm.config.cache import CacheDType
@@ -55,6 +55,11 @@ class SpyreAttentionMetadata:
     num_kv_heads: int = 0
     num_heads: int = 0
 
+    @property
+    def query_lens(self) -> torch.Tensor:
+        """Per-sequence query lengths, derived from query_start_loc. [num_seqs]"""
+        return self.query_start_loc[1:] - self.query_start_loc[:-1]
+
 
 class SpyreAttentionMetadataBuilder(AttentionMetadataBuilder[SpyreAttentionMetadata]):
     """Builds attention metadata from batch information."""
@@ -84,29 +89,18 @@ class SpyreAttentionMetadataBuilder(AttentionMetadataBuilder[SpyreAttentionMetad
         fast_build: bool = False,
     ) -> SpyreAttentionMetadata:
         """Build attention metadata from common metadata."""
-
-        # Extract information from common metadata
-        num_actual_tokens = common_attn_metadata.num_actual_tokens
-        num_seqs = common_attn_metadata.num_reqs
-        max_query_len = common_attn_metadata.max_query_len
-        max_seq_len = common_attn_metadata.max_seq_len
-
-        seq_lens = common_attn_metadata.seq_lens
-        query_start_loc = common_attn_metadata.query_start_loc
-        block_table = common_attn_metadata.block_table_tensor
-        slot_mapping = common_attn_metadata.slot_mapping
-
         return SpyreAttentionMetadata(
-            num_actual_tokens=num_actual_tokens,
-            num_seqs=num_seqs,
-            max_query_len=max_query_len,
-            max_seq_len=max_seq_len,
-            seq_lens=seq_lens,
-            query_start_loc=query_start_loc,
-            block_table=block_table,
+            num_actual_tokens=common_attn_metadata.num_actual_tokens,
+            num_seqs=common_attn_metadata.num_reqs,
+            max_query_len=common_attn_metadata.max_query_len,
+            max_seq_len=common_attn_metadata.max_seq_len,
+            seq_lens=common_attn_metadata.seq_lens,
+            query_start_loc=common_attn_metadata.query_start_loc,
+            block_table=common_attn_metadata.block_table_tensor,
             block_size=self.block_size,
-            slot_mapping=slot_mapping,
-            apply_causal_mask=common_attn_metadata.causal and max_query_len > 1,
+            slot_mapping=common_attn_metadata.slot_mapping,
+            apply_causal_mask=common_attn_metadata.causal
+            and common_attn_metadata.max_query_len > 1,
             num_kv_heads=self.num_kv_heads,
             num_heads=self.num_heads,
         )
@@ -167,6 +161,7 @@ class SpyreAttentionBackend(AttentionBackend):
 class SpyreAttentionImpl(AttentionImpl[SpyreAttentionMetadata]):
     """PyTorch native implementation of attention with paged KV cache."""
 
+    # TODO: Make these hyperparameters configurable
     # KV length alignment: KV tensors are padded to the next multiple of this value.
     # Because torch.compile treats shapes as static constants, every distinct kv_len
     # triggers a full recompile. Aligning to 256 buckets sequence lengths into tiers
@@ -221,14 +216,12 @@ class SpyreAttentionImpl(AttentionImpl[SpyreAttentionMetadata]):
         self.kv_cache_dtype = kv_cache_dtype
         self.attn_type = attn_type
 
-        # Target devices for the computation
+        # Target device/dtype for compiled attention kernels
         self._target_device = torch.device("spyre")
         self._target_dtype = torch.float16
 
-        use_sdpa = True
-
-        # When True, use torch.nn.functional.scaled_dot_product_attention
-        # Otherwise, use Spyre implementation with compiled kernel
+        # When True, use torch.nn.functional.scaled_dot_product_attention.
+        # Otherwise, use the transposed matmul kernel (_attn_transposed).
         self.use_sdpa = use_sdpa
 
         if self.use_sdpa:
@@ -236,8 +229,8 @@ class SpyreAttentionImpl(AttentionImpl[SpyreAttentionMetadata]):
         else:
             self.attn_op = self._attn_transposed
 
-        # Compile the attention function once for reuse
-        # and fore dynamic=False, because of the spyre constraint
+        # Compile the attention function once for reuse.
+        # dynamic=False forces static shapes, required by the Spyre compiler.
         self.attn_op = torch.compile(self.attn_op, dynamic=False)
 
         # Simplified implementation: don't support these features initially
@@ -267,9 +260,10 @@ class SpyreAttentionImpl(AttentionImpl[SpyreAttentionMetadata]):
         if attn_metadata is None:
             return output
 
-        batch_size = len(attn_metadata.seq_lens)
-
-        assert batch_size == 1, f"Expected batch_size=1, got {batch_size}"
+        # Currently only batch_size == 1 is supported
+        assert attn_metadata.num_seqs == 1, (
+            f"Spyre attention currently supports batch_size=1, got {attn_metadata.num_seqs}"
+        )
 
         num_actual_tokens = attn_metadata.num_actual_tokens
 
@@ -518,13 +512,10 @@ class SpyreAttentionImpl(AttentionImpl[SpyreAttentionMetadata]):
         key: torch.Tensor,  # [num_seqs, max_seq_len, num_kv_heads, head_size]
         value: torch.Tensor,  # [num_seqs, max_seq_len, num_kv_heads, head_size]
         mask: torch.Tensor,  # [num_seqs, 1, max_query_len, max_seq_len]  True=masked
-        device: torch.device,
-        dtype: torch.dtype,
+        device: torch.device,  # device for intermediate allocations
+        dtype: torch.dtype,  # dtype for intermediate allocations
     ) -> torch.Tensor:
-        """
-        Compute attention using Spyre compiled operations.
-
-        Processes each sequence separately with query chunking for Spyre compatibility.
+        """Dispatch attention: SDPA path or per-sequence chunked Spyre path.
 
         Returns:
             [num_seqs, max_query_len, num_heads, head_size]
@@ -560,12 +551,15 @@ class SpyreAttentionImpl(AttentionImpl[SpyreAttentionMetadata]):
 
     def _compute_attention_sdpa(
         self,
-        query: torch.Tensor,
-        key: torch.Tensor,
-        value: torch.Tensor,
-        mask: torch.Tensor,
+        query: torch.Tensor,  # [num_seqs, max_query_len, num_heads, head_size]
+        key: torch.Tensor,  # [num_seqs, max_seq_len, num_kv_heads, head_size]
+        value: torch.Tensor,  # [num_seqs, max_seq_len, num_kv_heads, head_size]
+        mask: torch.Tensor,  # [num_seqs, 1, max_query_len, max_seq_len]  True=masked
     ) -> torch.Tensor:
-        """SDPA fallback implementation."""
+        """SDPA path: runs compiled scaled_dot_product_attention.
+
+        Note: Currently runs on CPU. TODO: Transfer to Spyre when supported.
+        """
         out = self.attn_op(
             query.transpose(1, 2),
             key.transpose(1, 2),
@@ -590,7 +584,7 @@ class SpyreAttentionImpl(AttentionImpl[SpyreAttentionMetadata]):
         Processes queries in fixed-size chunks of QUERY_CHUNK_SIZE tokens.
         """
 
-        batch_size, query_len, num_heads, head_size = query.shape
+        _, _, num_heads, head_size = query.shape
         _, kv_len, num_kv_heads, _ = key.shape
 
         # Handle grouped-query attention by repeating KV heads
@@ -607,8 +601,6 @@ class SpyreAttentionImpl(AttentionImpl[SpyreAttentionMetadata]):
         actual_query_len = query_squeezed.shape[0]
         num_chunks = (actual_query_len + self.QUERY_CHUNK_SIZE - 1) // self.QUERY_CHUNK_SIZE
 
-        # Allocate output tensor
-        # output_full = torch.zeros(
         output_full = torch.empty(
             actual_query_len,
             num_heads,
@@ -651,7 +643,6 @@ class SpyreAttentionImpl(AttentionImpl[SpyreAttentionMetadata]):
                 num_heads,
                 head_size,
                 kv_len,
-                chunk_idx,
                 device,
                 dtype,
             )
@@ -671,131 +662,98 @@ class SpyreAttentionImpl(AttentionImpl[SpyreAttentionMetadata]):
         num_heads: int,
         head_size: int,
         kv_len: int,
-        chunk_idx: int,
         device: torch.device,
         dtype: torch.dtype,
     ) -> torch.Tensor:
         """Compute attention for a single query chunk on Spyre.
 
+        Prepares tensors on CPU (reshape, stickify, build mask), transfers to
+        Spyre for the compiled matmul kernel, then transfers the result back.
+
         Returns:
-            [QUERY_CHUNK_SIZE, num_heads, head_size] - attention output (padded)
+            [QUERY_CHUNK_SIZE, num_heads, head_size] — attention output (padded)
         """
-        try:
-            padded_query_len = self.QUERY_CHUNK_SIZE
+        padded_query_len = self.QUERY_CHUNK_SIZE
 
-            # Validate dimensions for Spyre
-            if head_size <= 0 or num_heads <= 0 or kv_len <= 0 or padded_query_len <= 0:
-                raise ValueError(
-                    f"Invalid dimensions: head_size={head_size}, num_heads={num_heads}, "
-                    f"kv_len={kv_len}, padded_query_len={padded_query_len}"
-                )
+        # Reshape query to flatten heads into query dimension
+        query_reordered = query_chunk_padded.transpose(
+            0, 1
+        ).contiguous()  # [num_heads, QUERY_CHUNK_SIZE, head_size]
+        query_flat = query_reordered.reshape(num_heads * padded_query_len, head_size)
 
-            # Reshape query to flatten heads into query dimension
-            query_reordered = query_chunk_padded.transpose(
-                0, 1
-            ).contiguous()  # [num_heads, QUERY_CHUNK_SIZE, head_size]
-            query_flat = query_reordered.reshape(num_heads * padded_query_len, head_size)
+        # Key and value: also flatten across heads
+        key_reordered = key_squeezed.transpose(0, 1).contiguous()  # [num_heads, kv_len, head_size]
+        value_reordered = value_squeezed.transpose(
+            0, 1
+        ).contiguous()  # [num_heads, kv_len, head_size]
 
-            # Key and value: also flatten across heads
-            key_reordered = key_squeezed.transpose(
-                0, 1
-            ).contiguous()  # [num_heads, kv_len, head_size]
-            value_reordered = value_squeezed.transpose(
-                0, 1
-            ).contiguous()  # [num_heads, kv_len, head_size]
+        key_flat = key_reordered.reshape(num_heads * kv_len, head_size)
+        value_flat = value_reordered.reshape(num_heads * kv_len, head_size)
 
-            key_flat = key_reordered.reshape(num_heads * kv_len, head_size)
-            value_flat = value_reordered.reshape(num_heads * kv_len, head_size)
+        # Transpose for attention computation
+        qt = query_flat.T.contiguous()  # [head_size, num_heads * QUERY_CHUNK_SIZE]
+        vt = value_flat.T.contiguous()  # [head_size, num_heads * kv_len]
+        k = key_flat  # [num_heads * kv_len, head_size]
 
-            # Transpose for attention computation
-            qt = query_flat.T.contiguous()  # [head_size, num_heads * QUERY_CHUNK_SIZE]
-            vt = value_flat.T.contiguous()  # [head_size, num_heads * kv_len]
-            k = key_flat  # [num_heads * kv_len, head_size]
+        # Stickification: force Spyre-friendly memory layout.
+        # Transposed tensors need double transpose-contiguous; standard tensors just contiguous.
+        qt_stickified = qt.transpose(0, 1).contiguous().transpose(0, 1).contiguous()
+        vt_stickified = vt.transpose(0, 1).contiguous().transpose(0, 1).contiguous()
+        k_stickified = k.contiguous()
 
-            # Apply stickification for Spyre
-            # Query-like tensors (transposed format): double transpose-contiguous
-            qt_stickified = qt.transpose(0, 1).contiguous().transpose(0, 1).contiguous()
-            vt_stickified = vt.transpose(0, 1).contiguous().transpose(0, 1).contiguous()
+        # Scale factor: 1D tensor replicated per head × query position
+        sm_scale_1d = torch.tensor(self.scale, dtype=dtype, device=device).repeat(
+            num_heads * padded_query_len
+        )  # [num_heads * QUERY_CHUNK_SIZE]
 
-            # Key-like tensors (standard format): single contiguous
-            k_stickified = k.contiguous()
+        # --- Build block-diagonal additive mask ---
+        # The transposed kernel flattens all heads into one matmul, so the mask
+        # must be block-diagonal: each head's causal/padding mask sits on the
+        # diagonal, off-diagonal blocks are masked (-65504).
+        if mask_chunk is not None:
+            mask_all_heads = mask_chunk[0, 0]  # [chunk_len, kv_len]
 
-            # Create sm_scale as a 1D tensor repeated for each head and query position
-            sm_scale_scalar = torch.tensor(self.scale, dtype=dtype, device=device)
-            sm_scale_1d = sm_scale_scalar.repeat(
-                num_heads * padded_query_len
-            )  # [num_heads * QUERY_CHUNK_SIZE]
+            # Pad query dimension to QUERY_CHUNK_SIZE if this is the last chunk
+            if chunk_len < self.QUERY_CHUNK_SIZE:
+                padding_size = self.QUERY_CHUNK_SIZE - chunk_len
+                mask_padding = torch.ones((padding_size, kv_len), dtype=torch.bool, device=device)
+                mask_all_heads = torch.cat([mask_all_heads, mask_padding], dim=0)
 
-            # Prepare mask values
-            if mask_chunk is not None:
-                mask_all_heads = mask_chunk[0, 0]  # [chunk_len, kv_len]
+            head_mask_t = mask_all_heads.T  # [kv_len, QUERY_CHUNK_SIZE], True = masked
+            mask_bool = ~torch.block_diag(*([~head_mask_t] * num_heads))
+        else:
+            # No causal/padding mask: only cross-head positions are masked.
+            ones_block = torch.ones(kv_len, padded_query_len, dtype=torch.bool, device=device)
+            mask_bool = ~torch.block_diag(*([ones_block] * num_heads))
 
-                # Pad if needed
-                if chunk_len < self.QUERY_CHUNK_SIZE:
-                    padding_size = self.QUERY_CHUNK_SIZE - chunk_len
-                    mask_padding = torch.ones(
-                        (padding_size, kv_len), dtype=torch.bool, device=device
-                    )
-                    mask_all_heads = torch.cat([mask_all_heads, mask_padding], dim=0)
+        # Convert boolean mask to additive: True → -65504.0, False → 0.0
+        mask_values = torch.where(
+            mask_bool,
+            torch.tensor(-65504.0, dtype=dtype, device=device),
+            torch.tensor(0.0, dtype=dtype, device=device),
+        ).contiguous()
 
-                # Build block-diagonal boolean mask.
-                # ~block_diag(~per_head_block): diagonal = per_head_block, off-diagonal = True.
-                # All heads share the same causal/padding mask, so the block is identical for each.
-                head_mask_t = mask_all_heads.T  # [kv_len, QUERY_CHUNK_SIZE], True = masked
-                mask_bool = ~torch.block_diag(*([~head_mask_t] * num_heads))
+        # --- Transfer to Spyre, compute, transfer back ---
+        qt_spyre = convert(qt_stickified, self._target_device, self._target_dtype)
+        k_spyre = convert(k_stickified, self._target_device, self._target_dtype)
+        vt_spyre = convert(vt_stickified, self._target_device, self._target_dtype)
+        sm_scale_spyre = convert(sm_scale_1d, self._target_device, self._target_dtype)
+        mask_spyre = convert(mask_values, self._target_device, self._target_dtype)
 
-                # Convert: True (masked) -> -65504.0, False (valid) -> 0.0
-                mask_values_cpu = torch.where(
-                    mask_bool,
-                    torch.tensor(-65504.0, dtype=dtype, device=device),
-                    torch.tensor(0.0, dtype=dtype, device=device),
-                )
-            else:
-                # No causal/padding mask: all within-head positions are valid.
-                # ~block_diag(ones): diagonal = False (valid), off-diagonal = True (masked).
-                ones_block = torch.ones(kv_len, padded_query_len, dtype=torch.bool, device=device)
-                mask_bool = ~torch.block_diag(*([ones_block] * num_heads))
-                mask_values_cpu = torch.where(
-                    mask_bool,
-                    torch.tensor(-65504.0, dtype=query_chunk_padded.dtype, device=device),
-                    torch.tensor(0.0, dtype=query_chunk_padded.dtype, device=device),
-                )
+        # Compiled attention on Spyre
+        output_spyre_t = self.attn_op(qt_spyre, k_spyre, vt_spyre, sm_scale_spyre, mask_spyre)
 
-            # Ensure mask values are contiguous before transfer to Spyre
-            mask_values_stickified = mask_values_cpu.contiguous()
+        # Transfer back to CPU
+        output_flat = convert(
+            output_spyre_t, device, dtype
+        ).contiguous()  # [head_size, num_heads * QUERY_CHUNK_SIZE]
 
-            # Transfer to Spyre device
-            qt_spyre = convert(qt_stickified, self._target_device, self._target_dtype)
-            k_spyre = convert(k_stickified, self._target_device, self._target_dtype)
-            vt_spyre = convert(vt_stickified, self._target_device, self._target_dtype)
-            sm_scale_spyre = convert(sm_scale_1d, self._target_device, self._target_dtype)
-            mask_values_spyre = convert(
-                mask_values_stickified, self._target_device, self._target_dtype
-            )
+        # Reshape: [head_size, N*Q] → [N, Q, head_size] → [Q, N, head_size]
+        output_transposed = output_flat.T  # [num_heads * QUERY_CHUNK_SIZE, head_size]
+        output_reshaped = output_transposed.reshape(num_heads, padded_query_len, head_size)
 
-            # Compute attention on Spyre (compiled)
-            output_spyre_t = self.attn_op(
-                qt_spyre, k_spyre, vt_spyre, sm_scale_spyre, mask_values_spyre
-            )
-
-            # Transfer back to CPU and convert back to original dtype if needed
-            output_flat = convert(
-                output_spyre_t, device, dtype
-            ).contiguous()  # [head_size, num_heads * QUERY_CHUNK_SIZE]
-
-            # Transpose and reshape
-            output_transposed = output_flat.T  # [num_heads * QUERY_CHUNK_SIZE, head_size]
-            output_reshaped = output_transposed.reshape(num_heads, padded_query_len, head_size)
-
-            # Transpose to match expected format
-            output_final = output_reshaped.transpose(
-                0, 1
-            ).contiguous()  # [QUERY_CHUNK_SIZE, num_heads, head_size]
-
-            return output_final
-
-        except Exception as e:
-            raise RuntimeError(f"Error during Spyre computation for chunk {chunk_idx}: {e}") from e
+        # [QUERY_CHUNK_SIZE, num_heads, head_size]
+        return output_reshaped.transpose(0, 1).contiguous()
 
     def _extract_relevant_output(
         self,
