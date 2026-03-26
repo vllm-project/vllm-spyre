@@ -46,7 +46,7 @@ def main():
         # # Datatype of the mamba cache (if any).
         # mamba_ssm_cache_dtype="float32",
         # # Datatype of the model.
-        # dtype="float32",
+        dtype="float16",
         # # Maximum number of tokens for a prefill before being chunked
         # max_num_batched_tokens=8192,
         # # compliates logic with mamba
