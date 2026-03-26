@@ -5,6 +5,7 @@ Test SpyreSiluAndMul custom op correctness against a reference implementation.
 import pytest
 import torch
 
+
 @pytest.fixture
 def dummy_tensor():
     return torch.randn(4, 256, dtype=torch.float32)  # 2*d=256, so d=128
