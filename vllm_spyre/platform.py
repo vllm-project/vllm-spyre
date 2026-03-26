@@ -189,9 +189,6 @@ class SpyrePlatform(Platform):
         model_config = vllm_config.model_config
         cache_config = vllm_config.cache_config
 
-        # unsetting this config as it was only set to pass vllm scheduler's max_model_len check
-        vllm_config.enable_chunked_prefill = False 
-
         is_decoder = model_config.runner_type == "generate"
 
         is_pooling = model_config.runner_type == "pooling"
@@ -244,6 +241,8 @@ class SpyrePlatform(Platform):
             # override stuff
             model_config.max_model_len = max_seq_len
             scheduler_config.max_num_seqs = max_batch_size
+            # unsetting this config as it was only set to pass vllm scheduler's max_model_len check
+            vllm_config.enable_chunked_prefill = False 
 
             scheduler_config.scheduler_cls = "vllm_spyre.v1.core.scheduler.PoolingSpyreScheduler"
 
