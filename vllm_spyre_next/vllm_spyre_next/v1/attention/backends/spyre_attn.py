@@ -225,13 +225,23 @@ class SpyreAttentionImpl(AttentionImpl[SpyreAttentionMetadata]):
             self.working_precision = working_precision
         else:
             self.working_precision = torch.bfloat16
-
-        # Compile the attention function once for reuse
-        self.attn_transposed_compiled = torch.compile(self._attn_transposed, dynamic=False)
+        
+        # Target devices for the computation    
+        self._target_device = torch.device("spyre")
+        self._target_dtype = torch.float16
 
         # When True, use torch.nn.functional.scaled_dot_product_attention
         # Otherwise, use Spyre implementation with compiled kernel
         self.use_sdpa = use_sdpa
+        
+        if self.use_sdpa:
+            self.attn_op = torch.nn.functional.scaled_dot_product_attention
+        else:
+            self.attn_op = self._attn_transposed
+
+        # Compile the attention function once for reuse 
+        # and fore dynamic=False, because of the spyre constraint
+        self.attn_op = torch.compile(self.attn_op, dynamic=False)
 
         # Simplified implementation: don't support these features initially
         if alibi_slopes is not None:
@@ -548,7 +558,7 @@ class SpyreAttentionImpl(AttentionImpl[SpyreAttentionMetadata]):
         mask: torch.Tensor,
     ) -> torch.Tensor:
         """SDPA fallback implementation."""
-        out = torch.nn.functional.scaled_dot_product_attention(
+        out = self.attn_op(
             query.transpose(1, 2),
             key.transpose(1, 2),
             value.transpose(1, 2),
@@ -657,7 +667,9 @@ class SpyreAttentionImpl(AttentionImpl[SpyreAttentionMetadata]):
             [QUERY_CHUNK_SIZE, num_heads, head_size] - attention output (padded)
         """
         try:
-            spyre_device = torch.device("spyre")
+            orig_dtype = query_chunk_padded.dtype
+            orig_device = query_chunk_padded.device
+            
             padded_query_len = self.QUERY_CHUNK_SIZE
 
             # Validate dimensions for Spyre
@@ -698,7 +710,7 @@ class SpyreAttentionImpl(AttentionImpl[SpyreAttentionMetadata]):
             k_stickified = k.contiguous()
 
             # Create sm_scale as a 1D tensor repeated for each head and query position
-            sm_scale_scalar = torch.tensor(self.scale, dtype=query_chunk_padded.dtype, device="cpu")
+            sm_scale_scalar = torch.tensor(self.scale, dtype=orig_dtype, device=orig_device)
             sm_scale_1d = sm_scale_scalar.repeat(
                 num_heads * padded_query_len
             )  # [num_heads * QUERY_CHUNK_SIZE]
@@ -711,7 +723,7 @@ class SpyreAttentionImpl(AttentionImpl[SpyreAttentionMetadata]):
                 if chunk_len < self.QUERY_CHUNK_SIZE:
                     padding_size = self.QUERY_CHUNK_SIZE - chunk_len
                     mask_padding = torch.ones(
-                        (padding_size, kv_len), dtype=torch.bool, device="cpu"
+                        (padding_size, kv_len), dtype=torch.bool, device=orig_device
                     )
                     mask_all_heads = torch.cat([mask_all_heads, mask_padding], dim=0)
 
@@ -724,43 +736,39 @@ class SpyreAttentionImpl(AttentionImpl[SpyreAttentionMetadata]):
                 # Convert: True (masked) -> -65504.0, False (valid) -> 0.0
                 mask_values_cpu = torch.where(
                     mask_bool,
-                    torch.tensor(-65504.0, dtype=query_chunk_padded.dtype, device="cpu"),
-                    torch.tensor(0.0, dtype=query_chunk_padded.dtype, device="cpu"),
+                    torch.tensor(-65504.0, dtype=orig_dtype, device=orig_device),
+                    torch.tensor(0.0, dtype=orig_dtype, device=orig_device),
                 )
             else:
                 # No causal/padding mask: all within-head positions are valid.
                 # ~block_diag(ones): diagonal = False (valid), off-diagonal = True (masked).
-                ones_block = torch.ones(kv_len, padded_query_len, dtype=torch.bool, device="cpu")
+                ones_block = torch.ones(kv_len, padded_query_len, dtype=torch.bool, device=orig_device)
                 mask_bool = ~torch.block_diag(*([ones_block] * num_heads))
                 mask_values_cpu = torch.where(
                     mask_bool,
-                    torch.tensor(-65504.0, dtype=query_chunk_padded.dtype, device="cpu"),
-                    torch.tensor(0.0, dtype=query_chunk_padded.dtype, device="cpu"),
+                    torch.tensor(-65504.0, dtype=query_chunk_padded.dtype, device=orig_device),
+                    torch.tensor(0.0, dtype=query_chunk_padded.dtype, device=orig_device),
                 )
 
             # Ensure mask values are contiguous before transfer to Spyre
             mask_values_stickified = mask_values_cpu.contiguous()
 
             # Transfer to Spyre device
-            qt_spyre = convert(qt_stickified, spyre_device, torch.float16)
-            k_spyre = convert(k_stickified, spyre_device, torch.float16)
-            vt_spyre = convert(vt_stickified, spyre_device, torch.float16)
-            sm_scale_spyre = convert(sm_scale_1d, spyre_device, torch.float16)
-            mask_values_spyre = convert(mask_values_stickified, spyre_device, torch.float16)
+            qt_spyre = convert(qt_stickified, self._target_device, self._target_dtype)
+            k_spyre = convert(k_stickified, self._target_device, self._target_dtype)
+            vt_spyre = convert(vt_stickified, self._target_device, self._target_dtype)
+            sm_scale_spyre = convert(sm_scale_1d, self._target_device, self._target_dtype)
+            mask_values_spyre = convert(mask_values_stickified, self._target_device, self._target_dtype)
 
             # Compute attention on Spyre (compiled)
-            output_spyre_t = self.attn_transposed_compiled(
+            output_spyre_t = self.attn_op(
                 qt_spyre, k_spyre, vt_spyre, sm_scale_spyre, mask_values_spyre
             )
 
             # Transfer back to CPU and convert back to original dtype if needed
             output_flat = convert(
-                output_spyre_t, torch.device("cpu")
+                output_spyre_t, orig_device, orig_dtype
             ).contiguous()  # [head_size, num_heads * QUERY_CHUNK_SIZE]
-
-            # Convert back to original dtype (bfloat16) if we converted from it
-            if query_chunk_padded.dtype == torch.bfloat16 and output_flat.dtype == torch.float16:
-                output_flat = output_flat.to(torch.bfloat16)
 
             # Transpose and reshape
             output_transposed = output_flat.T  # [num_heads * QUERY_CHUNK_SIZE, head_size]
