@@ -119,9 +119,6 @@ def make_scheduler_output(
         scheduled_cached_reqs=scheduled_cached_reqs,
         num_scheduled_tokens=num_scheduled_tokens,
         total_num_scheduled_tokens=total_tokens,
-        scheduled_spec_decode_tokens={},
-        scheduled_encoder_inputs={},
-        num_common_prefix_blocks=[],
         finished_req_ids=finished_req_ids,
         kv_connector_metadata=None,
         **extra_args,
@@ -134,7 +131,6 @@ def make_new_request_data(req_id, prompt_len):
         prompt_token_ids=[42] * prompt_len,
         sampling_params=SamplingParams(),
         pooling_params=None,
-        eos_token_id=None,
     )
     return NewRequestData.from_request(req, block_ids=[])
 

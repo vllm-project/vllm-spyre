@@ -1,4 +1,3 @@
-from dataclasses import fields
 from typing import Any
 
 import pytest
@@ -147,12 +146,7 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
             scheduled_cached_reqs=CachedRequestData.make_empty(),
             num_scheduled_tokens=num_scheduled_tokens,
             total_num_scheduled_tokens=tokens_to_schedule,
-            scheduled_spec_decode_tokens={},
-            scheduled_encoder_inputs={},
-            num_common_prefix_blocks=[],
-            finished_req_ids=set(),
-            free_encoder_mm_hashes=[],
-            **self._compat_sched_output_kwargs(),
+            **self._extra_sched_output_kwargs(),
         )
 
     def _schedule_running_requests(
@@ -161,13 +155,9 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
         num_computed_tokens: list[int],
         tokens_to_schedule: list[int],
     ) -> SchedulerOutput:
-        cached_reqs = CachedRequestData(
-            req_ids=req_ids,
-            new_token_ids=[],
-            new_block_ids=[],
-            num_computed_tokens=num_computed_tokens,
-            **self._compat_request_data_kwargs(),
-        )
+        cached_reqs = CachedRequestData.make_empty()
+        cached_reqs.req_ids = req_ids
+        cached_reqs.num_computed_tokens = num_computed_tokens
 
         num_scheduled_tokens = {}
         total_num_scheduled_tokens = 0
@@ -180,35 +170,18 @@ class InstrumentedModelRunner(ChunkedPrefillModelRunner):
             scheduled_cached_reqs=cached_reqs,
             num_scheduled_tokens=num_scheduled_tokens,
             total_num_scheduled_tokens=total_num_scheduled_tokens,
-            scheduled_spec_decode_tokens={},
-            scheduled_encoder_inputs={},
-            num_common_prefix_blocks=[],
-            finished_req_ids=set(),
-            free_encoder_mm_hashes=[],
-            **self._compat_sched_output_kwargs(),
+            **self._extra_sched_output_kwargs(),
         )
 
-    def _compat_sched_output_kwargs(self) -> dict[str, Any]:
-        field_names = [field.name for field in fields(SchedulerOutput)]
-        kwargs: dict[str, Any] = {}
-        if "structured_output_request_ids" in field_names:
-            kwargs["structured_output_request_ids"] = {}
-        if "grammar_bitmask" in field_names:
-            kwargs["grammar_bitmask"] = None
-        return kwargs
-
-    def _compat_request_data_kwargs(self) -> dict[str, Any]:
-        field_names = [field.name for field in fields(CachedRequestData)]
-        kwargs: dict[str, Any] = {}
-        if "resumed_req_ids" in field_names:
-            kwargs["resumed_req_ids"] = set()
-        if "all_token_ids" in field_names:
-            kwargs["all_token_ids"] = {}
-        if "num_output_tokens" in field_names:
-            kwargs["num_output_tokens"] = {}
-        if "resumed_from_preemption" in field_names:
-            kwargs["resumed_from_preemption"] = []
-        return kwargs
+    def _extra_sched_output_kwargs(self) -> dict[str, Any]:
+        """Common kwargs for SchedulerOutput construction"""
+        return {
+            "scheduled_spec_decode_tokens": {},
+            "scheduled_encoder_inputs": {},
+            "num_common_prefix_blocks": [],
+            "finished_req_ids": set(),
+            "free_encoder_mm_hashes": [],
+        }
 
     def assert_block_tables_and_slot_mappings(
         self,

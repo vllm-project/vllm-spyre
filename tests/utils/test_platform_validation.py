@@ -4,13 +4,27 @@ Tests the fix in vllm_spyre/platform.py that strips structured_outputs
 from SamplingParams during request validation.
 """
 
+from unittest.mock import MagicMock
 import pytest
+
 from vllm import SamplingParams
+from vllm.inputs.data import token_inputs
 from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import StructuredOutputsParams
 from vllm_spyre.platform import SpyrePlatform
 
 pytestmark = pytest.mark.skip_global_cleanup
+
+
+@pytest.fixture(autouse=True)
+def mock_spyre_config():
+    """Mock SpyrePlatform._config for all tests."""
+    original_config = SpyrePlatform._config
+    mock_config = MagicMock()
+    mock_config.model_config.max_model_len = 512
+    SpyrePlatform._config = mock_config
+    yield mock_config
+    SpyrePlatform._config = original_config
 
 
 class TestStructuredOutputValidation:
@@ -24,7 +38,8 @@ class TestStructuredOutputValidation:
 
         assert params.structured_outputs is not None
 
-        SpyrePlatform.validate_request("Test prompt", params)
+        processed_inputs = token_inputs(prompt_token_ids=[1, 2, 3])
+        SpyrePlatform.validate_request(processed_inputs, params)
 
         assert params.structured_outputs is None
 
@@ -34,7 +49,8 @@ class TestStructuredOutputValidation:
             max_tokens=20, structured_outputs=StructuredOutputsParams(json_object=True)
         )
 
-        SpyrePlatform.validate_request("Test prompt", params)
+        processed_inputs = token_inputs(prompt_token_ids=[1, 2, 3])
+        SpyrePlatform.validate_request(processed_inputs, params)
 
         assert len(caplog_vllm_spyre.records) > 0
         warning_record = caplog_vllm_spyre.records[0]
@@ -55,7 +71,8 @@ class TestStructuredOutputValidation:
 
         assert params.structured_outputs is not None
 
-        SpyrePlatform.validate_request("Test prompt", params)
+        processed_inputs = token_inputs(prompt_token_ids=[1, 2, 3])
+        SpyrePlatform.validate_request(processed_inputs, params)
 
         assert params.structured_outputs is None
 
@@ -77,7 +94,8 @@ class TestStructuredOutputValidation:
             "top_k": params.top_k,
         }
 
-        SpyrePlatform.validate_request("Test prompt", params)
+        processed_inputs = token_inputs(prompt_token_ids=[1, 2, 3])
+        SpyrePlatform.validate_request(processed_inputs, params)
 
         # Verify other params are unchanged
         assert params.max_tokens == original_values["max_tokens"]
@@ -92,7 +110,8 @@ class TestStructuredOutputValidation:
         pooling_params = PoolingParams()
 
         # Should not raise any errors and should return early
-        SpyrePlatform.validate_request("Test prompt", pooling_params)
+        processed_inputs = token_inputs(prompt_token_ids=[1, 2, 3])
+        SpyrePlatform.validate_request(processed_inputs, pooling_params)
 
         # PoolingParams don't have structured_outputs, so just verify no exception
         assert True  # If we got here, the early return worked

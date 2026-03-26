@@ -17,12 +17,8 @@ from typing import TYPE_CHECKING, cast
 
 import torch
 from vllm.logger import init_logger
+from vllm.utils.argparse_utils import FlexibleArgumentParser
 
-try:
-    # pre 0.11.1 compatibility
-    from vllm.utils import FlexibleArgumentParser  # ty: ignore[unresolved-import]
-except ImportError:
-    from vllm.utils.argparse_utils import FlexibleArgumentParser
 
 if TYPE_CHECKING:
     # NB: We can't eagerly import many things from vllm since vllm.config
@@ -30,24 +26,15 @@ if TYPE_CHECKING:
     from vllm.config import ModelConfig, VllmConfig
     from vllm.pooling_params import PoolingParams
     from vllm.sampling_params import SamplingParams
-    from vllm.inputs import ProcessorInputs, PromptType, TokenInputs
+    from vllm.inputs import ProcessorInputs, TokenInputs
 
-    # Try to import new types (0.16.0+)
-    try:
-        from vllm.renderers.inputs import DictPrompt, TokPrompt
-    except ImportError:
-        DictPrompt = None  # type: ignore
-        TokPrompt = None  # type: ignore
 else:
     ModelConfig = None
     VllmConfig = None
     SamplingParams = None
     PoolingParams = None
     ProcessorInputs = None
-    PromptType = None
     TokenInputs = None
-    DictPrompt = None
-    TokPrompt = None
 from vllm.platforms import Platform, PlatformEnum
 
 import vllm_spyre.envs as envs_spyre
@@ -103,7 +90,8 @@ class SpyrePlatform(Platform):
 
     @classmethod
     def import_kernels(cls) -> None:
-        pass  # suppress warning
+        # Workaround torch.accelerator.empty_cache for torch 2.7.1 and vllm v0.18.0 compatibility
+        setattr(torch.accelerator, "empty_cache", lambda: None)  # noqa
 
     @classmethod
     def is_async_output_supported(cls, enforce_eager: bool | None) -> bool:
@@ -319,6 +307,8 @@ class SpyrePlatform(Platform):
                     "set `--max-num-batched-tokens` to a number that satisfies "
                     "this constraint."
                 )
+            if hasattr(cache_config, "user_specified_block_size"):
+                cache_config.user_specified_block_size = True
 
         logger.info(
             "Configurations for Spyre. max_model_len=%d, max_num_seqs=%d, block_size=%d, "
@@ -436,9 +426,8 @@ class SpyrePlatform(Platform):
     @classmethod
     def validate_request(
         cls,
-        prompt: "PromptType | DictPrompt | TokPrompt",
+        processed_inputs: "ProcessorInputs",
         params: "SamplingParams | PoolingParams",
-        processed_inputs: "ProcessorInputs | None" = None,
     ) -> None:
         """Raises if this request is unsupported on this platform"""
 
@@ -464,18 +453,12 @@ class SpyrePlatform(Platform):
             )
             params.structured_outputs = None
 
-        if isinstance(prompt, dict) and "prompt_token_ids" in prompt:
-            prompt_len = len(prompt["prompt_token_ids"])  # ty: ignore
-        elif processed_inputs is not None:
-            if "encoder" in processed_inputs:
-                raise ValueError("Encoder-decoder models not supported ")
-            if "prompt_token_ids" not in processed_inputs:
-                # Can't do any extra validation on embedding-only inputs
-                return
-            prompt_len = len(cast(TokenInputs, processed_inputs)["prompt_token_ids"])
-        else:
-            # We need a prompt length to do any validation here
+        if "encoder_prompt" in processed_inputs:
+            raise ValueError("Encoder-decoder models not supported ")
+        if "prompt_token_ids" not in processed_inputs:
+            # Can't do any extra validation on embedding-only inputs
             return
+        prompt_len = len(cast(TokenInputs, processed_inputs)["prompt_token_ids"])
 
         max_tokens = 0
         if params is not None and params.max_tokens is not None:

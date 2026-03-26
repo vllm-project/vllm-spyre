@@ -22,13 +22,8 @@ from vllm.v1.engine.core import EngineCore
 from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre import envs
 
-try:
-    # old
-    from vllm.utils import FlexibleArgumentParser, get_open_port
-except ImportError:
-    # new
-    from vllm.utils.argparse_utils import FlexibleArgumentParser
-    from vllm.utils.network_utils import get_open_port
+from vllm.utils.argparse_utils import FlexibleArgumentParser
+from vllm.utils.network_utils import get_open_port
 
 from vllm.v1.request import Request
 
@@ -448,7 +443,6 @@ def create_random_request(
         request_id=str(request_id),
         prompt_token_ids=prompt_token_ids,
         sampling_params=sampling_params,
-        eos_token_id=None,
         arrival_time=0,
         lora_request=None,
         pooling_params=None,

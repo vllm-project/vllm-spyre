@@ -21,12 +21,7 @@ from vllm.config import VllmConfig
 from vllm.distributed import ensure_model_parallel_initialized, init_distributed_environment
 from vllm.logger import init_logger
 
-try:
-    # vllm >= v0.14.0
-    from vllm.utils.torch_utils import set_random_seed
-except ImportError:
-    # vllm < v0.14.0
-    from vllm.model_executor import set_random_seed  # ty: ignore[unresolved-import]
+from vllm.utils.torch_utils import set_random_seed
 
 from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import SamplingParams
@@ -154,12 +149,15 @@ class SpyreWorker(WorkerBase):
         """
         return self.model_runner.get_kv_cache_spec()
 
-    def compile_or_warm_up_model(self) -> None:
-        """Prepare model for execution through compilation/warmup."""
+    def compile_or_warm_up_model(self) -> float:
+        """Prepare model for execution through compilation/warmup.
+
+        Returns:
+            The accumulated compilation time in seconds.
+        """
 
         if envs_spyre.VLLM_SPYRE_USE_CB:
-            self._warmup_spyre_dynamic_size(self.restricted_tokens)
-            return
+            return self._warmup_spyre_dynamic_size(self.restricted_tokens)
         if self.model_runner.is_multimodal:
             raise NotImplementedError(
                 "[WARMUP] Static batching is not supported for multimodal models."
@@ -207,6 +205,7 @@ class SpyreWorker(WorkerBase):
             num_shape_combinations,
             all_warmup_total_t,
         )
+        return all_warmup_total_t
 
     def check_health(self) -> None:
         """Basic health check (override for device-specific checks)."""
@@ -262,24 +261,13 @@ class SpyreWorker(WorkerBase):
         distributed_init_method: str,
         is_driver_worker: bool = False,
     ) -> None:
-        try:
-            # pre 0.11.1 compatibility with old worker base class
-            from vllm.worker.worker_base import WorkerBase as LegacyWorkerBase  # ty: ignore
-
-            LegacyWorkerBase.__init__(self, vllm_config=vllm_config)
-            self.local_rank = local_rank
-            self.rank = rank
-            self.distributed_init_method = distributed_init_method
-            self.is_driver_worker = is_driver_worker
-        except ImportError:
-            # From 0.11.1 and on we should only have to call the super init
-            super().__init__(
-                vllm_config=vllm_config,
-                local_rank=local_rank,
-                rank=rank,
-                distributed_init_method=distributed_init_method,
-                is_driver_worker=is_driver_worker,
-            )
+        super().__init__(
+            vllm_config=vllm_config,
+            local_rank=local_rank,
+            rank=rank,
+            distributed_init_method=distributed_init_method,
+            is_driver_worker=is_driver_worker,
+        )
 
         # For power-user debugging of spyre logs for tensor parallel ops
         self.redirect_logs_to_files()
@@ -289,22 +277,6 @@ class SpyreWorker(WorkerBase):
             assert rank % self.parallel_config.tensor_parallel_size == 0, (
                 "Driver worker should be rank 0 of tensor parallel group."
             )
-        if self.model_config.trust_remote_code:
-            # note: lazy import to avoid importing torch before initializing
-            try:
-                # pre 0.11.1 compatibility
-                from vllm.utils import init_cached_hf_modules  # ty: ignore[unresolved-import]
-
-                init_cached_hf_modules()
-            except ImportError:
-                # 0.11.1 to 0.13.0 compatibility
-                try:
-                    from vllm.utils.import_utils import init_cached_hf_modules  # ty: ignore[unresolved-import]
-
-                    init_cached_hf_modules()
-                except ImportError:
-                    # >=0.14.0, init_cached_hf_modules is no longer needed
-                    pass
 
         self.model_runner: Union[
             StaticBatchingSpyreModelRunner,
@@ -576,7 +548,7 @@ class SpyreWorker(WorkerBase):
         self.perf_metrics.log("load model time", load_model_total_t, model=self.model_config.model)
         logger.info("load model took %.3fs", load_model_total_t)
 
-    def _warmup_spyre_dynamic_size(self, special_token_ids):
+    def _warmup_spyre_dynamic_size(self, special_token_ids) -> float:
         warmup_start_t = time.time()
 
         # satisfy mypy
@@ -670,9 +642,6 @@ class SpyreWorker(WorkerBase):
             scheduled_cached_reqs=CachedRequestData.make_empty(),
             num_scheduled_tokens={deploy_req.req_id: prompt_len},
             total_num_scheduled_tokens=prompt_len,
-            scheduled_spec_decode_tokens={},
-            scheduled_encoder_inputs={},
-            num_common_prefix_blocks=[],
             finished_req_ids=set(),
             **_get_extra_args(),
         )
@@ -692,6 +661,7 @@ class SpyreWorker(WorkerBase):
         )
 
         maybe_override_signals_handler()
+        return warmup_total_t
 
     def _cleanup_model_runner(self, request) -> None:
         # Needed to clean up the data of model runner
@@ -701,9 +671,6 @@ class SpyreWorker(WorkerBase):
             num_scheduled_tokens={},
             # NOTE: this means no work to do
             total_num_scheduled_tokens=0,
-            scheduled_spec_decode_tokens={},
-            scheduled_encoder_inputs={},
-            num_common_prefix_blocks=[],
             # The requests to be removed
             finished_req_ids=set([r.req_id for r in request]),
             **_get_extra_args(),
@@ -783,9 +750,6 @@ class SpyreWorker(WorkerBase):
             scheduled_cached_reqs=cached_request_data,
             num_scheduled_tokens={r.req_id: self._get_num_tokens(r) for r in dummy_requests},
             total_num_scheduled_tokens=sum(prompt_len for _ in range(batch_size)),
-            scheduled_spec_decode_tokens={},
-            scheduled_encoder_inputs={},
-            num_common_prefix_blocks=[],
             finished_req_ids=set(),
             **_get_extra_args(),
         )
@@ -855,9 +819,6 @@ class SpyreWorker(WorkerBase):
                 scheduled_cached_reqs=CachedRequestData.make_empty(),
                 num_scheduled_tokens={req.req_id: prompt_len},
                 total_num_scheduled_tokens=prompt_len,
-                scheduled_spec_decode_tokens={},
-                scheduled_encoder_inputs={},
-                num_common_prefix_blocks=[],
                 finished_req_ids=set(),
                 **_get_extra_args(),
             )
@@ -886,9 +847,6 @@ class SpyreWorker(WorkerBase):
             scheduled_cached_reqs=cached_request_data,
             num_scheduled_tokens={req.req_id: 1 for req in requests},
             total_num_scheduled_tokens=1,
-            scheduled_spec_decode_tokens={},
-            scheduled_encoder_inputs={},
-            num_common_prefix_blocks=[],
             finished_req_ids=set(),
             **_get_extra_args(),
         )
@@ -996,14 +954,10 @@ def maybe_override_signals_handler():
 
 
 def _get_extra_args() -> dict:
-    """Add any required backwards compatibility code for constructing
-    SchedulerOutputs here"""
-    extra_args: dict = {}
-    extra_args.update({"free_encoder_mm_hashes": []})
-
-    if "structured_output_request_ids" in dataclass_fields(SchedulerOutput):
-        extra_args["structured_output_request_ids"] = {}
-    if "grammar_bitmask" in dataclass_fields(SchedulerOutput):
-        extra_args["grammar_bitmask"] = None
-
-    return extra_args
+    """Add any required extra args for constructing SchedulerOutputs"""
+    return {
+        "free_encoder_mm_hashes": [],
+        "scheduled_spec_decode_tokens": {},
+        "scheduled_encoder_inputs": {},
+        "num_common_prefix_blocks": [],
+    }

@@ -214,6 +214,8 @@ def cleanup_fixture(should_do_global_cleanup_after_test: bool):
     SpyrePlatform._used_with_cli = False
     yield
     if should_do_global_cleanup_after_test:
+        # Workaround torch.accelerator.empty_cache for torch 2.7.1 and vllm v0.18.0 compatibility
+        setattr(torch.accelerator, "empty_cache", lambda: None)  # noqa
         cleanup_dist_env_and_memory()
 
 

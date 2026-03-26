@@ -10,12 +10,7 @@ from vllm_spyre.platform import SpyrePlatform
 from vllm_spyre.config.model_registry import get_model_registry
 from spyre_util import environ_checkpoint, REFERENCE_MODELS
 
-try:
-    # old
-    from vllm.utils import FlexibleArgumentParser
-except ImportError:
-    # new
-    from vllm.utils.argparse_utils import FlexibleArgumentParser
+from vllm.utils.argparse_utils import FlexibleArgumentParser
 
 global_default = 192
 
@@ -69,8 +64,6 @@ def test_generic_model_chunk_size_default(
         "32",
         "-tp",
         "4",
-        "--swap-space",  # to prevent a validation error in the 16GB memory test env.
-        "1",
     ]
 
     if model_name == "ibm-granite/granite-3.3-8b-instruct":

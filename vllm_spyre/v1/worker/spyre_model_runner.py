@@ -15,12 +15,8 @@ from vllm.forward_context import set_forward_context
 from vllm.logger import init_logger
 from vllm.sampling_params import SamplingType
 
-try:
-    # pre 0.11.1 compatibility
-    from vllm.utils import get_hash_fn_by_name, is_pin_memory_available  # ty: ignore[unresolved-import]
-except ImportError:
-    from vllm.utils.platform_utils import is_pin_memory_available
-    from vllm.utils.hashing import get_hash_fn_by_name
+from vllm.utils.platform_utils import is_pin_memory_available
+from vllm.utils.hashing import get_hash_fn_by_name
 
 from vllm.v1.core.block_pool import BlockPool
 from vllm.v1.core.kv_cache_utils import KVCacheBlock, get_request_block_hasher, init_none_hash
@@ -35,7 +31,6 @@ from vllm.v1.sample.logits_processor import build_logitsprocs
 
 import vllm_spyre.envs as envs_spyre
 import vllm_spyre.utils as utils_spyre
-from vllm_spyre.compat_utils import has_argument
 from vllm_spyre.model_executor.model_loader.spyre import (
     BACKEND_LIST,
     SpyreAttentionMetadata,
@@ -955,14 +950,11 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         self.kv_cache_manager = self._make_kv_cache_manager()
 
     def _make_block_pool(self) -> BlockPool:
-        kwargs = {}
-        if has_argument(BlockPool, "hash_block_size"):
-            kwargs["hash_block_size"] = self.block_size
         return BlockPool(
             num_gpu_blocks=self.n_blocks + 1,
             enable_caching=self.enable_prefix_caching,
             enable_kv_cache_events=False,
-            **kwargs,
+            hash_block_size=self.block_size,
         )
 
     def _make_kv_cache_manager(self) -> FullAttentionManager:
@@ -974,33 +966,24 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
             dtype=torch.float16,
         )
 
-        # Enable_caching parameter added in vllm v0.14.0
-        kwargs = {
-            "kv_cache_spec": self._attn_spec,
-            "block_pool": self.block_pool,
+        return FullAttentionManager(
+            kv_cache_spec=self._attn_spec,
+            block_pool=self.block_pool,
             # Currently don't support models with more than one
             # attention type, e.g. full and sliding window, so
             # there is only one group.
-            "kv_cache_group_id": 0,
+            kv_cache_group_id=0,
             # We don't support DCP
             # https://docs.vllm.ai/en/latest/serving/context_parallel_deployment/#decode-context-parallel
-            "dcp_world_size": 1,
-        }
-
-        # Conditionally add param for vLLM >= 0.14.0
-        if has_argument(FullAttentionManager.__init__, "enable_caching"):
-            kwargs["enable_caching"] = self.enable_prefix_caching
-
-        return FullAttentionManager(**kwargs)  # ty: ignore[invalid-argument-type]
+            dcp_world_size=1,
+            enable_caching=self.enable_prefix_caching,
+        )  # ty: ignore[invalid-argument-type]
 
     def _allocate_new_blocks_wrapper(self, req_id: str, num_tokens: int):
-        """Backwards compatibility for change to interface in v0.15.0"""
-        kwargs: dict[str, Any] = {
-            "num_tokens": num_tokens,
-        }
-        if has_argument(self.kv_cache_manager.allocate_new_blocks, "num_tokens_main_model"):
-            kwargs["num_tokens_main_model"] = num_tokens
-        return self.kv_cache_manager.allocate_new_blocks(req_id, **kwargs)
+        """Wrapper for allocating new blocks"""
+        return self.kv_cache_manager.allocate_new_blocks(
+            req_id, num_tokens=num_tokens, num_tokens_main_model=num_tokens
+        )
 
     def _get_blocks(self, request_id: str) -> list[KVCacheBlock]:
         return self.kv_cache_manager.req_to_blocks[request_id]
@@ -1941,17 +1924,11 @@ class SpyrePoolingModelRunner(
         pooling_metadata = self.input_batch.make_pooling_metadata()
 
         ## No partial prefill, hence we can use the prompt lens here
-        cursor_kwargs: dict[str, Any] = {}
-        if has_argument(pooling_metadata.build_pooling_cursor, "seq_lens_cpu"):
-            cursor_kwargs["seq_lens_cpu"] = pooling_metadata.prompt_lens
-
-        # v0.14.0 uses param "num_scheduled_tokens_np"
-        if has_argument(pooling_metadata.build_pooling_cursor, "num_scheduled_tokens_np"):
-            cursor_kwargs["num_scheduled_tokens_np"] = pooling_metadata.prompt_lens.numpy()
-        else:
-            cursor_kwargs["num_scheduled_tokens"] = pooling_metadata.prompt_lens.tolist()
-
-        pooling_metadata.build_pooling_cursor(device=self.device, **cursor_kwargs)
+        pooling_metadata.build_pooling_cursor(
+            device=self.device,
+            seq_lens_cpu=pooling_metadata.prompt_lens,
+            num_scheduled_tokens_np=pooling_metadata.prompt_lens.numpy(),
+        )
 
         # prepare unpadded output for the pooler
         hidden_state_list: list[torch.Tensor] = []
@@ -2002,11 +1979,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         # For hybrid KV caches, the `alignment_tokens` arg needs to be set to
         # the lowest common multiple of kv cache block sizes. Currently we only
         # support homogeneous kv caches with a single block size though.
-        self._alignment_token_kwargs = (
-            {"alignment_tokens": self.block_size}
-            if has_argument(FullAttentionManager.find_longest_cache_hit, "alignment_tokens")
-            else {}
-        )
+        self._alignment_token_kwargs = {"alignment_tokens": self.block_size}
 
         if vllm_config.cache_config.enable_prefix_caching:
             caching_hash_fn = get_hash_fn_by_name(vllm_config.cache_config.prefix_caching_hash_algo)
@@ -2384,20 +2357,12 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             # blocks in the last chunk to deduplicate the used blocks. So
             # although we will recompute, we'll still point the block table
             # to the cached blocks.
-            try:
-                # vllm >= v0.14.0
-                self.kv_cache_manager.allocate_new_computed_blocks(
-                    request_id=scheduler_request.request_id,
-                    new_computed_blocks=computed_blocks,
-                    num_local_computed_tokens=len(computed_blocks) * self.block_size,
-                    num_external_computed_tokens=0,
-                )
-            except (AttributeError, TypeError):
-                # vllm < v0.14.0
-                self.kv_cache_manager.save_new_computed_blocks(
-                    scheduler_request.request_id,
-                    computed_blocks,
-                )
+            self.kv_cache_manager.allocate_new_computed_blocks(
+                request_id=scheduler_request.request_id,
+                new_computed_blocks=computed_blocks,
+                num_local_computed_tokens=len(computed_blocks) * self.block_size,
+                num_external_computed_tokens=0,
+            )
         else:
             usable_blocks = 0
             n_hit = 0
@@ -2432,7 +2397,6 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
             prompt_token_ids=prompt_token_ids,
             sampling_params=request.sampling_params,
             pooling_params=None,
-            eos_token_id=None,
             block_hasher=self.request_block_hasher,
             mm_features=mm_features,
         )

@@ -120,7 +120,6 @@ def create_request_for_scheduler_test(
         request_id=str(request_id),
         sampling_params=sampling_params,
         prompt_token_ids=prompt,
-        eos_token_id=None,
         arrival_time=0,
         lora_request=None,
         pooling_params=None,
