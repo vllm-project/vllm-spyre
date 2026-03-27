@@ -130,28 +130,13 @@ class SpyreRMSNorm(RMSNorm):
         if x.shape[-1] != hidden_size:
             raise ValueError(f"Expected hidden_size to be {hidden_size}, but found: {x.shape[-1]}")
 
-        x = x.transpose(-1, -2).contiguous()
-
         variance_epsilon = torch.full(
             x.shape, variance_epsilon, dtype=torch.float16, device=x.device
         )
 
-        if variance_size_override is None:
-            x_var = x
-        else:
-            if hidden_size < variance_size_override:
-                raise ValueError(
-                    "Expected hidden_size to be at least "
-                    f"{variance_size_override}, but found: {hidden_size}"
-                )
-
-            x_var = x[:, :, :variance_size_override]
-
-        # After transpose, hidden dim is now dim=0
-        variance = x_var.pow(2).mean(dim=0, keepdim=True)
+        variance = x.pow(2).mean(dim=-1, keepdim=True)
 
         x = x * torch.rsqrt(variance + variance_epsilon)
-        x = x.transpose(-1, -2).contiguous()
 
         if weight is not None:
             x = x * weight
@@ -208,7 +193,6 @@ class SpyreRMSNorm(RMSNorm):
             if self.has_weight
             else None,
             convert(residual, self._target_device, self._target_dtype),
-            self.variance_size_override,
         )
 
         # Transfer back to CPU and restore original shape
