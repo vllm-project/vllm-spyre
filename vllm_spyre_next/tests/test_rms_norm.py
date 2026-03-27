@@ -39,8 +39,7 @@ def test_spyre_rmsnorm_matches_reference(
 
     Tests both paths:
     - forward_oot(): OOT dispatch via custom op (torch.ops.vllm.spyre_rmsnorm)
-    - forward(): full dispatch chain (CustomOp.forward -> _forward_method -> forward_oot)
-    - forward_native(): inherited upstream pure PyTorch (ground truth)
+    - reference_rms_norm: golden reference, similar to vLLM upstream pure PyTorch (ground truth)
     """
     from vllm_spyre_next.custom_ops.rms_norm import SpyreRMSNorm
 
@@ -102,13 +101,13 @@ def test_rmsnorm_oot_dispatch(default_vllm_config, monkeypatch, dummy_tensor, us
 
     # Mock _forward_spyre_impl (called by the custom op) with a known transform
     if residual is not None:
-        monkeypatch.setattr(layer, "forward_oot", mock_forward_oot_with_residual)
-        out_x, out_residual = layer.forward_oot(dummy_tensor, residual)
+        monkeypatch.setattr(layer, "_forward_spyre_impl", mock_forward_oot_with_residual)
+        out_x, out_residual = layer.forward(dummy_tensor, residual)
 
         assert torch.allclose(out_x, 2 * dummy_tensor)
         assert torch.allclose(out_residual, 2 * residual)
     else:
-        monkeypatch.setattr(layer, "forward_oot", mock_forward_oot)
-        out_x = layer.forward_oot(dummy_tensor, residual)
+        monkeypatch.setattr(layer, "_forward_spyre_impl", mock_forward_oot)
+        out_x = layer.forward(dummy_tensor, residual)
 
         assert torch.allclose(out_x, dummy_tensor + 1)
