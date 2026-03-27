@@ -22,15 +22,16 @@ def spyre_rms_norm(
     epsilon: float,
     variance_size: int | None = None,
 ) -> Tensor:
-    x = x.transpose(-1, -2).contiguous()
+    # x = x.transpose(-1, -2).contiguous()
 
     eps_tensor = torch.full(x.shape, epsilon, dtype=x.dtype, device=x.device)
 
     x_var = x if variance_size is None else x[..., :variance_size, :]
-    variance = x_var.pow(2).mean(dim=-2, keepdim=True)
+    # variance = x_var.pow(2).mean(dim=-2, keepdim=True)
+    variance = x_var.pow(2).mean(dim=-1, keepdim=True)
     x = x * torch.rsqrt(variance + eps_tensor)
 
-    x = x.transpose(-1, -2).contiguous()
+    # x = x.transpose(-1, -2).contiguous()
 
     if weight is not None:
         x = x * weight
