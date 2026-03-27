@@ -3,9 +3,9 @@
 """Spyre OOT RMSNorm — device sandwich around the Spyre IR provider.
 
 Tensors arrive on CPU. This module:
-1. Keeps a custom op boundary (forward → torch.ops.vllm.spyre_rmsnorm) so
+1. Keeps a custom op boundary (forward_oot → torch.ops.vllm.spyre_rmsnorm) so
    model-level torch.compile does not trace into Spyre device transfers.
-2. In forward_native(), converts tensors to Spyre and calls the compiled
+2. In _forward_spyre_impl(), converts tensors to Spyre and calls the compiled
    Spyre IR provider (kernels/rms_norm.py) which is also registered as the
    "spyre" implementation of ir.ops.rms_norm.
 
@@ -58,7 +58,7 @@ class SpyreRMSNorm(RMSNorm):
             "expect numerical differences to upstream vLLM."
         )
 
-    def forward(
+    def forward_oot(
         self,
         x: torch.Tensor,
         residual: torch.Tensor | None = None,
@@ -70,7 +70,7 @@ class SpyreRMSNorm(RMSNorm):
             return output, residual
         return output
 
-    def forward_native(
+    def _forward_spyre_impl(
         self,
         x: torch.Tensor,
         residual: torch.Tensor | None = None,
@@ -114,7 +114,7 @@ def _op_func(
 ) -> None:
     """Custom op implementation — runs outside torch.compile graph."""
     layer = get_layer(layer_name)
-    result = layer.forward_native(x, residual)
+    result = layer._forward_spyre_impl(x, residual)
 
     if residual is not None:
         output_data, residual_data = result
