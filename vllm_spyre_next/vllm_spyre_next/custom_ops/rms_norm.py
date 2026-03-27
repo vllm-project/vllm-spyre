@@ -8,9 +8,11 @@ when instantiated.
 
 Architecture:
     - OOT Registration: @RMSNorm.register_oot() replaces upstream at instantiation
+    - forward_oot(): Entry point for OOT dispatch, calls custom op for
+      torch.compile opacity
     - Custom Op Boundary: torch.ops.vllm.spyre_rmsnorm is opaque to torch.compile,
-      so forward_native runs eagerly outside the compiled graph
-    - Separate Compilation: forward_static is compiled independently via maybe_compile
+      so _forward_spyre_impl runs eagerly outside the compiled graph
+    - Separate Compilation: forward_spyre is compiled independently via maybe_compile
 
 Spyre Device Constraints:
     - Minimum batch size: 64 (due to spyre constraint, automatically padded)
@@ -19,8 +21,8 @@ Spyre Device Constraints:
     - Algorithm: Transpose-based computation with torch.ops.spyre.full()
 
 Limitations:
-    Currently the implementation in `_forward_vLLM_native` is similar to the
-    upstream implementation in `forward_static` from llm/model_executor/layers/layernorm.py,
+    Currently the implementation in `forward_spyre` is similar to the
+    upstream implementation in `forward_static` from vllm/model_executor/layers/layernorm.py,
     but it DOES NOT use the promotion of the data types, as this is not
     yet supported in torch-spyre.
 
@@ -75,15 +77,15 @@ class SpyreRMSNorm(RMSNorm):
             "expect numerical differences to upstream vLLM."
         )
 
-    def forward(
+    def forward_oot(
         self,
         x: torch.Tensor,
         residual: torch.Tensor | None = None,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
-        """Forward pass using custom op to bypass torch.compile.
+        """OOT forward pass using custom op to bypass torch.compile.
 
         Delegates to torch.ops.vllm.spyre_rmsnorm which retrieves this layer
-        from forward_context.no_compile_layers and calls forward_impl outside
+        from the layer registry and calls _forward_spyre_impl outside
         the compilation graph. This prevents torch.compile from inlining the
         Spyre-specific operations.
 
@@ -130,8 +132,6 @@ class SpyreRMSNorm(RMSNorm):
         if x.shape[-1] != hidden_size:
             raise ValueError(f"Expected hidden_size to be {hidden_size}, but found: {x.shape[-1]}")
 
-        x = x.transpose(-1, -2).contiguous()
-
         variance_epsilon = torch.full(
             x.shape, variance_epsilon, dtype=torch.float16, device=x.device
         )
@@ -148,10 +148,9 @@ class SpyreRMSNorm(RMSNorm):
             x_var = x[:, :, :variance_size_override]
 
         # After transpose, hidden dim is now dim=0
-        variance = x_var.pow(2).mean(dim=0, keepdim=True)
+        variance = x_var.pow(2).mean(dim=-1, keepdim=True)
 
         x = x * torch.rsqrt(variance + variance_epsilon)
-        x = x.transpose(-1, -2).contiguous()
 
         if weight is not None:
             x = x * weight
@@ -160,7 +159,7 @@ class SpyreRMSNorm(RMSNorm):
         else:
             return x, residual
 
-    def forward_native(
+    def _forward_spyre_impl(
         self,
         x: torch.Tensor,
         residual: torch.Tensor | None = None,
@@ -226,7 +225,7 @@ def _op_func(
 ) -> None:
     """Custom op implementation — runs outside torch.compile graph."""
     layer = get_layer(layer_name)
-    result = layer.forward_native(x, residual)
+    result = layer._forward_spyre_impl(x, residual)
 
     if residual is not None:
         output_data, residual_data = result
