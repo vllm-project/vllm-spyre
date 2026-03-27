@@ -1,24 +1,20 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Spyre OOT RMSNorm — device sandwich around the Spyre IR provider.
+"""Spyre OOT RMSNorm — device sandwich around the vLLM IR rms_norm op.
 
 Tensors arrive on CPU. This module:
 1. Keeps a custom op boundary (forward_oot → torch.ops.vllm.spyre_rmsnorm) so
    model-level torch.compile does not trace into Spyre device transfers.
-2. In _forward_spyre_impl(), converts tensors to Spyre and calls the compiled
-   Spyre IR provider (kernels/rms_norm.py) which is also registered as the
-   "spyre" implementation of ir.ops.rms_norm.
-
-TODO: Once torch-spyre supports all ops in eager mode, remove maybe_compile
-and call ir.ops.rms_norm() directly with direct_dispatch. This would let
-the IR dispatch chain select the implementation at runtime, making the
-explicit import of the provider function unnecessary.
+2. In _forward_spyre_impl(), converts tensors to Spyre and calls
+   ir.ops.rms_norm() via direct dispatch. The IR system routes to the
+   "spyre" provider (kernels/rms_norm.py) based on priority config.
 """
 
 import torch
 
 from functools import lru_cache
 
+from vllm import ir
 from vllm.logger import init_logger
 from vllm.model_executor.layers.layernorm import RMSNorm
 from vllm.utils.torch_utils import direct_register_custom_op
@@ -32,24 +28,13 @@ _SPYRE_MIN_BATCH_SIZE = 64
 
 @RMSNorm.register_oot(name="RMSNorm")
 class SpyreRMSNorm(RMSNorm):
-    """OOT shim: device sandwich around the Spyre IR provider for rms_norm."""
-
-    # Tensor args of the compiled function (spyre_rms_norm) — all static shapes
-    _dynamic_arg_dims = {"x": [], "weight": []}
+    """OOT shim: device sandwich around ir.ops.rms_norm for Spyre."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         self._target_device = torch.device("spyre")
         self._target_dtype = torch.float16
-
-        # Compile the Spyre IR provider function. This is the same function
-        # registered as the "spyre" impl of ir.ops.rms_norm.
-        # TODO: Remove maybe_compile once torch-spyre supports all individual
-        # ops eagerly; then ir.ops.rms_norm() with direct_dispatch suffices.
-        from .kernels.rms_norm import spyre_rms_norm
-
-        self._fwd = self.maybe_compile(spyre_rms_norm)
 
         self._layer_name = register_layer(self, "spyre_rmsnorm")
 
@@ -75,7 +60,7 @@ class SpyreRMSNorm(RMSNorm):
         x: torch.Tensor,
         residual: torch.Tensor | None = None,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
-        """Device sandwich: CPU → Spyre → compiled IR provider → CPU."""
+        """Device sandwich: CPU → Spyre → ir.ops.rms_norm (direct dispatch) → CPU."""
         # Handle residual on CPU (no need to transfer residual to Spyre)
         if residual is not None:
             x = x + residual
@@ -90,14 +75,13 @@ class SpyreRMSNorm(RMSNorm):
             pad = _SPYRE_MIN_BATCH_SIZE - orig_batch_size
             x = torch.nn.functional.pad(x, (0, 0, 0, pad))
 
-        # Transfer to Spyre, call compiled IR provider, transfer back
-        result = self._fwd(
+        # Transfer to Spyre, call IR op (direct dispatch → spyre provider), back
+        result = ir.ops.rms_norm(
             convert(x, self._target_device, self._target_dtype),
             convert(self.weight.data, self._target_device, self._target_dtype)
             if self.has_weight
             else None,
             self.variance_epsilon,
-            self.variance_size_override,
         )
         result = convert(result, x_device, x_dtype)[:orig_batch_size, :]
 

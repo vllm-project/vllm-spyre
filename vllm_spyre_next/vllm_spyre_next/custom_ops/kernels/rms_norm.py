@@ -11,16 +11,13 @@ from torch import Tensor
 
 from vllm import ir
 
-_supports_spyre = lambda x, weight, epsilon, variance_size=None: (
-    x.device.type == "spyre"
-)
+_supports_spyre = lambda x, weight, epsilon, variance_size=None: (x.device.type == "spyre")
 
 
 def spyre_rms_norm(
     x: Tensor,
     weight: Tensor | None,
     epsilon: float,
-    variance_size: int | None = None,
 ) -> Tensor:
     eps_tensor = torch.full(x.shape, epsilon, dtype=x.dtype, device=x.device)
 
@@ -33,6 +30,6 @@ def spyre_rms_norm(
 
 
 # Register with vLLM IR system (returns IrOpImpl, not the function)
-ir.ops.rms_norm.register_impl(
-    "spyre", supports_args=_supports_spyre, supported=True
-)(spyre_rms_norm)
+ir.ops.rms_norm.register_impl("spyre", supports_args=_supports_spyre, supported=True)(
+    spyre_rms_norm
+)

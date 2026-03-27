@@ -76,9 +76,7 @@ class TorchSpyrePlatform(CpuPlatform):
         logger.info(message, version, model_name)
 
     @classmethod
-    def get_default_ir_op_priority(
-        cls, vllm_config: "VllmConfig"
-    ) -> "IrOpPriorityConfig":
+    def get_default_ir_op_priority(cls, vllm_config: "VllmConfig") -> "IrOpPriorityConfig":
         from vllm.config.kernel import IrOpPriorityConfig
 
         return IrOpPriorityConfig.with_default(
