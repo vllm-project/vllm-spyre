@@ -94,9 +94,8 @@ extra-build-variables = { vllm = { VLLM_TARGET_DEVICE = "cpu" } }
 # vLLM and torch-spyre must be pulled from github to be built from source
 # NB: torch-spyre can only be compiled where `sendnn` is available
 [tool.uv.sources]
-vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.17.1" }
-# see https://github.com/torch-spyre/torch-spyre/pull/746
-torch-spyre = { git = "https://github.com/torch-spyre/torch-spyre", rev = "c1f67bb4701630179d53dbfc060dde62fc2d7d18" }
+vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.18.0" }
+torch-spyre = { git = "https://github.com/torch-spyre/torch-spyre", rev = "2865b7d69c9b1ee98a6276613d9f00324fcd06e2" }
 torch = [
   { index = "pytorch-cpu" },
 ]
