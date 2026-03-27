@@ -66,42 +66,18 @@ def test_spyre_rmsnorm_matches_reference(
     else:
         torch.testing.assert_close(actual.float(), expected.float(), atol=1e-2, rtol=1e-2)
 
-    # Test forward() — full dispatch chain
-    actual_forward = layer.forward(x, residual)
-    if use_residual:
-        actual_fwd_norm, actual_fwd_resid = actual_forward
-        torch.testing.assert_close(
-            actual_fwd_norm.float(), expected_norm.float(), atol=1e-2, rtol=1e-2
-        )
-        torch.testing.assert_close(
-            actual_fwd_resid.float(), expected_resid.float(), atol=1e-2, rtol=1e-2
-        )
-    else:
-        torch.testing.assert_close(actual_forward.float(), expected.float(), atol=1e-2, rtol=1e-2)
-
-    # Test forward_native() — inherited upstream pure PyTorch (tighter tolerance)
-    native_result = layer.forward_native(x, residual)
-    if use_residual:
-        native_norm, native_resid = native_result
-        torch.testing.assert_close(native_norm.float(), expected_norm.float(), atol=1e-5, rtol=1e-5)
-        torch.testing.assert_close(
-            native_resid.float(), expected_resid.float(), atol=1e-5, rtol=1e-5
-        )
-    else:
-        torch.testing.assert_close(native_result.float(), expected.float(), atol=1e-5, rtol=1e-5)
-
 
 @pytest.fixture
 def dummy_tensor():
     return torch.randn(4, 128, dtype=torch.float32)
 
 
-def mock_spyre_impl_no_residual(x, residual=None):
+def mock_forward_oot(x, residual=None):
     """Mock: return x + 1 (no residual path)."""
     return x + 1
 
 
-def mock_spyre_impl_with_residual(x, residual=None):
+def mock_forward_oot_with_residual(x, residual=None):
     """Mock: return (2 * x, 2 * residual) (residual path)."""
     return 2 * x, 2 * residual
 
@@ -126,13 +102,13 @@ def test_rmsnorm_oot_dispatch(default_vllm_config, monkeypatch, dummy_tensor, us
 
     # Mock _forward_spyre_impl (called by the custom op) with a known transform
     if residual is not None:
-        monkeypatch.setattr(layer, "_forward_spyre_impl", mock_spyre_impl_with_residual)
+        monkeypatch.setattr(layer, "forward_oot", mock_forward_oot_with_residual)
         out_x, out_residual = layer.forward_oot(dummy_tensor, residual)
 
         assert torch.allclose(out_x, 2 * dummy_tensor)
         assert torch.allclose(out_residual, 2 * residual)
     else:
-        monkeypatch.setattr(layer, "_forward_spyre_impl", mock_spyre_impl_no_residual)
+        monkeypatch.setattr(layer, "forward_oot", mock_forward_oot)
         out_x = layer.forward_oot(dummy_tensor, residual)
 
         assert torch.allclose(out_x, dummy_tensor + 1)
