@@ -202,7 +202,7 @@ class SpyreRMSNorm(RMSNorm):
                 residual = torch.nn.functional.pad(residual, (0, 0, 0, pad_amount))
 
         # Execute compiled kernel on Spyre device
-        outs = self.self.maybe_compiled_forward_spyre(
+        outs = self.maybe_compiled_forward_spyre(
             convert(x, self._target_device, self._target_dtype),
             self.variance_epsilon,
             self.hidden_size,
