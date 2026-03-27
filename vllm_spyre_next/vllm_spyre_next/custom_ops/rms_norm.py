@@ -68,7 +68,7 @@ class SpyreRMSNorm(RMSNorm):
 
         self._target_device = torch.device("spyre")
         self._target_dtype = torch.float16
-        self._fwd = self.maybe_compile(self.forward_spyre)
+        self.maybe_compiled_forward_spyre = self.maybe_compile(self.forward_spyre)
 
         self._layer_name = register_layer(self, "spyre_rmsnorm")
 
@@ -172,7 +172,7 @@ class SpyreRMSNorm(RMSNorm):
         Handles Spyre-specific constraints:
             1. Minimum batch size: Pads to 64 if needed
             2. Device transfer: CPU -> Spyre convert to float16
-            3. Kernel execution: Calls compiled _fwd
+            3. Kernel execution: Calls compiled maybe_compiled_forward_spyre
             4. Result transfer: Spyre -> CPU, trim padding, convert to bfloat16
 
         Limitations:
@@ -202,7 +202,7 @@ class SpyreRMSNorm(RMSNorm):
                 residual = torch.nn.functional.pad(residual, (0, 0, 0, pad_amount))
 
         # Execute compiled kernel on Spyre device
-        outs = self._fwd(
+        outs = self.self.maybe_compiled_forward_spyre(
             convert(x, self._target_device, self._target_dtype),
             self.variance_epsilon,
             self.hidden_size,
