@@ -62,8 +62,12 @@ class SpyreCpuFallbackMixin:
             raise ValueError(f"Duplicate layer name: {self.prefix}")
         compilation_config.static_forward_context[self.prefix] = self
 
-        logger.info("CPU fallback: %s (%s, output_device=%s)",
-                     self.prefix, cls.__name__, self._output_device)
+        logger.info(
+            "CPU fallback: %s (%s, output_device=%s)",
+            self.prefix,
+            cls.__name__,
+            self._output_device,
+        )
 
     def _apply(self, fn, recurse=True):
         """No-op: keep all parameters on CPU.

@@ -31,6 +31,7 @@ logger = init_logger(__name__)
 
 # --- QKVParallelLinear (inherits ColumnParallelLinear.forward) ---
 
+
 @QKVParallelLinear.register_oot(name="QKVParallelLinear")
 class SpyreQKVParallelLinear(SpyreCpuFallbackMixin, QKVParallelLinear):
     """OOT QKVParallelLinear that falls back to CPU execution."""
@@ -39,8 +40,7 @@ class SpyreQKVParallelLinear(SpyreCpuFallbackMixin, QKVParallelLinear):
         super().__init__(*args, **kwargs)
         # QKV output must stay on CPU: granite.py does qkv.split() which
         # creates strided views not supported on Spyre.
-        self._init_cpu_fallback("qkv_linear",
-                                output_device=torch.device("cpu"))
+        self._init_cpu_fallback("qkv_linear", output_device=torch.device("cpu"))
 
     def forward(self, input_):
         output = torch.empty(
@@ -64,9 +64,9 @@ class SpyreQKVParallelLinear(SpyreCpuFallbackMixin, QKVParallelLinear):
 
 # --- MergedColumnParallelLinear (inherits ColumnParallelLinear.forward) ---
 
+
 @MergedColumnParallelLinear.register_oot(name="MergedColumnParallelLinear")
-class SpyreMergedColumnParallelLinear(SpyreCpuFallbackMixin,
-                                      MergedColumnParallelLinear):
+class SpyreMergedColumnParallelLinear(SpyreCpuFallbackMixin, MergedColumnParallelLinear):
     """OOT MergedColumnParallelLinear that falls back to CPU execution."""
 
     def __init__(self, *args, **kwargs):
@@ -94,6 +94,7 @@ class SpyreMergedColumnParallelLinear(SpyreCpuFallbackMixin,
 
 
 # --- RowParallelLinear ---
+
 
 @RowParallelLinear.register_oot(name="RowParallelLinear")
 class SpyreRowParallelLinear(SpyreCpuFallbackMixin, RowParallelLinear):

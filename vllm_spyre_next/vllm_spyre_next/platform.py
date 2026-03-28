@@ -89,8 +89,7 @@ class TorchSpyrePlatform(CpuPlatform):
     ) -> str:
         """Use Spyre attention backend that wraps CPU attention with
         Spyre<->CPU device transfers."""
-        return ("vllm_spyre_next.attention_backend"
-                ".SpyreCPUAttentionBackend")
+        return "vllm_spyre_next.attention_backend.SpyreCPUAttentionBackend"
 
     @classmethod
     def apply_config_platform_defaults(cls, vllm_config: VllmConfig) -> None:
@@ -106,6 +105,7 @@ class TorchSpyrePlatform(CpuPlatform):
         Spyre compilation is handled separately in _compile_for_spyre().
         """
         from vllm.config import CompilationMode
+
         vllm_config.compilation_config.mode = CompilationMode.NONE
 
     @classmethod

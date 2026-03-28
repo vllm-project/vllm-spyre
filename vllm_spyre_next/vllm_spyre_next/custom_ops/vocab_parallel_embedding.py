@@ -23,8 +23,7 @@ logger = init_logger(__name__)
 
 
 @VocabParallelEmbedding.register_oot(name="VocabParallelEmbedding")
-class SpyreVocabParallelEmbedding(SpyreCpuFallbackMixin,
-                                  VocabParallelEmbedding):
+class SpyreVocabParallelEmbedding(SpyreCpuFallbackMixin, VocabParallelEmbedding):
     """OOT VocabParallelEmbedding that falls back to CPU execution."""
 
     def __init__(self, *args, **kwargs):

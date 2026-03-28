@@ -52,9 +52,7 @@ class TorchSpyreWorker(CPUWorker):
         # If Spyre needs host-side thread affinity in the future, add it here.
 
         # Distributed environment (reuse upstream logic)
-        os.environ["VLLM_DIST_IDENT"] = (
-            self.distributed_init_method.split(":")[-1]
-        )
+        os.environ["VLLM_DIST_IDENT"] = self.distributed_init_method.split(":")[-1]
         init_worker_distributed_environment(
             self.vllm_config,
             self.rank,

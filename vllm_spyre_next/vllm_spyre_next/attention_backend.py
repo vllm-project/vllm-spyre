@@ -122,9 +122,7 @@ class SpyreCPUAttentionBackendImpl(CPUAttentionBackendImpl):
         """
         return convert(t, device="cpu")
 
-    def _metadata_to_cpu(
-        self, meta: CPUAttentionMetadata
-    ) -> CPUAttentionMetadata:
+    def _metadata_to_cpu(self, meta: CPUAttentionMetadata) -> CPUAttentionMetadata:
         """Move metadata tensor fields to CPU if on Spyre.
 
         The CPU attention kernel expects all tensor metadata on CPU.
@@ -147,8 +145,6 @@ class SpyreCPUAttentionBackendImpl(CPUAttentionBackendImpl):
         if meta.sdpa_start_loc is not None:
             updates["sdpa_start_loc"] = self._to_cpu(meta.sdpa_start_loc)
         if meta.sdpa_attn_masks is not None:
-            updates["sdpa_attn_masks"] = [
-                self._to_cpu(m) for m in meta.sdpa_attn_masks
-            ]
+            updates["sdpa_attn_masks"] = [self._to_cpu(m) for m in meta.sdpa_attn_masks]
 
         return replace(meta, **updates)

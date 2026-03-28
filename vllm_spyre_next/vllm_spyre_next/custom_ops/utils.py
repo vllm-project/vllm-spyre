@@ -87,8 +87,7 @@ def _safe_spyre_to_cpu(tensor: torch.Tensor) -> torch.Tensor:
         cpu_root.copy_(t)
         # Reconstruct the view on CPU using storage_offset + as_strided
         offset = tensor.storage_offset()
-        cpu_view = torch.as_strided(
-            cpu_root, tensor.shape, tensor.stride(), offset)
+        cpu_view = torch.as_strided(cpu_root, tensor.shape, tensor.stride(), offset)
         return cpu_view.contiguous()
 
     # Non-view tensor: direct copy

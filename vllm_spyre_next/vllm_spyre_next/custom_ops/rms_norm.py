@@ -198,9 +198,7 @@ class SpyreRMSNorm(RMSNorm):
         # Transfer back to CPU and trim padding
         result = pytree.tree_map(
             # lambda el: convert(el, dtype=x_dtype, device=x_device)[
-            lambda el: convert(el, dtype=x_dtype, device="cpu")[
-                :orig_batch_size, :
-            ],
+            lambda el: convert(el, dtype=x_dtype, device="cpu")[:orig_batch_size, :],
             outs,
         )
         return result

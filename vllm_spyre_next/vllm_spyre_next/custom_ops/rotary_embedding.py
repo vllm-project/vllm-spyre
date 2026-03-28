@@ -17,7 +17,6 @@ Remove this file once Spyre supports rotary embedding natively.
 
 import torch
 
-from vllm.config import get_current_vllm_config
 from vllm.forward_context import get_forward_context
 from vllm.logger import init_logger
 from vllm.model_executor.layers.rotary_embedding.base import (
@@ -61,13 +60,21 @@ class SpyreRotaryEmbedding(SpyreCpuFallbackMixin, RotaryEmbedding):
         if key is not None:
             output_key = torch.empty_like(key)
             torch.ops.vllm.spyre_rotary_embedding(
-                positions, query, key, output_query, output_key, self.prefix,
+                positions,
+                query,
+                key,
+                output_query,
+                output_key,
+                self.prefix,
             )
             return output_query, output_key
 
         # key=None case (e.g. cross-layer KV sharing)
         torch.ops.vllm.spyre_rotary_embedding_q_only(
-            positions, query, output_query, self.prefix,
+            positions,
+            query,
+            output_query,
+            self.prefix,
         )
         return output_query, None
 
@@ -89,7 +96,10 @@ class SpyreRotaryEmbedding(SpyreCpuFallbackMixin, RotaryEmbedding):
         cpu_key = convert(key, device="cpu")
 
         result_query, result_key = RotaryEmbedding.forward_native(
-            self, cpu_positions, cpu_query, cpu_key,
+            self,
+            cpu_positions,
+            cpu_query,
+            cpu_key,
         )
 
         output_query.copy_(result_query)
@@ -98,6 +108,7 @@ class SpyreRotaryEmbedding(SpyreCpuFallbackMixin, RotaryEmbedding):
 
 
 # --- Custom op: with key ---
+
 
 def spyre_rotary_embedding(
     positions: torch.Tensor,
@@ -115,6 +126,7 @@ def spyre_rotary_embedding(
 
 # --- Custom op: query only (key=None) ---
 
+
 def spyre_rotary_embedding_q_only(
     positions: torch.Tensor,
     query: torch.Tensor,
@@ -125,7 +137,6 @@ def spyre_rotary_embedding_q_only(
     forward_context = get_forward_context()
     layer = forward_context.no_compile_layers[layer_name]
     layer.forward_impl(positions, query, None, output_query, None)
-
 
 
 def register():
@@ -143,6 +154,5 @@ def register():
         mutates_args=["output_query"],
         fake_impl=_fake_impl,
     )
-    register_spyre_dispatch("spyre_rotary_embedding_q_only",
-                            spyre_rotary_embedding_q_only)
+    register_spyre_dispatch("spyre_rotary_embedding_q_only", spyre_rotary_embedding_q_only)
     logger.info("Registered custom op: spyre_rotary_embedding")
