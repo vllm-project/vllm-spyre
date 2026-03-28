@@ -1,6 +1,6 @@
 """This module contains all custom ops for spyre"""
 
-from . import rms_norm
+from . import rms_norm  # noqa: F401  (OOT registration at import time)
 from . import silu_and_mul
 from vllm.logger import init_logger
 
@@ -11,3 +11,6 @@ def register_all():
     logger.info("Registering custom ops for spyre_next")
     rms_norm.register()
     silu_and_mul.register()
+
+    # IR provider registration (triggered by import)
+    from . import kernels as _kernels  # noqa: F401
