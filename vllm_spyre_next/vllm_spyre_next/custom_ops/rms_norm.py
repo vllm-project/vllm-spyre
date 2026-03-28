@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Spyre OOT RMSNorm — device sandwich around the vLLM IR rms_norm op.
+"""Spyre OOT RMSNorm — leverages the vLLM IR rms_norm op.
 
 Tensors arrive on CPU. This module:
 1. Keeps a custom op boundary (forward_oot → torch.ops.vllm.spyre_rmsnorm) so
@@ -61,6 +61,9 @@ class SpyreRMSNorm(RMSNorm):
         residual: torch.Tensor | None = None,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """Device sandwich: CPU → Spyre → ir.ops.rms_norm (direct dispatch) → CPU."""
+        if self.variance_size_override is not None:
+            raise NotImplementedError("variance_size_override not yet implemented")
+
         # Handle residual on CPU (no need to transfer residual to Spyre)
         if residual is not None:
             x = x + residual
@@ -70,12 +73,12 @@ class SpyreRMSNorm(RMSNorm):
         x_device = x.device
         orig_batch_size = x.shape[0]
 
-        # Pad to Spyre minimum batch size
+        # Pad to Spyre minimum batch size for reduction
         if orig_batch_size < _SPYRE_MIN_BATCH_SIZE:
             pad = _SPYRE_MIN_BATCH_SIZE - orig_batch_size
             x = torch.nn.functional.pad(x, (0, 0, 0, pad))
 
-        # Transfer to Spyre, call IR op (direct dispatch → spyre provider), back
+        # Transfer to Spyre, call IR op (direct dispatch → spyre provider)
         result = ir.ops.rms_norm(
             convert(x, self._target_device, self._target_dtype),
             convert(self.weight.data, self._target_device, self._target_dtype)
@@ -84,6 +87,8 @@ class SpyreRMSNorm(RMSNorm):
             self.variance_epsilon,
             self.variance_size_override,
         )
+        # Transfer result back to the original device/dtype
+        # Remove any padding
         result = convert(result, x_device, x_dtype)[:orig_batch_size, :]
 
         if residual is None:
