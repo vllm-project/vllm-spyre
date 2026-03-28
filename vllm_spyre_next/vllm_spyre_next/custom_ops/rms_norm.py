@@ -55,48 +55,6 @@ class SpyreRMSNorm(RMSNorm):
             return output, residual
         return output
 
-    @staticmethod
-    def forward_spyre(
-        x: torch.Tensor,
-        variance_epsilon: float,
-        hidden_size: int,
-        weight: torch.Tensor | None = None,
-        residual: torch.Tensor | None = None,
-        variance_size_override: int | None = None,
-    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
-        """Spyre-optimized RMS norm using transpose-based computation (active implementation).
-
-        Based on upstream vLLM's forward_static (vllm/model_executor/layers/layernorm.py)
-        but adapted for Spyre device with transpose operations and torch.ops.spyre.full().
-        Compiled separately via torch.compile in __init__.
-
-        Key differences from upstream:
-            - Uses transpose(-1, -2) for computation efficiency on Spyre
-            - Creates epsilon tensor via torch.ops.spyre.full() instead of scalar
-            - No dtype promotion support (torch-spyre limitation)
-        """
-        if residual is not None:
-            x = x + residual
-            residual = x
-
-        if x.shape[-1] != hidden_size:
-            raise ValueError(f"Expected hidden_size to be {hidden_size}, but found: {x.shape[-1]}")
-
-        variance_epsilon = torch.full(
-            x.shape, variance_epsilon, dtype=torch.float16, device=x.device
-        )
-
-        variance = x.pow(2).mean(dim=-1, keepdim=True)
-
-        x = x * torch.rsqrt(variance + variance_epsilon)
-
-        if weight is not None:
-            x = x * weight
-        if residual is None:
-            return x
-        else:
-            return x, residual
-
     def _forward_spyre_impl(
         self,
         x: torch.Tensor,
@@ -123,7 +81,8 @@ class SpyreRMSNorm(RMSNorm):
             convert(self.weight.data, self._target_device, self._target_dtype)
             if self.has_weight
             else None,
-            convert(residual, self._target_device, self._target_dtype),
+            self.variance_epsilon,
+            self.variance_size_override,
         )
         result = convert(result, x_device, x_dtype)[:orig_batch_size, :]
 
