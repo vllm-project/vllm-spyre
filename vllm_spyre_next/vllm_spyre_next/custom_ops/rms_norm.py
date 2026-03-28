@@ -192,7 +192,6 @@ class SpyreRMSNorm(RMSNorm):
             self.hidden_size,
             fwd_w,
             convert(residual, self._target_device, self._target_dtype),
-            self.variance_size_override,
         )
 
         # Transfer back to CPU and trim padding
