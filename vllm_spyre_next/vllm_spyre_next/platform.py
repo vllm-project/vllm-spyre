@@ -87,25 +87,17 @@ class TorchSpyrePlatform(CpuPlatform):
         attn_selector_config,
         num_heads=None,
     ) -> str:
-        """Use Spyre attention backend that wraps CPU attention with
-        Spyre<->CPU device transfers."""
+        """Use a wrapped cpu attention backend:
+        Upstream CPU attention backend with Spyre<->CPU device transfers."""
         return "vllm_spyre_next.attention_backend.SpyreCPUAttentionBackend"
 
     @classmethod
     def apply_config_platform_defaults(cls, vllm_config: VllmConfig) -> None:
-        """Set Spyre-specific config defaults before vLLM's defaulting logic.
-
-        Called early in VllmConfig.__post_init__, BEFORE compilation mode
-        and custom_ops defaults are applied. Setting CompilationMode.NONE here
-        ensures:
-        - vLLM's @support_torch_compile won't activate (avoids dynamic shapes
-          / SymInt which Spyre can't handle)
-        - custom_ops defaults to "all" (since mode == NONE), enabling
-          forward_oot dispatch for OOT-registered layers
-        Spyre compilation is handled separately in _compile_for_spyre().
-        """
+        """Set Spyre-specific config defaults before vLLM's defaulting logic."""
         from vllm.config import CompilationMode
 
+        # Currently CompilationMode is set to NONE and eager execution is enforced
+        # Layers wrapped for spyre are compiled manually
         vllm_config.compilation_config.mode = CompilationMode.NONE
 
     @classmethod
