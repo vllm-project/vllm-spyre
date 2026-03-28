@@ -25,7 +25,6 @@ def spyre_rms_norm(
     """
     eps_tensor = torch.full(x.shape, epsilon, dtype=x.dtype, device=x.device)
 
-    # x_var = x if variance_size is None else x[..., :variance_size]
     variance = x.pow(2).mean(dim=-1, keepdim=True)
     x = x * torch.rsqrt(variance + eps_tensor)
 
