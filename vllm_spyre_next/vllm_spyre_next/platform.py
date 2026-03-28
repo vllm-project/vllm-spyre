@@ -88,6 +88,23 @@ class TorchSpyrePlatform(CpuPlatform):
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:
         cls.log_server_boot(vllm_config)
 
+        # ---- compilation / custom ops ----
+        # Upstream defaults custom_ops to ["none"] when backend == "inductor",
+        # which disables all CustomOp forward_oot methods. Spyre needs
+        # forward_oot to run (device sandwich, padding, IR dispatch to Spyre
+        # provider). Force custom ops ON so dispatch_forward selects forward_oot
+        # regardless of compilation mode.
+        compilation_config = vllm_config.compilation_config
+        custom_ops = compilation_config.custom_ops
+        if "none" in custom_ops:
+            custom_ops.remove("none")
+        if "all" not in custom_ops:
+            custom_ops.append("all")
+
+        # Disable torch wrapping for IR ops — Spyre uses direct dispatch
+        # (no Inductor lowering), so the torch custom op layer is unnecessary.
+        compilation_config.ir_enable_torch_wrap = False
+
         # ---- worker ----
         parallel_config = vllm_config.parallel_config
         if parallel_config.worker_cls == "auto":

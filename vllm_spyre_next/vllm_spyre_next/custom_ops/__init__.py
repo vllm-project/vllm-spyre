@@ -1,6 +1,6 @@
 """This module contains all custom ops for spyre"""
 
-from . import rms_norm
+from . import rms_norm  # noqa: F401  (OOT registration at import time)
 from . import silu_and_mul
 from vllm.logger import init_logger
 
