@@ -20,7 +20,7 @@ import torch
 from vllm.logger import init_logger
 from vllm.v1.attention.backend import AttentionLayer
 
-from vllm_spyre_next.custom_ops.utils import spyre_to_cpu
+from vllm_spyre_next.custom_ops.utils import convert
 from vllm.v1.attention.backends.cpu_attn import (
     CPUAttentionBackend,
     CPUAttentionBackendImpl,
@@ -114,14 +114,13 @@ class SpyreCPUAttentionBackendImpl(CPUAttentionBackendImpl):
 
     @staticmethod
     def _to_cpu(t: torch.Tensor | None) -> torch.Tensor | None:
-        """Safely move a Spyre tensor to CPU.
+        """Safely move a tensor to CPU.
 
-        Delegates to spyre_to_cpu() which handles all edge cases:
-        - SpyreSafeView subclass tensors
-        - Views (including 2x int backing views)
-        - Root tensor D2H with view reconstruction on CPU
+        Delegates to convert() which handles torch-spyre's D2H copy
+        crash on sliced views by copying the root tensor and
+        reconstructing the view on CPU.
         """
-        return spyre_to_cpu(t)
+        return convert(t, device="cpu")
 
     def _metadata_to_cpu(
         self, meta: CPUAttentionMetadata

@@ -36,7 +36,7 @@ class SpyreVocabParallelEmbedding(SpyreCpuFallbackMixin,
             *input_.shape,
             self.embedding_dim,
             dtype=self.weight.dtype,
-            device=input_.device,
+            device=self._output_device,
         )
         torch.ops.vllm.spyre_cpu_fallback(input_, output, self.prefix)
         return output

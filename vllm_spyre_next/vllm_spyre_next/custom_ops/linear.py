@@ -37,14 +37,17 @@ class SpyreQKVParallelLinear(SpyreCpuFallbackMixin, QKVParallelLinear):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._init_cpu_fallback("qkv_linear")
+        # QKV output must stay on CPU: granite.py does qkv.split() which
+        # creates strided views not supported on Spyre.
+        self._init_cpu_fallback("qkv_linear",
+                                output_device=torch.device("cpu"))
 
     def forward(self, input_):
         output = torch.empty(
             *input_.shape[:-1],
             self.output_size_per_partition,
             dtype=input_.dtype,
-            device=input_.device,
+            device=self._output_device,
         )
         torch.ops.vllm.spyre_cpu_fallback(input_, output, self.prefix)
         if not self.return_bias:
@@ -68,14 +71,14 @@ class SpyreMergedColumnParallelLinear(SpyreCpuFallbackMixin,
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._init_cpu_fallback("merged_col_linear")
+        self._init_cpu_fallback("merged_col_linear")  # default: Spyre output
 
     def forward(self, input_):
         output = torch.empty(
             *input_.shape[:-1],
             self.output_size_per_partition,
             dtype=input_.dtype,
-            device=input_.device,
+            device=self._output_device,
         )
         torch.ops.vllm.spyre_cpu_fallback(input_, output, self.prefix)
         if not self.return_bias:
@@ -98,14 +101,14 @@ class SpyreRowParallelLinear(SpyreCpuFallbackMixin, RowParallelLinear):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._init_cpu_fallback("row_linear")
+        self._init_cpu_fallback("row_linear")  # default: Spyre output
 
     def forward(self, input_):
         output = torch.empty(
             *input_.shape[:-1],
             self.output_size,
             dtype=input_.dtype,
-            device=input_.device,
+            device=self._output_device,
         )
         torch.ops.vllm.spyre_cpu_fallback(input_, output, self.prefix)
         if not self.return_bias:

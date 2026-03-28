@@ -27,7 +27,7 @@ from vllm.model_executor.layers.rotary_embedding.base import (
 from vllm.utils.torch_utils import direct_register_custom_op
 
 from .cpu_fallback import SpyreCpuFallbackMixin
-from .utils import spyre_to_cpu
+from .utils import _fake_impl, convert, register_spyre_dispatch
 
 logger = init_logger(__name__)
 
@@ -84,9 +84,9 @@ class SpyreRotaryEmbedding(SpyreCpuFallbackMixin, RotaryEmbedding):
         Moves inputs to CPU, calls upstream forward_native, copies results
         back to pre-allocated output tensors (on Spyre).
         """
-        cpu_positions = spyre_to_cpu(positions)
-        cpu_query = spyre_to_cpu(query)
-        cpu_key = spyre_to_cpu(key)
+        cpu_positions = convert(positions, device="cpu")
+        cpu_query = convert(query, device="cpu")
+        cpu_key = convert(key, device="cpu")
 
         result_query, result_key = RotaryEmbedding.forward_native(
             self, cpu_positions, cpu_query, cpu_key,
@@ -113,18 +113,6 @@ def spyre_rotary_embedding(
     layer.forward_impl(positions, query, key, output_query, output_key)
 
 
-def spyre_rotary_embedding_fake(
-    positions: torch.Tensor,
-    query: torch.Tensor,
-    key: torch.Tensor,
-    output_query: torch.Tensor,
-    output_key: torch.Tensor,
-    layer_name: str,
-) -> None:
-    """Fake impl — outputs pre-allocated, nothing to do."""
-    return
-
-
 # --- Custom op: query only (key=None) ---
 
 def spyre_rotary_embedding_q_only(
@@ -139,32 +127,22 @@ def spyre_rotary_embedding_q_only(
     layer.forward_impl(positions, query, None, output_query, None)
 
 
-def spyre_rotary_embedding_q_only_fake(
-    positions: torch.Tensor,
-    query: torch.Tensor,
-    output_query: torch.Tensor,
-    layer_name: str,
-) -> None:
-    """Fake impl — output pre-allocated, nothing to do."""
-    return
-
 
 def register():
     """Register rotary embedding custom ops."""
-    from . import register_dual_dispatch
     direct_register_custom_op(
         op_name="spyre_rotary_embedding",
         op_func=spyre_rotary_embedding,
         mutates_args=["output_query", "output_key"],
-        fake_impl=spyre_rotary_embedding_fake,
+        fake_impl=_fake_impl,
     )
-    register_dual_dispatch("spyre_rotary_embedding", spyre_rotary_embedding)
+    register_spyre_dispatch("spyre_rotary_embedding", spyre_rotary_embedding)
     direct_register_custom_op(
         op_name="spyre_rotary_embedding_q_only",
         op_func=spyre_rotary_embedding_q_only,
         mutates_args=["output_query"],
-        fake_impl=spyre_rotary_embedding_q_only_fake,
+        fake_impl=_fake_impl,
     )
-    register_dual_dispatch("spyre_rotary_embedding_q_only",
-                           spyre_rotary_embedding_q_only)
+    register_spyre_dispatch("spyre_rotary_embedding_q_only",
+                            spyre_rotary_embedding_q_only)
     logger.info("Registered custom op: spyre_rotary_embedding")

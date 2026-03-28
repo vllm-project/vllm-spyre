@@ -32,7 +32,7 @@ from vllm.utils.torch_utils import direct_register_custom_op
 from vllm.model_executor.layers.activation import SiluAndMul
 from functools import lru_cache
 
-from .utils import convert, register_layer, get_layer, _fake_impl, spyre_to_cpu
+from .utils import convert, register_layer, get_layer, _fake_impl, register_spyre_dispatch
 
 logger = init_logger(__name__)
 
@@ -131,26 +131,18 @@ class SpyreSiluAndMul(SiluAndMul):
 
         # Workaround: Spyre doesn't support strided views (slicing).
         # Move to CPU for slicing, then transfer halves to Spyre.
-        x_cpu = spyre_to_cpu(x) if x.device.type == "spyre" else x
+        x_cpu = convert(x, device="cpu")
         d = x_cpu.shape[-1] // 2
         x1 = x_cpu[..., :d]
         x2 = x_cpu[..., d:]
 
-        # If compiled, run on Spyre. Otherwise, run on CPU — Spyre's
-        # eager kernels may not support all ops (silu, mul).
-        is_compiled = (self._fwd is not self.forward_static)
-        if is_compiled:
-            target_device = self._target_device
-        else:
-            target_device = torch.device("cpu")
-
         out = self._fwd(
-            convert(x1, target_device, self._target_dtype),
-            convert(x2, target_device, self._target_dtype),
+            convert(x1, self._target_device, self._target_dtype),
+            convert(x2, self._target_device, self._target_dtype),
         )
 
         # Transfer back to original device and restore original dtype
-        return convert(out, x_device, x_dtype)
+        return convert(out, "cpu", x_dtype)
 
 
 def _op_func(
@@ -173,4 +165,5 @@ def register():
         mutates_args=["output"],
         fake_impl=_fake_impl,
     )
+    register_spyre_dispatch("spyre_siluandmul", _op_func)
     logger.info("Registered custom op: SpyreSiluAndMul")

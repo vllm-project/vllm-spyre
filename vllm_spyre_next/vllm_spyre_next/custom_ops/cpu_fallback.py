@@ -23,7 +23,7 @@ from vllm.forward_context import get_forward_context
 from vllm.logger import init_logger
 from vllm.utils.torch_utils import direct_register_custom_op
 
-from .utils import spyre_to_cpu
+from .utils import convert, register_spyre_dispatch
 
 logger = init_logger(__name__)
 
@@ -38,12 +38,21 @@ class SpyreCpuFallbackMixin:
 
     _instance_counter: int = 0
 
-    def _init_cpu_fallback(self, prefix_name: str) -> None:
+    def _init_cpu_fallback(
+        self,
+        prefix_name: str,
+        output_device: torch.device | None = None,
+    ) -> None:
         """Register this layer instance in static_forward_context.
 
         Args:
             prefix_name: Short identifier for the layer type (e.g. "embedding").
+            output_device: Device for pre-allocated output tensors in forward().
+                Defaults to torch.device("spyre"). Set to torch.device("cpu")
+                for layers whose output must stay on CPU (e.g. QKV for split).
         """
+        self._output_device = output_device or torch.device("spyre")
+
         cls = type(self)
         cls._instance_counter += 1
         self.prefix = f"spyre_cpu_{prefix_name}_{cls._instance_counter}"
@@ -53,7 +62,8 @@ class SpyreCpuFallbackMixin:
             raise ValueError(f"Duplicate layer name: {self.prefix}")
         compilation_config.static_forward_context[self.prefix] = self
 
-        logger.info("CPU fallback: %s (%s)", self.prefix, cls.__name__)
+        logger.info("CPU fallback: %s (%s, output_device=%s)",
+                     self.prefix, cls.__name__, self._output_device)
 
     def _apply(self, fn, recurse=True):
         """No-op: keep all parameters on CPU.
@@ -85,7 +95,7 @@ def spyre_cpu_fallback(
     """
     forward_context = get_forward_context()
     layer = forward_context.no_compile_layers[layer_name]
-    cpu_input = spyre_to_cpu(input)
+    cpu_input = convert(input, device="cpu")
     result = layer.cpu_forward(cpu_input)
     output.copy_(result)
 
@@ -105,12 +115,11 @@ def spyre_cpu_fallback_fake(
 
 def register():
     """Register the generic spyre_cpu_fallback custom op."""
-    from . import register_dual_dispatch
     direct_register_custom_op(
         op_name="spyre_cpu_fallback",
         op_func=spyre_cpu_fallback,
         mutates_args=["output"],
         fake_impl=spyre_cpu_fallback_fake,
     )
-    register_dual_dispatch("spyre_cpu_fallback", spyre_cpu_fallback)
+    register_spyre_dispatch("spyre_cpu_fallback", spyre_cpu_fallback)
     logger.info("Registered custom op: spyre_cpu_fallback")

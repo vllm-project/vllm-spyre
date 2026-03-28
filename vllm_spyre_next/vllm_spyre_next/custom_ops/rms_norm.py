@@ -36,7 +36,7 @@ from vllm.utils.torch_utils import direct_register_custom_op
 from vllm.model_executor.layers.layernorm import RMSNorm
 from functools import lru_cache
 
-from .utils import convert, register_layer, get_layer, _fake_impl
+from .utils import convert, register_layer, get_layer, _fake_impl, register_spyre_dispatch
 
 logger = init_logger(__name__)
 
@@ -53,15 +53,6 @@ class SpyreRMSNorm(RMSNorm):
     """
 
     _dynamic_arg_dims = {"x": [], "residual": []}
-
-    def _apply(self, fn, recurse=True):
-        """Keep weights on CPU to avoid SpyreTensorImpl destructor bugs.
-
-        model.to(device="spyre") would move weights to Spyre, but the
-        SpyreTensorImpl destructor has a double-free bug. Weights are
-        transferred to Spyre at runtime via convert() in forward_native.
-        """
-        return self
 
     def __init__(self, *args, **kwargs):
         """Initialize SpyreRMSNorm layer.
@@ -139,28 +130,13 @@ class SpyreRMSNorm(RMSNorm):
         if x.shape[-1] != hidden_size:
             raise ValueError(f"Expected hidden_size to be {hidden_size}, but found: {x.shape[-1]}")
 
-        x = x.contiguous().transpose(-1, -2).contiguous()
-
         variance_epsilon = torch.full(
             x.shape, variance_epsilon, dtype=torch.float16, device=x.device
         )
 
-        if variance_size_override is None:
-            x_var = x
-        else:
-            if hidden_size < variance_size_override:
-                raise ValueError(
-                    "Expected hidden_size to be at least "
-                    f"{variance_size_override}, but found: {hidden_size}"
-                )
-
-            x_var = x[:, :, :variance_size_override]
-
-        # After transpose, hidden dim is now dim=0
-        variance = x_var.pow(2).mean(dim=0, keepdim=True)
+        variance = x.pow(2).mean(dim=-1, keepdim=True)
 
         x = x * torch.rsqrt(variance + variance_epsilon)
-        x = x.transpose(-1, -2).contiguous()
 
         if weight is not None:
             x = x * weight
@@ -190,6 +166,7 @@ class SpyreRMSNorm(RMSNorm):
             Normalized output [batch_size, hidden_size] in original dtype
         """
         x_dtype = x.dtype
+        x_device = x.device
 
         if self.variance_size_override is not None:
             raise NotImplementedError("TODO: variance_size_override not yet implemented")
@@ -203,19 +180,9 @@ class SpyreRMSNorm(RMSNorm):
             if residual is not None:
                 residual = torch.nn.functional.pad(residual, (0, 0, 0, pad_amount))
 
-        # # If compiled, run on Spyre. Otherwise, run on CPU — Spyre's
-        # # eager kernels don't support torch.full, pow, mean etc.
-        # is_compiled = (self._fwd is not self.forward_spyre)
-        # if is_compiled:
-        #     target_device = self._target_device
-        # else:
-        #     target_device = torch.device("cpu")
-            
-        target_device = self._target_device
-
-        fwd_x = convert(x, target_device, self._target_dtype)
+        fwd_x = convert(x, self._target_device, self._target_dtype)
         fwd_w = (
-            convert(self.weight.data, target_device, self._target_dtype)
+            convert(self.weight.data, self._target_device, self._target_dtype)
             if self.has_weight
             else None
         )
@@ -224,15 +191,16 @@ class SpyreRMSNorm(RMSNorm):
             self.variance_epsilon,
             self.hidden_size,
             fwd_w,
-            convert(residual, target_device, self._target_dtype),
+            convert(residual, self._target_device, self._target_dtype),
             self.variance_size_override,
         )
 
-        # # Transfer back to CPU and trim padding
+        # Transfer back to CPU and trim padding
         result = pytree.tree_map(
-            lambda el: convert(convert(el, dtype=x_dtype, device="cpu")[
+            # lambda el: convert(el, dtype=x_dtype, device=x_device)[
+            lambda el: convert(el, dtype=x_dtype, device="cpu")[
                 :orig_batch_size, :
-            ], target_device, self._target_dtype),
+            ],
             outs,
         )
         return result
@@ -265,4 +233,5 @@ def register():
         mutates_args=["output"],
         fake_impl=_fake_impl,
     )
+    register_spyre_dispatch("spyre_rmsnorm", _op_func)
     logger.info("Registered custom op: SpyreRMSNorm")
