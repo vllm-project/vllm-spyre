@@ -185,27 +185,22 @@ class SpyreRMSNorm(RMSNorm):
             if residual is not None:
                 residual = torch.nn.functional.pad(residual, (0, 0, 0, pad_amount))
 
-        fwd_x = convert(x, self._target_device, self._target_dtype)
-        fwd_w = (
-            convert(self.weight.data, self._target_device, self._target_dtype)
-            if self.has_weight
-            else None
-        )
+        # Execute compiled kernel on Spyre device
         outs = self._fwd(
-            fwd_x,
+            convert(x, self._target_device, self._target_dtype),
             self.variance_epsilon,
             self.hidden_size,
-            fwd_w,
+            convert(self.weight.data, self._target_device, self._target_dtype)
+            if self.has_weight
+            else None,
             convert(residual, self._target_device, self._target_dtype),
         )
 
-        # Transfer back to CPU and trim padding
-        result = pytree.tree_map(
-            # lambda el: convert(el, dtype=x_dtype, device=x_device)[
+        # Transfer back to CPU and restore original shape
+        return pytree.tree_map(
             lambda el: convert(el, dtype=x_dtype, device="cpu")[:orig_batch_size, :],
             outs,
         )
-        return result
 
 
 def _op_func(

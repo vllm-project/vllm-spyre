@@ -139,7 +139,7 @@ class TorchSpyreModelRunner(GPUModelRunner):
         # Store the real Spyre device before super().__init__ so that
         # _make_buffer can place .gpu tensors on Spyre directly.
         self._spyre_device = device
-
+        
         # Check if the model dtype is different from float16,
         # which is only currently supported in torch-spyre
         if vllm_config.model_config.dtype != torch.float16:
@@ -270,37 +270,6 @@ class TorchSpyreModelRunner(GPUModelRunner):
     #     self,
     #     kv_cache_config,
     # ) -> dict[str, torch.Tensor]:
-
-    # def _allocate_kv_cache_tensors(
-    #     self,
-    #     kv_cache_config,
-    # ) -> dict[str, torch.Tensor]:
-    #     """Allocate KV cache tensors on CPU instead of Spyre.
-
-    #     Spyre device memory is limited and may not support int8 tensors
-    #     (used as raw storage). KV cache stays on CPU; the attention backend
-    #     (TorchSDPA) operates on CPU tensors. The model receives KV cache
-    #     references and handles device placement internally.
-
-    #     TODO: Move KV cache to Spyre once device memory is sufficient and
-    #     int8/view operations are supported.
-    #     """
-    #     kv_cache_raw_tensors: dict[str, torch.Tensor] = {}
-    #     for kv_cache_tensor in kv_cache_config.kv_cache_tensors:
-    #         tensor = torch.zeros(kv_cache_tensor.size, dtype=torch.int8, device="cpu")
-    #         for layer_name in kv_cache_tensor.shared_by:
-    #             kv_cache_raw_tensors[layer_name] = tensor
-
-    #     layer_names = set()
-    #     for group in kv_cache_config.kv_cache_groups:
-    #         for layer_name in group.layer_names:
-    #             if layer_name in self.runner_only_attn_layers:
-    #                 continue
-    #             layer_names.add(layer_name)
-    #     assert layer_names == set(kv_cache_raw_tensors.keys()), (
-    #         "Some layers are not correctly initialized"
-    #     )
-    #     return kv_cache_raw_tensors
 
     # --- Stubs copied from CPUModelRunner ---
     # These are trivial overrides that GPUModelRunner expects.

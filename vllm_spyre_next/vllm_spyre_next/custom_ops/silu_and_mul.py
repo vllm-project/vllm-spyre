@@ -127,14 +127,13 @@ class SpyreSiluAndMul(SiluAndMul):
             the original dtype.
         """
         x_dtype = x.dtype
-        x_device = x.device
 
         # Workaround: Spyre doesn't support strided views (slicing).
         # Move to CPU for slicing, then transfer halves to Spyre.
-        x_cpu = convert(x, device="cpu")
-        d = x_cpu.shape[-1] // 2
-        x1 = x_cpu[..., :d]
-        x2 = x_cpu[..., d:]
+        x = convert(x, device="cpu")
+        d = x.shape[-1] // 2
+        x1 = x[..., :d]
+        x2 = x[..., d:]
 
         out = self._fwd(
             convert(x1, self._target_device, self._target_dtype),
