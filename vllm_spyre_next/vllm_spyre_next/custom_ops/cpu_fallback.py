@@ -86,7 +86,7 @@ def spyre_cpu_fallback(
     layer_name: str,
 ) -> None:
     """Custom op implementation
-    
+
     1. Converts input tensor to cpu
     2. Executes layer on cpu
     3. Copies result to pre-allocated output buffer (spyre)

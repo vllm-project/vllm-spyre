@@ -1,6 +1,6 @@
 """Spyre-specific model runner for vLLM v1.
 
-Inherits from GPUModelRunner (not CPUModelRunner) to preserve the CpuGpuBuffer
+Inherits from GPUModelRunner to preserve the CpuGpuBuffer
 dual-buffer pattern where .cpu = CPU staging and .gpu = Spyre device tensors.
 
 Data flow:
@@ -12,7 +12,7 @@ Data flow:
   operations (logits indexing, lm_head, sampling).
 
 Float .gpu buffers are on Spyre (via _make_buffer / SpyreCpuGpuBuffer).
-Int/bool .gpu buffers are aliased to .cpu (CPUModelRunner pattern).
+Int/bool .gpu buffers stay on CPU and are are aliased to .cpu (CPUModelRunner pattern).
 """
 
 from __future__ import annotations
@@ -96,8 +96,6 @@ class _SpyreOutputWrapper:
     outputs — both execute_model (via _model_forward) and _dummy_run
     (which calls self.model(...) directly).
 
-    Attribute access delegates to the wrapped model so that
-    self.model.compute_logits, self.model.config, etc. work unchanged.
     """
 
     def __init__(self, model: nn.Module):
@@ -127,13 +125,13 @@ class _SpyreOutputWrapper:
 
 
 class TorchSpyreModelRunner(GPUModelRunner):
-    """Model runner for IBM's Spyre device.
+    """Model runner for Spyre.
 
     Treats Spyre as the 'GPU' device in vLLM's CpuGpuBuffer pattern:
     - .cpu tensors on CPU (numpy staging for scheduler)
     - .gpu tensors on Spyre for floats, aliased to CPU for int/bool
 
-    Inherits from GPUModelRunner (not CPUModelRunner) to preserve
+    Inherits from GPUModelRunner to preserve
     the dual-buffer device placement pattern.
     """
 
@@ -142,14 +140,6 @@ class TorchSpyreModelRunner(GPUModelRunner):
         # _make_buffer can place .gpu tensors on Spyre directly.
         self._spyre_device = device
 
-        # Phase 1: Init with device="cpu" to avoid dtype/device errors.
-        # Many components create tensors on self.device during init, and
-        # Spyre doesn't support all dtypes (int32, bool) natively.
-        # _make_buffer (overridden below) already places .gpu on Spyre
-        # via self._spyre_device regardless of self.device.
-        with _torch_cuda_wrapper():
-            super().__init__(vllm_config, torch.device("cpu"))
-
         # Check if the model dtype is different from float16,
         # which is only currently supported in torch-spyre
         if vllm_config.model_config.dtype != torch.float16:
@@ -157,6 +147,14 @@ class TorchSpyreModelRunner(GPUModelRunner):
                 f"The model dtype needs to be torch.float16 for spyre, "
                 f"but was specified to be {vllm_config.model_config.dtype}"
             )
+
+        # Phase 1: Init with device="cpu" to avoid dtype/device errors.
+        # Many components create tensors on self.device during init, and
+        # Spyre doesn't support all dtypes (int32, bool) natively.
+        # _make_buffer (overridden below) already places .gpu on Spyre
+        # via self._spyre_device regardless of self.device.
+        with _torch_cuda_wrapper():
+            super().__init__(vllm_config, torch.device("cpu"))
 
         # Keep self.device as CPU. Input tensors (input_ids, positions) stay
         # on CPU — the embedding layer takes CPU int input, computes on CPU,
@@ -182,9 +180,7 @@ class TorchSpyreModelRunner(GPUModelRunner):
         """Load model and compile for Spyre."""
         logger.info("Loading model %s...", self.model_config.model)
 
-        # Load model on CPU. OOT-registered layers (VocabParallelEmbedding,
-        # RMSNorm, SiluAndMul, Linear, etc.) are automatically replaced at
-        # instantiation via register_oot().
+        # Load model on CPU
         self.model = get_model(vllm_config=self.vllm_config)
         self.model_memory_usage = 0  # No GPU memory profiling for Spyre
 
@@ -201,7 +197,7 @@ class TorchSpyreModelRunner(GPUModelRunner):
         # Compile for Spyre (no-op if enforce_eager=True)
         self._compile_for_spyre()
 
-        # Wrap model so ALL forward() calls (execute_model, _dummy_run, etc.)
+        # Wrap model so ALL forward() calls to the entire model, for example in execute_model, _dummy_run, etc.,
         # automatically convert Spyre outputs to CPU. This ensures downstream
         # indexing (logits_indices), lm_head (CPU weights), and sampling all
         # receive CPU tensors without needing per-call-site overrides.
@@ -269,37 +265,42 @@ class TorchSpyreModelRunner(GPUModelRunner):
         logger.info("Warmup done.")
 
     # --- KV cache allocation ---
+    # Potential sub to override KV cache tensor allocation
+    # def _allocate_kv_cache_tensors(
+    #     self,
+    #     kv_cache_config,
+    # ) -> dict[str, torch.Tensor]:
 
-    def _allocate_kv_cache_tensors(
-        self,
-        kv_cache_config,
-    ) -> dict[str, torch.Tensor]:
-        """Allocate KV cache tensors on CPU instead of Spyre.
+    # def _allocate_kv_cache_tensors(
+    #     self,
+    #     kv_cache_config,
+    # ) -> dict[str, torch.Tensor]:
+    #     """Allocate KV cache tensors on CPU instead of Spyre.
 
-        Spyre device memory is limited and may not support int8 tensors
-        (used as raw storage). KV cache stays on CPU; the attention backend
-        (TorchSDPA) operates on CPU tensors. The model receives KV cache
-        references and handles device placement internally.
+    #     Spyre device memory is limited and may not support int8 tensors
+    #     (used as raw storage). KV cache stays on CPU; the attention backend
+    #     (TorchSDPA) operates on CPU tensors. The model receives KV cache
+    #     references and handles device placement internally.
 
-        TODO: Move KV cache to Spyre once device memory is sufficient and
-        int8/view operations are supported.
-        """
-        kv_cache_raw_tensors: dict[str, torch.Tensor] = {}
-        for kv_cache_tensor in kv_cache_config.kv_cache_tensors:
-            tensor = torch.zeros(kv_cache_tensor.size, dtype=torch.int8, device="cpu")
-            for layer_name in kv_cache_tensor.shared_by:
-                kv_cache_raw_tensors[layer_name] = tensor
+    #     TODO: Move KV cache to Spyre once device memory is sufficient and
+    #     int8/view operations are supported.
+    #     """
+    #     kv_cache_raw_tensors: dict[str, torch.Tensor] = {}
+    #     for kv_cache_tensor in kv_cache_config.kv_cache_tensors:
+    #         tensor = torch.zeros(kv_cache_tensor.size, dtype=torch.int8, device="cpu")
+    #         for layer_name in kv_cache_tensor.shared_by:
+    #             kv_cache_raw_tensors[layer_name] = tensor
 
-        layer_names = set()
-        for group in kv_cache_config.kv_cache_groups:
-            for layer_name in group.layer_names:
-                if layer_name in self.runner_only_attn_layers:
-                    continue
-                layer_names.add(layer_name)
-        assert layer_names == set(kv_cache_raw_tensors.keys()), (
-            "Some layers are not correctly initialized"
-        )
-        return kv_cache_raw_tensors
+    #     layer_names = set()
+    #     for group in kv_cache_config.kv_cache_groups:
+    #         for layer_name in group.layer_names:
+    #             if layer_name in self.runner_only_attn_layers:
+    #                 continue
+    #             layer_names.add(layer_name)
+    #     assert layer_names == set(kv_cache_raw_tensors.keys()), (
+    #         "Some layers are not correctly initialized"
+    #     )
+    #     return kv_cache_raw_tensors
 
     # --- Stubs copied from CPUModelRunner ---
     # These are trivial overrides that GPUModelRunner expects.
