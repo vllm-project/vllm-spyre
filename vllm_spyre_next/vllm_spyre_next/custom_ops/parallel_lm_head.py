@@ -2,13 +2,6 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Spyre OOT replacement for ParallelLMHead.
 
-Keeps lm_head weights on CPU so that compute_logits (F.linear) works
-correctly in eager mode where hidden_states flow on CPU.
-
-The ParallelLMHead is not an embedding lookup — it does matrix
-multiplication via quant_method.apply → F.linear. No custom op is
-needed; we just prevent weights from being moved to Spyre.
-
 Remove this file once all model execution happens on Spyre.
 """
 

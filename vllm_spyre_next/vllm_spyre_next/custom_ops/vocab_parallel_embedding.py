@@ -2,11 +2,6 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Spyre CPU fallback for VocabParallelEmbedding.
 
-Embedding lookups cannot yet run on Spyre (integer indexing, large vocab
-tables). This OOT replacement routes them through the generic
-spyre_cpu_fallback custom op, executing on CPU without causing dynamo
-graph breaks.
-
 Remove this file once Spyre supports embedding natively.
 """
 

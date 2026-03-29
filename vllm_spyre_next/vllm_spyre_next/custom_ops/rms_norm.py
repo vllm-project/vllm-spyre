@@ -70,7 +70,7 @@ class SpyreRMSNorm(RMSNorm):
 
         self._layer_name = register_layer(self, "spyre_rmsnorm")
 
-        logger.warning(
+        logger.warning_once(
             "SpyreRMSNorm: no dtype promotion is performed, "
             "expect numerical differences to upstream vLLM."
         )
@@ -166,7 +166,12 @@ class SpyreRMSNorm(RMSNorm):
             Normalized output [batch_size, hidden_size] in original dtype
         """
         x_dtype = x.dtype
-        x_device = x.device
+
+        # Move to CPU for padding (torch.nn.functional.pad not supported on Spyre).
+        # The subsequent convert() to _target_device handles CPU→Spyre for computation.
+        x = convert(x, device="cpu")
+        if residual is not None:
+            residual = convert(residual, device="cpu")
 
         if self.variance_size_override is not None:
             raise NotImplementedError("TODO: variance_size_override not yet implemented")

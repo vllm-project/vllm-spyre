@@ -4,6 +4,8 @@
 
 Provides a single custom op (torch.ops.vllm.spyre_cpu_fallback) that can
 execute any layer on CPU while the rest of the model runs on Spyre.
+This is needed for example when a layer is not yet properly wrapped
+for execution via torch-spyre. For example RoPE, Embedding or MLP.
 Compatible with fullgraph=True compilation — no dynamo graph breaks.
 
 Usage: For each layer that needs CPU fallback, create a thin OOT wrapper:
@@ -23,7 +25,7 @@ from vllm.forward_context import get_forward_context
 from vllm.logger import init_logger
 from vllm.utils.torch_utils import direct_register_custom_op
 
-from .utils import convert, register_spyre_dispatch
+from .utils import convert, register_spyre_dispatch, _fake_impl
 
 logger = init_logger(__name__)
 
@@ -70,20 +72,11 @@ class SpyreCpuFallbackMixin:
         )
 
     def _apply(self, fn, recurse=True):
-        """No-op: keep all parameters on CPU.
-
-        nn.Module.to() uses _apply() internally, and parent modules call
-        child._apply(fn) directly (not child.to()). Overriding _apply()
-        prevents model.to(device="spyre") from moving this layer's weights
-        off CPU. The custom op handles CPU<->Spyre transfers at runtime.
-        """
+        """No-op: keep all parameters on CPU."""
         return self
 
     def cpu_forward(self, *args, **kwargs):
-        """Execute the layer's original forward on CPU.
-
-        Override this to call the parent class's forward_native.
-        """
+        """Execute the layer's original forward on CPU."""
         raise NotImplementedError
 
 
@@ -92,10 +85,11 @@ def spyre_cpu_fallback(
     output: torch.Tensor,
     layer_name: str,
 ) -> None:
-    """Custom op implementation — executes layer on CPU.
-
-    Retrieves the layer from forward_context, moves input to CPU,
-    calls cpu_forward, and copies result to the pre-allocated output.
+    """Custom op implementation
+    
+    1. Converts input tensor to cpu
+    2. Executes layer on cpu
+    3. Copies result to pre-allocated output buffer (spyre)
     """
     forward_context = get_forward_context()
     layer = forward_context.no_compile_layers[layer_name]
@@ -104,26 +98,13 @@ def spyre_cpu_fallback(
     output.copy_(result)
 
 
-def spyre_cpu_fallback_fake(
-    input: torch.Tensor,
-    output: torch.Tensor,
-    layer_name: str,
-) -> None:
-    """Fake implementation for shape inference during torch.compile.
-
-    Output is pre-allocated by the caller with the correct shape,
-    so nothing to do here.
-    """
-    return
-
-
 def register():
     """Register the generic spyre_cpu_fallback custom op."""
     direct_register_custom_op(
         op_name="spyre_cpu_fallback",
         op_func=spyre_cpu_fallback,
         mutates_args=["output"],
-        fake_impl=spyre_cpu_fallback_fake,
+        fake_impl=_fake_impl,
     )
     register_spyre_dispatch("spyre_cpu_fallback", spyre_cpu_fallback)
     logger.info("Registered custom op: spyre_cpu_fallback")

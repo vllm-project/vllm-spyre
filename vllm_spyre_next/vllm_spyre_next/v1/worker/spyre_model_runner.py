@@ -3,14 +3,16 @@
 Inherits from GPUModelRunner (not CPUModelRunner) to preserve the CpuGpuBuffer
 dual-buffer pattern where .cpu = CPU staging and .gpu = Spyre device tensors.
 
-Hidden states flow on Spyre between decoder layers. Float tensors go to Spyre
-device (.gpu = float16 on Spyre). Int and bool tensors stay on CPU via
-SpyreCpuGpuBuffer (.gpu aliased to .cpu). self.device is set to Spyre so that
-torch.compile's Spyre inductor backend sees Spyre-device graph inputs.
+Data flow:
+- self.device = CPU. Input tensors (input_ids, positions) stay on CPU.
+- Embedding: CPU int input → CPU compute → float16 output on Spyre.
+- Hidden states flow on Spyre between decoder layers.
+- Attention block: Spyre input → CPU compute → Spyre output.
+- _SpyreOutputWrapper converts final hidden_states to CPU for downstream
+  operations (logits indexing, lm_head, sampling).
 
-The model is wrapped with _SpyreOutputWrapper so that the final hidden_states
-are automatically converted from Spyre to CPU for downstream operations
-(logits indexing, lm_head, sampling).
+Float .gpu buffers are on Spyre (via _make_buffer / SpyreCpuGpuBuffer).
+Int/bool .gpu buffers are aliased to .cpu (CPUModelRunner pattern).
 """
 
 from __future__ import annotations
@@ -156,15 +158,13 @@ class TorchSpyreModelRunner(GPUModelRunner):
                 f"but was specified to be {vllm_config.model_config.dtype}"
             )
 
-        # Restore self.device to Spyre. This is needed because:
-        # - torch.compile with the Spyre inductor backend requires graph
-        #   inputs on the Spyre device (device_tensor_layout check)
-        # - _dummy_run creates input_ids/positions on self.device
-        # Int tensors (input_ids, positions) CAN be created on Spyre; they
-        # just can't be fancy-indexed. For execute_model, logits_indices
-        # comes from int buffers (aliased .gpu=.cpu, so CPU). For _dummy_run,
-        # the indexing issue is handled in warming_up_model.
-        self.device = self._spyre_device
+        # Keep self.device as CPU. Input tensors (input_ids, positions) stay
+        # on CPU — the embedding layer takes CPU int input, computes on CPU,
+        # and returns float16 on Spyre. Hidden states then flow on Spyre
+        # between decoder layers. _SpyreOutputWrapper converts final output
+        # back to CPU for logits indexing and lm_head.
+        # _make_buffer (overridden below) places float .gpu tensors on Spyre
+        # regardless of self.device.
 
         # Disable GPU-specific features (same as CPUModelRunner)
         self.use_cuda_graph = False
@@ -250,28 +250,23 @@ class TorchSpyreModelRunner(GPUModelRunner):
         logger.info("Model compiled for Spyre (backend=inductor)")
 
     def warming_up_model(self) -> None:
-        """Trigger Spyre compilation via dummy forward pass.
+        """Run a dummy forward pass to warm up the model.
 
-        _dummy_run ends with hidden_states[logit_indices_device] where
-        logit_indices_device is on Spyre but hidden_states is on CPU
-        (from _SpyreOutputWrapper). This indexing fails, but the return
-        value is not needed — warmup only needs the model forward to
-        trigger compilation.
+        With self.device=CPU, _dummy_run creates CPU int inputs (input_ids,
+        positions). The embedding layer takes CPU input and outputs on Spyre.
+        _SpyreOutputWrapper converts final hidden_states back to CPU, so
+        downstream indexing (logits_indices on CPU) works without errors.
+
+        When enforce_eager=False, this also triggers torch.compile.
         """
-        logger.info("Warming up model for Spyre compilation...")
+        logger.info("Warming up model...")
         num_tokens = min(
             max(16, self.max_num_reqs),
             self.scheduler_config.max_num_batched_tokens,
         )
         with _set_spyre_compilation_settings(self.vllm_config):
-            try:
-                self._dummy_run(num_tokens)
-            except (RuntimeError, NotImplementedError):
-                # Expected: _dummy_run tries to index CPU hidden_states
-                # with Spyre logit_indices at the end. The model forward
-                # (compilation warmup) completed successfully before this.
-                logger.debug("Warmup indexing error suppressed (expected)")
-        logger.info("Spyre warmup done.")
+            self._dummy_run(num_tokens)
+        logger.info("Warmup done.")
 
     # --- KV cache allocation ---
 
@@ -327,7 +322,10 @@ class TorchSpyreModelRunner(GPUModelRunner):
         # (e.g. is_text_generation_model in get_supported_tasks).
         model = self.model
         if isinstance(model, _SpyreOutputWrapper):
-            return model._model
+            model = model._model
+        # Unwrap torch.compile's OptimizedModule (has _orig_mod attribute)
+        if hasattr(model, "_orig_mod"):
+            model = model._orig_mod
         return model
 
     # --- Buffer management ---

@@ -96,9 +96,14 @@ class TorchSpyrePlatform(CpuPlatform):
         """Set Spyre-specific config defaults before vLLM's defaulting logic."""
         from vllm.config import CompilationMode
 
-        # Currently CompilationMode is set to NONE and eager execution is enforced
-        # Layers wrapped for spyre are compiled manually
         vllm_config.compilation_config.mode = CompilationMode.NONE
+
+        # Force eager execution. torch.compile with the Spyre inductor
+        # backend requires ALL graph tensors on Spyre, but our CPU fallback
+        # ops (embedding, linear, rotary, attention) create intermediate
+        # CPU tensors that the Spyre backend cannot codegen. Once all layers
+        # run natively on Spyre, this can be removed to enable compilation.
+        vllm_config.model_config.enforce_eager = True
 
     @classmethod
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:

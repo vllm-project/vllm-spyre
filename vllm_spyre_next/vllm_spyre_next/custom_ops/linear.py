@@ -2,15 +2,6 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Spyre CPU fallback for linear layers (MLP and attention projections).
 
-These layers use F.linear which cannot yet run on Spyre. The OOT
-replacements route computation through the generic spyre_cpu_fallback
-custom op, executing on CPU without dynamo graph breaks.
-
-Wraps:
-    - QKVParallelLinear (attention qkv_proj)
-    - MergedColumnParallelLinear (MLP gate_up_proj)
-    - RowParallelLinear (attention o_proj, MLP down_proj)
-
 Remove this file once Spyre supports linear ops natively.
 """
 

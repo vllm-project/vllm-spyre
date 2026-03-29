@@ -2,16 +2,6 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Spyre CPU fallback for RotaryEmbedding.
 
-Rotary positional embedding cannot yet run natively on Spyre. This OOT
-replacement routes computation through a dedicated custom op, executing
-on CPU without dynamo graph breaks.
-
-Pattern follows rms_norm.py / silu_and_mul.py:
-    1. OOT registration replaces upstream class at instantiation
-    2. forward() pre-allocates outputs, calls custom op
-    3. Custom op retrieves layer from forward_context, runs on CPU
-    4. Fake impl is a no-op (outputs pre-allocated)
-
 Remove this file once Spyre supports rotary embedding natively.
 """
 
