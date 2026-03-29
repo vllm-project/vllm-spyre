@@ -32,7 +32,7 @@ from vllm.utils.torch_utils import direct_register_custom_op
 from vllm.model_executor.layers.activation import SiluAndMul
 from functools import lru_cache
 
-from .utils import convert, register_layer, get_layer, _fake_impl
+from .utils import convert, register_layer, get_layer, _fake_impl, register_spyre_dispatch
 
 logger = init_logger(__name__)
 
@@ -111,14 +111,12 @@ class SpyreSiluAndMul(SiluAndMul):
 
         The Spyre device does not currently support strided tensor views (slicing),
         so the input is split into its two halves on the CPU before being
-        transferred to the device.  Once tensor slicing is supported this method
-        should revert to the simpler single-tensor path (see commented-out block).
+        transferred to the device.
 
         Execution steps:
             1. Slice on CPU: split x into x1 = x[..., :d] and x2 = x[..., d:]
             2. Device transfer: convert x1 and x2 independently to Spyre (float16)
-               via convert_for_spyre
-            3. Kernel execution: call compiled _fwd_spyre(x1_spyre, x2_spyre)
+            3. Kernel execution: call compiled _fwd(x1_spyre, x2_spyre)
             4. Result transfer: Spyre -> original device, restore original dtype
 
         Args:
@@ -129,19 +127,21 @@ class SpyreSiluAndMul(SiluAndMul):
             the original dtype.
         """
         x_dtype = x.dtype
-        x_device = x.device
 
-        # Note: Workaround with tensor slicing on CPU
+        # Workaround: Spyre doesn't support strided views (slicing).
+        # Move to CPU for slicing, then transfer halves to Spyre.
+        x = convert(x, device="cpu")
         d = x.shape[-1] // 2
         x1 = x[..., :d]
         x2 = x[..., d:]
+
         out = self._fwd(
             convert(x1, self._target_device, self._target_dtype),
             convert(x2, self._target_device, self._target_dtype),
         )
 
         # Transfer back to original device and restore original dtype
-        return convert(out, x_device, x_dtype)
+        return convert(out, "cpu", x_dtype)
 
 
 def _op_func(
@@ -164,4 +164,5 @@ def register():
         mutates_args=["output"],
         fake_impl=_fake_impl,
     )
+    register_spyre_dispatch("spyre_siluandmul", _op_func)
     logger.info("Registered custom op: SpyreSiluAndMul")
