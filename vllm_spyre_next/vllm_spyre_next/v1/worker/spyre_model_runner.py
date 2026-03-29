@@ -139,7 +139,7 @@ class TorchSpyreModelRunner(GPUModelRunner):
         # Store the real Spyre device before super().__init__ so that
         # _make_buffer can place .gpu tensors on Spyre directly.
         self._spyre_device = device
-        
+
         # Check if the model dtype is different from float16,
         # which is only currently supported in torch-spyre
         if vllm_config.model_config.dtype != torch.float16:

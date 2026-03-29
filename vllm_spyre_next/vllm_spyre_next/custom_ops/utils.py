@@ -65,38 +65,6 @@ def register_spyre_dispatch(op_name: str, op_func) -> None:
     _spyre_dispatch_lib.impl(op_name, op_func, dispatch_key="PrivateUse1")
 
 
-def _safe_spyre_to_cpu(tensor: torch.Tensor) -> torch.Tensor:
-    """Safely copy a Spyre tensor (possibly a sliced view) to CPU.
-
-    Handles torch-spyre bug where D2H copy crashes on sliced/non-contiguous
-    views. Strategy: walk up the view chain to find the root non-view tensor,
-    copy it to CPU in full, then reconstruct the original view (slice) on CPU.
-
-    Remove this function once torch-spyre fixes view copy issues.
-    """
-    # If this is a view (from slicing), we cannot D2H copy it directly —
-    # torch-spyre crashes on views. Copy the root tensor to CPU and
-    # reconstruct the view there.
-    if tensor._is_view() and tensor._base is not None:
-        # Walk up view chain to find the root non-view tensor
-        t = tensor
-        while t._is_view() and t._base is not None:
-            t = t._base
-        t = t.contiguous()
-        cpu_root = torch.empty(t.shape, dtype=t.dtype, device="cpu")
-        cpu_root.copy_(t)
-        # Reconstruct the view on CPU using storage_offset + as_strided
-        offset = tensor.storage_offset()
-        cpu_view = torch.as_strided(cpu_root, tensor.shape, tensor.stride(), offset)
-        return cpu_view.contiguous()
-
-    # Non-view tensor: direct copy
-    src = tensor.contiguous()
-    cpu_tensor = torch.empty(src.shape, dtype=src.dtype, device="cpu")
-    cpu_tensor.copy_(src)
-    return cpu_tensor
-
-
 def convert(tensor, device=None, dtype=None):
     """Convert tensor device and/or dtype. No-op when both are None.
 
@@ -119,17 +87,10 @@ def convert(tensor, device=None, dtype=None):
     target = torch.device(device) if isinstance(device, str) else device
 
     if tensor.device.type == "spyre":
-        # Spyre -> CPU: use safe D2H copy (handles view crash bug).
-        # Spyre -> Spyre dtype change: move to CPU first (torch-spyre
-        # doesn't support cross-dtype copy_).
+        # In case of spyre, first copy to CPU and then perform any potential dtype conversion
         if target is not None and target.type != "spyre":
-            tensor = _safe_spyre_to_cpu(tensor)
+            tensor = tensor.to(device=target)
         elif target is None and dtype is not None:
-            # dtype change only — must go through CPU
-            tensor = _safe_spyre_to_cpu(tensor)
-        elif target is not None and target.type == "spyre":
-            pass  # already on spyre, no device move needed
-        if dtype is not None and tensor.dtype != dtype:
             tensor = tensor.to(dtype=dtype)
     else:
         if dtype is not None and tensor.dtype != dtype:
