@@ -170,7 +170,7 @@ def _add_markers_for_llm_type(items):
 
     This is useful for running subsets of tests without requiring `--forked`.
     Generally, we can't mix and match different vllm usage patterns within the same pytest process
-    without running into problems with relelasing spyre cards or crashing the compiler.
+    without running into problems with releasing spyre cards or crashing the compiler.
     """
     for item in items:
         sort_key = SortKey.from_item(item)
@@ -187,7 +187,6 @@ def _add_markers_for_llm_type(items):
             # Doesn't use any cached vLLM model, so we wouldn't gain much of a speedup by unforking
             # this test, and using forked is more robust to failures
             item.add_marker(pytest.mark.fork_required)
-
 
 
 def _mark_all_e2e(items):
