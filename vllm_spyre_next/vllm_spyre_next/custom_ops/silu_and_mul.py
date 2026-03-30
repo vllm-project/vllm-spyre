@@ -12,7 +12,7 @@ Architecture:
       torch.compile opacity
     - Custom Op Boundary: torch.ops.vllm.spyre_siluandmul is opaque to torch.compile,
       so _forward_spyre_impl runs eagerly outside the compiled graph
-    - Separate Compilation: forward_static is compiled independently via maybe_compile
+    - Separate Compilation: forward_spyre is compiled independently via maybe_compile
 
 Spyre Device Constraints:
     - Device dtype: float16 (via convert_for_spyre)
@@ -62,7 +62,7 @@ class SpyreSiluAndMul(SiluAndMul):
 
         self._target_device = torch.device("spyre")
         self._target_dtype = torch.float16
-        self._fwd = self.maybe_compile(self.forward_static)
+        self.maybe_compiled_forward_spyre = self.maybe_compile(self.forward_spyre)
 
         self._layer_name = register_layer(self, "spyre_siluandmul")
 
@@ -88,7 +88,7 @@ class SpyreSiluAndMul(SiluAndMul):
         return output
 
     @staticmethod
-    def forward_static(x1: torch.Tensor, x2: torch.Tensor) -> torch.Tensor:
+    def forward_spyre(x1: torch.Tensor, x2: torch.Tensor) -> torch.Tensor:
         """Spyre-optimized silu+multiply kernel compiled via torch.compile.
 
         Computes silu(x1) * x2 on the Spyre device, relying on torch-spyre's
@@ -120,7 +120,7 @@ class SpyreSiluAndMul(SiluAndMul):
             1. Slice on CPU: split x into x1 = x[..., :d] and x2 = x[..., d:]
             2. Device transfer: convert x1 and x2 independently to Spyre (float16)
                via convert_for_spyre
-            3. Kernel execution: call compiled _fwd_spyre(x1_spyre, x2_spyre)
+            3. Kernel execution: call compiled maybe_compiled_forward_spyre(x1_spyre, x2_spyre)
             4. Result transfer: Spyre -> original device, restore original dtype
 
         Args:
@@ -137,7 +137,7 @@ class SpyreSiluAndMul(SiluAndMul):
         d = x.shape[-1] // 2
         x1 = x[..., :d]
         x2 = x[..., d:]
-        out = self._fwd(
+        out = self.maybe_compiled_forward_spyre(
             convert(x1, self._target_device, self._target_dtype),
             convert(x2, self._target_device, self._target_dtype),
         )
