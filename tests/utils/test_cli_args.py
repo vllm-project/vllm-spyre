@@ -96,3 +96,21 @@ def _build_engine_args(cli_args: list[str]) -> EngineArgs:
     engine_args = EngineArgs.from_cli_args(args)
 
     return engine_args
+
+def test_cli_max_num_batched_tokens(monkeypatch):
+    # Use the sendnn backend to activate the model configurator
+    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", "sendnn")
+    # Mock the torch_sendnn configuration check
+    monkeypatch.setattr(SpyrePlatform, "maybe_ensure_sendnn_configured", lambda: None)
+
+    test_model = os.path.join(os.path.dirname(__file__), "bge_copy")
+
+    common_args = [
+        "--model",
+        test_model,
+    ]
+
+    with environ_checkpoint():
+        engine_args = _build_engine_args(common_args)
+        # this line throws an exception without the fix
+        engine_args.create_engine_config()
