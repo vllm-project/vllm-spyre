@@ -4406,8 +4406,8 @@ wheels = [
 
 [[package]]
 name = "vllm"
-version = "0.18.0rc2"
-source = { git = "https://github.com/vllm-project/vllm?rev=v0.18.0#89138b21cc246ae944c741d5c399c148e2b770ab" }
+version = "0.18.0"
+source = { git = "https://github.com/vllm-project/vllm?rev=v0.18.0#bcf2be96120005e9aea171927f85055a6a5c0cf6" }
 dependencies = [
     { name = "aiohttp" },
     { name = "anthropic" },
