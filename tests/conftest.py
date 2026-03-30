@@ -188,7 +188,6 @@ def _add_markers_for_llm_type(items):
             # this test, and using forked is more robust to failures
             item.add_marker(pytest.mark.fork_required)
 
-        # Otherwise this test doesn't use cache
 
 
 def _mark_all_e2e(items):
