@@ -97,6 +97,7 @@ def _build_engine_args(cli_args: list[str]) -> EngineArgs:
 
     return engine_args
 
+
 def test_cli_max_num_batched_tokens(monkeypatch):
     # Use the sendnn backend to activate the model configurator
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", "sendnn")
