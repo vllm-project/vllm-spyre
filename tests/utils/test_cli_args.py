@@ -112,5 +112,5 @@ def test_cli_max_num_batched_tokens(monkeypatch):
 
     with environ_checkpoint():
         engine_args = _build_engine_args(common_args)
-        # this line throws an exception without the fix
+        # this line throws an exception without the chunked prefill reranker fix
         engine_args.create_engine_config()
