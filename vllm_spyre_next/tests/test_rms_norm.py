@@ -108,7 +108,7 @@ def test_rmsnorm_oot_dispatch(default_vllm_config, monkeypatch, dummy_tensor, us
         assert torch.allclose(out_x, 2 * dummy_tensor)
 
         # The residual is modified in-place
-        assert torch.allclose(out_residual, residual)
+        assert torch.allclose(out_residual, 2 * residual)
     else:
         monkeypatch.setattr(layer, "_forward_spyre_impl", mock_forward_oot)
         out_x = layer.forward(dummy_tensor, residual)

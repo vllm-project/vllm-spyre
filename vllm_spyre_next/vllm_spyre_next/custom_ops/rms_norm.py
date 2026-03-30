@@ -97,12 +97,13 @@ class SpyreRMSNorm(RMSNorm):
             Normalized output, or (output, residual) tuple if residual provided
         """
         output = torch.empty_like(x)
+        residual_out = torch.empty_like(residual) if residual is not None else None
 
         # Custom op call - executes outside torch.compile graph
-        torch.ops.vllm.spyre_rmsnorm(x, output, self._layer_name, residual)
+        torch.ops.vllm.spyre_rmsnorm(x, output, self._layer_name, residual, residual_out)
 
         if residual is not None:
-            return output, residual
+            return output, residual_out
         return output
 
     @staticmethod
@@ -209,6 +210,7 @@ def _op_func(
     output: torch.Tensor,
     layer_name: str,
     residual: torch.Tensor | None = None,
+    residual_out: torch.Tensor | None = None,
 ) -> None:
     """Custom op implementation — runs outside torch.compile graph."""
     layer = get_layer(layer_name)
@@ -217,7 +219,7 @@ def _op_func(
     if residual is not None:
         output_data, residual_data = result
         output.copy_(output_data)
-        residual.copy_(residual_data)
+        residual_out.copy_(residual_data)
     else:
         output.copy_(result)
 
@@ -228,7 +230,7 @@ def register():
     direct_register_custom_op(
         op_name="spyre_rmsnorm",
         op_func=_op_func,
-        mutates_args=["output"],
+        mutates_args=["output", "residual_out"],
         fake_impl=_fake_impl,
     )
     logger.info("Registered custom op: SpyreRMSNorm")
