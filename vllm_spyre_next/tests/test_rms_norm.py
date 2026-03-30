@@ -4,6 +4,7 @@ Test SpyreRMSNorm custom op correctness against a reference implementation.
 
 import pytest
 import torch
+import sys
 
 
 def reference_rms_norm(
@@ -105,9 +106,15 @@ def test_rmsnorm_oot_dispatch(default_vllm_config, monkeypatch, dummy_tensor, us
         out_x, out_residual = layer.forward(dummy_tensor, residual)
 
         assert torch.allclose(out_x, 2 * dummy_tensor)
-        assert torch.allclose(out_residual, 2 * residual)
+
+        # The residual is modified in-place
+        assert torch.allclose(out_residual, residual)
     else:
         monkeypatch.setattr(layer, "_forward_spyre_impl", mock_forward_oot)
         out_x = layer.forward(dummy_tensor, residual)
 
         assert torch.allclose(out_x, dummy_tensor + 1)
+
+
+if __name__ == "__main__":
+    sys.exit(pytest.main([__file__, "-k", "test_rmsnorm_oot_dispatch", "-v"]))
