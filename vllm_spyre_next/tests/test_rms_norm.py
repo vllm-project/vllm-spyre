@@ -39,7 +39,7 @@ def test_spyre_rmsnorm_matches_reference(
 
     Tests both paths:
     - forward_oot(): OOT dispatch via custom op (torch.ops.vllm.spyre_rmsnorm)
-    - reference_rms_norm: golden reference, similar to vLLM upstream pure PyTorch (ground truth)
+    - reference_rms_norm(): golden reference, similar to vLLM upstream pure PyTorch (ground truth)
     """
     from vllm_spyre_next.custom_ops.rms_norm import SpyreRMSNorm
 
