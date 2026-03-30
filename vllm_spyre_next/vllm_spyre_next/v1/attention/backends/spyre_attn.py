@@ -19,6 +19,7 @@ from vllm.v1.attention.backend import (
     AttentionBackend,
     AttentionCGSupport,
     AttentionImpl,
+    AttentionMetadata,
     AttentionMetadataBuilder,
     AttentionType,
     CommonAttentionMetadata,
@@ -28,7 +29,7 @@ from vllm.v1.kv_cache_interface import AttentionSpec
 
 
 @dataclass
-class SpyreAttentionMetadata:
+class SpyreAttentionMetadata(AttentionMetadata):
     """Metadata for PyTorch native attention computation."""
 
     # Batch information
@@ -64,9 +65,7 @@ class SpyreAttentionMetadata:
 class SpyreAttentionMetadataBuilder(AttentionMetadataBuilder[SpyreAttentionMetadata]):
     """Builds attention metadata from batch information."""
 
-    _cudagraph_support: ClassVar[AttentionCGSupport] = (
-        AttentionCGSupport.UNIFORM_SINGLE_TOKEN_DECODE
-    )
+    _cudagraph_support: ClassVar[AttentionCGSupport] = AttentionCGSupport.NEVER
 
     def __init__(
         self,
@@ -114,6 +113,7 @@ class SpyreAttentionBackend(AttentionBackend):
         torch.float16,
     ]
     supported_kv_cache_dtypes: ClassVar[list[CacheDType]] = [
+        "auto",
         "float16",
     ]
 

@@ -198,7 +198,6 @@ def test_spyre_attn(
         sliding_window=sliding_window,
         kv_cache_dtype="auto",
         logits_soft_cap=soft_cap,
-        working_precision=dtype,
         use_sdpa=use_sdpa,
     )
 
@@ -315,7 +314,6 @@ def test_spyre_attn_single_sequence(
             head_size=head_size,
             scale=scale,
             num_kv_heads=num_kv_heads,
-            working_precision=dtype,
         )
 
         output = torch.empty_like(query)
