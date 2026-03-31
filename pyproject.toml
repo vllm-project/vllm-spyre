@@ -84,7 +84,7 @@ override-dependencies = [
 extra-build-variables = { vllm = { VLLM_TARGET_DEVICE = "empty" } }
 
 [tool.uv.sources]
-vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.18.0" }
+vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.18.1" }
 
 [tool.ty.rules]
 possibly-missing-attribute = "ignore"
