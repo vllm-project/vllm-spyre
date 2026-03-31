@@ -112,7 +112,6 @@ class SpyreRMSNorm(RMSNorm):
         hidden_size: int,
         weight: torch.Tensor | None = None,
         residual: torch.Tensor | None = None,
-        variance_size_override: int | None = None,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """Spyre-optimized RMS norm implementation.
 
