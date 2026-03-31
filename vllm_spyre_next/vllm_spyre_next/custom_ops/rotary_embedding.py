@@ -54,25 +54,18 @@ class SpyreRotaryEmbedding(RotaryEmbedding):
 
     def __init__(self, *args, **kwargs):
         """Initialize SpyreRotaryEmbedding layer.
-
         Compiles the Spyre kernel and registers this instance in static_forward_context.
         Builds cos/sin cache for position embeddings.
         """
         super().__init__(*args, **kwargs)
-
         logger.debug("Building custom RotaryEmbedding")
-
         self._target_device = torch.device("spyre")
         self._target_dtype = torch.float16
-        
         # Build cos/sin cache on initialization
         self._build_cos_sin_cache()
-        
         # Compile the forward kernel
         self._fwd = self.maybe_compile(self.forward_static)
-
         self._layer_name = register_layer(self, "spyre_rotary_embedding")
-
         logger.warning(
             "SpyreRotaryEmbedding: no dtype promotion is performed, "
             "expect numerical differences to upstream vLLM."
@@ -85,29 +78,29 @@ class SpyreRotaryEmbedding(RotaryEmbedding):
         - frequencies = base^(-2i/rotary_dim) for i in [0, rotary_dim/2)
         - cos_cache[pos] = cos(pos * frequencies)
         - sin_cache[pos] = sin(pos * frequencies)
-        
+
         Note: Uses float16 directly (no dtype promotion) to match Spyre constraints,
         similar to SpyreRMSNorm implementation.
         """
         # Use float16 directly - no dynamic dimensions (Spyre constraint)
         compute_dtype = torch.float16
-        
+
         # Compute inverse frequencies: base^(-2i/rotary_dim)
         # Using negative exponent for numerical stability
         exponents = -torch.arange(0, self.rotary_dim, 2, dtype=compute_dtype) / self.rotary_dim
         inv_freq = torch.pow(self.base, exponents)
-        
+
         # Create position indices [0, 1, 2, ..., max_position_embeddings-1]
         t = torch.arange(self.max_position_embeddings, dtype=compute_dtype)
-        
+
         # Compute frequencies for each position: pos * inv_freq
         # Shape: [max_position_embeddings, rotary_dim // 2]
         freqs = torch.outer(t, inv_freq)
-        
+
         # Duplicate frequencies for interleaved pattern
         # Shape: [max_position_embeddings, rotary_dim]
         emb = torch.cat([freqs, freqs], dim=-1)
-        
+
         # Compute cos and sin directly in float16, then move to device
         self.cos_cache = emb.cos().to(device=self._target_device)
         self.sin_cache = emb.sin().to(device=self._target_device)
@@ -287,4 +280,3 @@ def register():
         fake_impl=_fake_impl,
     )
     logger.info("Registered custom op: SpyreRotaryEmbedding")
-
