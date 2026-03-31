@@ -483,13 +483,17 @@ class SpyrePlatform(Platform):
         return [shape for shape in warmup_shapes if prompt_len <= shape["prompt_length"]]
 
     # Defined here for testing purposes
-    DEFAULT_CHUNK_SIZE = 512
+    DEFAULT_CHUNK_SIZE = 2048
+    DEFAULT_MAX_MODEL_LEN = 1024
+    DEFAULT_MAX_NUM_SEQS = 2
 
     @classmethod
     def pre_register_and_update(cls, parser: FlexibleArgumentParser | None = None) -> None:
         if parser is not None:
             parser.set_defaults(enable_prefix_caching=True)
             parser.set_defaults(max_num_batched_tokens=cls.DEFAULT_CHUNK_SIZE)
+            parser.set_defaults(max_model_len=cls.DEFAULT_MAX_MODEL_LEN)
+            parser.set_defaults(max_num_seqs=cls.DEFAULT_MAX_NUM_SEQS)
 
     @classmethod
     def _check_threading_config(cls, worker_count: int):
