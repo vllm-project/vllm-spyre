@@ -9,9 +9,11 @@ replacing the upstream vLLM implementation
 Architecture:
     - OOT Registration: @VocabParallelEmbedding.register_oot() replaces upstream
       at instantiation
+    - forward_oot(): Entry point for OOT dispatch, calls custom op for
+      torch.compile opacity
     - Custom Op Boundary: torch.ops.vllm.spyre_vocab_parallel_embedding is opaque
-      to torch.compile, so forward_native runs eagerly outside the compiled graph
-    - Separate Compilation: forward_embedding is compiled independently via maybe_compile
+      to torch.compile, so _forward_spyre_impl runs eagerly outside the compiled graph
+    - Separate Compilation: forward_spyre is compiled independently via maybe_compile
 
 Spyre Device Constraints:
     - Algorithm: From vLLM's perspective, embedding runs on Spyre. Internally,
@@ -85,16 +87,17 @@ class SpyreVocabParallelEmbedding(VocabParallelEmbedding):
         logger.debug("Building custom VocabParallelEmbedding for Spyre")
 
         self._target_device = torch.device("spyre")
-        self._fwd = self.maybe_compile(self.forward_embedding)
+        self.maybe_compiled_forward_spyre = self.maybe_compile(self.forward_spyre)
 
         self._layer_name = register_layer(self, "spyre_vocab_parallel_embedding")
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass using custom op to bypass torch.compile.
+    def forward_oot(self, x: torch.Tensor) -> torch.Tensor:
+        """OOT forward pass using custom op to bypass torch.compile.
 
         Delegates to torch.ops.vllm.spyre_vocab_parallel_embedding which
-        retrieves this layer and calls forward_native outside the compilation
-        graph.
+        retrieves this layer from the layer registry and calls
+        _forward_spyre_impl outside the compilation graph. This prevents
+        torch.compile from inlining the Spyre-specific operations.
 
         Args:
             x: Token index tensor [num_tokens] (int64)
@@ -115,8 +118,8 @@ class SpyreVocabParallelEmbedding(VocabParallelEmbedding):
         return output
 
     @staticmethod
-    def forward_embedding(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
-        """Embedding kernel compiled via maybe_compile.
+    def forward_spyre(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
+        """Spyre embedding kernel compiled via maybe_compile.
 
         Args:
             x: Token index tensor [num_tokens] (int64)
@@ -127,7 +130,7 @@ class SpyreVocabParallelEmbedding(VocabParallelEmbedding):
         """
         return F.embedding(x, weight)
 
-    def forward_native(self, x: torch.Tensor) -> torch.Tensor:
+    def _forward_spyre_impl(self, x: torch.Tensor) -> torch.Tensor:
         """Spyre device execution: device transfer, kernel call, result transfer.
 
         From vLLM's perspective, this operation runs on the Spyre device.
@@ -149,7 +152,7 @@ class SpyreVocabParallelEmbedding(VocabParallelEmbedding):
         x_dtype = self.weight.dtype
         x_device = x.device
 
-        out = self._fwd(
+        out = self.maybe_compiled_forward_spyre(
             convert(x, device=self._target_device),
             convert(self.weight.data, device=self._target_device),
         )
@@ -168,7 +171,7 @@ def _op_func(
 ) -> None:
     """Custom op implementation — runs outside torch.compile graph."""
     layer = get_layer(layer_name)
-    result = layer.forward_native(x)
+    result = layer._forward_spyre_impl(x)
     output.copy_(result)
 
 
