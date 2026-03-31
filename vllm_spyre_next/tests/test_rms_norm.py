@@ -4,6 +4,7 @@ Test SpyreRMSNorm custom op correctness against a reference implementation.
 
 import pytest
 import torch
+import sys
 
 
 def reference_rms_norm(
@@ -38,8 +39,8 @@ def test_spyre_rmsnorm_matches_reference(
     """SpyreRMSNorm output matches golden reference.
 
     Tests both paths:
-    - forward(): custom op dispatch (no-compile path via torch.ops.vllm.spyre_rmsnorm)
-    - forward_native(): direct Spyre device execution
+    - forward_oot(): OOT dispatch via custom op (torch.ops.vllm.spyre_rmsnorm)
+    - reference_rms_norm(): golden reference, similar to vLLM upstream pure PyTorch (ground truth)
     """
     from vllm_spyre_next.custom_ops.rms_norm import SpyreRMSNorm
 
@@ -51,7 +52,9 @@ def test_spyre_rmsnorm_matches_reference(
     residual = torch.randn(batch_size, hidden_size, dtype=torch.float32) if use_residual else None
 
     expected = reference_rms_norm(x, layer.weight.data, eps, residual)
-    actual = layer.forward_native(x, residual)
+
+    # Test forward_oot (Spyre device execution via custom op)
+    actual = layer.forward_oot(x, residual)
 
     if use_residual:
         expected_norm, expected_resid = expected
@@ -63,30 +66,18 @@ def test_spyre_rmsnorm_matches_reference(
     else:
         torch.testing.assert_close(actual.float(), expected.float(), atol=1e-2, rtol=1e-2)
 
-    actual_forward = layer.forward(x, residual)
-    if use_residual:
-        actual_fwd_norm, actual_fwd_resid = actual_forward
-        torch.testing.assert_close(
-            actual_fwd_norm.float(), expected_norm.float(), atol=1e-2, rtol=1e-2
-        )
-        torch.testing.assert_close(
-            actual_fwd_resid.float(), expected_resid.float(), atol=1e-2, rtol=1e-2
-        )
-    else:
-        torch.testing.assert_close(actual_forward.float(), expected.float(), atol=1e-2, rtol=1e-2)
-
 
 @pytest.fixture
 def dummy_tensor():
     return torch.randn(4, 128, dtype=torch.float32)
 
 
-def mock_forward_native_no_residual(x, residual=None):
+def mock_forward_oot(x, residual=None):
     """Mock: return x + 1 (no residual path)."""
     return x + 1
 
 
-def mock_forward_native_with_residual(x, residual=None):
+def mock_forward_oot_with_residual(x, residual=None):
     """Mock: return (2 * x, 2 * residual) (residual path)."""
     return 2 * x, 2 * residual
 
@@ -109,15 +100,21 @@ def test_rmsnorm_oot_dispatch(default_vllm_config, monkeypatch, dummy_tensor, us
 
     residual = torch.randn(4, 128, dtype=torch.float32) if use_residual else None
 
-    # Mock forward_native (called by forward_oot) with a known transform
+    # Mock _forward_spyre_impl (called by the custom op) with a known transform
     if residual is not None:
-        monkeypatch.setattr(layer, "forward_native", mock_forward_native_with_residual)
-        out_x, out_residual = layer.forward_oot(dummy_tensor, residual)
+        monkeypatch.setattr(layer, "_forward_spyre_impl", mock_forward_oot_with_residual)
+        out_x, out_residual = layer.forward(dummy_tensor, residual)
 
         assert torch.allclose(out_x, 2 * dummy_tensor)
+
+        # The residual is modified in-place
         assert torch.allclose(out_residual, 2 * residual)
     else:
-        monkeypatch.setattr(layer, "forward_native", mock_forward_native_no_residual)
-        out_x = layer.forward_oot(dummy_tensor, residual)
+        monkeypatch.setattr(layer, "_forward_spyre_impl", mock_forward_oot)
+        out_x = layer.forward(dummy_tensor, residual)
 
         assert torch.allclose(out_x, dummy_tensor + 1)
+
+
+if __name__ == "__main__":
+    sys.exit(pytest.main([__file__, "-k", "test_rmsnorm_oot_dispatch", "-v"]))
