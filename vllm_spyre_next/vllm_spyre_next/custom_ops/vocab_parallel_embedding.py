@@ -87,6 +87,7 @@ class SpyreVocabParallelEmbedding(VocabParallelEmbedding):
         logger.debug("Building custom VocabParallelEmbedding for Spyre")
 
         self._target_device = torch.device("spyre")
+        self._target_dtype = None
         self.maybe_compiled_forward_spyre = self.maybe_compile(self.forward_spyre)
 
         self._layer_name = register_layer(self, "spyre_vocab_parallel_embedding")
@@ -149,17 +150,17 @@ class SpyreVocabParallelEmbedding(VocabParallelEmbedding):
         Returns:
             Embedding output [num_tokens, embedding_dim] in weight dtype
         """
-        x_dtype = self.weight.dtype
-        x_device = x.device
+        out_dtype = self.weight.dtype
+        out_device = x.device
 
         out = self.maybe_compiled_forward_spyre(
-            convert(x, device=self._target_device),
-            convert(self.weight.data, device=self._target_device),
+            convert(x, dtype=self._target_dtype, device=self._target_device),
+            convert(self.weight.data, dtype=self._target_dtype, device=self._target_device),
         )
 
         # Transfer back to original device and restore original dtype
         return pytree.tree_map(
-            lambda el: convert(el, dtype=x_dtype, device=x_device),
+            lambda el: convert(el, dtype=out_dtype, device=out_device),
             out,
         )
 
