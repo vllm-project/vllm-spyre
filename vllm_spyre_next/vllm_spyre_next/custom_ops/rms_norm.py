@@ -120,7 +120,7 @@ class SpyreRMSNorm(RMSNorm):
         but adapted for Spyre device. Compiled separately via torch.compile in __init__.
 
         Key differences from upstream:
-            - Creates epsilon tensor via torch.ops.spyre.full() instead of scalar
+            - Creates epsilon tensor via torch.full() instead of scalar
             - No dtype promotion support (torch-spyre limitation)
         """
         if residual is not None:
