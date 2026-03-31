@@ -8,9 +8,11 @@ vllm/model_executor/layers/activation.py when instantiated.
 
 Architecture:
     - OOT Registration: @SiluAndMul.register_oot() replaces upstream at instantiation
+    - forward_oot(): Entry point for OOT dispatch, calls custom op for
+      torch.compile opacity
     - Custom Op Boundary: torch.ops.vllm.spyre_siluandmul is opaque to torch.compile,
-      so forward_native runs eagerly outside the compiled graph
-    - Separate Compilation: forward_static is compiled independently via maybe_compile
+      so _forward_spyre_impl runs eagerly outside the compiled graph
+    - Separate Compilation: forward_spyre is compiled independently via maybe_compile
 
 Spyre Device Constraints:
     - Device dtype: float16 (via convert_for_spyre)
@@ -60,15 +62,15 @@ class SpyreSiluAndMul(SiluAndMul):
 
         self._target_device = torch.device("spyre")
         self._target_dtype = torch.float16
-        self._fwd = self.maybe_compile(self.forward_static)
+        self.maybe_compiled_forward_spyre = self.maybe_compile(self.forward_spyre)
 
         self._layer_name = register_layer(self, "spyre_siluandmul")
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass using custom op to bypass torch.compile.
+    def forward_oot(self, x: torch.Tensor) -> torch.Tensor:
+        """OOT forward pass using custom op to bypass torch.compile.
 
         Delegates to torch.ops.vllm.spyre_siluandmul which retrieves this layer
-        from forward_context.no_compile_layers and calls forward_impl outside
+        from the layer registry and calls _forward_spyre_impl outside
         the compilation graph.
 
         Args:
@@ -86,14 +88,14 @@ class SpyreSiluAndMul(SiluAndMul):
         return output
 
     @staticmethod
-    def forward_static(x1: torch.Tensor, x2: torch.Tensor) -> torch.Tensor:
+    def forward_spyre(x1: torch.Tensor, x2: torch.Tensor) -> torch.Tensor:
         """Spyre-optimized silu+multiply kernel compiled via torch.compile.
 
         Computes silu(x1) * x2 on the Spyre device, relying on torch-spyre's
         registered aten::silu.out kernel. The two halves are passed in as
         separate tensors because the Spyre device does not yet support tensor
         slicing (strided views); the split is therefore performed on CPU before
-        this method is called (see forward_native).
+        this method is called (see _forward_spyre_impl).
 
         Args:
             x1: First half of the gated input, shape [..., d], on Spyre device
@@ -106,7 +108,7 @@ class SpyreSiluAndMul(SiluAndMul):
         """
         return F.silu(x1) * x2
 
-    def forward_native(self, x: torch.Tensor) -> torch.Tensor:
+    def _forward_spyre_impl(self, x: torch.Tensor) -> torch.Tensor:
         """Spyre device execution: CPU slicing workaround, device transfer, kernel call.
 
         The Spyre device does not currently support strided tensor views (slicing),
@@ -118,7 +120,7 @@ class SpyreSiluAndMul(SiluAndMul):
             1. Slice on CPU: split x into x1 = x[..., :d] and x2 = x[..., d:]
             2. Device transfer: convert x1 and x2 independently to Spyre (float16)
                via convert_for_spyre
-            3. Kernel execution: call compiled _fwd_spyre(x1_spyre, x2_spyre)
+            3. Kernel execution: call compiled maybe_compiled_forward_spyre(x1_spyre, x2_spyre)
             4. Result transfer: Spyre -> original device, restore original dtype
 
         Args:
@@ -135,7 +137,7 @@ class SpyreSiluAndMul(SiluAndMul):
         d = x.shape[-1] // 2
         x1 = x[..., :d]
         x2 = x[..., d:]
-        out = self._fwd(
+        out = self.maybe_compiled_forward_spyre(
             convert(x1, self._target_device, self._target_dtype),
             convert(x2, self._target_device, self._target_dtype),
         )
@@ -151,7 +153,7 @@ def _op_func(
 ) -> None:
     """Custom op implementation — runs outside torch.compile graph."""
     layer = get_layer(layer_name)
-    result = layer.forward_native(x)
+    result = layer._forward_spyre_impl(x)
     output.copy_(result)
 
 

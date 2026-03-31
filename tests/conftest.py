@@ -153,11 +153,40 @@ def pytest_collection_modifyitems(config, items):
 
     sort_tests_for_llm_caching(items)
 
+    _add_markers_for_llm_type(items)
+
     with open(".test_sort.txt", "w") as f:
         for item in items:
             f.write("\n")
             f.write(str(item.listnames()[-2]) + " " + item.name + "\n")
             f.write(str(SortKey.from_item(item)) + "\n")
+
+
+def _add_markers_for_llm_type(items):
+    """Add markers in-place for the type of vLLM usage, either:
+    - "llm": for tests that use a cached LLM instance
+    - "server": for tests that use a vLLM server
+    - "engine": for tests that create a vLLM engine directly.
+
+    This is useful for running subsets of tests without requiring `--forked`.
+    Generally, we can't mix and match different vllm usage patterns within the same pytest process
+    without running into problems with releasing spyre cards or crashing the compiler.
+    """
+    for item in items:
+        sort_key = SortKey.from_item(item)
+        if sort_key.cache_type == "llm":
+            item.add_marker(pytest.mark.uses_llm)
+        elif sort_key.cache_type == "online":
+            item.add_marker(pytest.mark.uses_server)
+        elif sort_key.cache_type == "engine":
+            item.add_marker(pytest.mark.uses_engine)
+            # Our direct usage of the vllm engine tends to break unforked tests in many ways,
+            # so mark them as requiring forked for now
+            item.add_marker(pytest.mark.fork_required)
+        else:
+            # Doesn't use any cached vLLM model, so we wouldn't gain much of a speedup by unforking
+            # this test, and using forked is more robust to failures
+            item.add_marker(pytest.mark.fork_required)
 
 
 def _mark_all_e2e(items):

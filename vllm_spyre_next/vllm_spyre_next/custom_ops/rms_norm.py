@@ -6,8 +6,8 @@ Tensors arrive on CPU. This module:
 1. Keeps a custom op boundary (forward_oot → torch.ops.vllm.spyre_rmsnorm) so
    model-level torch.compile does not trace into Spyre device transfers.
 2. In _forward_spyre_impl(), converts tensors to Spyre and calls
-   ir.ops.rms_norm() via direct dispatch. The IR system routes to the
-   "spyre" provider (kernels/rms_norm.py) based on priority config.
+   ir.ops.rms_norm(). The IR system routes to the registered provider
+   based on priority config.
 """
 
 import torch
@@ -50,9 +50,11 @@ class SpyreRMSNorm(RMSNorm):
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """Custom op boundary — opaque to model-level torch.compile."""
         output = torch.empty_like(x)
-        torch.ops.vllm.spyre_rmsnorm(x, output, self._layer_name, residual)
+        residual_out = torch.empty_like(residual) if residual is not None else None
+        torch.ops.vllm.spyre_rmsnorm(x, output, self._layer_name, residual, residual_out)
+
         if residual is not None:
-            return output, residual
+            return output, residual_out
         return output
 
     def _forward_spyre_impl(
@@ -60,7 +62,7 @@ class SpyreRMSNorm(RMSNorm):
         x: torch.Tensor,
         residual: torch.Tensor | None = None,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
-        """Device sandwich: CPU → Spyre → ir.ops.rms_norm (direct dispatch) → CPU."""
+        """Device sandwich: CPU → Spyre → ir.ops.rms_norm → CPU."""
         if self.variance_size_override is not None:
             raise NotImplementedError("variance_size_override not yet implemented")
 
@@ -78,7 +80,7 @@ class SpyreRMSNorm(RMSNorm):
             pad = _SPYRE_MIN_BATCH_SIZE - orig_batch_size
             x = torch.nn.functional.pad(x, (0, 0, 0, pad))
 
-        # Transfer to Spyre, call IR op (direct dispatch → spyre provider)
+        # Transfer to Spyre and call IR op
         result = ir.ops.rms_norm(
             convert(x, self._target_device, self._target_dtype),
             convert(self.weight.data, self._target_device, self._target_dtype)
@@ -101,6 +103,7 @@ def _op_func(
     output: torch.Tensor,
     layer_name: str,
     residual: torch.Tensor | None = None,
+    residual_out: torch.Tensor | None = None,
 ) -> None:
     """Custom op implementation — runs outside torch.compile graph."""
     layer = get_layer(layer_name)
@@ -109,7 +112,7 @@ def _op_func(
     if residual is not None:
         output_data, residual_data = result
         output.copy_(output_data)
-        residual.copy_(residual_data)
+        residual_out.copy_(residual_data)
     else:
         output.copy_(result)
 
@@ -120,7 +123,7 @@ def register():
     direct_register_custom_op(
         op_name="spyre_rmsnorm",
         op_func=_op_func,
-        mutates_args=["output"],
+        mutates_args=["output", "residual_out"],
         fake_impl=_fake_impl,
     )
     logger.info("Registered custom op: SpyreRMSNorm")
