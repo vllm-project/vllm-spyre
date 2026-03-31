@@ -17,16 +17,6 @@ Spyre Device Constraints:
     - Output dtype: matches input dtype (converted on CPU)
     - Cache management: cos/sin caches stored on Spyre device
 
-RoPE Algorithm:
-    1. Generate cos/sin cache based on position frequencies
-    2. Apply rotation: output = x * cos + rotate_half(x) * sin
-    3. rotate_half splits tensor and rotates: [x1, x2] -> [-x2, x1]
-
-Granite-3.3-8B-Instruct Parameters:
-    - rope_theta (base): 10000000.0
-    - max_position_embeddings: 131072
-    - rope_scaling: null (standard RoPE)
-
 Limitations:
     - No dtype promotion (torch-spyre limitation)
     - rope_scaling not yet implemented
