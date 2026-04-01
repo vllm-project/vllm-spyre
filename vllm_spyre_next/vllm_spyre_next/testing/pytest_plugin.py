@@ -34,7 +34,6 @@ XDG_CACHE_HOME          Base cache directory (default: ~/.cache)
 from __future__ import annotations
 
 import fnmatch
-import inspect
 import os
 import re
 import subprocess
@@ -330,16 +329,18 @@ def _prepare_upstream_tests_dir() -> Path:
 
 def _spicy_code_edits(upstream_tests_dir: Path):
     """Apply spicy code edits to the upstream tests directory.
-    
+
     These should be _temporary_ edits to source code for vllm tests while we work to make them more
     portable. This should only be used where mocking is not possible or too cumbersome.
     """
 
     # Mocking out torch.device seems impossible to do (at least multiple rounds of Bob and Claude
-    # were unsuccessful). So we patch the source code to change `torch.device("cuda:0")` to 
-    # `torch.device("cpu")`.
-    hardcoded_cuda_test_path = upstream_tests_dir / "v1" / "attention" / "test_attention_backends.py"
-    with open(hardcoded_cuda_test_path, "r") as f:
+    # were unsuccessful). So we patch the source code to change the hardcoded
+    # `torch.device("cuda:0")` to `torch.device("cpu")`.
+    hardcoded_cuda_test_path = (
+        upstream_tests_dir / "v1" / "attention" / "test_attention_backends.py"
+    )
+    with open(hardcoded_cuda_test_path) as f:
         content = f.read()
     content = content.replace('torch.device("cuda:0")', 'torch.device("cpu")')
     with open(hardcoded_cuda_test_path, "w") as f:
@@ -622,6 +623,7 @@ def should_do_global_cleanup_after_test():
     """Skip global cleanup for Spyre - torch.accelerator.empty_cache() doesn't work yet."""
     return False
 
+
 @pytest.fixture()
 def patch_backend_list(request, monkeypatch):
     """This fixture patches things for tests/v1/attention/test_attention_backends.py"""
@@ -656,19 +658,21 @@ def patch_backend_list(request, monkeypatch):
     }
     monkeypatch.setattr(test_module, "BATCH_SPECS", our_batch_specs)
 
-    # _test_backend_correctness may be called with a hardcoded AttentionBackendEnum.FLASH_ATTN, 
+    # _test_backend_correctness may be called with a hardcoded AttentionBackendEnum.FLASH_ATTN,
     # which we want to ignore
     orig_tbc = test_module._test_backend_correctness
-    def tbc_wrapper(batch_spec, model, backend_to_test: list[AttentionBackendEnum | str], *args, **kwargs):
+
+    def tbc_wrapper(
+        batch_spec, model, backend_to_test: list[AttentionBackendEnum | str], *args, **kwargs
+    ):
         if "AttentionBackendEnum.FLEX_ATTENTION" in str(backend_to_test):
-            print("skipping bad invocation of _test_backend_correctness for LARGE_BLOCK_BACKENDS")
             return
-        print("running tbc for ", backend_to_test)
         return orig_tbc(batch_spec, model, backend_to_test, *args, **kwargs)
+
     monkeypatch.setattr(test_module, "_test_backend_correctness", tbc_wrapper)
 
     yield
-    
+
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_fixture_setup(fixturedef, request):
