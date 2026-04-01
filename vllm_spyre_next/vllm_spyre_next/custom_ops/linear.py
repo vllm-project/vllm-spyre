@@ -14,7 +14,9 @@ Since tensor_parallel=1 is assumed, both classes are functionally equivalent
 to F.linear(input, weight, bias) and share the same implementation pattern.
 
 Spyre Device Constraints:
-    - Compute dtype: float16 on Spyre device
+    - Computations performed in torch.float16:
+      Input (dtype defined by model / user) converted to torch.float16 for
+      operations on spyre and then converted back to original dtype for cpu.
     - Tensor parallelism: TP=1 assumed (single Spyre device)
 
 References:
