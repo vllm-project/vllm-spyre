@@ -98,7 +98,9 @@ class SpyreMergedColumnParallelLinear(SpyreLinearBase, MergedColumnParallelLinea
         super().__init__(*args, **kwargs)
         self._init_spyre_linear("spyre_merged_col_linear")
 
-    def forward_oot(self, input_: torch.Tensor):
+    # `MergedColumnParallelLinear` is a PluggableLayer and we register a class as OOT,
+    # thus, the `forward` method is invoked when the OOT is triggered.
+    def forward(self, input_: torch.Tensor):
         output = input_.new_empty(
             input_.shape[0],
             self.output_size_per_partition,
@@ -119,7 +121,9 @@ class SpyreRowParallelLinear(SpyreLinearBase, RowParallelLinear):
         super().__init__(*args, **kwargs)
         self._init_spyre_linear("spyre_row_parallel_linear")
 
-    def forward_oot(self, input_: torch.Tensor):
+    # `SpyreRowParallelLinear` is a PluggableLayer and we register a class as OOT,
+    # thus, the `forward` method is invoked when the OOT is triggered.
+    def forward(self, input_: torch.Tensor):
         output = input_.new_empty(
             *input_.shape[:-1],
             self.output_size_per_partition,
