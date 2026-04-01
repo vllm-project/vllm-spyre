@@ -8,9 +8,11 @@ when instantiated.
 
 Architecture:
     - OOT Registration: @RMSNorm.register_oot() replaces upstream at instantiation
+    - forward_oot(): Entry point for OOT dispatch, calls custom op for
+      torch.compile opacity
     - Custom Op Boundary: torch.ops.vllm.spyre_rmsnorm is opaque to torch.compile,
-      so forward_native runs eagerly outside the compiled graph
-    - Separate Compilation: forward_static is compiled independently via maybe_compile
+      so _forward_spyre_impl runs eagerly outside the compiled graph
+    - Separate Compilation: forward_spyre is compiled independently via maybe_compile
 
 Spyre Device Constraints:
     - Minimum batch size: 64 (due to spyre constraint, automatically padded)
@@ -19,8 +21,8 @@ Spyre Device Constraints:
     - Algorithm: Transpose-based computation with torch.ops.spyre.full()
 
 Limitations:
-    Currently the implementation in `_forward_vLLM_native` is similar to the
-    upstream implementation in `forward_static` from llm/model_executor/layers/layernorm.py,
+    Currently the implementation in `forward_spyre` is similar to the
+    upstream implementation in `forward_static` from vllm/model_executor/layers/layernorm.py,
     but it DOES NOT use the promotion of the data types, as this is not
     yet supported in torch-spyre.
 
@@ -66,7 +68,7 @@ class SpyreRMSNorm(RMSNorm):
 
         self._target_device = torch.device("spyre")
         self._target_dtype = torch.float16
-        self._fwd = self.maybe_compile(self.forward_spyre)
+        self.maybe_compiled_forward_spyre = self.maybe_compile(self.forward_spyre)
 
         self._layer_name = register_layer(self, "spyre_rmsnorm")
 
@@ -75,15 +77,15 @@ class SpyreRMSNorm(RMSNorm):
             "expect numerical differences to upstream vLLM."
         )
 
-    def forward(
+    def forward_oot(
         self,
         x: torch.Tensor,
         residual: torch.Tensor | None = None,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
-        """Forward pass using custom op to bypass torch.compile.
+        """OOT forward pass using custom op to bypass torch.compile.
 
         Delegates to torch.ops.vllm.spyre_rmsnorm which retrieves this layer
-        from forward_context.no_compile_layers and calls forward_impl outside
+        from the layer registry and calls _forward_spyre_impl outside
         the compilation graph. This prevents torch.compile from inlining the
         Spyre-specific operations.
 
@@ -95,12 +97,13 @@ class SpyreRMSNorm(RMSNorm):
             Normalized output, or (output, residual) tuple if residual provided
         """
         output = torch.empty_like(x)
+        residual_out = torch.empty_like(residual) if residual is not None else None
 
         # Custom op call - executes outside torch.compile graph
-        torch.ops.vllm.spyre_rmsnorm(x, output, self._layer_name, residual)
+        torch.ops.vllm.spyre_rmsnorm(x, output, self._layer_name, residual, residual_out)
 
         if residual is not None:
-            return output, residual
+            return output, residual_out
         return output
 
     @staticmethod
@@ -130,28 +133,13 @@ class SpyreRMSNorm(RMSNorm):
         if x.shape[-1] != hidden_size:
             raise ValueError(f"Expected hidden_size to be {hidden_size}, but found: {x.shape[-1]}")
 
-        x = x.transpose(-1, -2).contiguous()
-
         variance_epsilon = torch.full(
             x.shape, variance_epsilon, dtype=torch.float16, device=x.device
         )
 
-        if variance_size_override is None:
-            x_var = x
-        else:
-            if hidden_size < variance_size_override:
-                raise ValueError(
-                    "Expected hidden_size to be at least "
-                    f"{variance_size_override}, but found: {hidden_size}"
-                )
-
-            x_var = x[:, :, :variance_size_override]
-
-        # After transpose, hidden dim is now dim=0
-        variance = x_var.pow(2).mean(dim=0, keepdim=True)
+        variance = x.pow(2).mean(dim=-1, keepdim=True)
 
         x = x * torch.rsqrt(variance + variance_epsilon)
-        x = x.transpose(-1, -2).contiguous()
 
         if weight is not None:
             x = x * weight
@@ -160,7 +148,7 @@ class SpyreRMSNorm(RMSNorm):
         else:
             return x, residual
 
-    def forward_native(
+    def _forward_spyre_impl(
         self,
         x: torch.Tensor,
         residual: torch.Tensor | None = None,
@@ -170,7 +158,7 @@ class SpyreRMSNorm(RMSNorm):
         Handles Spyre-specific constraints:
             1. Minimum batch size: Pads to 64 if needed
             2. Device transfer: CPU -> Spyre convert to float16
-            3. Kernel execution: Calls compiled _fwd
+            3. Kernel execution: Calls compiled maybe_compiled_forward_spyre
             4. Result transfer: Spyre -> CPU, trim padding, convert to bfloat16
 
         Limitations:
@@ -200,7 +188,7 @@ class SpyreRMSNorm(RMSNorm):
                 residual = torch.nn.functional.pad(residual, (0, 0, 0, pad_amount))
 
         # Execute compiled kernel on Spyre device
-        outs = self._fwd(
+        outs = self.maybe_compiled_forward_spyre(
             convert(x, self._target_device, self._target_dtype),
             self.variance_epsilon,
             self.hidden_size,
@@ -208,7 +196,6 @@ class SpyreRMSNorm(RMSNorm):
             if self.has_weight
             else None,
             convert(residual, self._target_device, self._target_dtype),
-            self.variance_size_override,
         )
 
         # Transfer back to CPU and restore original shape
@@ -223,15 +210,16 @@ def _op_func(
     output: torch.Tensor,
     layer_name: str,
     residual: torch.Tensor | None = None,
+    residual_out: torch.Tensor | None = None,
 ) -> None:
     """Custom op implementation — runs outside torch.compile graph."""
     layer = get_layer(layer_name)
-    result = layer.forward_native(x, residual)
+    result = layer._forward_spyre_impl(x, residual)
 
     if residual is not None:
         output_data, residual_data = result
         output.copy_(output_data)
-        residual.copy_(residual_data)
+        residual_out.copy_(residual_data)
     else:
         output.copy_(result)
 
@@ -242,7 +230,7 @@ def register():
     direct_register_custom_op(
         op_name="spyre_rmsnorm",
         op_func=_op_func,
-        mutates_args=["output"],
+        mutates_args=["output", "residual_out"],
         fake_impl=_fake_impl,
     )
     logger.info("Registered custom op: SpyreRMSNorm")

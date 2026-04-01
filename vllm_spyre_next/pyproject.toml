@@ -12,7 +12,7 @@ readme = "README.md"
 license = {text = "Apache 2"}
 dependencies = [
     "torch-spyre",
-    "vllm==0.15.1+cpu",
+    "vllm",
 
     # Listing as direct deps to ensure they're picked up from the correct index.
     # Versions intentionally left out because these are dependencies of dependencies.
