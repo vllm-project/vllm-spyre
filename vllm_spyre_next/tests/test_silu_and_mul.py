@@ -27,7 +27,7 @@ def reference_silu_and_mul(x: torch.Tensor) -> torch.Tensor:
     [
         pytest.param(
             torch.float16,
-            marks=pytest.mark.xfail(reason="Strided tensors on float16 does not work on spyre")
+            marks=pytest.mark.xfail(reason="Strided tensors on float16 does not work on spyre"),
         ),
         torch.float32,
     ],
