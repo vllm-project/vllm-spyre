@@ -16,8 +16,10 @@ Architecture:
 
 Spyre Device Constraints:
     - Minimum batch size: 64 (due to spyre constraint, automatically padded)
-    - Device dtype: float16 (converted for CPU)
-    - Output dtype: bfloat16 (converted on CPU)
+    - Computations performed in torch.float16:
+      Input (dtype defined by model / user) converted to torch.float16 for
+      operations on spyre and then converted back to original dtype for cpu.
+    - Epsilon as tensor: Instead of a scalar, a tensor is created via torch.full()
 
 Limitations:
     Currently the implementation in `forward_spyre` is similar to the
@@ -120,7 +122,7 @@ class SpyreRMSNorm(RMSNorm):
 
         Key differences from upstream:
             - Creates epsilon tensor via torch.full() instead of scalar
-            - No dtype promotion support (torch-spyre limitation)
+            - No dtype promotion support to torch.float32 (torch-spyre limitation)
         """
         if residual is not None:
             x = x + residual
@@ -155,7 +157,7 @@ class SpyreRMSNorm(RMSNorm):
             1. Minimum batch size: Pads to 64 if needed
             2. Device transfer: CPU -> Spyre convert to float16
             3. Kernel execution: Calls compiled maybe_compiled_forward_spyre
-            4. Result transfer: Spyre -> CPU, trim padding, convert to bfloat16
+            4. Result transfer: Spyre -> CPU, trim padding, convert to input dtype
 
         Limitations:
             - variance_size_override not implemented (raises NotImplementedError)
@@ -165,7 +167,7 @@ class SpyreRMSNorm(RMSNorm):
             residual: Optional residual
 
         Returns:
-            Normalized output [batch_size, hidden_size] in bfloat16
+            Normalized output [batch_size, hidden_size] in input dtype
         """
         x_dtype = x.dtype
         x_device = x.device

@@ -15,8 +15,9 @@ Architecture:
     - Separate Compilation: forward_spyre is compiled independently via maybe_compile
 
 Spyre Device Constraints:
-    - Device dtype: float16 (via convert_for_spyre)
-    - Output dtype: matches input dtype (converted on CPU)
+    - Computations performed in torch.float16:
+      Input (dtype defined by model / user) converted to torch.float16 for
+      operations on spyre and then converted back to original dtype for cpu.
 
 Output Shape Note:
     Unlike RMSNorm (same input/output shape), SiluAndMul halves the last dimension:
