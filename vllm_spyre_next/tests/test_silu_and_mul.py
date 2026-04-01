@@ -38,7 +38,7 @@ def test_spyre_siluandmul_matches_reference(default_vllm_config, num_tokens, d):
     layer = SpyreSiluAndMul()
 
     expected = reference_silu_and_mul(x)
-    actual = layer.forward_native(x)
+    actual = layer.forward_oot(x)
 
     torch.testing.assert_close(actual, expected, atol=1e-1, rtol=1e-1)
 
@@ -48,7 +48,7 @@ def dummy_tensor():
     return torch.randn(4, 256, dtype=torch.float32)  # 2*d=256, so d=128
 
 
-def mock_forward_native(x):
+def mock_forward_oot(x):
     """Mock: return ones with output shape (halves last dim)."""
     d = x.shape[-1] // 2
     return torch.ones(x.shape[:-1] + (d,), dtype=x.dtype, device=x.device)
@@ -70,7 +70,7 @@ def test_siluandmul_oot_dispatch(default_vllm_config, monkeypatch, dummy_tensor)
     assert layer._forward_method == layer.forward_oot
 
     # Mock forward_native (called by forward_oot) with a known transform
-    monkeypatch.setattr(layer, "forward_native", mock_forward_native)
+    monkeypatch.setattr(layer, "forward_oot", mock_forward_oot)
     out = layer.forward_oot(dummy_tensor)
 
     # Expected: ones with shape [4, 128] (halved last dim)
