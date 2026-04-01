@@ -1,6 +1,6 @@
 """Unit tests for platform validation of structured outputs.
 
-Tests the fix in vllm_spyre/platform.py that strips structured_outputs
+Tests that vllm_spyre/platform.py no longer strips structured_outputs
 from SamplingParams during request validation.
 """
 
@@ -33,33 +33,32 @@ def mock_spyre_config():
 
 
 class TestStructuredOutputValidation:
-    """Test that platform validation strips structured outputs from requests."""
+    """Test that platform validation passes structured outputs through unchanged."""
 
-    def test_strips_structured_outputs(self):
-        """Test that validate_request sets structured_outputs to None."""
-        params = SamplingParams(
-            max_tokens=20, structured_outputs=StructuredOutputsParams(json_object=True)
-        )
+    def test_preserves_structured_outputs(self):
+        """Test that validate_request does not strip structured_outputs."""
+        structured_outputs = StructuredOutputsParams(json_object=True)
+        params = SamplingParams(max_tokens=20, structured_outputs=structured_outputs)
 
         assert params.structured_outputs is not None
 
         SpyrePlatform.validate_request(token_inputs(prompt_token_ids=[0]), params)
 
-        assert params.structured_outputs is None
+        assert params.structured_outputs is not None
 
-    def test_logs_warning_when_stripping(self, caplog_vllm_spyre):
-        """Test that a warning is logged when stripping structured_outputs."""
+    def test_no_warning_logged_for_structured_outputs(self, caplog_vllm_spyre):
+        """Test that no warning is logged when structured_outputs are present."""
         params = SamplingParams(
             max_tokens=20, structured_outputs=StructuredOutputsParams(json_object=True)
         )
 
         SpyrePlatform.validate_request(token_inputs(prompt_token_ids=[0]), params)
 
-        assert len(caplog_vllm_spyre.records) > 0
-        warning_record = caplog_vllm_spyre.records[0]
-        assert warning_record.levelname == "WARNING"
-        assert "Structured outputs" in warning_record.message
-        assert "not supported" in warning_record.message
+        warning_records = [r for r in caplog_vllm_spyre.records if r.levelname == "WARNING"]
+        assert not any(
+            "Structured outputs" in r.message and "not supported" in r.message
+            for r in warning_records
+        )
 
     @pytest.mark.parametrize(
         "structured_output",
@@ -68,18 +67,18 @@ class TestStructuredOutputValidation:
             StructuredOutputsParams(regex="[0-9]+"),
         ],
     )
-    def test_strips_different_structured_output_types(self, structured_output):
-        """Test validation with different types of structured outputs."""
+    def test_preserves_different_structured_output_types(self, structured_output):
+        """Test validation preserves different types of structured outputs."""
         params = SamplingParams(max_tokens=20, structured_outputs=structured_output)
 
         assert params.structured_outputs is not None
 
         SpyrePlatform.validate_request(token_inputs(prompt_token_ids=[0]), params)
 
-        assert params.structured_outputs is None
+        assert params.structured_outputs is not None
 
     def test_preserves_other_sampling_params(self):
-        """Test that other sampling params are not affected by the fix."""
+        """Test that other sampling params are not affected by validation."""
         params = SamplingParams(
             max_tokens=20,
             temperature=0.5,
@@ -98,13 +97,12 @@ class TestStructuredOutputValidation:
 
         SpyrePlatform.validate_request(token_inputs(prompt_token_ids=[0]), params)
 
-        # Verify other params are unchanged
+        # Verify all params are unchanged
         assert params.max_tokens == original_values["max_tokens"]
         assert params.temperature == original_values["temperature"]
         assert params.top_p == original_values["top_p"]
         assert params.top_k == original_values["top_k"]
-        # But structured_outputs should be None
-        assert params.structured_outputs is None
+        assert params.structured_outputs is not None
 
     def test_does_not_affect_pooling_params(self):
         """Test that PoolingParams are not affected (early return in validate_request)."""

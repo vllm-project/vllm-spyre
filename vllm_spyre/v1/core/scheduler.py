@@ -116,6 +116,7 @@ class PoolingSpyreScheduler(SpyreScheduler):
         while holdback_queue:
             self.waiting.append(holdback_queue.popleft())
 
+        outputs._spyre_grammar_output = self.get_grammar_bitmask(outputs)  # type: ignore[attr-defined]
         return outputs
 
     def _get_matching_warmup_shapes(
@@ -260,22 +261,6 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         while holdback_queue:
             if self.can_schedule_prefill(holdback_queue[0]):
                 new_request = holdback_queue.popleft()
-                # Remove structured_output_request
-                # NB: SpyrePlatform.validate_request() removes structured_output
-                # before the request gets here in most cases
-                # TODO: We don't currently support structured output and it
-                # breaks some assumptions the code makes. The problems is that
-                # a structured output request will stay in waiting for multiple
-                # iterations with status WAITING_FOR_FSM. To handle this
-                # properly we need to exclude such requests from entering
-                # ongoing_prefills but still pass them in the waiting queue to
-                # the base scheduler to track the FSM initialization.
-                if new_request.structured_output_request is not None:
-                    logger.warning(
-                        "Removing structured output from request: %s", new_request.request_id
-                    )
-                    new_request.structured_output_request = None
-                    new_request.status = RequestStatus.WAITING
 
                 logger.debug(
                     "Scheduling a new request (%d prompt tokens), holding back %d requests",
@@ -300,6 +285,8 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
             "Ongoing prefill requests must be in the running queue."
         )
 
+        new_prefill_candidates: list[Request] = []
+
         # Check ongoing prefills
         if self.ongoing_prefills:
             # Some running requests are currently being prefilled. We need to
@@ -322,17 +309,38 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
 
         # Check new requests to prefill
         elif len(self.waiting) > 0:
-            self.ongoing_prefills.extend(self.waiting)
-            # Hide current decodes from the scheduler
-            running_holdback = self.running
-            self.running = []
-            self.previous_step_was_prefill = True
+            # Separate requests that are ready to prefill from those waiting
+            # for grammar FSM initialization (WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR). Only
+            # ready requests should hide the decode batch.
+            ready_to_prefill = [
+                r
+                for r in self.waiting
+                if r.status != RequestStatus.WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR  # type: ignore[attr-defined]
+            ]
+            if ready_to_prefill:
+                new_prefill_candidates = list(self.waiting)
+                # Hide current decodes from the scheduler
+                running_holdback = self.running
+                self.running = []
+                self.previous_step_was_prefill = True
+            else:
+                # Only WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR requests — let decodes continue and
+                # pass FSM-waiting requests through to the base scheduler.
+                running_holdback = []
+                self.previous_step_was_prefill = False
         else:
             self.previous_step_was_prefill = False
             running_holdback = []
 
         # delegate to super of SpyreScheduler: base V1 Scheduler
         outputs = super(SpyreScheduler, self).schedule()
+
+        # Track as ongoing prefills only the requests that were actually
+        # scheduled (i.e., moved from waiting to running by the base
+        # scheduler).  Structured output requests in WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR status
+        # are kept in self.waiting until their grammar FSM is ready.
+        if new_prefill_candidates:
+            self.ongoing_prefills.extend(r for r in new_prefill_candidates if r in self.running)
 
         # restore holdbacks after running the base scheduler
         self.running = self.running + running_holdback
@@ -345,6 +353,8 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
             r.num_computed_tokens <= r.num_prompt_tokens + 1 for r in self.running
         ):
             logger.debug("Scheduled tokens in this step: %s", outputs.num_scheduled_tokens)
+
+        outputs._spyre_grammar_output = self.get_grammar_bitmask(outputs)  # type: ignore[attr-defined]
         return outputs
 
     def can_schedule_prefill(self, request: Request) -> bool:
