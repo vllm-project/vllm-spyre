@@ -114,13 +114,11 @@ class SpyreRMSNorm(RMSNorm):
         hidden_size: int,
         weight: torch.Tensor | None = None,
         residual: torch.Tensor | None = None,
-        variance_size_override: int | None = None,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
-        """Spyre-optimized RMS norm using transpose-based computation (active implementation).
+        """Spyre-optimized RMS norm implementation.
 
         Based on upstream vLLM's forward_static (vllm/model_executor/layers/layernorm.py)
-        but adapted for Spyre device with epsilon being a tensor with torch.full().
-        Compiled separately via torch.compile in __init__.
+        but adapted for Spyre device. Compiled separately via torch.compile in __init__.
 
         Key differences from upstream:
             - Creates epsilon tensor via torch.full() instead of scalar

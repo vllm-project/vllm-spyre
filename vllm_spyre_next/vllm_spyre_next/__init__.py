@@ -23,7 +23,7 @@ def register_ops():
 
 def _init_logging():
     """Setup logging, extending from the vLLM logging config"""
-    config = dict[str, Any]()
+    config: dict[str, Any] = {}
 
     if VLLM_CONFIGURE_LOGGING:
         config = {**DEFAULT_LOGGING_CONFIG}
