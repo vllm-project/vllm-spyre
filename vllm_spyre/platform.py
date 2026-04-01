@@ -87,7 +87,8 @@ class SpyrePlatform(Platform):
 
     @classmethod
     def import_kernels(cls) -> None:
-        pass
+        # Workaround torch.accelerator.empty_cache for torch 2.7.1 and vllm v0.18.0 compatibility
+        setattr(torch.accelerator, "empty_cache", lambda: None)  # noqa
 
     @classmethod
     def is_async_output_supported(cls, enforce_eager: bool | None) -> bool:
@@ -240,6 +241,8 @@ class SpyrePlatform(Platform):
             # override stuff
             model_config.max_model_len = max_seq_len
             scheduler_config.max_num_seqs = max_batch_size
+            # unsetting this config as it was only set to pass vllm scheduler's max_model_len check
+            vllm_config.scheduler_config.enable_chunked_prefill = False
 
             scheduler_config.scheduler_cls = "vllm_spyre.v1.core.scheduler.PoolingSpyreScheduler"
 
@@ -295,6 +298,8 @@ class SpyrePlatform(Platform):
                     model_config.max_model_len * scheduler_config.max_num_seqs
                 )
                 cache_config.block_size = model_config.max_model_len  # ty: ignore[invalid-assignment]
+                vllm_config.cache_config.enable_prefix_caching = False
+
             else:
                 cache_config.block_size = cls._block_size
                 # Set VLLM_DT_CHUNK_LEN based on scheduler_config.max_num_batched_tokens
@@ -310,6 +315,7 @@ class SpyrePlatform(Platform):
                 )
                 if cache_config.num_gpu_blocks_override is None:
                     cache_config.num_gpu_blocks_override = cls.get_total_spyre_blocks(vllm_config)
+            cache_config.user_specified_block_size = True
 
         logger.info(
             "Configurations for Spyre. max_model_len=%d, max_num_seqs=%d, block_size=%d, "
@@ -487,6 +493,9 @@ class SpyrePlatform(Platform):
         if parser is not None:
             parser.set_defaults(enable_prefix_caching=True)
             parser.set_defaults(max_num_batched_tokens=cls.DEFAULT_CHUNK_SIZE)
+            parser.set_defaults(
+                enable_chunked_prefill=True
+            )  # set to pass vllm scheduler's max_model_len check
 
     @classmethod
     def _check_threading_config(cls, worker_count: int):
