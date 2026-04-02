@@ -1044,14 +1044,9 @@ class ChunkedPrefillModelRunner(
 
             logger.info("maybe_mm_embedding processing time: %.2fms", (t1 * 1000))
 
-
             # Cache the full embeddings for subsequent chunks
             request.cached_mm_embeddings = full_embeds
-            logger.debug(
-                "Computed and cached full multimodal embeddings for request '%s'",
-                req_id
-            )
-
+            logger.debug("Computed and cached full multimodal embeddings for request '%s'", req_id)
 
         # Slice the cached embeddings for this chunk
         if request.cached_mm_embeddings is not None:
