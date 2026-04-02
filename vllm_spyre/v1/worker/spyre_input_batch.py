@@ -193,6 +193,8 @@ class SamplingRequestState:
     total_hit_blocks: int = 0
     block_ids: list[int] = field(default_factory=list)
     generator: torch.Generator | None = None
+    # Cache for full multimodal embeddings (computed once, sliced per chunk)
+    cached_mm_embeddings: torch.Tensor | None = None
 
     @property
     def num_tokens(self) -> int:
