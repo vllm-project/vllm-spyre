@@ -30,7 +30,7 @@ from vllm.v1.kv_cache_interface import AttentionSpec
 
 @dataclass
 class SpyreAttentionMetadata(AttentionMetadata):
-    """Metadata for PyTorch native attention computation."""
+    """Metadata for PyTorch native attention computation on Spyre."""
 
     # Batch information
     num_actual_tokens: int
@@ -159,7 +159,7 @@ class SpyreAttentionBackend(AttentionBackend):
 
 
 class SpyreAttentionImpl(AttentionImpl[SpyreAttentionMetadata]):
-    """PyTorch native implementation of attention with paged KV cache."""
+    """PyTorch native implementation of attention with paged KV cache on Spyre."""
 
     # TODO: Make these hyperparameters configurable
     # KV length alignment: KV tensors are padded to the next multiple of this value.

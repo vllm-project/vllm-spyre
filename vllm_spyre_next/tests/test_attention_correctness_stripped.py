@@ -11,11 +11,13 @@ from torch.nn.attention.flex_attention import create_block_mask, flex_attention
 import sys
 import os
 
-sys.path.append(
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, os.pardir, os.pardir)
-)
+# Import attention test utilities from upstream vllm's test suite.
+import vllm as _vllm
 
-from attention_test_utils import (
+_vllm_source_root = os.path.dirname(os.path.dirname(_vllm.__file__))
+sys.path.insert(0, os.path.join(_vllm_source_root, "tests", "v1", "attention"))
+
+from utils import (
     BatchSpec,
     create_common_attn_metadata,
     create_standard_kv_cache_spec,

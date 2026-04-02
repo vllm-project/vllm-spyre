@@ -118,20 +118,17 @@ class TorchSpyrePlatform(CpuPlatform):
         logger.info("Loading scheduler from: %s", scheduler_class)
         scheduler_config.scheduler_cls = scheduler_class
 
-        # ---- attention backend ----
-        # A custom attention backend can be registered with get_attn_backend_cls()
-        # see copied code from vllm/platforms/cpu.CpuPlatform illustrating the default
-        # TorchSDPABackend used for vLLM CPU execution
-
-        # @classmethod
-        # def get_attn_backend_cls(cls, selected_backend: _Backend, head_size: int,
-        #                      dtype: torch.dtype, kv_cache_dtype: Optional[str],
-        #                      block_size: int, use_v1: bool,
-        #                      use_mla: bool) -> str:
-        #     if selected_backend and selected_backend != _Backend.TORCH_SDPA:
-        #         logger.info("Cannot use %s backend on CPU.", selected_backend)
-        #     logger.info("Using Torch SDPA backend.")
-        #     return "vllm.attention.backends.torch_sdpa.TorchSDPABackend"
+        # Override max_num_seqs if CUSTOM attention backend is used,
+        # since it only supports batch_size=1
+        attention_config = vllm_config.attention_config
+        if attention_config is not None and attention_config.backend == AttentionBackendEnum.CUSTOM:
+            if scheduler_config.max_num_seqs != 1:
+                logger.info(
+                    "Spyre CUSTOM attention backend only supports "
+                    "batch_size=1. Overriding max_num_seqs from %d to 1.",
+                    scheduler_config.max_num_seqs,
+                )
+                scheduler_config.max_num_seqs = 1
 
         # call CpuPlatform.check_and_update_config()
         super().check_and_update_config(vllm_config)
