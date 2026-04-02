@@ -9,8 +9,8 @@ when instantiated.
 Architecture:
     - OOT Registration: @RotaryEmbedding.register_oot() replaces upstream at instantiation
     - Custom Op Boundary: torch.ops.vllm.spyre_rotary_embedding is opaque to torch.compile,
-      so forward_native runs eagerly outside the compiled graph
-    - Separate Compilation: forward_static is compiled independently via maybe_compile
+      so _forward_spyre_impl runs eagerly outside the compiled graph
+    - Separate Compilation: forward_spyre is compiled independently via maybe_compile
 
 Spyre Device Constraints:
     - Device dtype: float16 (converted for Spyre)
@@ -49,7 +49,7 @@ class SpyreRotaryEmbedding(RotaryEmbedding):
     rotations to query and key tensors in attention mechanisms.
     """
 
-    _dynamic_arg_dims = {"query": [], "key": [], "positions": []}
+    _dynamic_arg_dims = {"positions": [], "query": [], "key": []}
 
     def __init__(self, *args, **kwargs):
         """Initialize SpyreRotaryEmbedding layer.
@@ -101,10 +101,10 @@ class SpyreRotaryEmbedding(RotaryEmbedding):
         emb = torch.cat([freqs, freqs], dim=-1)
 
         # Compute cos and sin directly in float16, then move to device
-        self.cos_cache = emb.cos().to(device=self._target_device)
-        self.sin_cache = emb.sin().to(device=self._target_device)
+        self.cos_cache = convert(emb.cos(), self._target_device, compute_dtype)
+        self.sin_cache = convert(emb.sin(), self._target_device, compute_dtype)
 
-    def forward(
+    def forward_oot(
         self,
         positions: torch.Tensor,
         query: torch.Tensor,
@@ -151,7 +151,7 @@ class SpyreRotaryEmbedding(RotaryEmbedding):
         return torch.cat([-x2, x1], dim=-1)
 
     @staticmethod
-    def forward_static(
+    def _forward_spyre_impl(
         positions: torch.Tensor,
         query: torch.Tensor,
         key: torch.Tensor,
@@ -206,7 +206,7 @@ class SpyreRotaryEmbedding(RotaryEmbedding):
 
         return query, key
 
-    def forward_native(
+    def forward_oot(
         self,
         positions: torch.Tensor,
         query: torch.Tensor,
@@ -233,13 +233,13 @@ class SpyreRotaryEmbedding(RotaryEmbedding):
         key_device = key.device
 
         # Transfer cos/sin cache to Spyre device if not already there
-        if self.cos_cache.device != self._target_device:
-            self.cos_cache = convert(self.cos_cache, self._target_device, self._target_dtype)
-            self.sin_cache = convert(self.sin_cache, self._target_device, self._target_dtype)
+        # if self.cos_cache.device != self._target_device:
+        #     self.cos_cache = convert(self.cos_cache, self._target_device, self._target_dtype)
+        #     self.sin_cache = convert(self.sin_cache, self._target_device, self._target_dtype)
 
         # Execute compiled kernel on Spyre device
         rotated_query, rotated_key = self._fwd(
-            convert(positions, self._target_device, torch.long),
+            convert(positions, self._target_device, torch.int64),
             convert(query, self._target_device, self._target_dtype),
             convert(key, self._target_device, self._target_dtype),
             self.cos_cache,
@@ -264,7 +264,7 @@ def _op_func(
 ) -> None:
     """Custom op implementation — runs outside torch.compile graph."""
     layer = get_layer(layer_name)
-    result_query, result_key = layer.forward_native(positions, query, key)
+    result_query, result_key = layer.forward_oot(positions, query, key)
     rotated_query.copy_(result_query)
     rotated_key.copy_(result_key)
 
