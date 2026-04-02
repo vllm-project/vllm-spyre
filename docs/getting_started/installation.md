@@ -40,18 +40,8 @@ GitHub.
 === "Release (PyPI)"
 
     ```sh
-    echo "torch; sys_platform == 'never'
-    torchaudio; sys_platform == 'never'
-    torchvision; sys_platform == 'never'
-    triton; sys_platform == 'never'" > overrides.txt
-    
-    uv pip install vllm-spyre --overrides overrides.txt
+    uv pip install vllm-spyre
     ```
-
-    ??? question "Why do I need the `--overrides`?"
-        To avoid dependency resolution errors, we need to install `torch`
-        separately and tell `uv` to ignore any of it's dependencies while
-        installing the `vllm-spyre` plugin.
 
 === "Source (GitHub)"
 
@@ -80,18 +70,18 @@ The Spyre runtime stack supports specific `torch` versions. Use the compatible v
 
 | torch_sendnn | torch |
 | -- | -- |
-| 1.0.0 | 2.7.1 |
+| 1.0.0 | 2.10.0 |
 
 === "Linux"
 
     ```sh
-    pip install torch=="2.7.1+cpu" --index-url "https://download.pytorch.org/whl/cpu"
+    pip install torch=="2.10.0+cpu" --index-url "https://download.pytorch.org/whl/cpu"
     ```
 
 === "Windows/macOS"
 
     ```sh
-    pip install torch=="2.7.1"
+    pip install torch=="2.10.0"
     ```
 
 !!! note
@@ -157,46 +147,10 @@ uv venv --python 3.12 --seed .venv --system-site-packages
 source .venv/bin/activate
 ```
 
-If you forget to override the `torch` dependencies when installing a released
-version from PyPI, you will likely see a dependency resolution error like this:
+### No solution found when resolving dependencies (Legacy)
 
-```sh
-$ uv pip install vllm-spyre
-
-Using Python 3.12.11 environment at: .venv3
-Resolved 155 packages in 45ms
-  × Failed to build `xformers==0.0.28.post1`
-  ├─▶ The build backend returned an error
-  ╰─▶ Call to `setuptools.build_meta:__legacy__.build_wheel` failed (exit status: 1)
-
-      [stderr]
-      Traceback (most recent call last):
-        File "<string>", line 14, in <module>
-        File "~.cache/uv/builds-v0/.tmpo0aEXS/lib/python3.12/site-packages/setuptools/build_meta.py", line 331, in get_requires_for_build_wheel
-          return self._get_build_requires(config_settings, requirements=[])
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        File "~.cache/uv/builds-v0/.tmpo0aEXS/lib/python3.12/site-packages/setuptools/build_meta.py", line 301, in _get_build_requires
-          self.run_setup()
-        File "~.cache/uv/builds-v0/.tmpo0aEXS/lib/python3.12/site-packages/setuptools/build_meta.py", line 512, in run_setup
-          super().run_setup(setup_script=setup_script)
-        File "~.cache/uv/builds-v0/.tmpo0aEXS/lib/python3.12/site-packages/setuptools/build_meta.py", line 317, in run_setup
-          exec(code, locals())
-        File "<string>", line 24, in <module>
-      ModuleNotFoundError: No module named 'torch'
-
-      hint: This error likely indicates that `xformers@0.0.28.post1` depends on `torch`, but doesn't declare it as a build dependency. If `xformers` is a first-party package, consider adding
-      `torch` to its `build-system.requires`. Otherwise, `uv pip install torch` into the environment and re-run with `--no-build-isolation`.
-  help: `xformers` (v0.0.28.post1) was included because `vllm-spyre` (v0.1.0) depends on `vllm` (v0.2.5) which depends on `xformers`
-```
-
-<!-- markdownlint-disable MD051 link-fragments -->
-
-To avoid this error, make sure to include the dependency `--overrides` as described
-in the installation from a [Release (PyPI)](#release-pypi) section.
-
-<!-- markdownlint-enable MD051 -->
-
-### No solution found when resolving dependencies
+!!! note
+    This error should no longer occur with torch 2.10.0 support. This section is kept for reference.
 
 If you forget to override the `torch` dependencies when installing from PyPI you
 will likely see a dependency resolution error like this:

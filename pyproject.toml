@@ -45,15 +45,11 @@ git_describe_command = "git describe --dirty --tags --long --match 'v*' --exclud
 
 
 [tool.uv]
-# Never install torch, so that no dependencies can override it.
-# This requires that torch is installed separately in the target environment.
 # Triton is optional in most dependencies, however, xgrammar requires it.
 # So we set to 'never' to prevent installing it or eventually any other
 # by accident
 override-dependencies = [
-    "torch; sys_platform == 'never'",
-    "torchaudio; sys_platform == 'never'",
-    "torchvision; sys_platform == 'never'",
+    "torch==2.10.0",
     "triton; sys_platform == 'never'",
     "intel-extension-for-pytorch; sys_platform == 'never'",
 
