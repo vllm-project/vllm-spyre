@@ -101,9 +101,11 @@ class TorchSpyrePlatform(CpuPlatform):
         if "all" not in custom_ops:
             custom_ops.append("all")
 
-        # Disable torch wrapping for IR ops — Spyre uses direct dispatch
-        # (no Inductor lowering), so the torch custom op layer is unnecessary.
-        compilation_config.ir_enable_torch_wrap = False
+        # Must use torch wrapping (True) so ir.ops.rms_norm() routes through
+        # torch.ops.vllm_ir.rms_norm (a registered custom op). This creates
+        # an opaque boundary that Dynamo captures without tracing inside.
+        # Inductor. The provider therefore runs eagerly at each forward call.
+        compilation_config.ir_enable_torch_wrap = True
 
         # ---- worker ----
         parallel_config = vllm_config.parallel_config
