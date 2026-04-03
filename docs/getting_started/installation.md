@@ -70,7 +70,9 @@ The Spyre runtime stack supports specific `torch` versions. Use the compatible v
 
 | torch_sendnn | torch |
 | -- | -- |
-| 1.0.0 | 2.10.0 |
+| 1.0.0 | 2.7.1 |
+| 1.1.0 | 2.7.1 |
+| 1.2.0 | 2.10.0 |
 
 === "Linux"
 

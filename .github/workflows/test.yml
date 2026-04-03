@@ -127,11 +127,6 @@ jobs:
             vllm_spyre/**/*.py
             vllm_spyre/config/model_configs.yaml
 
-      - name: "Install PyTorch 2.10.0"
-        if: steps.changed-src-files.outputs.any_changed == 'true'
-        run: |
-          pip install torch=="2.10.0" --index-url https://download.pytorch.org/whl/cpu
-
       - name: "Install uv"
         if: steps.changed-src-files.outputs.any_changed == 'true'
         uses: astral-sh/setup-uv@v5
