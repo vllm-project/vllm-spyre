@@ -20,7 +20,7 @@ Spyre Device Constraints:
 Limitations:
     - No dtype promotion (torch-spyre limitation)
     - rope_scaling not yet implemented
-    - Expect numerical differences from upstream vLLM
+    - sin/cos calculation use float32 dtype for accuracy
 
 References:
     - Upstream RotaryEmbedding: vllm/model_executor/layers/rotary_embedding.py
@@ -32,6 +32,7 @@ from vllm.logger import init_logger
 from vllm.utils.torch_utils import direct_register_custom_op
 from vllm.model_executor.layers.rotary_embedding import RotaryEmbedding
 from functools import lru_cache
+import torch.utils._pytree as pytree
 
 from .utils import convert, register_layer, get_layer, _fake_impl
 
@@ -57,18 +58,30 @@ class SpyreRotaryEmbedding(RotaryEmbedding):
         Builds cos/sin cache for position embeddings.
         """
         super().__init__(*args, **kwargs)
+        # Validate supported configurations
+        scaling_type = getattr(self, "scaling_type", "default")
+        rope_parameters = getattr(self, "rope_parameters", {}) or {}
+
+        is_supported = (
+            scaling_type == "default"
+            and "mrope_section" not in rope_parameters
+            and ("use_fope" not in rope_parameters or not rope_parameters["use_fope"])
+        )
+
+        if not is_supported:
+            raise NotImplementedError(
+                f"SpyreRotaryEmbedding only supports default scaling without mrope_section or fope."
+                f"Got scaling_type={scaling_type}, rope_parameters={rope_parameters}"
+            )
+
         logger.debug("Building custom RotaryEmbedding")
         self._target_device = torch.device("spyre")
         self._target_dtype = torch.float16
         # Build cos/sin cache on initialization
         self._build_cos_sin_cache()
         # Compile the forward kernel
-        self._fwd = self.maybe_compile(self.forward_static)
+        self.maybe_compiled_forward_spyre = self.maybe_compile(self.forward_spyre)
         self._layer_name = register_layer(self, "spyre_rotary_embedding")
-        logger.warning(
-            "SpyreRotaryEmbedding: no dtype promotion is performed, "
-            "expect numerical differences to upstream vLLM."
-        )
 
     def _build_cos_sin_cache(self):
         """Build cos/sin cache for position embeddings.
@@ -78,31 +91,39 @@ class SpyreRotaryEmbedding(RotaryEmbedding):
         - cos_cache[pos] = cos(pos * frequencies)
         - sin_cache[pos] = sin(pos * frequencies)
 
-        Note: Uses float16 directly (no dtype promotion) to match Spyre constraints,
-        similar to SpyreRMSNorm implementation.
+        Note: sin/cos calculation use float32 dtype for accuracy.
+        Generated text differ from baseline when float16 used.
         """
-        # Use float16 directly - no dynamic dimensions (Spyre constraint)
-        compute_dtype = torch.float16
+        logger.warning_once(
+            "Sin/Cos computation use float32 for accuracy.All computations are run on CPU."
+        )
+        compute_dtype = torch.float32
 
-        # Compute inverse frequencies: base^(-2i/rotary_dim)
-        # Using negative exponent for numerical stability
-        exponents = -torch.arange(0, self.rotary_dim, 2, dtype=compute_dtype) / self.rotary_dim
-        inv_freq = torch.pow(self.base, exponents)
+        """ Compute inverse frequencies: base^(-2i/rotary_dim)
+        Using negative exponent for numerical stability"""
+
+        i = torch.arange(0, self.rotary_dim, 2, dtype=compute_dtype)
+        ratio = i / self.rotary_dim
+
+        freq = torch.pow(self.base, ratio)
+
+        inv_freq = 1.0 / freq
 
         # Create position indices [0, 1, 2, ..., max_position_embeddings-1]
-        t = torch.arange(self.max_position_embeddings, dtype=compute_dtype)
+        pos_id = torch.arange(self.max_position_embeddings, dtype=compute_dtype)
 
         # Compute frequencies for each position: pos * inv_freq
         # Shape: [max_position_embeddings, rotary_dim // 2]
-        freqs = torch.outer(t, inv_freq)
+
+        freqs = pos_id.unsqueeze(1) * inv_freq.unsqueeze(0)
 
         # Duplicate frequencies for interleaved pattern
         # Shape: [max_position_embeddings, rotary_dim]
         emb = torch.cat([freqs, freqs], dim=-1)
 
         # Compute cos and sin directly in float16, then move to device
-        self.cos_cache = convert(emb.cos(), self._target_device, compute_dtype)
-        self.sin_cache = convert(emb.sin(), self._target_device, compute_dtype)
+        self.cos_cache = convert(emb.cos(), None, compute_dtype)
+        self.sin_cache = convert(emb.sin(), None, compute_dtype)
 
     def forward_oot(
         self,
@@ -135,31 +156,17 @@ class SpyreRotaryEmbedding(RotaryEmbedding):
         return rotated_query, rotated_key
 
     @staticmethod
-    def _rotate_half(x: torch.Tensor) -> torch.Tensor:
-        """Rotate half the hidden dims of the input.
-
-        Splits the last dimension in half and rotates:
-        [x1, x2] -> [-x2, x1]
-
-        Args:
-            x: Input tensor [..., rotary_dim]
-
-        Returns:
-            Rotated tensor [..., rotary_dim]
-        """
-        x1, x2 = x.chunk(2, dim=-1)
-        return torch.cat([-x2, x1], dim=-1)
-
-    @staticmethod
-    def _forward_spyre_impl(
-        positions: torch.Tensor,
+    def forward_spyre(
         query: torch.Tensor,
+        query_half: torch.Tensor,
         key: torch.Tensor,
-        cos_cache: torch.Tensor,
-        sin_cache: torch.Tensor,
-        rotary_dim: int,
+        key_half: torch.Tensor,
+        cos_q: torch.Tensor,
+        sin_q: torch.Tensor,
+        cos_k: torch.Tensor,
+        sin_k: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Spyre-optimized RoPE computation compiled via torch.compile.
+        """Spyre-optimized RoPE computation (active implementation).
 
         Applies rotary position embeddings to query and key tensors:
         output = x * cos + rotate_half(x) * sin
@@ -175,38 +182,13 @@ class SpyreRotaryEmbedding(RotaryEmbedding):
         Returns:
             Tuple of (rotated_query, rotated_key)
         """
-        # Retrieve cos/sin for the given positions
-        # positions shape: [batch_size, seq_len] or [total_tokens]
-        cos = cos_cache[positions]  # [..., rotary_dim]
-        sin = sin_cache[positions]  # [..., rotary_dim]
 
-        # Reshape cos/sin to match query/key dimensions
-        # Need to add head dimension: [..., 1, rotary_dim]
-        if cos.dim() == 2:  # [batch_size, seq_len, rotary_dim]
-            cos = cos.unsqueeze(-2)  # [batch_size, seq_len, 1, rotary_dim]
-            sin = sin.unsqueeze(-2)  # [batch_size, seq_len, 1, rotary_dim]
-        elif cos.dim() == 1:  # [total_tokens, rotary_dim]
-            cos = cos.unsqueeze(-2)  # [total_tokens, 1, rotary_dim]
-            sin = sin.unsqueeze(-2)  # [total_tokens, 1, rotary_dim]
+        query_out = query * cos_q + query_half * sin_q
+        key_out = key * cos_k + key_half * sin_k
 
-        # Apply rotation to query and key
-        # Only rotate the first rotary_dim dimensions
-        query_rot = query[..., :rotary_dim]
-        query_pass = query[..., rotary_dim:]
-        key_rot = key[..., :rotary_dim]
-        key_pass = key[..., rotary_dim:]
+        return query_out, key_out
 
-        # Apply RoPE: x * cos + rotate_half(x) * sin
-        query_rot = query_rot * cos + SpyreRotaryEmbedding._rotate_half(query_rot) * sin
-        key_rot = key_rot * cos + SpyreRotaryEmbedding._rotate_half(key_rot) * sin
-
-        # Concatenate rotated and pass-through parts
-        query = torch.cat([query_rot, query_pass], dim=-1)
-        key = torch.cat([key_rot, key_pass], dim=-1)
-
-        return query, key
-
-    def forward_oot(
+    def _forward_spyre_impl(
         self,
         positions: torch.Tensor,
         query: torch.Tensor,
@@ -232,24 +214,86 @@ class SpyreRotaryEmbedding(RotaryEmbedding):
         key_dtype = key.dtype
         key_device = key.device
 
-        # Transfer cos/sin cache to Spyre device if not already there
-        # if self.cos_cache.device != self._target_device:
-        #     self.cos_cache = convert(self.cos_cache, self._target_device, self._target_dtype)
-        #     self.sin_cache = convert(self.sin_cache, self._target_device, self._target_dtype)
-
         # Execute compiled kernel on Spyre device
-        rotated_query, rotated_key = self._fwd(
-            convert(positions, self._target_device, torch.int64),
-            convert(query, self._target_device, self._target_dtype),
-            convert(key, self._target_device, self._target_dtype),
-            self.cos_cache,
-            self.sin_cache,
-            self.rotary_dim,
+
+        positions = convert(positions, None, torch.int64)
+
+        Tq, q_hidden = query.shape
+        Tk, k_hidden = key.shape
+
+        assert Tq == Tk, f"Query/Key sequence mismatch: {Tq} != {Tk}"
+        T = Tq
+
+        q_heads = q_hidden // self.head_size
+        k_heads = k_hidden // self.head_size
+
+        query = query.reshape(T, q_heads, self.head_size)
+        key = key.reshape(T, k_heads, self.head_size)
+
+        # get cos/sin
+        cos = self.cos_cache[positions]  # [T, D]
+        sin = self.sin_cache[positions]
+
+        def expand_cos_sin(cos, sin, num_heads):
+            cos = cos.unsqueeze(1).expand(-1, num_heads, -1)
+            sin = sin.unsqueeze(1).expand(-1, num_heads, -1)
+            return cos.contiguous(), sin.contiguous()
+
+        # expand to heads
+        cos_q, sin_q = expand_cos_sin(cos, sin, q_heads)
+        cos_k, sin_k = expand_cos_sin(cos, sin, k_heads)
+
+        query_rot = query[..., : self.rotary_dim]
+        query_pass = query[..., self.rotary_dim :]
+
+        key_rot = key[..., : self.rotary_dim]
+        key_pass = key[..., self.rotary_dim :]
+
+        d = self.rotary_dim // 2
+
+        q1 = query_rot[..., :d]
+        q2 = query_rot[..., d:]
+        query_half = torch.cat([-q2, q1], dim=-1)
+
+        k1 = key_rot[..., :d]
+        k2 = key_rot[..., d:]
+        key_half = torch.cat([-k2, k1], dim=-1)
+
+        assert cos_q.shape == query_rot.shape, f"{cos_q.shape} != {query.shape}"
+        assert sin_q.shape == query_rot.shape
+
+        query_spyre = convert(query_rot, self._target_device, self._target_dtype)
+        query_half_spyre = convert(query_half, self._target_device, self._target_dtype)
+
+        key_spyre = convert(key_rot, self._target_device, self._target_dtype)
+        key_half_spyre = convert(key_half, self._target_device, self._target_dtype)
+
+        cos_q_spyre = convert(cos_q, self._target_device, self._target_dtype)
+        sin_q_spyre = convert(sin_q, self._target_device, self._target_dtype)
+
+        cos_k_spyre = convert(cos_k, self._target_device, self._target_dtype)
+        sin_k_spyre = convert(sin_k, self._target_device, self._target_dtype)
+
+        rotated_query, rotated_key = self.maybe_compiled_forward_spyre(
+            query_spyre,
+            query_half_spyre,
+            key_spyre,
+            key_half_spyre,
+            cos_q_spyre,
+            sin_q_spyre,
+            cos_k_spyre,
+            sin_k_spyre,
         )
 
         # Transfer back to CPU and restore original dtype
         rotated_query = convert(rotated_query, query_device, query_dtype)
         rotated_key = convert(rotated_key, key_device, key_dtype)
+
+        rotated_query = torch.cat([rotated_query, query_pass], dim=-1)
+        rotated_key = torch.cat([rotated_key, key_pass], dim=-1)
+
+        rotated_query = rotated_query.reshape(T, -1)
+        rotated_key = rotated_key.reshape(T, -1)
 
         return rotated_query, rotated_key
 
@@ -264,9 +308,9 @@ def _op_func(
 ) -> None:
     """Custom op implementation — runs outside torch.compile graph."""
     layer = get_layer(layer_name)
-    result_query, result_key = layer.forward_oot(positions, query, key)
-    rotated_query.copy_(result_query)
-    rotated_key.copy_(result_key)
+    result = list(layer._forward_spyre_impl(positions, query, key))
+    outputs = [rotated_query, rotated_key]
+    pytree.tree_map(lambda out, res: out.copy_(res), outputs, result)
 
 
 @lru_cache(maxsize=1)
