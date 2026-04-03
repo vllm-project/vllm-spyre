@@ -118,17 +118,5 @@ class TorchSpyrePlatform(CpuPlatform):
         logger.info("Loading scheduler from: %s", scheduler_class)
         scheduler_config.scheduler_cls = scheduler_class
 
-        # Override max_num_seqs if CUSTOM attention backend is used,
-        # since it only supports batch_size=1
-        attention_config = vllm_config.attention_config
-        if attention_config is not None and attention_config.backend == AttentionBackendEnum.CUSTOM:
-            if scheduler_config.max_num_seqs != 1:
-                logger.info(
-                    "Spyre CUSTOM attention backend only supports "
-                    "batch_size=1. Overriding max_num_seqs from %d to 1.",
-                    scheduler_config.max_num_seqs,
-                )
-                scheduler_config.max_num_seqs = 1
-
         # call CpuPlatform.check_and_update_config()
         super().check_and_update_config(vllm_config)

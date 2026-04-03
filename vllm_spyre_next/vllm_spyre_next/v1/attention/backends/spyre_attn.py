@@ -260,11 +260,6 @@ class SpyreAttentionImpl(AttentionImpl[SpyreAttentionMetadata]):
         if attn_metadata is None:
             return output
 
-        # Currently only batch_size == 1 is supported
-        assert attn_metadata.num_seqs == 1, (
-            f"Spyre attention currently supports batch_size=1, got {attn_metadata.num_seqs}"
-        )
-
         num_actual_tokens = attn_metadata.num_actual_tokens
 
         # Step 1: Update KV cache (CPU)
