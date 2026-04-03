@@ -1319,7 +1319,7 @@ wheels = [
 
 [[package]]
 name = "ibm-fms"
-version = "1.8.0"
+version = "1.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "torch", version = "2.10.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "platform_machine != 'aarch64' and sys_platform == 'darwin'" },
@@ -1327,7 +1327,7 @@ dependencies = [
     { name = "transformers" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/43/07/dc4f3b51e9ec46e1b87c0f1f1dca6875cbf3127b6942708edefca7d40949/ibm_fms-1.8.0-py3-none-any.whl", hash = "sha256:f931b9ee99891370d74293cf152b64cf4055749beb7078247cd39bbd54db0f7f", size = 225169, upload-time = "2026-03-20T14:20:21.334Z" },
+    { url = "https://files.pythonhosted.org/packages/8e/68/04622d1437ab00454690f21b943ab7df1e290b477fe19e85439b25efa1ab/ibm_fms-1.9.0-py3-none-any.whl", hash = "sha256:2d425958f98c9d015a8d54eff91ff0bbced234627653c987f1e6b29949153907", size = 238909, upload-time = "2026-04-03T16:15:20.445Z" },
 ]
 
 [[package]]
@@ -4676,7 +4676,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fms-model-optimizer", extras = ["fp8"], specifier = ">=0.8.2,<0.9" },
-    { name = "ibm-fms", specifier = ">=1.8.0,<2.0" },
+    { name = "ibm-fms", specifier = ">=1.9.0,<2" },
     { name = "torch", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torchvision", index = "https://download.pytorch.org/whl/cpu" },
     { name = "vllm", git = "https://github.com/vllm-project/vllm?rev=v0.18.1" },
