@@ -16,6 +16,10 @@ dependencies = [
     # NB: use strict < with the next patch version to not exclude versions with
     # build metadata suffixes
     "vllm>=0.18.0,<0.18.2",
+    
+    # Specific torch version overrides handled by uv
+    "torch",
+    "torchvision",
 ]
 requires-python = ">=3.11"
 dynamic = ["version"]
@@ -84,6 +88,21 @@ extra-build-variables = { vllm = { VLLM_TARGET_DEVICE = "empty" } }
 
 [tool.uv.sources]
 vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.18.1" }
+torch = [
+  { index = "pytorch-cpu" },
+]
+torchvision = [
+  { index = "pytorch-cpu" },
+]
+
+# The pytorch-cpu index here ensures we always pull the cpu version of torch everywhere
+# The `explicit=true` setting means this index will only be used for packages that we explicitly set
+# it for in `tool.uv.sources`. This is important to avoid requiring the use of 
+# `--index-strategy unsafe-best-match`
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.ty.rules]
 possibly-missing-attribute = "ignore"
