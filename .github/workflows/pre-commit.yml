@@ -29,12 +29,6 @@ jobs:
           pyproject.toml
     - name: "Install dependencies"
       run: VLLM_TARGET_DEVICE=empty uv sync --frozen
-
-    # The sadness knows no bounds: we require a separate pytorch install
-    - name: "Install PyTorch 2.7.1"
-      run: |
-        uv pip install pip && python3 -m pip install torch=="2.7.1+cpu" --index-url https://download.pytorch.org/whl/cpu
-
     - run: echo "::add-matcher::.github/workflows/matchers/ruff.json"
     - uses: j178/prek-action@v1
       with:
