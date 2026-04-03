@@ -53,7 +53,7 @@ overrides = [
     { name = "setuptools", specifier = ">=82" },
     { name = "torch", marker = "platform_machine not in 's390x, ppc64le'", specifier = "==2.10.0", index = "https://download.pytorch.org/whl/cpu" },
     { name = "triton", marker = "sys_platform == 'never'" },
-    { name = "vllm", marker = "platform_machine not in 's390x, ppc64le'", git = "https://github.com/vllm-project/vllm?rev=v0.18.0" },
+    { name = "vllm", marker = "platform_machine not in 's390x, ppc64le'", git = "https://github.com/vllm-project/vllm?rev=v0.18.1" },
 ]
 build-constraints = [{ name = "torch", specifier = "==2.10.0", index = "https://download.pytorch.org/whl/cpu" }]
 
@@ -8674,7 +8674,7 @@ wheels = [
 [[package]]
 name = "torch-spyre"
 version = "0.0.1"
-source = { git = "https://github.com/torch-spyre/torch-spyre?rev=db439f07a021068157a510a820a0249b0c69dc4b#db439f07a021068157a510a820a0249b0c69dc4b" }
+source = { git = "https://github.com/torch-spyre/torch-spyre?rev=479fa1c95ff65bf836a3b580d4f1c3aeb5b01101#479fa1c95ff65bf836a3b580d4f1c3aeb5b01101" }
 dependencies = [
     { name = "numpy" },
     { name = "psutil" },
@@ -9202,8 +9202,8 @@ wheels = [
 
 [[package]]
 name = "vllm"
-version = "0.18.0+cpu"
-source = { git = "https://github.com/vllm-project/vllm?rev=v0.18.0#bcf2be96120005e9aea171927f85055a6a5c0cf6" }
+version = "0.18.1+cpu"
+source = { git = "https://github.com/vllm-project/vllm?rev=v0.18.1#a26e8dc7ff2111a005144d775ecf9cebf56c45b2" }
 dependencies = [
     { name = "aiohttp" },
     { name = "anthropic" },
@@ -9349,9 +9349,9 @@ upstream-tests = [
 [package.metadata]
 requires-dist = [
     { name = "torch", index = "https://download.pytorch.org/whl/cpu" },
-    { name = "torch-spyre", git = "https://github.com/torch-spyre/torch-spyre?rev=db439f07a021068157a510a820a0249b0c69dc4b" },
+    { name = "torch-spyre", git = "https://github.com/torch-spyre/torch-spyre?rev=479fa1c95ff65bf836a3b580d4f1c3aeb5b01101" },
     { name = "torchvision", index = "https://download.pytorch.org/whl/cpu" },
-    { name = "vllm", git = "https://github.com/vllm-project/vllm?rev=v0.18.0" },
+    { name = "vllm", git = "https://github.com/vllm-project/vllm?rev=v0.18.1" },
 ]
 
 [package.metadata.requires-dev]
