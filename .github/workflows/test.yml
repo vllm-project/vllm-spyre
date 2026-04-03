@@ -110,6 +110,13 @@ jobs:
     name: "${{ matrix.test_suite.name }} (${{ matrix.vllm_version.name }})"
 
     steps:
+      - name: "Lightweight disk cleanup"
+        # super lightweight cleanup, not nearly as much as actions/free-up-disk-space
+        shell: bash
+        run: |
+          rm -rf /usr/share/swift
+          rm -rf /user/local/share/chromium
+
       - name: "Checkout"
         uses: actions/checkout@v4
         with:
