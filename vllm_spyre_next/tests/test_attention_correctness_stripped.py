@@ -2,14 +2,13 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Tests for v1 attention backends without GPUModelRunner dependency."""
 
+import os
+import sys
 from functools import partial
 
 import pytest
 import torch
 from torch.nn.attention.flex_attention import create_block_mask, flex_attention
-
-import sys
-import os
 
 # Import attention test utilities from upstream vllm's test suite.
 import vllm as _vllm
@@ -17,7 +16,7 @@ import vllm as _vllm
 _vllm_source_root = os.path.dirname(os.path.dirname(_vllm.__file__))
 sys.path.insert(0, os.path.join(_vllm_source_root, "tests", "v1", "attention"))
 
-from utils import (
+from utils import (  # noqa: E402
     BatchSpec,
     create_common_attn_metadata,
     create_standard_kv_cache_spec,
@@ -25,18 +24,18 @@ from utils import (
     try_backend_includes_kv_cache_update,
     try_get_attention_backend,
 )
-from vllm.utils.math_utils import cdiv
-from vllm.utils.torch_utils import (
+from vllm.utils.math_utils import cdiv  # noqa: E402
+from vllm.utils.torch_utils import (  # noqa: E402
     STR_DTYPE_TO_TORCH_DTYPE,
     is_torch_equal_or_newer,
     set_random_seed,
 )
-from vllm.v1.attention.backend import AttentionType, CommonAttentionMetadata
-from vllm.v1.attention.backends.registry import AttentionBackendEnum
-from vllm.v1.attention.backends.utils import (
+from vllm.v1.attention.backend import AttentionType, CommonAttentionMetadata  # noqa: E402
+from vllm.v1.attention.backends.registry import AttentionBackendEnum  # noqa: E402
+from vllm.v1.attention.backends.utils import (  # noqa: E402
     set_kv_cache_layout,
 )
-from vllm.v1.kv_cache_interface import FullAttentionSpec
+from vllm.v1.kv_cache_interface import FullAttentionSpec  # noqa: E402
 
 BACKENDS_TO_TEST = [
     AttentionBackendEnum.CUSTOM,
