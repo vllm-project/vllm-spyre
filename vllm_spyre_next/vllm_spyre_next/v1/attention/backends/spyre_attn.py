@@ -142,8 +142,8 @@ class SpyreAttentionBackend(AttentionBackend):
         head_size: int,
         cache_dtype_str: str = "auto",
     ) -> tuple[int, ...]:
-        """KV cache shape: [2, num_blocks, block_size, num_kv_heads, head_size]"""
-        return (2, num_blocks, block_size, num_kv_heads, head_size)
+        """KV cache shape: [num_blocks, 2, block_size, num_kv_heads, head_size]"""
+        return (num_blocks, 2, block_size, num_kv_heads, head_size)
 
     @classmethod
     def supports_head_size(cls, head_size: int) -> bool:
@@ -247,7 +247,7 @@ class SpyreAttentionImpl(AttentionImpl[SpyreAttentionMetadata]):
         query: torch.Tensor,  # [num_tokens, num_heads, head_size]
         key: torch.Tensor,  # [num_tokens, num_kv_heads, head_size]
         value: torch.Tensor,  # [num_tokens, num_kv_heads, head_size]
-        kv_cache: torch.Tensor,  # [2, num_blocks, block_size, num_kv_heads, head_size]
+        kv_cache: torch.Tensor,  # [num_blocks, 2, block_size, num_kv_heads, head_size]
         attn_metadata: SpyreAttentionMetadata,
         output: torch.Tensor | None = None,
         output_scale: torch.Tensor | None = None,
@@ -333,8 +333,8 @@ class SpyreAttentionImpl(AttentionImpl[SpyreAttentionMetadata]):
         block_indices = slot_mapping // block_size
         block_offsets = slot_mapping % block_size
 
-        kv_cache[0][block_indices, block_offsets] = key
-        kv_cache[1][block_indices, block_offsets] = value
+        kv_cache[block_indices, 0, block_offsets] = key
+        kv_cache[block_indices, 1, block_offsets] = value
 
     def _gather_compact_kv_cache(
         self,
@@ -349,7 +349,7 @@ class SpyreAttentionImpl(AttentionImpl[SpyreAttentionMetadata]):
         Gather only the relevant KV cache entries into compact tensors with alignment.
 
         Args:
-            kv_cache: [2, num_blocks, block_size, num_kv_heads, head_size]
+            kv_cache: [num_blocks, 2, block_size, num_kv_heads, head_size]
             block_table: [num_seqs, max_num_blocks_per_seq]
             seq_lens: [num_seqs]
             block_size: int
@@ -371,8 +371,8 @@ class SpyreAttentionImpl(AttentionImpl[SpyreAttentionMetadata]):
             * self.KV_LENGTH_ALIGNMENT
         )
 
-        key_cache = kv_cache[0]  # [num_blocks, block_size, num_kv_heads, head_size]
-        value_cache = kv_cache[1]
+        key_cache = kv_cache[:, 0]  # [num_blocks, block_size, num_kv_heads, head_size]
+        value_cache = kv_cache[:, 1]
         num_kv_heads = key_cache.shape[2]
         head_size = key_cache.shape[3]
 
@@ -460,7 +460,6 @@ class SpyreAttentionImpl(AttentionImpl[SpyreAttentionMetadata]):
         attend = q_valid.unsqueeze(2) & kv_valid.unsqueeze(1)
 
         if apply_causal_mask:
-            # context_len[s] = seq_len[s] - query_len[s]
             # query token q_i (0-indexed) can attend to KV positions 0 .. context_len + q_i
             context_lens = seq_lens - query_lens  # [num_seqs]
             # [num_seqs, max_query_len, 1]
@@ -559,6 +558,9 @@ class SpyreAttentionImpl(AttentionImpl[SpyreAttentionMetadata]):
         """SDPA path: runs compiled scaled_dot_product_attention.
 
         Note: Currently runs on CPU. TODO: Transfer to Spyre when supported.
+        Currently not supported because
+          - GQA
+          - Non-square attention
         """
         out = self.attn_op(
             query.transpose(1, 2),

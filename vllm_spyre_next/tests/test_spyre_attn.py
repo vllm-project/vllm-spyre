@@ -134,9 +134,9 @@ def test_spyre_attn(
     key = torch.randn(sum(query_lens), num_kv_heads, head_size, dtype=dtype)
     value = torch.randn(sum(query_lens), num_kv_heads, head_size, dtype=dtype)
 
-    kv_cache = torch.zeros(2, num_blocks, block_size, num_kv_heads, head_size, dtype=dtype)
-    key_cache = kv_cache[0]
-    value_cache = kv_cache[1]
+    kv_cache = torch.zeros(num_blocks, 2, block_size, num_kv_heads, head_size, dtype=dtype)
+    key_cache = kv_cache[:, 0]
+    value_cache = kv_cache[:, 1]
 
     cu_query_lens = torch.tensor([0] + query_lens, dtype=torch.int32).cumsum(
         dim=0, dtype=torch.int32
@@ -267,9 +267,9 @@ def test_spyre_attn_single_sequence(
         key = torch.randn(query_len, num_kv_heads, head_size, dtype=dtype)
         value = torch.randn(query_len, num_kv_heads, head_size, dtype=dtype)
 
-        kv_cache = torch.zeros(2, num_blocks, block_size, num_kv_heads, head_size, dtype=dtype)
-        key_cache = kv_cache[0]
-        value_cache = kv_cache[1]
+        kv_cache = torch.zeros(num_blocks, 2, block_size, num_kv_heads, head_size, dtype=dtype)
+        key_cache = kv_cache[:, 0]
+        value_cache = kv_cache[:, 1]
 
         max_num_blocks_per_seq = (kv_len + block_size - 1) // block_size
         block_tables = torch.randint(
