@@ -1024,12 +1024,65 @@ class ChunkedPrefillModelRunner(
         self.model.n_pads_right = self.block_size - (((request_tkv - 1) % self.block_size) + 1)
         self.model.indices = torch.ones(1, dtype=torch.bool, device="cpu")
 
-        # None unless this model is multimodal
-        input_embeds = self.model.get_maybe_mm_embeddings(
-            input_tokens,
-            mm_features=mm_features,
-            is_decode=False,
-        )
+        # For multimodal requests, compute embeddings once for the full sequence
+        # and cache them, then slice per chunk. This ensures image features are
+        # correctly aligned across all chunks.
+        if mm_features and request.cached_mm_embeddings is None:
+            # First chunk: compute full multimodal embeddings
+            full_input_tokens = torch.tensor(
+                prompt_token_ids, dtype=torch.int64, device=self.device
+            ).unsqueeze(0)
+
+            t0 = time.time()
+            full_embeds = self.model.get_maybe_mm_embeddings(
+                full_input_tokens,
+                mm_features=mm_features,
+                is_decode=False,
+            )
+
+            t1 = time.time() - t0
+
+            logger.info("maybe_mm_embedding processing time: %.2fms", (t1 * 1000))
+
+            # Cache the full embeddings for subsequent chunks
+            request.cached_mm_embeddings = full_embeds
+            logger.debug("Computed and cached full multimodal embeddings for request '%s'", req_id)
+
+        # Slice the cached embeddings for this chunk
+        if request.cached_mm_embeddings is not None:
+            # Extract the slice corresponding to this chunk
+            # Add left padding to align with the chunked token positions
+            full_embeds = request.cached_mm_embeddings
+
+            # Create output tensor with chunk size
+            input_embeds = torch.zeros(
+                (1, chunk_size, full_embeds.shape[-1]),
+                dtype=full_embeds.dtype,
+                device=self.device,
+            )
+
+            # Copy the relevant slice from full embeddings
+            # This mirrors the logic for input_tokens slicing above
+            input_embeds[0, chunk_left_offset : chunk_left_offset + chunk_end - chunk_start] = (
+                full_embeds[0, chunk_start:chunk_end]
+            )
+
+            logger.debug(
+                "Sliced embeddings for chunk %d of request '%s': [%d:%d] -> [%d:%d]",
+                chunk_i,
+                req_id,
+                chunk_start,
+                chunk_end,
+                chunk_left_offset,
+                chunk_left_offset + chunk_end - chunk_start,
+            )
+        else:
+            # Non-multimodal or decode: use standard token embedding
+            input_embeds = self.model.get_maybe_mm_embeddings(
+                input_tokens,
+                mm_features=None,
+                is_decode=False,
+            )
 
         model_inputs = SamplingForwardInputs(
             input_tokens=input_tokens,
@@ -1252,6 +1305,14 @@ class ChunkedPrefillModelRunner(
 
         if num_computed_tokens + num_scheduled_tokens < prompt_len:
             return
+
+        # Last prefill: clear cached multimodal embeddings to free memory
+        if request.cached_mm_embeddings is not None:
+            logger.debug(
+                "Clearing cached multimodal embeddings for request '%s' after last prefill",
+                req_id,
+            )
+            request.cached_mm_embeddings = None
 
         # Last prefill: we might need to update the tkv
         req_n_blocks = math.ceil(prompt_len / self.block_size)
