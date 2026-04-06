@@ -46,6 +46,7 @@ def test_pooling_metadata_prompt_token_ids_cpu():
     if VLLM_VERSION == "vLLM:lowest":
         from vllm_spyre.compat_utils import dataclass_fields
         from vllm.v1.pool.metadata import PoolingMetadata
+
         if "prompt_token_ids_cpu" in dataclass_fields(PoolingMetadata):
             raise AssertionError(
                 "remove the prompt_token_ids_cpu compat guard in "
