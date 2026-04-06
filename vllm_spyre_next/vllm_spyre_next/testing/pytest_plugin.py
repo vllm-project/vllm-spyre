@@ -327,8 +327,8 @@ def _prepare_upstream_tests_dir() -> Path:
     return tests_dir
 
 
-def _spicy_code_edits(upstream_tests_dir: Path):
-    """Apply spicy code edits to the upstream tests directory.
+def _temp_upstream_code_edits(upstream_tests_dir: Path):
+    """Apply small code edits to the upstream tests directory before importing.
 
     These should be _temporary_ edits to source code for vllm tests while we work to make them more
     portable. This should only be used where mocking is not possible or too cumbersome.
@@ -387,7 +387,7 @@ def pytest_configure(config):
         try:
             # Clone vLLM to cache
             upstream_tests_base = _prepare_upstream_tests_dir()
-            _spicy_code_edits(upstream_tests_base)
+            _temp_upstream_code_edits(upstream_tests_base)
             config._upstream_tests_base = upstream_tests_base
 
             # Determine which test paths to inject
