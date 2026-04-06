@@ -13,8 +13,9 @@ pytestmark = pytest.mark.compat
 
 VLLM_VERSION = os.getenv("TEST_VLLM_VERSION", "default")
 
+
 def test_inputs_reorganization():
-    """vllm >= 0.19.0 reorganized vllm.inputs: PR #35182. """
+    """vllm >= 0.19.0 reorganized vllm.inputs: PR #35182."""
     if VLLM_VERSION == "vLLM:lowest":
         try:
             from vllm.inputs.data import token_inputs  # noqa: F401
@@ -29,7 +30,7 @@ def test_inputs_reorganization():
 
 
 def test_pooler_activations_reorganization():
-    """vllm >= 0.19.0 merged get_cross_encoder_act_fn into get_act_fn: PR #37537. """
+    """vllm >= 0.19.0 merged get_cross_encoder_act_fn into get_act_fn: PR #37537."""
     if VLLM_VERSION == "vLLM:lowest":
         try:
             from vllm.model_executor.layers.pooler.activations import (  # noqa: F401

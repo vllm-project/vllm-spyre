@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from vllm.config import ModelConfig, VllmConfig
     from vllm.pooling_params import PoolingParams
     from vllm.sampling_params import SamplingParams
+
     try:
         # vllm >= 0.19.0
         from vllm.inputs import EngineInput, TokensInput

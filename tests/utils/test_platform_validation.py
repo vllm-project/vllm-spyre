@@ -12,6 +12,7 @@ from types import SimpleNamespace
 
 
 from vllm import SamplingParams
+
 try:
     # vllm >= 0.19.0: inputs reorganization
     from vllm.inputs import tokens_input
