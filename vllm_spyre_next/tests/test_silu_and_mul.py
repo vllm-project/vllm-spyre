@@ -79,8 +79,8 @@ def test_siluandmul_oot_dispatch(default_vllm_config, monkeypatch, dummy_tensor)
     # dispatch_forward should have selected forward_oot
     assert layer._forward_method == layer.forward_oot
 
-    # Mock forward_oot (called by forward_oot) with a known transform
-    monkeypatch.setattr(layer, "forward_oot", mock_forward_oot)
+    # Mock _forward_spyre_impl (called by forward_oot) with a known transform
+    monkeypatch.setattr(layer, "_forward_spyre_impl", mock_forward_oot)
     out = layer.forward_oot(dummy_tensor)
 
     # Expected: ones with shape [4, 128] (halved last dim)
