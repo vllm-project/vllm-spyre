@@ -635,29 +635,6 @@ def patch_backend_list(request, monkeypatch):
     test_module = request.node.module
     monkeypatch.setattr(test_module, "BACKENDS_TO_TEST", our_backend_list)
 
-    # the batch specs need to be modified to have only a single sequence, because we don't yet
-    # support batched attention
-    our_batch_specs = {
-        "small_decode": test_module.BatchSpec(seq_lens=[40], query_lens=[1]),
-        "small_prefill": test_module.BatchSpec(seq_lens=[40], query_lens=[8]),
-        "mixed_small": test_module.BatchSpec(seq_lens=[48], query_lens=[5]),
-        "medium_decode": test_module.BatchSpec(
-            seq_lens=[1024],
-            query_lens=[1],
-        ),
-        "medium_prefill": test_module.BatchSpec(seq_lens=[1024], query_lens=[16]),
-        "mixed_medium": test_module.BatchSpec(seq_lens=[2048], query_lens=[1]),
-        "large_decode": test_module.BatchSpec(seq_lens=[2048], query_lens=[1]),
-        "large_prefill": test_module.BatchSpec(seq_lens=[4096], query_lens=[32]),
-        "mixed_large": test_module.BatchSpec(seq_lens=[4096], query_lens=[32]),
-        "single_decode": test_module.BatchSpec(seq_lens=[1024], query_lens=[1]),
-        "single_prefill": test_module.BatchSpec(seq_lens=[1024], query_lens=[64]),
-        # encoder-only
-        "small_encoder_prefill": test_module.BatchSpec(seq_lens=[32], query_lens=[32]),
-        "medium_encoder_prefill": test_module.BatchSpec(seq_lens=[256], query_lens=[256]),
-    }
-    monkeypatch.setattr(test_module, "BATCH_SPECS", our_batch_specs)
-
     # _test_backend_correctness may be called with a hardcoded AttentionBackendEnum.FLASH_ATTN,
     # which we want to ignore
     orig_tbc = test_module._test_backend_correctness
