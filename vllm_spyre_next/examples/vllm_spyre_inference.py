@@ -1,8 +1,11 @@
-### TEST 1 - Disable prefix caching
+import os
 from vllm import LLM, SamplingParams
 from vllm.v1.attention.backends.registry import AttentionBackendEnum
 from vllm.config import AttentionConfig, CompilationConfig
 
+PROMPTS = [
+    "What are IBMs main businesses?",
+]
 
 def print_outputs(outputs, engine):
     print("-" * 50)
@@ -15,50 +18,57 @@ def print_outputs(outputs, engine):
             print(m.name, m.value)
 
 
-def main():
-    # Configuration
-    # MODEL = "ibm-granite/granite-3.0-8b-base"  # Tiny model
-    MODEL = "ibm-granite/granite-3.3-8b-instruct"  # Instruct model
-    # MODEL = "ibm-granite/granite-4.0-tiny-preview"  # Granite 3
-    # MODEL = "ibm-granite/granite-4.0-h-small"       # Granite 4
-    # MODEL = "ibm-granite/granite-4.0-h-tiny"       # Granite 4
-    # MODEL = "facebook/opt-125m" # Small model
-
-    # Sampling parameter for the inference process
-    sampling_params = SamplingParams(
-        max_tokens=5,  # Maximum number of tokens to produce
-    )
-
-    # Prompts to use for inference
-    prompts = [
-        "What are IBMs main businesses?",
-    ]
+def main(args):
+    sampling_params = SamplingParams(max_tokens=5)
 
     engine = LLM(
-        model=MODEL,  # Model to use for inference.
-        # By increasing utilization, you can provide more KV cache space.
-        gpu_memory_utilization=0.9,
-        # Flag determining whether prefix caching is enabled or disabled.
-        enable_prefix_caching=True,
-        # # Flag determining whether eager mode or torch.compile should be used.
+        model=args.model,
+        # gpu_memory_utilization=0.9,
+        # enable_prefix_caching=True,
+        # enforce_eager=args.enforce_eager,
         enforce_eager=True,
-        # # Datatype of the mamba cache (if any).
-        # mamba_ssm_cache_dtype="float32",
-        # # Datatype of the model.
-        dtype="float16",
-        # # Maximum number of tokens for a prefill before being chunked
-        # max_num_batched_tokens=8192,
-        # # compliates logic with mamba
-        # disable_cascade_attn=True,
-        disable_log_stats=False,  ## stats
-        attention_config=AttentionConfig(backend=AttentionBackendEnum.CUSTOM),
-        compilation_config=CompilationConfig(custom_ops=["all"]),
+        # dtype="float16",
+        # disable_log_stats=False,
+        # attention_config=AttentionConfig(backend=AttentionBackendEnum.CUSTOM),
+        # compilation_config=CompilationConfig(custom_ops=[args.custom_ops]),
     )
 
-    # Generate response for prompt 0
-    outputs = engine.generate(prompts[0], sampling_params)
+    outputs = engine.generate(
+        PROMPTS,
+        sampling_params
+    )
     print_outputs(outputs, engine)
 
 
 if __name__ == "__main__":
-    main()
+    """
+    python examples/vllm_spyre_inference.py \
+        --model ibm-granite/granite-3.3-8b-instruct \
+        --enforce_eager \
+        --custom_ops all
+    """
+    from argparse import ArgumentParser
+
+    parser = ArgumentParser()
+    parser.add_argument(
+        "--model",
+        type=str,
+        required=False,
+        default="ibm-granite/granite-3.3-8b-instruct",
+        help="Model to run E2E inference with",
+    )
+    parser.add_argument(
+        "--enforce_eager",
+        action="store_true",
+        help="Skip torch.compile, run in eager mode",
+    )
+    parser.add_argument(
+        "--custom_ops",
+        type=str,
+        default="all",
+        required=False,
+        help="CustoOps to enable",
+    )
+    args = parser.parse_args()
+
+    main(args)

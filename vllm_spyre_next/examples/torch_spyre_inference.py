@@ -91,6 +91,7 @@ def main():
         max_num_seqs=max_num_seqs,
         tensor_parallel_size=args.tp,
         max_num_batched_tokens=1024,
+        enforce_eager=False
     )
 
     # Generate texts from the prompts. The output is a list of RequestOutput objects
