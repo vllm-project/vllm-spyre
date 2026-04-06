@@ -41,6 +41,18 @@ def test_request_status_waiting_for_fsm_rename():
             )
 
 
+def test_pooling_metadata_prompt_token_ids_cpu():
+    """vllm >= 0.19.0 added prompt_token_ids_cpu to PoolingMetadata (#38139)."""
+    if VLLM_VERSION == "vLLM:lowest":
+        from vllm_spyre.compat_utils import dataclass_fields
+        from vllm.v1.pool.metadata import PoolingMetadata
+        if "prompt_token_ids_cpu" in dataclass_fields(PoolingMetadata):
+            raise AssertionError(
+                "remove the prompt_token_ids_cpu compat guard in "
+                "vllm_spyre/v1/worker/spyre_input_batch.py::make_pooling_metadata"
+            )
+
+
 def test_pooler_activations_reorganization():
     """vllm >= 0.19.0 merged get_cross_encoder_act_fn into get_act_fn: PR #37537."""
     if VLLM_VERSION == "vLLM:lowest":
