@@ -14,7 +14,7 @@ try:
     # vllm >= 0.19.0
     from vllm.model_executor.layers.pooler.activations import get_act_fn
 except ImportError:
-    from vllm.model_executor.layers.pooler.activations import (
+    from vllm.model_executor.layers.pooler.activations import (  # type: ignore[attr-defined]
         get_cross_encoder_act_fn as get_act_fn,
     )
 from vllm.model_executor.layers.pooler.seqwise.poolers import (

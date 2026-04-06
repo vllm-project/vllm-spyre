@@ -29,6 +29,18 @@ def test_inputs_reorganization():
             ) from e
 
 
+def test_request_status_waiting_for_fsm_rename():
+    """vllm >= 0.19.0 renamed RequestStatus.WAITING_FOR_FSM: PR #38048."""
+    if VLLM_VERSION == "vLLM:lowest":
+        from vllm.v1.request import RequestStatus
+
+        if not hasattr(RequestStatus, "WAITING_FOR_FSM"):
+            raise AssertionError(
+                "remove the _WAITING_FOR_GRAMMAR compat shim in "
+                "tests/v1/core/test_scheduler_structured_outputs.py"
+            )
+
+
 def test_pooler_activations_reorganization():
     """vllm >= 0.19.0 merged get_cross_encoder_act_fn into get_act_fn: PR #37537."""
     if VLLM_VERSION == "vLLM:lowest":
