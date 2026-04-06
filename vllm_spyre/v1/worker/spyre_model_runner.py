@@ -9,9 +9,13 @@ from transformers import AutoModel, AutoModelForSequenceClassification, AutoToke
 from vllm.config import DeviceConfig, VllmConfig, set_current_vllm_config
 from vllm.forward_context import set_forward_context
 from vllm.logger import init_logger
-from vllm.model_executor.layers.pooler.activations import (
-    get_cross_encoder_act_fn,
-)
+try:
+    # vllm >= 0.19.0
+    from vllm.model_executor.layers.pooler.activations import get_act_fn
+except ImportError:
+    from vllm.model_executor.layers.pooler.activations import (
+        get_cross_encoder_act_fn as get_act_fn,
+    )
 from vllm.model_executor.layers.pooler.seqwise.poolers import (
     pooler_for_classify,
     pooler_for_embed,
@@ -366,7 +370,7 @@ class SpyrePoolingModelRunner(
                     pooler_config=pooler_config,
                     pooling=self._pooler,
                     classifier=self.classifier,
-                    act_fn=get_cross_encoder_act_fn(self.model_config.hf_config),
+                    act_fn=get_act_fn(self.model_config.hf_config),
                 )
 
     @property
