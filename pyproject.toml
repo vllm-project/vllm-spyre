@@ -11,11 +11,14 @@ description = "vLLM plugin for Spyre hardware support"
 readme = "README.md"
 license = {text = "Apache 2"}
 dependencies = [
-    "fms-model-optimizer[fp8]>=0.8.0",
-    "ibm-fms>=1.8.0,<2.0",
+    "fms-model-optimizer[fp8]>=0.8.2,<0.9",
+    "ibm-fms>=1.9.0,<2",
     # NB: use strict < with the next patch version to not exclude versions with
     # build metadata suffixes
-    "vllm>=0.18.0,<0.18.1",
+    "vllm>=0.18.0,<0.18.2",
+    # Specific torch version overrides handled by uv
+    "torch",
+    "torchvision",
 ]
 requires-python = ">=3.11"
 dynamic = ["version"]
@@ -45,15 +48,11 @@ git_describe_command = "git describe --dirty --tags --long --match 'v*' --exclud
 
 
 [tool.uv]
-# Never install torch, so that no dependencies can override it.
-# This requires that torch is installed separately in the target environment.
 # Triton is optional in most dependencies, however, xgrammar requires it.
 # So we set to 'never' to prevent installing it or eventually any other
 # by accident
 override-dependencies = [
-    "torch; sys_platform == 'never'",
-    "torchaudio; sys_platform == 'never'",
-    "torchvision; sys_platform == 'never'",
+    "torch==2.10.0",
     "triton; sys_platform == 'never'",
     "intel-extension-for-pytorch; sys_platform == 'never'",
 
@@ -80,11 +79,29 @@ override-dependencies = [
     # TODO: remove once vllm pins correct version bounds
     "compressed-tensors==0.14.0.1",
 ]
+# This adds constraints to all dependent build environments, which will ensure everything is built
+# with the same version of torch. This CANNOT conflict with a package's existing build dependencies
+build-constraint-dependencies = ["torch==2.10.0"]
 # This ensures that we build with the empty backend for vLLM
 extra-build-variables = { vllm = { VLLM_TARGET_DEVICE = "empty" } }
 
 [tool.uv.sources]
-vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.18.0" }
+vllm = { git = "https://github.com/vllm-project/vllm", rev = "v0.18.1" }
+torch = [
+  { index = "pytorch-cpu" },
+]
+torchvision = [
+  { index = "pytorch-cpu" },
+]
+
+# The pytorch-cpu index here ensures we always pull the cpu version of torch everywhere
+# The `explicit=true` setting means this index will only be used for packages that we explicitly set
+# it for in `tool.uv.sources`. This is important to avoid requiring the use of 
+# `--index-strategy unsafe-best-match`
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.ty.rules]
 possibly-missing-attribute = "ignore"
