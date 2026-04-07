@@ -37,15 +37,17 @@ def parse_args():
     )
     parser.add_argument("--compare-with-cpu", action=argparse.BooleanOptionalAction)
     parser.add_argument(
-        "--enforce_eager", "--enforce-eager",
+        "--enforce_eager",
+        "--enforce-eager",
         action="store_true",
         help="Skip torch.compile, run in eager mode",
     )
     parser.add_argument(
-        "--custom_ops", "--custom-ops",
+        "--custom_ops",
+        "--custom-ops",
         type=str,
         nargs="*",
-        default=["all"],
+        default=["none"],
         help="Custom ops to enable (e.g., --custom_ops none +RMSNorm +SiluAndMul)",
     )
     return parser.parse_args()

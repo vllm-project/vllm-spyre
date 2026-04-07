@@ -80,7 +80,7 @@ class SpyreRMSNorm(RMSNorm):
             "SpyreRMSNorm dispatch: enabled=%s, _forward_method=%s, forward_spyre compiled=%s",
             self.enabled(),
             self._forward_method.__name__,
-            self.maybe_compiled_forward_spyre is not self.forward_spyre
+            self.maybe_compiled_forward_spyre is not self.forward_spyre,
         )
 
     def forward_oot(
