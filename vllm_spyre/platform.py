@@ -26,11 +26,7 @@ if TYPE_CHECKING:
     from vllm.pooling_params import PoolingParams
     from vllm.sampling_params import SamplingParams
 
-    try:
-        # vllm >= 0.19.0
-        from vllm.inputs import EngineInput, TokensInput
-    except ImportError:
-        from vllm.inputs import ProcessorInputs as EngineInput, TokenInputs as TokensInput  # type: ignore
+    from vllm.inputs import EngineInput, TokensInput
 else:
     ModelConfig = None
     VllmConfig = None
@@ -92,7 +88,6 @@ class SpyrePlatform(Platform):
 
     @classmethod
     def import_kernels(cls) -> None:
-        # Workaround torch.accelerator.empty_cache for torch 2.7.1 and vllm v0.18.0 compatibility
         setattr(torch.accelerator, "empty_cache", lambda: None)  # noqa
 
     @classmethod

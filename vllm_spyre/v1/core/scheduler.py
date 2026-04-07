@@ -270,7 +270,6 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
                 # properly we need to exclude such requests from entering
                 # ongoing_prefills but still pass them in the waiting queue to
                 # the base scheduler to track the FSM initialization.
-                # (vllm >= 0.19.0 WAITING_FOR_FSM -> WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR)
                 if new_request.structured_output_request is not None:
                     logger.warning(
                         "Removing structured output from request: %s", new_request.request_id

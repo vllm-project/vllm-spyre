@@ -14,12 +14,7 @@ from vllm.v1.core.sched.request_queue import FCFSRequestQueue
 from vllm.v1.request import Request, RequestStatus
 from vllm_spyre.v1.core.scheduler import ChunkedPrefillSpyreScheduler
 
-# vllm >= 0.19.0: WAITING_FOR_FSM renamed to WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR
-_WAITING_FOR_GRAMMAR = getattr(
-    RequestStatus,
-    "WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR",
-    getattr(RequestStatus, "WAITING_FOR_FSM", None),
-)
+_WAITING_FOR_GRAMMAR = RequestStatus.WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR
 
 
 pytestmark = pytest.mark.skip_global_cleanup

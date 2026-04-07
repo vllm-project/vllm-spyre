@@ -15,7 +15,6 @@ from vllm.v1.pool.metadata import PoolingMetadata
 from vllm.v1.sample.logits_processor import BatchUpdateBuilder, LogitsProcessors, MoveDirectionality
 from vllm.v1.sample.metadata import SamplingMetadata
 
-from vllm_spyre.compat_utils import dataclass_fields
 from vllm_spyre.v1.sample.spyre_logits_processor import LogitProcessorWrapper
 
 
@@ -736,13 +735,10 @@ class PoolingInputBatch(BaseInputBatch[PoolingRequestState]):
             pooling_states=[],
         )
 
-        # prompt_token_ids_cpu added in vllm 0.19.0 (#38139)
-        if "prompt_token_ids_cpu" in dataclass_fields(PoolingMetadata):
-            metadata_kwargs["prompt_token_ids_cpu"] = (
-                prompt_token_ids.cpu()
-                if prompt_token_ids is not None
-                and any(p.requires_token_ids for p in pooling_params)
-                else None
-            )
+        metadata_kwargs["prompt_token_ids_cpu"] = (
+            prompt_token_ids.cpu()
+            if prompt_token_ids is not None and any(p.requires_token_ids for p in pooling_params)
+            else None
+        )
 
         return PoolingMetadata(**metadata_kwargs)

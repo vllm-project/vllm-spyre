@@ -13,11 +13,7 @@ from types import SimpleNamespace
 
 from vllm import SamplingParams
 
-try:
-    # vllm >= 0.19.0: inputs reorganization
-    from vllm.inputs import tokens_input
-except ImportError:
-    from vllm.inputs.data import token_inputs as tokens_input  # type: ignore
+from vllm.inputs import tokens_input
 from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import StructuredOutputsParams
 from vllm_spyre.platform import SpyrePlatform
