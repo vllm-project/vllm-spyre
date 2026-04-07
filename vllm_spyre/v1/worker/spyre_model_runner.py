@@ -1065,6 +1065,7 @@ class ContinuousBatchingSpyreModelRunner(SpyreModelRunner):
         # TODO: move to kv cache manager
         # Continuous batching: free blocks
         for req_id in scheduler_output.finished_req_ids:
+            self.requests.pop(req_id, None)
             if logger.isEnabledFor(DEBUG) and (blocks_to_free := self._get_blocks(req_id)):
                 logger.debug("Freeing request id: %s", req_id)
                 for block in blocks_to_free:
@@ -2382,7 +2383,7 @@ class ChunkedPrefillModelRunner(ContinuousBatchingSpyreModelRunner):
         assert sampling_params is not None, "sampling_params are required for this model runner"
         assert prompt_token_ids is not None, "prompt token ids are required for this model runner"
 
-        is_new_batch = self.get_n_free_blocks() == self.n_blocks
+        is_new_batch = self.input_batch._num_requests == 0
         prompt_len = len(prompt_token_ids)
         mm_features = getattr(request, "mm_features", None)
 
