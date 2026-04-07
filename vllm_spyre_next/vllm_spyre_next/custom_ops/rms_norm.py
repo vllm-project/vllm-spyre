@@ -72,9 +72,14 @@ class SpyreRMSNorm(RMSNorm):
 
         self._layer_name = register_layer(self, "spyre_rmsnorm")
 
-        logger.warning(
+        logger.warning_once(
             "SpyreRMSNorm: no dtype promotion is performed, "
             "expect numerical differences to upstream vLLM."
+        )
+        logger.warning_once(
+            "SpyreRMSNorm dispatch: enabled=%s, _forward_method=%s",
+            self.enabled(),
+            self._forward_method.__name__,
         )
 
     def forward_oot(
