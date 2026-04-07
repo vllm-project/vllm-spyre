@@ -728,17 +728,14 @@ class PoolingInputBatch(BaseInputBatch[PoolingRequestState]):
         assert len(self.requests_ids) == len(self.pooling_params)
         pooling_params = [self.pooling_params[req_id] for req_id in self.requests_ids]
 
-        metadata_kwargs: dict = dict(
+        return PoolingMetadata(
             prompt_lens=torch.from_numpy(self._get_num_prompt_tokens()).to(self.device),
             prompt_token_ids=prompt_token_ids,
             pooling_params=pooling_params,
             pooling_states=[],
+            prompt_token_ids_cpu=(
+                prompt_token_ids.cpu()
+                if prompt_token_ids is not None and any(p.requires_token_ids for p in pooling_params)
+                else None
+            ),
         )
-
-        metadata_kwargs["prompt_token_ids_cpu"] = (
-            prompt_token_ids.cpu()
-            if prompt_token_ids is not None and any(p.requires_token_ids for p in pooling_params)
-            else None
-        )
-
-        return PoolingMetadata(**metadata_kwargs)
