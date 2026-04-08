@@ -51,6 +51,8 @@ class AllowEntry:
         param_allows:    Parameter combinations to allow (whitelist). If specified,
                          only these parameter values will run.
         param_overrides: Parameter values to replace upstream defaults with.
+        fixture_names:   Fixture names to inject for this test (e.g. "foo" for a
+                         custom fixture that prints "hello world").
     """
 
     test: str
@@ -59,6 +61,7 @@ class AllowEntry:
     param_skips: tuple[ParamSkip, ...] = ()
     param_allows: tuple[ParamAllow, ...] = ()
     param_overrides: tuple[ParamOverride, ...] = ()
+    fixture_names: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
