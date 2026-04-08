@@ -141,6 +141,8 @@ class SpyreCausalLM(nn.Module):
             tuple[torch.Tensor | ScaledTensor, torch.Tensor | ScaledTensor]
         ] = []
 
+        self.on_spyre = SpyrePlatform.is_backend_sendnn_enabled()
+
     def load_weights(
         self,
         model_config: ModelConfig,
@@ -435,7 +437,9 @@ class SpyreCausalLM(nn.Module):
         # However, on spyre these are ghost tensors- the data in these tensors does not reflect the
         # actual kv cache data on the device. They exist only for proper compilation, so we don't
         # waste any time assigning these tensors back to anything.
-        logits, _ = output
+        logits, kv_cache = output
+        if not self.on_spyre:
+            self.past_key_value_states = kv_cache
 
         if is_prompt:
             # assert that indeed received the last block of logits
