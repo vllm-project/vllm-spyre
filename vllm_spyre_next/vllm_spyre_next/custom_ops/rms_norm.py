@@ -76,8 +76,8 @@ class SpyreRMSNorm(RMSNorm):
             "SpyreRMSNorm: no dtype promotion is performed, "
             "expect numerical differences to upstream vLLM."
         )
-        logger.warning_once(
-            "SpyreRMSNorm dispatch: enabled=%s, _forward_method=%s, forward_spyre compiled=%s",
+        logger.debug(
+            "SpyreRMSNorm: Dispatch: enabled=%s, Forward method=%s, Compiled=%s",
             self.enabled(),
             self._forward_method.__name__,
             self.maybe_compiled_forward_spyre is not self.forward_spyre,
