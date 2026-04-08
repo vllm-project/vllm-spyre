@@ -73,12 +73,12 @@ def dummy_tensor():
 
 
 def mock_forward_oot(x, residual=None):
-    """Mock: return (x + 1, dummy) — no residual path."""
-    return x + 1, torch.empty(0)
+    """Mock: return x + 1 (no residual path)."""
+    return x + 1
 
 
 def mock_forward_oot_with_residual(x, residual=None):
-    """Mock: return (2 * x, 2 * residual) — residual path."""
+    """Mock: return (2 * x, 2 * residual) (residual path)."""
     return 2 * x, 2 * residual
 
 
@@ -100,7 +100,7 @@ def test_rmsnorm_oot_dispatch(default_vllm_config, monkeypatch, dummy_tensor, us
 
     residual = torch.randn(4, 128, dtype=torch.float32) if use_residual else None
 
-    # Mock _forward_spyre_impl (called by the custom op) with a known transform
+    # Mock _forward_spyre_impl (called directly by forward_oot) with a known transform
     if residual is not None:
         monkeypatch.setattr(layer, "_forward_spyre_impl", mock_forward_oot_with_residual)
         residual_orig = residual.clone()

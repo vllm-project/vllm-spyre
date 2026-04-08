@@ -177,13 +177,9 @@ def _op_func(
     layer_name: str,
 ) -> None:
     """Custom op implementation — runs outside torch.compile graph."""
-    import sys
-    print(f"[DEBUG vocab_embed _op_func] ENTER x.device={x.device} output.device={output.device}", flush=True, file=sys.stderr)
     layer = get_layer(layer_name)
     result = layer._forward_spyre_impl(x)
-    print(f"[DEBUG vocab_embed _op_func] result.device={result.device} result.shape={result.shape}, about to copy_", flush=True, file=sys.stderr)
     output.copy_(result)
-    print(f"[DEBUG vocab_embed _op_func] copy_ done", flush=True, file=sys.stderr)
 
 
 @lru_cache(maxsize=1)

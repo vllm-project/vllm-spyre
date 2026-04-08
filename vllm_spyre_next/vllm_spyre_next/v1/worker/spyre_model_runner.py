@@ -187,6 +187,16 @@ class TorchSpyreModelRunner(GPUModelRunner):
         if self.lora_config:
             self.model = self.load_lora_model(self.model, self.vllm_config, self.device)
 
+        # Keep Attention module buffers (_k_scale, _v_scale, etc.) on CPU.
+        # Attention is nn.Module (not PluggableLayer) so OOT registration is
+        # not possible. Patch _apply to no-op before model.to("spyre") so
+        # the CPU attention backend can access scale buffers without device
+        # mismatch.
+        from vllm.model_executor.layers.attention.attention import Attention
+        for module in self.model.modules():
+            if isinstance(module, Attention):
+                module._apply = lambda fn, recurse=True, _m=module: _m
+
         # Move layer weights to Spyre device.
         # SpyreCpuFallbackMixin._apply() no-op keeps CPU fallback layer
         # weights on CPU (linear, embedding, rotary, lm_head).

@@ -67,11 +67,10 @@ class SpyreSiluAndMul(SiluAndMul):
         self._layer_name = register_layer(self, "spyre_siluandmul")
 
     def forward_oot(self, x: torch.Tensor) -> torch.Tensor:
-        """OOT forward pass using custom op to bypass torch.compile.
+        """OOT forward pass — calls _forward_spyre_impl directly.
 
-        Delegates to torch.ops.vllm.spyre_siluandmul which retrieves this layer
-        from the layer registry and calls _forward_spyre_impl outside
-        the compilation graph.
+        No custom op boundary is used because the Spyre runtime does not
+        support in-device tensor copy_.
 
         Args:
             x: Input tensor [..., 2*d]
@@ -79,13 +78,7 @@ class SpyreSiluAndMul(SiluAndMul):
         Returns:
             Activated output tensor [..., d]
         """
-        d = x.shape[-1] // 2
-        output = torch.empty(x.shape[:-1] + (d,), dtype=x.dtype, device=x.device)
-
-        # Custom op call - executes outside torch.compile graph
-        torch.ops.vllm.spyre_siluandmul(x, output, self._layer_name)
-
-        return output
+        return self._forward_spyre_impl(x)
 
     @staticmethod
     def forward_spyre(x1: torch.Tensor, x2: torch.Tensor) -> torch.Tensor:
