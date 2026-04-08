@@ -74,7 +74,7 @@ jobs:
           # Lower bound support
           - vllm_version:
               name: "vLLM:lowest"
-              repo: "git+https://github.com/vllm-project/vllm --tag v0.18.0"
+              repo: "git+https://github.com/vllm-project/vllm --tag v0.19.0"
             test_suite:
               name: "backward compat"
               markers: "compat or (cpu and basic and not quantized)"
@@ -110,6 +110,13 @@ jobs:
     name: "${{ matrix.test_suite.name }} (${{ matrix.vllm_version.name }})"
 
     steps:
+      - name: "Lightweight disk cleanup"
+        # super lightweight cleanup, not nearly as much as actions/free-up-disk-space
+        shell: bash
+        run: |
+          rm -rf /usr/share/swift
+          rm -rf /user/local/share/chromium
+
       - name: "Checkout"
         uses: actions/checkout@v4
         with:
@@ -126,11 +133,6 @@ jobs:
             tests/**/*.py
             vllm_spyre/**/*.py
             vllm_spyre/config/model_configs.yaml
-
-      - name: "Install PyTorch 2.7.1"
-        if: steps.changed-src-files.outputs.any_changed == 'true'
-        run: |
-          pip install torch=="2.7.1" --index-url https://download.pytorch.org/whl/cpu
 
       - name: "Install uv"
         if: steps.changed-src-files.outputs.any_changed == 'true'
