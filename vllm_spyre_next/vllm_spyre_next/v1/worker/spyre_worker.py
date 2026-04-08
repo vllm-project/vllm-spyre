@@ -23,3 +23,13 @@ class TorchSpyreWorker(CPUWorker):
         # This has to happen before the model is loaded, so that all the layers will be swapped out
         # with the custom implementations for spyre.
         register_all()
+
+    def compile_or_warm_up_model(self):
+        # FIXME: Work around for https://github.com/torch-spyre/torch-spyre/issues/1420
+        # Ensure registration of Spyre decompositions before FX Graph tracing
+        import torch._inductor.decomposition
+        from torch_spyre._inductor.decompositions import spyre_decompositions
+
+        for op, impl in spyre_decompositions.items():
+            torch._inductor.decomposition.decompositions[op] = impl
+        return super().compile_or_warm_up_model()
