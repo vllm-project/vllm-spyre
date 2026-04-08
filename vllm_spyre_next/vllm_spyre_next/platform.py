@@ -35,6 +35,13 @@ class TorchSpyrePlatform(CpuPlatform):
     device_name: str = "cpu"
     device_type: str = "cpu"
 
+    # Primary dispatch key for direct_register_custom_op. Kept as CPU
+    # because some custom ops receive CPU-only tensors (e.g. rotary_embedding).
+    # All ops are ALSO registered for PrivateUse1 (Spyre) via
+    # register_spyre_dispatch() in each module's register() function,
+    # so dispatch works regardless of tensor device.
+    dispatch_key: str = "CPU"
+
     @classmethod
     def get_device_name(cls, device_id: int = 0) -> str:
         return "torch-spyre"
@@ -74,49 +81,46 @@ class TorchSpyrePlatform(CpuPlatform):
         logger.info(message, version, model_name)
 
     @classmethod
+    def get_attn_backend_cls(
+        cls,
+        selected_backend,
+        attn_selector_config,
+        num_heads=None,
+    ) -> str:
+        """Use a wrapped cpu attention backend:
+        Upstream CPU attention backend with Spyre<->CPU device transfers."""
+        return "vllm_spyre_next.attention_backend.SpyreCPUAttentionBackend"
+
+    @classmethod
+    def apply_config_platform_defaults(cls, vllm_config: VllmConfig) -> None:
+        """Set Spyre-specific config defaults before vLLM's defaulting logic."""
+        from vllm.config import CompilationMode
+
+        vllm_config.compilation_config.mode = CompilationMode.NONE
+
+        # Force eager execution. torch.compile with the Spyre inductor
+        # backend requires ALL graph tensors on Spyre, but our CPU fallback
+        # ops (embedding, linear, rotary, attention) create intermediate
+        # CPU tensors that the Spyre backend cannot codegen. Once all layers
+        # run natively on Spyre, this can be removed to enable compilation.
+        vllm_config.model_config.enforce_eager = True
+
+    @classmethod
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:
         cls.log_server_boot(vllm_config)
 
         # ---- worker ----
         parallel_config = vllm_config.parallel_config
         if parallel_config.worker_cls == "auto":
-            # "auto" defaults to the CPUWorker as we inherit from the CpuPlatform
-            # from vllm_spyre_next.v1.worker.spyre_worker import TorchSpyreWorker
             worker_class = "vllm_spyre_next.v1.worker.spyre_worker.TorchSpyreWorker"
-            # if a torch spyre specific worker class is needed it can be loaded with
-            # worker_class = "vllm_spyre_next.v1.worker.spyre_worker.TorchSpyreWorker"
             logger.info("Loading worker from: %s", worker_class)
             parallel_config.worker_cls = worker_class
 
-        # ---- model runner ----
-        # A custom model runner has to be added to a potential TorchSpyreWorker class:
-        # TorchSpyreWorker.model_runner = TorchSpyreModelRunner (see SpyreWorker for reference)
-        # The default vllm.v1.worker.cpu_worker.CPUWorker uses
-        # vllm.v1.worker.cpu_model_runner.CPUModelRunner
-
         # ---- scheduler ----
         scheduler_config = vllm_config.scheduler_config
-        # default scheduler
         scheduler_class = "vllm.v1.core.sched.scheduler.Scheduler"
-        # if a torch spyre specific scheduler class is needed it can be loaded with
-        # scheduler_class = "vllm_spyre_next.v1.core.scheduler.TorchSpyreScheduler"
         logger.info("Loading scheduler from: %s", scheduler_class)
         scheduler_config.scheduler_cls = scheduler_class
-
-        # ---- attention backend ----
-        # A custom attention backend can be registered with get_attn_backend_cls()
-        # see copied code from vllm/platforms/cpu.CpuPlatform illustrating the default
-        # TorchSDPABackend used for vLLM CPU execution
-
-        # @classmethod
-        # def get_attn_backend_cls(cls, selected_backend: _Backend, head_size: int,
-        #                      dtype: torch.dtype, kv_cache_dtype: Optional[str],
-        #                      block_size: int, use_v1: bool,
-        #                      use_mla: bool) -> str:
-        #     if selected_backend and selected_backend != _Backend.TORCH_SDPA:
-        #         logger.info("Cannot use %s backend on CPU.", selected_backend)
-        #     logger.info("Using Torch SDPA backend.")
-        #     return "vllm.attention.backends.torch_sdpa.TorchSDPABackend"
 
         # call CpuPlatform.check_and_update_config()
         super().check_and_update_config(vllm_config)

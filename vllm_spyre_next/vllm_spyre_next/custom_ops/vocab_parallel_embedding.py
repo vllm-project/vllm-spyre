@@ -119,6 +119,8 @@ class SpyreVocabParallelEmbedding(VocabParallelEmbedding):
         # Custom op call - executes outside torch.compile graph
         torch.ops.vllm.spyre_vocab_parallel_embedding(x, output, self._layer_name)
 
+        output = convert(output, dtype=self._weight_target_dtype, device=self._target_device)
+
         return output
 
     @staticmethod
@@ -166,6 +168,7 @@ class SpyreVocabParallelEmbedding(VocabParallelEmbedding):
             lambda el: convert(el, dtype=out_dtype, device=out_device),
             out,
         )
+        # return out
 
 
 def _op_func(
