@@ -9,10 +9,7 @@ import os
 from unittest.mock import MagicMock
 import pytest
 from types import SimpleNamespace
-
-
 from vllm import SamplingParams
-
 from vllm.inputs import tokens_input
 from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import StructuredOutputsParams

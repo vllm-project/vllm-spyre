@@ -9,7 +9,6 @@ from transformers import AutoModel, AutoModelForSequenceClassification, AutoToke
 from vllm.config import DeviceConfig, VllmConfig, set_current_vllm_config
 from vllm.forward_context import set_forward_context
 from vllm.logger import init_logger
-
 from vllm.model_executor.layers.pooler.activations import get_act_fn
 from vllm.model_executor.layers.pooler.seqwise.poolers import (
     pooler_for_classify,

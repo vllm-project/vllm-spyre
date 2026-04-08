@@ -14,9 +14,6 @@ from vllm.v1.core.sched.request_queue import FCFSRequestQueue
 from vllm.v1.request import Request, RequestStatus
 from vllm_spyre.v1.core.scheduler import ChunkedPrefillSpyreScheduler
 
-_WAITING_FOR_GRAMMAR = RequestStatus.WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR
-
-
 pytestmark = pytest.mark.skip_global_cleanup
 
 
@@ -82,7 +79,7 @@ class TestSchedulerStructuredOutputHandling:
 
         # Verify structured_output_request is set
         assert request.structured_output_request is not None
-        assert request.status == _WAITING_FOR_GRAMMAR
+        assert request.status == RequestStatus.WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR
 
         # Add request to waiting queue
         mocked_scheduler.waiting.append(request)
@@ -156,7 +153,7 @@ class TestSchedulerStructuredOutputHandling:
         # Verify all have structured_output_request set
         for request in requests:
             assert request.structured_output_request is not None
-            assert request.status == _WAITING_FOR_GRAMMAR
+            assert request.status == RequestStatus.WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR
 
         # Call the actual schedule method
         mocked_scheduler.schedule()
