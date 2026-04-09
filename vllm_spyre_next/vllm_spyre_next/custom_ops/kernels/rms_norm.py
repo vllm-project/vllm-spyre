@@ -8,13 +8,10 @@ Self-contained provider that handles:
 """
 
 import torch
-import torch.nn.functional as F
 
 from vllm import ir
 
 from ..utils import convert
-
-_SPYRE_MIN_BATCH_SIZE = 64
 
 
 def _supports_spyre(x, weight, epsilon, variance_size=None):
@@ -37,7 +34,6 @@ def spyre_rms_norm(
     Spyre-specific implementation details:
     - Device transfer: tensors arrive on CPU, are transferred to Spyre for
       compute, and transferred back to CPU afterward.
-    - Padding: batches smaller than _SPYRE_MIN_BATCH_SIZE are padded.
     - Epsilon as tensor: scalar broadcast limited on Spyre, expanded via
       torch.full().
     - No dtype promotion: torch-spyre limitation, stays in input dtype.
@@ -49,12 +45,6 @@ def spyre_rms_norm(
 
     x_device = x.device
     x_dtype = x.dtype
-    orig_batch_size = x.shape[0]
-
-    # Pad to Spyre minimum batch size for reduction ops
-    if orig_batch_size < _SPYRE_MIN_BATCH_SIZE:
-        pad = _SPYRE_MIN_BATCH_SIZE - orig_batch_size
-        x = F.pad(x, (0, 0, 0, pad))
 
     # Transfer to Spyre
     x = convert(x, target_device, target_dtype)
@@ -70,4 +60,4 @@ def spyre_rms_norm(
         x = x * weight
 
     # Transfer back to original device/dtype, remove padding
-    return convert(x, x_device, x_dtype)[:orig_batch_size, :]
+    return convert(x, x_device, x_dtype)
