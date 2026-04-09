@@ -9,17 +9,14 @@ from vllm.config import VllmConfig
 from vllm.logger import init_logger
 from vllm.v1.engine import async_llm, llm_engine
 from vllm.v1.metrics.loggers import StatLoggerBase, StatLoggerManager
-from vllm.v1.metrics.stats import FinishedRequestStats, IterationStats, SchedulerStats
+from vllm.v1.metrics.stats import (
+    FinishedRequestStats,
+    IterationStats,
+    MultiModalCacheStats,
+    SchedulerStats,
+)
 
 from vllm_spyre import envs as envs_spyre
-
-try:
-    from vllm.v1.metrics.stats import MultiModalCacheStats
-except ImportError:
-    # compatibility for vllm pre 0.11.1
-    class MultiModalCacheStats:
-        pass
-
 
 logger = init_logger(__name__)
 

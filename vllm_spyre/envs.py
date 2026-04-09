@@ -6,20 +6,11 @@ from vllm.logger import init_logger
 if TYPE_CHECKING:
     VLLM_SPYRE_DYNAMO_BACKEND: str = "sendnn"
     VLLM_SPYRE_WARMUP_PROMPT_LENS: list[int] | None = None
-    VLLM_SPYRE_WARMUP_NEW_TOKENS: list[int] | None = None
     VLLM_SPYRE_WARMUP_BATCH_SIZES: list[int] | None = None
-    VLLM_SPYRE_USE_CB: bool = False
     VLLM_SPYRE_PERF_METRIC_LOGGING_ENABLED: int = 0
     VLLM_SPYRE_PERF_METRIC_LOGGING_DIR: str = "/tmp"
     VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER: bool = False
-    VLLM_SPYRE_USE_CHUNKED_PREFILL: bool = False
     VLLM_SPYRE_CP_INTERLEAVE_STEPS: bool = True
-    # Prompt logprobs are behind a flag because they're only supported for
-    # static batching and require passing back the hidden states for the full
-    # prefill on every request. This could incur a heavy performance penalty in
-    # many cases, so it should only be enabled when prompt_logprobs are required
-    # for experimentation purposes.
-    VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS: bool = False
     VLLM_SPYRE_UPDATE_THREAD_CONFIG: bool = True
     VLLM_SPYRE_MAX_LOAD_PROCESSES: int = 0
     VLLM_SPYRE_WORKER_LOG_REDIRECT_DIR: str = ""
@@ -46,34 +37,15 @@ def clear_env_cache():
     _cache.clear()
 
 
-def _backend_backwards_compat() -> str:
-    val = os.getenv("VLLM_SPYRE_DYNAMO_BACKEND", "sendnn")
-    if val == "sendnn_decoder":
-        logger.warning_once(
-            "Using 'sendnn_decoder' for "
-            "VLLM_SPYRE_DYNAMO_BACKEND is deprecated. Use 'sendnn' instead"
-        )
-        val = "sendnn"
-    return val
-
-
 # --8<-- [start:env-vars-definition]
 environment_variables: dict[str, Callable[[], Any]] = {
     # Defines the prompt lengths the Spyre accelerator should be prepared
-    # for, formatted as comma separated list. Only applicable in static batching
-    # mode (VLLM_SPYRE_USE_CB=0).
+    # for, formatted as comma separated list. Only applicable in pooling.
     "VLLM_SPYRE_WARMUP_PROMPT_LENS": lambda: [
         int(p) for p in os.getenv(key="VLLM_SPYRE_WARMUP_PROMPT_LENS", default="64").split(",")
     ],
-    # Defines the max output tokens the Spyre accelerator should be prepared
-    # for, formatted as comma separated list. Only applicable in static batching
-    # mode (VLLM_SPYRE_USE_CB=0).
-    "VLLM_SPYRE_WARMUP_NEW_TOKENS": lambda: [
-        int(d) for d in os.getenv(key="VLLM_SPYRE_WARMUP_NEW_TOKENS", default="20").split(",")
-    ],
     # Defines the batch sizes the Spyre accelerator should be prepared
-    # for, formatted as comma separated list. Only applicable in static batching
-    # mode (VLLM_SPYRE_USE_CB=0).
+    # for, formatted as comma separated list. Only applicable in pooling.
     "VLLM_SPYRE_WARMUP_BATCH_SIZES": lambda: [
         int(b) for b in os.getenv(key="VLLM_SPYRE_WARMUP_BATCH_SIZES", default="1").split(",")
     ],
@@ -83,11 +55,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # - "inductor": Compile for execution on CPU (for debug and testing)
     # - "eager": Skip compile entirely (for debug and testing)
     #
-    # - "sendnn_decoder": Deprecated in favor of "sendnn"
-    "VLLM_SPYRE_DYNAMO_BACKEND": _backend_backwards_compat,
-    # If set, use the V1 continuous batching implementation. Otherwise, static
-    # batching mode will be enabled.
-    "VLLM_SPYRE_USE_CB": lambda: bool(int(os.getenv("VLLM_SPYRE_USE_CB", "0"))),
+    "VLLM_SPYRE_DYNAMO_BACKEND": lambda: os.getenv("VLLM_SPYRE_DYNAMO_BACKEND", "sendnn"),
     # Enable performance metric logging. This captures startup information
     # such as warmup times, and loading times.
     # When `--disable-log-stats=False` is used, this will log timing metrics
@@ -111,9 +79,6 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER": lambda: bool(
         int(os.getenv("VLLM_SPYRE_OVERRIDE_SIGNALS_HANDLER", "1"))
     ),
-    # If set, enables the `prompt_logprobs` sampling parameter.
-    # Currently, prompt_logprobs aren't supported
-    "VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS": lambda: False,
     # Allow vllm-spyre to update env vars related to multi-threading (eg. OMP)
     # based on the detected CPU cores and server configuration
     "VLLM_SPYRE_UPDATE_THREAD_CONFIG": lambda: bool(
@@ -152,12 +117,6 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # configurations
     # Set to 0 to have vllm-spyre attempt to detect the CPU count
     "VLLM_SPYRE_NUM_CPUS": lambda: int(os.getenv("VLLM_SPYRE_NUM_CPUS", "0")),
-    # Feature Flag
-    # If set, use the V1 chunked prefill implementation. Otherwise, normal
-    # single prefill is used.
-    "VLLM_SPYRE_USE_CHUNKED_PREFILL": lambda: bool(
-        int(os.getenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", "0"))
-    ),
     # Feature Flag
     # Works only with chunked prefill enabled. If set, prefill steps are
     # interleaved with a decode step

@@ -40,13 +40,6 @@ This example shows how to use KServe with RHOAI to deploy a model on OpenShift, 
               env:
                 - name: HF_HOME
                   value: /tmp/hf_home
-                # Static batching configurations can also be set on each InferenceService
-                - name: VLLM_SPYRE_WARMUP_BATCH_SIZES
-                  value: '4'
-                - name: VLLM_SPYRE_WARMUP_PROMPT_LENS
-                  value: '1024'
-                - name: VLLM_SPYRE_WARMUP_NEW_TOKENS
-                  value: '256'
               ports:
                 - containerPort: 8000
                   protocol: TCP

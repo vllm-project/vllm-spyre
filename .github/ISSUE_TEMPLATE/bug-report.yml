@@ -1,0 +1,46 @@
+name: 🐛 Bug report
+description: Report a bug in vLLM Spyre
+title: "[Bug]: "
+labels: ["bug"]
+
+body:
+- type: markdown
+  attributes:
+    value: |
+      Before submitting, please search [existing issues](https://github.com/vllm-project/vllm-spyre/issues) to avoid duplicates.
+
+- type: textarea
+  attributes:
+    label: Describe the bug
+    description: A clear and concise description of what the bug is.
+  validations:
+    required: true
+
+- type: textarea
+  attributes:
+    label: How to reproduce
+    description: |
+      Steps to reproduce the behavior. Include a minimal code example if possible.
+      
+    placeholder: |
+      ```
+      # Your code here
+      ```
+      1. Run command '...'
+      2. See error
+  validations:
+    required: true
+
+- type: textarea
+  attributes:
+    label: Additional context
+    description: Any other context, logs, etc. of the problem.
+
+- type: checkboxes
+  attributes:
+    label: Checklist
+    options:
+      - label: I have searched for similar issues.
+        required: true
+
+# Made with Bob

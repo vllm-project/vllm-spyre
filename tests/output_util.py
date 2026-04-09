@@ -3,7 +3,6 @@ returning the results"""
 
 import math
 import os
-from pathlib import Path
 from typing import Any, Union
 
 import numpy as np
@@ -12,10 +11,10 @@ import torch
 from hf_result_cache import HFResultCache
 from llm_cache import LLM_CACHE, get_cached_llm
 from sentence_transformers import SentenceTransformer, util
-from spyre_util import DecodeWarmupShapes, EmbeddingWarmupShapes, ModelInfo
+from spyre_util import EmbeddingWarmupShapes, ModelInfo
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, SamplingParams
-from vllm.transformers_utils.tokenizer import get_tokenizer
+from vllm.tokenizers import get_tokenizer
 
 DISABLE_ASSERTS = False  # used for debugging
 
@@ -414,9 +413,7 @@ def validate_vllm_vs_hf_output(
     tensor_parallel_size: int,
     backend: str,
     monkeypatch: pytest.MonkeyPatch,
-    warmup_shapes: DecodeWarmupShapes | None = None,
     max_num_seqs: int | None = None,
-    use_cb: bool = False,
     use_golden_token=True,
     max_num_batched_tokens: int | None = None,
     use_pc: bool = False,
@@ -439,10 +436,8 @@ def validate_vllm_vs_hf_output(
         tensor_parallel_size=tensor_parallel_size,
         backend=backend,
         monkeypatch=monkeypatch,
-        warmup_shapes=warmup_shapes,
         max_num_seqs=max_num_seqs,
         max_num_batched_tokens=max_num_batched_tokens,
-        use_cb=use_cb,
         use_pc=use_pc,
     )
 
@@ -465,9 +460,7 @@ def generate_spyre_vllm_output(
     tensor_parallel_size: int,
     backend: str,
     monkeypatch: pytest.MonkeyPatch,
-    warmup_shapes: DecodeWarmupShapes | None = None,
     max_num_seqs: int | None = None,
-    use_cb: bool = False,
     max_num_batched_tokens: int | None = None,
     use_pc: bool = False,
 ) -> list[dict[str, Any]]:
@@ -481,10 +474,8 @@ def generate_spyre_vllm_output(
         tensor_parallel_size=tensor_parallel_size,
         backend=backend,
         monkeypatch=monkeypatch,
-        warmup_shapes=warmup_shapes,
         max_num_seqs=max_num_seqs,
         max_num_batched_tokens=max_num_batched_tokens,
-        use_cb=use_cb,
         use_pc=use_pc,
     )
 
@@ -498,24 +489,12 @@ def generate_spyre_vllm_output(
     return results
 
 
-def kwargs_for_mode(mode: str, max_num_seqs: int, warmup_shapes: DecodeWarmupShapes) -> dict:
+def kwargs_for_mode(mode: str) -> dict:
     """Returns kwargs for validate_vllm_vs_hf_output based on mode"""
-    return (
-        {
-            "max_num_seqs": max_num_seqs,
-            "use_cb": True,
-            "max_num_batched_tokens": 128 if mode in ["cp", "pc"] else None,
-            "use_pc": mode == "pc",
-            "warmup_shapes": None,
-        }
-        if mode != "sb"
-        else {
-            "warmup_shapes": warmup_shapes,
-            "use_cb": False,
-            "use_pc": False,
-            "max_num_batched_tokens": None,
-        }
-    )
+    return {
+        "max_num_batched_tokens": 128,
+        "use_pc": mode == "pc",
+    }
 
 
 def extract_output(req_output):
@@ -536,52 +515,3 @@ def extract_output(req_output):
     )
 
     return result
-
-
-def generate_cache_for_test_swap_decode_programs_for_cb(
-    model: str | ModelInfo, prompts: list[str], parent_path: str
-):
-    """
-    This function bakes the generation of prompts with long contexts. Which
-    currently are used in the test
-    `test_spyre_cb::test_swap_decode_programs_for_cb`.
-    """
-
-    # Generate
-    assert len(prompts) == 4
-
-    p8k = 8 * 1024
-    p16k = 16 * 1024
-    p32k = 32 * 1024
-
-    import pickle
-
-    hf_outputs = generate_hf_output(
-        model=model,
-        prompts=prompts[0:2],
-        max_new_tokens=p8k,
-        ignore_eos=True,
-        include_prompt=True,
-    )
-    with open(Path(parent_path) / "prompts_8k_bs2.pickle", "wb") as f:
-        f.write(pickle.dumps(hf_outputs))
-
-    hf_outputs = generate_hf_output(
-        model=model,
-        prompts=[prompts[2]],
-        max_new_tokens=p16k,
-        ignore_eos=True,
-        include_prompt=True,
-    )
-    with open(Path(parent_path) / "prompts_16k_bs1.pickle", "wb") as f:
-        f.write(pickle.dumps(hf_outputs))
-
-    hf_outputs = generate_hf_output(
-        model=model,
-        prompts=[prompts[3]],
-        max_new_tokens=p32k,
-        ignore_eos=True,
-        include_prompt=True,
-    )
-    with open(Path(parent_path) / "prompts_32k_bs1.pickle", "wb") as f:
-        f.write(pickle.dumps(hf_outputs))

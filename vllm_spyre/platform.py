@@ -13,17 +13,11 @@ if sys.platform.startswith("darwin"):
 import math
 import operator
 import os
-from typing import TYPE_CHECKING, Union, cast
+from typing import TYPE_CHECKING, cast, Literal
 
 import torch
-from vllm.inputs import ProcessorInputs, PromptType, TokenInputs
 from vllm.logger import init_logger
-
-try:
-    # pre 0.11.1 compatibility
-    from vllm.utils import FlexibleArgumentParser  # ty: ignore[unresolved-import]
-except ImportError:
-    from vllm.utils.argparse_utils import FlexibleArgumentParser
+from vllm.utils.argparse_utils import FlexibleArgumentParser
 
 if TYPE_CHECKING:
     # NB: We can't eagerly import many things from vllm since vllm.config
@@ -31,11 +25,14 @@ if TYPE_CHECKING:
     from vllm.config import ModelConfig, VllmConfig
     from vllm.pooling_params import PoolingParams
     from vllm.sampling_params import SamplingParams
+    from vllm.inputs import EngineInput, TokensInput
 else:
     ModelConfig = None
     VllmConfig = None
     SamplingParams = None
     PoolingParams = None
+    EngineInput = None
+    TokensInput = None
 from vllm.platforms import Platform, PlatformEnum
 
 import vllm_spyre.envs as envs_spyre
@@ -70,13 +67,12 @@ class SpyrePlatform(Platform):
     # https://github.com/foundation-model-stack/fms-model-optimizer/blob/main/fms_mo/aiu_addons/__init__.py
     supported_quantization: list[str] = ["gptq", "compressed-tensors"]
     _warmup_shapes: tuple[dict[str, int], ...] | None = None
-    _block_size: int = 64  # hardcoded Spyre constraint for now
+    _block_size: Literal[64] = 64  # hardcoded Spyre constraint for now
     # TODO: this `None` is dangerous
     _config: VllmConfig = None  # ty: ignore[invalid-assignment]
-    _torch_sendnn_version = None
-    # tracks if we are being configured via CLI or LLM() so that we know if
-    # default arg parser changes actually have an effect
-    _used_with_cli = False
+    _torch_sendnn_configured: bool = False
+
+    _max_batch_tkv_limit: int = 0
 
     # Backend for dynamic compilation ops
     # See vllm batched_count_greater_than method
@@ -91,7 +87,8 @@ class SpyrePlatform(Platform):
 
     @classmethod
     def import_kernels(cls) -> None:
-        pass  # suppress warning
+        # Workaround torch.accelerator.empty_cache for torch 2.7.1 and vllm v0.18.0 compatibility
+        setattr(torch.accelerator, "empty_cache", lambda: None)  # noqa
 
     @classmethod
     def is_async_output_supported(cls, enforce_eager: bool | None) -> bool:
@@ -99,6 +96,78 @@ class SpyrePlatform(Platform):
         Check if the current platform supports async output.
         """
         return False
+
+    @classmethod
+    def get_max_batch_tkv_limit(cls) -> int:
+        if cls._max_batch_tkv_limit == 0:
+            # For spawned subprocesses, we need to grab the TKV limit from the environment
+            cls._set_batch_tkv_limit_from_env()
+        return cls._max_batch_tkv_limit
+
+    @classmethod
+    def get_total_spyre_blocks(cls, vllm_config: VllmConfig) -> int:
+        """Returns the total number of KV cache blocks available for spyre.
+        This currently returns the number of blocks required for a full-sized
+        batch, which may be greater than the available memory.
+
+        Until a correct available memory api is available, the number of blocks
+        must be overridden with a known good value via
+        cache_config.num_gpu_blocks_override
+        """
+        max_batch_size = vllm_config.scheduler_config.max_num_seqs
+        max_model_len = vllm_config.model_config.max_model_len
+        block_size = SpyrePlatform.get_block_size()
+        max_blocks_per_seq = max_model_len // block_size
+        num_blocks_full_batch = max_batch_size * max_blocks_per_seq
+
+        blocks_override = vllm_config.cache_config.num_gpu_blocks_override
+        if blocks_override is not None and blocks_override > 0:
+            num_blocks = blocks_override
+            # Total number of blocks needs to be a multiple of the batch size on Spyre
+            # -> round down to not exceed the Spyre cards hard-coded limits of detected models
+            old_num_blocks = num_blocks
+            num_blocks = math.floor(num_blocks / max_batch_size) * max_batch_size
+        else:
+            # Note on "+1": We need to add one additional block used exclusively for padding (idx 0)
+            num_blocks = num_blocks_full_batch + 1
+            # Total number of blocks needs to be a multiple of the batch size on Spyre
+            # -> round up as not among detected models (rounding down might cut the padding block)
+            old_num_blocks = num_blocks
+            num_blocks = math.ceil(num_blocks / max_batch_size) * max_batch_size
+
+        if num_blocks != old_num_blocks:
+            logger.info(
+                "Spyre constraint: num blocks rounded from %d to %d (multiple of batch size=%d)",
+                old_num_blocks,
+                num_blocks,
+                max_batch_size,
+            )
+
+        # As we drop the block reservation for chunked prefill the number of available blocks
+        # needs to be at least as big as the smaller of the batch tkv limit
+        # (VLLM_DT_MAX_BATCH_TKV_LIMIT) and a full batch (max_num_seqs * max_model_len)
+        num_blocks_batch_tkv_limit = cls.get_max_batch_tkv_limit() // block_size
+        # Note on "+1": We need to add one additional block used exclusively for padding (idx 0)
+        min_req_num_blocks = min(num_blocks_full_batch, num_blocks_batch_tkv_limit) + 1
+
+        # min_req_num_blocks := minimum required number of blocks
+        if num_blocks < min_req_num_blocks:
+            raise ValueError(
+                f"Number of pages available on Spyre {num_blocks} is not "
+                f"enough to serve the current model (need at least "
+                f"{min_req_num_blocks} pages)."
+            )
+
+        max_concurrency = num_blocks * block_size / max_model_len
+        backend = "Spyre" if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn" else "CPU"
+        logger.info("%s KV cache size: %s tokens", backend, num_blocks * block_size)
+        logger.info(
+            "Maximum concurrency for %s tokens per request: %.2fx",
+            str(max_model_len),
+            max_concurrency,
+        )
+
+        return num_blocks
 
     @classmethod
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:
@@ -124,9 +193,7 @@ class SpyrePlatform(Platform):
 
         is_pooling = model_config.runner_type == "pooling"
 
-        if not bool(int(os.getenv("VLLM_USE_V1", "1"))):
-            raise ValueError("vllm-spyre is only supported with vLLM v1. Please set VLLM_USE_V1=1")
-        elif not is_decoder and not is_pooling:
+        if not is_decoder and not is_pooling:
             raise ValueError("Only the 'generate' and 'pooling' runners are supported")
 
         if parallel_config.worker_cls == "auto":
@@ -142,39 +209,15 @@ class SpyrePlatform(Platform):
             os.environ["FLEX_OVERWRITE_NMB_FRAME"] = "false"
             os.environ["COMPILATION_MODE"] = "offline"
 
-        assert (
-            envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL and envs_spyre.VLLM_SPYRE_USE_CB
-        ) or not envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL, (
-            "Cannot use chunked prefill without continuous batching."
-        )
+        logger.info("Using backend: %s", envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND)
+        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn_compile_only":
+            os.environ["FLEX_DEVICE"] = "COMPILE"
 
-        # enable_prefix_caching will be defaulted to True when used with LLM();
-        # only assert if our arg parser default was applied
-        if cls._used_with_cli:
-            assert (
-                cache_config.enable_prefix_caching and envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL
-            ) or not cache_config.enable_prefix_caching, (
-                "Cannot use prefix caching without chunked prefill."
+        if is_decoder:
+            scheduler_config.scheduler_cls = (
+                "vllm_spyre.v1.core.scheduler.ChunkedPrefillSpyreScheduler"
             )
 
-        if envs_spyre.VLLM_SPYRE_USE_CB and is_decoder:
-            if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
-                scheduler_config.scheduler_cls = (
-                    "vllm_spyre.v1.core.scheduler.ChunkedPrefillSpyreScheduler"
-                )
-            else:
-                scheduler_config.scheduler_cls = (
-                    "vllm_spyre.v1.core.scheduler.ContinuousBatchingSpyreScheduler"
-                )
-            # Overwrite so that vLLM prints our value in the "Initializing a V1
-            # LLM engine" log message
-            # TODO: With the arg parser defaulting, this can be removed when we
-            # only support vllm >= v0.11.1
-            if hasattr(scheduler_config, "chunked_prefill_enabled"):
-                scheduler_config.chunked_prefill_enabled = envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL  # ty: ignore
-
-            if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
-                raise ValueError("Prompt logprobs not supported with continuous batching")
             if (
                 vllm_config.model_config.quantization
                 and vllm_config.scheduler_config.max_num_seqs == 1
@@ -190,10 +233,7 @@ class SpyrePlatform(Platform):
             max_seq_len = 0
             for shape in spyre_warmup_shapes:
                 max_batch_size = max(max_batch_size, shape["batch_size"])
-                max_seq_len = max(max_seq_len, shape["prompt_length"] + shape["new_tokens"])
-
-            if envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS and max_batch_size > 1:
-                raise ValueError("Prompt logprobs only supported with batch size 1")
+                max_seq_len = max(max_seq_len, shape["prompt_length"])
 
             # verify that warmup shapes are not too large
             model_config.get_and_verify_max_len(max_model_len=max_seq_len)
@@ -201,26 +241,22 @@ class SpyrePlatform(Platform):
             # override stuff
             model_config.max_model_len = max_seq_len
             scheduler_config.max_num_seqs = max_batch_size
+            # unsetting this config as it was only set to pass vllm scheduler's max_model_len check
+            vllm_config.scheduler_config.enable_chunked_prefill = False
 
-            scheduler_config.scheduler_cls = (
-                "vllm_spyre.v1.core.scheduler.StaticBatchingSpyreScheduler"
-            )
+            scheduler_config.scheduler_cls = "vllm_spyre.v1.core.scheduler.PoolingSpyreScheduler"
 
         # Apply model-specific configurations using the registry
         # Only when running on Spyre device (sendnn backend)
-        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
+        if cls.is_backend_sendnn_enabled():
             from vllm_spyre.config.model_registry import get_model_registry
 
             registry = get_model_registry()
 
-            # For static batching, pass warmup shapes for validation
-
+            # For static batching (pooling models), pass warmup shapes for validation
             warmup_shape_tuples = (
-                [
-                    (ws["prompt_length"], ws["new_tokens"], ws["batch_size"])
-                    for ws in cls._warmup_shapes
-                ]
-                if cls._warmup_shapes and not envs_spyre.VLLM_SPYRE_USE_CB
+                [(ws["prompt_length"], ws["batch_size"]) for ws in cls._warmup_shapes]
+                if cls._warmup_shapes
                 else None
             )
             configurator = registry.get_configurator_for_runtime(vllm_config, warmup_shape_tuples)
@@ -228,26 +264,6 @@ class SpyrePlatform(Platform):
             if configurator:
                 config_summary = configurator.configure(vllm_config)
                 logger.info(config_summary.format_log_message())
-                # TODO: This is a temporary check for backwards compatibility that should be
-                # removed when we can make breaking changes.
-                if (
-                    envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL
-                    and os.getenv("VLLM_DT_CHUNK_LEN") is None
-                    and vllm_config.scheduler_config.max_num_batched_tokens != 1024
-                    and vllm_config.parallel_config.world_size == 4
-                    and configurator.model_config.name
-                    in [
-                        "ibm-granite/granite-3.3-8b-instruct",
-                        "ibm-granite/granite-3.3-8b-instruct-FP8",
-                        "ibm-granite/granite-4-8b-dense",
-                    ]
-                ):
-                    logger.info(
-                        "Granite model detected. For backwards compatibility, "
-                        "defaulting --max-num-batched-tokens to 1024"
-                    )
-                    vllm_config.scheduler_config.max_num_batched_tokens = 1024
-
             else:
                 error_msg = f"No model-specific configuration found for '{model_config.model}'"
                 if envs_spyre.VLLM_SPYRE_REQUIRE_KNOWN_CONFIG:
@@ -264,40 +280,30 @@ class SpyrePlatform(Platform):
                 envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND,
             )
 
-        # v0.14.0+ defaults to async scheduling
+        # TODO: try to support async scheduling
         scheduler_config.async_scheduling = False
 
         # To disable any paged attention ops in the base scheduler, we:
         # - Set the block size (in tokens) to the maximum sequence length
         #       so that the scheduler thinks an entire sequence will fit in
         #       one single block.
-        # - Set `max_num_batched_tokens` to the size of a full batch of full
-        #       length requests, so that the scheduler will always have token
-        #       budget available to schedule a full batch
+        # - For pooling models, set `max_num_batched_tokens` to the size of a
+        #       full batch of full length requests, so that the scheduler will
+        #       always have token budget available to schedule a full batch
+        # - For generative models, set `max_num_batched_tokens` to the chunk
+        #       chunk size used for chunked prefill.
         if cache_config is not None:
-            cache_config.block_size = model_config.max_model_len  # ty: ignore[invalid-assignment]
-            if not envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
+            if not is_decoder:
                 scheduler_config.max_num_batched_tokens = (
                     model_config.max_model_len * scheduler_config.max_num_seqs
                 )
-            else:
-                # TODO: As a breaking change, remove the ability to override the
-                # chunk_len from VLLM_DT_CHUNK_LEN. It should be treated more like
-                # VLLM_DT_MAX_BATCH_SIZE wherein it is set based on the vllm_config.
-                # User overrides should only come from --max-num-batch-tokens.
-                if (chunk_len := os.getenv("VLLM_DT_CHUNK_LEN")) is None:
-                    os.environ["VLLM_DT_CHUNK_LEN"] = str(scheduler_config.max_num_batched_tokens)
-                else:
-                    try:
-                        chunk_len_int = int(chunk_len)
-                    except (ValueError, TypeError) as e:
-                        raise Exception("VLLM_DT_CHUNK_LEN must be an integer") from e
+                cache_config.block_size = model_config.max_model_len  # ty: ignore[invalid-assignment]
+                vllm_config.cache_config.enable_prefix_caching = False
 
-                    logger.info(
-                        "VLLM_DT_CHUNK_LEN was provided. Overriding max_num_batched_tokens to %d",
-                        chunk_len_int,
-                    )
-                    scheduler_config.max_num_batched_tokens = chunk_len_int
+            else:
+                cache_config.block_size = cls._block_size
+                # Set VLLM_DT_CHUNK_LEN based on scheduler_config.max_num_batched_tokens
+                os.environ["VLLM_DT_CHUNK_LEN"] = str(scheduler_config.max_num_batched_tokens)
 
                 assert scheduler_config.max_num_batched_tokens % cls._block_size == 0, (
                     "`max_num_batched_tokens` must"
@@ -307,6 +313,9 @@ class SpyrePlatform(Platform):
                     "set `--max-num-batched-tokens` to a number that satisfies "
                     "this constraint."
                 )
+                if cache_config.num_gpu_blocks_override is None:
+                    cache_config.num_gpu_blocks_override = cls.get_total_spyre_blocks(vllm_config)
+            cache_config.user_specified_block_size = True
 
         logger.info(
             "Configurations for Spyre. max_model_len=%d, max_num_seqs=%d, block_size=%d, "
@@ -315,13 +324,13 @@ class SpyrePlatform(Platform):
             scheduler_config.max_num_seqs,
             cache_config.block_size,
             scheduler_config.max_num_batched_tokens,
-            envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL,
+            is_decoder,
             cache_config.enable_prefix_caching,
         )
 
         # set env vars for torch_sendnn to consume
         os.environ["VLLM_DT_MAX_CONTEXT_LEN"] = str(vllm_config.model_config.max_model_len)
-        if envs_spyre.VLLM_SPYRE_USE_CB and vllm_config.model_config.max_model_len > 32 * 1024:
+        if vllm_config.model_config.max_model_len > 32 * 1024:
             logger.warning(
                 "Max context length is too big. Currently only 32K (32768) context length is "
                 "supported on Spyre for continuous batching. Results might be off!"
@@ -345,6 +354,9 @@ class SpyrePlatform(Platform):
                 "found. Using the default value (max_model_len * max_batch_size): %d",
                 default_max_batch_tkv_limit,
             )
+            cls._max_batch_tkv_limit = default_max_batch_tkv_limit
+        else:
+            cls._set_batch_tkv_limit_from_env()
 
         handle_disable_compilation(vllm_config, is_decoder)
 
@@ -370,6 +382,7 @@ class SpyrePlatform(Platform):
 
     @classmethod
     def get_warmup_shapes(cls, scheduler_config) -> tuple[dict[str, int], ...]:
+        assert scheduler_config.runner_type == "pooling"
         if cls._warmup_shapes is not None:
             return cls._warmup_shapes
         # load warmup shapes and sort by "speed"
@@ -385,25 +398,15 @@ class SpyrePlatform(Platform):
                 "The lists in VLLM_SPYRE_WARMUP_PROMPT_LENS and "
                 "VLLM_SPYRE_WARMUP_BATCH_SIZES must have equal length"
             )
-        if scheduler_config.runner_type == "pooling":
-            wup_new_tokens = [0] * len(wup_prompt_lens)
-        else:
-            wup_new_tokens = envs_spyre.VLLM_SPYRE_WARMUP_NEW_TOKENS or []
-            if len(wup_new_tokens) != len(wup_prompt_lens):
-                raise RuntimeError(
-                    "The lists in VLLM_SPYRE_WARMUP_PROMPT_LENS and "
-                    "VLLM_SPYRE_WARMUP_NEW_TOKENS must have equal length"
-                )
 
         logger.info("VLLM_SPYRE_WARMUP_PROMPT_LENS = %s", wup_prompt_lens)
-        logger.info("VLLM_SPYRE_WARMUP_NEW_TOKENS = %s", wup_new_tokens)
         logger.info("VLLM_SPYRE_WARMUP_BATCH_SIZES = %s", wup_batch_sizes)
 
         cls._warmup_shapes = tuple(
             sorted(
                 [
-                    {"prompt_length": pl, "new_tokens": nt, "batch_size": bs}
-                    for pl, nt, bs in zip(wup_prompt_lens, wup_new_tokens, wup_batch_sizes)
+                    {"prompt_length": pl, "batch_size": bs}
+                    for pl, bs in zip(wup_prompt_lens, wup_batch_sizes)
                 ],
                 key=operator.itemgetter("batch_size", "prompt_length"),
             )
@@ -424,9 +427,8 @@ class SpyrePlatform(Platform):
     @classmethod
     def validate_request(
         cls,
-        prompt: PromptType,
-        params: Union[SamplingParams, PoolingParams],
-        processed_inputs: ProcessorInputs | None = None,
+        processed_inputs: "EngineInput",
+        params: "SamplingParams | PoolingParams",
     ) -> None:
         """Raises if this request is unsupported on this platform"""
 
@@ -438,9 +440,7 @@ class SpyrePlatform(Platform):
             # Only validating generation requests for now
             return None
 
-        # Note: Currently prompt logprobs are not supported, therefore
-        # envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS is hardcoded to False
-        if params.prompt_logprobs is not None and not envs_spyre.VLLM_SPYRE_ENABLE_PROMPT_LOGPROBS:
+        if params.prompt_logprobs is not None:
             raise ValueError("Prompt logprobs are currently not supported.")
 
         # Structured Outputs are not supported yet and cause issues in our
@@ -452,87 +452,50 @@ class SpyrePlatform(Platform):
             )
             params.structured_outputs = None
 
-        if isinstance(prompt, dict) and "prompt_token_ids" in prompt:
-            prompt_len = len(prompt["prompt_token_ids"])  # ty: ignore
-        elif processed_inputs is not None:
-            if "encoder" in processed_inputs:
-                raise ValueError("Encoder-decoder models not supported ")
-            if "prompt_token_ids" not in processed_inputs:
-                # Can't do any extra validation on embedding-only inputs
-                return
-            prompt_len = len(cast(TokenInputs, processed_inputs)["prompt_token_ids"])
-        else:
-            # We need a prompt length to do any validation here
+        if "encoder_prompt" in processed_inputs:
+            raise ValueError("Encoder-decoder models not supported ")
+        if "prompt_token_ids" not in processed_inputs:
+            # Can't do any extra validation on embedding-only inputs
             return
+        prompt_len = len(cast(TokensInput, processed_inputs)["prompt_token_ids"])
 
         max_tokens = 0
         if params is not None and params.max_tokens is not None:
             max_tokens = params.max_tokens
 
-        if envs_spyre.VLLM_SPYRE_USE_CB:
-            # For continuous batching, check if the request is within the max
-            # context length. This needs to take the padded prompt length
-            # into account.
+        # For continuous batching, check if the request is within the max
+        # context length. This needs to take the padded prompt length
+        # into account.
 
-            # ceil division to pad to next block boundary
-            prompt_padding_len = math.ceil(prompt_len / cls._block_size) * cls._block_size
-            if prompt_padding_len + max_tokens > cls._config.model_config.max_model_len:
-                raise ValueError(
-                    "Could not add request: prompt length is "
-                    f"{prompt_len} tokens, which gets padded to "
-                    f"{prompt_padding_len} tokens, maximum number of output "
-                    f"tokens is {max_tokens} tokens, but max model context "
-                    f"length is {cls._config.model_config.max_model_len}."
-                )
-        else:
-            # For non-continuous batching, check if the request matches a warmup
-            # shape
-            assert cls._warmup_shapes is not None, "Warmup shapes must be set"
-            if (
-                len(
-                    cls._get_matching_warmup_shapes(
-                        prompt_len=prompt_len,
-                        max_tokens=max_tokens,
-                        warmup_shapes=cls._warmup_shapes,
-                    )
-                )
-                == 0
-            ):
-                raise ValueError(
-                    "No applicable warmup shape exists for "
-                    f"combination of prompt length ({prompt_len} tokens) "
-                    "and maximum number of output tokens to be "
-                    f"generated ({max_tokens} tokens)"
-                )
+        # ceil division to pad to next block boundary
+        prompt_padding_len = math.ceil(prompt_len / cls._block_size) * cls._block_size
+        if prompt_padding_len + max_tokens > cls._config.model_config.max_model_len:
+            raise ValueError(
+                "Could not add request: prompt length is "
+                f"{prompt_len} tokens, which gets padded to "
+                f"{prompt_padding_len} tokens, maximum number of output "
+                f"tokens is {max_tokens} tokens, but max model context "
+                f"length is {cls._config.model_config.max_model_len}."
+            )
 
     @classmethod
     def _get_matching_warmup_shapes(
-        cls, prompt_len: int, max_tokens: int, warmup_shapes: tuple[dict[str, int], ...]
+        cls, prompt_len: int, warmup_shapes: tuple[dict[str, int], ...]
     ) -> list[dict[str, int]]:
-        """Return the subset of shapes that match this request"""
-        return [
-            shape
-            for shape in warmup_shapes
-            if prompt_len <= shape["prompt_length"] and max_tokens <= shape["new_tokens"]
-        ]
+        """Return the subset of shapes that match this request (pooling models only)"""
+        return [shape for shape in warmup_shapes if prompt_len <= shape["prompt_length"]]
 
     # Defined here for testing purposes
-    DEFAULT_CHUNK_SIZE = 1024
+    DEFAULT_CHUNK_SIZE = 512
 
     @classmethod
     def pre_register_and_update(cls, parser: FlexibleArgumentParser | None = None) -> None:
         if parser is not None:
-            # let's us know that defaults were applied to the parser
-            cls._used_with_cli = True
-
-            parser.set_defaults(enable_prefix_caching=False)
-            # TODO: We don't use the value of the enable_chunked_prefill arg,
-            # but setting the default makes logs match our setting.
-            # vLLM >= 0.11.1 does not override the arg, so we could remove the
-            # env var for v2 if we update our minimum support
-            parser.set_defaults(enable_chunked_prefill=envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL)
-            if envs_spyre.VLLM_SPYRE_USE_CHUNKED_PREFILL:
-                parser.set_defaults(max_num_batched_tokens=cls.DEFAULT_CHUNK_SIZE)
+            parser.set_defaults(enable_prefix_caching=True)
+            parser.set_defaults(max_num_batched_tokens=cls.DEFAULT_CHUNK_SIZE)
+            parser.set_defaults(
+                enable_chunked_prefill=True
+            )  # set to pass vllm scheduler's max_model_len check
 
     @classmethod
     def _check_threading_config(cls, worker_count: int):
@@ -686,20 +649,92 @@ class SpyrePlatform(Platform):
         return max_new_tokens
 
     @classmethod
-    def sendnn_configured(cls) -> bool:
-        if envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn":
-            try:
-                from torch_sendnn._version import __version__ as version_str  # ty: ignore[unresolved-import]
-
-                sem_ver = version_str.split("+")[0]
-                cls._torch_sendnn_version = tuple(map(int, sem_ver.split(".")))
-                return True
-            except ImportError as err:
-                raise RuntimeError("sendnn backend requires torch_sendnn") from err
-        return False
+    def is_backend_sendnn_enabled(cls) -> bool:
+        return envs_spyre.VLLM_SPYRE_DYNAMO_BACKEND in ("sendnn", "sendnn_compile_only")
 
     @classmethod
-    def sendnn_version(cls):
-        if cls.sendnn_configured():
-            return cls._torch_sendnn_version
-        return (0, 0, 0)
+    def maybe_ensure_sendnn_configured(cls, model_config: ModelConfig) -> None:
+        """If using sendnn, import torch_sendnn and check configuration.
+
+        If torch_sendnn is imported too early, it may have the wrong
+        configuration. An assertion error will be raised in this case. This
+        function must be called before triggering any torch compilation.
+        """
+        if not cls._torch_sendnn_configured and cls.is_backend_sendnn_enabled():
+            try:
+                import torch_sendnn  # ty: ignore[unresolved-import] # noqa: F401
+            except ImportError as err:
+                raise RuntimeError("sendnn backend requires torch_sendnn") from err
+
+            # We only require checks for the `VLLM_DT_*` environment variables that need to be set
+            # at torch_sendnn import time for generative models.
+            if model_config.runner_type != "generate":
+                cls._torch_sendnn_configured = True
+                return
+
+            # If the compilation cache is disabled, then we cannot check any of the config from
+            # torch_sendnn directly
+            if not bool(int(os.getenv("TORCH_SENDNN_CACHE_ENABLE", "0"))):
+                cls._torch_sendnn_configured = True
+                return
+
+            # TODO: This is a hack to make sure that the sendnn backend is
+            # configured correctly. Environment variables are captured at
+            # import time, so we assert that values were captured with the
+            # values we set
+            # NB: must use getattr due to Python name mangling
+            try:
+                sendnn_backend_state = getattr(torch_sendnn.backends.sendnn_backend, "__state")
+                actual_config = sendnn_backend_state.spyre_graph_cache.deeptools_config["config"]
+            except (AttributeError, KeyError) as e:
+                logger.warning(
+                    "Error reading torch_sendnn backend state for validation: %s", str(e)
+                )
+                # Let this fall through and log many warnings to be noisy
+                actual_config = {}
+
+            # Validate environment variables and config values match
+            env_to_config = {
+                "VLLM_DT_CHUNK_LEN": "vllm_chunk_length",
+                "VLLM_DT_MAX_CONTEXT_LEN": "vllm_max_context_length",
+                "VLLM_DT_MAX_BATCH_SIZE": "vllm_max_batch_size",
+                "VLLM_DT_MAX_BATCH_TKV_LIMIT": "vllm_max_batch_tkv_limit",
+            }
+
+            # Intentionally noisy logging for increased visibility
+            backend_state_looks_valid = True
+            for env_var, config_key in env_to_config.items():
+                actual = actual_config.get(config_key)
+                expected = os.getenv(env_var)
+                if actual is None:
+                    logger.warning(
+                        "torch_sendnn may be misconfigured! %s does not exist as expected",
+                        config_key,
+                    )
+                    backend_state_looks_valid = False
+
+                if expected is None:
+                    logger.warning("%s must be set before importing torch_sendnn", env_var)
+                    backend_state_looks_valid = False
+
+                if actual != expected:
+                    logger.warning(
+                        "torch_sendnn is misconfigured! %s: expected '%s', got '%s'",
+                        config_key,
+                        expected,
+                        actual,
+                    )
+                    backend_state_looks_valid = False
+
+            assert backend_state_looks_valid, (
+                "torch_sendnn backend state could not be validated! Please "
+                "report this issue to maintainers."
+            )
+            cls._torch_sendnn_configured = True
+
+    @classmethod
+    def _set_batch_tkv_limit_from_env(cls) -> None:
+        try:
+            cls._max_batch_tkv_limit = int(os.getenv("VLLM_DT_MAX_BATCH_TKV_LIMIT", "-1"))  #  ty: ignore
+        except ValueError as e:
+            raise ValueError("VLLM_DT_MAX_BATCH_TKV_LIMIT must be an integer") from e

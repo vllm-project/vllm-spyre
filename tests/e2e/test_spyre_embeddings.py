@@ -6,7 +6,11 @@ Run `python -m pytest tests/e2e/test_spyre_embeddings.py`.
 from functools import partial
 
 import pytest
-from output_util import compare_embedding_results, spyre_vllm_embeddings, st_embeddings
+from output_util import (
+    compare_embedding_results,
+    spyre_vllm_embeddings,
+    st_embeddings,
+)
 from spyre_util import (
     EmbeddingWarmupShapes,
     ModelInfo,

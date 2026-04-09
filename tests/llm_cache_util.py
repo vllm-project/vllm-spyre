@@ -1,9 +1,12 @@
 """Contains utilities for LLM caching"""
 
+import os
+import time
 from typing import NamedTuple
 
-from spyre_util import DecodeWarmupShapes, ModelInfo
+from spyre_util import EmbeddingWarmupShapes, ModelInfo
 from vllm import LLM
+from vllm.distributed import cleanup_dist_env_and_memory
 
 
 def force_engine_shutdown(llm: LLM):
@@ -24,7 +27,18 @@ def force_engine_core_shutdown(engine_core):
     new engine will fail with an EADDRINUSE error.
     🌶️🌶️🌶️
     """
-    engine_core.shutdown()
+    try:
+        engine_core.shutdown()
+    finally:
+        # Cached-engine transitions happen outside the per-test cleanup fixture.
+        # Tear down distributed state immediately so the next engine/server
+        # setup does not inherit stale resources from the previous run.
+        cleanup_dist_env_and_memory()
+
+        # SendNN device teardown is not always instantaneous. Give the runtime
+        # a short grace period before the next cached config starts.
+        if os.environ.get("VLLM_SPYRE_DYNAMO_BACKEND") == "sendnn":
+            time.sleep(2)
 
 
 def sort_tests_for_llm_caching(items: list) -> None:
@@ -50,18 +64,18 @@ class SortKey(NamedTuple):
     grouping.
     """
 
+    cache_priority: int
     cache_type: str  # None (empty str), online, llm, engine
     backend: str = ""
     model: str = ""
     tp_size: int = 1
-    use_cb: bool = False
     use_cp: bool = False
     use_pc: bool = False
     max_model_len: int = 0
     max_num_seqs: int = 0
     num_blocks: int = 0
     max_num_batched_tokens: int = 0
-    warmup_shapes: DecodeWarmupShapes | None = None
+    warmup_shapes: EmbeddingWarmupShapes | None = None
 
     @staticmethod
     def from_item(item) -> "SortKey":
@@ -69,33 +83,32 @@ class SortKey(NamedTuple):
         if not cache_type:
             # Don't add any extra re-ordering logic for tests that won't utilize
             # the cache
-            return SortKey(cache_type=cache_type)
+            return SortKey(cache_priority=0, cache_type=cache_type)
 
         if not hasattr(item, "callspec"):
             # This isn't great- we probably want to cache but can't because the
             # test has no parameters at all
-            return SortKey(cache_type="")
+            return SortKey(cache_priority=0, cache_type="")
 
-        use_cb = SortKey._uses_cb(item)
-        use_cp = SortKey._uses_cp(item)
         use_pc = SortKey._uses_pc(item)
-        if use_cb or use_cp:
+        warmup_shapes = SortKey._get_warmup_shapes(item)
+
+        if warmup_shapes[0][0] == -1:
             sort_kwargs = {
                 "max_model_len": SortKey._get_max_model_len(item),
                 "max_num_seqs": SortKey._get_max_num_seqs(item),
             }
         else:
             sort_kwargs = {
-                "warmup_shapes": SortKey._get_warmup_shapes(item),
+                "warmup_shapes": warmup_shapes,
             }
 
         return SortKey(
+            cache_priority=SortKey._get_cache_priority(cache_type),
             cache_type=cache_type,
             model=SortKey._get_model(item),
             backend=SortKey._get_backend(item),
             tp_size=SortKey._get_tp_size(item),
-            use_cb=use_cb,
-            use_cp=use_cp,
             use_pc=use_pc,
             num_blocks=SortKey._get_num_blocks(item),
             max_num_batched_tokens=SortKey._get_max_num_batched_tokens(item),
@@ -125,32 +138,30 @@ class SortKey(NamedTuple):
         return ""
 
     @staticmethod
-    def _uses_cb(item) -> bool:
-        """True if the test uses continuous batching, false for static batching.
-        Checks for the pytest.mark.cb mark."""
-        markers = {mark.name for mark in item.own_markers}
-        return "cb" in markers
-
-    @staticmethod
-    def _uses_cp(item) -> bool:
-        """True if the test uses chunked prefill.
-        Checks for the pytest.mark.chunked_prefill mark."""
-        markers = {mark.name for mark in item.own_markers}
-        return "chunked_prefill" in markers
+    def _get_cache_priority(cache_type: str) -> int:
+        # Sort online tests before cached LLM tests so the server-backed path
+        # does not have to follow a same-process SendNN engine teardown.
+        cache_order = {
+            "": 0,
+            "online": 1,
+            "llm": 2,
+            "engine": 3,
+        }
+        return cache_order[cache_type]
 
     @staticmethod
     def _uses_pc(item) -> bool:
         """True if the test uses prefix caching.
         Checks for the pytest.mark.prefix_caching mark."""
         markers = {mark.name for mark in item.own_markers}
-        return "chunked_prefill" in markers and "prefix_caching" in markers
+        return "prefix_caching" in markers or "pc" in markers
 
     def _get_max_num_batched_tokens(item) -> int:
         """Chunk size for chunked prefill, if enabled"""
         params = item.callspec.params
         if "max_num_batched_tokens" in params:
             SortKey._assert_param(
-                isinstance(params["max_model_len"], int),
+                isinstance(params["max_num_batched_tokens"], int),
                 "max_num_batched_tokens must be an int",
                 item,
             )

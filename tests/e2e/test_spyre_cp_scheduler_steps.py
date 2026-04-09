@@ -101,7 +101,7 @@ def test_prefill_tkv_too_big(
             "running": ["1"],
             "request_outputs": ["1", "0"],
             "finished_requests": ["0"],
-            "n_used_blocks": 4,  # seq 0 needs another block for the last token
+            "n_used_blocks": 2,  # seq 0 needs another block for the last token
         },
         {
             # Decode sequence 1
@@ -121,7 +121,7 @@ def test_prefill_tkv_too_big(
             "running": [],
             "request_outputs": ["1"],
             "finished_requests": ["1"],
-            "n_used_blocks": 2,
+            "n_used_blocks": 0,
         },
         {
             # Tkv should be cleared one step later
@@ -145,7 +145,6 @@ def test_prefill_tkv_too_big(
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=False,
         max_num_batched_tokens=max_num_batched_tokens,
     )
 
@@ -216,7 +215,7 @@ def test_requests_exceed_batch_tkv_limit(
             "running": [],
             "request_outputs": ["0"],
             "finished_requests": ["0"],
-            "n_used_blocks": 2,
+            "n_used_blocks": 0,
         },
         {
             # Prefill sequence 1
@@ -238,7 +237,7 @@ def test_requests_exceed_batch_tkv_limit(
             "running": [],
             "request_outputs": ["1"],
             "finished_requests": ["1"],
-            "n_used_blocks": 2,
+            "n_used_blocks": 0,
         },
         {
             # Tkv should be cleared one step later
@@ -264,7 +263,6 @@ def test_requests_exceed_batch_tkv_limit(
         max_model_len=max_model_len,
         available_blocks=available_blocks,
         max_batch_tkv_limit=max_batch_tkv_limit,
-        use_cb=False,
         max_num_batched_tokens=max_num_batched_tokens,
     )
 
@@ -321,7 +319,7 @@ def test_single_cp_prefill(
             "waiting": [],
             "running": ["0"],
             "request_outputs": [],
-            "n_used_blocks": 8,
+            "n_used_blocks": 2,
         },
         {
             # Prefill sequence 0 chunk 1
@@ -330,7 +328,7 @@ def test_single_cp_prefill(
             "waiting": [],
             "running": ["0"],
             "request_outputs": [],
-            "n_used_blocks": 8,
+            "n_used_blocks": 4,
         },
         {
             # Prefill sequence 0 chunk 2
@@ -340,7 +338,7 @@ def test_single_cp_prefill(
             "waiting": [],
             "running": ["0"],
             "request_outputs": [],
-            "n_used_blocks": 8,
+            "n_used_blocks": 6,
         },
         {
             # Prefill sequence 0 chunk 3
@@ -361,7 +359,7 @@ def test_single_cp_prefill(
             "running": [],
             "request_outputs": ["0"],
             "finished_requests": ["0"],
-            "n_used_blocks": 9,
+            "n_used_blocks": 0,
         },
         {
             # Tkv should be cleared one step later
@@ -385,7 +383,6 @@ def test_single_cp_prefill(
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=False,
         random_prompts=True,
         max_num_batched_tokens=max_num_batched_tokens,
     )
@@ -460,7 +457,7 @@ def test_cp_prefill_interleave1(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": [],
-            "n_used_blocks": 9,
+            "n_used_blocks": 3,
         },
         {
             # Decode 2 of request 0.
@@ -469,7 +466,7 @@ def test_cp_prefill_interleave1(
             "waiting": [],
             "running": ["0", "1"],
             "request_outputs": ["0"],
-            "n_used_blocks": 9,
+            "n_used_blocks": 3,
         },
         {
             # Chunk 1 of request 1 prefill
@@ -479,7 +476,7 @@ def test_cp_prefill_interleave1(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": [],
-            "n_used_blocks": 9,
+            "n_used_blocks": 5,
         },
         {
             # Decode 3 of request 0.
@@ -488,7 +485,7 @@ def test_cp_prefill_interleave1(
             "waiting": [],
             "running": ["0", "1"],
             "request_outputs": ["0"],
-            "n_used_blocks": 9,
+            "n_used_blocks": 5,
         },
         {
             # Chunk 2 of request 1 prefill
@@ -498,7 +495,7 @@ def test_cp_prefill_interleave1(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": [],
-            "n_used_blocks": 9,
+            "n_used_blocks": 7,
         },
         {
             # Decode 4 of request 0.
@@ -507,7 +504,7 @@ def test_cp_prefill_interleave1(
             "waiting": [],
             "running": ["0", "1"],
             "request_outputs": ["0"],
-            "n_used_blocks": 9,
+            "n_used_blocks": 7,
         },
         {
             # Chunk 3 of request 1 prefill.
@@ -550,7 +547,7 @@ def test_cp_prefill_interleave1(
             "running": [],
             "finished_requests": ["1", "0"],
             "request_outputs": ["1", "0"],
-            "n_used_blocks": 10,
+            "n_used_blocks": 0,
         },
         {
             # Tkv should be cleared one step later
@@ -574,7 +571,6 @@ def test_cp_prefill_interleave1(
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=False,
         random_prompts=True,
         max_num_batched_tokens=max_num_batched_tokens,
     )
@@ -639,7 +635,7 @@ def test_cp_prefill_no_interleave(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": [],
-            "n_used_blocks": 9,
+            "n_used_blocks": 3,
         },
         {
             # Chunk 1 of request 1 prefill
@@ -649,7 +645,7 @@ def test_cp_prefill_no_interleave(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": [],
-            "n_used_blocks": 9,
+            "n_used_blocks": 5,
         },
         {
             # Chunk 2 of request 1 prefill
@@ -659,7 +655,7 @@ def test_cp_prefill_no_interleave(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": [],
-            "n_used_blocks": 9,
+            "n_used_blocks": 7,
         },
         {
             # Chunk 3 of request 1 prefill.
@@ -698,7 +694,7 @@ def test_cp_prefill_no_interleave(
             "running": ["0"],
             "finished_requests": ["1"],
             "request_outputs": ["1", "0"],
-            "n_used_blocks": 10,
+            "n_used_blocks": 1,
         },
         {
             # Decode 4 of request 0.
@@ -735,7 +731,7 @@ def test_cp_prefill_no_interleave(
             "running": [],
             "finished_requests": ["0"],
             "request_outputs": ["0"],
-            "n_used_blocks": 1,
+            "n_used_blocks": 0,
         },
         {
             # Tkv should be cleared one step later
@@ -759,7 +755,6 @@ def test_cp_prefill_no_interleave(
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=False,
         random_prompts=True,
         max_num_batched_tokens=max_num_batched_tokens,
     )
@@ -841,7 +836,7 @@ def test_cp_prefill_interleave2(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": [],
-            "n_used_blocks": 9,
+            "n_used_blocks": 3,
         },
         {
             # Decode 3 of request 0.
@@ -850,7 +845,7 @@ def test_cp_prefill_interleave2(
             "waiting": [],
             "running": ["0", "1"],
             "request_outputs": ["0"],
-            "n_used_blocks": 9,
+            "n_used_blocks": 3,
         },
         {
             # Chunk 1 of request 1 prefill
@@ -860,7 +855,7 @@ def test_cp_prefill_interleave2(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": [],
-            "n_used_blocks": 9,
+            "n_used_blocks": 5,
         },
         {
             # Decode 4 of request 0.
@@ -869,7 +864,7 @@ def test_cp_prefill_interleave2(
             "waiting": [],
             "running": ["0", "1"],
             "request_outputs": ["0"],
-            "n_used_blocks": 9,
+            "n_used_blocks": 5,
         },
         {
             # Chunk 2 of request 1 prefill
@@ -879,7 +874,7 @@ def test_cp_prefill_interleave2(
             "waiting": [],
             "running": ["1", "0"],
             "request_outputs": [],
-            "n_used_blocks": 9,
+            "n_used_blocks": 7,
         },
         {
             # Decode 5 of request 0.
@@ -888,7 +883,7 @@ def test_cp_prefill_interleave2(
             "waiting": [],
             "running": ["0", "1"],
             "request_outputs": ["0"],
-            "n_used_blocks": 9,
+            "n_used_blocks": 7,
         },
         {
             # Chunk 3 of request 1 prefill.
@@ -920,7 +915,7 @@ def test_cp_prefill_interleave2(
             "running": ["1"],
             "finished_requests": ["0"],
             "request_outputs": ["1", "0"],
-            "n_used_blocks": 10,
+            "n_used_blocks": 9,
         },
         {
             "step": 13,
@@ -929,7 +924,7 @@ def test_cp_prefill_interleave2(
             "running": [],
             "finished_requests": ["1"],
             "request_outputs": ["1"],
-            "n_used_blocks": 9,
+            "n_used_blocks": 0,
         },
         {
             # Tkv should be cleared one step later
@@ -953,7 +948,6 @@ def test_cp_prefill_interleave2(
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=False,
         random_prompts=True,
         max_num_batched_tokens=max_num_batched_tokens,
     )
@@ -1051,7 +1045,7 @@ def test_prefill_tkv_too_big2(
             "running": ["0"],
             "request_outputs": ["1", "0"],
             "finished_requests": ["1"],
-            "n_used_blocks": 3,
+            "n_used_blocks": 1,
         },
         # The tkv value used here is computed before the model forward pass and
         # token sampling of this step. As a result, it does not yet reflect
@@ -1090,7 +1084,7 @@ def test_prefill_tkv_too_big2(
             "running": ["2"],
             "request_outputs": ["2", "0"],
             "finished_requests": ["0"],
-            "n_used_blocks": 2,
+            "n_used_blocks": 1,
         },
         {
             # Decode 2 of sequence 2
@@ -1110,7 +1104,7 @@ def test_prefill_tkv_too_big2(
             "running": [],
             "request_outputs": ["2"],
             "finished_requests": ["2"],
-            "n_used_blocks": 2,
+            "n_used_blocks": 0,
         },
         {
             # tkv should be cleared one step later
@@ -1134,6 +1128,5 @@ def test_prefill_tkv_too_big2(
         max_num_seqs=max_num_seqs,
         max_model_len=max_model_len,
         available_blocks=available_blocks,
-        use_cb=False,
         max_num_batched_tokens=max_num_batched_tokens,
     )

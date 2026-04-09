@@ -50,25 +50,26 @@ class TestModelMatching:
         assert configurator.device_config is not None
         assert "VLLM_DT_MAX_BATCH_TKV_LIMIT" in configurator.device_config.env_vars
 
-    def test_match_granite_3_3_static_config(self, registry, granite_3_3_hf_config):
-        """Test matching granite-3.3-8b-instruct with static batching config."""
+    def test_match_granite_4_dense_hybrid_config(self, registry, granite_4_hf_dense_hybrid_config):
+        """Test matching granite-4-8b-dense configs that have type granitemoehybrid."""
         vllm_config = create_vllm_config(
-            hf_config=granite_3_3_hf_config,
+            hf_config=granite_4_hf_dense_hybrid_config,
             world_size=4,
+            max_model_len=32768,
+            max_num_seqs=32,
         )
 
-        warmup_shapes = [(6144, 2048, 1)]
-        configurator = registry.get_configurator_for_runtime(vllm_config, warmup_shapes)
+        configurator = registry.get_configurator_for_runtime(vllm_config)
 
         assert configurator is not None
         assert isinstance(configurator, ModelConfigurator)
-        assert configurator.model_config.name == "ibm-granite/granite-3.3-8b-instruct"
-        assert (
-            configurator.device_config is None
-        )  # Static batching configs don't have device_config
+        # This is really a dense model, but it has model type "granitemoehybrid"
+        # It has the same overrides as the regular dense variant
+        assert configurator.model_config.name == "ibm-granite/granite-4-8b-dense-hybrid"
+        assert configurator.device_config is not None
 
-    def test_match_granite_4_cb_config(self, registry, granite_4_hf_config):
-        """Test matching granite-4-8b-dense with CB config."""
+    def test_match_granite_4_dense_config(self, registry, granite_4_hf_config):
+        """Test matching granite-4-8b-dense configs that aren't spoofed moe hybrid models."""
         vllm_config = create_vllm_config(
             hf_config=granite_4_hf_config, world_size=4, max_model_len=32768, max_num_seqs=32
         )
@@ -88,7 +89,7 @@ class TestModelMatching:
             max_num_seqs=None,  # Static batching
         )
 
-        warmup_shapes = [(512, 0, 64)]
+        warmup_shapes = [(512, 64)]
         configurator = registry.get_configurator_for_runtime(vllm_config, warmup_shapes)
 
         assert configurator is not None
@@ -161,49 +162,35 @@ class TestUnregisteredModels:
         )
 
 
-class TestGraniteVersionAwareOverrides:
-    """Tests for version-aware GPU blocks overrides for Granite models."""
+class TestGraniteGPUBlocksOverrides:
+    """Tests for GPU blocks overrides for Granite models."""
 
     @pytest.mark.cpu
     @pytest.mark.parametrize(
-        "hf_config_fixture, sendnn_configured, sendnn_version, expected_blocks",
+        "hf_config_fixture, expected_blocks",
         [
-            ("granite_3_3_hf_config", True, (0, 0, 0), 8192),
-            ("granite_3_3_hf_config", True, (1, 0, 2), 2080),
-            ("granite_3_3_hf_config", True, (1, 1, 0), 8192),
-            ("granite_3_3_hf_config", False, (1, 0, 2), 8192),
-            ("granite_4_hf_config", True, (1, 1, 0), 8192),
+            ("granite_3_3_hf_config", 8192),
+            ("granite_4_hf_config", 8192),
         ],
         ids=[
-            "g3.3_zeros_sendnn",
-            "g3.3_sendnn_1.0.2",
-            "g3.3_sendnn_1.1.0",
-            "g3.3_no_sendnn",
-            "g4_sendnn_1.1.0",
+            "g3.3_default",
+            "g4_default",
         ],
     )
-    def test_granite_version_aware_overrides(
+    def test_granite_gpu_blocks_overrides(
         self,
         request,
         registry,
         hf_config_fixture,
-        sendnn_configured,
-        sendnn_version,
         expected_blocks,
     ):
-        """Test version-aware GPU blocks and env var overrides for granite models."""
+        """Test GPU blocks and env var overrides for granite models."""
 
         # Get the HF config from the fixture
         hf_config = request.getfixturevalue(hf_config_fixture)
 
         # Must ensure no env vars have been overridden before testing
-        with (
-            patch.dict(os.environ, clear=True),
-            patch(
-                "vllm_spyre.platform.SpyrePlatform.sendnn_configured", new=lambda: sendnn_configured
-            ),
-            patch("vllm_spyre.platform.SpyrePlatform.sendnn_version", new=lambda: sendnn_version),
-        ):
+        with patch.dict(os.environ, clear=True):
             # Create vllm_config for CB with TP=4 using helper
             granite_config = create_vllm_config(
                 hf_config=hf_config,

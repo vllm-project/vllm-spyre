@@ -7,7 +7,7 @@ from typing import Callable, Generic, TypeVar
 
 import pytest
 from llm_cache_util import force_engine_core_shutdown, force_engine_shutdown
-from spyre_util import DecodeWarmupShapes, ModelInfo, RemoteOpenAIServer, patch_environment
+from spyre_util import EmbeddingWarmupShapes, ModelInfo, RemoteOpenAIServer, patch_environment
 from vllm import LLM, EngineArgs
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.executor.abstract import Executor
@@ -108,9 +108,8 @@ class LLMCache:
         tensor_parallel_size: int,
         backend: str,
         monkeypatch: pytest.MonkeyPatch,
-        warmup_shapes: DecodeWarmupShapes | None = None,
+        warmup_shapes: EmbeddingWarmupShapes | None = None,
         max_num_seqs: int | None = None,
-        use_cb: bool = False,
         use_pc: bool = False,
         max_num_batched_tokens: int | None = None,
     ) -> LLM:
@@ -123,26 +122,19 @@ class LLMCache:
             "model": model,
             "tensor_parallel_size": tensor_parallel_size,
             "backend": backend,
-            "use_cb": use_cb,
+            "use_cp": True,
             "use_pc": use_pc,
             "max_num_batched_tokens": max_num_batched_tokens,
         }
-        if use_cb:
-            runtime_config.update({"max_model_len": max_model_len, "max_num_seqs": max_num_seqs})
-        else:
+        if warmup_shapes:
             runtime_config.update({"warmup_shapes": tuple(warmup_shapes)})
+        else:
+            runtime_config.update({"max_model_len": max_model_len, "max_num_seqs": max_num_seqs})
 
         # Always patch the environment so that it's consistent with the LLM
-        # Use chunked prefill if max_num_batched_tokens is set
-        use_chunked_prefill = bool(max_num_batched_tokens)
-        if use_pc:
-            assert use_chunked_prefill
         patch_environment(
-            use_cb,
-            warmup_shapes,
             backend,
             monkeypatch,
-            use_chunked_prefill=use_chunked_prefill,
             max_num_batched_tokens=max_num_batched_tokens,
         )
 
@@ -151,31 +143,50 @@ class LLMCache:
             return maybe_llm
         self.clear()
 
-        if isinstance(model, ModelInfo):
-            revision = model.revision
-            model_name = model.name
-        else:
-            revision = None
-            model_name = model
-
         return self._cache.set(
             runtime_config,
-            LLM(
-                model=model_name,
-                tokenizer=model_name,
-                revision=revision,
-                tokenizer_revision=revision,
+            _create_llm(
+                model=model,
                 max_model_len=max_model_len,
                 max_num_seqs=max_num_seqs,
                 tensor_parallel_size=tensor_parallel_size,
                 max_num_batched_tokens=max_num_batched_tokens,
-                logits_processors=[GoldenTokenInjector],
                 enable_prefix_caching=use_pc,
             ),
         )
 
     def clear(self) -> None:
         self._cache.clear()
+
+
+def _create_llm(
+    *,
+    model: str | ModelInfo,
+    max_model_len: int,
+    tensor_parallel_size: int,
+    max_num_seqs: int | None,
+    max_num_batched_tokens: int | None,
+    enable_prefix_caching: bool,
+) -> LLM:
+    if isinstance(model, ModelInfo):
+        model_name = model.name
+        revision = model.revision
+    else:
+        model_name = model
+        revision = None
+
+    return LLM(
+        model=model_name,
+        tokenizer=model_name,
+        revision=revision,
+        tokenizer_revision=revision,
+        max_model_len=max_model_len,
+        max_num_seqs=max_num_seqs,
+        tensor_parallel_size=tensor_parallel_size,
+        max_num_batched_tokens=max_num_batched_tokens,
+        logits_processors=[GoldenTokenInjector],
+        enable_prefix_caching=enable_prefix_caching,
+    )
 
 
 class EngineCache:
@@ -202,25 +213,36 @@ class EngineCache:
             "max_model_len": max_model_len,
             "max_num_seqs": max_num_seqs,
             "available_blocks": available_blocks,
+            "use_cp": True,
             "use_pc": use_pc,
             "max_num_batched_tokens": max_num_batched_tokens,
         }
 
         # Always patch the environment so that it's consistent with the engine
-        if max_num_batched_tokens is not None and max_num_batched_tokens > 0:
-            use_chunked_prefill = True
-        else:
-            use_chunked_prefill = False
-
-        if use_pc:
-            assert use_chunked_prefill
         patch_environment(
-            use_cb=True,
-            warmup_shapes=None,
             backend=backend,
             monkeypatch=monkeypatch,
-            use_chunked_prefill=use_chunked_prefill,
         )
+
+        engine_available_blocks = (
+            available_blocks if available_blocks is None else available_blocks + 1
+        )
+
+        def _reset_scheduler(scheduler):
+            if engine_available_blocks:
+                scheduler.kv_cache_config.num_blocks = engine_available_blocks
+            scheduler.kv_cache_manager.__init__(
+                kv_cache_config=scheduler.kv_cache_config,
+                max_model_len=scheduler.max_model_len,
+                enable_caching=scheduler.cache_config.enable_prefix_caching,
+                use_eagle=scheduler.use_eagle,
+                log_stats=scheduler.log_stats,
+                enable_kv_cache_events=scheduler.enable_kv_cache_events,
+                dcp_world_size=scheduler.dcp_world_size,
+                pcp_world_size=scheduler.pcp_world_size,
+                hash_block_size=scheduler.block_size,
+                metrics_collector=scheduler.kv_metrics_collector,
+            )
 
         maybe_engine = self._cache.maybe_get(runtime_config)
         if maybe_engine:
@@ -228,9 +250,7 @@ class EngineCache:
                 # reset the blockpool across tests: this will erase any seen
                 # prefixes and makes sure that the used block ids in each test
                 # are independent of the test ordering.
-                model_runner = maybe_engine.model_executor.driver_worker.worker.model_runner
-                model_runner.block_pool = model_runner._make_block_pool()
-                model_runner.kv_cache_manager = model_runner._make_kv_cache_manager()
+                _reset_scheduler(maybe_engine.scheduler)
 
             return maybe_engine
         self.clear()
@@ -286,16 +306,7 @@ class EngineCache:
         )
 
         if available_blocks is not None:
-            worker = engine_core.model_executor.driver_worker.worker
-            # NB: We cannot create extra blocks after compilation
-            assert worker.model_runner.n_blocks >= available_blocks, (
-                "Cannot set available_blocks > (context * batch size // 64)"
-            )
-            worker.model_runner.n_blocks = available_blocks
-            # need to overwrite the block pool and kv cache manager if the
-            # number of available blocks has changed
-            worker.model_runner.block_pool = worker.model_runner._make_block_pool()
-            worker.model_runner.kv_cache_manager = worker.model_runner._make_kv_cache_manager()
+            _reset_scheduler(engine_core.scheduler)
 
         # 🌶️🌶️🌶️
         # Set up a wrapper around the model that will store the forward context at each step.
@@ -363,30 +374,71 @@ ENGINE_CACHE = EngineCache()
 def get_cached_llm(
     model: str | ModelInfo,
     max_model_len: int,
-    tensor_parallel_size: int,
     backend: str,
     monkeypatch: pytest.MonkeyPatch,
-    warmup_shapes: DecodeWarmupShapes | None = None,
+    tensor_parallel_size: int = 1,
+    warmup_shapes: EmbeddingWarmupShapes | None = None,
     max_num_seqs: int | None = None,
-    use_cb: bool = False,
     max_num_batched_tokens: int | None = None,
     use_pc: bool = False,
+) -> LLM:
+    return get_llm(
+        model=model,
+        max_model_len=max_model_len,
+        backend=backend,
+        monkeypatch=monkeypatch,
+        tensor_parallel_size=tensor_parallel_size,
+        warmup_shapes=warmup_shapes,
+        max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=max_num_batched_tokens,
+        use_pc=use_pc,
+        cached=True,
+    )
+
+
+def get_llm(
+    model: str | ModelInfo,
+    max_model_len: int,
+    backend: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tensor_parallel_size: int = 1,
+    warmup_shapes: EmbeddingWarmupShapes | None = None,
+    max_num_seqs: int | None = None,
+    max_num_batched_tokens: int | None = None,
+    use_pc: bool = False,
+    cached: bool = True,
 ) -> LLM:
     # Clear other caches first
     API_SERVER_CACHE.clear()
     ENGINE_CACHE.clear()
 
-    return LLM_CACHE.get_cached_llm(
+    if cached:
+        return LLM_CACHE.get_cached_llm(
+            model=model,
+            max_model_len=max_model_len,
+            tensor_parallel_size=tensor_parallel_size,
+            backend=backend,
+            monkeypatch=monkeypatch,
+            warmup_shapes=warmup_shapes,
+            max_num_seqs=max_num_seqs,
+            use_pc=use_pc,
+            max_num_batched_tokens=max_num_batched_tokens,
+        )
+
+    patch_environment(
+        backend,
+        monkeypatch,
+        max_num_batched_tokens=max_num_batched_tokens,
+    )
+    LLM_CACHE.clear()
+
+    return _create_llm(
         model=model,
         max_model_len=max_model_len,
         tensor_parallel_size=tensor_parallel_size,
-        backend=backend,
-        monkeypatch=monkeypatch,
-        warmup_shapes=warmup_shapes,
         max_num_seqs=max_num_seqs,
-        use_cb=use_cb,
-        use_pc=use_pc,
         max_num_batched_tokens=max_num_batched_tokens,
+        enable_prefix_caching=use_pc,
     )
 
 

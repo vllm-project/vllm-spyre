@@ -12,7 +12,7 @@ class MMWarmupInputs(NamedTuple):
     """Wrapper for multimodal model warmup inputs,
     used for continuous batching."""
 
-    input_ids: list[int]
+    input_ids: list[list[int]]
     input_embeds: list[torch.Tensor]
     mm_features: list[MultiModalFeatureSpec]
 

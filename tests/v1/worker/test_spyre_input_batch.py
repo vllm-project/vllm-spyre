@@ -5,13 +5,8 @@ import numpy as np
 import pytest
 import torch
 from vllm.sampling_params import SamplingParams
-
-try:
-    from vllm.utils import is_pin_memory_available, make_tensor_with_pad
-except ImportError:
-    from vllm.utils.platform_utils import is_pin_memory_available
-    from vllm.utils.torch_utils import make_tensor_with_pad
-
+from vllm.utils.platform_utils import is_pin_memory_available
+from vllm.utils.torch_utils import make_tensor_with_pad
 from vllm.v1.sample.logits_processor import LogitsProcessors
 from vllm.v1.sample.metadata import SamplingMetadata
 
@@ -148,13 +143,13 @@ def _construct_cached_request_state(req_id_suffix: int):
     output_token_ids = [
         np.random.randint(0, VOCAB_SIZE) for _ in range(np.random.randint(0, NUM_OUTPUT_TOKENS))
     ]
+
     return SamplingRequestState(
+        generator=None,
         req_id=f"req_id_{req_id_suffix}",
         prompt_token_ids=prompt_token_ids,
         sampling_params=_create_sampling_params(),
-        generator=None,
         output_token_ids=output_token_ids,
-        left_padding=0,
     )
 
 
@@ -273,6 +268,7 @@ def test_sampling_metadata_topk_edges():
 
     # top_k should be clamped to VOCAB_SIZE
     req = _construct_cached_request_state(0)
+    # NB: sampling_params not directly settably by design
     req.sampling_params = SamplingParams(temperature=1.0, top_k=VOCAB_SIZE + 1)
     input_batch.add_request(req, 0)
 

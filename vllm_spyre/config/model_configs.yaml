@@ -9,7 +9,16 @@
 
 # templates for reuse via YAML anchors
 _templates:
-  # model architecture for Granite 8
+
+  granite_4_8b_architecture: &granite_4_8b_architecture
+    model_type: granite
+    num_hidden_layers: 40
+    max_position_embeddings: 131072
+    hidden_size: 4096
+    vocab_size: 100352
+    num_key_value_heads: 8
+    num_attention_heads: 32
+
   granite_33_8b_architecture: &granite_33_8b_architecture
     model_type: granite
     num_hidden_layers: 40
@@ -25,32 +34,76 @@ _templates:
       VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072  # 128k
       FLEX_HDMA_P2PSIZE: 268435456  # 256MB
       FLEX_HDMA_COLLSIZE: 33554432  # 32MB
-    num_gpu_blocks_override:
-      torch_sendnn_lt_1_0_3: 2080
-      default: 8192
+    num_gpu_blocks_override: 8192
+  
+  llama3_8b_architecture: &llama3_8b_architecture
+    model_type: llama
+    num_hidden_layers: 32
+    max_position_embeddings: 131072
+    hidden_size: 4096
+    vocab_size: 128256
+    num_key_value_heads: 8
+    num_attention_heads: 32
+  
+  # device config for TP=4 Llama3 8b models
+  llama3_8b_tp4_device_config: &llama3_8b_tp4_device_config
+    env_vars:
+      VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072  # 128k
+      FLEX_HDMA_P2PSIZE: 268435456  # 256MB
+      FLEX_HDMA_COLLSIZE: 33554432  # 32MB
+    num_gpu_blocks_override: 8192
+
+  mistral3_24b_architecture: &mistral3_24b_architecture
+    model_type: pixtral
+    # NB: vLLM remaps multimodal mistral configs while loading and updates the model_type from "mistral3" to "pixtral"
+    # see: https://github.com/vllm-project/vllm/blob/v0.16.0/vllm/transformers_utils/configs/mistral.py#L100
+    text_config:
+      num_hidden_layers: 40
+      max_position_embeddings: 131072
+      hidden_size: 5120
+      vocab_size: 131072
+      num_key_value_heads: 8
+      num_attention_heads: 32
+    vision_config:
+      num_hidden_layers: 24
+      hidden_size: 1024
+      num_attention_heads: 16
+
+  # device config for TP=4 mistral3 24b models
+  mistral3_24b_tp4_device_config: &mistral3_24b_tp4_device_config
+    env_vars:
+      VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072  # 128k
+      FLEX_HDMA_P2PSIZE: 268435456  # 256MB
+      FLEX_HDMA_COLLSIZE: 33554432  # 32MB
+    num_gpu_blocks_override: 8192
+
+  ministral3_14b_architecture: &ministral3_14b_architecture
+    # NB remapped from mistral3 in vllm
+    model_type: pixtral
+    text_config:
+      num_hidden_layers: 40
+      max_position_embeddings: 262144
+      hidden_size: 5120
+      vocab_size: 131072
+      num_key_value_heads: 8
+      num_attention_heads: 32
+    vision_config:
+      num_hidden_layers: 24
+      hidden_size: 1024
+      num_attention_heads: 16
+
+  # device config for TP=4 mistral3 24b models
+  ministral3_14b_device_config: &ministral3_14b_device_config
+    env_vars:
+      VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072  # 128k
+      FLEX_HDMA_P2PSIZE: 268435456  # 256MB
+      FLEX_HDMA_COLLSIZE: 33554432  # 32MB
+    num_gpu_blocks_override: 8192
 
 models:
   # Granite 3.3 8B Instruct
   ibm-granite/granite-3.3-8b-instruct:
     architecture: *granite_33_8b_architecture
-
-    # Static batching configurations
-    static_batching_configs:
-      - tp_size: 1
-        warmup_shapes:
-          - prompt_len: 2048
-            new_tokens: 1024
-            batch_size: 16
-      - tp_size: 4
-        warmup_shapes:
-          - prompt_len: 6144
-            new_tokens: 2048
-            batch_size: 1
-      - tp_size: 4
-        warmup_shapes:
-          - prompt_len: 7168
-            new_tokens: 1024
-            batch_size: 4
 
     # Continuous batching configurations
     continuous_batching_configs:
@@ -88,36 +141,29 @@ models:
         max_model_len: 32768
         max_num_seqs: 32
         device_config: *granite_8b_tp4_device_config
-
-  # Granite 4 8B Dense
-  ibm-granite/granite-4-8b-dense:
-    architecture:
-      model_type: granitemoehybrid
-      num_hidden_layers: 40
-      num_experts_per_tok: 0  # dense model
-      max_position_embeddings: 131072
-      hidden_size: 4096
-      vocab_size: 100352
-      num_key_value_heads: 8
-      num_attention_heads: 32
-
-    # Static batching configurations
-    static_batching_configs:
+  
+  # Llama 3.1 8B Instruct
+  meta-llama/Llama-3.1-8B-Instruct:
+    architecture: *llama3_8b_architecture
+    continuous_batching_configs:
       - tp_size: 1
-        warmup_shapes:
-          - prompt_len: 2048
-            new_tokens: 1024
-            batch_size: 16
+        max_model_len: 3072
+        max_num_seqs: 16
       - tp_size: 4
-        warmup_shapes:
-          - prompt_len: 6144
-            new_tokens: 2048
-            batch_size: 1
+        max_model_len: 16384
+        max_num_seqs: 4
+        device_config: *llama3_8b_tp4_device_config
       - tp_size: 4
-        warmup_shapes:
-          - prompt_len: 7168
-            new_tokens: 1024
-            batch_size: 4
+        max_model_len: 32768
+        max_num_seqs: 32
+        device_config: *llama3_8b_tp4_device_config
+
+  # Granite 4 8B Dense Hybrid
+  ibm-granite/granite-4-8b-dense-hybrid:
+    architecture:
+      <<: *granite_4_8b_architecture
+      model_type: granitemoehybrid
+      num_experts_per_tok: 0
 
     # Continuous batching configurations
     continuous_batching_configs:
@@ -135,6 +181,68 @@ models:
         max_num_seqs: 32
         device_config: *granite_8b_tp4_device_config
 
+  # Granite 4 8B Dense
+  ibm-granite/granite-4-8b-dense:
+    architecture:
+      <<: *granite_4_8b_architecture
+
+    # Continuous batching configurations
+    continuous_batching_configs:
+      - tp_size: 1
+        max_model_len: 3072
+        max_num_seqs: 16
+      - tp_size: 1
+        max_model_len: 8192
+        max_num_seqs: 4
+      - tp_size: 2
+        max_model_len: 8192
+        max_num_seqs: 4
+      - tp_size: 4
+        max_model_len: 32768
+        max_num_seqs: 32
+        device_config: *granite_8b_tp4_device_config
+
+  ibm-granite/granite-4-8b-dense-FP8:
+    architecture:
+      <<: *granite_4_8b_architecture
+      quantization_config:
+        format: float-quantized
+
+    # Continuous batching configurations
+    continuous_batching_configs:
+      - tp_size: 1
+        max_model_len: 3072
+        max_num_seqs: 16
+      - tp_size: 4
+        max_model_len: 16384
+        max_num_seqs: 4
+        device_config: *granite_8b_tp4_device_config
+      - tp_size: 4
+        max_model_len: 32768
+        max_num_seqs: 32
+        device_config: *granite_8b_tp4_device_config
+
+  # Mistral Small 3.2 24B Instruct
+  mistralai/Mistral-Small-3.2-24B-Instruct-2506:
+    architecture: *mistral3_24b_architecture
+    continuous_batching_configs:
+      - tp_size: 2
+        max_model_len: 8192
+        max_num_seqs: 32
+      - tp_size: 4
+        max_model_len: 32768
+        max_num_seqs: 32
+        device_config: *mistral3_24b_tp4_device_config
+
+  # Ministral 3 14B Instruct
+  mistralai/Ministral-3-14B-Instruct-2512-BF16:
+    architecture: *ministral3_14b_architecture
+    continuous_batching_configs:
+      - tp_size: 4
+        max_model_len: 32768
+        max_num_seqs: 32
+        device_config: *ministral3_14b_device_config
+
   # Embedding models (static batching only, no device configs needed)
   ibm-granite/granite-embedding-125m-english:
     architecture:
@@ -146,7 +254,6 @@ models:
       - tp_size: 1
         warmup_shapes:
           - prompt_len: 512
-            new_tokens: 0
             batch_size: 64
 
   ibm-granite/granite-embedding-278m-multilingual:
@@ -159,7 +266,6 @@ models:
       - tp_size: 1
         warmup_shapes:
           - prompt_len: 512
-            new_tokens: 0
             batch_size: 64
 
   # Other supported models (static batching only)
@@ -173,7 +279,6 @@ models:
       - tp_size: 1
         warmup_shapes:
           - prompt_len: 512
-            new_tokens: 0
             batch_size: 64
 
   BAAI/bge-reranker-v2-m3:
@@ -187,7 +292,6 @@ models:
       - tp_size: 1
         warmup_shapes:
           - prompt_len: 8192
-            new_tokens: 0
             batch_size: 1
 
   BAAI/bge-reranker-large:
@@ -201,7 +305,6 @@ models:
       - tp_size: 1
         warmup_shapes:
           - prompt_len: 512
-            new_tokens: 0
             batch_size: 64
 
   sentence-transformers/all-roberta-large-v1:
@@ -214,7 +317,6 @@ models:
       - tp_size: 1
         warmup_shapes:
           - prompt_len: 128
-            new_tokens: 0
             batch_size: 8
 
 # Made with Bob

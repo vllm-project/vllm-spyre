@@ -7,8 +7,8 @@ from spyre_util import get_spyre_backend_list, get_spyre_model_list
 @pytest.mark.parametrize("model", get_spyre_model_list(isScoring=True))
 @pytest.mark.parametrize(
     "warmup_shapes",
-    [  # (prompt_length/new_tokens/batch_size)
-        pytest.param([(64, 0, 4)]),
+    [  # (prompt_length/batch_size)
+        pytest.param([(64, 4)]),
     ],
 )
 @pytest.mark.parametrize("backend", get_spyre_backend_list())

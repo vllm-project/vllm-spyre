@@ -111,7 +111,6 @@ def test_alignment_with_fms(model, mode, monkeypatch):
         max_num_seqs=1,
         monkeypatch=monkeypatch,
         max_model_len=2048,
-        use_cb=True,
         max_num_batched_tokens=1024 if mode == "cp" else None,
     )
 

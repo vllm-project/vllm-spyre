@@ -2,12 +2,13 @@ import json
 import math
 import os
 import random
+import signal
 import subprocess
 import sys
 import time
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any, NamedTuple
-from contextlib import contextmanager
 
 import openai
 import pytest
@@ -17,55 +18,37 @@ from transformers import AutoTokenizer
 from vllm import SamplingParams
 from vllm.assets.image import ImageAsset
 from vllm.entrypoints.openai.cli_args import make_arg_parser
+from vllm.utils.argparse_utils import FlexibleArgumentParser
+from vllm.utils.network_utils import get_open_port
 from vllm.v1.engine.core import EngineCore
-
-from vllm_spyre.platform import SpyrePlatform
-from vllm_spyre import envs
-
-try:
-    # old
-    from vllm.utils import FlexibleArgumentParser, get_open_port
-except ImportError:
-    # new
-    from vllm.utils.argparse_utils import FlexibleArgumentParser
-    from vllm.utils.network_utils import get_open_port
-
 from vllm.v1.request import Request
+from vllm_spyre.v1.core.scheduler import (
+    ChunkedPrefillSpyreScheduler,
+)
+
+from vllm_spyre import envs
+from vllm_spyre.platform import SpyrePlatform
 
 EmbeddingWarmupShapes = list[tuple[int, int]]
-DecodeWarmupShapes = list[tuple[int, int, int]]
 
 
 def patch_environment(
-    use_cb: bool,
-    warmup_shapes: DecodeWarmupShapes | None,
     backend: str,
     monkeypatch,
-    use_chunked_prefill: bool = False,
     max_num_batched_tokens: int | None = None,
+    warmup_shapes: EmbeddingWarmupShapes | None = None,
 ):
     # Setup the environment correctly for the LLM
 
-    # ---- For static batching ----
+    # ---- For pooling ----
     if warmup_shapes:
-        assert not use_cb, (
-            "Warmup shapes through environment variables have "
-            "been deprecated in continuous batching"
-        )
-
         patch_warmup_shapes(warmup_shapes, monkeypatch)
 
     # --------------
-    monkeypatch.setenv("VLLM_SPYRE_USE_CB", "1" if use_cb else "0")
     monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", backend)
-    monkeypatch.setenv("VLLM_SPYRE_USE_CHUNKED_PREFILL", "1" if use_chunked_prefill else "0")
-    # NB: setting this env var explicitly is needed to set the desired value for
-    # the chunk size in the case that granite 8b TP4 is detected
-    if max_num_batched_tokens is not None:
-        monkeypatch.setenv("VLLM_DT_CHUNK_LEN", str(max_num_batched_tokens))
 
 
-def patch_warmup_shapes(warmup_shapes: DecodeWarmupShapes | EmbeddingWarmupShapes, monkeypatch):
+def patch_warmup_shapes(warmup_shapes: EmbeddingWarmupShapes, monkeypatch):
     warmup_prompt_length = [t[0] for t in warmup_shapes]
     warmup_batch_size = [t[-1] for t in warmup_shapes]
 
@@ -75,12 +58,6 @@ def patch_warmup_shapes(warmup_shapes: DecodeWarmupShapes | EmbeddingWarmupShape
     monkeypatch.setenv(
         "VLLM_SPYRE_WARMUP_BATCH_SIZES", ",".join(str(val) for val in warmup_batch_size)
     )
-
-    if all(len(s) == 3 for s in warmup_shapes):
-        warmup_new_tokens = [t[1] for t in warmup_shapes]
-        monkeypatch.setenv(
-            "VLLM_SPYRE_WARMUP_NEW_TOKENS", ",".join(str(val) for val in warmup_new_tokens)
-        )
 
 
 class ModelInfo(NamedTuple):
@@ -139,14 +116,21 @@ class RemoteOpenAIServer:
         env = os.environ.copy()
         if env_dict is not None:
             env.update(env_dict)
+        self.backend = env.get("VLLM_SPYRE_DYNAMO_BACKEND", "")
         self.proc = subprocess.Popen(
             ["vllm", "serve", model_name, *vllm_serve_args],
             env=env,
             stdout=sys.stdout,
             stderr=sys.stderr,
+            start_new_session=True,
         )
+        self._pgid = self.proc.pid
         max_wait_seconds = max_wait_seconds or 600
-        self._wait_for_server(url=self.url_for("health"), timeout=max_wait_seconds)
+        try:
+            self._wait_for_server(url=self.url_for("health"), timeout=max_wait_seconds)
+        except Exception:
+            self.shutdown()
+            raise
 
     def __enter__(self):
         return self
@@ -155,12 +139,19 @@ class RemoteOpenAIServer:
         self.shutdown()
 
     def shutdown(self):
-        self.proc.terminate()
+        with suppress(ProcessLookupError):
+            os.killpg(self._pgid, signal.SIGTERM)
+
         try:
-            self.proc.wait(8)
+            self.proc.wait(20)
         except subprocess.TimeoutExpired:
-            # force kill if needed
-            self.proc.kill()
+            with suppress(ProcessLookupError):
+                os.killpg(self._pgid, signal.SIGKILL)
+            self.proc.wait()
+
+        if self.backend == "sendnn":
+            # Give the runtime a moment to release the AIU/VFIO device.
+            time.sleep(2)
 
     def _wait_for_server(self, *, url: str, timeout: float):
         # run health check
@@ -220,7 +211,7 @@ def get_spyre_model_dir_path() -> Path:
 
 # add pytest markers to supported different backends
 def get_spyre_backend_list():
-    backend_list = ["eager", "inductor", "sendnn"]
+    backend_list = ["eager", "sendnn"]
 
     backends = []
     for backend in backend_list:
@@ -305,9 +296,18 @@ register_model_info(
     name="ibm-granite/granite-3.3-8b-instruct-FP8",
     revision="4b5990b8d402a75febe0086abbf1e490af494e3d",
 )
+### Multimodal
 register_model_info(
     name="ibm-granite/granite-vision-3.2-2b",
     revision="2818ae5b93cb750b099df1b65f7864e4a0401271",
+)
+register_model_info(
+    name="mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+    revision="68faf511d618ef198fef186659617cfd2eb8e33a",
+)
+register_model_info(
+    name="mistralai/Mistral-Small-3.2-24B-Instruct-2506",
+    revision="95a6d26c4bfb886c58daf9d3f7332c857cb27b43",
 )
 
 
@@ -411,12 +411,9 @@ def create_random_request(
     model: ModelInfo | None = None,
     seed: int = None,
 ) -> Request:
+    assert model is not None, "create_random_request requires a model to build tokenizer inputs."
     tokenizer = AutoTokenizer.from_pretrained(model.name, revision=model.revision)
     if from_model_vocab:
-        assert model is not None, (
-            "Prompt requested to be generated from model's vocabulary: need to provide model."
-        )
-
         valid_token_ids = sorted(
             [v for v in tokenizer.vocab.values() if v not in tokenizer.all_special_ids]
         )
@@ -439,10 +436,9 @@ def create_random_request(
         request_id=str(request_id),
         prompt_token_ids=prompt_token_ids,
         sampling_params=sampling_params,
-        eos_token_id=None,
-        arrival_time=0,
         lora_request=None,
         pooling_params=None,
+        arrival_time=0,
         cache_salt=None,
     )
 
@@ -577,8 +573,9 @@ def write_sample_model_config(tmp_path, data, filename="model_compile.log.json")
 
 
 def get_block_tables(engine_core: EngineCore) -> tuple[dict[str, list[int]], dict[int, int]]:
-    model_runner = engine_core.model_executor.driver_worker.worker.model_runner
-    req_to_blocks = model_runner.kv_cache_manager.req_to_blocks
+    scheduler: ChunkedPrefillSpyreScheduler = engine_core.scheduler
+    kv_cache_manager = scheduler.kv_cache_manager.coordinator.single_type_managers[0]
+    req_to_blocks = kv_cache_manager.req_to_blocks
 
     block_tables = {
         req_id: [block.block_id for block in blocks] for req_id, blocks in req_to_blocks.items()

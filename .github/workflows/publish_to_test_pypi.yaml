@@ -1,4 +1,4 @@
-# This tests the publication process by pushing a pre-release to test.pypi.org
+# This tests the publication process for vllm-spyre by pushing a pre-release to test.pypi.org
 # on all main commits
 name: Test publication on test.pypi.org
 
@@ -29,7 +29,7 @@ jobs:
             python-version: "3.12"
       - name: Build package
         run: uv build
-      - name: Publish package distributions to PyPI
+      - name: Publish package distributions to test PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
             repository-url: https://test.pypi.org/legacy/

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, cast
 import torch
 import torch.nn.functional as F
 from vllm.logger import init_logger
-from vllm.transformers_utils.tokenizer import get_tokenizer
+from vllm.tokenizers import get_tokenizer
 from vllm.v1.sample.logits_processor import BatchUpdate, LogitsProcessor, process_dict_updates
 
 logger = init_logger(__name__)
@@ -127,7 +127,7 @@ class GoldenTokenInjector(LogitsProcessor):
             return
 
         expected_token_id = expectation.token_ids[current_token_idx]
-        token_id = torch.argmax(logits[req_idx], dim=-1)
+        token_id = cast(int, torch.argmax(logits[req_idx], dim=-1))
 
         if expected_token_id == token_id:
             # Expectation is met, nothing to do.

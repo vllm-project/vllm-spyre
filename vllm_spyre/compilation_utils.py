@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING
+import importlib.metadata
 
 # Third Party
 from vllm.logger import init_logger
@@ -133,20 +134,28 @@ def handle_disable_compilation(vllm_config: VllmConfig, is_decoder: bool):
     if matching_config:
         # Check vllm_spyre version
         try:
-            from vllm_spyre._version import version as vllm_spyre_version
+            vllm_spyre_version = importlib.metadata.version("vllm_spyre")
 
-            if matching_config["vllm_spyre_version"] != vllm_spyre_version:
+            config_version = matching_config.get("vllm_spyre_version")
+            if config_version is None:
+                logger.warning(
+                    "[PRECOMPILED_WARN] Pre-compiled config missing vllm_spyre_version field. "
+                )
+            elif config_version != vllm_spyre_version:
                 # Can be converted to ValueError if we want to be strict
                 # with checking
                 logger.warning(
                     "[PRECOMPILED_WARN] "
                     "Model was compiled on vllm-spyre "
                     "%s but the current vllm_spyre version is %s",
-                    matching_config["vllm_spyre_version"],
+                    config_version,
                     vllm_spyre_version,
                 )
         except ImportError:
-            logger.warning("Cannot validate vllm_spyre version against pre-compiled model config")
+            logger.warning(
+                "[PRECOMPILED_WARN] Cannot validate vllm_spyre version against "
+                "pre-compiled model config"
+            )
 
         # Check model name
         model_name = matching_config["data"]["MODEL_NAME"]
@@ -194,27 +203,17 @@ def match_from_model_config_file(compilation_config: dict, vllm_config: VllmConf
         return False
 
     if "VLLM_SPYRE_WARMUP_PROMPT_LENS" in vllm_configs:
-        if envs_spyre.VLLM_SPYRE_USE_CB:
+        get_list = lambda x: [int(i) for i in x.split(",")]
+
+        prompt_lens = get_list(vllm_configs["VLLM_SPYRE_WARMUP_PROMPT_LENS"])
+        batch_sizes = get_list(vllm_configs["VLLM_SPYRE_WARMUP_BATCH_SIZES"])
+
+        if prompt_lens != envs_spyre.VLLM_SPYRE_WARMUP_PROMPT_LENS:
             return False
-        else:
-            get_list = lambda x: [int(i) for i in x.split(",")]
 
-            prompt_lens = get_list(vllm_configs["VLLM_SPYRE_WARMUP_PROMPT_LENS"])
-            new_tokens = get_list(vllm_configs["VLLM_SPYRE_WARMUP_NEW_TOKENS"])
-            batch_sizes = get_list(vllm_configs["VLLM_SPYRE_WARMUP_BATCH_SIZES"])
-
-            if prompt_lens != envs_spyre.VLLM_SPYRE_WARMUP_PROMPT_LENS:
-                return False
-
-            if new_tokens != envs_spyre.VLLM_SPYRE_WARMUP_NEW_TOKENS:
-                return False
-
-            if batch_sizes != envs_spyre.VLLM_SPYRE_WARMUP_BATCH_SIZES:
-                return False
+        if batch_sizes != envs_spyre.VLLM_SPYRE_WARMUP_BATCH_SIZES:
+            return False
     else:
-        if not envs_spyre.VLLM_SPYRE_USE_CB:
-            return False
-
         context_len = vllm_configs["VLLM_DT_MAX_CONTEXT_LEN"]
         batch_size = vllm_configs["VLLM_DT_MAX_BATCH_SIZE"]
 

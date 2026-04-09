@@ -8,7 +8,10 @@ Thank you for your interest in contributing to the Spyre plugin for vLLM! There 
 
 ## Issues
 
-If you encounter a bug or have a feature request, please search [existing issues](https://github.com/vllm-project/vllm-spyre/issues?q=is%3Aissue) first to see if it has already been reported. If not, please [create a new issue](https://github.com/vllm-project/vllm-spyre/issues/new/choose), providing as much relevant information as possible.
+If you encounter a bug or have a feature request, please search [existing issues](https://github.com/vllm-project/vllm-spyre/issues?q=is%3Aissue) first to see if it has already been reported. If not, please create a new issue, by using our [issue templates](https://github.com/vllm-project/vllm-spyre/issues/new/choose):
+
+- **🐛 Bug Report**: For reporting bugs and unexpected behavior
+- **🚀 Feature Request**: For suggesting new features or improvements
 
 You can also reach out for support in the `#sig-spyre` channel in the [vLLM Slack](https://inviter.co/vllm-slack) workspace.
 
@@ -47,7 +50,7 @@ INFO    -  [22:02:02] Serving on http://127.0.0.1:8000/
 
 #### View in Your Browser
 
-Open up [http://127.0.0.1:8000/](http://127.0.0.1:8000/) in your browser to see a live preview:.
+Open up [http://127.0.0.1:8000/](http://127.0.0.1:8000/) in your browser to see a live preview.
 
 #### Learn More
 
@@ -95,12 +98,22 @@ Here is a list of `pytest` markers you can use to filter them:
 --8<-- "pyproject.toml:test-markers-definition"
 ```
 
-### Testing Continuous Batching
+### Testing Specific Features
 
-Run the continuous batching tests:
+For most of the supported features the testing code can be run in isolation by passing
+the appropriate marker to pytest. Note the markers can be combined with boolean logic
+operators "and", "or" "not" and parentheses "()".
+
+- **prefix_caching**: Runs only the prefix caching tests
+- **quantized**: Runs all the tests with quantized models weights (FP8)
+- **embedding**: Runs only embedding model tests
+- **scoring**: Runs only reranker or scoring model tests
+- **multimodal**: Runs only multimodal model tests
+
+Example, run the prefix caching tests:
 
 ```sh
-python -m pytest -v -x tests/e2e -m cb
+python -m pytest -v -x tests/e2e -m prefix_caching
 ```
 
 ## Debugging

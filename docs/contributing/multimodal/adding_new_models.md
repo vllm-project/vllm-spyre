@@ -69,7 +69,7 @@ In vLLM Spyre, models are implemented with a generic wrapper around FMS; the imp
     - Test without compile first. If all of the above are correct and compile is still running into issues, ensure that your warmup features also include multimodal inputs and not just embeddings, because you need to ensure all parts of the model are traced properly. If you pass something like pre-merged embeddings, it's the same as just passing text embeddings since the vision encoder won't be used, so it's important to pass the raw multimodal objects.
 
 - What is the state of multimodal support with respect to model runners?
-    - Currently it's supported for continuous batching with and without chunked prefill. It is *not* yet enabled for static batching or for the pooling model runner.
+    - Currently it's supported for generative models with chunked prefill. It is *not* yet enabled for the pooling model runner.
 
 - There is a new model runner! How do I add multimodal support to it?
     - Ensure multimodal features are passed all the way through

@@ -131,10 +131,12 @@ models:
       num_hidden_layers: 32  # Optional: for precise matching
       vocab_size: 128256  # Optional: for precise matching
 
-    # Static batching configuration (if supported)
+    # Static batching configuration (pooling models only)
     static_batching_configs:
       - tp_size: 1
-        warmup_shapes: [[2048, 1024, 16]]  # [prompt_len, new_tokens, batch_size]
+        warmup_shapes:
+          - prompt_len: 512
+            batch_size: 64
 
     # Continuous batching configuration (if supported)
     continuous_batching_configs:
@@ -149,9 +151,7 @@ models:
         device_config:  # Optional: nested device configuration
           env_vars:
             VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072
-          num_gpu_blocks_override:
-            torch_sendnn_lt_1_0_3: 2080
-            default: 8192
+          num_gpu_blocks_override: 8192
 ```
 
 **That's it!** No code changes needed for most models.
@@ -178,18 +178,19 @@ architecture:
 
 ### Static Batching Configurations
 
-For models that support static batching (fixed batch sizes):
+For pooling models (embeddings, scoring) that use static batching:
 
 ```yaml
 static_batching_configs:
   - tp_size: 1
     warmup_shapes:
-      - [2048, 1024, 16]  # [prompt_length, new_tokens, batch_size]
-      - [4096, 512, 8]
-  - tp_size: 4
-    warmup_shapes:
-      - [6144, 2048, 1]
+      - prompt_len: 512
+        batch_size: 64
+      - prompt_len: 128
+        batch_size: 8
 ```
+
+**Note**: Decoder models (generation) only support continuous batching. Static batching is exclusively for pooling models.
 
 ### Continuous Batching Configurations
 
@@ -211,9 +212,7 @@ continuous_batching_configs:
       env_vars:
         VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072
         FLEX_HDMA_P2PSIZE: 268435456
-      num_gpu_blocks_override:
-        torch_sendnn_lt_1_0_3: 2080
-        default: 8192
+      num_gpu_blocks_override: 8192
 ```
 
 ### Device Configuration Templates (YAML Anchors)
@@ -226,8 +225,7 @@ device_config_templates:
     env_vars:
       VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072
       FLEX_HDMA_P2PSIZE: 268435456
-    num_gpu_blocks_override:
-      default: 8192
+    num_gpu_blocks_override: 8192
 
 models:
   ibm-granite/granite-3.3-8b-instruct:
@@ -370,7 +368,9 @@ sentence-transformers/all-roberta-large-v1:
 
   static_batching_configs:
     - tp_size: 1
-      warmup_shapes: [[128, 0, 8]]
+      warmup_shapes:
+        - prompt_len: 128
+          batch_size: 8
 ```
 
 ### Complex Generation Model with Device Config
@@ -383,9 +383,7 @@ device_config_templates:
       VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072
       FLEX_HDMA_P2PSIZE: 268435456
       FLEX_HDMA_COLLSIZE: 33554432
-    num_gpu_blocks_override:
-      torch_sendnn_lt_1_0_3: 2080
-      default: 8192
+    num_gpu_blocks_override: 8192
 
 models:
   ibm-granite/granite-3.3-8b-instruct:
@@ -397,12 +395,6 @@ models:
       vocab_size: 49159
       num_key_value_heads: 8
       num_attention_heads: 32
-
-    static_batching_configs:
-      - tp_size: 1
-        warmup_shapes: [[2048, 1024, 16]]
-      - tp_size: 4
-        warmup_shapes: [[6144, 2048, 1]]
 
     continuous_batching_configs:
       - tp_size: 1

@@ -41,10 +41,3 @@ def test_env_vars_override_with_bad_value(monkeypatch):
 def test_env_vars_override_for_invalid_config():
     with pytest.raises(ValueError, match=r"not a known setting"):
         envs.override("VLLM_SPYRE_NOT_A_CONFIG", "nothing")
-
-
-def test_sendnn_decoder_backwards_compat(monkeypatch):
-    # configuring the deprecated `sendnn_decoder` backend will swap to the new
-    # `sendnn` backend instead
-    monkeypatch.setenv("VLLM_SPYRE_DYNAMO_BACKEND", "sendnn_decoder")
-    assert envs.VLLM_SPYRE_DYNAMO_BACKEND == "sendnn"
