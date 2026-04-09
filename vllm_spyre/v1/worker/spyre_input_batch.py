@@ -193,6 +193,8 @@ class SamplingRequestState:
     total_hit_blocks: int = 0
     block_ids: list[int] = field(default_factory=list)
     generator: torch.Generator | None = None
+    # Cache for full multimodal embeddings (computed once, sliced per chunk)
+    cached_mm_embeddings: torch.Tensor | None = None
 
     @property
     def num_tokens(self) -> int:
@@ -731,4 +733,10 @@ class PoolingInputBatch(BaseInputBatch[PoolingRequestState]):
             prompt_token_ids=prompt_token_ids,
             pooling_params=pooling_params,
             pooling_states=[],
+            prompt_token_ids_cpu=(
+                prompt_token_ids.cpu()
+                if prompt_token_ids is not None
+                and any(p.requires_token_ids for p in pooling_params)
+                else None
+            ),
         )

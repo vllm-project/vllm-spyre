@@ -87,7 +87,10 @@ class SpyreVocabParallelEmbedding(VocabParallelEmbedding):
         logger.debug("Building custom VocabParallelEmbedding for Spyre")
 
         self._target_device = torch.device("spyre")
-        self._target_dtype = None
+        # The inputs for spyre need to be torch.int64
+        self._input_target_dtype = torch.int64
+        # The weights for spyre need to be torch.float16
+        self._weight_target_dtype = torch.float16
         self.maybe_compiled_forward_spyre = self.maybe_compile(self.forward_spyre)
 
         self._layer_name = register_layer(self, "spyre_vocab_parallel_embedding")
@@ -154,8 +157,8 @@ class SpyreVocabParallelEmbedding(VocabParallelEmbedding):
         out_device = x.device
 
         out = self.maybe_compiled_forward_spyre(
-            convert(x, dtype=self._target_dtype, device=self._target_device),
-            convert(self.weight.data, dtype=self._target_dtype, device=self._target_device),
+            convert(x, dtype=self._input_target_dtype, device=self._target_device),
+            convert(self.weight.data, dtype=self._weight_target_dtype, device=self._target_device),
         )
 
         # Transfer back to original device and restore original dtype

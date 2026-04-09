@@ -65,6 +65,26 @@ To do this:
     1. Ensure that the new lowest vLLM version is run with `vllm_version.name: "vLLM:lowest"` and runs the `compat` marker
 3. For any failing `compat` tests, remove the backwards compatibility code that is no longer required
 
+## Managing Dependencies
+
+Dependencies for vllm-spyre are managed with the `uv` tool. Usually, updating a dependency is as easy as running `uv add`, which will update both the pyproject.toml and the uv.lock file. An example is:
+
+```shell
+uv add "ibm-fms>=1.8.0,<2.0"
+```
+
+To update the locked version of a dependency without changing the version bounds in pyproject.toml, use `uv sync --upgrade-package`. An example is:
+
+```shell
+uv sync --upgrade-package ibm-fms
+```
+
+This would be done when you don't need to change the lower bound for a given dependency, but do want to lock a newer version to install in builds.
+For a general refresh of all dependencies, use `uv sync --upgrade`.
+
+By default, `uv` requires that the entire set of dependencies can successfully resolve and that there are no conflicts. This is sometimes problematic, as packages will often not declare forwards compatibility with future versions of their own dependencies, requiring consumers to wait for new releases. For example, maybe a new version of ibm-fms requires `transformers>=4.57`, but the latest vllm release still requires `transformers<4.57`.
+To work around these conflicts, we use the `tool.uv.override-dependencies` section of our pyproject.toml file. In this case, we could specify `transformers==4.57.0` to ignore vllm's upper bound on transformers. Doing so comes with the obvious risks that there may be incompatibilities, and we should try to keep the overrides to a minimum.
+
 ## New Model Support
 
 ### Generative Models
@@ -92,6 +112,25 @@ Pooling models all use hf transformers code, and compile for static batch shapes
 Simply try running one, and if it works, record the working configuration in the model configs YAML file.
 
 We don't have any guidance available for enabling pooling models if they do not compile successfully.
+
+## Testing changes on Spyre hardware
+
+To run tests on Spyre hardware, use the webhook integration with the Spyre validation suite. This is triggered by PR comments starting with `bot:test`.
+
+!!! note
+   System access and allow-listing are required to trigger these runs.
+
+You can control the test scope by specifying Pytest markers and files within the PR comment. These are specified with `MARKERS` and `TEST_FILE`, for example:
+
+```markdown
+bot:test
+MARKERS="spyre and prefix_caching"
+TEST_FILE=tests/e2e/test_spyre_basic.py
+```
+
+The `spyre-ci` status will be posted back to the PR once the job completes, but we do not strictly require this passing check to merge PRs.
+
+For any changes to dependencies or changes to model runner code, a thorough set of tests with the `spyre` marker should be run to ensure that everything is operational on physical Spyre hardware.
 
 ## Cutting Releases
 
