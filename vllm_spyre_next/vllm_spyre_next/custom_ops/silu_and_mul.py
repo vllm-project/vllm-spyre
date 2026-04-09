@@ -66,7 +66,7 @@ class SpyreSiluAndMul(SiluAndMul):
         self.maybe_compiled_forward_spyre = self.maybe_compile(self.forward_spyre)
 
         self._layer_name = register_layer(self, "spyre_siluandmul")
-        
+
         logger.debug_once(
             "SpyreSiluAndMul: Dispatch: enabled=%s, Forward method=%s, Compiled=%s",
             self.enabled(),
