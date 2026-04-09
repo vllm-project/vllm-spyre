@@ -22,8 +22,10 @@ if TYPE_CHECKING:
     # NB: We can't eagerly import many things from vllm since vllm.config
     # will import this file. These would lead to circular imports
     from vllm.config import VllmConfig
+    from vllm.config.kernel import IrOpPriorityConfig
 else:
     VllmConfig = None
+    IrOpPriorityConfig = None
 
 logger = init_logger(__name__)
 
@@ -74,8 +76,28 @@ class TorchSpyrePlatform(CpuPlatform):
         logger.info(message, version, model_name)
 
     @classmethod
+    def get_default_ir_op_priority(cls, vllm_config: "VllmConfig") -> "IrOpPriorityConfig":
+        from vllm.config.kernel import IrOpPriorityConfig
+
+        return IrOpPriorityConfig.with_default(
+            ["native"],
+            rms_norm=["spyre", "native"],
+        )
+
+    @classmethod
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:
         cls.log_server_boot(vllm_config)
+
+        # ---- compilation / custom ops ----
+        compilation_config = vllm_config.compilation_config
+
+        # Must use ir_enable_torch_wrap wrapping=True.
+        # With this, for example ir.ops.rms_norm() routes through
+        # torch.ops.vllm_ir.rms_norm (a registered custom op). This creates
+        # an opaque boundary that Dynamo captures without tracing inside.
+        # Inductor. The provider therefore runs eagerly at each forward call.
+        # This is necessary because the D2H and H2D transfers are not traceable.
+        compilation_config.ir_enable_torch_wrap = True
 
         # ---- worker ----
         parallel_config = vllm_config.parallel_config
