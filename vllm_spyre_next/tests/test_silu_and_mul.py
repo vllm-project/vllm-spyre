@@ -22,25 +22,35 @@ def reference_silu_and_mul(x: torch.Tensor) -> torch.Tensor:
 @pytest.mark.siluandmul
 @pytest.mark.parametrize("num_tokens", [1, 7, 63, 64, 65, 1024])
 @pytest.mark.parametrize("d", [2, 63, 64, 65, 1024, 13824])
-def test_spyre_siluandmul_matches_reference(default_vllm_config, num_tokens, d):
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pytest.param(
+            torch.float16,
+            marks=pytest.mark.xfail(reason="Strided tensors on float16 does not work on spyre"),
+        ),
+        torch.float32,
+    ],
+)
+def test_spyre_siluandmul_matches_reference(default_vllm_config, num_tokens, d, dtype):
     """SpyreSiluAndMul output matches golden reference.
 
     Tests both paths:
     - forward(): custom op dispatch (no-compile path via torch.ops.vllm.spyre_siluandmul)
-    - forward_native(): direct Spyre device execution
+    - forward_oot(): direct Spyre device execution
     """
     from vllm_spyre_next.custom_ops.silu_and_mul import SpyreSiluAndMul
 
     torch.manual_seed(42)
 
     # Input shape is [num_tokens, 2*d], output shape is [num_tokens, d]
-    x = torch.randn(num_tokens, 2 * d)
+    x = torch.randn(num_tokens, 2 * d, dtype=dtype)
     layer = SpyreSiluAndMul()
 
     expected = reference_silu_and_mul(x)
     actual = layer.forward_oot(x)
 
-    torch.testing.assert_close(actual, expected, atol=1e-1, rtol=1e-1)
+    torch.testing.assert_close(actual, expected, atol=1e-2, rtol=1e-2)
 
 
 @pytest.fixture
@@ -69,8 +79,8 @@ def test_siluandmul_oot_dispatch(default_vllm_config, monkeypatch, dummy_tensor)
     # dispatch_forward should have selected forward_oot
     assert layer._forward_method == layer.forward_oot
 
-    # Mock forward_native (called by forward_oot) with a known transform
-    monkeypatch.setattr(layer, "forward_oot", mock_forward_oot)
+    # Mock _forward_spyre_impl (called by forward_oot) with a known transform
+    monkeypatch.setattr(layer, "_forward_spyre_impl", mock_forward_oot)
     out = layer.forward_oot(dummy_tensor)
 
     # Expected: ones with shape [4, 128] (halved last dim)
