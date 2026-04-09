@@ -28,7 +28,6 @@ def parse_args():
     )
     parser.add_argument("--compare-with-cpu", action=argparse.BooleanOptionalAction)
     parser.add_argument("--attention_backend", "--attention-backend", type=str, default=None)
-    parser.add_argument("--enforce_eager", "--enforce-eager", action="store_true", default=False)
     return parser.parse_args()
 
 
@@ -100,7 +99,6 @@ def main():
         max_num_seqs=max_num_seqs,
         tensor_parallel_size=args.tp,
         max_num_batched_tokens=args.max_num_batched_tokens,
-        enforce_eager=args.enforce_eager,
         dtype="float16",  # Forcing torch.float16 for the model, because of a spyre constraint
         attention_config=AttentionConfig(backend=AttentionBackendEnum[args.attention_backend])
         if args.attention_backend is not None
