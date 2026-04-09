@@ -60,16 +60,21 @@ def convert(tensor, device=None, dtype=None):
     """
     if tensor is None:
         return None
-    # In case the tensor is on spyre and a dtype change is requested
-    # we first need to move it to cpu and then change the dtype.
-    if tensor.device.type == "spyre" and dtype is not None:
-        tensor = tensor.to(device="cpu")
-        # Set the device to spyre to avoid unexpected device change of the return tensor.
-        if device is None:
-            device = "spyre"
 
-    if dtype is not None:
-        tensor = tensor.to(dtype=dtype)
-    if device is not None:
-        tensor = tensor.to(device=device)
+    target_device = device if device is not None else tensor.device.type
+    target_dtype = dtype if dtype is not None else tensor.dtype
+
+    if tensor.device.type == target_device and tensor.dtype == target_dtype:
+        return tensor
+
+    # Spyre requires CPU for dtype changes
+    if tensor.device.type == "spyre" and tensor.dtype != target_dtype:
+        tensor = tensor.to(device="cpu")
+
+    if tensor.dtype != target_dtype:
+        tensor = tensor.to(dtype=target_dtype)
+
+    if tensor.device.type != target_device:
+        tensor = tensor.to(device=target_device)
+
     return tensor
