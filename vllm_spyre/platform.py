@@ -443,15 +443,6 @@ class SpyrePlatform(Platform):
         if params.prompt_logprobs is not None:
             raise ValueError("Prompt logprobs are currently not supported.")
 
-        # Structured Outputs are not supported yet and cause issues in our
-        # scheduler if included in the request
-        if params.structured_outputs is not None:
-            logger.warning(
-                "Structured outputs are currently not supported and "
-                "will be stripped from the request."
-            )
-            params.structured_outputs = None
-
         if "encoder_prompt" in processed_inputs:
             raise ValueError("Encoder-decoder models not supported ")
         if "prompt_token_ids" not in processed_inputs:

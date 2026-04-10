@@ -1,4 +1,5 @@
 import math
+import platform
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -23,6 +24,9 @@ from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec
 from vllm.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, ModelRunnerOutput, SamplerOutput
 from vllm.v1.pool.metadata import PoolingMetadata
 from vllm.v1.request import Request
+from vllm.v1.structured_output.utils import (
+    apply_grammar_bitmask as vllm_apply_grammar_bitmask,
+)
 
 import vllm_spyre.envs as envs_spyre
 import vllm_spyre.utils as utils_spyre
@@ -713,6 +717,7 @@ class ChunkedPrefillModelRunner(
         self.chunk_blocks_count = self.chunk_size // self.block_size
 
         self.prefix_cache_stats = None
+        self._unsupported_backend_logged = False
 
     def load_model(self) -> None:
         self._model = SpyreCausalLM(
@@ -1469,6 +1474,38 @@ class ChunkedPrefillModelRunner(
             return True
         return False
 
+    def apply_grammar_bitmask(
+        self,
+        scheduler_output: "SchedulerOutput",
+        logits: torch.Tensor,
+        batch: SamplingInputBatch,
+    ) -> None:
+        """Apply grammar bitmask in-place to constrain logits for structured
+        output requests.
+        """
+        grammar_output = getattr(scheduler_output, "_spyre_grammar_output", None)
+        if grammar_output is None:
+            return
+
+        ## llguidance is not supported on s390x due to endianness issues.
+        if platform.machine() == "s390x":
+            backend = self.vllm_config.structured_outputs_config.backend
+            if backend == "guidance":
+                raise RuntimeError(
+                    f"Structured output backend '{backend}' is not supported on s390x. "
+                    "'xgrammar' and 'outlines' backends are supported on s390x. "
+                    "Use '--structured-outputs-config '{\"backend\": \"xgrammar\"}'' or "
+                    "'--structured-outputs-config '{\"backend\": \"outlines\"}'' "
+                    "to enable structured outputs."
+                )
+
+        vllm_apply_grammar_bitmask(
+            scheduler_output,
+            grammar_output,
+            batch,  # type: ignore[arg-type]
+            logits,
+        )
+
     @SpyrePlatform.inference_mode()
     def execute_model(
         self,
@@ -1524,6 +1561,13 @@ class ChunkedPrefillModelRunner(
             t1 = time.time() - t0
             logger.debug("t_forward_pass: %.2fms [prefill single chunk][batch size 1]", (t1 * 1000))
             return self.prefill_output()
+
+        # Apply grammar bitmask for structured output requests.
+        self.apply_grammar_bitmask(
+            scheduler_output,
+            logits,
+            self.prefill_batch if is_prefill else self.input_batch,
+        )
 
         # Sample the next token.
         output: SamplerOutput | None = self.model.sample(
