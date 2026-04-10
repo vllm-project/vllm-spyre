@@ -390,3 +390,75 @@ def test_decode_padding_to_same_block(
     assert output.tkv == long_prompt_len + steps
     # One more real block was allocated for the short request
     assert runner.block_pool.get_num_free_blocks() == initial_free_blocks - 2
+
+
+@pytest.mark.cpu
+@pytest.mark.chunked_prefill
+@default_test_params
+def test_tkv_reset_on_new_batch(
+    model: ModelInfo,
+    max_model_len: int,
+    max_num_seqs: int,
+    max_num_batched_tokens: int,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Test that TKV is properly reset when starting a new batch after all
+    requests are finished. This verifies that is_new_batch logic correctly
+    detects when _num_requests == 0 and resets TKV to the new prompt length."""
+    runner: SpyreModelRunner = get_cpu_model_runner(
+        model=model,
+        max_model_len=max_model_len,
+        max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=max_num_batched_tokens,
+        monkeypatch=monkeypatch,
+    )
+
+    # First request with a specific prompt length
+    req_id_1 = "request_1"
+    prompt_len_1 = 50
+    new_req_data = make_new_request_data(req_id_1, prompt_len_1)
+
+    scheduler_output = make_scheduler_output(
+        scheduled_new_reqs=[new_req_data], num_scheduled_tokens={req_id_1: prompt_len_1}
+    )
+    output = runner.execute_model(scheduler_output)
+
+    # Verify TKV is set to the first prompt length
+    assert output.tkv == prompt_len_1
+    assert runner.input_batch._num_requests == 1
+
+    cached_req_data = make_cached_request_data({req_id_1: prompt_len_1})
+    scheduler_output = make_scheduler_output(
+        scheduled_new_reqs=[],
+        scheduled_cached_reqs=cached_req_data,
+        num_scheduled_tokens={req_id_1: 1},
+    )
+    output = runner.execute_model(scheduler_output)
+    assert output.tkv == prompt_len_1 + 1
+
+    # Finish the first request - this should clear the batch
+    scheduler_output = make_scheduler_output(
+        scheduled_new_reqs=[],
+        scheduled_cached_reqs=CachedRequestData.make_empty(),
+        num_scheduled_tokens={},
+        finished_req_ids={req_id_1},
+    )
+    output = runner.execute_model(scheduler_output)
+
+    # Batch should now be empty
+    assert runner.input_batch._num_requests == 0
+
+    req_id_2 = "request_2"
+    prompt_len_2 = 100  # Different from prompt_len_1
+    new_req_data = make_new_request_data(req_id_2, prompt_len_2)
+
+    scheduler_output = make_scheduler_output(
+        scheduled_new_reqs=[new_req_data], num_scheduled_tokens={req_id_2: prompt_len_2}
+    )
+    output = runner.execute_model(scheduler_output)
+
+    assert output.tkv == prompt_len_2, (
+        f"TKV should be reset to new prompt length {prompt_len_2} "
+        f"when starting a new batch, but got {output.tkv}"
+    )
+    assert runner.input_batch._num_requests == 1
