@@ -40,6 +40,8 @@ import subprocess
 import sys
 import tempfile
 import time
+import torch.testing
+
 from pathlib import Path
 
 import pytest
@@ -52,6 +54,7 @@ from vllm_spyre_next.testing.models import (
     ParamAllow,
     ParamOverride,
     ParamSkip,
+    Tolerances,
     UpstreamTestConfig,
 )
 
@@ -111,6 +114,13 @@ def _parse_config(raw_tests: dict) -> UpstreamTestConfig:
                 ParamOverride(param_name=k, values=tuple(v))
                 for k, v in params_section.get("override", {}).items()
             ]
+            tolerances_section = allow.get("tolerances")
+            tolerances = None
+            if tolerances_section:
+                tolerances = Tolerances(
+                    atol=float(tolerances_section.get("atol", 1e-3)),
+                    rtol=float(tolerances_section.get("rtol", 1e-3)),
+                )
             allow_list.append(
                 AllowEntry(
                     test=allow["test"],
@@ -119,6 +129,7 @@ def _parse_config(raw_tests: dict) -> UpstreamTestConfig:
                     param_skips=tuple(param_skips),
                     param_allows=tuple(param_allows),
                     param_overrides=tuple(param_overrides),
+                    tolerances=tolerances,
                 )
             )
         block_list = [BlockEntry(test=b["test"]) for b in file_entry.get("block_list", [])]
@@ -499,6 +510,10 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
         elif allow_entry.mode == "xfail_strict":
             item.add_marker(pytest.mark.xfail(strict=True))
 
+        # Store tolerances on item for fixture access
+        if allow_entry.tolerances:
+            item._spyre_tolerances = allow_entry.tolerances
+
     # Reorder tests so that tests with "uses_subprocess" marker run first
     _reorder_tests_by_name(items)
 
@@ -525,6 +540,28 @@ def _reorder_tests_by_name(items: list[pytest.Item]) -> None:
         return (priority, stable_map[item])
 
     items.sort(key=sort_key)
+
+
+def _convert_yaml_value(value):
+    """Convert YAML string values to Python objects where appropriate.
+
+    Handles torch dtype strings like "torch.half" -> torch.half.
+    """
+    if isinstance(value, str):
+        import torch
+
+        dtype_map = {
+            "torch.half": torch.half,
+            "torch.float16": torch.float16,
+            "torch.bfloat16": torch.bfloat16,
+            "torch.float32": torch.float32,
+            "torch.float": torch.float,
+            "torch.float64": torch.float64,
+            "torch.double": torch.double,
+        }
+        if value in dtype_map:
+            return dtype_map[value]
+    return value
 
 
 @pytest.hookimpl(tryfirst=True)
@@ -555,7 +592,7 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
         for i, marker in enumerate(metafunc.definition.own_markers):
             if marker.name == "parametrize" and marker.args[0] == po.param_name:
                 metafunc.definition.own_markers[i] = pytest.mark.parametrize(
-                    po.param_name, list(po.values)
+                    po.param_name, [_convert_yaml_value(v) for v in po.values]
                 ).mark
                 break
 
@@ -596,6 +633,31 @@ def default_vllm_config(monkeypatch):
 def should_do_global_cleanup_after_test():
     """Skip global cleanup for Spyre - torch.accelerator.empty_cache() doesn't work yet."""
     return False
+
+
+@pytest.fixture(autouse=True)
+def relax_torch_tolerances(request, monkeypatch):
+    """Relax torch.testing.assert_close tolerances for upstream tests.
+
+    Only applies to tests with explicit tolerances configured in upstream_tests.yaml:
+
+        - test: "test_foo"
+          tolerances:
+            atol: 1e-3
+            rtol: 1e-3
+    """
+    tolerances = getattr(request.node, "_spyre_tolerances", None)
+    if tolerances is None:
+        return
+
+    _original = torch.testing.assert_close
+
+    def relaxed_assert_close(*args, **kwargs):
+        kwargs["atol"] = tolerances.atol
+        kwargs["rtol"] = tolerances.rtol
+        return _original(*args, **kwargs)
+
+    monkeypatch.setattr(torch.testing, "assert_close", relaxed_assert_close)
 
 
 @pytest.hookimpl(tryfirst=True)

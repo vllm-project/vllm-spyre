@@ -14,6 +14,10 @@
 #                     Parameter name -> list of values to skip
 #   allow_list[].params.override
 #                     Parameter name -> replacement values (replaces upstream defaults)
+#   allow_list[].tolerances
+#                     Optional tolerance config for torch.testing.assert_close:
+#                       atol: float (absolute tolerance)
+#                       rtol: float (relative tolerance)
 #   block_list[].test fnmatch glob matched against test function name
 
 tests:
@@ -33,6 +37,24 @@ tests:
     #           hidden_size: [64]
     #   block_list:
     #     - test: "test_fused_rms_norm_quant"
+    # Currently the tests fail because upstream rtol and atol are 0
+    - rel_path: tests/kernels/core/test_activation.py
+      allow_list:
+        - test: "test_act_and_mul"
+          mode: mandatory_pass
+          tags: [siluandmul, upstream]
+          params:
+            allow:
+              activation: [silu_and_mul]
+            override:
+              num_tokens: [1, 7, 63, 64, 65, 83, 1024]
+              # Odd values fail op check. Not required for current list of models we plan to support
+              d: [8, 64, 512, 13824]
+              dtype: [torch.float32]
+              device: [cpu]
+          tolerances:
+            atol: 1e-2
+            rtol: 1e-2
     - rel_path: tests/models/language/generation/test_common.py
       allow_list:
         - test: "test_models"
