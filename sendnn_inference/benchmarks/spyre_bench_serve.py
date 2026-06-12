@@ -165,6 +165,9 @@ def _print_spyre_section(
     ]
 
     left_padding_blocks = [v for m in metrics_list for v in m.get("left_padding_blocks", [])]
+    pause_lats_ms = [lat * 1000 for m in metrics_list for lat in m.get("pause_latencies_s", [])]
+    pause_counts = [float(len(m.get("pause_latencies_s", []))) for m in metrics_list]
+    total_pause_ms = [float(sum(m.get("pause_latencies_s", []))) * 1000 for m in metrics_list]
 
     _section("Queue Wait Time", queue_times_ms, "Queue Wait Time (ms)")
     _section("Chunked Prefill Count", num_chunks_list, "Num Chunked Prefills")
@@ -172,6 +175,9 @@ def _print_spyre_section(
     _section("Decode Step Latency", decode_lats_ms, "Decode Step Latency (ms)")
     _section("Prefix Cache Hit", cache_hit_pcts, "Prefix Cache Hit (%)")
     _section("Left Padding Blocks", left_padding_blocks, "Left Padding Blocks")
+    _section("Pause Latency", pause_lats_ms, "Pause Latency (ms)")
+    _section("Number of Pauses", pause_counts, "Num Pauses")
+    _section("Total Time Paused", total_pause_ms, "Total Time Paused (ms)")
 
     print("=" * 50)
 
@@ -249,6 +255,8 @@ def _inject_spyre_metrics_into_result_file(
         m.get("prefix_cache_hit_pct", 0.0) for m in metrics_list
     ]
     result["spyre_left_padding_blocks"] = [m.get("left_padding_blocks", []) for m in metrics_list]
+    result["spyre_pause_latencies_s"] = [m.get("pause_latencies_s", []) for m in metrics_list]
+    result["spyre_pause_start_times_s"] = [m.get("pause_start_times_s", []) for m in metrics_list]
 
     try:
         with open(file_path, "w", encoding="utf-8") as fh:

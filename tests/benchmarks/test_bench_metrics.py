@@ -40,6 +40,8 @@ FAKE_METRICS: list[dict[str, Any]] = [
         "tkvs": [512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072],
         "prefix_cache_hit_pct": 0.25,
         "left_padding_blocks": [2, 0, 1],
+        "pause_latencies_s": [0.5, 1.2],
+        "pause_start_times_s": [0.0, 1.2],
     },
     {
         "queued_time_s": 0.00001,
@@ -51,6 +53,8 @@ FAKE_METRICS: list[dict[str, Any]] = [
         "tkvs": [256, 512, 1024, 2048, 4096],
         "prefix_cache_hit_pct": 0.0,
         "left_padding_blocks": [3, 1],
+        "pause_latencies_s": [0.3],
+        "pause_start_times_s": [0.5],
     },
 ]
 
@@ -196,13 +200,16 @@ def test_print_spyre_section_output(capsys):
     out.assert_contains("Total prefill chunks processed:")
     out.assert_contains("10")
 
-    # Section separators and mean/median/percentile lines for all six sections
+    # Section separators and mean/median/percentile lines for all sections
     out.assert_contains("Queue Wait Time")
     out.assert_contains("Chunked Prefill Count")
     out.assert_contains("Chunked Prefill Latency")
     out.assert_contains("Decode Step Latency")
     out.assert_contains("Prefix Cache Hit")
     out.assert_contains("Left Padding Blocks")
+    out.assert_contains("Pause Latency")
+    out.assert_contains("Number of Pauses")
+    out.assert_contains("Total Time Paused")
 
     for label in (
         "Queue Wait Time (ms)",
@@ -211,6 +218,9 @@ def test_print_spyre_section_output(capsys):
         "Decode Step Latency (ms)",
         "Prefix Cache Hit (%)",
         "Left Padding Blocks",
+        "Pause Latency (ms)",
+        "Num Pauses",
+        "Total Time Paused (ms)",
     ):
         out.assert_contains(f"Mean {label}:")
         out.assert_contains(f"Median {label}:")
@@ -271,6 +281,8 @@ _BENCH_FIXTURE: dict[str, Any] = {
     "decode_start_times": [2000.0, 2000.1],
     "tkvs": [64, 128, 192, 256],
     "left_padding_blocks": [2, 0],
+    "pause_start_times": [3000.0, 3005.0],
+    "pause_latencies": [0.5, 1.2],
     "prefill_step_start": 999.0,
     "decode_step_start": 1999.0,
 }
@@ -285,6 +297,7 @@ _EXPECTED_RESULT: dict[str, Any] = {
     "decode_start_times_s": pytest.approx([2000.0, 2000.1]),
     "tkvs": [64, 128, 192, 256],
     "left_padding_blocks": [2, 0],
+    "pause_latencies_s": pytest.approx([0.5, 1.2]),
 }
 
 
@@ -531,6 +544,14 @@ def test_scheduler_bench_metrics_accumulated(
 
         assert info["arrival_ts"] is not None, f"req {req_id}: arrival_ts not set"
         assert info["first_scheduled_ts"] is not None, f"req {req_id}: first_scheduled_ts not set"
+
+        # pause_latencies: list of pause durations (may be absent/None if no pausing occurred)
+        pause_lats = info["pause_latencies"] or []
+        assert isinstance(pause_lats, list), f"req {req_id}: pause_latencies is not a list"
+        for lat in pause_lats:
+            assert isinstance(lat, float) and lat > 0, (
+                f"req {req_id}: non-positive pause_latency {lat}"
+            )
 
         # left_padding_blocks: one entry per decode step, matching decode_latencies length
         assert len(info["left_padding_blocks"]) == len(info["decode_latencies"]), (

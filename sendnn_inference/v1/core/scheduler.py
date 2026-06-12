@@ -37,6 +37,8 @@ class SpyreBenchState:
     decode_start_times: dict[str, list[float]] = field(default_factory=dict)
     tkvs: dict[str, list[int]] = field(default_factory=dict)
     left_padding_blocks: dict[str, list[int]] = field(default_factory=dict)
+    pause_start_times: dict[str, list[float]] = field(default_factory=dict)
+    pause_latencies: dict[str, list[float]] = field(default_factory=dict)
     prefill_step_start: float | None = None
     decode_step_start: float | None = None
 
@@ -334,6 +336,8 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         dec_starts = self._bench.decode_start_times.pop(req_id, None)
         tkvs = self._bench.tkvs.pop(req_id, None)
         left_padding_blocks = self._bench.left_padding_blocks.pop(req_id, None)
+        pause_lats = self._bench.pause_latencies.pop(req_id, None)
+        pause_starts = self._bench.pause_start_times.pop(req_id, None)
         if lats is None and dec_lats is None:
             return None
         return {
@@ -344,6 +348,8 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
             "decode_start_times_s": dec_starts or [],
             "tkvs": tkvs or [],
             "left_padding_blocks": left_padding_blocks or [],
+            "pause_latencies_s": pause_lats or [],
+            "pause_start_times_s": pause_starts or [],
         }
 
     def _free_request(self, request, delay_free_blocks: bool = False):
@@ -377,6 +383,8 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
                 "tkvs": chunk_stats["tkvs"] if chunk_stats else [],
                 "prefix_cache_hit_pct": cache_hit_pct,
                 "left_padding_blocks": chunk_stats["left_padding_blocks"] if chunk_stats else [],
+                "pause_latencies_s": chunk_stats["pause_latencies_s"] if chunk_stats else [],
+                "pause_start_times_s": chunk_stats["pause_start_times_s"] if chunk_stats else [],
             }
             if kv_xfer_params is None:
                 kv_xfer_params = {"__spyre__": spyre_data}
@@ -770,6 +778,11 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
             self.running.remove(request_to_remove)
             self.paused_decoding_requests.append(request_to_remove)
             logger.info("Request %s paused due to batch TKV limit ", request_to_remove.request_id)
+            if self._bench is not None:
+                pause_ts = time.time()
+                self._bench.pause_start_times.setdefault(request_to_remove.request_id, []).append(
+                    pause_ts
+                )
 
         # It shouldn't be possible to remove all requests if we started with some
         assert not initial_had_requests or len(decoding_requests) > 0
@@ -791,6 +804,13 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
                         "Request %s resumed (batch TKV capacity available).",
                         request_to_add.request_id,
                     )
+                    if self._bench is not None:
+                        starts = self._bench.pause_start_times.get(request_to_add.request_id)
+                        if starts:
+                            duration = time.time() - starts[-1]
+                            self._bench.pause_latencies.setdefault(
+                                request_to_add.request_id, []
+                            ).append(duration)
                 else:
                     # Can't add any more requests
                     break
