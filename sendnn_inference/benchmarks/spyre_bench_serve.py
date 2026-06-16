@@ -147,7 +147,7 @@ def _print_spyre_section(
 
     def _section(header: str, values: list[float], label: str) -> None:
         if not values:
-            return
+            values = [0.0]
         arr = np.array(values)
         print("{s:{c}^{n}}".format(s=f" {header} ", n=50, c="-"))
         print("{:<40} {:<10.2f}".format(f"Mean {label}:", float(np.mean(arr))))
@@ -324,10 +324,8 @@ def main() -> None:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
-    # Force chat endpoint and our backend.
+    # Force our custom backend so Spyre metrics are always collected.
     args.backend = _BACKEND_NAME
-    if not hasattr(args, "endpoint") or args.endpoint == "/v1/completions":
-        args.endpoint = "/v1/chat/completions"
 
     selected_percentiles = [float(p) for p in args.metric_percentiles.split(",")]
 
