@@ -240,68 +240,9 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
             "Expecting an instance of CPSpyreModelRunnerOutput when doing chunked prefill."
         )
 
-        # Update the correct num_computed_tokens value given left-padding and
-        # prefix cache hit info
-        for req in self.ongoing_prefills:
-            # The number of computed tokens only need to be adapted when it is
-            # the first chunk of a multi-chunk prefill
-            is_first_chunk = req.num_computed_tokens <= self.chunk_size
-            is_last_chunk = req.num_computed_tokens == req.num_prompt_tokens
-            if is_first_chunk and not is_last_chunk:
-                left_padding = model_runner_output.left_padding.get(req.request_id, 0)
-                prefix_cache_len = model_runner_output.prefix_cache_hit_len.get(req.request_id, 0)
-
-                req.num_computed_tokens = self.adjust_computed_tokens(
-                    computed_tokens=req.num_computed_tokens,
-                    left_padding=left_padding,
-                    prefix_cache_len=prefix_cache_len,
-                )
-
         # Measure timing durations and accumulate metrics (scheduler-side timing injection)
         if self._bench is not None:
-            now = time.time()
-
-            # Prefill duration measurement (if prefill step was scheduled)
-            if self._bench.prefill_step_start is not None:
-                assert self.previous_step_was_prefill and self._bench.decode_step_start is None
-                t0 = self._bench.prefill_step_start
-                duration = now - t0
-                all_prefill_reqs = [
-                    r.req_id for r in scheduler_output.scheduled_new_reqs
-                ] + scheduler_output.scheduled_cached_reqs.req_ids
-                for req_id in all_prefill_reqs:
-                    self._bench.chunk_latencies.setdefault(req_id, []).append(duration)
-                    self._bench.chunk_start_times.setdefault(req_id, []).append(t0)
-                    self._bench.tkvs.setdefault(req_id, []).append(model_runner_output.tkv)
-                self._bench.prefill_step_start = None
-                self._bench.decode_step_start = None
-
-            # Decode duration measurement (if decode step was scheduled)
-            elif self._bench.decode_step_start is not None:
-                assert not self.previous_step_was_prefill and self._bench.prefill_step_start is None
-                t0 = self._bench.decode_step_start
-                duration = now - t0
-                tkv = model_runner_output.tkv
-                max_num_blocks = math.ceil(tkv / self.block_size)
-                req_by_id = {r.request_id: r for r in self.running}
-                for req_id in scheduler_output.scheduled_cached_reqs.req_ids:
-                    self._bench.decode_latencies.setdefault(req_id, []).append(duration)
-                    self._bench.decode_start_times.setdefault(req_id, []).append(t0)
-                    self._bench.tkvs.setdefault(req_id, []).append(tkv)
-                    req = req_by_id.get(req_id)
-                    if req is not None:
-                        req_num_blocks = math.ceil(req.num_computed_tokens / self.block_size)
-                        self._bench.left_padding_blocks.setdefault(req_id, []).append(
-                            max_num_blocks - req_num_blocks
-                        )
-                self._bench.prefill_step_start = None
-                self._bench.decode_step_start = None
-
-            # Track first-scheduled time and arrival time for queue-wait calculation
-            for req in self.ongoing_prefills:
-                if req.request_id not in self._bench.first_scheduled_ts:
-                    self._bench.first_scheduled_ts[req.request_id] = now
-                    self._bench.arrival_ts[req.request_id] = req.arrival_time
+            self._bench_update_from_output(scheduler_output, model_runner_output)
 
         # Remove completed prefills
         self.ongoing_prefills = [
@@ -319,6 +260,53 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
             assert self.total_reserved_blocks >= 0
 
         return result
+
+    def _bench_update_from_output(
+        self,
+        scheduler_output: "SchedulerOutput",
+        model_runner_output: SpyreModelRunnerOutput,
+    ) -> None:
+        assert self._bench is not None
+        now = time.time()
+
+        if self._bench.prefill_step_start is not None:
+            assert self.previous_step_was_prefill and self._bench.decode_step_start is None
+            t0 = self._bench.prefill_step_start
+            duration = now - t0
+            all_prefill_reqs = [
+                r.req_id for r in scheduler_output.scheduled_new_reqs
+            ] + scheduler_output.scheduled_cached_reqs.req_ids
+            for req_id in all_prefill_reqs:
+                self._bench.chunk_latencies.setdefault(req_id, []).append(duration)
+                self._bench.chunk_start_times.setdefault(req_id, []).append(t0)
+                self._bench.tkvs.setdefault(req_id, []).append(model_runner_output.tkv)
+            self._bench.prefill_step_start = None
+            self._bench.decode_step_start = None
+
+        elif self._bench.decode_step_start is not None:
+            assert not self.previous_step_was_prefill and self._bench.prefill_step_start is None
+            t0 = self._bench.decode_step_start
+            duration = now - t0
+            tkv = model_runner_output.tkv
+            max_num_blocks = math.ceil(tkv / self.block_size)
+            req_by_id = {r.request_id: r for r in self.running}
+            for req_id in scheduler_output.scheduled_cached_reqs.req_ids:
+                self._bench.decode_latencies.setdefault(req_id, []).append(duration)
+                self._bench.decode_start_times.setdefault(req_id, []).append(t0)
+                self._bench.tkvs.setdefault(req_id, []).append(tkv)
+                req = req_by_id.get(req_id)
+                if req is not None:
+                    req_num_blocks = math.ceil(req.num_computed_tokens / self.block_size)
+                    self._bench.left_padding_blocks.setdefault(req_id, []).append(
+                        max_num_blocks - req_num_blocks
+                    )
+            self._bench.prefill_step_start = None
+            self._bench.decode_step_start = None
+
+        for req in self.ongoing_prefills:
+            if req.request_id not in self._bench.first_scheduled_ts:
+                self._bench.first_scheduled_ts[req.request_id] = now
+                self._bench.arrival_ts[req.request_id] = req.arrival_time
 
     def get_and_clear_chunk_stats(self, req_id: str) -> dict | None:
         """Return and clear accumulated chunk timing for a finished request."""
@@ -386,22 +374,6 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
                 kv_xfer_params["__spyre__"] = spyre_data
 
         return kv_xfer_params
-
-    def adjust_computed_tokens(
-        self, computed_tokens: int, left_padding: int, prefix_cache_len: int
-    ) -> int:
-        """
-        Returns an adjusted `num_computed_tokens` given left padding and prefix
-        cache hit info.
-        """
-        # The prefix cache length is already adjusted for left padding.
-        # If it's bigger than the number of computed tokens, then we hit more
-        # prefix cache than we scheduled.
-        if prefix_cache_len > computed_tokens:
-            assert (prefix_cache_len + left_padding) % self.chunk_size == 0
-            return prefix_cache_len
-        # Otherwise just account for the left padding
-        return computed_tokens - left_padding
 
     def _current_chunk_token_threshold(self, new_prefill_candidates: list[Request]) -> int:
         """Returns the `long_prefill_token_threshold` to use for this step.
@@ -575,7 +547,7 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
             ready_to_prefill = [
                 r
                 for r in self.waiting
-                if r.status != RequestStatus.WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR  # type: ignore[attr-defined]
+                if r.status != RequestStatus.WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR
             ]
             if ready_to_prefill:
                 new_prefill_candidates = list(self.waiting)
@@ -663,7 +635,7 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
 
         assert 0 <= self.total_reserved_blocks <= free_blocks
 
-        # Inject scheduler-side step-start timestamps for accurate timing measurement
+        # Inject step-start timestamps for timing measurement
         if self._bench is not None:
             now = time.time()
             if self.previous_step_was_prefill:
