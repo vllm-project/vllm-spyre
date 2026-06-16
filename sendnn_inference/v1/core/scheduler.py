@@ -48,12 +48,6 @@ class SpyreBenchState:
 assert SpyrePlatform.get_block_size() == 64
 
 
-def round_up_to_block_size(n: int) -> int:
-    # Helper function to round up to the nearest block size
-    # Uses bitwise alignment for better performance
-    return (n + 63) & ~63
-
-
 class SpyreScheduler(Scheduler):
     """Base class inheriting from the V1 scheduler to support static
     and continuous batching respecting AIU Spyre constraints."""
@@ -220,7 +214,7 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         # are interleaved with a decode step. This allows to minimize currently
         # decoding requests
         self.do_interleaving: bool = envs_spyre.SENDNN_INFERENCE_CP_INTERLEAVE_STEPS
-        self.previous_step_was_prefill: bool = False
+        self.step_is_prefill: bool = False
 
         self.tkv = 0
         self.block_size = SpyrePlatform.get_block_size()
@@ -528,11 +522,11 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
             if schedule_prefill:
                 running_holdback = [r for r in self.running if r not in self.ongoing_prefills]
                 self.running = self.ongoing_prefills
-                self.previous_step_was_prefill = True
+                self.step_is_prefill = True
             else:
                 self.running = [r for r in self.running if r not in self.ongoing_prefills]
                 running_holdback = self.ongoing_prefills
-                self.previous_step_was_prefill = False
+                self.step_is_prefill = False
 
         # Check new requests to prefill
         elif len(self.waiting) > 0:
@@ -554,7 +548,7 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
                 # Hide current decodes from the scheduler
                 running_holdback = self.running
                 self.running = []
-                self.previous_step_was_prefill = True
+                self.step_is_prefill = True
             else:
                 # Grammar not yet initialized for any waiting request.
                 # Return them to holdback so the base scheduler doesn't
@@ -562,12 +556,12 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
                 while self.waiting:
                     holdback_queue.appendleft(self.waiting.pop())
                 running_holdback = []
-                self.previous_step_was_prefill = False
+                self.step_is_prefill = False
         else:
-            self.previous_step_was_prefill = False
+            self.step_is_prefill = False
             running_holdback = []
 
-        if not self.previous_step_was_prefill:
+        if not self.step_is_prefill:
             self._handle_decode_requests_pausing()
 
         # delegate to super of SpyreScheduler: base V1 Scheduler
@@ -717,7 +711,7 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
 
         # If we do interleaving, then two consecutive prefill steps are
         # forbidden when there are decoding requests
-        if self.do_interleaving and self.previous_step_was_prefill and len(decoding_requests) > 0:
+        if self.do_interleaving and self.step_is_prefill and len(decoding_requests) > 0:
             return False
 
         # Requests that are already prefilling are prioritized over new requests
@@ -758,18 +752,22 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         2. Resumes previously paused requests (oldest first) when capacity is available
         """
         decoding_requests = [r for r in self.running if r not in self.ongoing_prefills]
+        resumed = self._maybe_resume_decoding_requests(decoding_requests)
+        if not resumed:
+            self._maybe_pause_decoding_requests(decoding_requests)
 
-        had_to_remove = False
+    def _maybe_pause_decoding_requests(self, decoding_requests: list[Request]) -> int:
+        """
+        Iteratively pauses requests with the fewest decoded tokens until the batch fits
+        within TKV constraints. Mutates both decoding_requests and self.running.
+
+        Returns the number of requests paused.
+        """
         initial_had_requests = len(decoding_requests) > 0
+        num_paused = 0
 
-        # If we can't decode all requests due to batch TKV limits, iteratively
-        # remove requests with the fewest decoded tokens and pause them until
-        # the remaining batch fits within constraints
+        # TODO we should test different removal logics: longest request, optimize padding
         while not self._can_decode_all_requests(decoding_requests):
-            had_to_remove = True
-
-            # TODO we should test different removal logics: longest request, optimize padding
-            # Remove the request with the fewest decoded tokens
             # Decoded tokens = num_computed_tokens - num_prompt_tokens
             request_to_remove = min(
                 decoding_requests, key=lambda r: r.num_computed_tokens - r.num_prompt_tokens
@@ -778,6 +776,9 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
             self.running.remove(request_to_remove)
             self.paused_decoding_requests.append(request_to_remove)
             logger.info("Request %s paused due to batch TKV limit ", request_to_remove.request_id)
+            num_paused += 1
+
+            # update benchmark pausing statistics
             if self._bench is not None:
                 pause_ts = time.time()
                 self._bench.pause_start_times.setdefault(request_to_remove.request_id, []).append(
@@ -787,33 +788,42 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         # It shouldn't be possible to remove all requests if we started with some
         assert not initial_had_requests or len(decoding_requests) > 0
 
-        # If we didn't have to remove any requests, try to add back previously
-        # paused requests (oldest first) as long as they fit within constraints
-        if not had_to_remove:
-            while self.paused_decoding_requests:
-                # Try adding the oldest paused request (first in list)
-                request_to_add = self.paused_decoding_requests[0]
-                test_requests = decoding_requests + [request_to_add]
+        return num_paused
 
-                if self._can_decode_all_requests(test_requests):
-                    # Can add this request back
-                    self.paused_decoding_requests.pop(0)
-                    self.running.append(request_to_add)
-                    decoding_requests.append(request_to_add)
-                    logger.info(
-                        "Request %s resumed (batch TKV capacity available).",
-                        request_to_add.request_id,
-                    )
-                    if self._bench is not None:
-                        starts = self._bench.pause_start_times.get(request_to_add.request_id)
-                        if starts:
-                            duration = time.time() - starts[-1]
-                            self._bench.pause_latencies.setdefault(
-                                request_to_add.request_id, []
-                            ).append(duration)
-                else:
-                    # Can't add any more requests
-                    break
+    def _maybe_resume_decoding_requests(self, decoding_requests: list[Request]) -> int:
+        """
+        Resumes previously paused requests (oldest first) when TKV capacity is available.
+        Mutates both decoding_requests and self.running.
+
+        Returns the number of requests resumed.
+        """
+        num_resumed = 0
+
+        # Reverse iteration: pop(i) only shifts indices above i, which are already visited.
+        for i in range(len(self.paused_decoding_requests) - 1, -1, -1):
+            request_to_add = self.paused_decoding_requests[i]
+            test_requests = decoding_requests + [request_to_add]
+
+            if self._can_decode_all_requests(test_requests):
+                self.paused_decoding_requests.pop(i)
+                self.running.append(request_to_add)
+                decoding_requests.append(request_to_add)
+                logger.info(
+                    "Request %s resumed (batch TKV capacity available).",
+                    request_to_add.request_id,
+                )
+                num_resumed += 1
+
+                # update benchmark pausing statistics
+                if self._bench is not None:
+                    starts = self._bench.pause_start_times.get(request_to_add.request_id)
+                    if starts:
+                        duration = time.time() - starts[-1]
+                        self._bench.pause_latencies.setdefault(
+                            request_to_add.request_id, []
+                        ).append(duration)
+
+        return num_resumed
 
     def predict_next_decode_tkv(self, running_requests: list[Request]) -> int:
         """
