@@ -403,6 +403,40 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         # Otherwise just account for the left padding
         return computed_tokens - left_padding
 
+    def _current_chunk_token_threshold(self, new_prefill_candidates: list[Request]) -> int:
+        """Returns the `long_prefill_token_threshold` to use for this step.
+
+        For the chunk-0 step cap to `chunk_size - left_padding` so the base
+        scheduler is aware of the padding blocks.
+        Otherwise return `chunk_size`: the natural chunk boundary."""
+
+        # If there are no new prefill candidates, no cap is needed.
+        if not new_prefill_candidates:
+            return self.chunk_size
+
+        new_prefill = new_prefill_candidates[0]
+
+        # Calculate left-padding tokens for this prompt.
+        prompt_len = new_prefill.num_prompt_tokens
+        n_chunks = math.ceil(prompt_len / self.chunk_size)
+        padded_prompt_len = math.ceil(prompt_len / self.block_size) * self.block_size
+        left_padding = n_chunks * self.chunk_size - padded_prompt_len
+
+        # If the prefix cache already covers chunk 0's real content, no cap is
+        # needed: the base scheduler will start from chunk i>=1, which has no
+        # padding. `get_computed_blocks` records into `prefix_cache_stats` as
+        # a side effect; the base scheduler calls it again, so toggle
+        # log_stats off here to avoid double-counting.
+        prev_log_stats = self.kv_cache_manager.log_stats
+        self.kv_cache_manager.log_stats = False
+        _, prefix_token_len = self.kv_cache_manager.get_computed_blocks(new_prefill)
+        self.kv_cache_manager.log_stats = prev_log_stats
+        if prefix_token_len >= self.chunk_size - left_padding:
+            return self.chunk_size
+
+        # Adjust the token threshold to account for left padding
+        return self.chunk_size - left_padding
+
     def _get_required_blocks(self, request: Request, max_output: bool = False) -> tuple[int, int]:
         """
         Returns the block parameters for the given request.
@@ -563,6 +597,15 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
 
         if not self.step_is_prefill:
             self._handle_decode_requests_pausing()
+
+        # Cap chunk-0 token count to chunk_size - left_padding so the upstream KV
+        # cache manager doesn't allocate a real blocks for the left-padding region.
+        # Only matters at chunk 0; later chunks land on natural chunk boundaries.
+        # Mutating scheduler_config is safe: the SpyreScheduler is the only
+        # scheduler in this engine and at most one prefill is in flight per step.
+        self.scheduler_config.long_prefill_token_threshold = self._current_chunk_token_threshold(
+            new_prefill_candidates
+        )
 
         # delegate to super of SpyreScheduler: base V1 Scheduler
         outputs = super(SpyreScheduler, self).schedule()
