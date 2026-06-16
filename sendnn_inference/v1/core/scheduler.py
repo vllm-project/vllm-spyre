@@ -270,7 +270,7 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         now = time.time()
 
         if self._bench.prefill_step_start is not None:
-            assert self.previous_step_was_prefill and self._bench.decode_step_start is None
+            assert self.step_is_prefill and self._bench.decode_step_start is None
             t0 = self._bench.prefill_step_start
             duration = now - t0
             all_prefill_reqs = [
@@ -284,7 +284,7 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
             self._bench.decode_step_start = None
 
         elif self._bench.decode_step_start is not None:
-            assert not self.previous_step_was_prefill and self._bench.prefill_step_start is None
+            assert not self.step_is_prefill and self._bench.prefill_step_start is None
             t0 = self._bench.decode_step_start
             duration = now - t0
             tkv = model_runner_output.tkv
@@ -638,7 +638,7 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         # Inject step-start timestamps for timing measurement
         if self._bench is not None:
             now = time.time()
-            if self.previous_step_was_prefill:
+            if self.step_is_prefill:
                 self._bench.prefill_step_start = now
                 self._bench.decode_step_start = None
             else:
