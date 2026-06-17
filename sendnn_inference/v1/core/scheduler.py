@@ -39,6 +39,7 @@ class SpyreBenchState:
     left_padding_blocks: dict[str, list[int]] = field(default_factory=dict)
     pause_start_times: dict[str, list[float]] = field(default_factory=dict)
     pause_latencies: dict[str, list[float]] = field(default_factory=dict)
+    blocks_lacking: dict[str, bool] = field(default_factory=dict)
     prefill_step_start: float | None = None
     decode_step_start: float | None = None
 
@@ -320,6 +321,7 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         left_padding_blocks = self._bench.left_padding_blocks.pop(req_id, None)
         pause_lats = self._bench.pause_latencies.pop(req_id, None)
         pause_starts = self._bench.pause_start_times.pop(req_id, None)
+        was_missing_blocks = self._bench.blocks_lacking.pop(req_id, False)
         if lats is None and dec_lats is None:
             return None
         return {
@@ -332,6 +334,7 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
             "left_padding_blocks": left_padding_blocks or [],
             "pause_latencies_s": pause_lats or [],
             "pause_start_times_s": pause_starts or [],
+            "was_missing_blocks": was_missing_blocks,
         }
 
     def _free_request(self, request, delay_free_blocks: bool = False):
@@ -367,6 +370,7 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
                 "left_padding_blocks": chunk_stats["left_padding_blocks"] if chunk_stats else [],
                 "pause_latencies_s": chunk_stats["pause_latencies_s"] if chunk_stats else [],
                 "pause_start_times_s": chunk_stats["pause_start_times_s"] if chunk_stats else [],
+                "was_missing_blocks": chunk_stats["was_missing_blocks"] if chunk_stats else False,
             }
             if kv_xfer_params is None:
                 kv_xfer_params = {"__spyre__": spyre_data}
@@ -482,6 +486,8 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
             new_request = holdback_queue[0]
             cached, blocks = self._get_required_blocks(new_request, True)
             if blocks > available_blocks:
+                if self._bench is not None:
+                    self._bench.blocks_lacking[new_request.request_id] = True
                 break
 
             if self.can_schedule_prefill(new_request):
