@@ -725,7 +725,16 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
 
         # check that there is space in the current decode batch
         num_running = len(decoding_requests)
-        return num_running + len(self.waiting) < self.max_num_running_reqs
+        cond1 = num_running + len(self.waiting) < self.max_num_running_reqs
+
+        if request not in decoding_requests:
+            decoding_requests += [request]
+
+        # check that we can prefill and add the new request to the decode batch without
+        # getting it paused
+        cond2 = lambda: self._can_decode_all_requests(decoding_requests)
+
+        return cond1 and cond2()
 
     def _has_scheduling_priority(self, request):
         decoding_requests = [r for r in self.running if r not in self.ongoing_prefills]
