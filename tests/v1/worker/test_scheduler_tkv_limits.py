@@ -189,56 +189,15 @@ def test_scheduler_tkv_limits_ongoing_batch(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.mark.cpu
 @pytest.mark.chunked_prefill
-def test_chunked_prefill_make_stats_zeros_mm_cache_hits(
-    monkeypatch: pytest.MonkeyPatch,
-):
-    """
-    Regression test: Spyre forces MM cache hit reporting to zero in make_stats().
-
-    Spyre does not support cross-request MM cache reuse today. This test
-    verifies that ChunkedPrefillSpyreScheduler.make_stats() forces
-    mm_cache_stats.hits to zero while still applying the existing
-    prefix-cache hit correction.
-    """
-    model_runner = InstrumentedModelRunner.build(
-        monkeypatch=monkeypatch,
-        max_num_batched_tokens=512,
-        max_num_seqs=32,
-        max_model_len=32768,
-        available_blocks=32768,
-    )
-    scheduler = model_runner.scheduler
-
-    fake_stats = SimpleNamespace(
-        prefix_cache_stats=SimpleNamespace(queries=256, hits=128),
-        mm_cache_stats=SimpleNamespace(hits=5),
-        kv_connector_stats=None,
-    )
-
-    monkeypatch.setattr(
-        SpyreScheduler,
-        "make_stats",
-        lambda self, *args, **kwargs: fake_stats,
-    )
-
-    stats = scheduler.make_stats()
-
-    assert stats is fake_stats
-    assert stats.mm_cache_stats.hits == 0
-    assert stats.prefix_cache_stats.hits == scheduler.adjust_hit(256, 128)
-
-
-@pytest.mark.cpu
-@pytest.mark.chunked_prefill
 def test_chunked_prefill_make_stats_without_mm_cache_stats(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """
     Regression test: make_stats() handles stats objects without mm_cache_stats.
 
-    This verifies that the defensive getattr() guard avoids attribute errors
-    when the returned stats object does not expose mm_cache_stats, while the
-    existing prefix-cache correction still applies.
+    make_stats() no longer reads or writes mm_cache_stats, so a base stats object
+    that omits the attribute must not raise, while the prefix-cache correction and
+    the dedicated sendnn vision-encoder metric still apply.
     """
     model_runner = InstrumentedModelRunner.build(
         monkeypatch=monkeypatch,

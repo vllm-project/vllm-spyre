@@ -109,6 +109,61 @@ class Mistral3MMUtils(MMUtilsBase):
         )  # ty: ignore[call-non-callable]
         return input_embeds
 
+    @staticmethod
+    def encode_images(
+        fms_model: torch.nn.Module,
+        mm_features: list[MultiModalFeatureSpec],
+        mm_device: str,
+    ) -> torch.Tensor:
+        """Run the PixtralVision tower + projector for mistral3 and return the
+        packed image features [num_image_tokens, emb_dim]."""
+        if len(mm_features) != 1:
+            raise ValueError("Currently we assume we only embed one mm request at a time")
+        mm_spec = mm_features[0].data
+
+        # As in get_maybe_mm_embeddings: mistral tokenizer emits "images" not "pixel_values".
+        if isinstance(mm_spec, MultiModalKwargsItem) and "images" in mm_spec:
+            mm_spec["pixel_values"] = mm_spec.pop("images")
+        if mm_spec is None or "pixel_values" not in mm_spec:
+            raise KeyError("Mistral3 requires pixel_values")
+
+        pixel_values = mm_spec["pixel_values"].data
+        if pixel_values.ndim == 3:
+            pixel_values = pixel_values.unsqueeze(0)
+        mm_dtype = envs_spyre.SENDNN_INFERENCE_CPU_MM_DTYPE
+        if pixel_values.device.type != mm_device or pixel_values.dtype != mm_dtype:
+            pixel_values = pixel_values.to(device=mm_device, dtype=mm_dtype)
+
+        if "image_sizes" in mm_spec:
+            image_sizes_tensor = mm_spec["image_sizes"].data
+            if image_sizes_tensor.ndim == 1:
+                image_sizes = [(image_sizes_tensor[0].item(), image_sizes_tensor[1].item())]
+            else:
+                image_sizes = [(h.item(), w.item()) for h, w in image_sizes_tensor]
+        else:
+            image_sizes = [(img.shape[-2], img.shape[-1]) for img in pixel_values]
+
+        return fms_model._get_image_features(pixel_values, image_sizes)
+
+    @staticmethod
+    def embed_text(fms_model: torch.nn.Module, input_ids: torch.Tensor) -> torch.Tensor:
+        return fms_model._get_text_embeddings(input_ids, None)
+
+    @staticmethod
+    def merge_embeddings(
+        fms_model: torch.nn.Module,
+        input_ids: torch.Tensor,
+        text_embeds: torch.Tensor,
+        image_features: torch.Tensor,
+    ) -> torch.Tensor:
+        return fms_model._merge_multimodal_embeddings(
+            input_ids,
+            text_embeds,
+            image_features,
+            device=text_embeds.device,
+            dtype=text_embeds.dtype,
+        )
+
     def get_warmup_inputs(self, req_count: int) -> MMWarmupInputs:
         """Generate input for warmup using using dummy image."""
 
