@@ -30,12 +30,6 @@ if importlib.util.find_spec("torch_nnpa") is not None:
     os.environ.setdefault("TORCH_DEVICE_BACKEND_AUTOLOAD", "0")
 
 import importlib.metadata  # noqa: E402
-import json  # noqa: E402
-from logging.config import dictConfig  # noqa: E402
-from typing import Any  # noqa: E402
-
-from vllm.envs import VLLM_CONFIGURE_LOGGING, VLLM_LOGGING_CONFIG_PATH  # noqa: E402
-from vllm.logger import DEFAULT_LOGGING_CONFIG  # noqa: E402
 
 __version__ = importlib.metadata.version("sendnn_inference")
 
@@ -43,6 +37,14 @@ __version__ = importlib.metadata.version("sendnn_inference")
 def register():
     """Register the Spyre platform."""
     return "sendnn_inference.platform.SpyrePlatform"
+
+
+import json  # noqa: E402
+from logging.config import dictConfig  # noqa: E402
+from typing import Any  # noqa: E402
+
+from vllm.envs import VLLM_CONFIGURE_LOGGING, VLLM_LOGGING_CONFIG_PATH  # noqa: E402
+from vllm.logger import DEFAULT_LOGGING_CONFIG  # noqa: E402
 
 
 def _init_logging():
