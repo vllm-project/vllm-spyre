@@ -16,6 +16,11 @@ def _model_info_from_env() -> ModelInfo:
 def test_decoder_model_load_smoke(monkeypatch: pytest.MonkeyPatch) -> None:
     model = _model_info_from_env()
     patch_environment("eager", monkeypatch)
+    # SpyreMultiprocExecutor (used for async MM encoding) is only tested with
+    # VLLM_ENABLE_V1_MULTIPROCESSING=0 — running it inside a SyncMPClient
+    # EngineCore subprocess is untested and causes "operation was canceled"
+    # for MM models. Keep the EngineCore in-process for this smoke test.
+    monkeypatch.setenv("VLLM_ENABLE_V1_MULTIPROCESSING", "0")
 
     llm = LLM(
         model=model.name,

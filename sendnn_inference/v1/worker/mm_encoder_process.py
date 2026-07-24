@@ -240,7 +240,7 @@ def encoder_process_main(
 
     try:
         runner = VisionEncoderRunner(vllm_config)
-    except Exception as exc:
+    except BaseException as exc:
         logger.exception("encoder_process: failed to load vision model: %s", exc)
         result_queue.put(f"ERROR: {exc}")
         return
