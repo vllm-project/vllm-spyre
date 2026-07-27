@@ -376,9 +376,7 @@ def encoder_process_main(
             # Cumulative encoder-cache counters ride along so the scheduler can
             # surface the real MM cache hit rate (see scheduler.make_stats).
             cache = runner.mm_encoder_cache
-            result_queue.put(
-                (req_id, tuple(embeds.shape), embeds.dtype, cache.hits, cache.misses)
-            )
+            result_queue.put((req_id, tuple(embeds.shape), embeds.dtype, cache.hits, cache.misses))
             # Tombstone: a late cancel may still arrive on cancel_queue for this req_id.
             processed_ids.add(req_id)
             logger.info("maybe_mm_embedding processing time: %.2fms", t_elapsed * 1000)
