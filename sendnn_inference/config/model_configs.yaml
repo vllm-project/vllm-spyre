@@ -314,6 +314,30 @@ models:
 
 
   # Embedding models (static batching only, no device configs needed)
+  ibm-granite/granite-embedding-30m-english:
+    architecture:
+      model_type: roberta
+      num_hidden_layers: 6
+      vocab_size: 50265
+
+    static_batching_configs:
+      - tp_size: 1
+        warmup_shapes:
+          - prompt_len: 512
+            batch_size: 64
+
+  ibm-granite/granite-embedding-107m-multilingual:
+    architecture:
+      model_type: xlm-roberta
+      num_hidden_layers: 6
+      vocab_size: 250002
+
+    static_batching_configs:
+      - tp_size: 1
+        warmup_shapes:
+          - prompt_len: 512
+            batch_size: 64
+
   ibm-granite/granite-embedding-125m-english:
     architecture:
       model_type: roberta
