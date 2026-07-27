@@ -267,7 +267,6 @@ class SpyrePlatform(Platform):
         if (
             is_decoder
             and model_config.is_multimodal_model
-            and parallel_config.world_size > 1
             and envs_spyre.SENDNN_INFERENCE_ASYNC_MM_ENCODER
         ):
             from sendnn_inference.v1.executor.spyre_executor import SpyreMultiprocExecutor
