@@ -389,7 +389,7 @@ models:
           - prompt_len: 512
             batch_size: 64
 
-    intfloat/multilingual-e5-large:
+  intfloat/multilingual-e5-large:
     architecture:
       model_type: xlm-roberta
       num_hidden_layers: 24
@@ -401,7 +401,7 @@ models:
           - prompt_len: 512
             batch_size: 64
 
-    intfloat/multilingual-e5-large-instruct:
+  intfloat/multilingual-e5-large-instruct:
     architecture:
       model_type: xlm-roberta
       num_hidden_layers: 24
@@ -411,7 +411,7 @@ models:
       - tp_size: 1
         warmup_shapes:
           - prompt_len: 512
-            batch_size: 256
+            batch_size: 4
 
   # Other supported models (static batching only)
 
