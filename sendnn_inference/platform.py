@@ -659,9 +659,16 @@ class SpyrePlatform(Platform):
             try:
                 import psutil
 
-                cpu_count = float(psutil.cpu_count(logical=False))
+                if platform.machine() == "ppc64le":
+                    use_logical_cpus = (
+                        cls._config.model_config.is_multimodal_model
+                        and envs_spyre.SENDNN_INFERENCE_ASYNC_MM_ENCODER
+                    )
+                else:
+                    use_logical_cpus = False
+                cpu_count = float(psutil.cpu_count(logical=use_logical_cpus))
                 detection_message = (
-                    f"Detected {cpu_count} physical CPUs from psutil.cpu_count(logical=False)"
+                    f"Detected {cpu_count} physical CPUs from psutil.cpu_count(logical={use_logical_cpus})"
                 )
             except ImportError:
                 logger.info("Install psutil to count physical CPU cores")
