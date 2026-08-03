@@ -625,7 +625,7 @@ class SpyrePlatform(Platform):
         ConditionalDefaultManager.apply(parser)
 
     @classmethod
-    def get_cpu_count(cls) -> tuple[float | None, str]:
+    def get_cpu_count(cls, use_logical_cpus=False) -> tuple[float | None, str]:
         """Return (cpu_count, detection_message) for threading configuration.
 
         Priority:
@@ -659,9 +659,10 @@ class SpyrePlatform(Platform):
             try:
                 import psutil
 
-                cpu_count = float(psutil.cpu_count(logical=False))
+                cpu_count = float(psutil.cpu_count(logical=use_logical_cpus))
                 detection_message = (
-                    f"Detected {cpu_count} physical CPUs from psutil.cpu_count(logical=False)"
+                    f"Detected {cpu_count} {'logical' if use_logical_cpus else 'physical'} CPUs "
+                    "from psutil.cpu_count(logical={use_logical_cpus})"
                 )
             except ImportError:
                 logger.info("Install psutil to count physical CPU cores")

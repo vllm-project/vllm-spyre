@@ -163,7 +163,11 @@ def _configure_encoder_threads() -> None:
     if cpu_count is None:
         encoder_cpu_count = None
     elif platform.machine() == "ppc64le":
-        encoder_cpu_count = min(cpu_count, 36.0)
+        cpu_count, _ = SpyrePlatform.get_cpu_count(use_logical_cpus=True)
+        if cpu_count is None:
+            encoder_cpu_count = None
+        else:
+            encoder_cpu_count = min(math.ceil(cpu_count), 36)
     else:
         encoder_cpu_count = math.ceil(cpu_count)
 
