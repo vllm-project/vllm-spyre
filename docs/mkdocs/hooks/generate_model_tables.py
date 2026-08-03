@@ -20,7 +20,6 @@ POOLING_END_MARKER = "<!-- GENERATED_POOLING_MODELS_END -->"
 EXCLUDED_MODELS = {
     "ibm-granite/granite-4-8b-dense-hybrid",
     "ibm-granite/granite-4-8b-dense",
-    "ibm-granite/granite-4-8b-dense-FP8",
     "Qwen/Qwen3-Embedding-0.6B",
     "Qwen/Qwen3-Embedding-4B",
 }

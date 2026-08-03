@@ -275,7 +275,7 @@ models:
         max_num_seqs: 32
         device_config: *granite_8b_tp4_device_config
 
-  ibm-granite/granite-4-8b-dense-FP8:
+  ibm-granite/granite-4.1-8b-fp8:
     architecture:
       <<: *granite_4_8b_architecture
       quantization_config:
@@ -368,6 +368,30 @@ models:
 
 
   # Embedding models (static batching only, no device configs needed)
+  ibm-granite/granite-embedding-30m-english:
+    architecture:
+      model_type: roberta
+      num_hidden_layers: 6
+      vocab_size: 50265
+
+    static_batching_configs:
+      - tp_size: 1
+        warmup_shapes:
+          - prompt_len: 512
+            batch_size: 64
+
+  ibm-granite/granite-embedding-107m-multilingual:
+    architecture:
+      model_type: xlm-roberta
+      num_hidden_layers: 6
+      vocab_size: 250002
+
+    static_batching_configs:
+      - tp_size: 1
+        warmup_shapes:
+          - prompt_len: 512
+            batch_size: 64
+
   ibm-granite/granite-embedding-125m-english:
     architecture:
       model_type: roberta
@@ -392,7 +416,6 @@ models:
           - prompt_len: 512
             batch_size: 64
 
-  # Other supported models (static batching only)
   intfloat/multilingual-e5-large:
     architecture:
       model_type: xlm-roberta
@@ -404,6 +427,20 @@ models:
         warmup_shapes:
           - prompt_len: 512
             batch_size: 64
+
+  intfloat/multilingual-e5-large-instruct:
+    architecture:
+      model_type: xlm-roberta
+      num_hidden_layers: 24
+      vocab_size: 250002
+
+    static_batching_configs:
+      - tp_size: 1
+        warmup_shapes:
+          - prompt_len: 512
+            batch_size: 4
+
+  # Other supported models (static batching only)
 
   BAAI/bge-reranker-v2-m3:
     architecture:
