@@ -661,7 +661,8 @@ class SpyrePlatform(Platform):
 
                 cpu_count = float(psutil.cpu_count(logical=use_logical_cpus))
                 detection_message = (
-                    f"Detected {cpu_count} CPUs from psutil.cpu_count(logical={use_logical_cpus})"
+                    f"Detected {cpu_count} {'logical' if use_logical_cpus else 'physical'} CPUs "
+                    "from psutil.cpu_count(logical={use_logical_cpus})"
                 )
             except ImportError:
                 logger.info("Install psutil to count physical CPU cores")
