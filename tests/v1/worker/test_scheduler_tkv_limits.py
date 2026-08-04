@@ -236,9 +236,9 @@ def test_chunked_prefill_make_stats_without_mm_cache_stats(
     """
     Regression test: make_stats() handles stats objects without mm_cache_stats.
 
-    The mm_cache_stats override uses a defensive getattr() guard, so a base stats
-    object that omits the attribute must not raise, while the prefix-cache
-    correction still applies.
+    This verifies that the defensive getattr() guard avoids attribute errors
+    when the returned stats object does not expose mm_cache_stats, while the
+    existing prefix-cache correction still applies.
     """
     model_runner = InstrumentedModelRunner.build(
         monkeypatch=monkeypatch,
