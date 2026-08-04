@@ -164,10 +164,8 @@ class VisionEncoderRunner:
         identifier = identifiers[0] if cacheable else None
 
         if cacheable:
-            # The mm_hash identifier (sha256 of the image) uniquely identifies the
+            # The mm_hash identifier (sßha256 of the image) uniquely identifies the
             # image, so a stored entry is exactly what encode_images would produce.
-            # (Do NOT gate on mm_position.length: the reserved placeholder span can
-            # differ from the packed feature-row count, e.g. 704 vs 682.)
             cached = self.mm_encoder_cache.get(identifier)
             if cached is not None:
                 self.mm_encoder_cache.record_lookup(hit=True)
