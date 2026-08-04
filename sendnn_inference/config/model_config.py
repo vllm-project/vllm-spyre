@@ -232,6 +232,8 @@ class ModelConfig:
     Attributes:
         name: Model name/identifier
         architecture: Architecture pattern for matching
+        platforms: List of supported CPU architectures (["x86_64", "s390x", "ppc64le"]).
+            An empty list means the model is supported on all platforms.
         static_batching_configs: List of static batching configurations (pooling models only)
         continuous_batching_configs: List of continuous batching configurations (decoder models)
             (each may have its own device_config)
@@ -239,6 +241,7 @@ class ModelConfig:
 
     name: str
     architecture: ArchitecturePattern
+    platforms: list[str] = field(default_factory=list)
     static_batching_configs: list[StaticBatchingConfig] = field(default_factory=list)
     continuous_batching_configs: list[ContinuousBatchingConfig] = field(default_factory=list)
 
@@ -255,6 +258,9 @@ class ModelConfig:
         """
         # Parse architecture (pass model name for better logging)
         architecture = ArchitecturePattern.from_dict(name, data["architecture"])
+
+        # Parse supported platforms
+        platforms = data.get("platforms", [])
 
         # Parse static batching configs
         static_configs = []
@@ -301,6 +307,7 @@ class ModelConfig:
         return cls(
             name=name,
             architecture=architecture,
+            platforms=platforms,
             static_batching_configs=static_configs,
             continuous_batching_configs=continuous_configs,
         )
