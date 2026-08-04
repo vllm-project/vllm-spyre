@@ -159,9 +159,9 @@ class VisionEncoderRunner:
         are never cached (handled by ``MMEncoderCache.is_cacheable``).
         """
         mm_features = request.mm_features
-        slices = placeholder_slices(mm_features)
-        cacheable = self.mm_encoder_cache.enabled and len(slices) == 1 == len(mm_features)
-        identifier = slices[0][0] if cacheable else None
+        identifiers = placeholder_slices(mm_features)
+        cacheable = self.mm_encoder_cache.enabled and len(identifiers) == 1 == len(mm_features)
+        identifier = identifiers[0] if cacheable else None
 
         if cacheable:
             # The mm_hash identifier (sha256 of the image) uniquely identifies the
@@ -179,18 +179,18 @@ class VisionEncoderRunner:
                 )
                 return cached
 
-        image_features = self.mm_utils_cls.encode_images(
+        image_embed = self.mm_utils_cls.encode_images(
             self.fms_model, mm_features, self.mm_device
         )
         if cacheable:
-            self.mm_encoder_cache.put(identifier, image_features)
+            self.mm_encoder_cache.put(identifier, image_embed)
             self.mm_encoder_cache.record_lookup(hit=False)
             logger.info(
                 "encoder_process: vision-encoder-cache hit rate: %.1f%% (req '%s', MISS)",
                 self._hit_rate() * 100,
                 request.request_id,
             )
-        return image_features
+        return image_embed
 
     def _hit_rate(self) -> float:
         cache = self.mm_encoder_cache

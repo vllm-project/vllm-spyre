@@ -249,10 +249,10 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         self.pause_events = 0
         self.resume_events = 0
 
-        # Cross-request MM encoder-cache stats. The worker/encoder-subprocess
+        # Cross-request vision-encoder cache stats. The worker/encoder-subprocess
         # caches report cumulative counters (only one path is active per run, so
         # they sum without double counting); make_stats emits the per-interval
-        # delta into base_stats.mm_cache_stats.
+        # delta into the dedicated sendnn ``vision_encoder_cache`` metric.
         self._mm_async_cum_hits = 0
         self._mm_async_cum_queries = 0
         self._mm_inline_cum_hits = 0
@@ -992,11 +992,11 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         """Update the scheduler stats from the base scheduler.
         In sendnn-inference the last chunk is always recomputed, even though
         the space is not duplicated.
-        The cross-request vision-encoder cache lives worker-side; its cumulative
-        counters are plumbed back via update_from_output, and the per-interval
-        delta is reported as a dedicated sendnn ``vision_encoder_cache`` metric
-        (NOT folded into upstream's mm_cache_stats, which tracks a different
-        cache — vLLM's multimodal processor/input cache).
+        Spyre forces upstream ``mm_cache_stats`` (vLLM's multimodal processor/input
+        cache) hit reporting to 0.0% — pre-existing Spyre behavior, unrelated to our
+        cache. Our cross-request vision-encoder cache is reported *separately* as a
+        dedicated sendnn ``vision_encoder_cache`` metric, from cumulative counters
+        plumbed back via update_from_output.
         """
         base_stats = super().make_stats(*args, **kwargs)
 
@@ -1005,6 +1005,10 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
                 base_stats.prefix_cache_stats.hits = self.adjust_hit(
                     base_stats.prefix_cache_stats.queries, base_stats.prefix_cache_stats.hits
                 )
+
+                mm_cache_stats = getattr(base_stats, "mm_cache_stats", None)
+                if mm_cache_stats is not None:
+                    mm_cache_stats.hits = 0
 
             # Per-interval delta of the real vision-encoder cache hit/query counts.
             # Sum the two sources (async subprocess + inline fallback); only one is

@@ -1120,9 +1120,9 @@ class ChunkedPrefillModelRunner(
         ``torch.inference_mode`` (merge updates the text-embedding tensor in place).
         Equivalent to ``get_maybe_mm_embeddings(mm_features, is_decode=False)``.
         """
-        slices = placeholder_slices(mm_features)
-        cacheable = self.mm_encoder_cache.enabled and len(slices) == 1 == len(mm_features)
-        identifier = slices[0][0] if cacheable else None
+        identifiers = placeholder_slices(mm_features)
+        cacheable = self.mm_encoder_cache.enabled and len(identifiers) == 1 == len(mm_features)
+        identifier = identifiers[0] if cacheable else None
 
         image_features = None
         if cacheable:

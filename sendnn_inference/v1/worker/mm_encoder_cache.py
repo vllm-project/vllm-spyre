@@ -30,22 +30,22 @@ logger = init_logger(__name__)
 _WARMUP_IDENTIFIER_PREFIX = "MM-warmup"
 
 
-def placeholder_slices(mm_features: Any) -> list[tuple[str, int, int]]:
-    """Return ``(identifier, offset, length)`` for each cacheable image.
+def placeholder_slices(mm_features: Any) -> list[str]:
+    """Return the mm_hash ``identifier`` of each cacheable image in the request.
 
-    ``offset``/``length`` come from each feature's ``mm_position``. ``length`` is
-    the reserved placeholder span, which may differ from the packed feature-row
-    count, so it must NOT be used to validate a cache entry — the ``identifier``
-    (mm_hash) alone keys the cache. Only ``identifier`` is used by callers today.
+    The identifier (mm_hash) alone keys the cache. Features without an
+    ``mm_position`` (not a real image placeholder) and warmup/non-cacheable
+    identifiers are skipped (see ``MMEncoderCache.is_cacheable``).
     """
-    slices: list[tuple[str, int, int]] = []
+    identifiers: list[str] = []
     for feat in mm_features or []:
-        position = getattr(feat, "mm_position", None)
         identifier = getattr(feat, "identifier", None)
-        if position is None or not MMEncoderCache.is_cacheable(identifier):
+        if getattr(feat, "mm_position", None) is None or not MMEncoderCache.is_cacheable(
+            identifier
+        ):
             continue
-        slices.append((identifier, position.offset, position.length))
-    return slices
+        identifiers.append(identifier)
+    return identifiers
 
 
 class MMEncoderCache:
