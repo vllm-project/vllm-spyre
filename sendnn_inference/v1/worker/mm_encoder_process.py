@@ -25,7 +25,7 @@ from vllm.logger import init_logger
 import sendnn_inference.envs as envs_spyre
 from sendnn_inference.model_executor.model_loader.spyre import SpyreCausalLM, cast_params_for_spyre
 from sendnn_inference.platform import SpyrePlatform, THREADING_ENVS
-from sendnn_inference.v1.worker.mm_encoder_cache import MMEncoderCache, placeholder_slices
+from sendnn_inference.v1.worker.mm_encoder_cache import MMEncoderCache, cacheable_identifiers
 from sendnn_inference.v1.worker.mm_shared_memory import write_embeddings
 
 logger = init_logger(__name__)
@@ -159,12 +159,12 @@ class VisionEncoderRunner:
         are never cached (handled by ``MMEncoderCache.is_cacheable``).
         """
         mm_features = request.mm_features
-        identifiers = placeholder_slices(mm_features)
+        identifiers = cacheable_identifiers(mm_features)
         cacheable = self.mm_encoder_cache.enabled and len(identifiers) == 1 == len(mm_features)
         identifier = identifiers[0] if cacheable else None
 
         if cacheable:
-            # The mm_hash identifier (sßha256 of the image) uniquely identifies the
+            # The mm_hash identifier (sha256 of the image) uniquely identifies the
             # image, so a stored entry is exactly what encode_images would produce.
             cached = self.mm_encoder_cache.get(identifier)
             if cached is not None:

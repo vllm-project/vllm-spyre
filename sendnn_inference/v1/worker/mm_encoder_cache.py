@@ -30,7 +30,7 @@ logger = init_logger(__name__)
 _WARMUP_IDENTIFIER_PREFIX = "MM-warmup"
 
 
-def placeholder_slices(mm_features: Any) -> list[str]:
+def cacheable_identifiers(mm_features: Any) -> list[str]:
     """Return the mm_hash ``identifier`` of each cacheable image in the request.
 
     The identifier (mm_hash) alone keys the cache. Features without an
@@ -84,7 +84,7 @@ class MMEncoderCache:
         nbytes = tensor.numel() * tensor.element_size()
         # A single entry larger than the whole budget is simply not cached.
         over = nbytes > self.capacity_bytes
-        logger.info(
+        logger.debug(
             "MM encoder cache: entry '%s' size=%.2f MiB, budget=%.2f MiB "
             "(SENDNN_INFERENCE_MM_ENCODER_CACHE_MB) — %s",
             identifier,

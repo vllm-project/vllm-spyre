@@ -44,7 +44,7 @@ from sendnn_inference.utils import exact_div
 from sendnn_inference.v1.sample.spyre_logits_processor import build_logitsprocs_for_cb
 from sendnn_inference.v1.worker.mm_encoder_cache import (
     MMEncoderCache,
-    placeholder_slices,
+    cacheable_identifiers,
 )
 from sendnn_inference.v1.worker.mm_shared_memory import (
     cleanup_embeddings,
@@ -1120,7 +1120,7 @@ class ChunkedPrefillModelRunner(
         ``torch.inference_mode`` (merge updates the text-embedding tensor in place).
         Equivalent to ``get_maybe_mm_embeddings(mm_features, is_decode=False)``.
         """
-        identifiers = placeholder_slices(mm_features)
+        identifiers = cacheable_identifiers(mm_features)
         cacheable = self.mm_encoder_cache.enabled and len(identifiers) == 1 == len(mm_features)
         identifier = identifiers[0] if cacheable else None
 
