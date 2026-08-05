@@ -44,7 +44,7 @@ def cacheable_identifiers(mm_features: Any) -> list[str]:
             identifier
         ):
             continue
-        identifiers.append(identifier)
+        identifiers.append(identifier)  # ty: ignore[invalid-argument-type]
     return identifiers
 
 

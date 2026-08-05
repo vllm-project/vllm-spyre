@@ -138,7 +138,7 @@ class LlavaNextMMUtils(MMUtilsBase):
         image_sizes = mm_spec["image_sizes"].data
         if image_sizes.ndim == 1:
             image_sizes = image_sizes.unsqueeze(0)
-        return pixel_values, image_sizes
+        return pixel_values, image_sizes  # ty: ignore[invalid-return-type]
 
     @staticmethod
     def encode_images(
@@ -148,17 +148,15 @@ class LlavaNextMMUtils(MMUtilsBase):
     ) -> torch.Tensor:
         """Run the SiglipVision tower + projector for Llava Next and return the
         packed image features [num_image_tokens, emb_dim]."""
-        pixel_values, image_sizes = LlavaNextMMUtils._prepare_vision_inputs(
-            mm_features, mm_device
-        )
-        image_features = fms_model.get_image_features(pixel_values, image_sizes)
-        return fms_model.pack_image_features(
+        pixel_values, image_sizes = LlavaNextMMUtils._prepare_vision_inputs(mm_features, mm_device)
+        image_features = fms_model.get_image_features(pixel_values, image_sizes)  # ty: ignore[call-non-callable]
+        return fms_model.pack_image_features(  # ty: ignore[call-non-callable]
             image_features, image_sizes, image_newline=fms_model.image_newline
         )
 
     @staticmethod
     def embed_text(fms_model: torch.nn.Module, input_ids: torch.Tensor) -> torch.Tensor:
-        return fms_model._get_text_embeddings(input_ids)
+        return fms_model._get_text_embeddings(input_ids)  # ty: ignore[call-non-callable]
 
     @staticmethod
     def merge_embeddings(

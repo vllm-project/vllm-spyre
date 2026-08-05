@@ -116,7 +116,7 @@ class Mistral3MMUtils(MMUtilsBase):
             # Mistral image input in vLLM has no image_sizes attribute, so derive
             # it from pixel_values.
             image_sizes = [(img.shape[-2], img.shape[-1]) for img in pixel_values]
-        return pixel_values, image_sizes
+        return pixel_values, image_sizes  # ty: ignore[invalid-return-type]
 
     @staticmethod
     def encode_images(
@@ -126,14 +126,12 @@ class Mistral3MMUtils(MMUtilsBase):
     ) -> torch.Tensor:
         """Run the PixtralVision tower + projector for mistral3 and return the
         packed image features [num_image_tokens, emb_dim]."""
-        pixel_values, image_sizes = Mistral3MMUtils._prepare_vision_inputs(
-            mm_features, mm_device
-        )
-        return fms_model._get_image_features(pixel_values, image_sizes)
+        pixel_values, image_sizes = Mistral3MMUtils._prepare_vision_inputs(mm_features, mm_device)
+        return fms_model._get_image_features(pixel_values, image_sizes)  # ty: ignore[call-non-callable]
 
     @staticmethod
     def embed_text(fms_model: torch.nn.Module, input_ids: torch.Tensor) -> torch.Tensor:
-        return fms_model._get_text_embeddings(input_ids, None)
+        return fms_model._get_text_embeddings(input_ids, None)  # ty: ignore[call-non-callable]
 
     @staticmethod
     def merge_embeddings(
@@ -142,7 +140,7 @@ class Mistral3MMUtils(MMUtilsBase):
         text_embeds: torch.Tensor,
         image_features: torch.Tensor,
     ) -> torch.Tensor:
-        return fms_model._merge_multimodal_embeddings(
+        return fms_model._merge_multimodal_embeddings(  # ty: ignore[call-non-callable]
             input_ids,
             text_embeds,
             image_features,

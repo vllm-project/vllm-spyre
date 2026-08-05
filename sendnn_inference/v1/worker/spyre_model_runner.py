@@ -1129,7 +1129,7 @@ class ChunkedPrefillModelRunner(
             # Keyed by the mm_hash identifier only; do NOT gate on
             # mm_position.length (the reserved placeholder span can differ from the
             # packed feature-row count, so a length check rejects valid entries).
-            cached = self.mm_encoder_cache.get(identifier)
+            cached = self.mm_encoder_cache.get(identifier)  # ty: ignore[invalid-argument-type]
             if cached is not None:
                 image_features = cached
                 self.mm_encoder_cache.record_lookup(hit=True)
@@ -1142,7 +1142,7 @@ class ChunkedPrefillModelRunner(
         if image_features is None:
             image_features = self.model.encode_images(mm_features)
             if cacheable:
-                self.mm_encoder_cache.put(identifier, image_features)
+                self.mm_encoder_cache.put(identifier, image_features)  # ty: ignore[invalid-argument-type]
                 self.mm_encoder_cache.record_lookup(hit=False)
                 cache = self.mm_encoder_cache
                 logger.info(

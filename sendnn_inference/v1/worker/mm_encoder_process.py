@@ -166,7 +166,7 @@ class VisionEncoderRunner:
         if cacheable:
             # The mm_hash identifier (sha256 of the image) uniquely identifies the
             # image, so a stored entry is exactly what encode_images would produce.
-            cached = self.mm_encoder_cache.get(identifier)
+            cached = self.mm_encoder_cache.get(identifier)  # ty: ignore[invalid-argument-type]
             if cached is not None:
                 self.mm_encoder_cache.record_lookup(hit=True)
                 logger.info(
@@ -177,11 +177,9 @@ class VisionEncoderRunner:
                 )
                 return cached
 
-        image_embed = self.mm_utils_cls.encode_images(
-            self.fms_model, mm_features, self.mm_device
-        )
+        image_embed = self.mm_utils_cls.encode_images(self.fms_model, mm_features, self.mm_device)
         if cacheable:
-            self.mm_encoder_cache.put(identifier, image_embed)
+            self.mm_encoder_cache.put(identifier, image_embed)  # ty: ignore[invalid-argument-type]
             self.mm_encoder_cache.record_lookup(hit=False)
             logger.info(
                 "encoder_process: vision-encoder-cache hit rate: %.1f%% (req '%s', MISS)",
