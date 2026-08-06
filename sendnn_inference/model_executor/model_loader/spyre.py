@@ -17,9 +17,9 @@ from vllm.logger import init_logger
 from vllm.model_executor.model_loader.weight_utils import download_weights_from_hf
 from vllm.v1.outputs import SamplerOutput
 from vllm.v1.sample.metadata import SamplingMetadata
-from vllm.v1.sample.sampler import Sampler
 
 import sendnn_inference.envs as envs_spyre
+from sendnn_inference.v1.sample.spyre_sampler import SpyreSampler
 import sendnn_inference.multimodal as spyre_mm
 import sendnn_inference.utils as utils_spyre
 from sendnn_inference.platform import SpyrePlatform
@@ -113,7 +113,11 @@ class SpyreCausalLM(nn.Module):
     ) -> None:
         super().__init__()
 
-        self.sampler = Sampler()
+        # Spyre runs the sampler on the host CPU. SpyreSampler serves random
+        # sampling noise from a pool built once at load, avoiding a costly
+        # per-step q.exponential_() on s390x. The pool is built up front in
+        # load_weights() via prebuild_noise_pool().
+        self.sampler = SpyreSampler()
 
         # boolean tensor of length batch size with indices:
         # True for unfinished sequences and
@@ -355,6 +359,19 @@ class SpyreCausalLM(nn.Module):
                 self._cast_to_f32()
 
         logger.debug("Model weights loaded successfully.")
+
+        # Pre-generate the sampler's exponential noise pool now that the model
+        # is loaded. The sampler runs on the host CPU, so the pool lives there.
+        # vocab_size is a best guess: if the actual logits width differs the
+        # pool is transparently rebuilt on first use.
+        try:
+            self.sampler.prebuild_noise_pool(
+                vocab_size=self.model_config.get_vocab_size(),
+                device=torch.device("cpu"),
+            )
+        except Exception as e:
+            # Prebuilding is a pure optimization; never fail model load over it.
+            logger.warning("Could not prebuild sampler noise pool: %s", e)
 
     def _cast_params_for_spyre(self):
         """Cast the LLM to fp16 for Spyre, then place the multimodal submodules

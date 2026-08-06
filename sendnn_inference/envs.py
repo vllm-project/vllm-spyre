@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     SENDNN_INFERENCE_TP_MM_SHARING: bool = True
     SENDNN_INFERENCE_LONG_OUT_PRIO: bool = False
     SENDNN_INFERENCE_PAUSING_ENABLED: bool = True
+    SENDNN_INFERENCE_SAMPLER_NOISE_POOL_SIZE: int = 1024
 
 logger = init_logger(__name__)
 
@@ -209,6 +210,17 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # is rotated for fairness.
     "SENDNN_INFERENCE_PAUSING_ENABLED": lambda: bool(
         int(os.getenv("SENDNN_INFERENCE_PAUSING_ENABLED", "1"))
+    ),
+    # Number of rows in the pre-generated exponential noise pool used by the
+    # Spyre random sampler (see sendnn_inference/v1/sample/spyre_sampler.py).
+    # The sampler runs on the host CPU on Spyre, where drawing fresh noise
+    # (q.exponential_()) every step is expensive on s390x. We instead build a
+    # [pool_size x vocab] pool of exponential noise once at load and slice rows
+    # from it at sample time. Host memory cost is roughly
+    # pool_size * vocab_size * 4 bytes. Set to 0 to disable pooling and fall
+    # back to per-step noise generation.
+    "SENDNN_INFERENCE_SAMPLER_NOISE_POOL_SIZE": lambda: int(
+        os.getenv("SENDNN_INFERENCE_SAMPLER_NOISE_POOL_SIZE", "1024")
     ),
 }
 # --8<-- [end:env-vars-definition]
