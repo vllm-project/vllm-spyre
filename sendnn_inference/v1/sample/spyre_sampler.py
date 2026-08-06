@@ -62,6 +62,12 @@ class ExponentialNoisePool:
         gen.manual_seed(seed)
         self.pool = torch.empty(numel, dtype=dtype, device=self.device)
         self.pool.exponential_(generator=gen)
+        # exponential_() can underflow to exactly 0.0 in low-precision dtypes
+        # (float16 hits it at ~6e-8), which would make probs.div_(q) produce
+        # +inf/nan and select a wrong or top-k/top-p-masked token. Clamp to the
+        # smallest positive normal so the pool never contains a zero. This is a
+        # no-op in practice for float32 (its tiny is ~1e-38).
+        self.pool.clamp_(min=torch.finfo(dtype).tiny)
         self._offset_rng = random.Random(seed)
 
     def draw(self, shape: torch.Size) -> torch.Tensor:

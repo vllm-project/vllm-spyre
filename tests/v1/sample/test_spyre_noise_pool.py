@@ -35,6 +35,35 @@ def test_pool_dtype_follows_request():
     assert pool.draw(torch.Size([2, 8])).dtype == torch.float16
 
 
+def test_pool_has_no_values_below_tiny_after_clamp():
+    # exponential_() underflows to subnormal/zero values in float16 (~6e-5 of
+    # samples fall below `tiny`); the clamp must lift them all to `tiny` so
+    # probs.div_(q) can never divide by zero or a subnormal. This reliably
+    # fails without the clamp (a 2M pool has ~120 sub-tiny values).
+    tiny = torch.finfo(torch.float16).tiny
+    for seed in range(4):
+        pool = ExponentialNoisePool(numel=2_000_000, dtype=torch.float16, seed=seed)
+        assert pool.pool.min().item() >= tiny
+        assert not torch.any(pool.pool == 0)
+
+
+def test_zero_noise_would_select_masked_token_but_clamp_prevents_it():
+    # Demonstrates the hazard the clamp fixes: a zero in q makes 0/0 -> nan for
+    # a masked (prob 0) token, and argmax then selects that masked index.
+    vocab = 8
+    probs = torch.zeros(1, vocab)
+    probs[:, :4] = 0.25  # tokens 4..7 are masked out (prob 0)
+
+    bad_q = torch.full((vocab,), 0.5, dtype=torch.float16)
+    bad_q[5] = 0.0  # an unclamped underflow
+    corrupted = probs.clone().div_(bad_q).argmax(dim=-1)
+    assert corrupted.item() == 5  # masked token wrongly selected
+
+    # The real pool is clamped at fill, so it can never contain that zero.
+    pool = ExponentialNoisePool(numel=100_000, dtype=torch.float16, seed=0)
+    assert pool.pool.min().item() >= torch.finfo(torch.float16).tiny
+
+
 def test_pool_too_small_raises():
     pool = ExponentialNoisePool(numel=16, dtype=torch.float32, seed=0)
     with pytest.raises(ValueError, match="Noise pool too small"):
