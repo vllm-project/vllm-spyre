@@ -7,7 +7,7 @@ enforce the max_batch_tkv_limit constraint.
 
 import pytest
 from scheduling_utils import create_request_for_scheduler_test, random_prompt
-from v1.worker.mock_model import InstrumentedModelRunner
+from v1.worker.mock_model import InstrumentedModelRunner, execute_and_sample
 from spyre_util import REFERENCE_MODELS
 from sendnn_inference.platform import SpyrePlatform
 from types import SimpleNamespace
@@ -78,7 +78,7 @@ def test_scheduler_tkv_limits(monkeypatch: pytest.MonkeyPatch):
     # configuration that exceeds the TKV limit
     while True:
         sched_output = scheduler.schedule()
-        output = model_runner.execute_model(sched_output)
+        output = execute_and_sample(model_runner, sched_output)
         scheduler.update_from_output(sched_output, output)
         if len(scheduler.running) == 0:
             break
@@ -151,7 +151,7 @@ def test_scheduler_tkv_limits_ongoing_batch(monkeypatch: pytest.MonkeyPatch):
     # Run the scheduler loop until first set of requests have generated tokens
     while True:
         sched_output = scheduler.schedule()
-        output = model_runner.execute_model(sched_output)
+        output = execute_and_sample(model_runner, sched_output)
         scheduler.update_from_output(sched_output, output)
 
         target_req = requests[0]
@@ -181,7 +181,7 @@ def test_scheduler_tkv_limits_ongoing_batch(monkeypatch: pytest.MonkeyPatch):
     # configuration that exceeds the TKV limit
     while True:
         sched_output = scheduler.schedule()
-        output = model_runner.execute_model(sched_output)
+        output = execute_and_sample(model_runner, sched_output)
         scheduler.update_from_output(sched_output, output)
         if len(scheduler.running) == 0:
             break
@@ -212,6 +212,7 @@ def test_chunked_prefill_make_stats_zeros_mm_cache_hits(
     fake_stats = SimpleNamespace(
         prefix_cache_stats=SimpleNamespace(queries=256, hits=128),
         mm_cache_stats=SimpleNamespace(hits=5),
+        kv_connector_stats=None,
     )
 
     monkeypatch.setattr(
@@ -250,6 +251,7 @@ def test_chunked_prefill_make_stats_without_mm_cache_stats(
 
     fake_stats = SimpleNamespace(
         prefix_cache_stats=SimpleNamespace(queries=256, hits=128),
+        kv_connector_stats=None,
     )
 
     monkeypatch.setattr(
