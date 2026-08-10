@@ -40,6 +40,9 @@ FAKE_METRICS: list[dict[str, Any]] = [
         "tkvs": [512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072],
         "prefix_cache_hit_pct": 0.25,
         "left_padding_blocks": [2, 0, 1],
+        "pause_latencies_s": [0.5, 1.2],
+        "pause_start_times_s": [0.0, 1.2],
+        "was_missing_blocks": True,
     },
     {
         "queued_time_s": 0.00001,
@@ -51,6 +54,9 @@ FAKE_METRICS: list[dict[str, Any]] = [
         "tkvs": [256, 512, 1024, 2048, 4096],
         "prefix_cache_hit_pct": 0.0,
         "left_padding_blocks": [3, 1],
+        "pause_latencies_s": [0.3],
+        "pause_start_times_s": [0.5],
+        "was_missing_blocks": False,
     },
 ]
 
@@ -82,7 +88,10 @@ def test_inject_adds_spyre_keys(tmp_path):
     result_file = _write_fake_result(tmp_path)
     _inject_spyre_metrics_into_result_file(_make_args(tmp_path), FAKE_METRICS, time.time() - 1)
     data = json.loads(result_file.read_text())
-    expected_keys = {"spyre_" + k for k in FAKE_METRICS[0]} | {"spyre_total_prefill_chunks"}
+    expected_keys = {"spyre_" + k for k in FAKE_METRICS[0]} | {
+        "spyre_total_prefill_chunks",
+        "spyre_num_requests_missing_blocks",
+    }
     for key in expected_keys:
         assert key in data, f"expected key {key!r} missing from result JSON"
 
@@ -99,9 +108,12 @@ def test_inject_values_correct(tmp_path):
             continue
         expected = [m[key] for m in FAKE_METRICS]
         assert data["spyre_" + key] == expected
-    # Derived run-level scalar
+    # Derived run-level scalars
     assert data["spyre_total_prefill_chunks"] == sum(
         m["num_chunked_prefills"] for m in FAKE_METRICS
+    )
+    assert data["spyre_num_requests_missing_blocks"] == sum(
+        1 for m in FAKE_METRICS if m.get("was_missing_blocks", False)
     )
     # Original keys preserved
     assert data["backend"] == "spyre-chat"
@@ -192,17 +204,21 @@ def test_print_spyre_section_output(capsys):
     _print_spyre_section(FAKE_METRICS, SELECTED_PERCENTILES)
     out = _TrackedOutput(capsys.readouterr().out)
 
-    # Run-level scalar
+    # Run-level scalars
     out.assert_contains("Total prefill chunks processed:")
     out.assert_contains("10")
+    out.assert_contains("Requests blocked by missing KV blocks:   1")
 
-    # Section separators and mean/median/percentile lines for all six sections
+    # Section separators and mean/median/percentile lines for all sections
     out.assert_contains("Queue Wait Time")
     out.assert_contains("Chunked Prefill Count")
     out.assert_contains("Chunked Prefill Latency")
     out.assert_contains("Decode Step Latency")
     out.assert_contains("Prefix Cache Hit")
     out.assert_contains("Left Padding Blocks")
+    out.assert_contains("Pause Latency")
+    out.assert_contains("Number of Pauses")
+    out.assert_contains("Total Time Paused")
 
     for label in (
         "Queue Wait Time (ms)",
@@ -211,6 +227,9 @@ def test_print_spyre_section_output(capsys):
         "Decode Step Latency (ms)",
         "Prefix Cache Hit (%)",
         "Left Padding Blocks",
+        "Pause Latency (ms)",
+        "Num Pauses",
+        "Total Time Paused (ms)",
     ):
         out.assert_contains(f"Mean {label}:")
         out.assert_contains(f"Median {label}:")
@@ -273,6 +292,9 @@ _BENCH_FIXTURE: dict[str, Any] = {
     "decode_start_times": [2000.0, 2000.1],
     "tkvs": [64, 128, 192, 256],
     "left_padding_blocks": [2, 0],
+    "pause_start_times": [3000.0, 3005.0],
+    "pause_latencies": [0.5, 1.2],
+    "blocks_lacking": True,
     "prefill_step_start": 999.0,
     "decode_step_start": 1999.0,
 }
@@ -287,6 +309,9 @@ _EXPECTED_RESULT: dict[str, Any] = {
     "decode_start_times_s": pytest.approx([2000.0, 2000.1]),
     "tkvs": [64, 128, 192, 256],
     "left_padding_blocks": [2, 0],
+    "pause_latencies_s": pytest.approx([0.5, 1.2]),
+    "pause_start_times_s": pytest.approx([3000.0, 3005.0]),
+    "was_missing_blocks": True,
 }
 
 
@@ -533,6 +558,14 @@ def test_scheduler_bench_metrics_accumulated(
 
         assert info["arrival_ts"] is not None, f"req {req_id}: arrival_ts not set"
         assert info["first_scheduled_ts"] is not None, f"req {req_id}: first_scheduled_ts not set"
+
+        # pause_latencies: list of pause durations (may be absent/None if no pausing occurred)
+        pause_lats = info["pause_latencies"] or []
+        assert isinstance(pause_lats, list), f"req {req_id}: pause_latencies is not a list"
+        for lat in pause_lats:
+            assert isinstance(lat, float) and lat > 0, (
+                f"req {req_id}: non-positive pause_latency {lat}"
+            )
 
         # left_padding_blocks: one entry per decode step, matching decode_latencies length
         assert len(info["left_padding_blocks"]) == len(info["decode_latencies"]), (

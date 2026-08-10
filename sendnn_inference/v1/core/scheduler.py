@@ -38,6 +38,9 @@ class SpyreBenchState:
     decode_start_times: dict[str, list[float]] = field(default_factory=dict)
     tkvs: dict[str, list[int]] = field(default_factory=dict)
     left_padding_blocks: dict[str, list[int]] = field(default_factory=dict)
+    pause_start_times: dict[str, list[float]] = field(default_factory=dict)
+    pause_latencies: dict[str, list[float]] = field(default_factory=dict)
+    blocks_lacking: dict[str, bool] = field(default_factory=dict)
     prefill_step_start: float | None = None
     decode_step_start: float | None = None
     
@@ -322,7 +325,7 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         now = time.time()
 
         if self._bench.prefill_step_start is not None:
-            assert self.previous_step_was_prefill and self._bench.decode_step_start is None
+            assert self.step_is_prefill and self._bench.decode_step_start is None
             t0 = self._bench.prefill_step_start
             duration = now - t0
             all_prefill_reqs = [
@@ -336,7 +339,7 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
             self._bench.decode_step_start = None
 
         elif self._bench.decode_step_start is not None:
-            assert not self.previous_step_was_prefill and self._bench.prefill_step_start is None
+            assert not self.step_is_prefill and self._bench.prefill_step_start is None
             t0 = self._bench.decode_step_start
             duration = now - t0
             tkv = model_runner_output.tkv
@@ -370,6 +373,9 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         dec_starts = self._bench.decode_start_times.pop(req_id, None)
         tkvs = self._bench.tkvs.pop(req_id, None)
         left_padding_blocks = self._bench.left_padding_blocks.pop(req_id, None)
+        pause_lats = self._bench.pause_latencies.pop(req_id, None)
+        pause_starts = self._bench.pause_start_times.pop(req_id, None)
+        was_missing_blocks = self._bench.blocks_lacking.pop(req_id, False)
         if lats is None and dec_lats is None:
             return None
         return {
@@ -380,6 +386,9 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
             "decode_start_times_s": dec_starts or [],
             "tkvs": tkvs or [],
             "left_padding_blocks": left_padding_blocks or [],
+            "pause_latencies_s": pause_lats or [],
+            "pause_start_times_s": pause_starts or [],
+            "was_missing_blocks": was_missing_blocks,
         }
 
     def _free_request(self, request, delay_free_blocks: bool = False):
@@ -420,6 +429,9 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
                 "tkvs": chunk_stats["tkvs"] if chunk_stats else [],
                 "prefix_cache_hit_pct": cache_hit_pct,
                 "left_padding_blocks": chunk_stats["left_padding_blocks"] if chunk_stats else [],
+                "pause_latencies_s": chunk_stats["pause_latencies_s"] if chunk_stats else [],
+                "pause_start_times_s": chunk_stats["pause_start_times_s"] if chunk_stats else [],
+                "was_missing_blocks": chunk_stats["was_missing_blocks"] if chunk_stats else False,
             }
             if kv_xfer_params is None:
                 kv_xfer_params = {"__spyre__": spyre_data}
@@ -542,6 +554,8 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
             new_request = holdback_queue.popleft()
             cached, blocks = self._get_required_blocks(new_request, True)
             if blocks > available_blocks:
+                if self._bench is not None:
+                    self._bench.blocks_lacking[new_request.request_id] = True
                 holdback_queue.appendleft(new_request)
                 break
 
@@ -718,7 +732,7 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         # Inject step-start timestamps for timing measurement
         if self._bench is not None:
             now = time.time()
-            if self.previous_step_was_prefill:
+            if self.step_is_prefill:
                 self._bench.prefill_step_start = now
                 self._bench.decode_step_start = None
             else:
@@ -973,17 +987,29 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         self.paused_decoding_requests.clear()
         decoding_requests.clear()
 
+        now = time.time() if self._bench is not None else 0.0
+
         for req, _ in request_order:
             if self._can_decode_all_requests(decoding_requests + [req]):
                 decoding_requests.append(req)
                 self.request_last_decode_step[req.request_id] = 0
                 if req.request_id in was_paused:
                     self.running.append(req)
+                    # bench: pause -> running, close the currently open interval
+                    if self._bench is not None:
+                        starts = self._bench.pause_start_times.get(req.request_id)
+                        if starts:
+                            self._bench.pause_latencies.setdefault(req.request_id, []).append(
+                                now - starts[-1]
+                            )
             else:
                 self.paused_decoding_requests.append(req)
                 self.request_last_decode_step[req.request_id] += 1
                 if req.request_id in was_running:
                     self.running.remove(req)
+                    # bench: running -> paused, open a new interval
+                    if self._bench is not None:
+                        self._bench.pause_start_times.setdefault(req.request_id, []).append(now)
 
         pause_inc = len(self.paused_decoding_requests) - len(was_paused)
         if pause_inc >= 0:
