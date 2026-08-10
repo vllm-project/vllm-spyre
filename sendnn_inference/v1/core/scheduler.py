@@ -59,6 +59,12 @@ class MMEncodeRequest:
 assert SpyrePlatform.get_block_size() == 64
 
 
+def round_up_to_block_size(n: int) -> int:
+    # Helper function to round up to the nearest block size
+    # Uses bitwise alignment for better performance
+    return (n + 63) & ~63
+
+
 class SpyreScheduler(Scheduler):
     """Base class inheriting from the V1 scheduler to support static
     and continuous batching respecting AIU Spyre constraints."""
