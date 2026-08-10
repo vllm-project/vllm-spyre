@@ -68,6 +68,7 @@ def scheduler():
     sched.paused_decoding_requests = []
     sched.request_last_decode_step = {}
     sched.long_output_prio = False
+    sched._bench = None
     sched.pause_events = 0
     sched.resume_events = 0
     sched._get_required_blocks = lambda req, *a, **k: (0, 0)
