@@ -834,9 +834,14 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         n_blocks = math.floor(max(self.tkv, prompt_len) / self.block_size)
         new_req_tkv = n_blocks * self.block_size + prompt_len % self.block_size
 
-        # check that we can prefill and add the new request to the decode batch without
-        # getting it paused
-        cond2 = lambda: self._can_decode_all_requests(decoding_requests)
+        # check that batch size x tkv is smaller than the max supported number
+        # Note: using max_tkv is a conservative upper bound here. For the
+        # optimal check we need model runner to return per sequence tkvs
+        cond2 = lambda: self.check_batch_tkv_limit_cp(
+            request=request,
+            new_req_tkv=new_req_tkv,
+            running=decoding_requests,
+        )
 
         return cond1 and cond2()
 
@@ -858,150 +863,77 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         num_prefills = len(self.waiting) + len(self.ongoing_prefills)
         return num_prefills < max_concurrent_prefills
 
-    def _can_decode_all_requests(self, decoding_requests: list[Request]) -> bool:
+    def check_batch_tkv_limit_cp(self, request: Request, new_req_tkv: int, running) -> bool:
         """
-        Check if all decoding requests can be decoded in the next step without
-        violating the max batch TKV limit.
+        Check whether adding a new sequence to the decode batch would violate
+        Spyre's maximum batch volume constraint for chunked prefill.
+
+        In Spyre, the product of `batch_size` and the current `tkv`
+        (tokens-per-sequence) must not exceed the limit defined by
+        `VLLM_DT_MAX_BATCH_TKV_LIMIT`. Before scheduling a new sequence,
+        we must ensure that this constraint will hold for all decoding
+        steps that result from combining the new sequence with the currently
+        running decode batch.
+
+        This implementation:
+        1. Computes the maximum possible `tkv` for each sequence in the
+        decode batch.
+        2. Sorts these values in ascending order.
+        3. Iterates through them, stopping once the `tkv` of the new sequence.
+        is reached. Remaining sequences do not need to be checked explicitly,
+        since they were validated when they were added (by inductive reasoning).
+
+        Note: drawing explaining the algorithm in more detail uploaded here:
+        https://github.com/torch-spyre/sendnn-inference/pull/363#issuecomment-3173605517
         """
-        if not decoding_requests:
-            return True
 
-        next_predicted_tkv = self.predict_next_decode_tkv(decoding_requests)
+        # Compute the effective token length of the new request
+        # Rounded up to the nearest block size to account for potential padding
+        new_req_max_tkv = round_up_to_block_size(new_req_tkv + request.max_tokens - 1)
+        # Extra block of slack: left-padding can push a sequence's runtime tkv up to
+        # one block past the scheduler's estimate when the batch re-aligns on admission.
+        new_req_max_tkv += self.block_size
 
-        # the tkv should never get beyond max_model_len
-        assert next_predicted_tkv <= self.max_model_len
-
-        # check batch tkv limit: batch_size * predicted_tkv must not exceed limit
-        batch_size = len(decoding_requests)
-        predicted_batch_tkv = batch_size * next_predicted_tkv
-
-        return predicted_batch_tkv <= self.max_batch_tkv_limit
-
-    def _handle_decode_requests_pausing(self) -> None:
-        """
-        Manage pausing and resuming of decode requests based on batch TKV constraints.
-
-        This method:
-        1. Pauses requests with the fewest decoded tokens when batch TKV limit is exceeded
-        2. Resumes previously paused requests (oldest first) when capacity is available
-        """
-        decoding_requests = [r for r in self.running if r not in self.ongoing_prefills]
-        resumed = self._maybe_resume_decoding_requests(decoding_requests)
-        if not resumed:
-            self._maybe_pause_decoding_requests(decoding_requests)
-
-    def _maybe_pause_decoding_requests(self, decoding_requests: list[Request]) -> int:
-        """
-        Iteratively pauses requests with the fewest decoded tokens until the batch fits
-        within TKV constraints. Mutates both decoding_requests and self.running.
-
-        Returns the number of requests paused.
-        """
-        initial_had_requests = len(decoding_requests) > 0
-        num_paused = 0
-
-        # TODO we should test different removal logics: longest request, optimize padding
-        while not self._can_decode_all_requests(decoding_requests):
-            # Decoded tokens = num_computed_tokens - num_prompt_tokens
-            request_to_remove = min(
-                decoding_requests, key=lambda r: r.num_computed_tokens - r.num_prompt_tokens
+        # Compute token lengths for all running requests (decode batch)
+        decode_req_max_tkvs = []
+        # Decide new tkv based on max of current tkv or new request prompt tokens
+        dec_req_tkv = max(self.tkv, request.num_prompt_tokens)
+        for req in running:
+            n_generated_output_tokens = req.num_computed_tokens - req.num_prompt_tokens
+            # Rounded up to the nearest block size to account for potential padding
+            dec_req_max_tkv = round_up_to_block_size(
+                dec_req_tkv + (req.max_tokens - n_generated_output_tokens) - 1
             )
-            decoding_requests.remove(request_to_remove)
-            self.running.remove(request_to_remove)
-            self.paused_decoding_requests.append(request_to_remove)
-            logger.info("Request %s paused due to batch TKV limit ", request_to_remove.request_id)
-            num_paused += 1
+            # Extra block of slack: left-padding can push a sequence's runtime tkv up to
+            # one block past the scheduler's estimate when the batch re-aligns on admission.
+            dec_req_max_tkv += self.block_size
 
-            # update benchmark pausing statistics
-            if self._bench is not None:
-                pause_ts = time.time()
-                self._bench.pause_start_times.setdefault(request_to_remove.request_id, []).append(
-                    pause_ts
-                )
+            decode_req_max_tkvs.append(dec_req_max_tkv)
 
-        # It shouldn't be possible to remove all requests if we started with some
-        assert not initial_had_requests or len(decoding_requests) > 0
+        # Sort decode requests token lengths in ascending order
+        decode_req_max_tkvs.sort()
 
-        return num_paused
+        # Initialize values
+        # The request is already in the running queue if it has done a first
+        # chunked prefill
+        batch_size = len(running)
+        if request not in running:
+            batch_size += 1
+        max_batch_tkv = 0
 
-    def _maybe_resume_decoding_requests(self, decoding_requests: list[Request]) -> int:
-        """
-        Resumes previously paused requests (oldest first) when TKV capacity is available.
-        Mutates both decoding_requests and self.running.
+        # Try adding the new request to the batch and check the max volume
+        for decode_req_max_tkv in decode_req_max_tkvs:
+            if new_req_max_tkv <= decode_req_max_tkv:
+                # If the new request is shorter, it limits the batch volume
+                max_batch_tkv = max(max_batch_tkv, batch_size * new_req_max_tkv)
+                break
+            else:
+                # Otherwise, use the current (longer) request's volume
+                max_batch_tkv = max(max_batch_tkv, batch_size * decode_req_max_tkv)
+                # decrease batch_size by 1 as the current request finished
+                batch_size -= 1
 
-        Returns the number of requests resumed.
-        """
-        num_resumed = 0
-
-        # Reverse iteration: pop(i) only shifts indices above i, which are already visited.
-        for i in range(len(self.paused_decoding_requests) - 1, -1, -1):
-            request_to_add = self.paused_decoding_requests[i]
-            test_requests = decoding_requests + [request_to_add]
-
-            if self._can_decode_all_requests(test_requests):
-                self.paused_decoding_requests.pop(i)
-                self.running.append(request_to_add)
-                decoding_requests.append(request_to_add)
-                logger.info(
-                    "Request %s resumed (batch TKV capacity available).",
-                    request_to_add.request_id,
-                )
-                num_resumed += 1
-
-                # update benchmark pausing statistics
-                if self._bench is not None:
-                    starts = self._bench.pause_start_times.get(request_to_add.request_id)
-                    if starts:
-                        duration = time.time() - starts[-1]
-                        self._bench.pause_latencies.setdefault(
-                            request_to_add.request_id, []
-                        ).append(duration)
-
-        return num_resumed
-
-    def predict_next_decode_tkv(self, running_requests: list[Request]) -> int:
-        """
-        Predicts the TKV after the next decode step for a given batch of running
-        requests.
-
-        This method replicates the TKV calculation logic from the model runner's
-        _prepare_decode method, accounting for:
-        - Block alignment (left-padding to make batch rectangular)
-        - The next token that will be generated (+1)
-        - Maximum TKV across all requests in the batch
-
-        Args:
-            running_requests: List of Request objects currently in the decode batch
-
-        Returns:
-            The predicted TKV value after the next decode step
-        """
-        if not running_requests:
-            return 0
-
-        # Step 1: Find the maximum number of blocks across all requests
-        # Account for requests that will need a new block after the next token
-        max_n_blocks = 0
-        num_blocks_per_req: list[int] = []
-        for request in running_requests:
-            num_blocks = math.ceil((request.num_computed_tokens + 1) / self.block_size)
-            num_blocks_per_req.append(num_blocks)
-            max_n_blocks = max(max_n_blocks, num_blocks)
-
-        # Step 2: Calculate TKV for each request and find the maximum
-        max_tkv = 0
-        for request, num_blocks in zip(running_requests, num_blocks_per_req):
-            # Calculate left padding blocks needed for alignment
-            left_pad_blocks_count = max_n_blocks - num_blocks
-            left_padding = left_pad_blocks_count * self.block_size
-
-            # Calculate TKV for this request (including the next token)
-            req_tkv = left_padding + request.num_computed_tokens + 1
-
-            # Track the maximum TKV
-            max_tkv = max(max_tkv, req_tkv)
-
-        return max_tkv
+        return max_batch_tkv <= self.max_batch_tkv_limit
 
     def _can_decode_all_requests(self, decoding_requests: list[Request]) -> bool:
         """
@@ -1157,13 +1089,6 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
                             )
                 self._mm_encoding_submitted.discard(rid)
                 self._mm_encoding_ready.discard(rid)
-
-        # Also remove from paused_decoding_requests
-        self.paused_decoding_requests = (
-            []
-            if request_ids is None
-            else [r for r in self.paused_decoding_requests if r.request_id not in request_ids]
-        )
 
         # Also remove from paused_decoding_requests
         self.paused_decoding_requests = (
