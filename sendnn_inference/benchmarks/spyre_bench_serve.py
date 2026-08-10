@@ -24,6 +24,7 @@ from vllm.benchmarks.lib.endpoint_request_func import (
     RequestFuncInput,
 )
 from vllm.benchmarks.serve import add_cli_args, main_async
+from vllm.utils.argparse_utils import FlexibleArgumentParser
 
 from sendnn_inference.benchmarks.spyre_request_func import async_request_spyre_chat
 
@@ -81,9 +82,9 @@ def _register_backend() -> None:
         OPENAI_COMPATIBLE_BACKENDS.append(_BACKEND_NAME)
 
 
-def _build_parser() -> argparse.ArgumentParser:
+def _build_parser() -> FlexibleArgumentParser:
     """Build an arg parser based on vllm's but with spyre-chat as default backend."""
-    parser = argparse.ArgumentParser(
+    parser = FlexibleArgumentParser(
         description="Spyre-extended vllm bench serve",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

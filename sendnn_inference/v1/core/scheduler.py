@@ -43,8 +43,9 @@ class SpyreBenchState:
     blocks_lacking: dict[str, bool] = field(default_factory=dict)
     prefill_step_start: float | None = None
     decode_step_start: float | None = None
-    
 
+
+@dataclass
 class MMEncodeRequest:
     """Lightweight descriptor for a waiting MM request that should be
     pre-encoded before its Spyre prefill step begins."""
