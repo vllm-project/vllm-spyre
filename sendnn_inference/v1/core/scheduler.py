@@ -981,17 +981,29 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         self.paused_decoding_requests.clear()
         decoding_requests.clear()
 
+        now = time.time() if self._bench is not None else 0.0
+
         for req, _ in request_order:
             if self._can_decode_all_requests(decoding_requests + [req]):
                 decoding_requests.append(req)
                 self.request_last_decode_step[req.request_id] = 0
                 if req.request_id in was_paused:
                     self.running.append(req)
+                    # bench: pause -> running, close the currently open interval
+                    if self._bench is not None:
+                        starts = self._bench.pause_start_times.get(req.request_id)
+                        if starts:
+                            self._bench.pause_latencies.setdefault(req.request_id, []).append(
+                                now - starts[-1]
+                            )
             else:
                 self.paused_decoding_requests.append(req)
                 self.request_last_decode_step[req.request_id] += 1
                 if req.request_id in was_running:
                     self.running.remove(req)
+                    # bench: running -> paused, open a new interval
+                    if self._bench is not None:
+                        self._bench.pause_start_times.setdefault(req.request_id, []).append(now)
 
         pause_inc = len(self.paused_decoding_requests) - len(was_paused)
         if pause_inc >= 0:
