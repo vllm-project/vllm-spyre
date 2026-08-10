@@ -190,5 +190,5 @@ class LogitProcessorWrapper(LogitsProcessor):
             logits[i] = self.logitprocs[i].apply(logits[i].unsqueeze(0))
         return logits
 
-    def set_prefill_index(self, idx: int) -> None:
+    def set_prefill_index(self, idx: int | None) -> None:
         self._prefill_index = idx

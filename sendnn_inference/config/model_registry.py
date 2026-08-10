@@ -1,5 +1,6 @@
 """Model configuration registry."""
 
+import platform
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -145,6 +146,7 @@ class ModelConfigRegistry:
             logger.debug("No HF config available for matching")
             return None
 
+        current_platform = platform.machine()
         best_match: ModelConfig | None = None
         best_field_count = -1
 
@@ -163,6 +165,15 @@ class ModelConfigRegistry:
                     best_field_count = field_count
 
         if best_match:
+            if best_match.platforms and current_platform not in best_match.platforms:
+                logger.warning(
+                    "Model '%s' (matched config '%s') is not officially supported "
+                    "on platform '%s'. Supported platforms: %s",
+                    vllm_model_config.model,
+                    best_match.name,
+                    current_platform,
+                    best_match.platforms,
+                )
             logger.info(
                 "Matched model '%s' to configuration '%s' (%d fields)",
                 vllm_model_config.model,

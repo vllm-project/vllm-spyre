@@ -8,16 +8,33 @@ The two main constraints checked at prefill time are:
 1. Max-context constraint: current tkv <= max_context_len
 2. Volumetric constraint: current_max_tkv * batch_size <= max_batch_tkv_limit
 
-Run `python -m pytest tests/e2e/test_spyre_holdback_scheduler_steps.py`.
+Run `python -m pytest tests/e2e/test_spyre_decode_pause_scheduler_steps.py`.
 """
 
 import pytest
+import openai
+import httpx
+import huggingface_hub
+from prometheus_client import REGISTRY
 from scheduling_utils import (
     validate_scheduler_steps,
     create_request_for_scheduler_test,
     random_prompt,
 )
-from spyre_util import ModelInfo, verify_block_tables
+from spyre_util import (
+    ModelInfo,
+    RemoteOpenAIServer,
+    verify_block_tables,
+    REFERENCE_MODELS,
+)
+
+from vllm.transformers_utils.repo_utils import get_model_path
+
+
+def normalize_model_name(model: ModelInfo) -> str:
+    if huggingface_hub.constants.HF_HUB_OFFLINE:
+        return get_model_path(model.name, model.revision)
+    return model.name
 
 
 @pytest.mark.chunked_prefill
@@ -26,6 +43,7 @@ from spyre_util import ModelInfo, verify_block_tables
 @pytest.mark.parametrize("max_model_len", [128])
 @pytest.mark.parametrize("max_num_batched_tokens", [128])
 @pytest.mark.parametrize("available_blocks", [None])
+@pytest.mark.parametrize("use_git", [False, True])
 def test_max_batch_tkv_decode_pausing(
     model: ModelInfo,
     backend: str,
@@ -35,6 +53,7 @@ def test_max_batch_tkv_decode_pausing(
     max_model_len: int,
     max_num_batched_tokens: int,
     available_blocks: int,
+    use_git: bool,
 ):
     """Test that requests are scheduled and removed on time before max batch tkv
     exceeds the limit.
@@ -43,8 +62,8 @@ def test_max_batch_tkv_decode_pausing(
     not future max_batch_tkv values.
 
     Configuration:
-        * max_num_seqs: 2
-        * number of prompts: 2
+        * max_num_seqs: 4
+        * number of prompts: 3
             * 0: len = 15, max tokens = 11, step joining = 0
             * 1: len = 15, max tokens = 13, step joining = 0
             * 2: len = 66, max tokens = 10, step joining = 0
@@ -60,7 +79,7 @@ def test_max_batch_tkv_decode_pausing(
             add_step=0,
             max_tokens=11,
             prompt=random_prompt(model, seed=0, length=15),
-            use_golden_token_injection=False,
+            use_golden_token_injection=use_git,
             generate_hf_results=True,
         ),
         create_request_for_scheduler_test(
@@ -69,7 +88,7 @@ def test_max_batch_tkv_decode_pausing(
             add_step=0,
             max_tokens=13,
             prompt=random_prompt(model, seed=1, length=15),
-            use_golden_token_injection=False,
+            use_golden_token_injection=use_git,
             generate_hf_results=True,
         ),
         create_request_for_scheduler_test(
@@ -78,7 +97,7 @@ def test_max_batch_tkv_decode_pausing(
             add_step=0,
             max_tokens=10,
             prompt=random_prompt(model, seed=2, length=66),
-            use_golden_token_injection=False,
+            use_golden_token_injection=use_git,
             generate_hf_results=True,
         ),
     ]
@@ -156,7 +175,6 @@ def test_max_batch_tkv_decode_pausing(
             "block_tables": {"0": [1], "1": [2], "2": [3, 4]},
         },
         {
-            # Decode sequences 0, 1, and 2
             "step": 9,
             "tkv": 85,
             "waiting": [],
@@ -166,70 +184,89 @@ def test_max_batch_tkv_decode_pausing(
             "block_tables": {"0": [1], "1": [2], "2": [3, 4]},
         },
         {
-            # Decode sequences 0 and 1
-            # About to violate the volumetric constraint: 3 * 86 = 258 > 256
-            # Holdback activates: request 2 gets paused
             "step": 10,
-            "tkv": 22,  # tkv of request 0 without left-padding
+            "tkv": 85,
             "waiting": [],
-            "running": ["1", "0"],
-            "request_outputs": ["1", "0"],
+            "running": ["2", "1"],
+            "request_outputs": ["2", "1"],
             "n_used_blocks": 4,
             "block_tables": {"0": [1], "1": [2], "2": [3, 4]},
         },
         {
-            # Decode sequences 0 and 1
-            # Sequences 0 finishes
+            "step": 11,
+            "tkv": 86,
+            "waiting": [],
+            "running": ["2", "0"],
+            "request_outputs": ["2", "0"],
+            "n_used_blocks": 4,
+            "block_tables": {"0": [1], "1": [2], "2": [3, 4]},
+        },
+        {
+            "step": 12,
+            "tkv": 86,
+            "waiting": [],
+            "running": ["2", "1"],
+            "request_outputs": ["2", "1"],
+            "n_used_blocks": 4,
+            "block_tables": {"0": [1], "1": [2], "2": [3, 4]},
+        },
+        {
             "step": 13,
+            "tkv": 87,
+            "waiting": [],
+            "running": ["2", "0"],
+            "request_outputs": ["2", "0"],
+            "finished_requests": [],
+            "n_used_blocks": 4,
+            "block_tables": {"0": [1], "1": [2], "2": [3, 4]},
+        },
+        {
+            "step": 14,
+            "tkv": 87,
+            "waiting": [],
+            "running": ["1"],
+            "request_outputs": ["2", "1"],
+            "finished_requests": ["2"],
+            "n_used_blocks": 2,
+            "block_tables": {"0": [1], "1": [2]},
+        },
+        {
+            "step": 15,
+            "tkv": 24,
+            "waiting": [],
+            "running": ["1", "0"],
+            "request_outputs": ["1", "0"],
+            "n_used_blocks": 2,
+            "block_tables": {"0": [1], "1": [2]},
+        },
+        {
+            "step": 16,
             "tkv": 25,
             "waiting": [],
             "running": ["1"],
             "request_outputs": ["1", "0"],
             "finished_requests": ["0"],
-            "n_used_blocks": 3,
-            "block_tables": {"1": [2], "2": [3, 4]},
-        },
-        {
-            # Decode sequences 1 and 2
-            # Sequence 2 can now resume
-            "step": 14,
-            "tkv": 89,  # 25 + 64 = tkv of request 1 with left-padding
-            "waiting": [],
-            "running": ["1", "2"],
-            "request_outputs": ["1", "2"],
-            "n_used_blocks": 3,
-            "block_tables": {"1": [2], "2": [3, 4]},
-        },
-        {
-            # Decode sequences 1 and 2
-            # Sequence 1 finishes
-            "step": 16,
-            "tkv": 91,
-            "waiting": [],
-            "running": ["2"],
-            "request_outputs": ["1", "2"],
-            "finished_requests": ["1"],
-            "n_used_blocks": 2,
-            "block_tables": {"2": [3, 4]},
+            "n_used_blocks": 1,
+            "block_tables": {"1": [2]},
         },
         {
             # Decode sequence 2
             "step": 17,
-            "tkv": 74,  # tkv of request 2
+            "tkv": 26,
             "waiting": [],
-            "running": ["2"],
-            "request_outputs": ["2"],
-            "n_used_blocks": 2,
-            "block_tables": {"2": [3, 4]},
+            "running": ["1"],
+            "request_outputs": ["1"],
+            "n_used_blocks": 1,
+            "block_tables": {"1": [2]},
         },
         {
             # Sequence 2 finishes
             "step": 18,
-            "tkv": 75,
+            "tkv": 27,
             "waiting": [],
             "running": [],
-            "request_outputs": ["2"],
-            "finished_requests": ["2"],
+            "request_outputs": ["1"],
+            "finished_requests": ["1"],
             "n_used_blocks": 0,
             "block_tables": {},
         },
@@ -260,6 +297,18 @@ def test_max_batch_tkv_decode_pausing(
         prefix_caching=True,
     )
 
+    def get_counter(name: str) -> float:
+        print(f"get_counter {model.name=}")
+        return (
+            REGISTRY.get_sample_value(
+                f"sendnn:{name}_total", {"engine": "0", "model_name": normalize_model_name(model)}
+            )
+            or 0.0
+        )
+
+    assert get_counter("pause_events") == 1.0
+    assert get_counter("resume_events") == 1.0
+
 
 @pytest.mark.chunked_prefill
 @pytest.mark.full_model
@@ -267,6 +316,7 @@ def test_max_batch_tkv_decode_pausing(
 @pytest.mark.parametrize("max_model_len", [128])
 @pytest.mark.parametrize("max_num_batched_tokens", [128])
 @pytest.mark.parametrize("available_blocks", [None])
+@pytest.mark.parametrize("use_git", [False, True])
 def test_prefill_exceeds_max_batch_tkv(
     model: ModelInfo,
     backend: str,
@@ -276,6 +326,7 @@ def test_prefill_exceeds_max_batch_tkv(
     max_model_len: int,
     max_num_batched_tokens: int,
     available_blocks: int,
+    use_git: bool,
 ):
     """Test that requests are blocked when the volumetric constraint is immediately
     violated after prefill.
@@ -300,7 +351,7 @@ def test_prefill_exceeds_max_batch_tkv(
             add_step=0,
             max_tokens=7,
             prompt=random_prompt(model, seed=0, length=25),
-            use_golden_token_injection=False,
+            use_golden_token_injection=use_git,
             generate_hf_results=True,
         ),
         create_request_for_scheduler_test(
@@ -309,7 +360,7 @@ def test_prefill_exceeds_max_batch_tkv(
             add_step=0,
             max_tokens=6,
             prompt=random_prompt(model, seed=1, length=25),
-            use_golden_token_injection=False,
+            use_golden_token_injection=use_git,
             generate_hf_results=True,
         ),
         create_request_for_scheduler_test(
@@ -318,7 +369,7 @@ def test_prefill_exceeds_max_batch_tkv(
             add_step=0,
             max_tokens=3,
             prompt=random_prompt(model, seed=2, length=66),
-            use_golden_token_injection=False,
+            use_golden_token_injection=use_git,
             generate_hf_results=True,
         ),
     ]
@@ -404,7 +455,7 @@ def test_prefill_exceeds_max_batch_tkv(
             "running": ["2"],
             "request_outputs": ["2"],
             "n_used_blocks": 2,
-            "block_tables": {"2": [3, 4]},
+            "block_tables": {"2": [1, 2]},
         },
         {
             # Decode sequence 2
@@ -414,7 +465,7 @@ def test_prefill_exceeds_max_batch_tkv(
             "running": ["2"],
             "request_outputs": ["2"],
             "n_used_blocks": 2,
-            "block_tables": {"2": [3, 4]},
+            "block_tables": {"2": [1, 2]},
         },
         {
             # Sequence 2 finishes
@@ -453,3 +504,84 @@ def test_prefill_exceeds_max_batch_tkv(
         extra_assert_funcs=[verify_block_tables],
         prefix_caching=True,
     )
+
+    def get_counter(name: str) -> float:
+        return (
+            REGISTRY.get_sample_value(
+                f"sendnn:{name}_total", {"engine": "0", "model_name": normalize_model_name(model)}
+            )
+            or 0.0
+        )
+
+    assert get_counter("pause_events") == 0.0
+    assert get_counter("resume_events") == 0.0
+
+
+async def get_metrics(client: openai.AsyncOpenAI) -> list[str]:
+    response = await client.get("../metrics", cast_to=httpx.Response)
+    assert response.status_code == 200
+    metrics = response.text
+    return metrics.splitlines()
+
+
+def get_metric_value(metrics: list[str], metric_name: str) -> float:
+    metric_line = [line for line in metrics if line.startswith(metric_name)][0]
+    return float(metric_line.split(" ")[-1])
+
+
+@pytest.mark.parametrize("mode", [pytest.param("pc", marks=pytest.mark.prefix_caching, id="pc")])
+@pytest.mark.parametrize("backend", [pytest.param("eager", marks=pytest.mark.cpu, id="eager")])
+@pytest.mark.parametrize("tp_size", [1])
+@pytest.mark.parametrize("max_model_len", [512])
+@pytest.mark.parametrize("model", [REFERENCE_MODELS["ibm-ai-platform/micro-g3.3-8b-instruct-1b"]])
+@pytest.mark.asyncio
+async def test_metrics(
+    remote_openai_server: RemoteOpenAIServer,
+    model,
+    backend,
+    tp_size,
+    mode,
+    max_num_seqs,
+    max_model_len,
+    max_num_batched_tokens,
+):
+    # Here we just want to check that no upstream vllm change is preventing
+    # the flow of metrics from the engine core to the frontend. Any non-zero
+    # metric will do.
+    client = remote_openai_server.get_async_client()
+
+    prompt = random_prompt(
+        model=model,
+        seed=0,
+        length=1,
+    )
+
+    metrics = await get_metrics(client)
+    decode_batch = get_metric_value(metrics, "sendnn:decode_batch")
+    assert decode_batch == 0
+
+    # 10 tokens output tokens seems to be enough for an asynchronous
+    # call to /metrics to see the decode_batch gauge higher than 0
+    tokens_to_generate = 10
+    max_recorded_batch = 0
+    stream = await client.completions.create(
+        model=model.name,
+        prompt=prompt,
+        max_tokens=tokens_to_generate,
+        extra_body={"min_tokens": tokens_to_generate},
+        stream=True,
+    )
+    async for chunk in stream:
+        metrics = await get_metrics(client)
+        decode_batch = get_metric_value(metrics, "sendnn:decode_batch")
+        max_recorded_batch = max(max_recorded_batch, decode_batch)
+
+    assert max_recorded_batch > 0
+
+    metrics = await get_metrics(client)
+    decode_batch = get_metric_value(metrics, "sendnn:decode_batch")
+    assert decode_batch == 0
+
+    # just make sure that the other metrics are also registered
+    for metric in ["paused", "pause_events", "resume_events"]:
+        assert any(m.startswith(f"sendnn:{metric}") for m in metrics)

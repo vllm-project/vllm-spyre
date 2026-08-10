@@ -3,12 +3,47 @@
 #
 # Each model entry contains:
 # - architecture: Pattern for matching HuggingFace model configs
+# - platforms: List of supported CPU architectures (e.g. [x86_64, s390x, ppc64le]).
+#              If omitted, the model is supported on all platforms.
 # - static_batching_configs: List of static batching configurations (optional)
 # - continuous_batching_configs: List of continuous batching configurations (optional)
 #   - Each CB config may have a nested device_config for device-specific settings
 
 # templates for reuse via YAML anchors
 _templates:
+  granite_41_30b_architecture: &granite_41_30b_architecture
+    model_type: granite
+    num_hidden_layers: 64
+    max_position_embeddings: 131072
+    hidden_size: 4096
+    vocab_size: 100352
+    num_key_value_heads: 8
+    num_attention_heads: 32
+
+  # device config for TP=4 Granite 4.1 30b models
+  granite_41_30b_tp4_device_config: &granite_41_30b_tp4_device_config
+    env_vars:
+      VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072  # 128k
+      FLEX_HDMA_P2PSIZE: 268435456  # 256MB
+      FLEX_HDMA_COLLSIZE: 33554432  # 32MB
+    num_gpu_blocks_override: 2080
+
+  granite_swa_20b_architecture: &granite_swa_20b_architecture
+    model_type: granite_swa
+    num_hidden_layers: 44
+    max_position_embeddings: 131072
+    hidden_size: 4096
+    vocab_size: 100352
+    num_key_value_heads: 8
+    num_attention_heads: 32
+
+  # device config for TP=4 Granite SWA 20b
+  granite_swa_20b_tp4_device_config: &granite_swa_20b_tp4_device_config
+    env_vars:
+      VLLM_DT_MAX_BATCH_TKV_LIMIT: 131072  # 128k
+      FLEX_HDMA_P2PSIZE: 268435456  # 256MB
+      FLEX_HDMA_COLLSIZE: 33554432  # 32MB
+    num_gpu_blocks_override: 8192
 
   granite_4_8b_architecture: &granite_4_8b_architecture
     model_type: granite
@@ -35,7 +70,7 @@ _templates:
       FLEX_HDMA_P2PSIZE: 268435456  # 256MB
       FLEX_HDMA_COLLSIZE: 33554432  # 32MB
     num_gpu_blocks_override: 8192
-  
+
   granite_vision_33_2b_architecture: &granite_vision_33_2b_architecture
    model_type: llava_next
    text_config:
@@ -125,10 +160,26 @@ _templates:
       FLEX_HDMA_COLLSIZE: 33554432  # 32MB
     num_gpu_blocks_override: 8192
 
+  ministral3_8b_architecture: &ministral3_8b_architecture
+    # NB remapped from mistral3 in vllm
+    model_type: pixtral
+    text_config:
+      num_hidden_layers: 34
+      max_position_embeddings: 262144
+      hidden_size: 4096
+      vocab_size: 131072
+      num_key_value_heads: 8
+      num_attention_heads: 32
+    vision_config:
+      num_hidden_layers: 24
+      hidden_size: 1024
+      num_attention_heads: 16
+
 models:
   # Granite 3.3 8B Instruct
   ibm-granite/granite-3.3-8b-instruct:
     architecture: *granite_33_8b_architecture
+    platforms: [x86_64, ppc64le, s390x]
 
     # Continuous batching configurations
     continuous_batching_configs:
@@ -152,6 +203,7 @@ models:
       <<: *granite_33_8b_architecture
       quantization_config:
         format: float-quantized
+    platforms: [x86_64, ppc64le, s390x]
 
     # Continuous batching configurations only
     continuous_batching_configs:
@@ -166,10 +218,11 @@ models:
         max_model_len: 32768
         max_num_seqs: 32
         device_config: *granite_8b_tp4_device_config
-  
+
   # Llama 3.1 8B Instruct
   meta-llama/Llama-3.1-8B-Instruct:
     architecture: *llama3_8b_architecture
+    platforms: [x86_64, ppc64le]
     continuous_batching_configs:
       - tp_size: 1
         max_model_len: 3072
@@ -189,6 +242,7 @@ models:
       <<: *granite_4_8b_architecture
       model_type: granitemoehybrid
       num_experts_per_tok: 0
+    platforms: [x86_64, ppc64le, s390x]
 
     # Continuous batching configurations
     continuous_batching_configs:
@@ -210,6 +264,7 @@ models:
   ibm-granite/granite-4-8b-dense:
     architecture:
       <<: *granite_4_8b_architecture
+    platforms: [x86_64, ppc64le, s390x]
 
     # Continuous batching configurations
     continuous_batching_configs:
@@ -227,11 +282,12 @@ models:
         max_num_seqs: 32
         device_config: *granite_8b_tp4_device_config
 
-  ibm-granite/granite-4-8b-dense-FP8:
+  ibm-granite/granite-4.1-8b-fp8:
     architecture:
       <<: *granite_4_8b_architecture
       quantization_config:
         format: float-quantized
+    platforms: [x86_64, ppc64le, s390x]
 
     # Continuous batching configurations
     continuous_batching_configs:
@@ -247,9 +303,31 @@ models:
         max_num_seqs: 32
         device_config: *granite_8b_tp4_device_config
 
+  # Granite 4.1 30B
+  ibm-granite/granite-4.1-30b:
+    architecture: *granite_41_30b_architecture
+    platforms: [x86_64, ppc64le, s390x]
+    continuous_batching_configs:
+      - tp_size: 4
+        max_model_len: 32768
+        max_num_seqs: 32
+        device_config: *granite_41_30b_tp4_device_config
+
+  # Granite SWA 20B (prerelease)
+  # TODO (ysc) update with real hf id once the model is public
+  ibm-granite/swa-20b:
+    architecture: *granite_swa_20b_architecture
+    platforms: [x86_64, ppc64le, s390x]
+    continuous_batching_configs:
+      - tp_size: 4
+        max_model_len: 32768
+        max_num_seqs: 32
+        device_config: *granite_swa_20b_tp4_device_config
+
   # Granite Vision 3.3 2B
   ibm-granite/granite-vision-3.3-2b:
     architecture: *granite_vision_33_2b_architecture
+    platforms: [x86_64, ppc64le, s390x]
     continuous_batching_configs:
       - tp_size: 1
         max_model_len: 8192
@@ -262,10 +340,11 @@ models:
         max_model_len: 32768
         max_num_seqs: 32
         device_config: *granite_vision_2b_tp4_device_config
-        
+
   # Mistral Small 3.2 24B Instruct
   mistralai/Mistral-Small-3.2-24B-Instruct-2506:
     architecture: *mistral3_24b_architecture
+    platforms: [x86_64, ppc64le]
     continuous_batching_configs:
       - tp_size: 2
         max_model_len: 8192
@@ -278,7 +357,24 @@ models:
   # Ministral 3 14B Instruct
   mistralai/Ministral-3-14B-Instruct-2512-BF16:
     architecture: *ministral3_14b_architecture
+    platforms: [x86_64, ppc64le, s390x]
     continuous_batching_configs:
+      - tp_size: 1
+        max_model_len: 4096
+        max_num_seqs: 32
+      - tp_size: 4
+        max_model_len: 32768
+        max_num_seqs: 32
+        device_config: *ministral3_14b_device_config
+
+  # Ministral 3 8B Instruct
+  mistralai/Ministral-3-8B-Instruct-2512-BF16:
+    architecture: *ministral3_8b_architecture
+    platforms: [x86_64, ppc64le, s390x]
+    continuous_batching_configs:
+      - tp_size: 1
+        max_model_len: 4096
+        max_num_seqs: 32
       - tp_size: 4
         max_model_len: 32768
         max_num_seqs: 32
@@ -286,11 +382,37 @@ models:
 
 
   # Embedding models (static batching only, no device configs needed)
+  ibm-granite/granite-embedding-30m-english:
+    architecture:
+      model_type: roberta
+      num_hidden_layers: 6
+      vocab_size: 50265
+    platforms: [x86_64, ppc64le, s390x]
+    static_batching_configs:
+      - tp_size: 1
+        warmup_shapes:
+          - prompt_len: 512
+            batch_size: 64
+
+  ibm-granite/granite-embedding-107m-multilingual:
+    architecture:
+      model_type: xlm-roberta
+      num_hidden_layers: 6
+      vocab_size: 250002
+    platforms: [x86_64, ppc64le, s390x]
+
+    static_batching_configs:
+      - tp_size: 1
+        warmup_shapes:
+          - prompt_len: 512
+            batch_size: 64
+
   ibm-granite/granite-embedding-125m-english:
     architecture:
       model_type: roberta
       num_hidden_layers: 12
       vocab_size: 50265
+    platforms: [x86_64, ppc64le, s390x]
 
     static_batching_configs:
       - tp_size: 1
@@ -303,6 +425,7 @@ models:
       model_type: xlm-roberta
       num_hidden_layers: 12
       vocab_size: 250002
+    platforms: [x86_64, ppc64le, s390x]
 
     static_batching_configs:
       - tp_size: 1
@@ -310,42 +433,33 @@ models:
           - prompt_len: 512
             batch_size: 64
 
-  Qwen/Qwen3-Embedding-0.6B:
-    architecture:
-      model_type: qwen3
-      num_hidden_layers: 28
-      vocab_size: 151669
-
-    static_batching_configs:
-      - tp_size: 1
-        warmup_shapes:
-          - prompt_len: 512
-            batch_size: 64
-
-  Qwen/Qwen3-Embedding-4B:
-    architecture:
-      model_type: qwen3
-      num_hidden_layers: 36
-      vocab_size: 151665
-
-    static_batching_configs:
-      - tp_size: 1
-        warmup_shapes:
-          - prompt_len: 512
-            batch_size: 64
-
-  # Other supported models (static batching only)
   intfloat/multilingual-e5-large:
     architecture:
       model_type: xlm-roberta
       num_hidden_layers: 24
       vocab_size: 250002
+    platforms: [x86_64, ppc64le]
 
     static_batching_configs:
       - tp_size: 1
         warmup_shapes:
           - prompt_len: 512
             batch_size: 64
+
+  intfloat/multilingual-e5-large-instruct:
+    architecture:
+      model_type: xlm-roberta
+      num_hidden_layers: 24
+      vocab_size: 250002
+    platforms: [x86_64, ppc64le]
+
+    static_batching_configs:
+      - tp_size: 1
+        warmup_shapes:
+          - prompt_len: 512
+            batch_size: 4
+
+  # Other supported models (static batching only)
 
   BAAI/bge-reranker-v2-m3:
     architecture:
@@ -353,6 +467,7 @@ models:
       max_position_embeddings: 8194
       num_hidden_layers: 24
       vocab_size: 250002
+    platforms: [x86_64, ppc64le]
 
     static_batching_configs:
       - tp_size: 1
@@ -366,6 +481,7 @@ models:
       max_position_embeddings: 514
       num_hidden_layers: 24
       vocab_size: 250002
+    platforms: [x86_64, ppc64le]
 
     static_batching_configs:
       - tp_size: 1
@@ -378,6 +494,7 @@ models:
       model_type: roberta
       num_hidden_layers: 24
       vocab_size: 50265
+    platforms: [x86_64, ppc64le]
 
     static_batching_configs:
       - tp_size: 1

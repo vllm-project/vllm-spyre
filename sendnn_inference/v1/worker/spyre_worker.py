@@ -11,7 +11,7 @@ import time
 import math
 from datetime import timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Union, cast
+from typing import Union, cast
 
 import torch
 import torch.distributed as dist
@@ -28,11 +28,7 @@ from vllm.v1.core.sched.output import CachedRequestData, NewRequestData, Schedul
 from vllm.v1.kv_cache_interface import KVCacheConfig, KVCacheSpec
 from vllm.v1.outputs import ModelRunnerOutput
 
-try:
-    from vllm.v1.worker.worker_base import CompilationTimes, WorkerBase
-except ImportError:
-    CompilationTimes = None  # type: ignore[assignment, misc]
-    from vllm.v1.worker.worker_base import WorkerBase
+from vllm.v1.worker.worker_base import CompilationTimes, WorkerBase
 
 import sendnn_inference.envs as envs_spyre
 import sendnn_inference.perf_metrics as perf_metrics
@@ -44,10 +40,7 @@ from sendnn_inference.v1.worker.spyre_model_runner import (
     SpyrePoolingModelRunner,
     SupportedTask,
 )
-
-if TYPE_CHECKING:
-    from vllm.v1.core.sched.output import GrammarOutput
-
+from vllm.v1.core.sched.output import GrammarOutput
 
 logger = init_logger(__name__)
 
@@ -152,9 +145,7 @@ class SpyreWorker(WorkerBase):
 
         if self.is_decoder:
             t = self._warmup_spyre_dynamic_size(self.restricted_tokens)
-            if CompilationTimes is not None:
-                return CompilationTimes(language_model=t, encoder=0.0)
-            return t
+            return CompilationTimes(language_model=t, encoder=0.0)
         if self.model_runner.is_multimodal:
             raise NotImplementedError("[WARMUP] multimodal models are not supported yet.")
         num_shape_combinations = len(self.spyre_warmup_shapes)
@@ -188,9 +179,7 @@ class SpyreWorker(WorkerBase):
             num_shape_combinations,
             all_warmup_total_t,
         )
-        if CompilationTimes is not None:
-            return CompilationTimes(language_model=all_warmup_total_t, encoder=0.0)
-        return all_warmup_total_t
+        return CompilationTimes(language_model=all_warmup_total_t, encoder=0.0)
 
     def check_health(self) -> None:
         """Basic health check (override for device-specific checks)."""
@@ -416,7 +405,7 @@ class SpyreWorker(WorkerBase):
         logger.info("load model took %.3fs", load_model_total_t)
 
     def _gen_warmup_block_ids(self, num_tokens: int) -> tuple[list[int]]:
-        num_blocks = math.ceil(num_tokens / 64)
+        num_blocks = math.ceil(num_tokens / SpyrePlatform.get_block_size())
         start = self.warmup_block_ids
         end = start + num_blocks
         self.warmup_block_ids = end
@@ -425,7 +414,6 @@ class SpyreWorker(WorkerBase):
     def _warmup_spyre_dynamic_size(self, special_token_ids) -> float:
         warmup_start_t = time.time()
 
-        # satisfy mypy
         model_runner: ChunkedPrefillModelRunner = cast(ChunkedPrefillModelRunner, self.model_runner)
 
         vocab_size = model_runner.vocab_size
@@ -519,8 +507,35 @@ class SpyreWorker(WorkerBase):
             finished_req_ids=set(),
             **_get_extra_args(),
         )
-        logger.info("[WARMUP] Deploying to device...")
+        logger.info("[WARMUP] Deploying prefill to device...")
         self.execute_model(scheduler_output)
+        model_runner._pending_sampling_state = None
+
+        # Mirror the prefill deploy with a decode deploy: ensure the compiled
+        # decode program is also installed on the device before runtime, so
+        # the first runtime decode does not pay a one-time deploy cost
+        # (observed as elevated ITL on the very first decoded token).
+        decode_cached = CachedRequestData.make_empty()
+        decode_cached.req_ids = [deploy_req.req_id]
+        if prompt_len % SpyrePlatform.get_block_size() == 0:
+            decode_cached.new_block_ids = [self._gen_warmup_block_ids(1)]
+        else:
+            decode_cached.new_block_ids = [([],)]
+        random_idx = int(torch.randint(0, len(valid_token_ids_tensor), (1,)).item())
+        decode_cached.new_token_ids = [[int(valid_token_ids_tensor[random_idx].item())]]
+        decode_cached.num_computed_tokens = [prompt_len]
+
+        decode_scheduler_output = SchedulerOutput(
+            scheduled_new_reqs=[],
+            scheduled_cached_reqs=decode_cached,
+            num_scheduled_tokens={deploy_req.req_id: 1},
+            total_num_scheduled_tokens=1,
+            finished_req_ids=set(),
+            **_get_extra_args(),
+        )
+        logger.info("[WARMUP] Deploying decode to device...")
+        self.execute_model(decode_scheduler_output)
+        model_runner._pending_sampling_state = None
         self._cleanup_model_runner(request=[deploy_req])
 
         model_runner.complete_warmup()
@@ -550,9 +565,9 @@ class SpyreWorker(WorkerBase):
             **_get_extra_args(),
         )
         self.execute_model(scheduler_output)
-        # satisfy mypy
-        model_runner: ChunkedPrefillModelRunner = cast(ChunkedPrefillModelRunner, self.model_runner)
-        model_runner.tkv = 0
+        if isinstance(self.model_runner, ChunkedPrefillModelRunner):
+            self.model_runner._pending_sampling_state = None
+            self.model_runner.tkv = 0
 
     def _warmup_spyre_fixed_size(self, prompt_len, special_token_ids, batch_size):
         assert self.is_pooling, "only pooling models have fixed warmup shapes"
@@ -675,6 +690,7 @@ class SpyreWorker(WorkerBase):
         # Once we figure it out this limitation we should revert this to
         # bs=1 again.
         assert _inside_warmup_mode, "it looks like you are outside the warmup context for warmup"
+        model_runner = cast(ChunkedPrefillModelRunner, self.model_runner)
 
         req_count = len(requests)
         for idx, req in enumerate(requests):
@@ -690,6 +706,7 @@ class SpyreWorker(WorkerBase):
             logger.info("[WARMUP] Prefill [%s/%s]...", idx + 1, req_count)
 
             self.execute_model(scheduler_output)
+            model_runner._pending_sampling_state = None
 
         random_token_id = lambda: torch.randint(0, len(valid_token_ids_tensor), (1,)).item()
 
@@ -697,7 +714,7 @@ class SpyreWorker(WorkerBase):
         cached_request_data.req_ids = [req.req_id for req in requests]
         cached_request_data.new_block_ids = []
         for req in requests:
-            if len(req.prompt_token_ids) % 64 == 0:
+            if len(req.prompt_token_ids) % SpyrePlatform.get_block_size() == 0:
                 cached_request_data.new_block_ids.append(self._gen_warmup_block_ids(1))
             else:
                 cached_request_data.new_block_ids.append(([],))
@@ -716,6 +733,7 @@ class SpyreWorker(WorkerBase):
         )
         logger.info("[WARMUP] Decode...")
         self.execute_model(scheduler_output)
+        model_runner._pending_sampling_state = None
         self._cleanup_model_runner(request=requests)
 
     def _warmup_model_forward_pass(
@@ -770,11 +788,6 @@ class SpyreWorker(WorkerBase):
     def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
         return self.model_runner.get_supported_tasks()
 
-    def sample_tokens(self, grammar_output: "GrammarOutput | None") -> ModelRunnerOutput:
-        from vllm.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT
-
-        return EMPTY_MODEL_RUNNER_OUTPUT
-
     @SpyrePlatform.inference_mode()
     def execute_model(
         self,
@@ -784,6 +797,25 @@ class SpyreWorker(WorkerBase):
             self.profiler.step()
         output = self.model_runner.execute_model(scheduler_output)
         return output if self.is_driver_worker else None
+
+    def sample_tokens(  # type: ignore[override]
+        self,
+        grammar_output: "GrammarOutput",
+    ) -> ModelRunnerOutput | None:
+        return self.model_runner.sample_tokens(grammar_output)
+
+    def store_mm_embeddings(self, results: list[tuple]) -> None:
+        """Read completed MM embeddings from SHM and cache them for prefill.
+
+        Called on all TP ranks via collective_rpc by SpyreMultiprocExecutor
+        after the encoder subprocess has written embeddings to POSIX SHM.
+        Each worker reads independently — no rank-0 tensor broadcast needed.
+
+        ``results`` is a list of ``(req_id, shape, dtype)`` tuples identifying
+        the SHM blocks written by the encoder process.
+        """
+        if isinstance(self.model_runner, ChunkedPrefillModelRunner):
+            self.model_runner.store_mm_embeddings(results)
 
     def _get_num_tokens(self, r: NewRequestData) -> int:
         assert r.prompt_token_ids is not None, "requests should have tokens!"

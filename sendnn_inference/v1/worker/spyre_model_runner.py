@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, Union
 
 import torch
+import torch.distributed
 from transformers import AutoModel, AutoModelForSequenceClassification, AutoTokenizer
 from vllm.config import DeviceConfig, VllmConfig, set_current_vllm_config
 from vllm.forward_context import set_forward_context
@@ -41,6 +42,13 @@ from sendnn_inference.perf_metrics import create_perf_metric_logger
 from sendnn_inference.platform import SpyrePlatform
 from sendnn_inference.utils import exact_div
 from sendnn_inference.v1.sample.spyre_logits_processor import build_logitsprocs_for_cb
+from sendnn_inference.v1.worker.mm_shared_memory import (
+    cleanup_embeddings,
+    dtype_to_idx,
+    idx_to_dtype,
+    read_embeddings,
+    write_embeddings,
+)
 
 # yapf conflicts with ruff for this block
 # yapf: disable
@@ -57,10 +65,12 @@ from sendnn_inference.v1.worker.spyre_input_batch import (
 if TYPE_CHECKING:
     from vllm.v1.core.sched.output import NewRequestData, SchedulerOutput
     from vllm.v1.sample.metadata import SamplingMetadata
+    from vllm.v1.structured_output.utils import GrammarOutput
 else:
     SchedulerOutput = None
     NewRequestData = None
     SamplingMetadata = None
+    GrammarOutput = None
 
 FMS_POOLING_MODEL_LIST = ["Qwen3ForCausalLM"]
 
@@ -105,6 +115,17 @@ class SpyreModelRunnerOutput(ModelRunnerOutput):
     prefix_cache_hit_len: dict[str, int] = field(default_factory=dict)
 
 
+@dataclass
+class SamplingState:
+    """State for deferred sampling when grammar bitmask is being built asynchronously."""
+
+    logits: torch.Tensor
+    metadata: "SamplingMetadata"
+    is_prefill: bool
+    scheduler_output: "SchedulerOutput"
+    batch_req_ids: list[str]  # Store request IDs to validate batch consistency
+
+
 InputBatchT = TypeVar("InputBatchT", bound=BaseInputBatch)
 ModelInputsT = TypeVar("ModelInputsT", bound=ModelForwardInputs)
 
@@ -136,8 +157,8 @@ class BaseSpyreModelRunner(ABC, Generic[InputBatchT, RequestStateT, ModelInputsT
                 self.pad_token_id = getattr(self.model_config.hf_config, "pad_token_id", None) or 0
             if self.model_config.get_sliding_window():
                 logger.warning(
-                    "Sliding window is not supported on Spyre. "
-                    "The model will run without sliding window."
+                    "Sliding window is not fully supported on Spyre yet."
+                    "The model will run with experimental sliding window support."
                 )
 
         if vllm_config.device_config is None:
@@ -319,10 +340,12 @@ class SpyrePoolingModelRunner(
                 )
                 self._model = self._model.base_model
             else:
-                self._model = AutoModel.from_pretrained(self.model_config.model)
+                self._model = AutoModel.from_pretrained(
+                    self.model_config.model, dtype=torch.float16, attn_implementation="eager"
+                )
         elif task == "classify":
             class_model = AutoModelForSequenceClassification.from_pretrained(
-                self.model_config.model
+                self.model_config.model, attn_implementation="eager"
             )
             if hasattr(class_model, "bert"):
                 self._model = class_model.bert
@@ -369,9 +392,7 @@ class SpyrePoolingModelRunner(
 
         if task == "classify":
             tokenizer = AutoTokenizer.from_pretrained(self.model_config.model)
-            # Assert to satisfy type checker
-            assert tokenizer is not None, "Failed to load tokenizer"
-            output = tokenizer(text="foo", text_pair="bar")
+            output = tokenizer(text="foo", text_pair="bar")  # ty: ignore[call-non-callable]
             self.use_token_type_ids = "token_type_ids" in output
             if self.use_token_type_ids:
                 self.sep_token_id = tokenizer.sep_token_id
@@ -742,6 +763,12 @@ class ChunkedPrefillModelRunner(
 
         self._enable_prefix_caching = vllm_config.cache_config.enable_prefix_caching
 
+        # State for async sampling (when grammar bitmask is being built)
+        # Engine guarantees at most one outstanding deferred grammar batch per model runner.
+        # This assumes the execution pattern: forward(A) -> sample(A) -> forward(B) -> sample(B)
+        # and will not support: forward(A) -> forward(B) -> sample(A) -> sample(B)
+        self._pending_sampling_state: SamplingState | None = None
+
         # TODO: Remove this once we can prefill and decode in the same step
         self.prefill_batch = SamplingInputBatch(
             # TODO: review this, currently we only support prefill for
@@ -764,6 +791,17 @@ class ChunkedPrefillModelRunner(
         # Initialize performance metric logger for tracking embedding times
         self.perf_logger = create_perf_metric_logger(rank=rank)
 
+        # Pre-computed MM embeddings for waiting requests (keyed by request_id).
+        # Populated by store_mm_embeddings() (async path via executor).
+        # Consumed and removed by add_new_request() when the request begins prefill.
+        self.pending_mm_embeddings: dict[str, torch.Tensor] = {}
+
+        # Request IDs that finished (aborted/completed) while their encode job
+        # was still in-flight.  store_mm_embeddings() checks this set and discards
+        # late-arriving results rather than letting them leak in pending_mm_embeddings.
+        # Entries are removed once the late result arrives (self-cleaning).
+        self._finished_encode_req_ids: set[str] = set()
+
     def load_model(self) -> None:
         self._model = SpyreCausalLM(
             vllm_config=self.vllm_config,
@@ -785,6 +823,33 @@ class ChunkedPrefillModelRunner(
     def prompt_len(request: NewRequestData | Request) -> int:
         assert request.prompt_token_ids is not None, "prompt token ids are required"
         return len(request.prompt_token_ids)
+
+    def store_mm_embeddings(self, results: list[tuple]) -> None:
+        """Read completed async MM embeddings from POSIX SHM and cache them.
+
+        Called on all TP ranks via collective_rpc by SpyreMultiprocExecutor
+        after the encoder subprocess has written embeddings to SHM.  Each rank
+        reads independently — no rank-0 tensor broadcast is needed.
+
+        ``results`` is a list of ``(req_id, shape, dtype)`` tuples.  The SHM
+        blocks are kept alive by the executor until this call returns.
+        """
+        for req_id, shape, dtype in results:
+            if req_id in self._finished_encode_req_ids:
+                # Request finished while its encode was in-flight; discard the
+                # late result and clean up the tombstone entry.
+                self._finished_encode_req_ids.discard(req_id)
+                logger.debug("Discarding late async MM embeddings for finished req '%s'", req_id)
+                continue
+            embeds = read_embeddings(req_id, shape, dtype)
+            self.pending_mm_embeddings[req_id] = embeds
+            logger.debug(
+                "Stored async MM embeddings for req '%s' (rank %d): shape=%s dtype=%s",
+                req_id,
+                self.rank,
+                shape,
+                dtype,
+            )
 
     def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
         tasks = list[SupportedTask]()
@@ -822,6 +887,7 @@ class ChunkedPrefillModelRunner(
 
     def complete_warmup(self) -> None:
         super().complete_warmup()
+        self._pending_sampling_state = None
         # get the number or pages from the actual Spyre card after the warmup
         # and set it accordingly in the model runner and for the kv cache size
         n_blocks_avail = SpyrePlatform.get_total_spyre_blocks(self.vllm_config)
@@ -887,6 +953,150 @@ class ChunkedPrefillModelRunner(
 
     def _prepare_prompt(self, new_request_data: list[NewRequestData]) -> SamplingForwardInputs:
         raise NotImplementedError
+
+    def _compute_and_cache_mm_embeddings(
+        self,
+        request: SamplingRequestState,
+        req_id: str,
+        full_input_tokens: torch.Tensor,
+        mm_features: Any,
+    ) -> None:
+        """Compute MM embeddings and cache them on every TP rank.
+
+        Two modes are supported, controlled by ``SENDNN_INFERENCE_TP_MM_SHARING``:
+
+        **Sharing enabled (default, =1):**
+            Rank 0 runs the vision encoder once and distributes the result to
+            all other TP ranks via POSIX shared memory.  This avoids
+            ``world_size`` redundant encoder calls.
+
+            Synchronisation uses two GLOO broadcast collectives:
+
+            * **Broadcast A** — rank 0 signals that SHM is written and carries
+              the embedding shape + dtype in the ``meta`` tensor.
+            * **Broadcast B** — cleanup barrier; all ranks signal they have
+              finished reading so rank 0 can safely unlink the SHM segment.
+
+            Both broadcasts are placed in a ``finally`` block so they always
+            execute — even when an exception is raised — preventing any rank
+            from hanging at a collective the failing rank never reaches.
+
+            A zero ``meta`` tensor (``[0, 0, 0, 0]``) is the failure sentinel:
+            rank 0 only writes a non-zero ``meta`` on success; non-rank-0
+            workers skip the SHM read when they receive all-zeros.
+
+        **Sharing disabled (=0):**
+            Every TP rank runs the vision encoder independently and caches its
+            own copy.  This is the original behaviour — no SHM or coordination
+            overhead, but ``world_size`` redundant encoder calls per request.
+            Set ``SENDNN_INFERENCE_TP_MM_SHARING=0`` to fall back to this mode
+            if SHM-related failures are observed.
+
+        On completion, ``request.cached_mm_embeddings`` is set on every rank.
+        """
+        if self.parallel_config.world_size > 1 and envs_spyre.SENDNN_INFERENCE_TP_MM_SHARING:
+            data_shm = None
+            full_embeds = None
+            meta = torch.zeros(4, dtype=torch.int64)
+
+            try:
+                if self.rank == 0:
+                    # Embedding computation is inside the try so that a failure
+                    # here still reaches the finally → broadcast A → unblocks
+                    # the other ranks that are waiting on broadcast A.
+                    t0 = time.time()
+                    with torch.inference_mode():
+                        full_embeds = self.model.get_maybe_mm_embeddings(
+                            full_input_tokens,
+                            mm_features=mm_features,
+                            is_decode=False,
+                        )
+                    t_elapsed = time.time() - t0
+                    logger.info("maybe_mm_embedding processing time: %.2fms", (t_elapsed * 1000))
+                    self.perf_logger.log(
+                        "get_mm_embeddings_time_ms",
+                        t_elapsed * 1000,
+                        phase="prefill",
+                        has_mm_features=True,
+                        req_id=req_id,
+                    )
+                    full_embeds = full_embeds.cpu().contiguous()
+                    data_shm = write_embeddings(full_embeds, req_id)
+                    # Only set meta to a non-zero value on success; zeros = failure.
+                    meta = torch.tensor(
+                        [
+                            full_embeds.shape[0],
+                            full_embeds.shape[1],
+                            full_embeds.shape[2],
+                            dtype_to_idx(full_embeds.dtype),
+                        ],
+                        dtype=torch.int64,
+                    )
+
+            finally:
+                # ── Broadcast A (always) ──────────────────────────────────────
+                # Carries valid shape/dtype on success, all-zeros on failure.
+                # Must be in finally so it is sent even when rank 0 raises above.
+                torch.distributed.broadcast(meta, src=0)
+
+                # Non-rank-0 reads from SHM only if meta signals success.
+                # Wrapped in try/except so a read failure does not stop
+                # broadcast B from executing on this rank.
+                if self.rank != 0:
+                    try:
+                        if meta.any():
+                            shape = (int(meta[0]), int(meta[1]), int(meta[2]))
+                            dtype = idx_to_dtype(int(meta[3]))
+                            full_embeds = read_embeddings(req_id, shape, dtype)
+                        # else: full_embeds stays None — rank 0 failed; the
+                        # exception will propagate from rank 0 separately.
+                    except Exception as exc:
+                        logger.error(
+                            "[rank %d] SHM read failed for req '%s': %s",
+                            self.rank,
+                            req_id,
+                            exc,
+                        )
+                        full_embeds = None
+
+                # ── Broadcast B (always) ──────────────────────────────────────
+                # Symmetric cleanup barrier. Must be in finally for the same
+                # reason as broadcast A.
+                torch.distributed.broadcast(meta, src=0)
+                if data_shm is not None:
+                    cleanup_embeddings(data_shm)
+        else:
+            # Sharing disabled (TP = 1, or SENDNN_INFERENCE_TP_MM_SHARING not set):
+            # every rank runs the vision encoder independently.  This is the
+            # original behaviour — no SHM, no coordination overhead.
+            t0 = time.time()
+            with torch.inference_mode():
+                full_embeds = self.model.get_maybe_mm_embeddings(
+                    full_input_tokens,
+                    mm_features=mm_features,
+                    is_decode=False,
+                )
+            # Ensure embeddings are on CPU before passing to the Spyre decoder.
+            # When the vision tower runs on NNPA, get_maybe_mm_embeddings returns
+            # an NNPA tensor; slicing it into a CPU input_embeds in
+            # _prepare_chunked_prefill would fail without this explicit move.
+            full_embeds = full_embeds.cpu().contiguous()
+            t_elapsed = time.time() - t0
+            logger.info("maybe_mm_embedding processing time: %.2fms", (t_elapsed * 1000))
+            self.perf_logger.log(
+                "get_mm_embeddings_time_ms",
+                t_elapsed * 1000,
+                phase="prefill",
+                has_mm_features=True,
+                req_id=req_id,
+            )
+
+        request.cached_mm_embeddings = full_embeds
+        logger.debug(
+            "Cached full multimodal embeddings for request '%s' (rank %d)",
+            req_id,
+            self.rank,
+        )
 
     def _prepare_chunked_prefill(self, req_id: str) -> SamplingForwardInputs:
         """
@@ -1021,10 +1231,14 @@ class ChunkedPrefillModelRunner(
             chunk_end = min(chunk_start + chunk_size, prompt_len)
             chunk_left_offset = 0
 
+        # Padding positions are masked by the attention masks — use empty to avoid
+        # zeroing memory that will be either overwritten or never read by the model.
         input_tokens = torch.zeros(chunk_size, dtype=torch.int64, device=self.device)
         input_tokens_np = input_tokens.numpy()
         input_positions = torch.zeros(chunk_size, dtype=torch.int64, device=self.device)
         input_positions_np = input_positions.numpy()
+        # NOTE: keeping zeros for input_tokens/positions since token ID 0 (pad) is needed
+        # for the attention mask logic; only input_embeds padding is safe to skip zeroing.
 
         # Create tensors based on slice
         input_tokens_np[chunk_left_offset : chunk_left_offset + chunk_end - chunk_start] = (
@@ -1076,35 +1290,16 @@ class ChunkedPrefillModelRunner(
         self.model.indices = torch.ones(1, dtype=torch.bool, device="cpu")
 
         # For multimodal requests, compute embeddings once for the full sequence
-        # and cache them, then slice per chunk. This ensures image features are
-        # correctly aligned across all chunks.
+        # and cache them, then slice per chunk.  With tensor parallelism (TP>1) each
+        # worker is a separate process; we avoid running the vision encoder world_size
+        # times by having rank 0 compute and broadcast the result to all other ranks.
+
         if mm_features and request.cached_mm_embeddings is None:
-            # First chunk: compute full multimodal embeddings
             full_input_tokens = torch.tensor(
                 prompt_token_ids, dtype=torch.int64, device=self.device
             ).unsqueeze(0)
 
-            t0 = time.time()
-            full_embeds = self.model.get_maybe_mm_embeddings(
-                full_input_tokens,
-                mm_features=mm_features,
-                is_decode=False,
-            )
-
-            t_elapsed = time.time() - t0
-
-            logger.info("maybe_mm_embedding processing time: %.2fms", (t_elapsed * 1000))
-            self.perf_logger.log(
-                "get_mm_embeddings_time_ms",
-                t_elapsed * 1000,
-                phase="prefill",
-                has_mm_features=True,
-                req_id=req_id,
-            )
-
-            # Cache the full embeddings for subsequent chunks
-            request.cached_mm_embeddings = full_embeds
-            logger.debug("Computed and cached full multimodal embeddings for request '%s'", req_id)
+            self._compute_and_cache_mm_embeddings(request, req_id, full_input_tokens, mm_features)
 
         # Slice the cached embeddings for this chunk
         if request.cached_mm_embeddings is not None:
@@ -1112,8 +1307,9 @@ class ChunkedPrefillModelRunner(
             # Add left padding to align with the chunked token positions
             full_embeds = request.cached_mm_embeddings
 
-            # Create output tensor with chunk size
-            input_embeds = torch.zeros(
+            # Padded positions are masked by left_padded_prompt_mask so the model
+            # ignores them — use empty to skip the zero-fill cost (~40 MB per chunk).
+            input_embeds = torch.empty(
                 (1, chunk_size, full_embeds.shape[-1]),
                 dtype=full_embeds.dtype,
                 device=self.device,
@@ -1191,7 +1387,7 @@ class ChunkedPrefillModelRunner(
         # We'll calculate tkv on the fly, it is the max num computed tokens
         # of a request since there is no tokens left padding, only for blocks
         tkv = 0
-        for req_id in req_ids:
+        for idx, req_id in enumerate(req_ids):
             # TODO: Will this always just be one token ID if there's no spec
             # or jump decoding?
 
@@ -1212,7 +1408,14 @@ class ChunkedPrefillModelRunner(
             slot_mapping.append(slot)
 
             # input token and position of the token generated in the last step
-            generation_token = req_state.output_token_ids[-1]
+            # During warmup the prefill's sample_tokens() is skipped
+            # so output_token_ids is never populated.
+            # Fall back to the token supplied by the warmup harness
+            # via cached_request_data.new_token_ids.
+            if req_state.output_token_ids:
+                generation_token = req_state.output_token_ids[-1]
+            else:
+                generation_token = cached_request_data.new_token_ids[idx][0]
             input_tokens.append([generation_token])
             input_positions.append([req_state.num_computed_tokens])
 
@@ -1361,6 +1564,17 @@ class ChunkedPrefillModelRunner(
 
         self.requests[req_id] = req_state
 
+        # Consume pre-computed embeddings if they were encoded in advance by
+        # pre_encode_mm_requests().  With cached_mm_embeddings already set,
+        # _prepare_chunked_prefill skips its encoding block entirely.
+        if req_id in self.pending_mm_embeddings:
+            req_state.cached_mm_embeddings = self.pending_mm_embeddings.pop(req_id)
+            logger.debug(
+                "Consumed pre-encoded MM embeddings for request '%s' (rank %d)",
+                req_id,
+                self.rank,
+            )
+
         # Add only to prefill batch, it will be added later to the input batch
         # once if is fully prefilled
         self.prefill_batch.add_request(req_state)
@@ -1472,7 +1686,7 @@ class ChunkedPrefillModelRunner(
         - Synchronizes input_batch with scheduler output (handles pause/resume)
         - Bumps the count of computed tokens for each request
         - Updates the KV cache metadata for each request
-        - Safely removes finished requests from the batch
+        - Safely removes finished requests from the batch (or defers removal if sampling is pending)
         - Refreshes metadata for logits processors
         """
         req_data = scheduler_output.scheduled_cached_reqs
@@ -1521,6 +1735,11 @@ class ChunkedPrefillModelRunner(
         if scheduler_output.finished_req_ids:
             for req_id in scheduler_output.finished_req_ids:
                 self.input_batch.remove_request(req_id)
+                # If the embedding was already delivered, discard it now.
+                # If the encode is still in-flight, mark the req_id so that
+                # store_mm_embeddings() discards the late result when it arrives.
+                if self.pending_mm_embeddings.pop(req_id, None) is None:
+                    self._finished_encode_req_ids.add(req_id)
                 self.requests.pop(req_id, None)
                 # Clean up paused tracking for finished requests
                 self.paused_req_ids.discard(req_id)
@@ -1551,15 +1770,20 @@ class ChunkedPrefillModelRunner(
     def apply_grammar_bitmask(
         self,
         scheduler_output: "SchedulerOutput",
+        grammar_output: "GrammarOutput | None",
         logits: torch.Tensor,
         batch: SamplingInputBatch,
     ) -> None:
         """Apply grammar bitmask in-place to constrain logits for structured
         output requests.
+
+        Args:
+            scheduler_output: The scheduler output containing request information.
+            grammar_output: The grammar output with bitmasks to apply. If None, no grammar
+                is applied.
+            logits: The logits tensor to modify in-place.
+            batch: The input batch containing request information.
         """
-        grammar_output = getattr(scheduler_output, "_spyre_grammar_output", None)
-        if grammar_output is None:
-            return
 
         class _DenseBatchAdapter:
             def __init__(self, batch: SamplingInputBatch):
@@ -1569,11 +1793,56 @@ class ChunkedPrefillModelRunner(
             def __getattr__(self, name: str):
                 return getattr(self._batch, name)
 
-        vllm_apply_grammar_bitmask(
-            scheduler_output,
-            grammar_output,
-            _DenseBatchAdapter(batch),  # type: ignore[arg-type]
-            logits,
+        if grammar_output is not None:
+            # Note: Grammar output batch size validation is handled internally by
+            # vllm_apply_grammar_bitmask. If there's a mismatch (e.g., requests
+            # finished/aborted while grammar was building), it will raise an error.
+
+            vllm_apply_grammar_bitmask(
+                scheduler_output,
+                grammar_output,
+                _DenseBatchAdapter(batch),  # type: ignore[arg-type]
+                logits,
+            )
+
+    def defer_sampling(
+        self,
+        logits: torch.Tensor,
+        is_prefill: bool,
+        scheduler_output: "SchedulerOutput",
+    ) -> None:
+        """Defer sampling until grammar bitmask is ready.
+
+        Stores the current sampling context for later completion.
+        """
+        # Protect against double defer (batch A overwriting batch B)
+        assert self._pending_sampling_state is None, (
+            "Multiple deferred sampling batches are not supported. "
+            "defer_sampling() called twice without sample_tokens() in between. "
+            "This would leak the previous batch's state (logits, metadata, scheduler_output). "
+            "Engine must guarantee at most one pending grammar batch globally."
+        )
+
+        # sample_tokens() is always called in the same engine step immediately after
+        # execute_model() returns None — before any update_states/refresh_metadata
+        # runs again. Therefore the metadata and scheduler_output are stable for
+        # the lifetime of this deferred state and do not need to be deep-copied.
+
+        # Store the current batch request IDs to validate consistency when applying grammar
+        # The batch object itself is mutable and gets modified (requests added/removed),
+        # so we capture the request IDs at this point in time.
+        batch = self.prefill_batch if is_prefill else self.input_batch
+        batch_req_ids = list(batch.sorted_requests_ids)
+
+        self._pending_sampling_state = SamplingState(
+            # logits is the result of an advanced-index gather inside SpyreCausalLM.forward()
+            # (logits[self.indices, -1, :]), which always produces a fresh tensor with its
+            # own storage — never a view into model output buffers. No clone needed.
+            logits=logits,
+            metadata=self.get_sampling_metadata(is_prefill),
+            is_prefill=is_prefill,
+            scheduler_output=scheduler_output,
+            batch_req_ids=batch_req_ids,
         )
 
     @SpyrePlatform.inference_mode()
@@ -1581,24 +1850,22 @@ class ChunkedPrefillModelRunner(
         self,
         scheduler_output: SchedulerOutput,
         **kwargs,
-    ) -> ModelRunnerOutput:
+    ) -> ModelRunnerOutput | None:
         t0 = time.time()
 
         self.update_states(scheduler_output)
 
         if not scheduler_output.total_num_scheduled_tokens:
-            # Return empty ModelRunnerOutput if there's no work to do.
             return self.get_empty_output()
 
-        # Initialize internal request states if this is the first chunk of a very new prefill
+        # Initialize internal request states if this is the first chunk of a new prefill
         self.maybe_setup_new_prefill(scheduler_output)
 
+        # Forward pass
         model_input = self.prepare_model_input(scheduler_output)
         is_prefill = model_input.is_prompt
 
-        # Execute the model
         attn_metadata = self.build_attn_metadata(model_input)
-        # Embeddings take priority [used by multimodal models only]
         input_ids_or_embeds = (
             model_input.input_embeds
             if model_input.input_embeds is not None
@@ -1621,10 +1888,11 @@ class ChunkedPrefillModelRunner(
                 is_prompt=model_input.is_prompt,
             )
 
-        # If the prompt is being prefilled we don't have to sample
-        # and generate a new token.
+        # Early return for incomplete prefill (no sampling needed)
         if is_prefill and self.check_incomplete_prefill(scheduler_output):
-            # Only return outputs from the driver worker
+            # Clear any pending sampling state since we're not sampling this iteration
+            self._pending_sampling_state = None
+
             if not self.is_driver_worker:
                 return self.get_empty_output()
 
@@ -1632,49 +1900,12 @@ class ChunkedPrefillModelRunner(
             logger.debug("t_forward_pass: %.2fms [prefill single chunk][batch size 1]", (t1 * 1000))
             return self.prefill_output()
 
-        # Apply grammar bitmask for structured output requests.
-        self.apply_grammar_bitmask(
-            scheduler_output,
+        self.defer_sampling(
             logits,
-            self.prefill_batch if is_prefill else self.input_batch,
+            is_prefill,
+            scheduler_output,
         )
-
-        # Sample the next token.
-        output: SamplerOutput | None = self.model.sample(
-            logits=logits,
-            sampling_metadata=self.get_sampling_metadata(is_prefill),
-        )
-        assert output is not None, "Expected sampler output"
-
-        t1 = time.time() - t0
-        batch_size = model_input.input_tokens.shape[0]
-        step_type = "[prefill last chunk]" if is_prefill else "[decode]"
-        logger.debug("t_token: %.2fms %s[batch size %d]", (t1 * 1000), step_type, batch_size)
-
-        # Get the right batch, if this is the last chunk to conclude the
-        # prefill, we'll generate a token and we should get from the prefill
-        # batch because input_batch may have other request that are were
-        # not processed at this step.
-        batch = self.prefill_batch if is_prefill else self.input_batch
-
-        # Add the sampled token(s) to the request cache
-        req_ids = (
-            [r.req_id for r in scheduler_output.scheduled_new_reqs]
-            if len(scheduler_output.scheduled_new_reqs) > 0
-            else batch.sorted_requests_ids
-        )
-        sampled_ids = output.sampled_token_ids.tolist()
-
-        for i, req_id in enumerate(req_ids):
-            req_state = self.requests[req_id]
-            req_state.append_output_token_ids(sampled_ids[i])
-
-        # Only return outputs from the driver worker
-        if not self.is_driver_worker:
-            return self.get_empty_output()
-
-        model_output = self.sampled_output(output, is_prefill)
-        return model_output
+        return None
 
     def prefill_output(self) -> SpyreModelRunnerOutput:
         req_id_to_index = self.get_req_id_to_index(is_prefill=True)
@@ -1694,6 +1925,64 @@ class ChunkedPrefillModelRunner(
             left_padding=left_padding,
             prefix_cache_hit_len=self.get_prefix_cache_len(),
         )
+
+    def sample_tokens(self, grammar_output: "GrammarOutput | None") -> ModelRunnerOutput | None:
+        """Complete sampling with the grammar bitmask after async grammar building.
+
+        This is called by the engine after grammar bitmasks have been built
+        asynchronously while the model was running.
+
+        Args:
+            grammar_output: The grammar output generated asynchronously by the engine.
+                           Can be None if no grammar constraints are needed.
+
+        Returns:
+            ModelRunnerOutput for driver worker, None for non-driver workers.
+        """
+        state = self._pending_sampling_state
+        logits = state.logits
+        sampling_metadata = state.metadata
+        is_prefill = state.is_prefill
+        stored_scheduler_output = state.scheduler_output
+        stored_batch_req_ids = state.batch_req_ids
+
+        # Clear the pending state
+        self._pending_sampling_state = None
+
+        # Use the batch object only as a proxy for non-ID attributes needed by
+        # vllm_apply_grammar_bitmask; the request ordering comes from the stored
+        # snapshot so it remains correct even if the live batch has changed.
+        current_batch = self.prefill_batch if is_prefill else self.input_batch
+
+        # Apply grammar bitmask constraints to logits
+        self.apply_grammar_bitmask(stored_scheduler_output, grammar_output, logits, current_batch)
+
+        output: SamplerOutput | None = self.model.sample(
+            logits=logits,
+            sampling_metadata=sampling_metadata,
+        )
+        assert output is not None, "Expected sampler output"
+
+        for req_id, token_ids in zip(
+            stored_batch_req_ids, output.sampled_token_ids.tolist(), strict=True
+        ):
+            self.requests[req_id].append_output_token_ids(token_ids)
+
+        # Reset _prefill_index on the live wrappers now that sampling is done.
+        # _maybe_prepare_last_prefill sets it so that apply() routes the prefill
+        # logits to the correct per-slot processor. It must stay set until here
+        # (so model.sample uses the right slot), but must be cleared before the
+        # next decode step so the full batch isn't routed through a single slot.
+        if is_prefill:
+            for logitsproc in self.input_batch.logitsprocs_wrappers:
+                # apply() already self-clears _prefill_index after use; this is
+                # a belt-and-suspenders reset in case sampling was skipped.
+                logitsproc.set_prefill_index(None)
+
+        if not self.is_driver_worker:
+            return self.get_empty_output()
+
+        return self.sampled_output(output, is_prefill)
 
     def sampled_output(self, output: SamplerOutput, is_prefill: bool) -> SpyreModelRunnerOutput:
         req_id_to_index = self.get_req_id_to_index(is_prefill)

@@ -16,6 +16,11 @@ def _model_info_from_env() -> ModelInfo:
 def test_decoder_model_load_smoke(monkeypatch: pytest.MonkeyPatch) -> None:
     model = _model_info_from_env()
     patch_environment("eager", monkeypatch)
+    # Disable the async MM encoder subprocess for the smoke test: CI runners
+    # may OOM when loading the full decoder model AND a
+    # separate vision-only encoder subprocess simultaneously.  The async
+    # encoder path is covered by test_async_mm_encoder.py on larger machines.
+    monkeypatch.setenv("SENDNN_INFERENCE_ASYNC_MM_ENCODER", "0")
 
     llm = LLM(
         model=model.name,
