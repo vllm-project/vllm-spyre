@@ -38,6 +38,9 @@ FAKE_METRICS: list[dict[str, Any]] = [
         "decode_latencies_s": [88888.8, 0.000005, 44444.4],
         "decode_start_times_s": [5000.0, 5088888.8, 5088888.8],
         "tkvs": [512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072],
+        "prefill_elapsed_s": 7777777.7,
+        "prefill_busy_s": 2250.9,
+        "prefill_idle_s": 7775526.8,
         "prefix_cache_hit_pct": 0.25,
         "left_padding_blocks": [2, 0, 1],
         "pause_latencies_s": [0.5, 1.2],
@@ -52,6 +55,9 @@ FAKE_METRICS: list[dict[str, Any]] = [
         "decode_latencies_s": [0.000002, 77777.7],
         "decode_start_times_s": [1112345.5, 1112345.5],
         "tkvs": [256, 512, 1024, 2048, 4096],
+        "prefill_elapsed_s": 33333333.3,
+        "prefill_busy_s": 0.0000004,
+        "prefill_idle_s": 33333333.2999996,
         "prefix_cache_hit_pct": 0.0,
         "left_padding_blocks": [3, 1],
         "pause_latencies_s": [0.3],
@@ -213,6 +219,9 @@ def test_print_spyre_section_output(capsys):
     out.assert_contains("Queue Wait Time")
     out.assert_contains("Chunked Prefill Count")
     out.assert_contains("Chunked Prefill Latency")
+    out.assert_contains("Prefill Phase Time")
+    out.assert_contains("Time Spent Prefilling")
+    out.assert_contains("Prefill Phase Idle Time")
     out.assert_contains("Decode Step Latency")
     out.assert_contains("Prefix Cache Hit")
     out.assert_contains("Left Padding Blocks")
@@ -224,6 +233,9 @@ def test_print_spyre_section_output(capsys):
         "Queue Wait Time (ms)",
         "Num Chunked Prefills",
         "Chunk Prefill Latency (ms)",
+        "Prefill Phase Time (ms)",
+        "Time Spent Prefilling (ms)",
+        "Prefill Phase Idle Time (ms)",
         "Decode Step Latency (ms)",
         "Prefix Cache Hit (%)",
         "Left Padding Blocks",
@@ -237,6 +249,38 @@ def test_print_spyre_section_output(capsys):
             out.assert_contains(f"P{int(percentile)} {label}:")
 
     out.assert_all_lines_covered()
+
+
+@pytest.mark.cpu
+def test_every_printed_metric_has_a_description(capsys):
+    """Every metric _print_spyre_section prints must have a _METRIC_DESCRIPTIONS entry,
+    and every entry must correspond to something printed. Fails when a new metric ships
+    without a description (or a description outlives its metric)."""
+    from sendnn_inference.benchmarks.spyre_bench_serve import _METRIC_DESCRIPTIONS
+
+    _print_spyre_section(FAKE_METRICS, SELECTED_PERCENTILES)
+    lines = [line.strip() for line in capsys.readouterr().out.splitlines() if line.strip()]
+
+    # Section headers are printed centred in dashes: "----- Queue Wait Time -----".
+    # Run-level scalars are printed as "Some label:   <value>".
+    printed: list[str] = []
+    for line in lines:
+        if set(line) == {"="}:
+            continue
+        if line.startswith("-"):
+            printed.append(line.strip("- "))
+        elif ":" in line:
+            label = line.split(":", 1)[0].strip()
+            # Skip the per-section Mean/Median/PXX rows; they belong to the section above.
+            if not label.startswith(("Mean ", "Median ", "P")):
+                printed.append(label)
+
+    described = [header for header, _ in _METRIC_DESCRIPTIONS]
+    assert printed == described, (
+        "Printed metrics and _METRIC_DESCRIPTIONS disagree (order matters).\n"
+        f"  printed  : {printed}\n"
+        f"  described: {described}"
+    )
 
 
 @pytest.mark.cpu

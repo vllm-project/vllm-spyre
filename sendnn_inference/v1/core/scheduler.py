@@ -437,6 +437,17 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
             num_expected = math.ceil(request.num_prompt_tokens / self.chunk_size)
             num_skipped = max(0, num_expected - num_executed)
             cache_hit_pct = num_skipped / num_expected if num_expected > 0 else 0.0
+
+            # Prefill-phase breakdown, all derived from the per-chunk timings above.
+            chunk_lats = chunk_stats["chunk_prefill_latencies_s"] if chunk_stats else []
+            chunk_starts = chunk_stats["chunk_prefill_start_times_s"] if chunk_stats else []
+            prefill_busy_s = sum(chunk_lats)
+            if chunk_lats and chunk_starts and first_ts is not None:
+                prefill_elapsed_s = chunk_starts[-1] + chunk_lats[-1] - first_ts
+            else:
+                prefill_elapsed_s = 0.0
+            # Guard against a negative result from clock jitter between the two samples.
+            prefill_idle_s = max(0.0, prefill_elapsed_s - prefill_busy_s)
             spyre_data = {
                 "queued_time_s": queued_time_s,
                 "num_chunked_prefills": num_executed,
@@ -449,6 +460,9 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
                 "decode_latencies_s": chunk_stats["decode_latencies_s"] if chunk_stats else [],
                 "decode_start_times_s": chunk_stats["decode_start_times_s"] if chunk_stats else [],
                 "tkvs": chunk_stats["tkvs"] if chunk_stats else [],
+                "prefill_elapsed_s": prefill_elapsed_s,
+                "prefill_busy_s": prefill_busy_s,
+                "prefill_idle_s": prefill_idle_s,
                 "prefix_cache_hit_pct": cache_hit_pct,
                 "left_padding_blocks": chunk_stats["left_padding_blocks"] if chunk_stats else [],
                 "pause_latencies_s": chunk_stats["pause_latencies_s"] if chunk_stats else [],

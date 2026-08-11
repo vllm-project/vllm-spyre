@@ -165,6 +165,25 @@ _METRIC_DESCRIPTIONS: list[tuple[str, str]] = [
         "Wall-clock duration of a single prefill step. One sample per chunk.",
     ),
     (
+        "Prefill Phase Time",
+        "Elapsed time from the start of a request's first prefill step to the end of its "
+        "last one, which is when its first token is produced. Starts after the request "
+        "leaves the waiting queue, so 'Queue Wait Time' does not contribute. One sample "
+        "per request.",
+    ),
+    (
+        "Time Spent Prefilling",
+        "Time a request spent actually executing prefill steps, i.e. the sum of its "
+        "Chunked Prefill Latency samples. One sample per request.",
+    ),
+    (
+        "Prefill Phase Idle Time",
+        "Time a request spent inside its prefill phase without prefilling, computed as "
+        "(Prefill Phase Time - Time Spent Prefilling). Covers pausing and any other "
+        "reason the request made no prefill progress, but excludes the initial queue wait. "
+        "One sample per request.",
+    ),
+    (
         "Decode Step Latency",
         "Wall-clock duration of a single decode step. One sample per decode step per request.",
     ),
@@ -261,6 +280,12 @@ def _print_spyre_section(
         m["prefix_cache_hit_pct"] * 100 for m in metrics_list if "prefix_cache_hit_pct" in m
     ]
 
+    prefill_elapsed_ms = [
+        m["prefill_elapsed_s"] * 1000 for m in metrics_list if "prefill_elapsed_s" in m
+    ]
+    prefill_busy_ms = [m["prefill_busy_s"] * 1000 for m in metrics_list if "prefill_busy_s" in m]
+    prefill_idle_ms = [m["prefill_idle_s"] * 1000 for m in metrics_list if "prefill_idle_s" in m]
+
     left_padding_blocks = [v for m in metrics_list for v in m.get("left_padding_blocks", [])]
     pause_lats_ms = [lat * 1000 for m in metrics_list for lat in m.get("pause_latencies_s", [])]
     pause_counts = [float(len(m.get("pause_latencies_s", []))) for m in metrics_list]
@@ -269,6 +294,9 @@ def _print_spyre_section(
     _section("Queue Wait Time", queue_times_ms, "Queue Wait Time (ms)")
     _section("Chunked Prefill Count", num_chunks_list, "Num Chunked Prefills")
     _section("Chunked Prefill Latency", chunk_lats_ms, "Chunk Prefill Latency (ms)")
+    _section("Prefill Phase Time", prefill_elapsed_ms, "Prefill Phase Time (ms)")
+    _section("Time Spent Prefilling", prefill_busy_ms, "Time Spent Prefilling (ms)")
+    _section("Prefill Phase Idle Time", prefill_idle_ms, "Prefill Phase Idle Time (ms)")
     _section("Decode Step Latency", decode_lats_ms, "Decode Step Latency (ms)")
     _section("Prefix Cache Hit", cache_hit_pcts, "Prefix Cache Hit (%)")
     _section("Left Padding Blocks", left_padding_blocks, "Left Padding Blocks")
@@ -348,6 +376,9 @@ def _inject_spyre_metrics_into_result_file(
     result["spyre_decode_latencies_s"] = [m.get("decode_latencies_s", []) for m in metrics_list]
     result["spyre_decode_start_times_s"] = [m.get("decode_start_times_s", []) for m in metrics_list]
     result["spyre_tkvs"] = [m.get("tkvs", []) for m in metrics_list]
+    result["spyre_prefill_elapsed_s"] = [m.get("prefill_elapsed_s", 0.0) for m in metrics_list]
+    result["spyre_prefill_busy_s"] = [m.get("prefill_busy_s", 0.0) for m in metrics_list]
+    result["spyre_prefill_idle_s"] = [m.get("prefill_idle_s", 0.0) for m in metrics_list]
     result["spyre_prefix_cache_hit_pct"] = [
         m.get("prefix_cache_hit_pct", 0.0) for m in metrics_list
     ]
