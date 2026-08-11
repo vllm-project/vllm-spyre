@@ -110,6 +110,15 @@ def _build_parser() -> FlexibleArgumentParser:
         ),
     )
     parser.add_argument(
+        "--describe-metrics",
+        action="store_true",
+        default=False,
+        help=(
+            "After the SenDNN metrics table, print a short description of every "
+            "metric section explaining what it measures and its sample granularity."
+        ),
+    )
+    parser.add_argument(
         "--decode-thresholds",
         type=str,
         metavar="LOW,HIGH",
@@ -123,6 +132,90 @@ def _build_parser() -> FlexibleArgumentParser:
     )
 
     return parser
+
+
+# Short explanation of every metric printed by _print_spyre_section, shown when
+# --describe-metrics is passed.  Ordered to match the printed output.
+_METRIC_DESCRIPTIONS: list[tuple[str, str]] = [
+    (
+        "Total prefill chunks processed",
+        "Total number of chunked prefills executed by the server across all requests.",
+    ),
+    (
+        "Requests blocked by missing KV blocks",
+        "Number of requests that were held back at least once because not enough free "
+        "KV-cache blocks were available. A non-zero count signals KV-cache pressure, "
+        "not an error.",
+    ),
+    (
+        "Queue Wait Time",
+        "Time from when the API server received the request until its first prefill step "
+        "started. Unlike vLLM's own queue time this includes the API-server -> engine-core "
+        "hop, so it adds up with prefill and decode latencies to reconstruct TTFT. "
+        "One sample per request.",
+    ),
+    (
+        "Chunked Prefill Count",
+        "Number of prefill chunks actually executed for a request. Lower than "
+        "ceil(prompt_len / chunk_size) when a prefix-cache hit lets whole chunks be "
+        "skipped. One sample per request.",
+    ),
+    (
+        "Chunked Prefill Latency",
+        "Wall-clock duration of a single prefill step. One sample per chunk.",
+    ),
+    (
+        "Decode Step Latency",
+        "Wall-clock duration of a single decode step. One sample per decode step per request.",
+    ),
+    (
+        "Prefix Cache Hit",
+        "Fraction of a request's prefill chunks that were skipped thanks to the prefix "
+        "cache, computed as (1 - executed_chunks/expected_chunks). Measured in chunks "
+        "rather than tokens because Spyre only ever skips whole chunks. "
+        "One sample per request.",
+    ),
+    (
+        "Left Padding Blocks",
+        "Per decode step, the number of KV-cache blocks of left padding a request carries "
+        "because it is shorter than the batch's longest sequence "
+        "(ceil(tkv/block_size) - ceil(computed_tokens/block_size)). Zero for the longest "
+        "request; high values mean the batch mixes very different sequence lengths and "
+        "wastes compute on padding.",
+    ),
+    (
+        "Pause Latency",
+        "Duration of a single pause interval - the time a decoding request spent evicted "
+        "from the running batch because the batch TKV limit could not accommodate it. "
+        "One sample per pause interval. A request still paused when it finishes has that "
+        "final open interval excluded from all three pause metrics.",
+    ),
+    (
+        "Number of Pauses",
+        "How many times a request was paused and later resumed. One sample per request "
+        "(including 0). A request still paused when it finishes has that final open "
+        "interval excluded from all three pause metrics.",
+    ),
+    (
+        "Total Time Paused",
+        "Total time a request spent paused over its lifetime (the sum of its pause "
+        "intervals). One sample per request, including 0. Read alongside Pause Latency to "
+        "distinguish many short pauses from one long one. A request still paused when it "
+        "finishes has that final open interval excluded from all three pause metrics.",
+    ),
+]
+
+
+def _print_metric_descriptions(width: int = 100) -> None:
+    """Print a short explanation of every metric section printed above."""
+    import textwrap
+
+    print("{s:{c}^{n}}".format(s=" Metric Descriptions ", n=50, c="="))
+    for header, description in _METRIC_DESCRIPTIONS:
+        print(f"{header}:")
+        for line in textwrap.wrap(description, width=width - 2):
+            print(f"  {line}")
+        print()
 
 
 def _print_spyre_section(
@@ -348,6 +441,9 @@ def main() -> None:
 
     print("{s:{c}^{n}}".format(s=" SenDNN Metrics ", n=50, c="="))
     _print_spyre_section(_spyre_metrics_collected, selected_percentiles)
+
+    if getattr(args, "describe_metrics", False):
+        _print_metric_descriptions()
 
     _inject_spyre_metrics_into_result_file(args, _spyre_metrics_collected, run_started_at)
 

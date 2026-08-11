@@ -20,6 +20,7 @@ schedule()  →  SpyreBenchState (accumulate raw values)
   →  patch_serving.py SSE injection  (into final usage SSE chunk)
   →  async_request_spyre_chat()  →  output.custom_metrics_dict
   →  _print_spyre_section()  +  _inject_spyre_metrics_into_result_file()
+  →  _METRIC_DESCRIPTIONS  (--describe-metrics explanatory block)
 ```
 
 **Key architecture facts:**
@@ -47,21 +48,18 @@ Before writing any code, answer these questions (ask the user if unclear):
 
 **File**: `sendnn_inference/v1/core/scheduler.py`
 
-Add your field to the dataclass at the top of the file:
+Add your field to the dataclass at the top of the file. **Every field carries a one- or two-line comment** saying what it holds — match that convention; a bare field is a review comment waiting to happen. State the unit and, for per-step lists, what one entry corresponds to (one prefill step / one decode step / one pause interval). Read the neighbouring fields in the real file rather than copying the abridged sketch below.
 
 ```python
 @dataclass
 class SpyreBenchState:
-    chunk_latencies: dict[str, list[float]] = field(default_factory=dict)
-    chunk_start_times: dict[str, list[float]] = field(default_factory=dict)
-    arrival_ts: dict[str, float] = field(default_factory=dict)
-    first_scheduled_ts: dict[str, float] = field(default_factory=dict)
+    # ... existing fields, each with its own comment ...
+
+    # Duration of each decode step the request took part in.
     decode_latencies: dict[str, list[float]] = field(default_factory=dict)
-    decode_start_times: dict[str, list[float]] = field(default_factory=dict)
-    tkvs: dict[str, list[int]] = field(default_factory=dict)
-    prefill_step_start: float | None = None
-    decode_step_start: float | None = None
-    # NEW — keyed by request_id, choose the container type for your cardinality:
+
+    # NEW — keyed by request_id, choose the container type for your cardinality.
+    # One entry per <prefill step | decode step | pause interval | request>; <unit>.
     my_new_metric: dict[str, <type>] = field(default_factory=dict)
 ```
 
@@ -174,7 +172,35 @@ print("{:<40} {:<10}".format("My run-level total:", total))
 
 ---
 
-## Step 7 — Inject into the result JSON
+## Step 7 — Add a description entry
+
+**File**: `sendnn_inference/benchmarks/spyre_bench_serve.py`
+
+Every printed metric has a short explanation in the module-level `_METRIC_DESCRIPTIONS` list, printed by `_print_metric_descriptions()` when the user passes `--describe-metrics`. Add an entry for your new metric:
+
+```python
+_METRIC_DESCRIPTIONS: list[tuple[str, str]] = [
+    # ... existing entries ...
+    (
+        "My New Metric",   # must match the _section() header (or the run-level print label)
+        "What it measures, in one or two sentences. State the sample granularity explicitly: "
+        "one sample per request / per prefill chunk / per decode step / per pause interval.",
+    ),
+]
+```
+
+Rules for a good entry:
+
+- **The first element must match the printed header exactly** — the `_section()` header string from Step 6, or the label of the run-level print line. This is what lets a reader map a description back to the table above it.
+- **Keep the list in printed order** so the descriptions read in the same sequence as the table (run-level scalar lines first, then the `_section()` metrics).
+- **Always state the sample granularity.** It changes how the mean should be read: a per-chunk metric is dominated by long-prompt requests, and a per-step metric batched across requests records the same value for every participant in that step.
+- **Say what the measurement brackets**, not just its name — e.g. that a step latency is measured from the end of `schedule()` to `update_from_output()` and therefore covers the whole scheduler → executor → model round trip, not just the forward pass.
+- **Mention a non-obvious exclusion or convention in one sentence** if there is one (e.g. pause metrics exclude an interval still open when the request finishes; prefix-cache hit is measured in chunks rather than tokens).
+- Avoid characters that wrap badly: `textwrap.wrap()` will break on a lone ` - `, leaving a dangling hyphen at end of line. Write `(1 - a/b)` rather than `1 - a / b`.
+
+---
+
+## Step 8 — Inject into the result JSON
 
 **File**: `sendnn_inference/benchmarks/spyre_bench_serve.py`
 
@@ -192,7 +218,7 @@ Use a `spyre_` prefix so the key is clearly SenDNN-owned in the vllm result JSON
 
 ---
 
-## Step 8 — Add tests
+## Step 9 — Add tests
 
 **File**: `tests/benchmarks/test_bench_metrics.py`
 
@@ -255,19 +281,22 @@ Use a `spyre_` prefix so the key is clearly SenDNN-owned in the vllm result JSON
 
 6. **Update `test_print_spyre_section_output`** (if you added a new `_section()` call): Add `out.assert_contains("<SectionHeader>")` for the section separator, and add the label string (third argument to `_section()`) to the `for label in (...)` loop so mean/median/percentile lines are asserted. `assert_all_lines_covered()` is called at the end of the test and will fail if any output line was not covered by an assertion — the error message lists the exact uncovered lines.
 
+7. **Cover the description entry.** `_METRIC_DESCRIPTIONS` must stay in sync with what `_print_spyre_section()` actually prints, and nothing enforces that automatically yet. Add (or extend) a test asserting that every printed section header has a matching description entry — walking the `_section()` header strings and checking each appears as a `_METRIC_DESCRIPTIONS[i][0]`. Without this, a new metric silently ships with no description.
+
 ---
 
 ## Checklist
 
 Before declaring done:
 
-- [ ] Field added to `SpyreBenchState` with the correct container type (scalar, list, dict-of-list…)
+- [ ] Field added to `SpyreBenchState` with the correct container type (scalar, list, dict-of-list…) and a short comment stating unit and what one entry corresponds to
 - [ ] Populated in `update_from_output()` (or `schedule()`) under `if self._bench is not None:` guard
 - [ ] Retrieved via `.pop()` in `get_and_clear_chunk_stats()` with a safe default if absent
 - [ ] Key added to the `spyre_data` dict in `_free_request()` with a safe fallback when `chunk_stats is None`
 - [ ] `_print_spyre_section()` updated with a new `_section()` call or run-level print line
+- [ ] `_METRIC_DESCRIPTIONS` entry added, header matching the printed section exactly, in printed order, stating sample granularity
 - [ ] `_inject_spyre_metrics_into_result_file()` updated with a new `result["spyre_..."]` key
-- [ ] Tests updated: `FAKE_METRICS`, `test_inject_adds_spyre_keys`, `test_inject_values_correct`, `_BENCH_FIXTURE`, `_EXPECTED_RESULT` (drives `test_get_and_clear_returns_correct_dict`), `test_scheduler_bench_metrics_accumulated` adapted accordingly, `test_print_spyre_section_output` updated if a new `_section()` was added
+- [ ] Tests updated: `FAKE_METRICS`, `test_inject_adds_spyre_keys`, `test_inject_values_correct`, `_BENCH_FIXTURE`, `_EXPECTED_RESULT` (drives `test_get_and_clear_returns_correct_dict`), `test_scheduler_bench_metrics_accumulated` adapted accordingly, `test_print_spyre_section_output` updated if a new `_section()` was added, and a check that the new metric has a `_METRIC_DESCRIPTIONS` entry
 - [ ] No changes to `patch_serving.py`, `spyre_request_func.py`, or any model runner file
 - [ ] No changes to `SpyreRequestMetrics` in `stats_logger.py` (not part of the active pipeline)
 - [ ] All new tracking is gated by `self._bench is not None` (enforced by `SpyreBenchState` being `None` when env var is off)

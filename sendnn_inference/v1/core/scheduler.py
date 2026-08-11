@@ -30,17 +30,38 @@ class SpyreBenchState:
     """Bench-metrics-only state for tracking per-request and per-step timing.
     Only instantiated when SENDNN_INFERENCE_BENCH_METRICS_ENABLED is set."""
 
-    chunk_latencies: dict[str, list[float]] = field(default_factory=dict)
+    # All dicts below are keyed by request_id. Per-step lists grow by one entry per
+    # step the request took part in.
+
+    # Timestamp the API server stamped on the request on receipt (request.arrival_time).
     arrival_ts: dict[str, float] = field(default_factory=dict)
+    # Timestamp of the request's first prefill step.
     first_scheduled_ts: dict[str, float] = field(default_factory=dict)
+    # Duration of each prefill step the request took part in.
+    chunk_latencies: dict[str, list[float]] = field(default_factory=dict)
+    # Start timestamp of each prefill step.
     chunk_start_times: dict[str, list[float]] = field(default_factory=dict)
+    # Duration of each decode step the request took part in.
     decode_latencies: dict[str, list[float]] = field(default_factory=dict)
+    # Start timestamp of each decode step.
     decode_start_times: dict[str, list[float]] = field(default_factory=dict)
+    # Batch-wide sequence length (tkv) at each step the request took part in.
     tkvs: dict[str, list[int]] = field(default_factory=dict)
+    # Per decode step, KV blocks of pure left padding the request carries because it is
+    # shorter than the batch's longest sequence. Zero for the longest request.
     left_padding_blocks: dict[str, list[int]] = field(default_factory=dict)
-    pause_start_times: dict[str, list[float]] = field(default_factory=dict)
+    # Duration of each *completed* pause interval (paused -> running). An interval still
+    # open when the request finishes is never recorded here.
     pause_latencies: dict[str, list[float]] = field(default_factory=dict)
+    # Start timestamp of each pause interval (running -> paused).
+    pause_start_times: dict[str, list[float]] = field(default_factory=dict)
+    # True if the request was ever held back because too few free KV blocks were
+    # available. Signals KV-cache pressure, not an error.
     blocks_lacking: dict[str, bool] = field(default_factory=dict)
+
+    # Step-start timestamps for the in-flight step, set at the end of schedule() and
+    # consumed in update_from_output() to close the duration. Exactly one is non-None
+    # at a time, depending on whether the current step is a prefill or a decode.
     prefill_step_start: float | None = None
     decode_step_start: float | None = None
 
