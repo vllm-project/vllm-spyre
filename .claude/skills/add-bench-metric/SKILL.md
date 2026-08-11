@@ -20,7 +20,7 @@ schedule()  →  SpyreBenchState (accumulate raw values)
   →  patch_serving.py SSE injection  (into final usage SSE chunk)
   →  async_request_spyre_chat()  →  output.custom_metrics_dict
   →  _print_spyre_section()  +  _inject_spyre_metrics_into_result_file()
-  →  _METRIC_DESCRIPTIONS  (--describe-metrics explanatory block)
+  →  _METRIC_DESCRIPTIONS  (--describe-metrics description file)
 ```
 
 **Key architecture facts:**
@@ -176,7 +176,7 @@ print("{:<40} {:<10}".format("My run-level total:", total))
 
 **File**: `sendnn_inference/benchmarks/spyre_bench_serve.py`
 
-Every printed metric has a short explanation in the module-level `_METRIC_DESCRIPTIONS` list, printed by `_print_metric_descriptions()` when the user passes `--describe-metrics`. Add an entry for your new metric:
+Every printed metric has a short explanation in the module-level `_METRIC_DESCRIPTIONS` list, written to `sendnn_bench_metrics_description.txt` by `_write_metric_descriptions()` when the user passes `--describe-metrics`. Add an entry for your new metric:
 
 ```python
 _METRIC_DESCRIPTIONS: list[tuple[str, str]] = [

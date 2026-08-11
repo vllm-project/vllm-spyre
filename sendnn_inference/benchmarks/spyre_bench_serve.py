@@ -114,8 +114,9 @@ def _build_parser() -> FlexibleArgumentParser:
         action="store_true",
         default=False,
         help=(
-            "After the SenDNN metrics table, print a short description of every "
-            "metric section explaining what it measures and its sample granularity."
+            "Write a 'sendnn_bench_metrics_description.txt' file (in --result-dir, or the "
+            "current directory) describing every metric section: what it measures and its "
+            "sample granularity."
         ),
     )
     parser.add_argument(
@@ -134,8 +135,9 @@ def _build_parser() -> FlexibleArgumentParser:
     return parser
 
 
-# Short explanation of every metric printed by _print_spyre_section, shown when
-# --describe-metrics is passed.  Ordered to match the printed output.
+# Short explanation of every metric printed by _print_spyre_section, written to
+# _METRIC_DESCRIPTION_FILENAME when --describe-metrics is passed. Ordered to match
+# the printed output.
 _METRIC_DESCRIPTIONS: list[tuple[str, str]] = [
     (
         "Total prefill chunks processed",
@@ -225,16 +227,27 @@ _METRIC_DESCRIPTIONS: list[tuple[str, str]] = [
 ]
 
 
-def _print_metric_descriptions(width: int = 100) -> None:
-    """Print a short explanation of every metric section printed above."""
-    import textwrap
+_METRIC_DESCRIPTION_FILENAME = "sendnn_bench_metrics_description.txt"
 
-    print("{s:{c}^{n}}".format(s=" Metric Descriptions ", n=50, c="="))
+
+def _write_metric_descriptions(result_dir: str | None = None) -> None:
+    """Write a short explanation of every metric section to a text file.
+
+    Each description is a single unwrapped line so it reflows in any editor."""
+    file_path = os.path.join(result_dir or ".", _METRIC_DESCRIPTION_FILENAME)
+
+    lines = ["SenDNN benchmark metric descriptions", ""]
     for header, description in _METRIC_DESCRIPTIONS:
-        print(f"{header}:")
-        for line in textwrap.wrap(description, width=width - 2):
-            print(f"  {line}")
-        print()
+        lines.append(f"{header}:")
+        lines.append(description)
+        lines.append("")
+
+    try:
+        with open(file_path, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(lines))
+        logger.info("SenDNN metric descriptions written to %s", file_path)
+    except OSError as exc:
+        logger.warning("Failed to write SenDNN metric descriptions to %s: %s", file_path, exc)
 
 
 def _print_spyre_section(
@@ -474,7 +487,7 @@ def main() -> None:
     _print_spyre_section(_spyre_metrics_collected, selected_percentiles)
 
     if getattr(args, "describe_metrics", False):
-        _print_metric_descriptions()
+        _write_metric_descriptions(getattr(args, "result_dir", None))
 
     _inject_spyre_metrics_into_result_file(args, _spyre_metrics_collected, run_started_at)
 
