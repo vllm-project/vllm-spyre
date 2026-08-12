@@ -36,6 +36,11 @@ _BACKEND_NAME = "spyre-chat"
 _spyre_metrics_collected: list[dict[str, Any]] = []
 _request_outputs_collected: list[dict[str, Any]] = []
 
+# Per-request join key. _spyre_metrics_collected fills in completion order while
+# vllm's result arrays (ttfts/itls/start_times) are in submission order, so they
+# are realigned by start_time at injection time rather than zipped positionally.
+_SPYRE_START_TIME_KEY = "__spyre_start_time__"
+
 
 def _make_collecting_func():
     """Return a wrapper around async_request_spyre_chat that accumulates
@@ -50,7 +55,10 @@ def _make_collecting_func():
         output = await async_request_spyre_chat(request_func_input, session, pbar)
         if output.success:
             if output.custom_metrics_dict:
-                _spyre_metrics_collected.append(output.custom_metrics_dict)
+                # Copy so the join key doesn't leak into the splat below.
+                _spyre_metrics_collected.append(
+                    {**output.custom_metrics_dict, _SPYRE_START_TIME_KEY: output.start_time}
+                )
                 _request_outputs_collected.append(
                     {
                         "start_time": output.start_time,
@@ -373,33 +381,57 @@ def _inject_spyre_metrics_into_result_file(
         logger.warning("Failed to read vllm result JSON %s: %s", file_path, exc)
         return
 
-    result["spyre_queued_time_s"] = [
-        m["queued_time_s"] for m in metrics_list if "queued_time_s" in m
-    ]
-    result["spyre_num_chunked_prefills"] = [
-        m["num_chunked_prefills"] for m in metrics_list if "num_chunked_prefills" in m
-    ]
-    result["spyre_chunk_prefill_latencies_s"] = [
-        m.get("chunk_prefill_latencies_s", []) for m in metrics_list
-    ]
-    result["spyre_chunk_prefill_start_times_s"] = [
-        m.get("chunk_prefill_start_times_s", []) for m in metrics_list
-    ]
-    result["spyre_total_prefill_chunks"] = sum(result["spyre_num_chunked_prefills"])
-    result["spyre_decode_latencies_s"] = [m.get("decode_latencies_s", []) for m in metrics_list]
-    result["spyre_decode_start_times_s"] = [m.get("decode_start_times_s", []) for m in metrics_list]
-    result["spyre_tkvs"] = [m.get("tkvs", []) for m in metrics_list]
-    result["spyre_prefill_elapsed_s"] = [m.get("prefill_elapsed_s", 0.0) for m in metrics_list]
-    result["spyre_prefill_busy_s"] = [m.get("prefill_busy_s", 0.0) for m in metrics_list]
-    result["spyre_prefill_idle_s"] = [m.get("prefill_idle_s", 0.0) for m in metrics_list]
-    result["spyre_prefix_cache_hit_pct"] = [
-        m.get("prefix_cache_hit_pct", 0.0) for m in metrics_list
-    ]
-    result["spyre_left_padding_blocks"] = [m.get("left_padding_blocks", []) for m in metrics_list]
-    result["spyre_pause_latencies_s"] = [m.get("pause_latencies_s", []) for m in metrics_list]
-    result["spyre_pause_start_times_s"] = [m.get("pause_start_times_s", []) for m in metrics_list]
-    result["spyre_was_missing_blocks"] = [m.get("was_missing_blocks", False) for m in metrics_list]
-    result["spyre_num_requests_missing_blocks"] = sum(result["spyre_was_missing_blocks"])
+    # Reorder metrics to match vllm's submission-ordered rows by start_time,
+    # emitting one entry per row (missing rows get sentinels) so every spyre_*
+    # array stays aligned with ttfts/itls/start_times.
+    ordered: list[dict[str, Any] | None]
+    start_times = result.get("start_times")
+    if isinstance(start_times, list):
+        by_start = {
+            round(float(m[_SPYRE_START_TIME_KEY]), 9): m
+            for m in metrics_list
+            if _SPYRE_START_TIME_KEY in m
+        }
+        ordered = [by_start.get(round(float(st), 9)) for st in start_times]
+        matched = sum(1 for m in ordered if m is not None)
+        if matched != len(metrics_list):
+            logger.warning(
+                "Spyre metrics: matched %d/%d collected metric sets to result rows "
+                "by start_time; unmatched rows use sentinels.",
+                matched,
+                len(metrics_list),
+            )
+    else:
+        logger.warning(
+            "Spyre metrics: result JSON has no 'start_times'; falling back to "
+            "collection order, which may not match vllm's per-request arrays."
+        )
+        ordered = list(metrics_list)
+
+    def _col(key: str, default: Any) -> list[Any]:
+        return [default if m is None else m.get(key, default) for m in ordered]
+
+    result["spyre_queued_time_s"] = _col("queued_time_s", None)
+    result["spyre_num_chunked_prefills"] = _col("num_chunked_prefills", None)
+    result["spyre_chunk_prefill_latencies_s"] = _col("chunk_prefill_latencies_s", [])
+    result["spyre_chunk_prefill_start_times_s"] = _col("chunk_prefill_start_times_s", [])
+    result["spyre_total_prefill_chunks"] = sum(
+        n for n in result["spyre_num_chunked_prefills"] if n is not None
+    )
+    result["spyre_decode_latencies_s"] = _col("decode_latencies_s", [])
+    result["spyre_decode_start_times_s"] = _col("decode_start_times_s", [])
+    result["spyre_tkvs"] = _col("tkvs", [])
+    result["spyre_prefill_elapsed_s"] = _col("prefill_elapsed_s", 0.0)
+    result["spyre_prefill_busy_s"] = _col("prefill_busy_s", 0.0)
+    result["spyre_prefill_idle_s"] = _col("prefill_idle_s", 0.0)
+    result["spyre_prefix_cache_hit_pct"] = _col("prefix_cache_hit_pct", 0.0)
+    result["spyre_left_padding_blocks"] = _col("left_padding_blocks", [])
+    result["spyre_pause_latencies_s"] = _col("pause_latencies_s", [])
+    result["spyre_pause_start_times_s"] = _col("pause_start_times_s", [])
+    result["spyre_was_missing_blocks"] = _col("was_missing_blocks", False)
+    result["spyre_num_requests_missing_blocks"] = sum(
+        1 for v in result["spyre_was_missing_blocks"] if v
+    )
 
     try:
         with open(file_path, "w", encoding="utf-8") as fh:
