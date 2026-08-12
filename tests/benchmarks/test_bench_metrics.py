@@ -4,8 +4,8 @@
 Tests cover four layers:
   1. _inject_spyre_metrics_into_result_file — JSON result file injection
   2. _print_spyre_section — stdout output format
-  3. ChunkedPrefillSpyreScheduler accumulation — _chunk_latencies / _arrival_ts /
-     _first_scheduled_ts, and get_and_clear_chunk_stats
+  3. ChunkedPrefillSpyreScheduler accumulation — SpyreBenchState fields
+     (chunk_latencies, arrival_ts, …) and get_and_clear_chunk_stats
   4. async_request_spyre_chat — client-side SSE parsing
 """
 
@@ -330,7 +330,6 @@ def _make_bare_scheduler():
 _BENCH_FIXTURE: dict[str, Any] = {
     "chunk_latencies": [88888.8, 0.000005],
     "arrival_ts": 1000.0,
-    "first_scheduled_ts": 1001.0,
     "chunk_start_times": [1000.0, 1088888.8],
     "decode_latencies": [0.1, 0.2],
     "decode_start_times": [2000.0, 2000.1],
@@ -450,9 +449,8 @@ def test_scheduler_bench_metrics_accumulated(
     available_blocks,
 ):
     """Two requests with prompts longer than max_num_batched_tokens each trigger
-    multiple prefill chunks. Verify that _chunk_latencies, _arrival_ts, and
-    _first_scheduled_ts are populated correctly, and cleared once the request
-    finishes via _free_request."""
+    multiple prefill chunks. Verify that the SpyreBenchState fields are populated
+    correctly and cleared once the request finishes via _free_request."""
     from llm_cache import get_cached_engine
     from scheduling_utils import create_request_for_scheduler_test, random_prompt
 
@@ -509,8 +507,8 @@ def test_scheduler_bench_metrics_accumulated(
         req_id = request.request_id
         bench = self._bench
         # Snapshot all dict fields dynamically so new metrics are captured automatically.
-        # List-valued dicts are copied; scalar-valued dicts (arrival_ts, first_scheduled_ts)
-        # are stored as-is so truthiness checks work correctly.
+        # List-valued dicts are copied; scalar-valued dicts (arrival_ts) are stored
+        # as-is so truthiness checks work correctly.
         if bench:
             snap = {}
             for f in dc_fields(bench):

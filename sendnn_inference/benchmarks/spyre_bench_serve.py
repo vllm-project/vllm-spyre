@@ -151,10 +151,10 @@ _METRIC_DESCRIPTIONS: list[tuple[str, str]] = [
     ),
     (
         "Queue Wait Time",
-        "Time from when the API server received the request until its first prefill step "
-        "started. Unlike vLLM's own queue time this includes the API-server -> engine-core "
-        "hop, so it adds up with prefill and decode latencies to reconstruct TTFT. "
-        "One sample per request.",
+        "Time from when the API server received the request until the start of its first "
+        "prefill step. Unlike vLLM's own queue time this includes the API-server -> "
+        "engine-core hop, so it adds up with prefill and decode latencies to reconstruct "
+        "TTFT. One sample per request.",
     ),
     (
         "Chunked Prefill Count",

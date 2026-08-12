@@ -35,8 +35,6 @@ class SpyreBenchState:
 
     # Timestamp the API server stamped on the request on receipt (request.arrival_time).
     arrival_ts: dict[str, float] = field(default_factory=dict)
-    # Timestamp of the request's first prefill step.
-    first_scheduled_ts: dict[str, float] = field(default_factory=dict)
     # Duration of each prefill step the request took part in.
     chunk_latencies: dict[str, list[float]] = field(default_factory=dict)
     # Start timestamp of each prefill step.
@@ -381,8 +379,7 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
             self._bench.decode_step_start = None
 
         for req in self.ongoing_prefills:
-            if req.request_id not in self._bench.first_scheduled_ts:
-                self._bench.first_scheduled_ts[req.request_id] = now
+            if req.request_id not in self._bench.arrival_ts:
                 self._bench.arrival_ts[req.request_id] = req.arrival_time
 
     def get_and_clear_chunk_stats(self, req_id: str) -> dict | None:
@@ -421,18 +418,7 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         if self._bench is not None:
             req_id = request.request_id
             chunk_stats = self.get_and_clear_chunk_stats(req_id)
-            first_ts = self._bench.first_scheduled_ts.pop(req_id, None)
             arrival_ts = self._bench.arrival_ts.pop(req_id, None)
-            # NOTE: queued_time_s looks like a duplicate of FinishedRequestStats.queued_time, but
-            # it is not. FinishedRequestStats.queued_time is (scheduled_ts - queued_ts): both
-            # timestamps are recorded inside the engine core, so it misses the time the request
-            # spent in transit from the API server to the engine (IPC hop). Here we use the stamp
-            # of the API server on receipt (request.arrival_time), which gives a complete client-
-            # visible queue wait that adds up cleanly with prefill and decode latencies when
-            # reconstructing TTFT.
-            queued_time_s = (
-                (first_ts - arrival_ts) if first_ts is not None and arrival_ts is not None else 0.0
-            )
             num_executed = chunk_stats["num_chunked_prefills"] if chunk_stats else 0
             num_expected = math.ceil(request.num_prompt_tokens / self.chunk_size)
             num_skipped = max(0, num_expected - num_executed)
@@ -442,12 +428,23 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
             chunk_lats = chunk_stats["chunk_prefill_latencies_s"] if chunk_stats else []
             chunk_starts = chunk_stats["chunk_prefill_start_times_s"] if chunk_stats else []
             prefill_busy_s = sum(chunk_lats)
-            if chunk_lats and chunk_starts and first_ts is not None:
-                prefill_elapsed_s = chunk_starts[-1] + chunk_lats[-1] - first_ts
+            if chunk_lats and chunk_starts:
+                prefill_elapsed_s = chunk_starts[-1] + chunk_lats[-1] - chunk_starts[0]
             else:
                 prefill_elapsed_s = 0.0
             # Guard against a negative result from clock jitter between the two samples.
             prefill_idle_s = max(0.0, prefill_elapsed_s - prefill_busy_s)
+
+            # NOTE: queued_time_s looks like a duplicate of FinishedRequestStats.queued_time, but
+            # it is not. FinishedRequestStats.queued_time is (scheduled_ts - queued_ts): both
+            # timestamps are recorded inside the engine core, so it misses the time the request
+            # spent in transit from the API server to the engine (IPC hop). Here we use the stamp
+            # of the API server on receipt (request.arrival_time), which gives a complete client-
+            # visible queue wait that adds up cleanly with prefill and decode latencies when
+            # reconstructing TTFT.
+            queued_time_s = (
+                (chunk_starts[0] - arrival_ts) if chunk_starts and arrival_ts is not None else 0.0
+            )
             spyre_data = {
                 "queued_time_s": queued_time_s,
                 "num_chunked_prefills": num_executed,
