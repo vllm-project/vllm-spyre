@@ -497,8 +497,10 @@ def test_scheduler_bench_metrics_accumulated(
         generate_hf_results=False,
     )
 
-    # Capture metrics just before _free_request clears them
+    # Capture metrics just before _free_request clears them, plus the derived
+    # __spyre__ payload it returns (prefill_elapsed_s & co. only exist there).
     captured: dict[str, dict] = {}
+    captured_spyre: dict[str, dict] = {}
     original_free = scheduler.__class__._free_request
 
     def _capturing_free(self, request, delay_free_blocks=False):
@@ -520,7 +522,10 @@ def test_scheduler_bench_metrics_accumulated(
             captured[req_id] = snap
         else:
             captured[req_id] = {}
-        return original_free(self, request, delay_free_blocks)
+        kv_params = original_free(self, request, delay_free_blocks)
+        if kv_params and "__spyre__" in kv_params:
+            captured_spyre[req_id] = dict(kv_params["__spyre__"])
+        return kv_params
 
     scheduler._free_request = _capturing_free.__get__(scheduler)
 
@@ -599,7 +604,21 @@ def test_scheduler_bench_metrics_accumulated(
             assert isinstance(tkv, int) and tkv > 0, f"req {req_id}: non-positive tkv {tkv}"
 
         assert info["arrival_ts"] is not None, f"req {req_id}: arrival_ts not set"
-        assert info["first_scheduled_ts"] is not None, f"req {req_id}: first_scheduled_ts not set"
+
+        # Derived prefill-phase breakdown (only present in the __spyre__ payload).
+        # The phase brackets the same steps as prefill_busy_s plus the gaps between
+        # them, so it can never be shorter.
+        assert req_id in captured_spyre, f"req {req_id}: no __spyre__ payload captured"
+        derived = captured_spyre[req_id]
+        elapsed = derived["prefill_elapsed_s"]
+        busy = derived["prefill_busy_s"]
+        assert elapsed >= busy - 1e-6, (
+            f"req {req_id}: prefill_elapsed_s {elapsed} < prefill_busy_s {busy} — "
+            f"elapsed/busy clocks disagree"
+        )
+        assert derived["prefill_idle_s"] == pytest.approx(max(0.0, elapsed - busy), abs=1e-9), (
+            f"req {req_id}: prefill_idle_s {derived['prefill_idle_s']} != elapsed - busy"
+        )
 
         # pause_latencies: list of pause durations (may be absent/None if no pausing occurred)
         pause_lats = info["pause_latencies"] or []
