@@ -6,6 +6,7 @@ compatibility code that can be cleaned up.
 """
 
 import inspect
+import re
 
 import pytest
 
@@ -107,3 +108,80 @@ def test_sendnn_bench__completion_stream_generator_signature_unchanged():
     _assert_positional_prefix(
         OpenAIServingCompletion.completion_stream_generator, COMPLETION_STREAM_GENERATOR_PREFIX
     )
+
+
+# ---------------------------------------------------------------------------
+# sendnn_inference/benchmarks/spyre_bench_serve.py
+#
+# _run_vllm_and_capture_trailing() calls main_async() and splits its stdout on a
+# closing line of specific form, so it relies on that line's exact shape.
+#
+# Both break modes are silent: never matching captures nothing, matching too early
+# swallows upstream's metrics table.
+# ---------------------------------------------------------------------------
+
+
+def test_sendnn_bench__main_async_unchanged():
+    """spyre_bench_serve imports main_async and calls it as main_async(args)."""
+    import asyncio
+
+    from vllm.benchmarks.serve import main_async
+
+    assert asyncio.iscoroutinefunction(main_async), (
+        "vllm.benchmarks.serve.main_async is no longer a coroutine function; "
+        "_run_vllm_and_capture_trailing calls it via asyncio.run()."
+    )
+
+    params = list(inspect.signature(main_async).parameters.values())
+    positional = [
+        p
+        for p in params
+        if p.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+    ]
+    assert len(positional) == 1, (
+        f"vllm.benchmarks.serve.main_async now takes {len(positional)} positional "
+        f"parameters ({[p.name for p in positional]}); _run_vllm_and_capture_trailing "
+        f"calls main_async(args) with exactly one."
+    )
+
+
+def test_sendnn_bench__metrics_table_end_marker_unchanged():
+    """_run_vllm_and_capture_trailing splits stdout on the line closing upstream's
+    metrics table. It must still be printed, exactly once, as a standalone print()."""
+    import vllm.benchmarks.serve as upstream_serve
+
+    from sendnn_inference.benchmarks.spyre_bench_serve import _VLLM_METRICS_TABLE_END_MARKER
+
+    source = inspect.getsource(upstream_serve)
+
+    # Matches `print("=" * 50)` / `print('=' * 50)` with flexible inner spacing.
+    width = len(_VLLM_METRICS_TABLE_END_MARKER)
+    char = _VLLM_METRICS_TABLE_END_MARKER[0]
+    pattern = re.compile(rf"""print\(\s*['"]{re.escape(char)}['"]\s*\*\s*{width}\s*\)""")
+    matches = pattern.findall(source)
+
+    assert len(matches) == 1, (
+        f"Expected exactly one `print({char!r} * {width})` in vllm.benchmarks.serve "
+        f"(found {len(matches)})."
+    )
+
+
+def test_sendnn_bench__table_headers_do_not_collide_with_end_marker():
+    """Upstream's centered section headers must keep a non-empty title, else one
+    strips down to the end marker and the splitter swallows the metrics table."""
+    import vllm.benchmarks.serve as upstream_serve
+
+    from sendnn_inference.benchmarks.spyre_bench_serve import _VLLM_METRICS_TABLE_END_MARKER
+
+    source = inspect.getsource(upstream_serve)
+    marker_char = _VLLM_METRICS_TABLE_END_MARKER[0]
+
+    # Upstream centers section titles in a run of '=' or '-', e.g.
+    #   print("{s:{c}^{n}}".format(s=" Serving Benchmark Result ", n=50, c="="))
+    for match in re.finditer(r"""\.format\(\s*s=\s*(['"])(.*?)\1""", source):
+        title = match.group(2)
+        assert title.strip(marker_char).strip(), (
+            f"Upstream renders a centered header with title {title!r}, which strips to "
+            f"the end-of-table marker and would flip _run_vllm_and_capture_trailing's "
+            f"splitter early, swallowing upstream's metrics table."
+        )

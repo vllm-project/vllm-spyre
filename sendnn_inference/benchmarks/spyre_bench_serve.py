@@ -32,6 +32,10 @@ logger = logging.getLogger(__name__)
 
 _BACKEND_NAME = "spyre-chat"
 
+# Line upstream prints to close its metrics table (`print("=" * 50)` in
+# vllm/benchmarks/serve.py). Pinned by tests/utils/test_upstream_compatibility.py.
+_VLLM_METRICS_TABLE_END_MARKER = "=" * 50
+
 # Shared accumulators — populated by the wrapper below during the benchmark run.
 _spyre_metrics_collected: list[dict[str, Any]] = []
 _request_outputs_collected: list[dict[str, Any]] = []
@@ -461,7 +465,7 @@ def _run_vllm_and_capture_trailing(args: Any) -> tuple[str, str]:
     class _StdoutSplitter:
         def write(self, s):
             if not done["v"]:
-                if s.strip() == "=" * 50:
+                if s.strip() == _VLLM_METRICS_TABLE_END_MARKER:
                     done["v"] = True
                 else:
                     orig_stdout.write(s)
@@ -489,6 +493,14 @@ def _run_vllm_and_capture_trailing(args: Any) -> tuple[str, str]:
     finally:
         sys.stdout = orig_stdout
         sys.stderr = orig_stderr
+
+    if not done["v"]:
+        logger.warning(
+            "Never saw upstream's end-of-metrics-table marker (%r), so no trailing "
+            "output was captured. vllm's `bench serve` output format has likely "
+            "changed; see _VLLM_METRICS_TABLE_END_MARKER.",
+            _VLLM_METRICS_TABLE_END_MARKER,
+        )
 
     return stdout_buf.getvalue(), stderr_buf.getvalue()
 
