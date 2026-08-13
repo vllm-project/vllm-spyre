@@ -230,12 +230,12 @@ def test_result_file_path_none_when_nothing_written(tmp_path):
 
 
 @pytest.mark.cpu
-def test_inject_warns_when_file_absent(tmp_path, caplog):
+def test_inject_warns_when_file_absent(tmp_path, caplog_sendnn_inference):
     """Path is known but vllm wrote nothing there — warn, don't crash."""
     args = _make_args(tmp_path, result_filename="never_written.json")
-    with caplog.at_level("WARNING"):
+    with caplog_sendnn_inference.at_level("WARNING"):
         _inject_spyre_metrics_into_result_file(args, FAKE_METRICS)
-    assert "does not exist" in caplog.text
+    assert "does not exist" in caplog_sendnn_inference.text
 
 
 # ---------------------------------------------------------------------------
