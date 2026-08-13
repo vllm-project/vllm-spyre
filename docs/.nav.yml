@@ -17,6 +17,7 @@ nav:
       - Supported Features: user_guide/supported_features.md
       - Supported Models: user_guide/supported_models.md
       - Performance Tuning: user_guide/performance.md
+      - Detailed Performance Measurement: user_guide/detailed_performance_measurement.md
     - Developer Guide:
       - Contributing: contributing/README.md
       - Maintaining: contributing/maintaining.md
@@ -38,6 +39,7 @@ nav:
     - Supported Features: user_guide/supported_features.md
     - Supported Models: user_guide/supported_models.md
     - Performance Tuning: user_guide/performance.md
+    - Detailed Performance Measurement: user_guide/detailed_performance_measurement.md
   - Developer Guide:
     - Contributing: contributing/README.md
     - Maintaining: contributing/maintaining.md
