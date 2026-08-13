@@ -5,8 +5,15 @@ Usage:
     sendnn-bench serve --host localhost --port 8000 --model <model> \\
         --dataset-name random --num-prompts 20 --request-rate 2
 
+Result files:
+    Any flag that makes vllm write a result JSON (--save-result, --plot-timeline,
+    --detailed-timeline) requires both --result-dir and --result-filename, so the
+    path to inject Spyre metrics into is unambiguous. --append-result is rejected:
+    it produces JSONL, compatibility with injected metrics is not yet supported.
+
 Env var:
-    SENDNN_INFERENCE_BENCH_METRICS_ENABLED=1  (must also be set on the server)
+    SENDNN_INFERENCE_BENCH_METRICS_ENABLED=1  (must be set on the server; the
+    client does not read it)
 """
 
 import argparse
@@ -14,7 +21,6 @@ import asyncio
 import json
 import logging
 import os
-import time
 from typing import Any
 
 import numpy as np
@@ -117,8 +123,9 @@ def _build_parser() -> FlexibleArgumentParser:
         default=False,
         help=(
             "Write a detailed per-request Gantt-chart timeline HTML alongside the "
-            "JSON result file (same name with a _detailed.html suffix). "
-            "Requires --save-result and SENDNN_INFERENCE_BENCH_METRICS_ENABLED on the server."
+            "JSON result file (same name with a _detailed_timeline.html suffix). "
+            "Requires --result-dir and --result-filename, and "
+            "SENDNN_INFERENCE_BENCH_METRICS_ENABLED on the server."
         ),
     )
     parser.add_argument(
@@ -145,6 +152,61 @@ def _build_parser() -> FlexibleArgumentParser:
     )
 
     return parser
+
+
+# Flags that make upstream `vllm bench serve` write a result JSON, plus our own
+# flags that need to locate that JSON afterwards. Each entry is (attr, cli_flag).
+_RESULT_FILE_FLAGS: tuple[tuple[str, str], ...] = (
+    ("save_result", "--save-result"),
+    ("plot_timeline", "--plot-timeline"),
+    ("detailed_timeline", "--detailed-timeline"),
+)
+
+
+def _validate_result_file_args(args: Any) -> None:
+    """Require an unambiguous result-file path whenever a JSON will be written.
+
+    Upstream picks the result filename itself (timestamped) unless
+    ``--result-filename`` is given, which would force us to guess which file it
+    wrote by scanning for the newest ``.json`` in the directory. Requiring both
+    ``--result-dir`` and ``--result-filename`` makes the path exact.
+
+    ``--append-result`` is rejected outright: it makes upstream emit one JSON
+    object per line (JSONL), which cannot be read back and rewritten as a single
+    document without corrupting the file.
+    """
+    if getattr(args, "append_result", False):
+        raise ValueError(
+            "--append-result is not supported by sendnn-bench: it is incompatible "
+            "with Spyre metrics injection."
+        )
+
+    triggered = [flag for attr, flag in _RESULT_FILE_FLAGS if getattr(args, attr, False)]
+    if not triggered:
+        return
+
+    missing = []
+    if not getattr(args, "result_dir", None):
+        missing.append("--result-dir")
+    if not getattr(args, "result_filename", None):
+        missing.append("--result-filename")
+    if missing:
+        raise ValueError(
+            f"{', '.join(triggered)} requires both --result-dir and --result-filename "
+            f"in sendnn-bench for Spyre metrics injection (missing: {', '.join(missing)})."
+        )
+
+
+def _result_file_path(args: Any) -> str | None:
+    """Path of the result JSON, or None if no JSON will be written."""
+    if not any(getattr(args, attr, False) for attr, _ in _RESULT_FILE_FLAGS):
+        return None
+    name = getattr(args, "result_filename", None)
+    if not name:
+        return None
+    if os.path.isabs(name):
+        return name
+    return os.path.join(getattr(args, "result_dir", None) or ".", name)
 
 
 # Short explanation of every metric printed by _print_spyre_section, written to
@@ -335,48 +397,25 @@ def _print_spyre_section(
 def _inject_spyre_metrics_into_result_file(
     args: Any,
     metrics_list: list[dict[str, Any]],
-    run_started_at: float,
 ) -> None:
-    """If vllm wrote a result JSON (--save-result / --append-result / --result-filename),
-    find it and inject per-request Spyre metric lists alongside vllm's own per-request
+    """If vllm wrote a result JSON (--save-result / --plot-timeline / --detailed-timeline),
+    inject per-request Spyre metric lists alongside vllm's own per-request
     fields (ttfts, itls, …)."""
     if not metrics_list:
         return
-    if not (
-        getattr(args, "save_result", False)
-        or getattr(args, "append_result", False)
-        or getattr(args, "result_filename", None)
-    ):
+
+    # None means no result-file flag was passed, i.e. vllm wrote no JSON — nothing to do.
+    file_path = _result_file_path(args)
+    if file_path is None:
         return
 
-    # Locate the file vllm just wrote by finding the newest .json in the result dir
-    # that was modified after we started the run.
-    result_dir = getattr(args, "result_dir", None) or "."
-    explicit_name = getattr(args, "result_filename", None)
-
-    if explicit_name:
-        candidate = (
-            explicit_name
-            if os.path.isabs(explicit_name)
-            else os.path.join(result_dir, explicit_name)
+    if not os.path.isfile(file_path):
+        logger.warning(
+            "Expected vllm result JSON at %s but it does not exist; "
+            "skipping Spyre metric injection.",
+            file_path,
         )
-        candidates = [candidate] if os.path.isfile(candidate) else []
-    else:
-        try:
-            candidates = [
-                os.path.join(result_dir, f)
-                for f in os.listdir(result_dir)
-                if f.endswith(".json")
-                and os.path.getmtime(os.path.join(result_dir, f)) >= run_started_at
-            ]
-        except OSError:
-            candidates = []
-
-    if not candidates:
-        logger.warning("Could not locate vllm result JSON to inject Spyre metrics into.")
         return
-
-    file_path = max(candidates, key=os.path.getmtime)
 
     try:
         with open(file_path, encoding="utf-8") as fh:
@@ -519,12 +558,17 @@ def main() -> None:
     # Force our custom backend so Spyre metrics are always collected.
     args.backend = _BACKEND_NAME
 
+    # Validate the results JSON path arguments
+    try:
+        _validate_result_file_args(args)
+    except ValueError as exc:
+        parser.error(str(exc))
+
     selected_percentiles = [float(p) for p in args.metric_percentiles.split(",")]
 
     _spyre_metrics_collected.clear()
     _request_outputs_collected.clear()
 
-    run_started_at = time.time()
     stdout_trailing, stderr_trailing = _run_vllm_and_capture_trailing(args)
 
     print("{s:{c}^{n}}".format(s=" SenDNN Metrics ", n=50, c="="))
@@ -533,60 +577,38 @@ def main() -> None:
     if getattr(args, "describe_metrics", False):
         _write_metric_descriptions(getattr(args, "result_dir", None))
 
-    _inject_spyre_metrics_into_result_file(args, _spyre_metrics_collected, run_started_at)
+    _inject_spyre_metrics_into_result_file(args, _spyre_metrics_collected)
 
     if getattr(args, "detailed_timeline", False):
         from pathlib import Path
 
         from sendnn_inference.benchmarks.spyre_plot import generate_detailed_timeline_plot
 
-        # Derive the HTML path from the JSON result file: same name, _detailed.html suffix.
-        result_dir = getattr(args, "result_dir", None) or "."
-        explicit_name = getattr(args, "result_filename", None)
-        if explicit_name:
-            json_candidate = (
-                explicit_name
-                if os.path.isabs(explicit_name)
-                else os.path.join(result_dir, explicit_name)
-            )
-            candidates = [json_candidate] if os.path.isfile(json_candidate) else []
-        else:
-            try:
-                candidates = [
-                    os.path.join(result_dir, f)
-                    for f in os.listdir(result_dir)
-                    if f.endswith(".json")
-                    and os.path.getmtime(os.path.join(result_dir, f)) >= run_started_at
-                ]
-            except OSError:
-                candidates = []
+        # the path is always resolvable here (see _validate_result_file_args)
+        result_json = _result_file_path(args)
+        assert result_json is not None, "--detailed-timeline implies a known result JSON path"
 
-        if candidates:
-            json_path = Path(str(max(candidates, key=os.path.getmtime)))
-            html_path = json_path.with_name(json_path.stem + "_detailed_timeline.html")
-            decode_thresholds_str = getattr(args, "decode_thresholds", None)
-            # Parse comma-separated milliseconds and convert to seconds
-            decode_thresholds = None
-            if decode_thresholds_str:
-                try:
-                    thresholds_ms = [float(x.strip()) for x in decode_thresholds_str.split(",")]
-                    if len(thresholds_ms) != 2:
-                        raise ValueError("Expected exactly 2 comma-separated values")
-                    decode_thresholds = [ms / 1000.0 for ms in thresholds_ms]
-                except (ValueError, AttributeError) as e:
-                    logger.warning(
-                        "Invalid --decode-thresholds format: %s (expected LOW,HIGH in ms)",
-                        e,
-                    )
-                    decode_thresholds = None
-            generate_detailed_timeline_plot(
-                _request_outputs_collected, html_path, decode_thresholds=decode_thresholds
-            )
-        else:
-            logger.warning(
-                "--detailed-timeline requires --save-result so the JSON path is known; "
-                "no result file found, skipping timeline."
-            )
+        json_path = Path(result_json)
+        # Derive the HTML path from the JSON result file: same name, _detailed.html suffix.
+        html_path = json_path.with_name(json_path.stem + "_detailed_timeline.html")
+        decode_thresholds_str = getattr(args, "decode_thresholds", None)
+        # Parse comma-separated milliseconds and convert to seconds
+        decode_thresholds = None
+        if decode_thresholds_str:
+            try:
+                thresholds_ms = [float(x.strip()) for x in decode_thresholds_str.split(",")]
+                if len(thresholds_ms) != 2:
+                    raise ValueError("Expected exactly 2 comma-separated values")
+                decode_thresholds = [ms / 1000.0 for ms in thresholds_ms]
+            except (ValueError, AttributeError) as e:
+                logger.warning(
+                    "Invalid --decode-thresholds format: %s (expected LOW,HIGH in ms)",
+                    e,
+                )
+                decode_thresholds = None
+        generate_detailed_timeline_plot(
+            _request_outputs_collected, html_path, decode_thresholds=decode_thresholds
+        )
 
     trailing = stdout_trailing + stderr_trailing
     if trailing.strip():

@@ -13,7 +13,6 @@ import argparse
 import asyncio
 import json
 import pathlib
-import time
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -22,6 +21,8 @@ import pytest
 from sendnn_inference.benchmarks.spyre_bench_serve import (
     _inject_spyre_metrics_into_result_file,
     _print_spyre_section,
+    _result_file_path,
+    _validate_result_file_args,
 )
 
 # ---------------------------------------------------------------------------
@@ -69,18 +70,34 @@ FAKE_METRICS: list[dict[str, Any]] = [
 SELECTED_PERCENTILES = [90.0, 99.0, 100.0]
 
 
+_RESULT_FILENAME = "result.json"
+
+
 def _write_fake_result(tmp_path) -> pathlib.Path:
-    p = tmp_path / "result.json"
+    p = tmp_path / _RESULT_FILENAME
     p.write_text(json.dumps({"backend": "spyre-chat", "num_prompts": 2}))
     return p
 
 
-def _make_args(tmp_path, *, save_result: bool = True, result_filename=None):
+def _make_args(
+    tmp_path,
+    *,
+    save_result: bool = True,
+    append_result: bool = False,
+    plot_timeline: bool = False,
+    detailed_timeline: bool = False,
+    result_filename: Any = _RESULT_FILENAME,
+    result_dir: Any = None,
+):
+    """Build an args namespace. Defaults mirror the validated happy path:
+    --save-result with both --result-dir and --result-filename set."""
     return argparse.Namespace(
         save_result=save_result,
-        append_result=False,
+        append_result=append_result,
+        plot_timeline=plot_timeline,
+        detailed_timeline=detailed_timeline,
         result_filename=str(result_filename) if result_filename else None,
-        result_dir=str(tmp_path),
+        result_dir=str(result_dir) if result_dir else str(tmp_path),
     )
 
 
@@ -92,7 +109,7 @@ def _make_args(tmp_path, *, save_result: bool = True, result_filename=None):
 @pytest.mark.cpu
 def test_inject_adds_spyre_keys(tmp_path):
     result_file = _write_fake_result(tmp_path)
-    _inject_spyre_metrics_into_result_file(_make_args(tmp_path), FAKE_METRICS, time.time() - 1)
+    _inject_spyre_metrics_into_result_file(_make_args(tmp_path), FAKE_METRICS)
     data = json.loads(result_file.read_text())
     expected_keys = {"spyre_" + k for k in FAKE_METRICS[0]} | {
         "spyre_total_prefill_chunks",
@@ -105,7 +122,7 @@ def test_inject_adds_spyre_keys(tmp_path):
 @pytest.mark.cpu
 def test_inject_values_correct(tmp_path):
     result_file = _write_fake_result(tmp_path)
-    _inject_spyre_metrics_into_result_file(_make_args(tmp_path), FAKE_METRICS, time.time() - 1)
+    _inject_spyre_metrics_into_result_file(_make_args(tmp_path), FAKE_METRICS)
     data = json.loads(result_file.read_text())
 
     # Per-request lists map directly: "spyre_" + key → [m[key] for m in FAKE_METRICS]
@@ -129,9 +146,7 @@ def test_inject_values_correct(tmp_path):
 def test_inject_noop_when_save_result_false(tmp_path):
     result_file = _write_fake_result(tmp_path)
     original = result_file.read_text()
-    _inject_spyre_metrics_into_result_file(
-        _make_args(tmp_path, save_result=False), FAKE_METRICS, time.time() - 1
-    )
+    _inject_spyre_metrics_into_result_file(_make_args(tmp_path, save_result=False), FAKE_METRICS)
     assert result_file.read_text() == original
 
 
@@ -139,7 +154,7 @@ def test_inject_noop_when_save_result_false(tmp_path):
 def test_inject_noop_when_metrics_empty(tmp_path):
     result_file = _write_fake_result(tmp_path)
     original = result_file.read_text()
-    _inject_spyre_metrics_into_result_file(_make_args(tmp_path), [], time.time() - 1)
+    _inject_spyre_metrics_into_result_file(_make_args(tmp_path), [])
     assert result_file.read_text() == original
 
 
@@ -147,9 +162,80 @@ def test_inject_noop_when_metrics_empty(tmp_path):
 def test_inject_explicit_result_filename(tmp_path):
     result_file = _write_fake_result(tmp_path)
     args = _make_args(tmp_path, result_filename=str(result_file))
-    _inject_spyre_metrics_into_result_file(args, FAKE_METRICS, time.time() - 1)
+    _inject_spyre_metrics_into_result_file(args, FAKE_METRICS)
     data = json.loads(result_file.read_text())
     assert "spyre_queued_time_s" in data
+
+
+# ---------------------------------------------------------------------------
+# Test 1B — _validate_result_file_args / _result_file_path
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.cpu
+def test_validate_rejects_append_result(tmp_path):
+    """--append-result makes vllm write JSONL, which cannot carry injected metrics."""
+    args = _make_args(tmp_path, append_result=True)
+    with pytest.raises(ValueError, match="--append-result is not supported"):
+        _validate_result_file_args(args)
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize("flag", ["save_result", "plot_timeline", "detailed_timeline"])
+@pytest.mark.parametrize(
+    ("result_dir", "result_filename", "expected_missing"),
+    [
+        (None, None, ["--result-dir", "--result-filename"]),
+        ("set", None, ["--result-filename"]),
+        (None, "r.json", ["--result-dir"]),
+    ],
+)
+def test_validate_requires_both_dir_and_filename(
+    tmp_path, flag, result_dir, result_filename, expected_missing
+):
+    """Every flag that causes a result JSON to be written requires an explicit path."""
+    # Built directly rather than via _make_args, which defaults result_dir to tmp_path
+    # and so could not express the "--result-dir absent" case.
+    args = argparse.Namespace(
+        save_result=False,
+        append_result=False,
+        plot_timeline=False,
+        detailed_timeline=False,
+        result_dir=str(tmp_path) if result_dir else None,
+        result_filename=result_filename,
+    )
+    setattr(args, flag, True)
+    with pytest.raises(ValueError) as exc:
+        _validate_result_file_args(args)
+    for missing in expected_missing:
+        assert missing in str(exc.value)
+
+
+@pytest.mark.cpu
+def test_validate_accepts_full_path(tmp_path):
+    _validate_result_file_args(_make_args(tmp_path))  # must not raise
+
+
+@pytest.mark.cpu
+def test_validate_noop_when_no_result_file_requested(tmp_path):
+    """Without any result-file flag, the path args are irrelevant."""
+    args = _make_args(tmp_path, save_result=False, result_filename=None, result_dir="")
+    _validate_result_file_args(args)  # must not raise
+
+
+@pytest.mark.cpu
+def test_result_file_path_none_when_nothing_written(tmp_path):
+    args = _make_args(tmp_path, save_result=False)
+    assert _result_file_path(args) is None
+
+
+@pytest.mark.cpu
+def test_inject_warns_when_file_absent(tmp_path, caplog):
+    """Path is known but vllm wrote nothing there — warn, don't crash."""
+    args = _make_args(tmp_path, result_filename="never_written.json")
+    with caplog.at_level("WARNING"):
+        _inject_spyre_metrics_into_result_file(args, FAKE_METRICS)
+    assert "does not exist" in caplog.text
 
 
 # ---------------------------------------------------------------------------
