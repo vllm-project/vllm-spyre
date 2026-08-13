@@ -372,8 +372,11 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
                 req = req_by_id.get(req_id)
                 if req is not None:
                     req_num_blocks = math.ceil(req.num_computed_tokens / self.block_size)
+                    # Clamp at 0: num_computed_tokens is read after the step, while
+                    # tkv is the runner's value for that step, so a request that just
+                    # crossed a block boundary can momentarily exceed max_num_blocks.
                     self._bench.left_padding_blocks.setdefault(req_id, []).append(
-                        max_num_blocks - req_num_blocks
+                        max(0, max_num_blocks - req_num_blocks)
                     )
             self._bench.prefill_step_start = None
             self._bench.decode_step_start = None
