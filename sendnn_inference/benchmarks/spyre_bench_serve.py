@@ -606,9 +606,13 @@ def main() -> None:
                     e,
                 )
                 decode_thresholds = None
-        generate_detailed_timeline_plot(
-            _request_outputs_collected, html_path, decode_thresholds=decode_thresholds
-        )
+        # TODO need to fix this timeline bug on long runs
+        try:
+            generate_detailed_timeline_plot(
+                _request_outputs_collected, html_path, decode_thresholds=decode_thresholds
+            )
+        except Exception:
+            logger.warning("Failed to generate detailed timeline plot", exc_info=True)
 
     trailing = stdout_trailing + stderr_trailing
     if trailing.strip():
