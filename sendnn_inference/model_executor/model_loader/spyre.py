@@ -1,6 +1,7 @@
 """Utilities for selecting and loading Spyre models."""
 
 import os
+import warnings
 from dataclasses import dataclass
 from typing import cast
 
@@ -17,6 +18,7 @@ from vllm.logger import init_logger
 from vllm.model_executor.model_loader.weight_utils import download_weights_from_hf
 from vllm.v1.outputs import SamplerOutput
 from vllm.v1.sample.metadata import SamplingMetadata
+from vllm.v1.sample.sampler import Sampler
 
 import sendnn_inference.envs as envs_spyre
 import sendnn_inference.multimodal as spyre_mm
@@ -112,9 +114,18 @@ class SpyreCausalLM(nn.Module):
         rank: int,
     ) -> None:
         super().__init__()
-
-        # SpyreSampler is a vLLM Sampler subclass that uses top-k/top-p sampling implementations optimized for Spyre platform.
-        self.sampler = SpyreSampler(vllm_config=vllm_config)
+        vllm_config_compatible = SpyreSampler.is_vllm_config_compatible(vllm_config)
+        if not vllm_config_compatible:
+            warnings.warn(
+                "The provided vllm_config is not compatible with SpyreSampler."
+                "Falling back to default Sampler with reduced performance on Spyre platform.",
+                stacklevel=2,
+            )
+            self.sampler = Sampler()
+        else:
+            # SpyreSampler is a vLLM Sampler subclass that uses top-k/top-p sampling
+            # implementations optimized for Spyre platform.
+            self.sampler = SpyreSampler(vllm_config=vllm_config)
 
         # boolean tensor of length batch size with indices:
         # True for unfinished sequences and

@@ -81,11 +81,17 @@ class AsyncRingBuffer(ABC):
         Args:
             n: Number of rows to borrow.  Must satisfy ``1 <= n <= B``.
 
+        Raises:
+            ValueError: If ``n`` is outside the valid range.
+
         Example::
 
             with buf.borrow_rows(batch_size) as noise:
                 tokens = probs.div(noise).argmax(dim=-1)
         """
+        if n > self._B or n < 1:
+            raise ValueError(f"n (got {n}) must satisfy 1 <= n <= {self._B} (max_batch_size)")
+
         start = self._read_pos
         end = start + n
 
@@ -136,10 +142,10 @@ class AsyncRingBuffer(ABC):
 
 
 class AsyncExponential_RingBuffer(AsyncRingBuffer):
-    """Ring buffer that pre-generates exponential noise via ``exponential_()``."""
+    """Ring buffer that pre-generates exponential log noise via ``exponential_().log_()``."""
 
     def _refill_slice(self, start: int, end: int) -> None:
-        self._buf[start:end].exponential_()
+        self._buf[start:end].exponential_().log_()
 
 
 class _AsyncCounterRingBuffer(AsyncRingBuffer):

@@ -4,14 +4,13 @@
 import warnings
 
 import torch
-import torch.nn as nn
 from vllm.config.model import LogprobsMode
-from vllm.v1.sample.ops.topk_topp_sampler import apply_top_k_top_p
+from vllm.v1.sample.ops.topk_topp_sampler import apply_top_k_top_p, TopKTopPSampler
 
 from sendnn_inference.v1.sample.async_ring_buffer import AsyncExponential_RingBuffer
 
 
-class SpyreTopKTopPSampler(nn.Module):
+class SpyreTopKTopPSampler(TopKTopPSampler):
     """Top-k/top-p sampler optimized for Spyre hardware via asynchronous noise pre-sampling.
 
     This removes CPU-bound noise generation from the latency-critical sampling path by
@@ -35,21 +34,15 @@ class SpyreTopKTopPSampler(nn.Module):
             max_batch_size: The maximum batch size that will be processed.
                 Determines the total capacity of the pre-allocated noise buffer.
             logprobs_mode: See vllm.v1.sample.ops.topk_topp_sampler for details.
-
-        Raises:
-            ValueError: If use_fp64_gumbel is True, as SpyreTopKTopPSampler does
-                not support 64-bit Gumbel noise computation.
-
         """
-        super().__init__()
-        self.logprobs_mode = logprobs_mode
+        super().__init__(logprobs_mode=logprobs_mode)
 
         self._noise_buffer = AsyncExponential_RingBuffer(
             vocab_size=vocab_size,
             max_batch_size=max_batch_size,
         )
 
-    def forward(
+    def forward_native(
         self,
         logits: torch.Tensor,
         generators: dict[int, torch.Generator],
@@ -60,7 +53,8 @@ class SpyreTopKTopPSampler(nn.Module):
 
         if generators:
             warnings.warn(
-                "Generators are not supported by SpyreTopKTopPSampler. Falling back to TopKTopPSampler."
+                "Generators are not supported by SpyreTopKTopPSampler. Falling back to base class.",
+                stacklevel=2,
             )
             return super().forward_native(logits, generators, k, p)
 
@@ -71,10 +65,8 @@ class SpyreTopKTopPSampler(nn.Module):
         elif self.logprobs_mode == "processed_logprobs":
             logits_to_return = logits.log_softmax(dim=-1, dtype=torch.float32)
 
-        probs = logits.softmax(dim=-1, dtype=torch.float32)
-
-        with self._noise_buffer.borrow_rows(n=probs.shape[0]) as noise:
-            sample_result = SpyreTopKTopPSampler._sample_with_predrawn_noise(probs, noise)
+        with self._noise_buffer.borrow_rows(n=logits.shape[0]) as log_noise:
+            sample_result = SpyreTopKTopPSampler._sample_with_predrawn_log_noise(logits, log_noise)
 
         return sample_result, logits_to_return
 
@@ -86,3 +78,10 @@ class SpyreTopKTopPSampler(nn.Module):
     def _sample_with_predrawn_noise(probs: torch.Tensor, noise: torch.Tensor) -> torch.Tensor:
         """Sample using pre-drawn exponential noise (no exponential_() call)."""
         return probs.div(noise).argmax(dim=-1).view(-1)
+
+    @staticmethod
+    def _sample_with_predrawn_log_noise(
+        logits: torch.Tensor, log_noise: torch.Tensor
+    ) -> torch.Tensor:
+        """Sample using pre-drawn exponential log noise (no exponential_() call)."""
+        return (logits - log_noise).argmax(dim=-1).view(-1)

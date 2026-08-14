@@ -75,15 +75,14 @@ class TestAsyncRingBuffer:
 
         assert len(seen) == len(set(seen)), f"duplicate row indices returned: {seen}"
 
-    def test_exponential_shape_and_positivity(self):
-        """AsyncExponentialRingBuffer returns correctly shaped positive tensors."""
+    def test_exponential_shape(self):
+        """AsyncExponentialRingBuffer returns correctly shaped tensors."""
         V, B = 16, 4
         buf = AsyncExponential_RingBuffer(vocab_size=V, max_batch_size=B)
         try:
             for b in [1, 2, B]:
                 with buf.borrow_rows(b) as rows:
                     assert rows.shape == (b, V)
-                    assert (rows > 0).all(), "exponential values must be positive"
         finally:
             buf.shutdown()
 
@@ -97,14 +96,23 @@ class TestAsyncRingBuffer:
         finally:
             buf.shutdown()
 
+    def test_borrow_out_of_bounds(self):
+        """borrow_rows must raise a ValueError when n is outside the valid range."""
+        V, B = 8, 4
+        buf = AsyncExponential_RingBuffer(vocab_size=V, max_batch_size=B)
+        try:
+            with pytest.raises(ValueError, match="n.*must satisfy"), buf.borrow_rows(B + 1):
+                pass
+        finally:
+            buf.shutdown()
+
     def test_release_on_exception(self):
         """Release must occur even when the consumer body raises."""
         V, B = 4, 2
         buf = _AsyncCounterRingBuffer(vocab_size=V, max_batch_size=B)
         try:
-            with pytest.raises(RuntimeError, match="intentional") as _:
-                with buf.borrow_rows(B):
-                    raise RuntimeError("intentional")
+            with pytest.raises(RuntimeError, match="intentional") as _, buf.borrow_rows(B):
+                raise RuntimeError("intentional")
         finally:
             # If release happened, a second borrow must succeed.
             with buf.borrow_rows(B) as rows:
