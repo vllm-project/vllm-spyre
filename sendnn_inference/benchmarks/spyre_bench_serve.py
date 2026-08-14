@@ -332,14 +332,20 @@ def _print_spyre_section(
     if not metrics_list:
         return
 
-    queue_times_ms = [m["queued_time_s"] * 1000 for m in metrics_list if "queued_time_s" in m]
+    # Values may be present-but-None (sentinel rows); skip nulls for scalars and
+    # coerce None to [] for lists so a single null never aborts the whole section.
+    queue_times_ms = [
+        m["queued_time_s"] * 1000 for m in metrics_list if m.get("queued_time_s") is not None
+    ]
     num_chunks_list = [
-        m["num_chunked_prefills"] for m in metrics_list if "num_chunked_prefills" in m
+        m["num_chunked_prefills"] for m in metrics_list if m.get("num_chunked_prefills") is not None
     ]
     chunk_lats_ms = [
-        lat * 1000 for m in metrics_list for lat in m.get("chunk_prefill_latencies_s", [])
+        lat * 1000 for m in metrics_list for lat in (m.get("chunk_prefill_latencies_s") or [])
     ]
-    decode_lats_ms = [lat * 1000 for m in metrics_list for lat in m.get("decode_latencies_s", [])]
+    decode_lats_ms = [
+        lat * 1000 for m in metrics_list for lat in (m.get("decode_latencies_s") or [])
+    ]
     total_prefill_chunks = sum(num_chunks_list)
 
     total_missing_blocks = sum(1 for m in metrics_list if m.get("was_missing_blocks", False))
@@ -364,19 +370,27 @@ def _print_spyre_section(
             )
 
     cache_hit_pcts = [
-        m["prefix_cache_hit_pct"] * 100 for m in metrics_list if "prefix_cache_hit_pct" in m
+        m["prefix_cache_hit_pct"] * 100
+        for m in metrics_list
+        if m.get("prefix_cache_hit_pct") is not None
     ]
 
     prefill_elapsed_ms = [
-        m["prefill_elapsed_s"] * 1000 for m in metrics_list if "prefill_elapsed_s" in m
+        m["prefill_elapsed_s"] * 1000
+        for m in metrics_list
+        if m.get("prefill_elapsed_s") is not None
     ]
-    prefill_busy_ms = [m["prefill_busy_s"] * 1000 for m in metrics_list if "prefill_busy_s" in m]
-    prefill_idle_ms = [m["prefill_idle_s"] * 1000 for m in metrics_list if "prefill_idle_s" in m]
+    prefill_busy_ms = [
+        m["prefill_busy_s"] * 1000 for m in metrics_list if m.get("prefill_busy_s") is not None
+    ]
+    prefill_idle_ms = [
+        m["prefill_idle_s"] * 1000 for m in metrics_list if m.get("prefill_idle_s") is not None
+    ]
 
-    left_padding_blocks = [v for m in metrics_list for v in m.get("left_padding_blocks", [])]
-    pause_lats_ms = [lat * 1000 for m in metrics_list for lat in m.get("pause_latencies_s", [])]
-    pause_counts = [float(len(m.get("pause_latencies_s", []))) for m in metrics_list]
-    total_pause_ms = [float(sum(m.get("pause_latencies_s", []))) * 1000 for m in metrics_list]
+    left_padding_blocks = [v for m in metrics_list for v in (m.get("left_padding_blocks") or [])]
+    pause_lats_ms = [lat * 1000 for m in metrics_list for lat in (m.get("pause_latencies_s") or [])]
+    pause_counts = [float(len(m.get("pause_latencies_s") or [])) for m in metrics_list]
+    total_pause_ms = [float(sum(m.get("pause_latencies_s") or [])) * 1000 for m in metrics_list]
 
     _section("Queue Wait Time", queue_times_ms, "Queue Wait Time (ms)")
     _section("Chunked Prefill Count", num_chunks_list, "Num Chunked Prefills")

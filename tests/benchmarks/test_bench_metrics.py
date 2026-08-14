@@ -473,6 +473,20 @@ def test_print_missing_keys_show_zeros(capsys):
     assert "0.00" in out
 
 
+@pytest.mark.cpu
+def test_print_tolerates_null_values(capsys):
+    # Present-but-None values (scalars and lists) must not abort the section.
+    metrics = [
+        {k: None for k in FAKE_METRIC_KEYS},
+        FAKE_METRICS[0],
+    ]
+    _print_spyre_section(metrics, SELECTED_PERCENTILES)
+    out = capsys.readouterr().out
+    # Non-null row still contributes its data; section completes to the end marker.
+    assert "Queue Wait Time" in out
+    assert out.rstrip().endswith("=" * 50)
+
+
 # ---------------------------------------------------------------------------
 # Test 3B — get_and_clear_chunk_stats (pure unit, no engine)
 # ---------------------------------------------------------------------------
