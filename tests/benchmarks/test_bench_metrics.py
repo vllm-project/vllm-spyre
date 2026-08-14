@@ -19,6 +19,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from sendnn_inference.benchmarks.spyre_bench_serve import (
+    _SPYRE_START_TIME_KEY,
     _inject_spyre_metrics_into_result_file,
     _print_spyre_section,
     _result_file_path,
@@ -29,7 +30,14 @@ from sendnn_inference.benchmarks.spyre_bench_serve import (
 # Shared test data
 # ---------------------------------------------------------------------------
 
-# Synthetic values
+# Per-request start_time stamps carried on each collected metric dict. vllm's
+# result arrays (ttfts/itls/start_times) are submission-ordered, so injection
+# realigns metrics against them by this key. The values are distinct so the
+# reorder is observable.
+FAKE_START_TIMES = [111.111, 222.222]
+
+# Synthetic values. FAKE_METRICS[i] carries FAKE_START_TIMES[i] under
+# _SPYRE_START_TIME_KEY so the injection reordering path can match it to a row.
 FAKE_METRICS: list[dict[str, Any]] = [
     {
         "queued_time_s": 42.0,
@@ -47,6 +55,7 @@ FAKE_METRICS: list[dict[str, Any]] = [
         "pause_latencies_s": [0.5, 1.2],
         "pause_start_times_s": [0.0, 1.2],
         "was_missing_blocks": True,
+        _SPYRE_START_TIME_KEY: FAKE_START_TIMES[0],
     },
     {
         "queued_time_s": 0.00001,
@@ -64,8 +73,13 @@ FAKE_METRICS: list[dict[str, Any]] = [
         "pause_latencies_s": [0.3],
         "pause_start_times_s": [0.5],
         "was_missing_blocks": False,
+        _SPYRE_START_TIME_KEY: FAKE_START_TIMES[1],
     },
 ]
+
+# Metric keys that map 1:1 to a spyre_<key> result column. The start-time stamp
+# is an alignment key only — it is never written back out.
+FAKE_METRIC_KEYS = [k for k in FAKE_METRICS[0] if k != _SPYRE_START_TIME_KEY]
 
 SELECTED_PERCENTILES = [90.0, 99.0, 100.0]
 
@@ -73,9 +87,15 @@ SELECTED_PERCENTILES = [90.0, 99.0, 100.0]
 _RESULT_FILENAME = "result.json"
 
 
-def _write_fake_result(tmp_path) -> pathlib.Path:
+def _write_fake_result(tmp_path, *, start_times: Any = FAKE_START_TIMES) -> pathlib.Path:
+    """Write a stand-in vllm result JSON. By default it carries submission-ordered
+    start_times aligned with FAKE_METRICS so injection takes the reordering path;
+    pass start_times=None to simulate a result file lacking that key."""
     p = tmp_path / _RESULT_FILENAME
-    p.write_text(json.dumps({"backend": "spyre-chat", "num_prompts": 2}))
+    payload: dict[str, Any] = {"backend": "spyre-chat", "num_prompts": 2}
+    if start_times is not None:
+        payload["start_times"] = start_times
+    p.write_text(json.dumps(payload))
     return p
 
 
@@ -111,12 +131,14 @@ def test_inject_adds_spyre_keys(tmp_path):
     result_file = _write_fake_result(tmp_path)
     _inject_spyre_metrics_into_result_file(_make_args(tmp_path), FAKE_METRICS)
     data = json.loads(result_file.read_text())
-    expected_keys = {"spyre_" + k for k in FAKE_METRICS[0]} | {
+    expected_keys = {"spyre_" + k for k in FAKE_METRIC_KEYS} | {
         "spyre_total_prefill_chunks",
         "spyre_num_requests_missing_blocks",
     }
     for key in expected_keys:
         assert key in data, f"expected key {key!r} missing from result JSON"
+    # The alignment-only stamp must not leak into the written columns.
+    assert "spyre_" + _SPYRE_START_TIME_KEY not in data
 
 
 @pytest.mark.cpu
@@ -126,7 +148,7 @@ def test_inject_values_correct(tmp_path):
     data = json.loads(result_file.read_text())
 
     # Per-request lists map directly: "spyre_" + key → [m[key] for m in FAKE_METRICS]
-    for key in FAKE_METRICS[0]:
+    for key in FAKE_METRIC_KEYS:
         if key == "num_chunked_prefills":
             continue
         expected = [m[key] for m in FAKE_METRICS]
@@ -140,6 +162,63 @@ def test_inject_values_correct(tmp_path):
     )
     # Original keys preserved
     assert data["backend"] == "spyre-chat"
+
+
+@pytest.mark.cpu
+def test_inject_reorders_by_start_time(tmp_path):
+    """The core feature: metrics are collected in completion order but must be
+    written in the result's submission order, keyed by start_time — so a reversed
+    collection order still lands aligned with the rows."""
+    # start_times in submission order match FAKE_METRICS[0], then [1].
+    result_file = _write_fake_result(tmp_path)
+    # Hand the metrics in the opposite (completion) order; the stamp must drive
+    # placement, not list position.
+    _inject_spyre_metrics_into_result_file(_make_args(tmp_path), list(reversed(FAKE_METRICS)))
+    data = json.loads(result_file.read_text())
+
+    # queued_time_s is distinct per request, so it pins the ordering unambiguously.
+    assert data["spyre_queued_time_s"] == [
+        FAKE_METRICS[0]["queued_time_s"],
+        FAKE_METRICS[1]["queued_time_s"],
+    ]
+
+
+@pytest.mark.cpu
+def test_inject_pads_unmatched_rows_with_sentinels(tmp_path):
+    """A result row with no matching collected metric (e.g. a failed request that
+    never produced Spyre metrics) gets a sentinel, keeping every spyre_* array the
+    same length as start_times/ttfts."""
+    # Three submission-ordered rows; only the first and third have metrics.
+    result_file = _write_fake_result(
+        tmp_path, start_times=[FAKE_START_TIMES[0], 999.999, FAKE_START_TIMES[1]]
+    )
+    _inject_spyre_metrics_into_result_file(_make_args(tmp_path), FAKE_METRICS)
+    data = json.loads(result_file.read_text())
+
+    assert len(data["spyre_queued_time_s"]) == 3
+    assert data["spyre_queued_time_s"] == [
+        FAKE_METRICS[0]["queued_time_s"],
+        None,  # unmatched row → sentinel
+        FAKE_METRICS[1]["queued_time_s"],
+    ]
+    # List-valued columns get their [] sentinel, not None.
+    assert data["spyre_tkvs"][1] == []
+
+
+@pytest.mark.cpu
+def test_inject_skips_when_no_start_times(tmp_path, caplog_sendnn_inference):
+    """Without start_times there is no key to realign the completion-ordered,
+    metrics-only list against vllm's submission-ordered arrays, so injection must
+    refuse to write per-request columns rather than emit misaligned data."""
+    result_file = _write_fake_result(tmp_path, start_times=None)
+    original = result_file.read_text()
+    with caplog_sendnn_inference.at_level("WARNING"):
+        _inject_spyre_metrics_into_result_file(_make_args(tmp_path), FAKE_METRICS)
+    # File untouched, and no spyre_* columns written.
+    data = json.loads(result_file.read_text())
+    assert result_file.read_text() == original
+    assert not any(k.startswith("spyre_") for k in data)
+    assert "no 'start_times'" in caplog_sendnn_inference.text
 
 
 @pytest.mark.cpu

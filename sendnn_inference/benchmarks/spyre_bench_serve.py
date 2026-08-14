@@ -445,11 +445,15 @@ def _inject_spyre_metrics_into_result_file(
                 len(metrics_list),
             )
     else:
+        # No start_times means no key to align against vllm's submission-ordered
+        # arrays, so any failed/reordered request would misalign spyre_*[i] from
+        # ttfts[i]. Refuse to write the columns rather than emit corrupt data.
         logger.warning(
-            "Spyre metrics: result JSON has no 'start_times'; falling back to "
-            "collection order, which may not match vllm's per-request arrays."
+            "Spyre metrics: result JSON has no 'start_times' to align against; "
+            "skipping per-request Spyre metric injection to avoid emitting arrays "
+            "misaligned with vllm's ttfts/itls/start_times."
         )
-        ordered = list(metrics_list)
+        return
 
     def _col(key: str, default: Any) -> list[Any]:
         return [default if m is None else m.get(key, default) for m in ordered]
