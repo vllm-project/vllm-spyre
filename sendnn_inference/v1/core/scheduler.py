@@ -502,7 +502,7 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         # log_stats off here to avoid double-counting.
         prev_log_stats = self.kv_cache_manager.log_stats
         self.kv_cache_manager.log_stats = False
-        _, prefix_token_len = self.kv_cache_manager.get_computed_blocks(new_prefill)
+        _, prefix_token_len, _ = self.kv_cache_manager.get_computed_blocks(new_prefill)
         self.kv_cache_manager.log_stats = prev_log_stats
         if prefix_token_len >= self.chunk_size - left_padding:
             return self.chunk_size
@@ -519,7 +519,7 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         if request.num_computed_tokens == 0:
             old_log_stats = self.kv_cache_manager.log_stats
             self.kv_cache_manager.log_stats = False
-            new_computed_blocks, num_new_local_computed_tokens = (
+            new_computed_blocks, num_new_local_computed_tokens, _ = (
                 self.kv_cache_manager.get_computed_blocks(request)
             )
             self.kv_cache_manager.log_stats = old_log_stats
@@ -543,6 +543,7 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
             new_computed_blocks=new_computed_blocks.blocks,
             num_encoder_tokens=0,
             total_computed_tokens=num_computed_tokens,
+            num_local_computed_tokens=num_new_local_computed_tokens,
             num_tokens_main_model=num_tokens,
         )
 
@@ -812,7 +813,7 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
             # case where most of the prompt hits prefix cache and we only run a single chunk.
             prev_log_stats = self.kv_cache_manager.log_stats
             self.kv_cache_manager.log_stats = False
-            _, num_computed_tokens = self.kv_cache_manager.get_computed_blocks(request)
+            _, num_computed_tokens, _ = self.kv_cache_manager.get_computed_blocks(request)
             self.kv_cache_manager.log_stats = prev_log_stats
 
         is_first_chunk = request.num_computed_tokens == 0
@@ -1101,7 +1102,7 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
         self,
         request_ids: Union[str, Iterable[str], None],
         finished_status: RequestStatus,
-    ) -> list[tuple[str, int]]:
+    ) -> list[Request]:
         """
         Handles removing finished requests from ongoing_prefills and
         paused_decoding_requests
