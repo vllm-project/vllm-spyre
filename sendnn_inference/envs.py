@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     SENDNN_INFERENCE_MM_DEVICE: str = "auto"
     SENDNN_INFERENCE_ASYNC_MM_ENCODER: bool = True
     SENDNN_INFERENCE_TP_MM_SHARING: bool = True
+    SENDNN_INFERENCE_BENCH_METRICS_ENABLED: bool = False
     SENDNN_INFERENCE_LONG_OUT_PRIO: bool = False
     SENDNN_INFERENCE_PAUSING_ENABLED: bool = True
 
@@ -193,6 +194,13 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # SHM-related failure modes at the cost of redundant CPU work.
     "SENDNN_INFERENCE_TP_MM_SHARING": lambda: bool(
         int(os.getenv("SENDNN_INFERENCE_TP_MM_SHARING", "1"))
+    ),
+    # Enable collection of per-request Spyre-specific benchmark metrics
+    # (queue wait time, chunked prefill count and latencies). Only needed
+    # when running `sendnn-bench serve`. Disabled by default to avoid
+    # overhead in production deployments.
+    "SENDNN_INFERENCE_BENCH_METRICS_ENABLED": lambda: bool(
+        int(os.environ.get("SENDNN_INFERENCE_BENCH_METRICS_ENABLED", "0"))
     ),
     # When "0" (default) and when there are paused requests, the request with
     # the shortest current output is prioritized when both request have been

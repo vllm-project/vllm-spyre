@@ -86,6 +86,7 @@ def mocked_scheduler():
     scheduler.available_blocks = 1
     scheduler.total_reserved_blocks = 0
     scheduler.reserved_blocks = dict[str, int]()
+    scheduler._bench = None
     scheduler._get_required_blocks = lambda x, *args, **kwargs: (0, 0)
     scheduler._get_free_blocks = lambda *args, **kwargs: 1
     scheduler.pause_events = 0

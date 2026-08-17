@@ -68,6 +68,10 @@ The following additional flags can help with insights and result interpretation:
     - `--save-detailed`: saves individual recorded data per request (useful for debugging)
     - `--result-dir {path/to/results}`: target path for output results
 
+!!! tip
+
+    For Spyre-specific per-request metrics (queue wait time, per-chunk prefill latencies, per-step decode latencies, prefix cache hit rate, left padding, pausing), use `sendnn-bench serve` instead of `vllm bench serve`. See [Detailed Performance Measurement](./detailed_performance_measurement.md).
+
 ### `--custom-output-len -1`
 
 When running benchmarks, all requests typically use the same `max-tokens` value (the maximum number of output tokens for a request). This value can be set using [`--output-len`](https://docs.vllm.ai/en/stable/cli/bench/serve/#-output-len). For the `custom` dataset (`--dataset-name custom`), if the dataset contains per-request output token counts as shown in the [Custom dataset documentation](https://docs.vllm.ai/en/stable/api/vllm/benchmarks/datasets/#vllm.benchmarks.datasets.CustomDataset), you can load the per-request `max-tokens` using `--custom-output-len -1`. Paired with `--ignore-eos` (which tells the model to ignore the EOS token and always generate exactly `max-tokens` tokens), this makes benchmarks more stable and reproducible, since the number of output tokens is fixed across runs. Without this, output length varies across runs — even at temperature 0.0, unless using [batch invariance](https://docs.vllm.ai/en/latest/features/batch_invariance/#batch-invariance) — making results more variable and difficult to interpret.
