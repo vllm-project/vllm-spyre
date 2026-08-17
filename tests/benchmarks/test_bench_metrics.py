@@ -30,10 +30,7 @@ from sendnn_inference.benchmarks.spyre_bench_serve import (
 # Shared test data
 # ---------------------------------------------------------------------------
 
-# Per-request start_time stamps carried on each collected metric dict. vllm's
-# result arrays (ttfts/itls/start_times) are submission-ordered, so injection
-# realigns metrics against them by this key. The values are distinct so the
-# reorder is observable.
+# Per-request start_time stamps carried on each collected metric dict
 FAKE_START_TIMES = [111.111, 222.222]
 
 # Synthetic values. FAKE_METRICS[i] carries FAKE_START_TIMES[i] under
