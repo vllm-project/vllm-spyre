@@ -261,6 +261,7 @@ def test_sendnn_bench__kv_transfer_params_survives_to_request_output():
     assert "finished" in ro_params, (
         "RequestOutput.__init__ no longer accepts 'finished'; patch_serving gates the "
         "'__spyre__' read on res.finished and must be updated."
+    )
 
 
 @pytest.mark.utils
@@ -317,4 +318,3 @@ def test_finish_requests_returns_list_of_request():
     assert args is not None and args[0] is Request, (
         f"finish_requests return type is {annotation!r}, expected list[Request]. "
         "Update the return annotation on SpyreScheduler.finish_requests when vLLM:lowest > v0.27.1."
-    )
