@@ -318,3 +318,4 @@ def test_finish_requests_returns_list_of_request():
     assert args is not None and args[0] is Request, (
         f"finish_requests return type is {annotation!r}, expected list[Request]. "
         "Update the return annotation on SpyreScheduler.finish_requests when vLLM:lowest > v0.27.1."
+    )
