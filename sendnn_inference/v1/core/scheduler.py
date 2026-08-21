@@ -416,7 +416,7 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
     def _free_request(self, request, delay_free_blocks: bool = False):
         """Override to inject Spyre bench metrics into kv_transfer_params so
         they travel over ZMQ to the API server process in EngineCoreOutput."""
-        kv_xfer_params = super()._free_request(request, delay_free_blocks)
+        kv_xfer_params, ec_xfer_params = super()._free_request(request, delay_free_blocks)
 
         if self._bench is not None:
             req_id = request.request_id
@@ -474,7 +474,7 @@ class ChunkedPrefillSpyreScheduler(SpyreScheduler):
             else:
                 kv_xfer_params["__spyre__"] = spyre_data
 
-        return kv_xfer_params
+        return kv_xfer_params, ec_xfer_params
 
     def _current_chunk_token_threshold(self, new_prefill_candidates: list[Request]) -> int:
         """Returns the `long_prefill_token_threshold` to use for this step.

@@ -319,3 +319,24 @@ def test_finish_requests_returns_list_of_request():
         f"finish_requests return type is {annotation!r}, expected list[Request]. "
         "Update the return annotation on SpyreScheduler.finish_requests when vLLM:lowest > v0.27.1."
     )
+
+
+@pytest.mark.utils
+def test_free_request_returns_2_tuple():
+    """Scheduler._free_request returns a 2-tuple (kv_xfer_params, ec_xfer_params)
+    as of vLLM v0.27.1 (previously returned kv_xfer_params directly).
+
+    When vLLM:lowest is bumped past v0.27.1, the unpack-to-2 in
+    SpyreScheduler._free_request can be simplified and this test deleted.
+    """
+    from vllm.v1.core.sched.scheduler import Scheduler
+    import inspect
+
+    sig = inspect.signature(Scheduler._free_request)
+    annotation = sig.return_annotation
+    assert annotation != inspect.Parameter.empty
+    args = getattr(annotation, "__args__", None)
+    assert args is not None and len(args) == 2, (
+        f"_free_request returns {len(args) if args else '?'}-tuple, expected 2. "
+        "Update the unpack in SpyreScheduler._free_request when vLLM:lowest > v0.27.1."
+    )
