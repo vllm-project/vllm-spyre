@@ -698,10 +698,10 @@ def test_scheduler_bench_metrics_accumulated(
             captured[req_id] = snap
         else:
             captured[req_id] = {}
-        kv_params = original_free(self, request, delay_free_blocks)
+        kv_params, ec_params = original_free(self, request, delay_free_blocks)
         if kv_params and "__spyre__" in kv_params:
             captured_spyre[req_id] = dict(kv_params["__spyre__"])
-        return kv_params
+        return kv_params, ec_params
 
     scheduler._free_request = _capturing_free.__get__(scheduler)
 
