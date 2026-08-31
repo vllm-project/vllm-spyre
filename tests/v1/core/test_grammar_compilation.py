@@ -38,6 +38,7 @@ import pytest
 from vllm.sampling_params import StructuredOutputsParams
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import RequestStatus
+from vllm.v1.structured_output import StructuredOutputGrammar
 from vllm.v1.structured_output.request import StructuredOutputRequest
 
 from scheduling_utils import create_request_for_scheduler_test, random_prompt
@@ -51,7 +52,7 @@ pytestmark = [
 ]
 
 
-class _PermissiveStubGrammar:
+class _PermissiveStubGrammar(StructuredOutputGrammar):
     """Minimal ``StructuredOutputGrammar`` stub: accepts any tokens, never
     terminates. The scheduler advances the FSM by calling ``accept_tokens``
     each step a structured request samples; this stub keeps the scheduler
@@ -59,6 +60,9 @@ class _PermissiveStubGrammar:
 
     def accept_tokens(self, request_id: str, tokens) -> bool:
         return True
+
+    def validate_tokens(self, tokens) -> list:
+        return list(tokens)
 
     def rollback(self, num_tokens: int) -> None:
         return None

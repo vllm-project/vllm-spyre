@@ -94,7 +94,7 @@ def mocked_scheduler():
     scheduler.long_output_prio = False
 
     scheduler.kv_cache_manager = Mock()
-    scheduler.kv_cache_manager.get_computed_blocks.return_value = (None, 0)
+    scheduler.kv_cache_manager.get_computed_blocks.return_value = (None, 0, 0)
 
     real_output = SchedulerOutput.make_empty()
 

@@ -74,7 +74,7 @@ def scheduler():
     sched._get_required_blocks = lambda req, *a, **k: (0, 0)
     sched._get_free_blocks = lambda: 100
     sched.kv_cache_manager = Mock()
-    sched.kv_cache_manager.get_computed_blocks.return_value = (None, 0)
+    sched.kv_cache_manager.get_computed_blocks.return_value = (None, 0, 0)
     sched.kv_cache_manager.block_pool = Mock()
     # scheduler_config needed by _current_chunk_token_threshold inside schedule()
     sched.scheduler_config = Mock()

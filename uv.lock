@@ -31,7 +31,7 @@ overrides = [
     { name = "torch", specifier = "==2.11.0", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torchvision", specifier = "==0.26.0", index = "https://download.pytorch.org/whl/cpu" },
     { name = "triton", marker = "sys_platform == 'never'" },
-    { name = "vllm", marker = "platform_machine not in 's390x, ppc64le'", git = "https://github.com/vllm-project/vllm?rev=v0.25.1" },
+    { name = "vllm", marker = "platform_machine not in 's390x, ppc64le'", git = "https://github.com/vllm-project/vllm?rev=v0.27.1" },
 ]
 
 [[package]]
@@ -774,15 +774,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/81/e1/56027a71e31b02ddc53c7d65b01e68edf64dea2932122fe7746a516f75d5/dill-0.4.1.tar.gz", hash = "sha256:423092df4182177d4d8ba8290c8a5b640c66ab35ec7da59ccfa00f6fa3eea5fa", size = 187315, upload-time = "2026-01-19T02:36:56.85Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1e/77/dc8c558f7593132cf8fefec57c4f60c83b16941c574ac5f619abb3ae7933/dill-0.4.1-py3-none-any.whl", hash = "sha256:1e1ce33e978ae97fcfcff5638477032b801c46c7c65cf717f95fbc2248f79a9d", size = 120019, upload-time = "2026-01-19T02:36:55.663Z" },
-]
-
-[[package]]
-name = "diskcache"
-version = "5.6.3"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/3f/21/1c1ffc1a039ddcc459db43cc108658f32c57d271d7289a2794e401d0fdb6/diskcache-5.6.3.tar.gz", hash = "sha256:2c3a3fa2743d8535d832ec61c2054a1641f41775aa7c556758a109941e33e4fc", size = 67916, upload-time = "2023-08-31T06:12:00.316Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/3f/27/4570e78fc0bf5ea0ca45eb1de3818a23787af9b390c0b0a0033a1b8236f9/diskcache-5.6.3-py3-none-any.whl", hash = "sha256:5e31b2d5fbad117cc363ebaf6b689474db18a1f6438bc82358b024abd4c2ca19", size = 45550, upload-time = "2023-08-31T06:11:58.822Z" },
 ]
 
 [[package]]
@@ -3940,7 +3931,7 @@ requires-dist = [
     { name = "torch", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torchvision", index = "https://download.pytorch.org/whl/cpu" },
     { name = "transformers", specifier = ">=5.12.1" },
-    { name = "vllm", git = "https://github.com/vllm-project/vllm?rev=v0.25.1" },
+    { name = "vllm", git = "https://github.com/vllm-project/vllm?rev=v0.27.1" },
 ]
 
 [package.metadata.requires-dev]
@@ -4298,13 +4289,13 @@ resolution-markers = [
     "python_full_version < '3.12' and platform_machine != 'aarch64' and sys_platform == 'darwin'",
 ]
 dependencies = [
-    { name = "filelock", marker = "platform_machine != 'aarch64' and sys_platform == 'darwin'" },
-    { name = "fsspec", marker = "platform_machine != 'aarch64' and sys_platform == 'darwin'" },
-    { name = "jinja2", marker = "platform_machine != 'aarch64' and sys_platform == 'darwin'" },
-    { name = "networkx", marker = "platform_machine != 'aarch64' and sys_platform == 'darwin'" },
-    { name = "setuptools", marker = "platform_machine != 'aarch64' and sys_platform == 'darwin'" },
-    { name = "sympy", marker = "platform_machine != 'aarch64' and sys_platform == 'darwin'" },
-    { name = "typing-extensions", marker = "platform_machine != 'aarch64' and sys_platform == 'darwin'" },
+    { name = "filelock" },
+    { name = "fsspec" },
+    { name = "jinja2" },
+    { name = "networkx" },
+    { name = "setuptools" },
+    { name = "sympy" },
+    { name = "typing-extensions" },
 ]
 wheels = [
     { url = "https://download-r2.pytorch.org/whl/cpu/torch-2.11.0-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:d75eadcd97fe0dc7cd0eedc4d72152484c19cb2cfe46ce55766c8e129116425f", upload-time = "2026-03-23T15:16:54Z" },
@@ -4332,13 +4323,13 @@ resolution-markers = [
     "python_full_version < '3.12' and platform_machine == 'aarch64'",
 ]
 dependencies = [
-    { name = "filelock", marker = "platform_machine == 'aarch64' or sys_platform != 'darwin'" },
-    { name = "fsspec", marker = "platform_machine == 'aarch64' or sys_platform != 'darwin'" },
-    { name = "jinja2", marker = "platform_machine == 'aarch64' or sys_platform != 'darwin'" },
-    { name = "networkx", marker = "platform_machine == 'aarch64' or sys_platform != 'darwin'" },
-    { name = "setuptools", marker = "platform_machine == 'aarch64' or sys_platform != 'darwin'" },
-    { name = "sympy", marker = "platform_machine == 'aarch64' or sys_platform != 'darwin'" },
-    { name = "typing-extensions", marker = "platform_machine == 'aarch64' or sys_platform != 'darwin'" },
+    { name = "filelock" },
+    { name = "fsspec" },
+    { name = "jinja2" },
+    { name = "networkx" },
+    { name = "setuptools" },
+    { name = "sympy" },
+    { name = "typing-extensions" },
 ]
 wheels = [
     { url = "https://download-r2.pytorch.org/whl/cpu/torch-2.11.0%2Bcpu-cp311-cp311-linux_s390x.whl", hash = "sha256:5214b203ee187f8746c66f1378b72611b7c1e15c5cb325037541899e705ea24e", upload-time = "2026-04-27T21:55:40Z" },
@@ -4387,9 +4378,9 @@ resolution-markers = [
     "python_full_version < '3.12' and platform_machine != 'aarch64' and sys_platform == 'darwin'",
 ]
 dependencies = [
-    { name = "numpy", marker = "platform_machine != 'aarch64' and sys_platform == 'darwin'" },
-    { name = "pillow", marker = "platform_machine != 'aarch64' and sys_platform == 'darwin'" },
-    { name = "torch", version = "2.11.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "platform_machine != 'aarch64' and sys_platform == 'darwin'" },
+    { name = "numpy" },
+    { name = "pillow" },
+    { name = "torch", version = "2.11.0", source = { registry = "https://download.pytorch.org/whl/cpu" } },
 ]
 wheels = [
     { url = "https://download-r2.pytorch.org/whl/cpu/torchvision-0.26.0-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:55bd6ad4ae77be01ba67a410b05b51f53b0d0ee45f146eb6a0dfb9007e70ab3c", upload-time = "2026-03-23T15:36:09Z" },
@@ -4417,9 +4408,9 @@ resolution-markers = [
     "python_full_version < '3.12' and platform_machine == 'aarch64'",
 ]
 dependencies = [
-    { name = "numpy", marker = "platform_machine == 'aarch64' or sys_platform != 'darwin'" },
-    { name = "pillow", marker = "platform_machine == 'aarch64' or sys_platform != 'darwin'" },
-    { name = "torch", version = "2.11.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "platform_machine == 'aarch64' or sys_platform != 'darwin'" },
+    { name = "numpy" },
+    { name = "pillow" },
+    { name = "torch", version = "2.11.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" } },
 ]
 wheels = [
     { url = "https://download-r2.pytorch.org/whl/cpu/torchvision-0.26.0%2Bcpu-cp311-cp311-manylinux_2_28_aarch64.whl", hash = "sha256:c11e55041f6b84a6c4fb28981b901475aa81c38695ccec6ddfcc54c3fa9fac4f", upload-time = "2026-03-23T15:36:09Z" },
@@ -4597,8 +4588,8 @@ wheels = [
 
 [[package]]
 name = "vllm"
-version = "0.25.1+empty"
-source = { git = "https://github.com/vllm-project/vllm?rev=v0.25.1#752a3a504485790a2e8491cacbb35c137339ad34" }
+version = "0.27.1+empty"
+source = { git = "https://github.com/vllm-project/vllm?rev=v0.27.1#6e448d0ea9bf3d88d898b65449ca6dc2aec170ac" }
 dependencies = [
     { name = "aiohttp" },
     { name = "anthropic" },
@@ -4608,7 +4599,6 @@ dependencies = [
     { name = "cloudpickle" },
     { name = "compressed-tensors" },
     { name = "depyf" },
-    { name = "diskcache" },
     { name = "einops" },
     { name = "fastapi", extra = ["standard"] },
     { name = "filelock" },
@@ -4840,8 +4830,8 @@ dependencies = [
     { name = "apache-tvm-ffi" },
     { name = "numpy" },
     { name = "pydantic" },
-    { name = "torch", version = "2.11.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "platform_machine != 'aarch64' and sys_platform == 'darwin'" },
-    { name = "torch", version = "2.11.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "platform_machine == 'aarch64' or sys_platform != 'darwin'" },
+    { name = "torch", version = "2.11.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'ppc64le' and sys_platform == 'darwin') or (platform_machine == 's390x' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin')" },
+    { name = "torch", version = "2.11.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 'arm64' and platform_machine != 'ppc64le' and platform_machine != 's390x' and platform_machine != 'x86_64') or sys_platform != 'darwin'" },
     { name = "transformers" },
     { name = "triton", marker = "sys_platform == 'never'" },
     { name = "typing-extensions" },
