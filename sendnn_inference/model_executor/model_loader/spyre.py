@@ -1,7 +1,6 @@
 """Utilities for selecting and loading Spyre models."""
 
 import os
-import warnings
 from dataclasses import dataclass
 from typing import cast
 
@@ -116,10 +115,9 @@ class SpyreCausalLM(nn.Module):
         super().__init__()
         vllm_config_compatible = SpyreSampler.is_vllm_config_compatible(vllm_config)
         if not vllm_config_compatible:
-            warnings.warn(
-                "The provided vllm_config is not compatible with SpyreSampler."
-                "Falling back to default Sampler with reduced performance on Spyre platform.",
-                stacklevel=2,
+            logger.warning(
+                "The provided vllm_config is not compatible with SpyreSampler. "
+                "Falling back to default Sampler with reduced performance on Spyre platform."
             )
             self.sampler = Sampler()
         else:
