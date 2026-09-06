@@ -23,6 +23,7 @@ import sendnn_inference.envs as envs_spyre
 import sendnn_inference.multimodal as spyre_mm
 import sendnn_inference.utils as utils_spyre
 from sendnn_inference.platform import SpyrePlatform
+from sendnn_inference.v1.sample.spyre_sampler import SpyreSampler
 
 try:
     import backends.dynamo_tracer  # ty: ignore[unresolved-import] # noqa
@@ -112,8 +113,17 @@ class SpyreCausalLM(nn.Module):
         rank: int,
     ) -> None:
         super().__init__()
-
-        self.sampler = Sampler()
+        vllm_config_compatible = SpyreSampler.is_vllm_config_compatible(vllm_config)
+        if not vllm_config_compatible:
+            logger.warning(
+                "The provided vllm_config is not compatible with SpyreSampler. "
+                "Falling back to default Sampler with reduced performance on Spyre platform."
+            )
+            self.sampler = Sampler()
+        else:
+            # SpyreSampler is a vLLM Sampler subclass that uses top-k/top-p sampling
+            # implementations optimized for Spyre platform.
+            self.sampler = SpyreSampler(vllm_config=vllm_config)
 
         # boolean tensor of length batch size with indices:
         # True for unfinished sequences and
